@@ -227,48 +227,43 @@ func (projectKind) List(ctx context.Context, env *Env) ([]*Live, error) {
 	return out, nil
 }
 
-func projectMembers(ctx context.Context, env *Env, name string) ([]any, error) {
-	var resp struct {
-		Members []struct {
-			Username string `json:"username"`
-			Role     string `json:"role"`
-		} `json:"members"`
+// projectRoleRow is one row of GET /api/v1/projects/{name}/members (Username)
+// or /groups (GroupName).
+type projectRoleRow struct {
+	Username  string `json:"username"`
+	GroupName string `json:"group_name"`
+	Role      string `json:"role"`
+}
+
+// projectRoleRows lists the members or groups (kind) of a project as manifest
+// rows sorted by name: name picks the principal's name out of a row and nameKey
+// is the manifest field that holds it.
+func projectRoleRows(
+	ctx context.Context, env *Env, project, kind, nameKey string, name func(projectRoleRow) string,
+) ([]any, error) {
+	var resp map[string][]projectRoleRow
+
+	if err := env.Client.Get(ctx, projectPath(project)+"/"+kind, &resp); err != nil {
+		return nil, fmt.Errorf("list %s of project %q: %w", kind, project, err)
 	}
 
-	if err := env.Client.Get(ctx, projectPath(name)+"/members", &resp); err != nil {
-		return nil, fmt.Errorf("list members of project %q: %w", name, err)
-	}
+	rows := resp[kind]
+	sort.Slice(rows, func(i, j int) bool { return name(rows[i]) < name(rows[j]) })
 
-	sort.Slice(resp.Members, func(i, j int) bool { return resp.Members[i].Username < resp.Members[j].Username })
-
-	out := make([]any, len(resp.Members))
-	for i, m := range resp.Members {
-		out[i] = map[string]any{"username": m.Username, "role": m.Role}
+	out := make([]any, len(rows))
+	for i, r := range rows {
+		out[i] = map[string]any{nameKey: name(r), "role": r.Role}
 	}
 
 	return out, nil
 }
 
+func projectMembers(ctx context.Context, env *Env, name string) ([]any, error) {
+	return projectRoleRows(ctx, env, name, "members", "username", func(r projectRoleRow) string { return r.Username })
+}
+
 func projectGroups(ctx context.Context, env *Env, name string) ([]any, error) {
-	var resp struct {
-		Groups []struct {
-			GroupName string `json:"group_name"`
-			Role      string `json:"role"`
-		} `json:"groups"`
-	}
-
-	if err := env.Client.Get(ctx, projectPath(name)+"/groups", &resp); err != nil {
-		return nil, fmt.Errorf("list groups of project %q: %w", name, err)
-	}
-
-	sort.Slice(resp.Groups, func(i, j int) bool { return resp.Groups[i].GroupName < resp.Groups[j].GroupName })
-
-	out := make([]any, len(resp.Groups))
-	for i, g := range resp.Groups {
-		out[i] = map[string]any{"group": g.GroupName, "role": g.Role}
-	}
-
-	return out, nil
+	return projectRoleRows(ctx, env, name, "groups", "group", func(r projectRoleRow) string { return r.GroupName })
 }
 
 var projectBodyFields = []string{ //nolint:gochecknoglobals // immutable field list
@@ -295,16 +290,16 @@ func (projectKind) Create(ctx context.Context, env *Env, o *Object) (string, err
 		created.Spec["members"] = []any{map[string]any{"username": owner, "role": projectRoleOwner}}
 	}
 
-	var resp projectResponse
-	if err := env.Client.Do(ctx, http.MethodPost, projectsPath, body, &resp); err != nil {
-		return "", fmt.Errorf("create project %q: %w", o.Name, err)
+	id, err := env.Client.create(ctx, projectsPath, body, "project", o.Name)
+	if err != nil {
+		return "", err
 	}
 
 	if err := projectReconcile(ctx, env, o, created); err != nil {
-		return resp.ID, err
+		return id, err
 	}
 
-	return resp.ID, nil
+	return id, nil
 }
 
 func (projectKind) Update(ctx context.Context, env *Env, live *Live, o *Object, changes []Change) (string, error) {
@@ -465,9 +460,5 @@ func projectReconcileGroups(ctx context.Context, env *Env, o *Object, live *Live
 }
 
 func (projectKind) Delete(ctx context.Context, env *Env, live *Live) error {
-	if err := env.Client.Do(ctx, http.MethodDelete, projectPath(live.Key), nil, nil); err != nil {
-		return fmt.Errorf("delete project %q: %w", live.Key, err)
-	}
-
-	return nil
+	return env.Client.remove(ctx, projectPath(live.Key), "project", live.Key)
 }

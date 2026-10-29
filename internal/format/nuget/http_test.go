@@ -13,13 +13,25 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/licensemeta/archivetest"
 	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
 	"github.com/openartifact/openartifact/internal/webhook"
 )
+
+// policyDB is a nugetDB whose license policies are those of a policytest Case.
+type policyDB struct {
+	*nugetDB
+
+	lister policytest.Lister
+}
+
+// ListLicensePolicies answers the case's policies; the double has its own, so the embedded
+// Lister would be ambiguous.
+func (d policyDB) ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error) {
+	return d.lister.ListLicensePolicies(ctx, repoID)
+}
 
 type nugetDB struct {
 	*formattest.DB
@@ -64,6 +76,29 @@ func newTestHandler(t *testing.T) (*HTTPHandler, *nugetDB, *formattest.BlobStore
 }
 
 func register(h *HTTPHandler) func(chi.Router) { return h.RegisterRepoRoutes }
+
+// dotnet nuget push sends PUT to the PackagePublish URL with a trailing slash.
+func TestPushAcceptsTrailingSlash(t *testing.T) {
+	h, db, _, _ := newTestHandler(t)
+
+	var body bytes.Buffer
+
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("package", "x.nupkg")
+	_, _ = fw.Write(createNupkg(t, "Newtonsoft.Json.nuspec", sampleNuspec))
+	_ = mw.Close()
+
+	req := formattest.Request(http.MethodPut, "/repos/myrepo/v3/package/", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	if w := formattest.Do(register(h), req); w.Code != http.StatusCreated {
+		t.Fatalf("push status = %d: %s", w.Code, w.Body.String())
+	}
+
+	if db.pkg == nil {
+		t.Fatal("the pushed package was not recorded")
+	}
+}
 
 func TestPushAndDeleteEmitEvents(t *testing.T) {
 	h, db, bs, pub := newTestHandler(t)
@@ -144,9 +179,14 @@ func nuspecWithLicense(licenseXML string) string {
 </package>`
 }
 
+// pushNuspecStore is the part of the database pushNuspec needs.
+type pushNuspecStore interface {
+	HTTPStore
+}
+
 func pushNuspec(
 	t *testing.T,
-	db database.Database,
+	db pushNuspecStore,
 	bs *formattest.BlobStore,
 	pub *formattest.Publisher,
 	nuspec string,
@@ -198,7 +238,7 @@ func TestPushLicensePolicy(t *testing.T) {
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
-			w := pushNuspec(t, c.DB(inner), bs, pub, nuspec)
+			w := pushNuspec(t, policyDB{inner, c.Lister()}, bs, pub, nuspec)
 			c.AssertResponse(t, w.Code, w.Body.Bytes())
 			assertNupkgStored(t, c, w.Code, inner, bs, pub)
 		})
@@ -222,7 +262,7 @@ func TestPushLicensePolicyNoEnforceableLicenseAdmitted(t *testing.T) {
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
-			w := pushNuspec(t, c.DB(inner), bs, pub, nuspec)
+			w := pushNuspec(t, policyDB{inner, c.Lister()}, bs, pub, nuspec)
 			c.AssertResponse(t, w.Code, w.Body.Bytes())
 			assertNupkgStored(t, c, w.Code, inner, bs, pub)
 		})
@@ -244,7 +284,7 @@ func TestPushLicensePolicyLicenseURL(t *testing.T) {
 				bs := formattest.NewBlobStore()
 				pub := &formattest.Publisher{}
 
-				w := pushNuspec(t, c.DB(inner), bs, pub, nuspecWithLicense(`<licenseUrl>`+url+`</licenseUrl>`))
+				w := pushNuspec(t, policyDB{inner, c.Lister()}, bs, pub, nuspecWithLicense(`<licenseUrl>`+url+`</licenseUrl>`))
 				c.AssertResponse(t, w.Code, w.Body.Bytes())
 				assertNupkgStored(t, c, w.Code, inner, bs, pub)
 			})

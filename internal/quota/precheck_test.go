@@ -9,18 +9,16 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 type quotaRowDB struct {
-	databasetest.BaseMockDB
-
-	q *models.StorageQuota
+	q   *models.StorageQuota
+	err error
 }
 
 func (d *quotaRowDB) GetOrCreateStorageQuota(context.Context, string) (*models.StorageQuota, error) {
-	return d.q, nil
+	return d.q, d.err
 }
 
 func TestPrecheck(t *testing.T) {
@@ -48,7 +46,7 @@ func TestPrecheck(t *testing.T) {
 	}
 
 	// A quota lookup failure is advisory: the reservation reports it.
-	if err := Precheck(ctx, &databasetest.BaseMockDB{}, "r", 10); err != nil {
+	if err := Precheck(ctx, &quotaRowDB{err: errors.New("lookup failed")}, "r", 10); err != nil {
 		t.Errorf("lookup failure: %v", err)
 	}
 }

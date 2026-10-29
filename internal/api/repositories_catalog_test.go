@@ -36,6 +36,11 @@ type catalogDB struct {
 	repo        *models.Repository
 }
 
+// ListProjectGrantsByUser is not exercised by the tests.
+func (*catalogDB) ListProjectGrantsByUser(context.Context, string) ([]*models.ProjectGrant, error) {
+	return nil, nil
+}
+
 func (db *catalogDB) RepoCatalogStats(_ context.Context, ids []string, _ bool) (map[string]models.RepoStats, error) {
 	db.statsCalls++
 
@@ -432,8 +437,9 @@ func TestPackageDetail(t *testing.T) {
 		},
 		detail: &models.ComponentDetail{
 			ID: "p1", Format: "npm", Name: "widget", Version: "1.0.0", Filename: "widget-1.0.0.tgz",
-			Info: map[string]string{"main": "index.js", "author": "me"},
-			Deps: []byte(`{"dependencies":{"left-pad":"^1.0.0"}}`),
+			Info:        map[string]string{"main": "index.js", "author": "me"},
+			Deps:        []byte(`{"dependencies":{"left-pad":"^1.0.0"}}`),
+			DepsDecoder: "npm-manifest",
 		},
 		rows: []*models.Component{
 			{ID: "p1", Name: "widget", Version: "1.0.0", Format: "npm", Filename: "widget-1.0.0.tgz"},

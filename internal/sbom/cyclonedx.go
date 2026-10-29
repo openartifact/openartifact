@@ -142,17 +142,6 @@ func (g *Generator) cdxTools(spec string) any {
 	}}
 }
 
-func rootType(format string) string {
-	switch strings.ToLower(format) {
-	case "docker":
-		return "container"
-	case "raw":
-		return "file"
-	default:
-		return "library"
-	}
-}
-
 func (in *Input) cdxComponent() cdxComponent {
 	c := cdxComponent{
 		Type:     rootType(in.Format),
@@ -249,8 +238,8 @@ func (g *Generator) GenerateCycloneDX(
 		return nil, fmt.Errorf("%w: CycloneDX %q", ErrUnsupportedSpec, spec)
 	}
 
-	in := newInput(format, artifactID, metadata)
-	if err := g.loadSBOM(ctx, repoID, in); err != nil {
+	in, err := g.sbomInput(ctx, repoID, format, artifactID, metadata)
+	if err != nil {
 		return nil, err
 	}
 

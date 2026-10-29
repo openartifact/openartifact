@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"database/sql"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/audit"
@@ -65,8 +67,37 @@ func validFormatList() string {
 	return strings.Join(repotype.SortedNames(), ", ")
 }
 
+// RepositoriesStore is the part of the database RepositoriesHandler needs.
+type RepositoriesStore interface {
+	collectOrphansAsyncStore
+	reclaimMetadataBlobsStore
+	ArtifactSecurity(ctx context.Context, repoID string, artifactIDs []string) (map[string]models.ArtifactSecurity, error)
+	CountRepoPackageNames(ctx context.Context, repoIDs []string) (map[string]int64, error)
+	CreateProjectRepository(ctx context.Context, repo *models.Repository, memberIDs []string, maxRepositories int) error
+	CreateRepositoryWithMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error
+	DeleteRepository(ctx context.Context, id string) error
+	GetProject(ctx context.Context, id string) (*models.Project, error)
+	GetProjectByName(ctx context.Context, name string) (*models.Project, error)
+	GetRepoComponentBlob(ctx context.Context, repoID string, id string) (*models.ComponentBlob, error)
+	GetRepoComponentDetail(ctx context.Context, repoID string, id string) (*models.ComponentDetail, error)
+	GetRepoMetadataByRepo(ctx context.Context, repositoryID string) ([]models.RepoMetadata, error)
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListComponentsByRepo(ctx context.Context, repoID string, formatFilter string, page int, limit int) ([]*models.Component, int, error)
+	ListGroupMembers(ctx context.Context, groupRepoID string) ([]*models.RepositoryGroupMember, error)
+	ListMetadataGroupsOfMember(ctx context.Context, memberRepoID string) ([]string, error)
+	ListRecentPackages(ctx context.Context, repoIDs []string, limit int) ([]models.RecentPackage, error)
+	ListRepoPackageRollup(ctx context.Context, opts models.PackageRollupOptions) ([]models.PackageRollup, int, error)
+	ListRepositories(ctx context.Context, page int, limit int, formatFilter string) ([]*models.Repository, error)
+	MoveRepositoryToProject(ctx context.Context, repoID string, toProjectID string, maxRepositories int) error
+	ReplaceGroupMembers(ctx context.Context, groupRepoID string, memberIDs []string) error
+	RepoCatalogStats(ctx context.Context, repoIDs []string, withLastPublished bool) (map[string]models.RepoStats, error)
+	UpdateRepository(ctx context.Context, repo *models.Repository) error
+	UpdateRepositoryAndMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error
+}
+
 type RepositoriesHandler struct {
-	db        database.Database
+	db        RepositoriesStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	blobStore storage.BlobStore
@@ -81,7 +112,7 @@ type RepositoriesHandler struct {
 	tasks *bgtask.Runner
 }
 
-func NewRepositoriesHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *RepositoriesHandler {
+func NewRepositoriesHandler(db RepositoriesStore, log *logger.Logger, evaluator *auth.Evaluator) *RepositoriesHandler {
 	return &RepositoriesHandler{db: db, log: log, evaluator: evaluator, tasks: bgtask.New(context.Background())}
 }
 
@@ -479,6 +510,26 @@ func encryptUpstreamPassword(plain string) (string, error) {
 	return enc, nil
 }
 
+// protectUpstreamPassword encrypts plain for storage. On failure it writes the
+// 400 (not a plaintext password) or 500 (logged under op) answer and returns
+// false.
+func (h *RepositoriesHandler) protectUpstreamPassword(w http.ResponseWriter, op, plain string) (string, bool) {
+	enc, err := encryptUpstreamPassword(plain)
+	if err == nil {
+		return enc, true
+	}
+
+	if ve, ok := errors.AsType[validationError](err); ok {
+		writeError(w, http.StatusBadRequest, "validation_failed", ve.Error())
+		return "", false
+	}
+
+	h.log.Errorw(op+": encrypt upstream password", "error", err)
+	writeError(w, http.StatusInternalServerError, "internal_error", "failed to protect upstream credentials")
+
+	return "", false
+}
+
 // createRepositoryBody is the body of POST /api/v1/repositories and of
 // POST /api/v1/projects/{project}/repositories.
 type createRepositoryBody struct {
@@ -615,7 +666,7 @@ func (h *RepositoriesHandler) createRepository(
 		return
 	}
 
-	if body.SignPackages && (repoType != "hosted" || body.Format != "rpm") {
+	if body.SignPackages && (repoType != "hosted" || !repotype.PackageSigning(body.Format)) {
 		writeError(w, http.StatusBadRequest, "validation_failed", errSignPackagesRPMOnly)
 		return
 	}
@@ -691,17 +742,8 @@ func (h *RepositoriesHandler) createRepository(
 			return
 		}
 
-		encPassword, err := encryptUpstreamPassword(body.UpstreamPassword)
-		if err != nil {
-			if ve, ok := errors.AsType[validationError](err); ok {
-				writeError(w, http.StatusBadRequest, "validation_failed", ve.Error())
-
-				return
-			}
-
-			h.log.Errorw("create repository: encrypt upstream password", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to protect upstream credentials")
-
+		encPassword, ok := h.protectUpstreamPassword(w, "create repository", body.UpstreamPassword)
+		if !ok {
 			return
 		}
 
@@ -866,7 +908,7 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	if body.SignPackages != nil {
-		if *body.SignPackages && (repo.RepoType != "hosted" || repo.Format != "rpm") {
+		if *body.SignPackages && (repo.RepoType != "hosted" || !repotype.PackageSigning(repo.Format)) {
 			writeError(w, http.StatusBadRequest, "validation_failed", errSignPackagesRPMOnly)
 			return
 		}
@@ -971,17 +1013,8 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	if body.UpstreamPassword != nil {
-		enc, err := encryptUpstreamPassword(*body.UpstreamPassword)
-		if err != nil {
-			if ve, ok := errors.AsType[validationError](err); ok {
-				writeError(w, http.StatusBadRequest, "validation_failed", ve.Error())
-
-				return
-			}
-
-			h.log.Errorw("update repository: encrypt upstream password", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to protect upstream credentials")
-
+		enc, ok := h.protectUpstreamPassword(w, "update repository", *body.UpstreamPassword)
+		if !ok {
 			return
 		}
 
@@ -1229,7 +1262,7 @@ func (h *RepositoriesHandler) metadataGroupsOf(ctx context.Context, repo *models
 // allows it. false means the caller must hard-delete: retention 0, or a
 // database without trash support.
 func (h *RepositoriesHandler) softDeleteRepository(ctx context.Context, repo *models.Repository) (bool, error) {
-	store, ok := h.db.(database.TrashStore)
+	store, ok := h.db.(database.TrashOps)
 	if !ok {
 		return false, nil
 	}
@@ -1274,12 +1307,18 @@ func (h *RepositoriesHandler) hardDeleteRepository(ctx context.Context, w http.R
 	return true
 }
 
+// reclaimMetadataBlobsStore is the part of the database reclaimMetadataBlobs needs.
+type reclaimMetadataBlobsStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	GetDB() *sql.DB
+}
+
 // reclaimMetadataBlobs frees generated-metadata blobs (no blobs row, so the
 // orphan collector cannot find them) of a repository that was just deleted.
 // Best effort: a failure only leaves unreferenced space behind.
 func reclaimMetadataBlobs(
 	ctx context.Context,
-	db database.Database,
+	db reclaimMetadataBlobsStore,
 	store storage.BlobStore,
 	log *logger.Logger,
 	repo string,
@@ -1333,9 +1372,14 @@ func (h *RepositoriesHandler) collectOrphansAsync() {
 	collectOrphansAsync(h.tasks, h.db, h.blobStore, h.log)
 }
 
+// collectOrphansAsyncStore is the part of the database collectOrphansAsync needs.
+type collectOrphansAsyncStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+}
+
 // collectOrphansAsync starts the detached orphan-blob sweep on tasks (shared by
 // repository delete and the trash purge). A nil store is a no-op.
-func collectOrphansAsync(tasks *bgtask.Runner, db database.Database, store storage.BlobStore, log *logger.Logger) {
+func collectOrphansAsync(tasks *bgtask.Runner, db collectOrphansAsyncStore, store storage.BlobStore, log *logger.Logger) {
 	if store == nil {
 		return
 	}

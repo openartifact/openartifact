@@ -7,9 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <!-- Settings > Security > Scanners: which vulnerability scanners are ready, and what the pipeline is doing. -->
 <template>
   <div class="space-y-5">
-    <SectionActions>
-      <AppButton variant="secondary" size="sm" class="max-md:h-11" :loading="loading" @click="load">{{ t('sx.refresh') }}</AppButton>
-    </SectionActions>
+    <SectionRefresh :loading="loading" @refresh="load" />
 
     <p
       v-if="health"
@@ -94,7 +92,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed } from 'vue'
 import { ExclamationTriangleIcon } from '@heroicons/vue/20/solid'
 import AppButton from '../../../components/AppButton.vue'
-import SectionActions from '../../../components/SectionActions.vue'
+import SectionRefresh from '../../../components/SectionRefresh.vue'
 import StatusBadge from '../../../components/StatusBadge.vue'
 import ListTable, { type ListColumn } from '../../../components/ui/ListTable.vue'
 import RelativeTime from '../../../components/ui/RelativeTime.vue'

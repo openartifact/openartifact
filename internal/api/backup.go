@@ -20,24 +20,32 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/backup"
 	"github.com/openartifact/openartifact/internal/bgtask"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
+
+// BackupStore is the part of the database BackupHandler needs.
+type BackupStore interface {
+	repoAccessStore
+	CreateBackupJob(ctx context.Context, job *models.BackupJob) error
+	GetBackupJob(ctx context.Context, id string) (*models.BackupJob, error)
+	ListBackupJobs(ctx context.Context, limit int) ([]*models.BackupJob, error)
+}
 
 type BackupHandler struct {
 	repoAccess
 
 	backupEngine *backup.Engine
 	tasks        *bgtask.Runner
+	db           BackupStore
 }
 
-func NewBackupHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, backupEngine *backup.Engine) *BackupHandler {
+func NewBackupHandler(db BackupStore, log *logger.Logger, evaluator *auth.Evaluator, backupEngine *backup.Engine) *BackupHandler {
 	return &BackupHandler{
 		repoAccess:   newRepoAccess(db, log, evaluator),
 		backupEngine: backupEngine,
-		tasks:        bgtask.New(context.Background()),
+		tasks:        bgtask.New(context.Background()), db: db,
 	}
 }
 

@@ -167,7 +167,14 @@ func (a *ansibleFixture) add(name string, fake *ansibleFake) { a.fakes[name] = f
 func (a *ansibleFixture) get(method, path, query string) *httptest.ResponseRecorder {
 	req := httptest.NewRequestWithContext(context.Background(), method, "/?"+query, nil)
 	w := httptest.NewRecorder()
-	be := Backend{
+	a.f.h.Serve(w, req, a.f.grp, path, a.backend())
+
+	return w
+}
+
+// backend answers the members from the fakes.
+func (a *ansibleFixture) backend() Backend {
+	return Backend{
 		Authorize: func(_ *http.Request, m *models.Repository, _ string) bool { return !a.f.denied[m.Name] },
 		ServeMember: func(w http.ResponseWriter, r *http.Request, m *models.Repository, p string) {
 			a.f.asked = append(a.f.asked, m.Name)
@@ -181,9 +188,6 @@ func (a *ansibleFixture) get(method, path, query string) *httptest.ResponseRecor
 			fake.serve(w, r, m, p)
 		},
 	}
-	a.f.h.Serve(w, req, a.f.grp, path, be)
-
-	return w
 }
 
 type ansibleVersionsBody struct {

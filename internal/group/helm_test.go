@@ -12,10 +12,8 @@ import (
 	pkghelm "github.com/openartifact/openartifact/pkg/helm"
 )
 
-const helmBase = "http://oa.test"
-
 // memberIndex builds the index.yaml a member (hosted or proxy) serves:
-// absolute URLs below its own /repos/<member>/charts/, a member-specific
+// relative charts/ URLs, a member-specific
 // digest so the merge winner is observable.
 func memberIndex(member string, charts map[string][]string) string {
 	var b strings.Builder
@@ -28,7 +26,7 @@ func memberIndex(member string, charts map[string][]string) string {
 		for _, v := range versions {
 			b.WriteString("  - name: " + name + "\n    version: " + v + "\n    description: from " + member + "\n")
 			b.WriteString("    digest: " + member + "-" + name + "-" + v + "\n")
-			b.WriteString("    urls:\n    - " + helmBase + "/repos/" + member + "/charts/" + name + "-" + v + ".tgz\n")
+			b.WriteString("    urls:\n    - " + "charts/" + name + "-" + v + ".tgz\n")
 		}
 	}
 
@@ -39,8 +37,6 @@ func helmGroup(t *testing.T) *fixture {
 	t.Helper()
 
 	f := newFixture(t, "helm", member("hosted", "helm", "hosted"), member("mirror", "helm", "proxy"))
-	f.h.SetBaseURL(helmBase + "/")
-
 	return f
 }
 
@@ -91,9 +87,9 @@ func TestHelmGroup_IndexMergePrecedence(t *testing.T) {
 
 	for name, versions := range got {
 		for v, cv := range versions {
-			want := helmBase + "/repos/all/charts/" + name + "-" + v + ".tgz"
+			want := "charts/" + name + "-" + v + ".tgz"
 			if len(cv.URLs) != 1 || cv.URLs[0] != want {
-				t.Errorf("%s %s urls = %v, want [%s] (rewritten to the group)", name, v, cv.URLs, want)
+				t.Errorf("%s %s urls = %v, want [%s] (relative to the group)", name, v, cv.URLs, want)
 			}
 		}
 	}

@@ -29,63 +29,6 @@ type AiResult struct {
 	ArtifactVersion       string          `db:"artifact_version" json:"artifact_version"`
 }
 
-// Ansible collections: one ns-name-version.tar.gz artifact per namespace, name and version.
-type AnsibleCollection struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Namespace    string `db:"namespace" json:"namespace"`
-	Name         string `db:"name" json:"name"`
-	Version      string `db:"version" json:"version"`
-	Filename     string `db:"filename" json:"filename"`
-	BlobID       string `db:"blob_id" json:"blob_id"`
-	// Collection dependencies from MANIFEST.json: {"namespace.name": "version requirement"}.
-	Dependencies json.RawMessage `db:"dependencies" json:"dependencies"`
-	// The collection_info object of MANIFEST.json (authors, description, license, tags, links); served as the metadata of the version detail.
-	Metadata json.RawMessage `db:"metadata" json:"metadata"`
-	// requires_ansible of meta/runtime.yml, empty when the collection has none.
-	RequiresAnsible string     `db:"requires_ansible" json:"requires_ansible"`
-	CreatedAt       time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt       time.Time  `db:"updated_at" json:"updated_at"`
-	DeletedAt       *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy       *string    `db:"deleted_by" json:"deleted_by"`
-}
-
-// Alpine packages: one .apk per branch/repo/arch/name/version.
-type ApkPackage struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Branch       string `db:"branch" json:"branch"`
-	Repo         string `db:"repo" json:"repo"`
-	// Architecture directory of the mirror tree.
-	Arch string `db:"arch" json:"arch"`
-	// Architecture of the package itself (PKGINFO arch, APKINDEX A:); noarch inside an x86_64 directory.
-	PkgArch string `db:"pkg_arch" json:"pkg_arch"`
-	Name    string `db:"name" json:"name"`
-	Version string `db:"version" json:"version"`
-	// APKINDEX C: value: Q1 + base64 of the SHA-1 of the control segment.
-	Checksum string `db:"checksum" json:"checksum"`
-	// Lowercase hex SHA-256 of the data segment (PKGINFO datahash).
-	DataSha256       string     `db:"data_sha256" json:"data_sha256"`
-	Description      string     `db:"description" json:"description"`
-	Url              string     `db:"url" json:"url"`
-	License          string     `db:"license" json:"license"`
-	Origin           string     `db:"origin" json:"origin"`
-	Maintainer       string     `db:"maintainer" json:"maintainer"`
-	Commit           string     `db:"commit" json:"commit"`
-	BuildTime        int64      `db:"build_time" json:"build_time"`
-	InstalledSize    int64      `db:"installed_size" json:"installed_size"`
-	Depends          []string   `db:"depends" json:"depends"`
-	Provides         []string   `db:"provides" json:"provides"`
-	InstallIf        []string   `db:"install_if" json:"install_if"`
-	ProviderPriority int32      `db:"provider_priority" json:"provider_priority"`
-	DownloadCount    int64      `db:"download_count" json:"download_count"`
-	CreatedAt        time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt        time.Time  `db:"updated_at" json:"updated_at"`
-	BlobID           string     `db:"blob_id" json:"blob_id"`
-	DeletedAt        *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy        *string    `db:"deleted_by" json:"deleted_by"`
-}
-
 // Alpine repository index signing keys; private_key is sealed with internal/crypto.
 type ApkSigningKey struct {
 	RepositoryID string    `db:"repository_id" json:"repository_id"`
@@ -341,32 +284,6 @@ type BundlePromotion struct {
 	PromoterID *string `db:"promoter_id" json:"promoter_id"`
 }
 
-// Rust/Cargo packages.
-type CargoCrate struct {
-	ID            string          `db:"id" json:"id"`
-	RepositoryID  string          `db:"repository_id" json:"repository_id"`
-	Name          string          `db:"name" json:"name"`
-	Version       string          `db:"version" json:"version"`
-	Description   *string         `db:"description" json:"description"`
-	Homepage      *string         `db:"homepage" json:"homepage"`
-	Documentation *string         `db:"documentation" json:"documentation"`
-	Repository    *string         `db:"repository" json:"repository"`
-	License       *string         `db:"license" json:"license"`
-	Keywords      []string        `db:"keywords" json:"keywords"`
-	Categories    []string        `db:"categories" json:"categories"`
-	Authors       []string        `db:"authors" json:"authors"`
-	Readme        *string         `db:"readme" json:"readme"`
-	MetadataJson  json.RawMessage `db:"metadata_json" json:"metadata_json"`
-	Yanked        bool            `db:"yanked" json:"yanked"`
-	// Total downloads; BIGINT to avoid overflow on popular crates
-	DownloadCount int64      `db:"download_count" json:"download_count"`
-	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time  `db:"updated_at" json:"updated_at"`
-	BlobID        string     `db:"blob_id" json:"blob_id"`
-	DeletedAt     *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy     *string    `db:"deleted_by" json:"deleted_by"`
-}
-
 // Cleanup/retention policies for automatic artifact deletion
 type CleanupPolicy struct {
 	ID                      string     `db:"id" json:"id"`
@@ -387,97 +304,22 @@ type CleanupPolicy struct {
 	ProjectID *string `db:"project_id" json:"project_id"`
 }
 
-// Composer packages: one dist zip per package name and normalised version.
-type ComposerPackage struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Name         string `db:"name" json:"name"`
-	// The version as published, e.g. v1.2.3 or dev-main.
-	Version string `db:"version" json:"version"`
-	// Composer VersionParser::normalize of version, e.g. 1.2.3.0.
-	VersionNormalized string `db:"version_normalized" json:"version_normalized"`
-	BlobID            string `db:"blob_id" json:"blob_id"`
-	// Hex sha1 of the dist zip (Composer dist.shasum).
-	Sha1 string `db:"sha1" json:"sha1"`
-	// The composer.json of the package as uploaded.
-	ComposerJson json.RawMessage `db:"composer_json" json:"composer_json"`
-	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
-	DeletedAt    *time.Time      `db:"deleted_at" json:"deleted_at"`
-	DeletedBy    *string         `db:"deleted_by" json:"deleted_by"`
-}
-
-type ConanPackage struct {
-	ID             string     `db:"id" json:"id"`
-	RepositoryID   string     `db:"repository_id" json:"repository_id"`
-	Name           string     `db:"name" json:"name"`
-	Version        string     `db:"version" json:"version"`
-	UserChannel    string     `db:"user_channel" json:"user_channel"`
-	RecipeRevision string     `db:"recipe_revision" json:"recipe_revision"`
-	Conanfile      *string    `db:"conanfile" json:"conanfile"`
-	Conaninfo      *string    `db:"conaninfo" json:"conaninfo"`
-	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time  `db:"updated_at" json:"updated_at"`
-	BlobID         *string    `db:"blob_id" json:"blob_id"`
-	DeletedAt      *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy      *string    `db:"deleted_by" json:"deleted_by"`
-	// Package id (binary configuration hash); empty for a file of the recipe revision itself.
+// conan package coordinates of a package_files row (one row per stored file)
+type ConanFile struct {
+	ID string `db:"id" json:"id"`
+	// Package id (binary configuration hash); empty for a file of the recipe revision itself
 	PackageID string `db:"package_id" json:"package_id"`
-	// Package revision; empty for a file of the recipe revision itself.
+	// Package revision (hash of the package manifest); empty for a file of the recipe revision itself
 	PackageRevision string `db:"package_revision" json:"package_revision"`
-	// Path of the stored file inside its recipe or package revision (conanfile.py, conan_package.tgz, metadata/sign/...); empty for rows stored before migration 019.
-	Filename string `db:"filename" json:"filename"`
-	// Lowercase hex MD5 of the file, as Conan 1 snapshots report it. Empty until computed.
-	Md5 string `db:"md5" json:"md5"`
-	// Lowercase hex SHA-1 of the file, for Conan checksum deploy (X-Checksum-Sha1). Empty for files stored before it was tracked.
-	Sha1 string `db:"sha1" json:"sha1"`
 }
 
-type CondaPackage struct {
-	ID           string     `db:"id" json:"id"`
-	RepositoryID string     `db:"repository_id" json:"repository_id"`
-	Name         string     `db:"name" json:"name"`
-	Version      string     `db:"version" json:"version"`
-	BuildString  string     `db:"build_string" json:"build_string"`
-	Platform     string     `db:"platform" json:"platform"`
-	Depends      []string   `db:"depends" json:"depends"`
-	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
-	BlobID       string     `db:"blob_id" json:"blob_id"`
-	DeletedAt    *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy    *string    `db:"deleted_by" json:"deleted_by"`
-	// Package file extension: .tar.bz2 (legacy) or .conda (zip with zstd members).
-	Extension   string `db:"extension" json:"extension"`
-	BuildNumber int32  `db:"build_number" json:"build_number"`
-	Md5         string `db:"md5" json:"md5"`
-	// info/index.json timestamp in milliseconds since the epoch; 0 when the package declares none.
-	TimestampMs int64 `db:"timestamp_ms" json:"timestamp_ms"`
-	// Remaining info/index.json fields emitted into repodata.json (constrains, license, noarch, ...).
-	IndexExtra json.RawMessage `db:"index_extra" json:"index_extra"`
-}
-
-// Debian packages. Canonical table for Debian format. Scoped to distribution+component for proper Debian model. blob_id FK to global blobs table.
-type DebPackage struct {
-	ID             string          `db:"id" json:"id"`
-	RepositoryID   string          `db:"repository_id" json:"repository_id"`
-	DistributionID string          `db:"distribution_id" json:"distribution_id"`
-	ComponentID    string          `db:"component_id" json:"component_id"`
-	BlobID         string          `db:"blob_id" json:"blob_id"`
-	Name           string          `db:"name" json:"name"`
-	Version        string          `db:"version" json:"version"`
-	Arch           string          `db:"arch" json:"arch"`
-	Summary        *string         `db:"summary" json:"summary"`
-	Description    *string         `db:"description" json:"description"`
-	License        *string         `db:"license" json:"license"`
-	Maintainer     *string         `db:"maintainer" json:"maintainer"`
-	Homepage       *string         `db:"homepage" json:"homepage"`
-	Filename       *string         `db:"filename" json:"filename"`
-	InstalledSize  *int64          `db:"installed_size" json:"installed_size"`
-	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
-	ControlFields  json.RawMessage `db:"control_fields" json:"control_fields"`
-	DeletedAt      *time.Time      `db:"deleted_at" json:"deleted_at"`
-	DeletedBy      *string         `db:"deleted_by" json:"deleted_by"`
+// Deb side of package_files: the distribution and component the .deb is published in, and its control stanza
+type DebFile struct {
+	ID             string `db:"id" json:"id"`
+	DistributionID string `db:"distribution_id" json:"distribution_id"`
+	ComponentID    string `db:"component_id" json:"component_id"`
+	// Packages-stanza map of the .deb (bulk, up to MBs, derived from the file)
+	ControlFields json.RawMessage `db:"control_fields" json:"control_fields"`
 }
 
 type DebianArchitecture struct {
@@ -708,21 +550,6 @@ type FederationUnit struct {
 	ChangedAt  time.Time `db:"changed_at" json:"changed_at"`
 }
 
-// Go module proxy packages
-type GomodModule struct {
-	ID           string     `db:"id" json:"id"`
-	RepositoryID string     `db:"repository_id" json:"repository_id"`
-	ModulePath   string     `db:"module_path" json:"module_path"`
-	Version      string     `db:"version" json:"version"`
-	GoModContent string     `db:"go_mod_content" json:"go_mod_content"`
-	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
-	ZipBlobID    *string    `db:"zip_blob_id" json:"zip_blob_id"`
-	ModBlobID    *string    `db:"mod_blob_id" json:"mod_blob_id"`
-	DeletedAt    *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy    *string    `db:"deleted_by" json:"deleted_by"`
-}
-
 // GPG signing keys managed through the admin API. private_key_enc is sealed by internal/crypto and never returned.
 type GpgKey struct {
 	ID             string     `db:"id" json:"id"`
@@ -761,44 +588,6 @@ type GroupPackageOwner struct {
 	GroupRepoID  string `db:"group_repo_id" json:"group_repo_id"`
 	Path         string `db:"path" json:"path"`
 	MemberRepoID string `db:"member_repo_id" json:"member_repo_id"`
-}
-
-// Helm chart packages
-type HelmChart struct {
-	ID           string     `db:"id" json:"id"`
-	RepositoryID string     `db:"repository_id" json:"repository_id"`
-	Name         string     `db:"name" json:"name"`
-	Version      string     `db:"version" json:"version"`
-	AppVersion   *string    `db:"app_version" json:"app_version"`
-	Description  *string    `db:"description" json:"description"`
-	Keywords     []string   `db:"keywords" json:"keywords"`
-	Home         *string    `db:"home" json:"home"`
-	Sources      []string   `db:"sources" json:"sources"`
-	Maintainers  []byte     `db:"maintainers" json:"maintainers"`
-	Icon         *string    `db:"icon" json:"icon"`
-	ApiVersion   string     `db:"api_version" json:"api_version"`
-	Type         string     `db:"type" json:"type"`
-	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
-	BlobID       string     `db:"blob_id" json:"blob_id"`
-	DeletedAt    *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy    *string    `db:"deleted_by" json:"deleted_by"`
-}
-
-type IvyArtifact struct {
-	ID           string     `db:"id" json:"id"`
-	RepositoryID string     `db:"repository_id" json:"repository_id"`
-	Organisation string     `db:"organisation" json:"organisation"`
-	Module       string     `db:"module" json:"module"`
-	Revision     string     `db:"revision" json:"revision"`
-	ArtifactName string     `db:"artifact_name" json:"artifact_name"`
-	ArtifactType string     `db:"artifact_type" json:"artifact_type"`
-	ArtifactExt  string     `db:"artifact_ext" json:"artifact_ext"`
-	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
-	BlobID       string     `db:"blob_id" json:"blob_id"`
-	DeletedAt    *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy    *string    `db:"deleted_by" json:"deleted_by"`
 }
 
 // CISA Known Exploited Vulnerabilities catalog, keyed by upper-case CVE id (CC0 1.0).
@@ -842,56 +631,18 @@ type LicenseResult struct {
 	LicenseSource string `db:"license_source" json:"license_source"`
 }
 
-type MavenArtifact struct {
-	ID              string `db:"id" json:"id"`
-	RepositoryID    string `db:"repository_id" json:"repository_id"`
-	GroupID         string `db:"group_id" json:"group_id"`
-	ArtifactIDCoord string `db:"artifact_id_coord" json:"artifact_id_coord"`
-	Version         string `db:"version" json:"version"`
-	Classifier      string `db:"classifier" json:"classifier"`
-	Extension       string `db:"extension" json:"extension"`
-	// Snapshot timestamp string (e.g. "20240101.120000"). NULL for release artifacts.
-	SnapshotTimestamp *string `db:"snapshot_timestamp" json:"snapshot_timestamp"`
-	// Snapshot build number. 0 = not a snapshot or build number not tracked. NULL would be cleaner but 0 is kept for backward compatibility.
-	SnapshotBuildNumber int32      `db:"snapshot_build_number" json:"snapshot_build_number"`
-	IsSnapshot          bool       `db:"is_snapshot" json:"is_snapshot"`
-	RepoPath            string     `db:"repo_path" json:"repo_path"`
-	CreatedAt           time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt           time.Time  `db:"updated_at" json:"updated_at"`
-	BlobID              string     `db:"blob_id" json:"blob_id"`
-	Md5                 string     `db:"md5" json:"md5"`
-	Sha1                string     `db:"sha1" json:"sha1"`
-	Sha512              string     `db:"sha512" json:"sha512"`
-	DeletedAt           *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy           *string    `db:"deleted_by" json:"deleted_by"`
-}
-
-// Nix store paths: one narinfo and NAR file per store hash.
-type NixPath struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	// The 32 character nixbase32 hash of the store path (the narinfo file name).
-	StoreHash string `db:"store_hash" json:"store_hash"`
-	// Store path name without the hash, for example hello-2.12.
-	Name string `db:"name" json:"name"`
-	// narinfo NarHash: sha256:<nixbase32> of the uncompressed NAR.
-	NarHash string `db:"nar_hash" json:"nar_hash"`
-	NarSize int64  `db:"nar_size" json:"nar_size"`
-	// File name below nar/: <nixbase32 sha256 of the file>.nar.<ext>; several paths may share one.
-	NarFile     string `db:"nar_file" json:"nar_file"`
-	Compression string `db:"compression" json:"compression"`
-	// narinfo References: base names of the store paths referenced.
-	Refs    []string `db:"refs" json:"refs"`
-	Deriver string   `db:"deriver" json:"deriver"`
-	Ca      string   `db:"ca" json:"ca"`
-	// narinfo Sig lines supplied by the uploader (name:base64).
-	Signatures    []string   `db:"signatures" json:"signatures"`
-	DownloadCount int64      `db:"download_count" json:"download_count"`
-	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time  `db:"updated_at" json:"updated_at"`
-	BlobID        string     `db:"blob_id" json:"blob_id"`
-	DeletedAt     *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy     *string    `db:"deleted_by" json:"deleted_by"`
+// maven coordinates of a package_files row (one row per stored file)
+type MavenFile struct {
+	ID         string `db:"id" json:"id"`
+	Classifier string `db:"classifier" json:"classifier"`
+	Extension  string `db:"extension" json:"extension"`
+	// Snapshot timestamp string (e.g. "20240101.120000"); NULL for release artifacts
+	SnapshotTimestamp   *string `db:"snapshot_timestamp" json:"snapshot_timestamp"`
+	SnapshotBuildNumber int32   `db:"snapshot_build_number" json:"snapshot_build_number"`
+	IsSnapshot          bool    `db:"is_snapshot" json:"is_snapshot"`
+	Md5                 string  `db:"md5" json:"md5"`
+	Sha1                string  `db:"sha1" json:"sha1"`
+	Sha512              string  `db:"sha512" json:"sha512"`
 }
 
 // Uploaded NAR files waiting for their narinfo; swept by the cleanup worker.
@@ -912,80 +663,6 @@ type NixSigningKey struct {
 	CreatedBy    string    `db:"created_by" json:"created_by"`
 	CreatedAt    time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
-}
-
-// Distribution tags for npm packages, e.g. latest, next, beta
-type NpmDistTag struct {
-	ID        string `db:"id" json:"id"`
-	PackageID string `db:"package_id" json:"package_id"`
-	// Tag name, e.g. latest
-	Tag string `db:"tag" json:"tag"`
-	// Version string the tag currently points to
-	Version   string    `db:"version" json:"version"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-// One row per npm package (scoped or unscoped) within a repository
-type NpmPackage struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	// Scope prefix without @, empty string for unscoped packages
-	Scope string `db:"scope" json:"scope"`
-	Name  string `db:"name" json:"name"`
-	// Full package name including scope, e.g. @scope/name or name
-	FullName      string `db:"full_name" json:"full_name"`
-	LatestVersion string `db:"latest_version" json:"latest_version"`
-	// True when latest_version denormalization needs refresh
-	PackumentStale bool      `db:"packument_stale" json:"packument_stale"`
-	CreatedAt      time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
-}
-
-// One row per published version of an npm package
-type NpmVersion struct {
-	ID        string `db:"id" json:"id"`
-	PackageID string `db:"package_id" json:"package_id"`
-	Version   string `db:"version" json:"version"`
-	// Full package.json manifest as stored in the packument
-	ManifestJson json.RawMessage `db:"manifest_json" json:"manifest_json"`
-	// Subresource Integrity string, e.g. sha512-<base64>
-	Integrity       string    `db:"integrity" json:"integrity"`
-	Shasum          string    `db:"shasum" json:"shasum"`
-	TarballFilename string    `db:"tarball_filename" json:"tarball_filename"`
-	CreatedAt       time.Time `db:"created_at" json:"created_at"`
-	BlobID          string    `db:"blob_id" json:"blob_id"`
-	// Auto-updated by trigger on every UPDATE.
-	UpdatedAt time.Time  `db:"updated_at" json:"updated_at"`
-	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy *string    `db:"deleted_by" json:"deleted_by"`
-}
-
-// NuGet .NET packages
-type NugetPackage struct {
-	ID                       string  `db:"id" json:"id"`
-	RepositoryID             string  `db:"repository_id" json:"repository_id"`
-	PackageID                string  `db:"package_id" json:"package_id"`
-	Version                  string  `db:"version" json:"version"`
-	Title                    *string `db:"title" json:"title"`
-	Description              *string `db:"description" json:"description"`
-	Summary                  *string `db:"summary" json:"summary"`
-	Authors                  *string `db:"authors" json:"authors"`
-	Owners                   *string `db:"owners" json:"owners"`
-	Tags                     *string `db:"tags" json:"tags"`
-	ProjectUrl               *string `db:"project_url" json:"project_url"`
-	LicenseUrl               *string `db:"license_url" json:"license_url"`
-	IconUrl                  *string `db:"icon_url" json:"icon_url"`
-	RequireLicenseAcceptance bool    `db:"require_license_acceptance" json:"require_license_acceptance"`
-	IsPrerelease             bool    `db:"is_prerelease" json:"is_prerelease"`
-	MinClientVersion         *string `db:"min_client_version" json:"min_client_version"`
-	// Total downloads; BIGINT to avoid overflow on popular packages
-	DownloadCount    int64      `db:"download_count" json:"download_count"`
-	CreatedAt        time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt        time.Time  `db:"updated_at" json:"updated_at"`
-	BlobID           string     `db:"blob_id" json:"blob_id"`
-	DeletedAt        *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy        *string    `db:"deleted_by" json:"deleted_by"`
-	DependencyGroups []byte     `db:"dependency_groups" json:"dependency_groups"`
 }
 
 type OsvAdvisory struct {
@@ -1032,6 +709,21 @@ type OsvMirrorState struct {
 	RematchedAt        *time.Time `db:"rematched_at" json:"rematched_at"`
 }
 
+// One logical package of a repository; identity is (repository_id, name_key)
+type Package struct {
+	ID           string `db:"id" json:"id"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Format       string `db:"format" json:"format"`
+	// Listing and display name
+	Name string `db:"name" json:"name"`
+	// Identity inside the repository: the normalised name
+	NameKey string `db:"name_key" json:"name_key"`
+	// Package-level facts of the format (npm scope, apk branch/repo, maven group/artifact)
+	Attrs     json.RawMessage `db:"attrs" json:"attrs"`
+	CreatedAt time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time       `db:"updated_at" json:"updated_at"`
+}
+
 // Pre-computed bsdiff patches between package versions for bandwidth-efficient updates
 type PackageDelta struct {
 	ID           string    `db:"id" json:"id"`
@@ -1046,46 +738,75 @@ type PackageDelta struct {
 	CreatedAt    time.Time `db:"created_at" json:"created_at"`
 }
 
-// Arch Linux pacman packages: one .pkg.tar.{zst,xz,gz} file per name/version/arch.
-type PacmanPackage struct {
+// One stored file: the unit of listing, trash, quota, blob references and scan ids
+type PackageFile struct {
 	ID           string `db:"id" json:"id"`
+	VersionID    string `db:"version_id" json:"version_id"`
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Name         string `db:"name" json:"name"`
-	Base         string `db:"base" json:"base"`
-	Version      string `db:"version" json:"version"`
-	// Architecture of the package ("any" or a CPU architecture), from its .PKGINFO.
+	// Repository-wide locator, unique while live
+	Path string `db:"path" json:"path"`
+	// What a client downloads
+	Filename string  `db:"filename" json:"filename"`
+	BlobID   *string `db:"blob_id" json:"blob_id"`
+	// Declared size that wins over the blob size when set (rpm, rubygems)
+	SizeBytes *int64 `db:"size_bytes" json:"size_bytes"`
+	// primary counts as one artifact for quota; any other role (go mod) counts none
+	Role string `db:"role" json:"role"`
+	// true: the file is a unit of the repository listing
+	Listed bool `db:"listed" json:"listed"`
+	// Platform qualifier shown by the listing and part of the retention partition
 	Arch string `db:"arch" json:"arch"`
-	// Architecture directory (os/ARCH) the package was uploaded to; an "any" package is listed in the database of every architecture of the repository.
-	RepoArch      string   `db:"repo_arch" json:"repo_arch"`
-	Filename      string   `db:"filename" json:"filename"`
-	BlobID        string   `db:"blob_id" json:"blob_id"`
-	Md5           string   `db:"md5" json:"md5"`
-	Description   string   `db:"description" json:"description"`
-	Url           string   `db:"url" json:"url"`
-	Packager      string   `db:"packager" json:"packager"`
-	BuildDate     int64    `db:"build_date" json:"build_date"`
-	InstalledSize int64    `db:"installed_size" json:"installed_size"`
-	Licenses      []string `db:"licenses" json:"licenses"`
-	PackageGroups []string `db:"package_groups" json:"package_groups"`
-	Replaces      []string `db:"replaces" json:"replaces"`
-	Conflicts     []string `db:"conflicts" json:"conflicts"`
-	Provides      []string `db:"provides" json:"provides"`
-	Depends       []string `db:"depends" json:"depends"`
-	Optdepends    []string `db:"optdepends" json:"optdepends"`
-	Makedepends   []string `db:"makedepends" json:"makedepends"`
-	Checkdepends  []string `db:"checkdepends" json:"checkdepends"`
-	// Newline-separated file list for the files database; NULL until it is read from the package blob (the metadata worker fills it).
-	FileList *string `db:"file_list" json:"file_list"`
-	// Base64 of the binary detached OpenPGP signature of the package file; empty when unsigned.
-	Signature string `db:"signature" json:"signature"`
-	// Who made the signature: uploader (a .sig upload), server (the repository signing key, made by the metadata worker) or empty.
+	// Extra retention-partition suffix (deb distribution, maven snapshot flag)
+	Part string `db:"part" json:"part"`
+	// File-level facts of the format; the listing reads release, epoch, build_time, archive_size, installed_size
+	Attrs json.RawMessage `db:"attrs" json:"attrs"`
+	// sha1/md5/sha512/shasum/integrity for checksum search; sha256 is the blob's
+	Checksums json.RawMessage `db:"checksums" json:"checksums"`
+	// Federation unit key, set on the primary file of a federated unit
+	UnitKey       *string    `db:"unit_key" json:"unit_key"`
+	DownloadCount int64      `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time  `db:"updated_at" json:"updated_at"`
+	DeletedAt     *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy     *string    `db:"deleted_by" json:"deleted_by"`
+}
+
+// Mutable named pointers to versions (npm dist-tags); version is resolved at read time
+type PackageTag struct {
+	ID        string    `db:"id" json:"id"`
+	PackageID string    `db:"package_id" json:"package_id"`
+	Tag       string    `db:"tag" json:"tag"`
+	Version   string    `db:"version" json:"version"`
+	UnitKey   *string   `db:"unit_key" json:"unit_key"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// One version incarnation; live iff at least one of its files is live
+type PackageVersion struct {
+	ID           string `db:"id" json:"id"`
+	PackageID    string `db:"package_id" json:"package_id"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Version      string `db:"version" json:"version"`
+	// Identity inside the package: the version plus the coordinates the format keys on; cleanup ranks by it
+	VersionKey string `db:"version_key" json:"version_key"`
+	// Version-level metadata of the format (manifest, dependencies, descriptive fields)
+	Metadata  json.RawMessage `db:"metadata" json:"metadata"`
+	CreatedAt time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time       `db:"updated_at" json:"updated_at"`
+	DeletedAt *time.Time      `db:"deleted_at" json:"deleted_at"`
+	DeletedBy *string         `db:"deleted_by" json:"deleted_by"`
+}
+
+// Pacman side of package_files: the files-database file list and the detached signature
+type PacmanFile struct {
+	ID string `db:"id" json:"id"`
+	// Newline-separated file list; NULL = not read from the package yet (never coalesce to an empty string); bulk, derivable from the blob
+	FileList  *string `db:"file_list" json:"file_list"`
+	Signature string  `db:"signature" json:"signature"`
+	// Empty (unsigned), uploader (publisher-uploaded) or server (signed with the repository key)
 	SignatureSource string `db:"signature_source" json:"signature_source"`
-	// Fingerprint of the repository key that made a server signature; the worker re-signs when the repository key changes.
-	SignatureKey string     `db:"signature_key" json:"signature_key"`
-	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
-	DeletedAt    *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy    *string    `db:"deleted_by" json:"deleted_by"`
+	SignatureKey    string `db:"signature_key" json:"signature_key"`
 }
 
 // Assignments of permission targets to users or groups
@@ -1215,29 +936,6 @@ type ProxyCacheEntry struct {
 	UpdatedAt time.Time  `db:"updated_at" json:"updated_at"`
 }
 
-// PyPI Python packages
-type PypiPackage struct {
-	ID             string     `db:"id" json:"id"`
-	RepositoryID   string     `db:"repository_id" json:"repository_id"`
-	Name           string     `db:"name" json:"name"`
-	Version        string     `db:"version" json:"version"`
-	Filename       string     `db:"filename" json:"filename"`
-	PackageType    string     `db:"package_type" json:"package_type"`
-	PythonVersion  *string    `db:"python_version" json:"python_version"`
-	RequiresPython *string    `db:"requires_python" json:"requires_python"`
-	Summary        *string    `db:"summary" json:"summary"`
-	Author         *string    `db:"author" json:"author"`
-	AuthorEmail    *string    `db:"author_email" json:"author_email"`
-	License        *string    `db:"license" json:"license"`
-	Keywords       *string    `db:"keywords" json:"keywords"`
-	Classifiers    []string   `db:"classifiers" json:"classifiers"`
-	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time  `db:"updated_at" json:"updated_at"`
-	BlobID         string     `db:"blob_id" json:"blob_id"`
-	DeletedAt      *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy      *string    `db:"deleted_by" json:"deleted_by"`
-}
-
 // Quota usage already in storage_quotas counters but not (yet) backed by package rows, or the reverse; see migration 061
 type QuotaPending struct {
 	ID            int64     `db:"id" json:"id"`
@@ -1246,19 +944,6 @@ type QuotaPending struct {
 	ArtifactCount int32     `db:"artifact_count" json:"artifact_count"`
 	Kind          int16     `db:"kind" json:"kind"`
 	CreatedAt     time.Time `db:"created_at" json:"created_at"`
-}
-
-type RawArtifact struct {
-	ID           string          `db:"id" json:"id"`
-	RepositoryID string          `db:"repository_id" json:"repository_id"`
-	Path         string          `db:"path" json:"path"`
-	ContentType  string          `db:"content_type" json:"content_type"`
-	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
-	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
-	BlobID       string          `db:"blob_id" json:"blob_id"`
-	DeletedAt    *time.Time      `db:"deleted_at" json:"deleted_at"`
-	DeletedBy    *string         `db:"deleted_by" json:"deleted_by"`
 }
 
 // Journal work queue: rows whose sidecar must be (re)written or deleted; see migration 068
@@ -1420,37 +1105,13 @@ type RepositoryMetadatum struct {
 	LastGenerated time.Time `db:"last_generated" json:"last_generated"`
 }
 
-// RPM packages. Canonical table for RPM format. blob_id FK to global blobs table.
-type RpmPackage struct {
-	ID            string          `db:"id" json:"id"`
-	RepositoryID  string          `db:"repository_id" json:"repository_id"`
-	BlobID        string          `db:"blob_id" json:"blob_id"`
-	Name          string          `db:"name" json:"name"`
-	Version       string          `db:"version" json:"version"`
-	Release       string          `db:"release" json:"release"`
-	Epoch         int32           `db:"epoch" json:"epoch"`
-	Arch          string          `db:"arch" json:"arch"`
-	Summary       *string         `db:"summary" json:"summary"`
-	Description   *string         `db:"description" json:"description"`
-	License       *string         `db:"license" json:"license"`
-	Url           *string         `db:"url" json:"url"`
-	Vendor        *string         `db:"vendor" json:"vendor"`
-	GroupName     *string         `db:"group_name" json:"group_name"`
-	Packager      *string         `db:"packager" json:"packager"`
-	SourceRpm     *string         `db:"source_rpm" json:"source_rpm"`
-	BuildHost     *string         `db:"build_host" json:"build_host"`
-	BuildTime     *time.Time      `db:"build_time" json:"build_time"`
-	Filename      *string         `db:"filename" json:"filename"`
-	PackageSize   *int64          `db:"package_size" json:"package_size"`
-	InstalledSize *int64          `db:"installed_size" json:"installed_size"`
-	ArchiveSize   *int64          `db:"archive_size" json:"archive_size"`
-	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
-	HeaderStart   int64           `db:"header_start" json:"header_start"`
-	HeaderEnd     int64           `db:"header_end" json:"header_end"`
-	RpmExtra      json.RawMessage `db:"rpm_extra" json:"rpm_extra"`
-	DeletedAt     *time.Time      `db:"deleted_at" json:"deleted_at"`
-	DeletedBy     *string         `db:"deleted_by" json:"deleted_by"`
+// RPM side of package_files: header byte range and parsed header extras
+type RpmFile struct {
+	ID          string `db:"id" json:"id"`
+	HeaderStart int64  `db:"header_start" json:"header_start"`
+	HeaderEnd   int64  `db:"header_end" json:"header_end"`
+	// Parsed header extras (dependencies, files[], changelogs[], sizes_parsed): KB-MB per row, derived from the file, never re-parse when copying
+	RpmExtra json.RawMessage `db:"rpm_extra" json:"rpm_extra"`
 }
 
 type RpmRepo struct {
@@ -1462,30 +1123,6 @@ type RpmRepo struct {
 	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
 }
 
-type RubygemsGem struct {
-	ID           string          `db:"id" json:"id"`
-	RepositoryID string          `db:"repository_id" json:"repository_id"`
-	Name         string          `db:"name" json:"name"`
-	Version      string          `db:"version" json:"version"`
-	Platform     string          `db:"platform" json:"platform"`
-	Description  *string         `db:"description" json:"description"`
-	Summary      *string         `db:"summary" json:"summary"`
-	Homepage     *string         `db:"homepage" json:"homepage"`
-	Authors      []string        `db:"authors" json:"authors"`
-	Licenses     []string        `db:"licenses" json:"licenses"`
-	Dependencies json.RawMessage `db:"dependencies" json:"dependencies"`
-	MetadataJson json.RawMessage `db:"metadata_json" json:"metadata_json"`
-	Yanked       bool            `db:"yanked" json:"yanked"`
-	// Total downloads; BIGINT to avoid overflow on popular gems
-	DownloadCount int64      `db:"download_count" json:"download_count"`
-	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time  `db:"updated_at" json:"updated_at"`
-	BlobID        string     `db:"blob_id" json:"blob_id"`
-	Size          int64      `db:"size" json:"size"`
-	DeletedAt     *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy     *string    `db:"deleted_by" json:"deleted_by"`
-}
-
 // SBOM report payloads. FK to scan_jobs. Content in blobs (not inline).
 type SbomResult struct {
 	ID             string  `db:"id" json:"id"`
@@ -1494,21 +1131,6 @@ type SbomResult struct {
 	SpecVersion    string  `db:"spec_version" json:"spec_version"`
 	BlobID         *string `db:"blob_id" json:"blob_id"`
 	ComponentCount int32   `db:"component_count" json:"component_count"`
-}
-
-type SbtArtifact struct {
-	ID           string     `db:"id" json:"id"`
-	RepositoryID string     `db:"repository_id" json:"repository_id"`
-	GroupID      string     `db:"group_id" json:"group_id"`
-	ArtifactID   string     `db:"artifact_id" json:"artifact_id"`
-	Version      string     `db:"version" json:"version"`
-	ScalaVersion string     `db:"scala_version" json:"scala_version"`
-	Filename     string     `db:"filename" json:"filename"`
-	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
-	BlobID       string     `db:"blob_id" json:"blob_id"`
-	DeletedAt    *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy    *string    `db:"deleted_by" json:"deleted_by"`
 }
 
 // Parent table for all scan work (vuln, license, secret, sbom, ai). Result payloads are in: vuln_results, license_results, secret_results, sbom_results, ai_results.
@@ -1636,41 +1258,6 @@ type SystemSetting struct {
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
 
-// Terraform/OpenTofu registry modules: one archive (zip or tar.gz) per name/system/version.
-type TerraformModule struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Name         string `db:"name" json:"name"`
-	System       string `db:"system" json:"system"`
-	Version      string `db:"version" json:"version"`
-	// Archive kind as stored: zip or tar.gz; it is the extension of the download URL.
-	ArchiveExt    string     `db:"archive_ext" json:"archive_ext"`
-	DownloadCount int64      `db:"download_count" json:"download_count"`
-	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time  `db:"updated_at" json:"updated_at"`
-	BlobID        string     `db:"blob_id" json:"blob_id"`
-	DeletedAt     *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy     *string    `db:"deleted_by" json:"deleted_by"`
-}
-
-// Terraform/OpenTofu registry providers: one platform zip per type/version/os/arch.
-type TerraformProvider struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Type         string `db:"type" json:"type"`
-	Version      string `db:"version" json:"version"`
-	Os           string `db:"os" json:"os"`
-	Arch         string `db:"arch" json:"arch"`
-	// Plugin protocol versions the provider speaks, as the registry reports them (for example 5.0, 6.0).
-	Protocols     []string   `db:"protocols" json:"protocols"`
-	DownloadCount int64      `db:"download_count" json:"download_count"`
-	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time  `db:"updated_at" json:"updated_at"`
-	BlobID        string     `db:"blob_id" json:"blob_id"`
-	DeletedAt     *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy     *string    `db:"deleted_by" json:"deleted_by"`
-}
-
 // Admin VEX decisions per (repository, artifact, vulnerability). justification is the OpenVEX enum.
 type VexStatement struct {
 	ID              string    `db:"id" json:"id"`
@@ -1742,4 +1329,18 @@ type WebhookDelivery struct {
 	DeliveredAt    *time.Time      `db:"delivered_at" json:"delivered_at"`
 	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
+}
+
+// Work a web process asks a worker process to do. One row per (kind, key); a repeated request refreshes requested_at. Rows are deleted once the work they asked for finished.
+type WorkerRequest struct {
+	// What to do, e.g. regen:npm, regen:maven, regen:group, ai:analyze, vuln:scan, dtrack:push.
+	Kind string `db:"kind" json:"kind"`
+	// What to do it to: a repository or package id, or a hash of the payload when the subject has several parts.
+	Key string `db:"key" json:"key"`
+	// The subject of kinds whose key is only a hash; null otherwise.
+	Payload []byte `db:"payload" json:"payload"`
+	// When the work was last requested; a worker deletes only the requests it has seen, so one made while it worked survives.
+	RequestedAt time.Time `db:"requested_at" json:"requested_at"`
+	// While in the future, a worker holds the request; a worker that died leaves it to expire and another takes it over. Null: unclaimed.
+	ClaimedUntil *time.Time `db:"claimed_until" json:"claimed_until"`
 }

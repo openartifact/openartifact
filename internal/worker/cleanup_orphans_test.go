@@ -10,17 +10,27 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
+	"database/sql"
+
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// orphanListerDBStore is what orphanListerDB is used as.
+type orphanListerDBStore interface {
+	CleanupStore
+	TrashPurgeStore
+}
+
 type orphanListerDB struct {
-	databasetest.BaseMockDB
+	orphanListerDBStore
 
 	calls  int
 	minAge time.Duration
 }
+
+// GetDB is not exercised by the tests.
+func (*orphanListerDB) GetDB() *sql.DB { return nil }
 
 func (d *orphanListerDB) ListUnreferencedBlobs(_ context.Context, minAge time.Duration, _ string, _, _ int) ([]string, string, error) {
 	d.calls++
@@ -75,7 +85,7 @@ func TestCollectOrphansIfDueIsThrottled(t *testing.T) {
 }
 
 type reconcileCountingDB struct {
-	databasetest.BaseMockDB
+	CleanupStore
 
 	calls     int
 	corrected int64

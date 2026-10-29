@@ -8,17 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <div>
     <PageHeader :title="repoName" :description="repo?.description || undefined">
       <template v-if="repo" #meta>
-        <FormatBadge :format="repo.format" />
-        <span class="text-xs text-muted">{{ t(`repos.new.type.${repo.repo_type ?? 'hosted'}` as 'repos.new.type.hosted') }}</span>
-        <span class="text-xs text-muted" aria-hidden="true">·</span>
-        <span class="inline-flex items-center gap-1 text-xs text-muted">
-          <EyeIcon v-if="repo.public" class="h-3.5 w-3.5" aria-hidden="true" />
-          <EyeSlashIcon v-else class="h-3.5 w-3.5" aria-hidden="true" />
-          {{ repo.public ? t('repos.public') : t('repos.private') }}
-        </span>
-        <span v-if="repo.federated" class="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-0.5 text-xs font-medium text-muted" :title="t('federation.badgeTitle')" data-testid="federated-badge">
-          <ArrowsRightLeftIcon class="h-3 w-3" aria-hidden="true" />{{ t('federation.badge') }}
-        </span>
+        <RepoMeta :repo="repo" />
       </template>
       <template v-if="repo && canUpload" #actions>
         <AppButton variant="secondary" :aria-expanded="showUpload" @click="showUpload = !showUpload">
@@ -81,12 +71,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowsRightLeftIcon, ArrowUpTrayIcon, EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
+import { ArrowUpTrayIcon } from '@heroicons/vue/24/outline'
 import AppButton from '../components/AppButton.vue'
 import ConnectClientPanel from '../components/ConnectClientPanel.vue'
-import FormatBadge from '../components/FormatBadge.vue'
 import PackageUploadZone from '../components/PackageUploadZone.vue'
 import PageHeader from '../components/PageHeader.vue'
+import RepoMeta from '../components/RepoMeta.vue'
 import RepoActivityTab from '../components/repos/RepoActivityTab.vue'
 import RepoMembersTab from '../components/repos/RepoMembersTab.vue'
 import RepoPackagesTab from '../components/repos/RepoPackagesTab.vue'

@@ -26,7 +26,7 @@ func TestBlobUpsertsRejectInvalidSHA256(t *testing.T) {
 		"non-hex":   strings.Repeat("zz", 32),
 	}
 
-	p := &PostgresDB{}
+	p := newPostgresDB(&core{})
 	ctx := context.Background()
 
 	for name, sha := range bad {

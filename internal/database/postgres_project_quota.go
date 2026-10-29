@@ -29,7 +29,7 @@ SELECT COALESCE(SUM(sq.current_size_bytes), 0)::bigint, COALESCE(SUM(sq.current_
 
 // GetProjectQuota returns the project's storage ceiling; a project that never
 // had one reads as unlimited (zero limits).
-func (p *PostgresDB) GetProjectQuota(ctx context.Context, projectID string) (*models.ProjectQuota, error) {
+func (p *QuotaStore) GetProjectQuota(ctx context.Context, projectID string) (*models.ProjectQuota, error) {
 	q := &models.ProjectQuota{ProjectID: projectID, WarnThresholdPercent: 80}
 
 	err := p.db.QueryRowContext(ctx,
@@ -47,7 +47,7 @@ func (p *PostgresDB) GetProjectQuota(ctx context.Context, projectID string) (*mo
 // returns it. Enabling a limit initialises the project counters from the
 // repository counters in the same transaction; disabling it zeroes them (they
 // are only maintained while a limit is set).
-func (p *PostgresDB) SetProjectQuota(
+func (p *QuotaStore) SetProjectQuota(
 	ctx context.Context,
 	projectID string,
 	maxSizeBytes, maxArtifactCount int64,
@@ -115,7 +115,7 @@ func (p *PostgresDB) SetProjectQuota(
 // GetProjectUsage reports a project's usage: the sum of its repositories'
 // counters (always available, whether or not a ceiling is set), the ceiling,
 // and one line per live repository, largest first.
-func (p *PostgresDB) GetProjectUsage(ctx context.Context, projectID string) (*models.ProjectUsage, error) {
+func (p *QuotaStore) GetProjectUsage(ctx context.Context, projectID string) (*models.ProjectUsage, error) {
 	quota, err := p.GetProjectQuota(ctx, projectID)
 	if err != nil {
 		return nil, err

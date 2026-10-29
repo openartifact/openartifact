@@ -69,6 +69,9 @@ jobs:
       - name: duplication ratchet (dupl)
         run: scripts/dup-check.sh
 
+      - name: fuzz target selection (PR fuzzing picks and caps targets)
+        run: .clusterfuzzlite/select-targets_test.sh
+
       # -coverpkg=./... attributes coverage to every package, not just the one a
       # test lives in; the coverage job merges this with the integration profile.
       - name: go test (race, unit packages)
@@ -81,10 +84,18 @@ jobs:
           path: coverage-unit.out
           retention-days: 14
 
-  integration:
-    name: integration (postgres + garage + testcontainers)
+  # The integration packages run as parallel shards (scripts/integration-packages.sh
+  # assigns every package to one, `rest` takes whatever no other shard claims), each
+  # with its own Postgres and Garage. Wall time is the slowest shard, not the sum.
+  # The `integration` job below aggregates them under the required check name.
+  integration-shard:
+    name: integration shard (${{ matrix.shard }})
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false # every shard reports, so one failure does not hide another
+      matrix:
+        shard: [database, worker, tests, rest]
     env:
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/openartifact_test?sslmode=disable
       TEST_S3_ENDPOINT: http://localhost:3900
@@ -159,21 +170,41 @@ jobs:
           $G bucket allow --read --write --owner "$TEST_S3_BUCKET" --key ci
 
       - name: go test (integration tag, race)
-        # Every package with an integration-tagged test file, so a new one can't be missed.
+        env:
+          SHARD: ${{ matrix.shard }}
+        # The shard's packages: every package with an integration-tagged test file
+        # belongs to exactly one shard, so a new one can't be missed.
         run: |
-          pkgs=$(grep -rl --include='*_test.go' -E '^//go:build .*integration' cmd internal pkg tests \
-            | xargs -n1 dirname | sort -u | sed 's#^#./#')
-          echo "$pkgs"
-          # shellcheck disable=SC2086
+          mapfile -t pkgs < <(scripts/integration-packages.sh "$SHARD")
+          [ "${#pkgs[@]}" -gt 0 ] || { echo "::error::shard $SHARD has no packages"; exit 1; }
+          printf '%s\n' "${pkgs[@]}"
           go test -race -covermode=atomic -coverpkg=./... -coverprofile=coverage-integration.out \
-            -tags integration -count=1 -timeout 25m $pkgs
+            -tags integration -count=1 -timeout 25m "${pkgs[@]}"
 
+      # One profile per shard; the coverage job merges coverage-go-integration-*.
       - name: upload integration coverage profile
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: coverage-go-integration
+          name: coverage-go-integration-${{ matrix.shard }}
           path: coverage-integration.out
           retention-days: 14
+
+  # Keeps the required check `integration (postgres + garage + testcontainers)` (the
+  # name the repository ruleset requires) and the `needs: integration` of the
+  # coverage job stable while the work is sharded: green only when every shard is.
+  integration:
+    name: integration (postgres + garage + testcontainers)
+    needs: [integration-shard]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: every integration shard passed
+        env:
+          RESULT: ${{ needs.integration-shard.result }}
+        run: |
+          echo "integration shards: $RESULT"
+          [ "$RESULT" = success ]
 
   lint:
     name: golangci-lint
@@ -313,9 +344,12 @@ jobs:
 
       - name: merge and summarize
         run: |
+          # One integration profile per shard (same -covermode and -coverpkg), merged first.
+          integration=(cov/in/coverage-go-integration-*/coverage-integration.out)
+          ls -l "${integration[@]}"
           scripts/coverage/merge-go.sh cov/unit.out cov/in/coverage-go-unit/coverage-unit.out
-          scripts/coverage/merge-go.sh cov/integration.out cov/in/coverage-go-integration/coverage-integration.out
-          scripts/coverage/merge-go.sh cov/merged.out cov/in/coverage-go-unit/coverage-unit.out cov/in/coverage-go-integration/coverage-integration.out
+          scripts/coverage/merge-go.sh cov/integration.out "${integration[@]}"
+          scripts/coverage/merge-go.sh cov/merged.out cov/in/coverage-go-unit/coverage-unit.out "${integration[@]}"
           scripts/coverage/summarize.sh --out cov/report \
             --go-merged cov/merged.out --go-unit cov/unit.out --go-integration cov/integration.out \
             --web-lcov cov/in/coverage-web/lcov.info

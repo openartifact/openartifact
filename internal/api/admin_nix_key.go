@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/nixkeys"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -21,7 +20,7 @@ type NixKeyHandler struct {
 }
 
 // NewNixKeyHandler builds the handler.
-func NewNixKeyHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, keys *nixkeys.Service) *NixKeyHandler {
+func NewNixKeyHandler(db signingKeyAdminStore, log *logger.Logger, evaluator *auth.Evaluator, keys *nixkeys.Service) *NixKeyHandler {
 	h := &NixKeyHandler{}
 	h.db, h.log, h.evaluator, h.keys = db, log, evaluator, keys
 	h.format, h.route, h.noun, h.groups = "nix", "nix-key", "nix signing key", true

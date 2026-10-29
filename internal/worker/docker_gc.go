@@ -6,16 +6,17 @@ package worker
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/ocimanifest"
+	"github.com/openartifact/openartifact/internal/pglock"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -94,10 +95,14 @@ type DockerGCReport struct {
 	Truncated bool
 }
 
-// DockerGCDB is the database a DockerGCWorker needs: the repository and quota
-// queries plus the GC store. *database.PostgresDB implements it.
+// DockerGCDB is the database a DockerGCWorker needs: the repository listing,
+// the advisory lock connection and the GC store. *database.PostgresDB
+// implements it.
 type DockerGCDB interface {
-	database.Database
+	GetDB() *sql.DB
+	ListRepositories(ctx context.Context, page, limit int, formatFilter string) ([]*models.Repository, error)
+	quota.ReleaseNStore
+	storage.SafeDeleteBlobStore
 	database.DockerGCStore
 }
 
@@ -116,43 +121,50 @@ type DockerGCDB interface {
 // transaction that holds the repository's exclusive docker lock, which manifest
 // pushes take shared; and recently pushed or used content is never touched.
 type DockerGCWorker struct {
+	*lifecycle
+
 	db        DockerGCDB
 	blobStore storage.BlobStore
 	log       *logger.Logger
 	interval  time.Duration
 	grace     time.Duration
-
-	startOnce sync.Once
-	stopOnce  sync.Once
-	stopCh    chan struct{}
-	doneCh    chan struct{}
-	// runCtx is cancelled by Stop so in-flight runs stop promptly.
-	runCtx context.Context //nolint:containedctx // lifecycle context of the worker
-	cancel context.CancelFunc
 }
 
 // NewDockerGCWorker creates the worker. interval is the pause between
 // scheduled passes over all docker repositories (0 disables the schedule;
 // RunRepo still works for on-demand runs); grace is the default minimum age.
 func NewDockerGCWorker(db DockerGCDB, blobStore storage.BlobStore, log *logger.Logger, interval, grace time.Duration) *DockerGCWorker {
-	runCtx, cancel := context.WithCancel(context.Background())
-
 	return &DockerGCWorker{
+		lifecycle: newLifecycle(),
 		db:        db,
 		blobStore: blobStore,
 		log:       log,
 		interval:  interval,
 		grace:     grace,
-		stopCh:    make(chan struct{}),
-		doneCh:    make(chan struct{}),
-		runCtx:    runCtx,
-		cancel:    cancel,
 	}
 }
 
 // DefaultGrace is the configured grace period, used when a run does not
 // specify one.
 func (w *DockerGCWorker) DefaultGrace() time.Duration { return w.grace }
+
+// CollectRemoved runs the garbage collection of a repository after tags were
+// deleted from it, with the worker's default grace period. A run that is
+// already in progress covers the removal, so it is not an error.
+func (w *DockerGCWorker) CollectRemoved(ctx context.Context, repo *models.Repository) error {
+	_, err := w.RunRepo(ctx, repo, DockerGCOptions{Grace: w.grace})
+
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, ErrDockerGCBusy):
+		w.log.Debugw("cleanup: docker garbage collection skipped", "repository_id", repo.ID, "reason", err)
+
+		return nil
+	default:
+		return fmt.Errorf("run gc: %w", err)
+	}
+}
 
 // Start begins the scheduled passes. With a non-positive interval nothing is
 // scheduled.
@@ -166,21 +178,7 @@ func (w *DockerGCWorker) start() {
 		return
 	}
 
-	go func() {
-		defer close(w.doneCh)
-
-		ticker := time.NewTicker(w.interval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				w.runAllSafely()
-			case <-w.stopCh:
-				return
-			}
-		}
-	}()
+	go w.runEvery(w.interval, w.runAllSafely)
 }
 
 // runAllSafely contains a panic to one pass so the schedule keeps running.
@@ -192,19 +190,6 @@ func (w *DockerGCWorker) runAllSafely() {
 	}()
 
 	w.runAll(w.runCtx)
-}
-
-// Stop cancels in-flight runs and waits for the schedule goroutine to exit.
-func (w *DockerGCWorker) Stop() {
-	w.stopOnce.Do(func() {
-		close(w.stopCh)
-		w.cancel()
-	})
-
-	// Never started: nothing will close doneCh, and a later Start must not.
-	w.startOnce.Do(func() { close(w.doneCh) })
-
-	<-w.doneCh
 }
 
 // runAll collects every docker repository with the configured grace period.
@@ -251,7 +236,7 @@ func (w *DockerGCWorker) RunRepo(ctx context.Context, repo *models.Repository, o
 	stop := context.AfterFunc(w.runCtx, cancel)
 	defer stop()
 
-	release, locked, err := tryAdvisoryLock(ctx, w.db.GetDB(), "docker-gc:"+repo.ID)
+	release, locked, err := pglock.Try(ctx, w.db.GetDB(), "docker-gc:"+repo.ID)
 	if err != nil {
 		return nil, fmt.Errorf("lock docker gc: %w", err)
 	}

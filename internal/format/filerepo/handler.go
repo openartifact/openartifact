@@ -47,8 +47,9 @@ type Row struct {
 }
 
 // Spec holds what differs between the formats served by Handler. A is the
-// format's row model.
-type Spec[A any] struct {
+// format's row model and S the database the format's row queries need (it
+// must satisfy HandlerStore too).
+type Spec[A, S any] struct {
 	// Format is the format name used in logs, webhook payloads and the
 	// immutability guard.
 	Format string
@@ -58,29 +59,41 @@ type Spec[A any] struct {
 	GroupKey string
 
 	// Get returns the live row at the coordinates, or nil.
-	Get func(ctx context.Context, db database.Database, repoID string, c base.ArtifactPath) (*A, error)
+	Get func(ctx context.Context, db S, repoID string, c base.ArtifactPath) (*A, error)
 	// New builds the row an upload of the file at c stores.
 	New func(repoID string, c base.ArtifactPath, size int64, sha256Hex string) *A
 	// Create stores the row (upserting an existing coordinate).
-	Create func(ctx context.Context, db database.Database, a *A) error
+	Create func(ctx context.Context, db S, a *A) error
 	// Delete removes the row.
-	Delete func(ctx context.Context, db database.Database, id string) error
+	Delete func(ctx context.Context, db S, id string) error
 	// View exposes the shared fields of a row.
 	View func(a *A) Row
 	// Stamp records the blob key and creation time on a row about to be stored.
 	Stamp func(a *A, blobKey string, createdAt time.Time)
 }
 
+// HandlerStore is the part of the database every Handler needs.
+type HandlerStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
+}
+
 // Handler serves one file-repository format.
-type Handler[A any] struct {
+type Handler[A any, S HandlerStore] struct {
 	*base.Handler
 
-	spec Spec[A]
+	spec Spec[A, S]
+	DB   S
 }
 
 // New creates the handler of the format described by spec.
-func New[A any](spec Spec[A], log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *Handler[A] {
-	return &Handler[A]{Handler: base.New(log, db, blobStore, baseURL), spec: spec}
+func New[A any, S HandlerStore](spec Spec[A, S], log *logger.Logger, db S, blobStore storage.BlobStore, baseURL string) *Handler[A, S] {
+	return &Handler[A, S]{Handler: base.New(log, db, blobStore, baseURL), spec: spec, DB: db}
 }
 
 // RegisterRepoRoutes registers the format's routes on the provided sub-router.
@@ -88,7 +101,7 @@ func New[A any](spec Spec[A], log *logger.Logger, db database.Database, blobStor
 // Routes use a true chi wildcard ("/*"): {name:regexp} params never span "/".
 // chi does not answer HEAD from a GET route, so it is registered explicitly:
 // resolvers probe for a file with HEAD before fetching it.
-func (h *Handler[A]) RegisterRepoRoutes(r chi.Router) {
+func (h *Handler[A, S]) RegisterRepoRoutes(r chi.Router) {
 	r.Get("/*", h.handleRequest)
 	r.Head("/*", h.handleRequest)
 	r.Put("/*", h.handleRequest)
@@ -96,28 +109,20 @@ func (h *Handler[A]) RegisterRepoRoutes(r chi.Router) {
 }
 
 // RegisterRoutes registers the routes under prefix.
-func (h *Handler[A]) RegisterRoutes(r chi.Router, prefix string) {
+func (h *Handler[A, S]) RegisterRoutes(r chi.Router, prefix string) {
 	r.Route(prefix, func(r chi.Router) {
 		h.RegisterRepoRoutes(r)
 	})
 	h.Log.Infow(h.spec.Format+" handler registered", "prefix", prefix)
 }
 
-func (h *Handler[A]) handleRequest(w http.ResponseWriter, r *http.Request) {
+func (h *Handler[A, S]) handleRequest(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 	filePath := vars["*"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -133,13 +138,13 @@ func (h *Handler[A]) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 func repoNameOf(r *http.Request) string { return urlparams.Vars(r)["name"] }
 
-func (h *Handler[A]) get(ctx context.Context, repoID string, c base.ArtifactPath) (*A, error) {
+func (h *Handler[A, S]) get(ctx context.Context, repoID string, c base.ArtifactPath) (*A, error) {
 	return h.spec.Get(ctx, h.DB, repoID, c)
 }
 
 // lookup finds the artifact at cur, else the one an older release stored under
 // the legacy reading of the same path.
-func (h *Handler[A]) lookup(ctx context.Context, repoID string, cur, legacy base.ArtifactPath) (*A, error) {
+func (h *Handler[A, S]) lookup(ctx context.Context, repoID string, cur, legacy base.ArtifactPath) (*A, error) {
 	artifact, err := h.get(ctx, repoID, cur)
 	if err != nil || artifact != nil || cur == legacy {
 		return artifact, err
@@ -149,7 +154,7 @@ func (h *Handler[A]) lookup(ctx context.Context, repoID string, cur, legacy base
 }
 
 // handleDownload serves a file (GET) or just its headers (HEAD).
-func (h *Handler[A]) handleDownload(w http.ResponseWriter, r *http.Request, repoID, filePath string) {
+func (h *Handler[A, S]) handleDownload(w http.ResponseWriter, r *http.Request, repoID, filePath string) {
 	cur, legacy, ok := base.SplitArtifactPath(filePath)
 	if !ok {
 		http.NotFound(w, r)
@@ -214,7 +219,7 @@ func (h *Handler[A]) handleDownload(w http.ResponseWriter, r *http.Request, repo
 // coordinates only) and the row it collides with (existing: previous, else one
 // stored under the legacy reading of the path), so the immutability guard
 // cannot be sidestepped by shadowing a legacy row.
-func (h *Handler[A]) lookupForUpload(ctx context.Context, repoID string, cur, legacy base.ArtifactPath) (*A, *A, error) {
+func (h *Handler[A, S]) lookupForUpload(ctx context.Context, repoID string, cur, legacy base.ArtifactPath) (*A, *A, error) {
 	previous, err := h.get(ctx, repoID, cur)
 	if err != nil || previous != nil || cur == legacy {
 		return previous, previous, err
@@ -228,7 +233,7 @@ func (h *Handler[A]) lookupForUpload(ctx context.Context, repoID string, cur, le
 // handleUpload stores a file. Publishing the same bytes again is a no-op;
 // different bytes replace the file unless the repository has immutable releases
 // and the version is a release.
-func (h *Handler[A]) handleUpload(w http.ResponseWriter, r *http.Request, repoID, filePath string) {
+func (h *Handler[A, S]) handleUpload(w http.ResponseWriter, r *http.Request, repoID, filePath string) {
 	cur, legacy, ok := base.SplitArtifactPath(filePath)
 	if !ok {
 		http.Error(w, "invalid path", http.StatusBadRequest)
@@ -353,7 +358,7 @@ func (h *Handler[A]) handleUpload(w http.ResponseWriter, r *http.Request, repoID
 	h.writeStored(w, artifact)
 }
 
-func (h *Handler[A]) writeStored(w http.ResponseWriter, a *A) {
+func (h *Handler[A, S]) writeStored(w http.ResponseWriter, a *A) {
 	row := h.spec.View(a)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -369,7 +374,7 @@ func (h *Handler[A]) writeStored(w http.ResponseWriter, a *A) {
 
 // rejectImmutable answers a refused overwrite or delete: 409 when the
 // repository has immutable releases.
-func (h *Handler[A]) rejectImmutable(w http.ResponseWriter, filePath string, err error) {
+func (h *Handler[A, S]) rejectImmutable(w http.ResponseWriter, filePath string, err error) {
 	if errors.Is(err, trash.ErrImmutableRelease) {
 		http.Error(w, "released versions are immutable in this repository", http.StatusConflict)
 		return
@@ -379,7 +384,7 @@ func (h *Handler[A]) rejectImmutable(w http.ResponseWriter, filePath string, err
 	http.Error(w, "internal error", http.StatusInternalServerError)
 }
 
-func (h *Handler[A]) handleDelete(w http.ResponseWriter, r *http.Request, repoID, filePath string) {
+func (h *Handler[A, S]) handleDelete(w http.ResponseWriter, r *http.Request, repoID, filePath string) {
 	cur, legacy, ok := base.SplitArtifactPath(filePath)
 	if !ok {
 		http.NotFound(w, r)

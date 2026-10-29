@@ -7,17 +7,12 @@ package proxy
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/presign"
 	pkgcargo "github.com/openartifact/openartifact/pkg/cargo"
 )
 
@@ -60,102 +55,50 @@ func (s *Service) serveCargo(w http.ResponseWriter, r *http.Request, repo *model
 }
 
 func (s *Service) serveCargoConfig(w http.ResponseWriter, r *http.Request, repo *models.Repository) {
-	body := pkgcargo.RenderConfig(s.baseURL, repo.Name, repo.Public)
-	sum := sha256.Sum256(body)
-
-	if base.Revalidate(w, r, repo.Public, `"`+hex.EncodeToString(sum[:])+`"`, cargoConfigMaxAge) {
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
-	}
+	// The body carries the origin the client reached, so the content ETag
+	// serveGeneratedJSON derives from it differs per origin.
+	s.serveGeneratedJSON(w, r, repo, nil, pkgcargo.RenderConfig(s.publicBase(w, r), repo.Name, repo.Public), cargoConfigMaxAge)
 }
 
 func cargoIndexKey(indexPath string) string { return "index/" + indexPath }
 
-// resolveCargoIndex returns the cache entry of a crate's index file, fetching
-// it upstream when it is absent or expired (and serving stale when the
-// upstream is down).
-func (s *Service) resolveCargoIndex(ctx context.Context, repo *models.Repository, p pkgcargo.Path) (*resolution, error) {
-	key := cargoIndexKey(p.IndexPath)
+// cargoIndexDoc is a crate's index file, cached verbatim.
+func cargoIndexDoc(indexPath string) metaDoc {
+	return metaDoc{
+		key:   cargoIndexKey(indexPath),
+		url:   func(upstream string) (string, error) { return upstreamURL(upstream, indexPath) },
+		opts:  staticOpts(fetchOpts{verify: pkgcargo.VerifyIndex}),
+		limit: pkgcargo.MaxIndexBytes,
+		what:  "cargo index",
+		bad:   badDocUpstream,
+	}
+}
 
-	return s.resolveWith(ctx, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		target, err := upstreamURL(repo.UpstreamURL, p.IndexPath)
-		if err != nil {
-			s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
-			return nil, errInternal
-		}
-
-		return s.fetchURL(fctx, repo, key, target, fetchOpts{verify: pkgcargo.VerifyIndex})
-	})
+// cargoConfigDoc is the upstream's own config.json, whose "dl" template tells
+// where crate files live.
+var cargoConfigDoc = metaDoc{ //nolint:gochecknoglobals // read-only descriptor
+	key:   cargoConfigKey,
+	opts:  staticOpts(fetchOpts{accept: jsonMediaType, verify: pkgcargo.VerifyConfig}),
+	limit: 1 << 20,
+	what:  "cargo config",
+	bad:   badDocUpstream,
 }
 
 func (s *Service) serveCargoIndex(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgcargo.Path) {
-	key := cargoIndexKey(p.IndexPath)
-	resolve := func() (*resolution, error) { return s.resolveCargoIndex(r.Context(), repo, p) }
-
-	res, err := resolve()
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, resolve)
+	s.serveVerbatim(w, r, repo, cargoIndexDoc(p.IndexPath))
 }
 
 func (s *Service) serveCargoCrate(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgcargo.Path) {
-	key := "api/v1/crates/" + p.Crate + "/" + p.Version + "/download"
-	resolve := func() (*resolution, error) {
-		return s.resolveWith(r.Context(), repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-			return s.fetchCargoCrate(fctx, repo, p, key)
-		})
-	}
-
-	res, err := resolve()
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, resolve)
-}
-
-// readCachedDoc loads a cached index file or config document (at most limit bytes).
-func (s *Service) readCachedDoc(ctx context.Context, entry *models.ProxyCacheEntry, limit int64) ([]byte, error) {
-	rc, err := s.blobStore.Get(ctx, entry.BlobKey)
-	if err != nil {
-		return nil, fmt.Errorf("open cached cargo metadata: %w", err)
-	}
-	defer func() { base.CloseLog(rc, s.log) }()
-
-	body, err := io.ReadAll(io.LimitReader(rc, limit+1))
-	if err != nil {
-		return nil, fmt.Errorf("read cached cargo metadata: %w", err)
-	}
-
-	if int64(len(body)) > limit {
-		return nil, errInternal
-	}
-
-	return body, nil
+	s.serveDownload(w, r, repo, "api/v1/crates/"+p.Crate+"/"+p.Version+"/download", func(ctx context.Context) (download, error) {
+		return s.locateCargoCrate(ctx, repo, p)
+	})
 }
 
 // cargoDownloadTemplate returns the "dl" of the upstream's config.json,
 // fetching it when it is not cached.
 func (s *Service) cargoDownloadTemplate(ctx context.Context, repo *models.Repository) (string, error) {
-	res, err := s.resolveWith(ctx, repo, cargoConfigKey, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		target, uerr := upstreamURL(repo.UpstreamURL, cargoConfigKey)
-		if uerr != nil {
-			s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", uerr)
-			return nil, errInternal
-		}
-
-		return s.fetchURL(fctx, repo, cargoConfigKey, target, fetchOpts{accept: "application/json", verify: pkgcargo.VerifyConfig})
+	cfg, _, err := parseDoc(ctx, s, repo, cargoConfigDoc, func(doc []byte, _ *resolution) (pkgcargo.Config, error) {
+		return pkgcargo.ParseConfig(bytes.NewReader(doc)) //nolint:wrapcheck // logged by parseDoc
 	})
 	if errors.Is(err, errNotFound) {
 		// A registry without config.json is not a sparse registry.
@@ -167,79 +110,57 @@ func (s *Service) cargoDownloadTemplate(ctx context.Context, repo *models.Reposi
 		return "", err
 	}
 
-	doc, err := s.readCachedDoc(ctx, res.entry, 1<<20)
-	if err != nil {
-		s.log.Errorw("failed to read cached cargo config", "repo", repo.Name, "error", err)
-		return "", errInternal
-	}
-
-	cfg, err := pkgcargo.ParseConfig(bytes.NewReader(doc))
-	if err != nil {
-		s.log.Warnw("unreadable upstream cargo config", "repo", repo.Name, "error", err)
-		return "", errUpstream
-	}
-
 	return cfg.DL, nil
 }
 
-// fetchCargoCrate downloads one crate file from the URL the upstream's dl
-// template gives and caches it only when it matches the cksum of its index
-// entry. A version the index does not list is errNotFound without a negative
-// cache entry: the index may simply be stale.
-func (s *Service) fetchCargoCrate(
-	ctx context.Context,
-	repo *models.Repository,
-	p pkgcargo.Path,
-	key string,
-) (*models.ProxyCacheEntry, error) {
-	idx := pkgcargo.Path{Kind: pkgcargo.KindIndex, Crate: strings.ToLower(p.Crate)}
-	idx.IndexPath = pkgcargo.IndexPathFor(idx.Crate)
+// locateCargoCrate finds one crate file: the URL the upstream's dl template
+// gives, cached only when it matches the cksum of its index entry. A version
+// the index does not list is errNotFound.
+func (s *Service) locateCargoCrate(ctx context.Context, repo *models.Repository, p pkgcargo.Path) (download, error) {
+	crate := strings.ToLower(p.Crate)
 
-	res, err := s.resolveCargoIndex(ctx, repo, idx)
+	entry, _, err := parseDoc(ctx, s, repo, cargoIndexDoc(pkgcargo.IndexPathFor(crate)),
+		func(doc []byte, _ *resolution) (*pkgcargo.Entry, error) {
+			entry, found, ferr := pkgcargo.FindVersion(doc, p.Version)
+			if ferr != nil || !found {
+				return nil, ferr //nolint:wrapcheck // logged by parseDoc
+			}
+
+			return &entry, nil
+		})
 	if err != nil {
-		return nil, err
+		return download{}, err
 	}
 
-	if aerr := s.packuments.Acquire(ctx); aerr != nil {
-		return nil, aerr //nolint:wrapcheck // caller checks for cancellation
-	}
-
-	doc, err := s.readCachedDoc(ctx, res.entry, pkgcargo.MaxIndexBytes)
-	if err != nil {
-		s.packuments.Release()
-		s.log.Errorw("failed to read cached cargo index", "repo", repo.Name, "crate", p.Crate, "error", err)
-
-		return nil, errInternal
-	}
-
-	entry, found, err := pkgcargo.FindVersion(doc, p.Version)
-	s.packuments.Release()
-
-	if err != nil {
-		s.log.Warnw("unreadable upstream cargo index", "repo", repo.Name, "crate", p.Crate, "error", err)
-		return nil, errUpstream
-	}
-
-	if !found {
-		return nil, errNotFound
+	if entry == nil {
+		return download{}, errNotFound
 	}
 
 	if !pkgcargo.ValidCksum(entry.Cksum) {
 		s.log.Warnw("upstream cargo index entry has no usable cksum", "repo", repo.Name, "crate", p.Crate, "version", p.Version)
-		return nil, errUpstream
+		return download{}, errUpstream
 	}
 
 	dl, err := s.cargoDownloadTemplate(ctx, repo)
 	if err != nil {
-		return nil, err
+		return download{}, err
 	}
 
-	target := pkgcargo.DownloadURL(dl, p.Crate, p.Version, entry.Cksum)
+	return download{
+		url:  pkgcargo.DownloadURL(dl, p.Crate, p.Version, entry.Cksum),
+		opts: fetchOpts{wantSHA256: strings.ToLower(entry.Cksum)},
+	}, nil
+}
 
-	return s.fetchURL(ctx, repo, key, target, fetchOpts{
-		// Credentials go only to the configured upstream, never to the
-		// host its config.json points downloads at.
-		noAuth:     !sameOriginStr(repo.UpstreamURL, target),
-		wantSHA256: strings.ToLower(entry.Cksum),
-	})
+// cargoCrateDir is the key prefix of the crate download endpoint; everything
+// outside it is index data or config.json.
+const cargoCrateDir = "api/v1/crates/"
+
+// CargoHooks is the proxy hooks of the cargo format.
+var CargoHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve: (*Service).serveCargo,
+	// Crate files, not index files or config.json.
+	Immutable:  func(key string) bool { return strings.HasPrefix(key, cargoCrateDir) && keyName(key) == "download" },
+	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, cargoCrateDir) },
+	BlobPath:   presign.CargoBlobPath,
 }

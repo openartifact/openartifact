@@ -6,7 +6,7 @@ package models
 
 import "time"
 
-// RawArtifact mirrors the raw_artifacts table.
+// RawArtifact is a raw file: a package_files row of a raw package.
 // BlobID is UUID FK to blobs table; SizeBytes is for response display.
 type RawArtifact struct {
 	ID           string

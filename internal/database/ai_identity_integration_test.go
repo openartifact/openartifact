@@ -13,32 +13,6 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
-// Migration 023 adds the identity columns with a ” default so rows written
-// by older releases stay valid.
-func TestMigration023AIArtifactIdentityColumns(t *testing.T) {
-	db := scratchDB(t)
-
-	migrateThrough(t, db, "022")
-	migrateAll(t, db)
-
-	for _, col := range []string{"artifact_name", "artifact_version"} {
-		def := mustScan[string](t, db,
-			`SELECT column_default FROM information_schema.columns WHERE table_name = 'ai_results' AND column_name = $1`, col)
-		if def != "''::text" {
-			t.Errorf("%s default = %q, want ''::text", col, def)
-		}
-
-		nullable := mustScan[string](t, db,
-			`SELECT is_nullable FROM information_schema.columns WHERE table_name = 'ai_results' AND column_name = $1`, col)
-		if nullable != "NO" {
-			t.Errorf("%s is_nullable = %q, want NO", col, nullable)
-		}
-	}
-
-	// Re-applying is a no-op.
-	migrateAll(t, db)
-}
-
 // Name and version written with an analysis come back from get and list, and
 // a later status change keeps whatever the writer supplies.
 func TestAIAnalysisPersistsArtifactIdentity(t *testing.T) {
@@ -139,62 +113,5 @@ func assertKeepsCompletedResult(t *testing.T, pg *PostgresDB, repoID, status, wa
 
 	if got.ArtifactVersion != "1.4.0" {
 		t.Errorf("%s: artifact_version = %q, want the latest identity", status, got.ArtifactVersion)
-	}
-}
-
-// Migration 024 rewrites the Go ids stored by older releases.
-func TestMigration024GoFormatID(t *testing.T) {
-	db := scratchDB(t)
-
-	migrateThrough(t, db, "023")
-
-	const systemOrg = "00000000-0000-0000-0000-000000000001"
-
-	repo := mustScan[string](t, db, `INSERT INTO repositories (name, format, org_id) VALUES ('gomods', 'go', $1) RETURNING id`, systemOrg)
-	oldRef := mustScan[string](
-		t,
-		db,
-		`INSERT INTO artifact_refs (repository_id, artifact_path, format) VALUES ($1, 'a', 'gomod') RETURNING id`,
-		repo,
-	)
-	npmRef := mustScan[string](
-		t,
-		db,
-		`INSERT INTO artifact_refs (repository_id, artifact_path, format) VALUES ($1, 'b', 'npm') RETURNING id`,
-		repo,
-	)
-
-	oldJob := mustScan[string](
-		t,
-		db,
-		`INSERT INTO scan_jobs (artifact_ref_id, scan_type, scanner) VALUES ($1, 'vuln', 'osv') RETURNING id`,
-		oldRef,
-	)
-	npmJob := mustScan[string](
-		t,
-		db,
-		`INSERT INTO scan_jobs (artifact_ref_id, scan_type, scanner) VALUES ($1, 'vuln', 'osv') RETURNING id`,
-		npmRef,
-	)
-
-	mustExec(t, db, `INSERT INTO vuln_results (scan_job_id, ecosystem) VALUES ($1, 'gomod')`, oldJob)
-	mustExec(t, db, `INSERT INTO vuln_results (scan_job_id, ecosystem) VALUES ($1, 'npm')`, npmJob)
-
-	migrateAll(t, db)
-
-	if got := mustScan[string](t, db, `SELECT format FROM artifact_refs WHERE id = $1`, oldRef); got != "go" {
-		t.Errorf("artifact_refs.format = %q, want go", got)
-	}
-
-	if got := mustScan[string](t, db, `SELECT format FROM artifact_refs WHERE id = $1`, npmRef); got != "npm" {
-		t.Errorf("other formats must not change, got %q", got)
-	}
-
-	if got := mustScan[string](t, db, `SELECT ecosystem FROM vuln_results WHERE scan_job_id = $1`, oldJob); got != "go" {
-		t.Errorf("vuln_results.ecosystem = %q, want go", got)
-	}
-
-	if got := mustScan[string](t, db, `SELECT ecosystem FROM vuln_results WHERE scan_job_id = $1`, npmJob); got != "npm" {
-		t.Errorf("other ecosystems must not change, got %q", got)
 	}
 }

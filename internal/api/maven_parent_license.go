@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
@@ -23,11 +22,17 @@ import (
 // maxParentRescan bounds how many unresolved poms one parent upload re-evaluates.
 const maxParentRescan = 500
 
+// pomSourcesStore is the part of the database pomSources needs.
+type pomSourcesStore interface {
+	ListGroupMemberRepositories(ctx context.Context, groupRepoID string) ([]*models.Repository, error)
+	ListGroupsOfMember(ctx context.Context, memberRepoID string) ([]*models.Repository, error)
+}
+
 // pomSources lists, in lookup order, the repositories a parent pom of a pom in
 // repoID may come from: the repository itself, then the other members of every
 // group it belongs to in each group's priority order. Proxy members count only
 // through what they have already cached.
-func pomSources(ctx context.Context, db database.Database, repoID string) ([]*models.Repository, error) {
+func pomSources(ctx context.Context, db pomSourcesStore, repoID string) ([]*models.Repository, error) {
 	sources := []*models.Repository{{ID: repoID, RepoType: repotype.Hosted}}
 	seen := map[string]struct{}{repoID: {}}
 
@@ -55,12 +60,18 @@ func pomSources(ctx context.Context, db database.Database, repoID string) ([]*mo
 	return sources, nil
 }
 
+// repoPOMLookupStore is the part of the database repoPOMLookup needs.
+type repoPOMLookupStore interface {
+	pomSourcesStore
+	sourcePOMBlobStore
+}
+
 // repoPOMLookup returns a licensemeta.POMLookup that reads a parent pom from the
 // stored artifacts of the repository, then from the other members of its groups
 // (hosted members' stored poms, proxy members' cached poms). It never reaches
 // outside the registry: a parent that is not stored or already cached is "not
 // available", and the child's license stays unresolved until it is.
-func repoPOMLookup(db database.Database, blobs storage.BlobStore, repoID string) licensemeta.POMLookup {
+func repoPOMLookup(db repoPOMLookupStore, blobs storage.BlobStore, repoID string) licensemeta.POMLookup {
 	var sources []*models.Repository
 
 	return func(ctx context.Context, groupID, artifactID, version string) (*pkgmaven.POM, error) {
@@ -99,11 +110,26 @@ func repoPOMLookup(db database.Database, blobs storage.BlobStore, repoID string)
 	}
 }
 
+// sourcePOMBlobStore is the part of the database sourcePOMBlob needs.
+type sourcePOMBlobStore interface {
+	GetLatestSnapshotFile(
+		ctx context.Context,
+		repoID string,
+		groupID string,
+		artifactID string,
+		version string,
+		classifier string,
+		extension string,
+	) (*models.MavenArtifact, error)
+	GetMavenArtifactByPath(ctx context.Context, repoID string, path string) (*models.MavenArtifact, error)
+	GetProxyCacheEntry(ctx context.Context, repoID string, cacheKey string) (*models.ProxyCacheEntry, error)
+}
+
 // sourcePOMBlob returns the blob digest of the pom at path in src, or "" when
 // src does not hold it.
 func sourcePOMBlob(
 	ctx context.Context,
-	db database.Database,
+	db sourcePOMBlobStore,
 	src *models.Repository,
 	groupID, artifactID, version, path string,
 ) (string, error) {
@@ -161,12 +187,17 @@ func readStoredPOM(ctx context.Context, blobs storage.BlobStore, sha string) (*p
 	return pom, nil
 }
 
+// inheritedPOMLicensesStore is the part of the database inheritedPOMLicenses needs.
+type inheritedPOMLicensesStore interface {
+	repoPOMLookupStore
+}
+
 // inheritedPOMLicenses resolves the licenses of a pom that declares none from
 // its parent chain in the repository. resolved is false when a parent is not
 // stored (yet).
 func inheritedPOMLicenses(
 	ctx context.Context,
-	db database.Database,
+	db inheritedPOMLicensesStore,
 	blobs storage.BlobStore,
 	repoID string,
 	parent *pkgmaven.Parent,
@@ -174,11 +205,24 @@ func inheritedPOMLicenses(
 	return licensemeta.InheritPOMLicenses(ctx, parent, repoPOMLookup(db, blobs, repoID)) //nolint:wrapcheck // callers only log it
 }
 
+// recordPOMLicensesStore is the part of the database recordPOMLicenses needs.
+type recordPOMLicensesStore interface {
+	CreateLicenseScanResult(ctx context.Context, result *models.LicenseScanResult) error
+	GetLicenseScanResult(ctx context.Context, repoID string, artifactID string) (*models.LicenseScanResult, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+}
+
 // recordPOMLicenses stores the license scan result of an uploaded pom that
 // declares no license of its own: the inherited licenses when the parent chain
 // resolves, an empty (unresolved) result otherwise, which a later parent upload
 // re-evaluates (reevaluateUnresolvedPOMs).
-func recordPOMLicenses(ctx context.Context, db database.Database, log *logger.Logger, repoID, artifactID string, licenses []string) error {
+func recordPOMLicenses(
+	ctx context.Context,
+	db recordPOMLicensesStore,
+	log *logger.Logger,
+	repoID, artifactID string,
+	licenses []string,
+) error {
 	_, _, err := licensepolicy.Record(ctx, db, log, repoID, artifactID, licenses, models.LicenseSourceArtifact)
 	if err != nil {
 		return fmt.Errorf("record pom licenses: %w", err)
@@ -187,12 +231,18 @@ func recordPOMLicenses(ctx context.Context, db database.Database, log *logger.Lo
 	return nil
 }
 
+// reevaluateWaitingPOMsStore is the part of the database reevaluateWaitingPOMs needs.
+type reevaluateWaitingPOMsStore interface {
+	pomSourcesStore
+	reevaluateUnresolvedPOMsStore
+}
+
 // reevaluateWaitingPOMs re-resolves the unresolved poms of the repository that
 // stored a possible parent and of the hosted repositories that share a group
 // with it (their poms may take that parent through the group).
 func reevaluateWaitingPOMs(
 	ctx context.Context,
-	db database.Database,
+	db reevaluateWaitingPOMsStore,
 	blobs storage.BlobStore,
 	log *logger.Logger,
 	repoID string,
@@ -220,6 +270,13 @@ func reevaluateWaitingPOMs(
 	return total, nil
 }
 
+// reevaluateUnresolvedPOMsStore is the part of the database reevaluateUnresolvedPOMs needs.
+type reevaluateUnresolvedPOMsStore interface {
+	LicenseStore
+	mavenArtifactsByIDStore
+	quarantineSiblingsStore
+}
+
 // reevaluateUnresolvedPOMs re-resolves the poms of a repository whose license
 // scan found no license, after a pom that may be their parent was stored. A pom
 // whose parent chain now resolves gets its scan result rewritten with the
@@ -227,7 +284,7 @@ func reevaluateWaitingPOMs(
 // blocking policy is violated). It returns how many results it updated.
 func reevaluateUnresolvedPOMs(
 	ctx context.Context,
-	db database.Database,
+	db reevaluateUnresolvedPOMsStore,
 	blobs storage.BlobStore,
 	log *logger.Logger,
 	repoID string,
@@ -299,7 +356,12 @@ func reevaluateUnresolvedPOMs(
 	return updated, nil
 }
 
-func mavenArtifactsByID(ctx context.Context, db database.Database, repoID string) (map[string]*models.MavenArtifact, error) {
+// mavenArtifactsByIDStore is the part of the database mavenArtifactsByID needs.
+type mavenArtifactsByIDStore interface {
+	ListMavenArtifactsByRepo(ctx context.Context, repoID string) ([]*models.MavenArtifact, error)
+}
+
+func mavenArtifactsByID(ctx context.Context, db mavenArtifactsByIDStore, repoID string) (map[string]*models.MavenArtifact, error) {
 	arts, err := db.ListMavenArtifactsByRepo(ctx, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("list maven artifacts: %w", err)
@@ -313,12 +375,26 @@ func mavenArtifactsByID(ctx context.Context, db database.Database, repoID string
 	return out, nil
 }
 
+// quarantineSiblingsStore is the part of the database quarantineSiblings needs.
+type quarantineSiblingsStore interface {
+	CreateLicenseScanResult(ctx context.Context, result *models.LicenseScanResult) error
+	GetLicenseScanResult(ctx context.Context, repoID string, artifactID string) (*models.LicenseScanResult, error)
+	GetMavenArtifactsByGAV(
+		ctx context.Context,
+		repoID string,
+		groupID string,
+		artifactID string,
+		version string,
+	) ([]*models.MavenArtifact, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+}
+
 // quarantineSiblings records the (blocked) licenses against the other files
 // stored for the same group, artifact and version, best-effort, so the blocked
 // version cannot be downloaded through them.
 func quarantineSiblings(
 	ctx context.Context,
-	db database.Database,
+	db quarantineSiblingsStore,
 	log *logger.Logger,
 	repoID, groupID, artifactID, version, skipPath string,
 	licenses []string,

@@ -6,32 +6,29 @@ package backup
 
 import (
 	"context"
+	"slices"
 	"sort"
-	"strings"
 	"sync"
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 )
 
 // r2State is the extra fake state the round-two backup tests need (fakeDB.extra).
 type r2State struct {
-	rpmRepos  map[string]*models.RPMRepo
-	stale     map[string]bool
-	members   map[string][]*models.RepositoryGroupMember
-	goModules map[string][]*models.GoModule
-	maven     map[string][]*models.MavenArtifact
+	rpmRepos map[string]*models.RPMRepo
+	stale    map[string]bool
+	members  map[string][]*models.RepositoryGroupMember
 }
 
 func r2(d *fakeDB) *r2State {
 	s := d.extra
 	if s == nil {
 		s = &r2State{
-			rpmRepos:  map[string]*models.RPMRepo{},
-			stale:     map[string]bool{},
-			members:   map[string][]*models.RepositoryGroupMember{},
-			goModules: map[string][]*models.GoModule{},
-			maven:     map[string][]*models.MavenArtifact{},
+			rpmRepos: map[string]*models.RPMRepo{},
+			stale:    map[string]bool{},
+			members:  map[string][]*models.RepositoryGroupMember{},
 		}
 		d.extra = s
 	}
@@ -67,32 +64,6 @@ func (d *fakeDB) AddGroupMember(_ context.Context, groupID, memberID string, pri
 	return nil
 }
 
-func (d *fakeDB) ListGoModulesByRepo(_ context.Context, repoID string) ([]*models.GoModule, error) {
-	return r2(d).goModules[repoID], nil
-}
-
-func (d *fakeDB) CreateGoModule(_ context.Context, m *models.GoModule) error {
-	s := r2(d)
-	s.goModules[m.RepositoryID] = append(s.goModules[m.RepositoryID], m)
-
-	return nil
-}
-
-func (d *fakeDB) ListMavenArtifactsByRepo(_ context.Context, repoID string) ([]*models.MavenArtifact, error) {
-	return r2(d).maven[repoID], nil
-}
-
-func (d *fakeDB) CreateMavenArtifact(_ context.Context, a *models.MavenArtifact) error {
-	s := r2(d)
-	s.maven[a.RepositoryID] = append(s.maven[a.RepositoryID], a)
-
-	return nil
-}
-
-func (d *fakeDB) GetDebianDistributionsByRepo(context.Context, string) ([]models.DebianDistribution, error) {
-	return nil, nil
-}
-
 // recordingRegen records the metadata refreshes a restore asks for.
 type recordingRegen struct {
 	mu    sync.Mutex
@@ -105,12 +76,51 @@ func (r *recordingRegen) add(s string) {
 	r.mu.Unlock()
 }
 
-func (r *recordingRegen) NotifyDebStale(repoID string)    { r.add("deb:" + repoID) }
-func (r *recordingRegen) NotifyPacmanStale(repoID string) { r.add("pacman:" + repoID) }
-func (r *recordingRegen) NotifyRPMStale(repoID string)    { r.add("rpm:" + repoID) }
-func (r *recordingRegen) NotifyApkStale(repoID string)    { r.add("apk:" + repoID) }
-func (r *recordingRegen) NotifyMavenStale(repoID, g, a string) {
-	r.add("maven:" + repoID + ":" + g + ":" + a)
+// recordingWorker is the metadata worker the recording hooks find bound for
+// their format.
+type recordingWorker struct {
+	r    *recordingRegen
+	name string
+}
+
+func (w recordingWorker) NotifyStale(repoID, group, artifact string) {
+	if group == "" && artifact == "" {
+		w.r.add(w.name + ":" + repoID)
+
+		return
+	}
+
+	w.r.add(w.name + ":" + repoID + ":" + group + ":" + artifact)
+}
+
+// staleNotifier is what the recording hooks call; the backup package cannot
+// import the plugin layer that registers the real ones.
+type staleNotifier interface {
+	NotifyStale(repoID, group, artifact string)
+}
+
+//nolint:gochecknoglobals // registers the recording hooks once per test binary
+var registerRecordingHooks sync.Once
+
+// workers binds a recording worker per format with generated metadata and, once
+// per process, registers the Changed hooks that forward to it.
+func (r *recordingRegen) workers() *lifecycle.Workers {
+	registerRecordingHooks.Do(func() {
+		for _, name := range []string{"deb", "rpm", "pacman", "apk", "maven"} {
+			lifecycle.Register(name, lifecycle.Hooks{Changed: func(env *lifecycle.Env, c lifecycle.Change) {
+				if n, ok := lifecycle.Worker[staleNotifier](env.Workers, name); ok {
+					n.NotifyStale(c.RepoID, c.GroupID, c.ArtifactID)
+				}
+			}})
+		}
+	})
+
+	w := lifecycle.NewWorkers()
+	for _, name := range []string{"deb", "rpm", "pacman", "apk", "maven"} {
+		w.Bind(name, recordingWorker{r, name})
+	}
+
+	return w
 }
 
 // backupAndRestore runs a full backup of src and restores it into a fresh
@@ -163,45 +173,15 @@ func repoByName(t *testing.T, d *fakeDB, name string) *models.Repository {
 	return nil
 }
 
-// BKP-3: go repositories were skipped because the export switch only knew
-// "gomod", while repositories.format stores "go" (as do package listings).
-func TestBackupRestore_GoModulesRoundTrip(t *testing.T) {
-	ctx := context.Background()
-	src := newFakeDB("src")
-
-	repo := &models.Repository{Name: "gomods", Format: "go", RepoType: "hosted"}
-	if err := src.CreateRepository(ctx, repo); err != nil {
-		t.Fatal(err)
-	}
-
-	r2(src).goModules[repo.ID] = []*models.GoModule{
-		{
-			RepositoryID: repo.ID,
-			ModulePath:   "example.com/m",
-			Version:      "v1.0.0",
-			GoModContent: "module example.com/m",
-			ZipHash:      strings.Repeat("c", 64),
-			ZipBlobKey:   strings.Repeat("c", 64),
-		},
-	}
-
-	dst := backupAndRestore(t, src, nil)
-
-	mods := r2(dst).goModules[repoByName(t, dst, "gomods").ID]
-	if len(mods) != 1 || mods[0].ModulePath != "example.com/m" || mods[0].Version != "v1.0.0" {
-		t.Fatalf("restored go modules = %+v, want example.com/m@v1.0.0", mods)
-	}
-}
-
 // BKP-5: group repositories lost their members (and so all their content) on a
 // restore.
 func TestBackupRestore_GroupMembersRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	src := newFakeDB("src")
 
-	a := &models.Repository{Name: "a", Format: "go", RepoType: "hosted"}
-	b := &models.Repository{Name: "b", Format: "go", RepoType: "hosted"}
-	g := &models.Repository{Name: "grp", Format: "go", RepoType: "group"}
+	a := &models.Repository{Name: "a", Format: "raw", RepoType: "hosted"}
+	b := &models.Repository{Name: "b", Format: "raw", RepoType: "hosted"}
+	g := &models.Repository{Name: "grp", Format: "raw", RepoType: "group"}
 
 	for _, r := range []*models.Repository{a, b, g} {
 		if err := src.CreateRepository(ctx, r); err != nil {
@@ -223,7 +203,8 @@ func TestBackupRestore_GroupMembersRoundTrip(t *testing.T) {
 }
 
 // BKP-4: restoring deb/maven/rpm package rows leaves repodata/dists/
-// maven-metadata.xml missing; the restore must schedule their regeneration.
+// maven-metadata.xml missing; the restore must schedule their regeneration,
+// per the Regen kind of each format's descriptor (not per format name).
 func TestBackupRestore_RegeneratesGeneratedMetadata(t *testing.T) {
 	ctx := context.Background()
 	src := newFakeDB("src")
@@ -231,20 +212,25 @@ func TestBackupRestore_RegeneratesGeneratedMetadata(t *testing.T) {
 	rpm := &models.Repository{Name: "r", Format: "rpm", RepoType: "hosted"}
 	deb := &models.Repository{Name: "d", Format: "deb", RepoType: "hosted"}
 	mvn := &models.Repository{Name: "m", Format: "maven", RepoType: "hosted"}
+	plain := &models.Repository{Name: "p", Format: "raw", RepoType: "hosted"}
+	proxy := &models.Repository{Name: "px", Format: "deb", RepoType: "proxy"}
 
-	for _, r := range []*models.Repository{deb, mvn, rpm} {
+	for _, r := range []*models.Repository{deb, mvn, rpm, plain, proxy} {
 		if err := src.CreateRepository(ctx, r); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	sha := "0000000000000000000000000000000000000000000000000000000000000001"
-	r2(src).maven[mvn.ID] = []*models.MavenArtifact{
-		{RepositoryID: mvn.ID, GroupID: "com.x", ArtifactCoord: "app", Version: "1.0", Extension: "jar", BlobSHA256: sha, BlobSizeBytes: 1},
+	src.pkgRows[mvn.ID] = map[string][]string{
+		"packages": {
+			`{"id":"p1","attrs":{"group_id":"com.x","artifact_id":"app"}}`,
+			`{"id":"p2","attrs":{"group_id":"com.x","artifact_id":"app"}}`,
+			`{"id":"p3","attrs":{}}`,
+		},
 	}
 
 	regen := &recordingRegen{}
-	dst := backupAndRestore(t, src, func(e *Engine) { e.SetRegenerator(regen) })
+	dst := backupAndRestore(t, src, func(e *Engine) { e.SetWorkers(regen.workers()) })
 
 	rpmID, debID, mvnID := repoByName(t, dst, "r").ID, repoByName(t, dst, "d").ID, repoByName(t, dst, "m").ID
 
@@ -255,13 +241,7 @@ func TestBackupRestore_RegeneratesGeneratedMetadata(t *testing.T) {
 	sort.Strings(regen.calls)
 
 	want := []string{"deb:" + debID, "maven:" + mvnID + ":com.x:app", "rpm:" + rpmID}
-	if len(regen.calls) != len(want) {
+	if !slices.Equal(regen.calls, want) {
 		t.Fatalf("regeneration calls = %v, want %v", regen.calls, want)
-	}
-
-	for i := range want {
-		if regen.calls[i] != want[i] {
-			t.Fatalf("regeneration calls = %v, want %v", regen.calls, want)
-		}
 	}
 }

@@ -15,6 +15,8 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
+
+	"github.com/openartifact/openartifact/internal/limitio"
 )
 
 // Sentinel errors for deb file parsing.
@@ -37,21 +39,6 @@ const (
 	maxControlArchiveSize = 64 << 20 // 64 MiB
 	maxControlFileSize    = 1 << 20  // 1 MiB
 )
-
-// readAllLimited reads at most max+1 bytes from r and errors if the
-// result exceeds max, without ever allocating more than max+1 bytes.
-func readAllLimited(r io.Reader, limit int64, tooLarge error) ([]byte, error) {
-	data, err := io.ReadAll(io.LimitReader(r, limit+1))
-	if err != nil {
-		return nil, err
-	}
-
-	if int64(len(data)) > limit {
-		return nil, fmt.Errorf("%w: max %d bytes", tooLarge, limit)
-	}
-
-	return data, nil
-}
 
 // DebFile represents a parsed .deb file.
 type DebFile struct {
@@ -162,7 +149,7 @@ func extractControlFile(raw []byte, ext string) (*ControlFile, error) {
 		}
 		defer func() { _ = gr.Close() }()
 
-		tarData, err = readAllLimited(gr, maxControlArchiveSize, ErrControlArchiveTooLarge)
+		tarData, err = limitio.ReadAll(gr, maxControlArchiveSize, ErrControlArchiveTooLarge)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read %s: %w", ext, err)
 		}
@@ -177,7 +164,7 @@ func extractControlFile(raw []byte, ext string) (*ControlFile, error) {
 			return nil, fmt.Errorf("failed to decompress %s: %w", ext, err)
 		}
 
-		tarData, err = readAllLimited(xr, maxControlArchiveSize, ErrControlArchiveTooLarge)
+		tarData, err = limitio.ReadAll(xr, maxControlArchiveSize, ErrControlArchiveTooLarge)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read %s: %w", ext, err)
 		}
@@ -190,7 +177,7 @@ func extractControlFile(raw []byte, ext string) (*ControlFile, error) {
 		}
 		defer zr.Close()
 
-		tarData, err = readAllLimited(zr, maxControlArchiveSize, ErrControlArchiveTooLarge)
+		tarData, err = limitio.ReadAll(zr, maxControlArchiveSize, ErrControlArchiveTooLarge)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read %s: %w", ext, err)
 		}
@@ -229,7 +216,7 @@ func extractFileFromTar(tarData []byte, filename string) ([]byte, error) {
 		// Match by exact name or path suffix (e.g., "./control" matches "control")
 		name := strings.TrimPrefix(header.Name, "./")
 		if name == filename || strings.HasSuffix(name, "/"+filename) {
-			data, err := readAllLimited(tr, maxControlFileSize, ErrControlFileTooLarge)
+			data, err := limitio.ReadAll(tr, maxControlFileSize, ErrControlFileTooLarge)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read file data: %w", err)
 			}

@@ -182,8 +182,6 @@ func helmFixture(t *testing.T) (*fixture, *fakeChartRepo) {
 	f.repo.Format = "helm"
 	f.repo.Name = "charts"
 	f.repo.UpstreamURL = strings.TrimSuffix(f.repo.UpstreamURL, "/maven2/") + "/charts"
-	f.svc.SetBaseURL(oaBase + "/")
-
 	return f, g
 }
 
@@ -215,9 +213,9 @@ func TestHelmProxy_IndexURLsAreRewrittenAndCached(t *testing.T) {
 		got := parseIndexBody(t, w.Body.String())
 
 		want := map[string]string{
-			"app":      oaBase + "/repos/charts/charts/app-1.0.0.tgz",
-			"abs":      oaBase + "/repos/charts/charts/abs-2.0.0.tgz",
-			"nodigest": oaBase + "/repos/charts/charts/nodigest-1.0.0.tgz",
+			"app":      "charts/app-1.0.0.tgz",
+			"abs":      "charts/abs-2.0.0.tgz",
+			"nodigest": "charts/nodigest-1.0.0.tgz",
 		}
 
 		for name, u := range want {
@@ -293,7 +291,7 @@ func TestHelmProxy_ChartsAreVerifiedCachedAndServedWithUpstreamDown(t *testing.T
 		t.Fatalf("stale index = %d, Warning %q; want 200 with a stale warning", w.Code, w.Header().Get("Warning"))
 	}
 
-	if cv := parseIndexBody(t, w.Body.String())["app"]; len(cv.URLs) != 1 || cv.URLs[0] != oaBase+"/repos/charts/charts/app-1.0.0.tgz" {
+	if cv := parseIndexBody(t, w.Body.String())["app"]; len(cv.URLs) != 1 || cv.URLs[0] != "charts/app-1.0.0.tgz" {
 		t.Errorf("stale index was not rewritten: %+v", cv)
 	}
 
@@ -494,7 +492,7 @@ entries:
 			t.Fatalf("both charts are served under %s", first.URLs[0])
 		}
 
-		if want := oaBase + "/repos/charts/charts/foo-1.0.0.tgz"; first.URLs[0] != want {
+		if want := "charts/foo-1.0.0.tgz"; first.URLs[0] != want {
 			t.Errorf("first claimant = %s, want the plain name %s", first.URLs[0], want)
 		}
 
@@ -505,5 +503,30 @@ entries:
 				t.Errorf("GET %s = %d %q, want %q", p, w.Code, w.Body.String(), want)
 			}
 		}
+	}
+}
+
+// The rewritten URLs are relative, so neither the body nor the ETag of the
+// proxied index depends on the origin the request came in on.
+func TestHelmProxy_IndexIsIndependentOfOrigin(t *testing.T) {
+	f, _ := helmFixture(t)
+
+	get := func(host string) *httptest.ResponseRecorder {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/repos/charts/index.yaml", http.NoBody)
+		req.Host = host
+
+		w := httptest.NewRecorder()
+		f.svc.Serve(w, req, f.repo, "index.yaml")
+
+		return w
+	}
+
+	a, b := get("a.example"), get("b.example")
+	if a.Code != http.StatusOK || a.Header().Get("ETag") == "" || a.Header().Get("ETag") != b.Header().Get("ETag") {
+		t.Errorf("ETags %q and %q (status %d) differ across origins", a.Header().Get("ETag"), b.Header().Get("ETag"), a.Code)
+	}
+
+	if a.Body.String() != b.Body.String() || strings.Contains(a.Body.String(), "a.example") {
+		t.Errorf("index differs across origins or embeds one:\n%s", a.Body.String())
 	}
 }

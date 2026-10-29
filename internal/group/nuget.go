@@ -5,15 +5,13 @@
 package group
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/pathseg"
 	pkgnuget "github.com/openartifact/openartifact/pkg/nuget"
 )
@@ -24,6 +22,14 @@ const maxNuGetDocBytes = 128 << 20
 // nugetMetaMaxAge is how long shared caches may reuse a public group's
 // metadata before revalidating.
 const nugetMetaMaxAge = 60
+
+const nugetContentType = "application/json"
+
+// NuGetHooks is the nuget group: merged registrations and version lists, packages first-hit.
+var NuGetHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: (*Handler).serveNuGet,
+	PackageRef:  nugetRef,
+}
 
 // serveNuGet answers the NuGet v3 metadata routes of a group and reports
 // whether the path was one of them; package files (.nupkg, .nuspec) are left
@@ -57,34 +63,21 @@ func (h *Handler) serveNuGet(
 		return false
 	}
 
-	groupV3 := h.baseURL + "/repos/" + grp.Name + "/v3/"
-
-	// Members are asked with GET and without the client's conditional headers.
-	mr := r.Clone(r.Context())
-	mr.Method = http.MethodGet
-	mr.Header.Del("If-None-Match")
-	mr.Header.Del("If-Modified-Since")
-	mr.Header.Set("Accept", "application/json")
-
-	// Member documents are held whole until merged: one gate slot per request,
-	// taken when a member starts delivering and freed before the answer is
-	// written.
-	sess := h.newSession(r.Context())
-	defer sess.release()
-
-	nr := &nugetRequest{h: h, grp: grp, members: members, be: be, mr: mr, groupV3: groupV3, sess: sess}
+	// The members answer with URLs under the origin this request reached (they
+	// resolve it the same way), so the rewrite below needs it per request.
+	origin := h.publicBase(w, r)
 
 	switch {
 	case len(segs) == 2 && segs[1] == "index.json":
-		nr.serveIndex(w, r)
+		h.serveNuGetIndex(w, r, grp, origin)
 	case len(segs) == 2 && (segs[1] == "query" || segs[1] == "autocomplete"):
 		http.NotFound(w, r)
 	case len(segs) == 4 && segs[1] == "package" && segs[3] == "index.json" && nugetSegment(segs[2]):
-		nr.serveVersions(w, r, relPath)
+		h.serveNuGetVersions(w, r, grp, members, be, origin, relPath)
 	case len(segs) == 4 && segs[1] == "registration" && segs[3] == "index.json" && nugetSegment(segs[2]):
-		nr.serveRegistration(w, r, strings.ToLower(segs[2]))
+		h.serveNuGetRegistration(w, r, grp, members, be, origin, strings.ToLower(segs[2]))
 	case len(segs) >= 4 && segs[1] == "registration" && nugetSegment(segs[2]):
-		nr.serveLeaf(w, r, relPath)
+		h.serveNuGetLeaf(w, r, grp, members, be, origin, relPath)
 	default:
 		return false
 	}
@@ -97,82 +90,34 @@ func nugetSegment(s string) bool {
 	return pathseg.Name(s)
 }
 
-// nugetRequest is one NuGet metadata request of a group.
-type nugetRequest struct {
-	h       *Handler
-	grp     *models.Repository
-	members []*models.Repository
-	be      Backend
-	mr      *http.Request
-	groupV3 string // ".../repos/<group>/v3/"
-	sess    *mergeSession
+// nugetPrepare makes the request members are asked with accept JSON.
+func nugetPrepare(mr *http.Request) { mr.Header.Set("Accept", "application/json") }
+
+// nugetAsk is what members are asked for the document at path; first stops
+// asking once that many members have it (0: ask all).
+func nugetAsk(path string, first int) memberAsk {
+	return memberAsk{path: samePath(path), limit: maxNuGetDocBytes, prepare: nugetPrepare, first: first}
 }
 
-// memberDoc is what asking one member for a path yielded.
-type memberDoc struct {
-	body   []byte
-	found  bool // 200 with a complete body
-	failed bool // anything but 200 and 404
-}
-
-// ask requests relPath from member m and returns its document with every
-// URL of the member rewritten to point at the group.
-func (n *nugetRequest) ask(m *models.Repository, relPath string) memberDoc {
-	cw := n.sess.capture(maxNuGetDocBytes)
-	n.be.ServeMember(cw, n.mr, m, relPath)
-
-	switch {
-	case cw.status == http.StatusNotFound:
-		return memberDoc{}
-	case cw.status != http.StatusOK || cw.overflow:
-		return memberDoc{failed: true}
-	}
-
-	body, err := pkgnuget.RewriteURLs(cw.body.Bytes(), pkgnuget.URLPrefix{
-		From: n.h.baseURL + "/repos/" + m.Name + "/v3/",
-		To:   n.groupV3,
+// nugetGroupDoc returns the document of answer a with every URL of its member
+// rewritten to point at the group. ok is false when the document is unreadable.
+func (h *Handler) nugetGroupDoc(grp *models.Repository, origin string, a answer, path string) ([]byte, bool) {
+	body, err := pkgnuget.RewriteURLs(a.body, pkgnuget.URLPrefix{
+		From: nugetV3(origin, a.member.Name),
+		To:   nugetV3(origin, grp.Name),
 	})
 	if err != nil {
-		n.h.log.Warnw("unreadable nuget document from group member", "group", n.grp.Name, "member", m.Name, "path", relPath, "error", err)
-		return memberDoc{failed: true}
+		h.log.Warnw("unreadable nuget document from group member", "group", grp.Name, "member", a.member.Name, "path", path, "error", err)
+		return nil, false
 	}
 
-	return memberDoc{body: body, found: true}
+	return body, true
 }
 
-// write answers with body (a validator on its digest; none, and no-store,
-// when a member failed meanwhile) or, when there is none, with 404 or, if a
-// member failed, 502.
-func (n *nugetRequest) write(w http.ResponseWriter, r *http.Request, body []byte, failed bool) {
-	// Everything held for the merge is in body by now.
-	n.sess.release()
+// nugetV3 is the root of repository name's v3 resources under origin.
+func nugetV3(origin, name string) string { return origin + "/repos/" + name + "/v3/" }
 
-	if body == nil {
-		if failed {
-			http.Error(w, "member repository error", http.StatusBadGateway)
-		} else {
-			http.NotFound(w, r)
-		}
-
-		return
-	}
-
-	sum := sha256.Sum256(body)
-
-	if revalidateMerged(w, r, n.grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, nugetMetaMaxAge, failed) {
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
-	}
-}
-
-func (n *nugetRequest) serveIndex(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) serveNuGetIndex(w http.ResponseWriter, r *http.Request, grp *models.Repository, origin string) {
 	idx := pkgnuget.ServiceIndex{
 		PackageBase:   "x/",
 		Registrations: "x/",
@@ -181,135 +126,190 @@ func (n *nugetRequest) serveIndex(w http.ResponseWriter, r *http.Request) {
 		RegistrationTypes: []string{"RegistrationsBaseUrl", "RegistrationsBaseUrl/3.6.0", "RegistrationsBaseUrl/Versioned"},
 	}
 
-	body, err := idx.Render(strings.TrimSuffix(n.groupV3, "/v3/"))
+	body, err := idx.Render(origin + "/repos/" + grp.Name)
 	if err != nil {
-		n.h.log.Errorw("failed to render nuget group service index", "group", n.grp.Name, "error", err)
+		h.log.Errorw("failed to render nuget group service index", "group", grp.Name, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	n.write(w, r, body, false)
+	writeMerged(w, r, grp.Public, body, nugetContentType, base.ContentETag(body), nugetMetaMaxAge, false)
 }
 
-// serveLeaf answers a registration leaf (or page) from the first member that
-// has it.
-func (n *nugetRequest) serveLeaf(w http.ResponseWriter, r *http.Request, relPath string) {
-	failed := false
+// serveNuGetLeaf answers a registration leaf (or page) from the first member
+// that has a readable one. It does not use serveMergedDoc: a member whose
+// document is unreadable is skipped for the next one, which collect cannot do.
+func (h *Handler) serveNuGetLeaf(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	members []*models.Repository,
+	be Backend,
+	origin, relPath string,
+) {
+	sess := h.newSession(r.Context())
+	defer sess.release()
 
-	for _, m := range n.members {
-		d := n.ask(m, relPath)
-		if d.found {
-			n.write(w, r, d.body, failed)
-			return
-		}
+	mr := memberGetRequest(r)
+	nugetPrepare(mr)
 
-		failed = failed || d.failed
-	}
+	var c collection
 
-	n.write(w, r, nil, failed)
-}
-
-func (n *nugetRequest) serveVersions(w http.ResponseWriter, r *http.Request, relPath string) {
-	var (
-		lists  [][]string
-		failed bool
-	)
-
-	for _, m := range n.members {
-		d := n.ask(m, relPath)
-		failed = failed || d.failed
-
-		if !d.found {
-			continue
-		}
-
-		// A member whose list cannot be read is left out, as one whose
-		// registration cannot be, instead of failing the others' versions.
-		list, err := pkgnuget.ParseVersionList(d.body)
-		if err != nil {
-			n.h.log.Warnw(
-				"unreadable nuget version list from group member",
-				"group",
-				n.grp.Name,
-				"member",
-				m.Name,
-				"path",
-				relPath,
-				"error",
-				err,
-			)
-
-			failed = true
+	for _, m := range members {
+		a := h.askMember(sess, mr, m, relPath, maxNuGetDocBytes, be)
+		if !a.found {
+			if a.failed {
+				c.fail(m)
+			}
 
 			continue
 		}
 
-		lists = append(lists, list)
-	}
-
-	if len(lists) == 0 {
-		n.write(w, r, nil, failed)
-		return
-	}
-
-	body, err := pkgnuget.MergeVersions(lists...)
-	if err != nil {
-		n.h.log.Errorw("failed to merge nuget version lists", "group", n.grp.Name, "error", err)
-		http.Error(w, "member repository error", http.StatusBadGateway)
-
-		return
-	}
-
-	n.write(w, r, body, failed)
-}
-
-func (n *nugetRequest) serveRegistration(w http.ResponseWriter, r *http.Request, id string) {
-	var (
-		sets   [][]json.RawMessage
-		failed bool
-	)
-
-	for _, m := range n.members {
-		items, ok, memberFailed := n.memberItems(m, id)
-		if ok {
-			sets = append(sets, items)
+		body, ok := h.nugetGroupDoc(grp, origin, a, relPath)
+		if !ok {
+			c.fail(m)
+			continue
 		}
 
-		failed = failed || memberFailed
+		sess.release()
+		writeMerged(w, r, grp.Public, body, nugetContentType, base.ContentETag(body), nugetMetaMaxAge, c.partial())
+
+		return
+	}
+
+	writeNoDocument(w, r, c.partial())
+}
+
+func (h *Handler) serveNuGetVersions(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	members []*models.Repository,
+	be Backend,
+	origin, relPath string,
+) {
+	h.serveMergedDoc(w, r, grp, members, be, mergedDoc{
+		ask:         nugetAsk(relPath, 0),
+		what:        "nuget version lists",
+		maxAge:      nugetMetaMaxAge,
+		contentType: nugetContentType,
+		merge: func(c *collection) ([]byte, error) {
+			var lists [][]string
+
+			for _, a := range c.docs {
+				doc, ok := h.nugetGroupDoc(grp, origin, a, relPath)
+				if !ok {
+					c.fail(a.member)
+					continue
+				}
+
+				// A member whose list cannot be read is left out, as one whose
+				// registration cannot be, instead of failing the others' versions.
+				list, err := pkgnuget.ParseVersionList(doc)
+				if err != nil {
+					h.log.Warnw(
+						"unreadable nuget version list from group member",
+						"group",
+						grp.Name,
+						"member",
+						a.member.Name,
+						"path",
+						relPath,
+						"error",
+						err,
+					)
+					c.fail(a.member)
+
+					continue
+				}
+
+				lists = append(lists, list)
+			}
+
+			if len(lists) == 0 {
+				return nil, errNoDocument
+			}
+
+			return pkgnuget.MergeVersions(lists...) //nolint:wrapcheck // logged by serveMergedDoc
+		},
+	})
+}
+
+// serveNuGetRegistration answers the registration index of id: the union of
+// the members' items. It does not use serveMergedDoc: the pages a member's
+// index does not inline are fetched from it within the same session.
+func (h *Handler) serveNuGetRegistration(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	members []*models.Repository,
+	be Backend,
+	origin, id string,
+) {
+	sess := h.newSession(r.Context())
+	defer sess.release()
+
+	c := h.collect(r, sess, members, nugetAsk("v3/registration/"+id+"/index.json", 0), be)
+
+	mr := memberGetRequest(r)
+	nugetPrepare(mr)
+
+	var sets [][]json.RawMessage
+
+	for _, a := range c.docs {
+		items, ok := h.nugetMemberItems(sess, mr, grp, origin, a, id, be)
+		if !ok {
+			c.fail(a.member)
+			continue
+		}
+
+		sets = append(sets, items)
 	}
 
 	if len(sets) == 0 {
-		n.write(w, r, nil, failed)
+		writeNoDocument(w, r, c.partial())
 		return
 	}
 
-	indexURL := n.groupV3 + "registration/" + url.PathEscape(id) + "/index.json"
+	indexURL := nugetV3(origin, grp.Name) + "registration/" + url.PathEscape(id) + "/index.json"
 
 	body, err := pkgnuget.MergeRegistrationItems(indexURL, sets...)
 	if err != nil {
-		n.h.log.Errorw("failed to merge nuget registrations", "group", n.grp.Name, "package", id, "error", err)
+		h.log.Errorw("failed to merge nuget registrations", "group", grp.Name, "package", id, "error", err)
 		http.Error(w, "member repository error", http.StatusBadGateway)
 
 		return
 	}
 
-	n.write(w, r, body, failed)
+	sess.release()
+
+	writeMerged(w, r, grp.Public, body, nugetContentType, base.ContentETag(body), nugetMetaMaxAge, c.partial())
 }
 
-// memberItems returns every package item of member m's registration of id,
-// fetching the pages its index does not inline. ok is false when m has no
-// registration or could not deliver it whole; failed when that is an error.
-func (n *nugetRequest) memberItems(m *models.Repository, id string) ([]json.RawMessage, bool, bool) {
-	d := n.ask(m, "v3/registration/"+id+"/index.json")
-	if !d.found {
-		return nil, false, d.failed
+// nugetMemberItems returns every package item of the registration index a of
+// id, fetching the pages it does not inline from a's member. ok is false when
+// the registration could not be read whole.
+func (h *Handler) nugetMemberItems(
+	sess *mergeSession,
+	mr *http.Request,
+	grp *models.Repository,
+	origin string,
+	a answer,
+	id string,
+	be Backend,
+) ([]json.RawMessage, bool) {
+	m := a.member
+
+	doc, ok := h.nugetGroupDoc(grp, origin, a, "v3/registration/"+id+"/index.json")
+	if !ok {
+		return nil, false
 	}
 
-	pages, err := pkgnuget.ParsePages(d.body)
+	pages, err := pkgnuget.ParsePages(doc)
 	if err != nil {
-		n.h.log.Warnw("unreadable nuget registration from group member", "group", n.grp.Name, "member", m.Name, "package", id, "error", err)
-		return nil, false, true
+		h.log.Warnw("unreadable nuget registration from group member", "group", grp.Name, "member", m.Name, "package", id, "error", err)
+		return nil, false
 	}
 
 	var items []json.RawMessage
@@ -321,20 +321,27 @@ func (n *nugetRequest) memberItems(m *models.Repository, id string) ([]json.RawM
 		}
 
 		if !nugetSegment(p.Lower) || !nugetSegment(p.Upper) {
-			return nil, false, true
+			return nil, false
 		}
 
-		pd := n.ask(m, "v3/registration/"+id+"/page/"+p.Lower+"/"+p.Upper+".json")
-		if !pd.found {
-			return nil, false, true
+		pagePath := "v3/registration/" + id + "/page/" + p.Lower + "/" + p.Upper + ".json"
+
+		pa := h.askMember(sess, mr, m, pagePath, maxNuGetDocBytes, be)
+		if !pa.found {
+			return nil, false
 		}
 
-		pageItems, perr := pkgnuget.ParsePageItems(pd.body)
+		pd, ok := h.nugetGroupDoc(grp, origin, pa, pagePath)
+		if !ok {
+			return nil, false
+		}
+
+		pageItems, perr := pkgnuget.ParsePageItems(pd)
 		if perr != nil {
-			n.h.log.Warnw(
+			h.log.Warnw(
 				"unreadable nuget registration page from group member",
 				"group",
-				n.grp.Name,
+				grp.Name,
 				"member",
 				m.Name,
 				"package",
@@ -342,11 +349,24 @@ func (n *nugetRequest) memberItems(m *models.Repository, id string) ([]json.RawM
 				"error",
 				perr,
 			)
-			return nil, false, true
+			return nil, false
 		}
 
 		items = append(items, pageItems...)
 	}
 
-	return items, true, false
+	return items, true
+}
+
+func nugetRef(relPath string) (PkgRef, bool) {
+	segs := strings.Split(strings.Trim(relPath, "/"), "/")
+	if len(segs) < 3 || segs[0] != "v3" || (segs[1] != "registration" && segs[1] != "package") || !nugetSegment(segs[2]) {
+		return PkgRef{}, false
+	}
+
+	return PkgRef{
+		probe:  "v3/package/" + strings.ToLower(segs[2]) + "/index.json",
+		accept: "application/json",
+		file:   strings.HasSuffix(relPath, ".nupkg") || strings.HasSuffix(relPath, ".nuspec"),
+	}, true
 }

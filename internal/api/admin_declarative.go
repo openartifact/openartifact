@@ -9,10 +9,11 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"context"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -33,18 +34,25 @@ var declarativeKinds = map[string]bool{
 	"SSOProvider": true, "Webhook": true, "StorageTier": true, "TierPolicy": true,
 }
 
+// AdminDeclarativeStore is the part of the database AdminDeclarativeHandler needs.
+type AdminDeclarativeStore interface {
+	DeleteDeclarativeObject(ctx context.Context, kind string, name string) (bool, error)
+	ListDeclarativeObjects(ctx context.Context) ([]models.DeclarativeObject, error)
+	UpsertDeclarativeObjects(ctx context.Context, items []models.DeclarativeObject) ([]models.DeclarativeObject, error)
+}
+
 // AdminDeclarativeHandler stores the ownership markers of `oa apply`: which
 // objects it created or adopted, so --prune only deletes managed objects.
 //
 // Markers are deliberately not part of backups: a restored instance has none,
 // so prune touches nothing until the next apply re-adopts the objects.
 type AdminDeclarativeHandler struct {
-	db        database.Database
+	db        AdminDeclarativeStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 }
 
-func NewAdminDeclarativeHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *AdminDeclarativeHandler {
+func NewAdminDeclarativeHandler(db AdminDeclarativeStore, log *logger.Logger, evaluator *auth.Evaluator) *AdminDeclarativeHandler {
 	return &AdminDeclarativeHandler{db: db, log: log, evaluator: evaluator}
 }
 

@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/api/responses"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -130,10 +129,15 @@ type auditExportRow interface {
 	record() []string
 }
 
+// auditExportStore is the part of the database auditExport needs.
+type auditExportStore interface {
+	ListAuditLogs(ctx context.Context, params models.AuditListParams) (*models.AuditPage, error)
+}
+
 // auditExport describes one export: which entries, which columns and how a
 // stored entry becomes a row.
 type auditExport struct {
-	db      database.Database
+	db      auditExportStore
 	log     *logger.Logger
 	params  models.AuditListParams
 	format  string

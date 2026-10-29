@@ -7,6 +7,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,18 +15,24 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+var errNotImplemented = errors.New("not implemented")
+
 type storageUpdateMockDB struct {
-	databasetest.BaseMockDB
+	AdminStorageStore
 
 	backend *models.StorageBackend
 	busy    string
 	updated bool
+}
+
+// UpdateStorageBackendStatus is not exercised by the tests.
+func (*storageUpdateMockDB) UpdateStorageBackendStatus(context.Context, string, string, *string) error {
+	return errNotImplemented
 }
 
 func (m *storageUpdateMockDB) GetStorageBackend(context.Context, string) (*models.StorageBackend, error) {
@@ -159,7 +166,7 @@ func TestHealthCheckStoreReportsConnectivity(t *testing.T) {
 }
 
 type storageUsageMockDB struct {
-	databasetest.BaseMockDB
+	AdminStorageStore
 }
 
 func (storageUsageMockDB) ListStorageBackends(context.Context) ([]*models.StorageBackend, error) {

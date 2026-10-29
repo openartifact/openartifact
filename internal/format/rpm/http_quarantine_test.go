@@ -14,14 +14,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 type quarantineDB struct {
-	databasetest.BaseMockDB
+	HTTPStore
 
 	quarantined map[string]bool // artifact key -> quarantined
 }

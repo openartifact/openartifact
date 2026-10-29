@@ -12,11 +12,9 @@ import (
 )
 
 const countAnsibleCollectionNames = `-- name: CountAnsibleCollectionNames :one
-SELECT COUNT(*) FROM (
-    SELECT 1 FROM ansible_collections ac
-    WHERE ac.repository_id = $1 AND ac.deleted_at IS NULL
-    GROUP BY ac.namespace, ac.name
-) c
+SELECT COUNT(DISTINCT p.id) FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+WHERE p.repository_id = $1
 `
 
 func (q *Queries) CountAnsibleCollectionNames(ctx context.Context, repositoryID string) (int64, error) {
@@ -26,104 +24,74 @@ func (q *Queries) CountAnsibleCollectionNames(ctx context.Context, repositoryID 
 	return count, err
 }
 
-const createAnsibleCollection = `-- name: CreateAnsibleCollection :one
-INSERT INTO ansible_collections (
-    repository_id, namespace, name, version, filename, blob_id, dependencies, metadata, requires_ansible, created_at
-)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::timestamptz, NOW()))
-RETURNING id, created_at, updated_at
+const filterLivePackageFileIDs = `-- name: FilterLivePackageFileIDs :many
+
+SELECT f.id FROM package_files f
+WHERE f.repository_id = $1 AND f.id = ANY($2::uuid[]) AND f.deleted_at IS NULL
 `
 
-type CreateAnsibleCollectionParams struct {
-	RepositoryID    string          `db:"repository_id" json:"repository_id"`
-	Namespace       string          `db:"namespace" json:"namespace"`
-	Name            string          `db:"name" json:"name"`
-	Version         string          `db:"version" json:"version"`
-	Filename        string          `db:"filename" json:"filename"`
-	BlobID          string          `db:"blob_id" json:"blob_id"`
-	Dependencies    json.RawMessage `db:"dependencies" json:"dependencies"`
-	Metadata        json.RawMessage `db:"metadata" json:"metadata"`
-	RequiresAnsible string          `db:"requires_ansible" json:"requires_ansible"`
-	CreatedAt       *time.Time      `db:"created_at" json:"created_at"`
+type FilterLivePackageFileIDsParams struct {
+	RepositoryID string   `db:"repository_id" json:"repository_id"`
+	Ids          []string `db:"ids" json:"ids"`
 }
 
-type CreateAnsibleCollectionRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) CreateAnsibleCollection(ctx context.Context, arg CreateAnsibleCollectionParams) (CreateAnsibleCollectionRow, error) {
-	row := q.db.QueryRow(ctx, createAnsibleCollection,
-		arg.RepositoryID,
-		arg.Namespace,
-		arg.Name,
-		arg.Version,
-		arg.Filename,
-		arg.BlobID,
-		arg.Dependencies,
-		arg.Metadata,
-		arg.RequiresAnsible,
-		arg.CreatedAt,
-	)
-	var i CreateAnsibleCollectionRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
-const deleteAnsibleCollection = `-- name: DeleteAnsibleCollection :exec
-DELETE FROM ansible_collections WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL
-`
-
-type DeleteAnsibleCollectionParams struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-}
-
-func (q *Queries) DeleteAnsibleCollection(ctx context.Context, arg DeleteAnsibleCollectionParams) error {
-	_, err := q.db.Exec(ctx, deleteAnsibleCollection, arg.ID, arg.RepositoryID)
-	return err
+// Ansible collections on the generic package tables (mapping spec in pkg_ansible.go). One
+// published collection version is one package_versions row with one package_files row.
+// The ids among ids that are live files of the repository: the hard deletes of
+// the version-grain formats act on live rows only.
+func (q *Queries) FilterLivePackageFileIDs(ctx context.Context, arg FilterLivePackageFileIDsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, filterLivePackageFileIDs, arg.RepositoryID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getAnsibleCollection = `-- name: GetAnsibleCollection :one
-SELECT ac.id, ac.repository_id, ac.namespace, ac.name, ac.version, ac.filename, b.blob_key, b.size_bytes, b.sha256,
-       ac.dependencies, ac.metadata, ac.requires_ansible, ac.created_at, ac.updated_at
-FROM ansible_collections ac
-JOIN blobs b ON b.id = ac.blob_id
-WHERE ac.repository_id = $1 AND ac.namespace = $2 AND ac.name = $3 AND ac.version = $4 AND ac.deleted_at IS NULL
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'namespace', '')::text AS namespace, COALESCE(p.attrs ->> 'name', '')::text AS name,
+       v.version, f.filename, b.blob_key, b.size_bytes, b.sha256, v.metadata, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = $1 AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $2 AND p.name_key = $3
 `
 
 type GetAnsibleCollectionParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Namespace    string `db:"namespace" json:"namespace"`
-	Name         string `db:"name" json:"name"`
 	Version      string `db:"version" json:"version"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Fqcn         string `db:"fqcn" json:"fqcn"`
 }
 
 type GetAnsibleCollectionRow struct {
-	ID              string          `db:"id" json:"id"`
-	RepositoryID    string          `db:"repository_id" json:"repository_id"`
-	Namespace       string          `db:"namespace" json:"namespace"`
-	Name            string          `db:"name" json:"name"`
-	Version         string          `db:"version" json:"version"`
-	Filename        string          `db:"filename" json:"filename"`
-	BlobKey         string          `db:"blob_key" json:"blob_key"`
-	SizeBytes       int64           `db:"size_bytes" json:"size_bytes"`
-	Sha256          string          `db:"sha256" json:"sha256"`
-	Dependencies    json.RawMessage `db:"dependencies" json:"dependencies"`
-	Metadata        json.RawMessage `db:"metadata" json:"metadata"`
-	RequiresAnsible string          `db:"requires_ansible" json:"requires_ansible"`
-	CreatedAt       time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt       time.Time       `db:"updated_at" json:"updated_at"`
+	ID           string          `db:"id" json:"id"`
+	RepositoryID string          `db:"repository_id" json:"repository_id"`
+	Namespace    string          `db:"namespace" json:"namespace"`
+	Name         string          `db:"name" json:"name"`
+	Version      string          `db:"version" json:"version"`
+	Filename     string          `db:"filename" json:"filename"`
+	BlobKey      string          `db:"blob_key" json:"blob_key"`
+	SizeBytes    int64           `db:"size_bytes" json:"size_bytes"`
+	Sha256       string          `db:"sha256" json:"sha256"`
+	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
+	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) GetAnsibleCollection(ctx context.Context, arg GetAnsibleCollectionParams) (GetAnsibleCollectionRow, error) {
-	row := q.db.QueryRow(ctx, getAnsibleCollection,
-		arg.RepositoryID,
-		arg.Namespace,
-		arg.Name,
-		arg.Version,
-	)
+	row := q.db.QueryRow(ctx, getAnsibleCollection, arg.Version, arg.RepositoryID, arg.Fqcn)
 	var i GetAnsibleCollectionRow
 	err := row.Scan(
 		&i.ID,
@@ -135,9 +103,7 @@ func (q *Queries) GetAnsibleCollection(ctx context.Context, arg GetAnsibleCollec
 		&i.BlobKey,
 		&i.SizeBytes,
 		&i.Sha256,
-		&i.Dependencies,
 		&i.Metadata,
-		&i.RequiresAnsible,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -145,37 +111,37 @@ func (q *Queries) GetAnsibleCollection(ctx context.Context, arg GetAnsibleCollec
 }
 
 const getAnsibleCollectionByID = `-- name: GetAnsibleCollectionByID :one
-SELECT ac.id, ac.repository_id, ac.namespace, ac.name, ac.version, ac.filename, b.blob_key, b.size_bytes, b.sha256,
-       ac.dependencies, ac.metadata, ac.requires_ansible, ac.created_at, ac.updated_at
-FROM ansible_collections ac
-JOIN blobs b ON b.id = ac.blob_id
-WHERE ac.repository_id = $1 AND ac.id = $2 AND ac.deleted_at IS NULL
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'namespace', '')::text AS namespace, COALESCE(p.attrs ->> 'name', '')::text AS name,
+       v.version, f.filename, b.blob_key, b.size_bytes, b.sha256, v.metadata, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.id = $1 AND f.repository_id = $2 AND f.deleted_at IS NULL
 `
 
 type GetAnsibleCollectionByIDParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
 	ID           string `db:"id" json:"id"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
 }
 
 type GetAnsibleCollectionByIDRow struct {
-	ID              string          `db:"id" json:"id"`
-	RepositoryID    string          `db:"repository_id" json:"repository_id"`
-	Namespace       string          `db:"namespace" json:"namespace"`
-	Name            string          `db:"name" json:"name"`
-	Version         string          `db:"version" json:"version"`
-	Filename        string          `db:"filename" json:"filename"`
-	BlobKey         string          `db:"blob_key" json:"blob_key"`
-	SizeBytes       int64           `db:"size_bytes" json:"size_bytes"`
-	Sha256          string          `db:"sha256" json:"sha256"`
-	Dependencies    json.RawMessage `db:"dependencies" json:"dependencies"`
-	Metadata        json.RawMessage `db:"metadata" json:"metadata"`
-	RequiresAnsible string          `db:"requires_ansible" json:"requires_ansible"`
-	CreatedAt       time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt       time.Time       `db:"updated_at" json:"updated_at"`
+	ID           string          `db:"id" json:"id"`
+	RepositoryID string          `db:"repository_id" json:"repository_id"`
+	Namespace    string          `db:"namespace" json:"namespace"`
+	Name         string          `db:"name" json:"name"`
+	Version      string          `db:"version" json:"version"`
+	Filename     string          `db:"filename" json:"filename"`
+	BlobKey      string          `db:"blob_key" json:"blob_key"`
+	SizeBytes    int64           `db:"size_bytes" json:"size_bytes"`
+	Sha256       string          `db:"sha256" json:"sha256"`
+	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
+	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) GetAnsibleCollectionByID(ctx context.Context, arg GetAnsibleCollectionByIDParams) (GetAnsibleCollectionByIDRow, error) {
-	row := q.db.QueryRow(ctx, getAnsibleCollectionByID, arg.RepositoryID, arg.ID)
+	row := q.db.QueryRow(ctx, getAnsibleCollectionByID, arg.ID, arg.RepositoryID)
 	var i GetAnsibleCollectionByIDRow
 	err := row.Scan(
 		&i.ID,
@@ -187,9 +153,7 @@ func (q *Queries) GetAnsibleCollectionByID(ctx context.Context, arg GetAnsibleCo
 		&i.BlobKey,
 		&i.SizeBytes,
 		&i.Sha256,
-		&i.Dependencies,
 		&i.Metadata,
-		&i.RequiresAnsible,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -197,11 +161,13 @@ func (q *Queries) GetAnsibleCollectionByID(ctx context.Context, arg GetAnsibleCo
 }
 
 const listAnsibleCollectionNames = `-- name: ListAnsibleCollectionNames :many
-SELECT ac.namespace, ac.name, MIN(ac.created_at)::timestamptz AS created_at, MAX(ac.updated_at)::timestamptz AS updated_at
-FROM ansible_collections ac
-WHERE ac.repository_id = $1 AND ac.deleted_at IS NULL
-GROUP BY ac.namespace, ac.name
-ORDER BY ac.namespace, ac.name
+SELECT COALESCE(p.attrs ->> 'namespace', '')::text AS namespace, COALESCE(p.attrs ->> 'name', '')::text AS name,
+       MIN(v.created_at)::timestamptz AS created_at, MAX(v.updated_at)::timestamptz AS updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+WHERE p.repository_id = $1
+GROUP BY p.id
+ORDER BY 1, 2
 LIMIT $2 OFFSET $3
 `
 
@@ -218,7 +184,8 @@ type ListAnsibleCollectionNamesRow struct {
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
 
-// One row per collection of the repository, a page of them in name order.
+// One row per collection of the repository that has a live version, a page of
+// them in name order.
 func (q *Queries) ListAnsibleCollectionNames(ctx context.Context, arg ListAnsibleCollectionNamesParams) ([]ListAnsibleCollectionNamesRow, error) {
 	rows, err := q.db.Query(ctx, listAnsibleCollectionNames, arg.RepositoryID, arg.Limit, arg.Offset)
 	if err != nil {
@@ -245,40 +212,39 @@ func (q *Queries) ListAnsibleCollectionNames(ctx context.Context, arg ListAnsibl
 }
 
 const listAnsibleCollectionVersions = `-- name: ListAnsibleCollectionVersions :many
-SELECT ac.id, ac.repository_id, ac.namespace, ac.name, ac.version, ac.filename, b.blob_key, b.size_bytes, b.sha256,
-       ac.dependencies, ac.metadata, ac.requires_ansible, ac.created_at, ac.updated_at
-FROM ansible_collections ac
-JOIN blobs b ON b.id = ac.blob_id
-WHERE ac.repository_id = $1 AND ac.namespace = $2 AND ac.name = $3 AND ac.deleted_at IS NULL
-ORDER BY ac.created_at, ac.id
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'namespace', '')::text AS namespace, COALESCE(p.attrs ->> 'name', '')::text AS name,
+       v.version, f.filename, b.blob_key, b.size_bytes, b.sha256, v.metadata, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $1 AND p.name_key = $2
+ORDER BY f.created_at, f.id
 `
 
 type ListAnsibleCollectionVersionsParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Namespace    string `db:"namespace" json:"namespace"`
-	Name         string `db:"name" json:"name"`
+	Fqcn         string `db:"fqcn" json:"fqcn"`
 }
 
 type ListAnsibleCollectionVersionsRow struct {
-	ID              string          `db:"id" json:"id"`
-	RepositoryID    string          `db:"repository_id" json:"repository_id"`
-	Namespace       string          `db:"namespace" json:"namespace"`
-	Name            string          `db:"name" json:"name"`
-	Version         string          `db:"version" json:"version"`
-	Filename        string          `db:"filename" json:"filename"`
-	BlobKey         string          `db:"blob_key" json:"blob_key"`
-	SizeBytes       int64           `db:"size_bytes" json:"size_bytes"`
-	Sha256          string          `db:"sha256" json:"sha256"`
-	Dependencies    json.RawMessage `db:"dependencies" json:"dependencies"`
-	Metadata        json.RawMessage `db:"metadata" json:"metadata"`
-	RequiresAnsible string          `db:"requires_ansible" json:"requires_ansible"`
-	CreatedAt       time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt       time.Time       `db:"updated_at" json:"updated_at"`
+	ID           string          `db:"id" json:"id"`
+	RepositoryID string          `db:"repository_id" json:"repository_id"`
+	Namespace    string          `db:"namespace" json:"namespace"`
+	Name         string          `db:"name" json:"name"`
+	Version      string          `db:"version" json:"version"`
+	Filename     string          `db:"filename" json:"filename"`
+	BlobKey      string          `db:"blob_key" json:"blob_key"`
+	SizeBytes    int64           `db:"size_bytes" json:"size_bytes"`
+	Sha256       string          `db:"sha256" json:"sha256"`
+	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
+	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 // Every live version of one collection; the caller orders them by version.
 func (q *Queries) ListAnsibleCollectionVersions(ctx context.Context, arg ListAnsibleCollectionVersionsParams) ([]ListAnsibleCollectionVersionsRow, error) {
-	rows, err := q.db.Query(ctx, listAnsibleCollectionVersions, arg.RepositoryID, arg.Namespace, arg.Name)
+	rows, err := q.db.Query(ctx, listAnsibleCollectionVersions, arg.RepositoryID, arg.Fqcn)
 	if err != nil {
 		return nil, err
 	}
@@ -296,9 +262,7 @@ func (q *Queries) ListAnsibleCollectionVersions(ctx context.Context, arg ListAns
 			&i.BlobKey,
 			&i.SizeBytes,
 			&i.Sha256,
-			&i.Dependencies,
 			&i.Metadata,
-			&i.RequiresAnsible,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -313,29 +277,29 @@ func (q *Queries) ListAnsibleCollectionVersions(ctx context.Context, arg ListAns
 }
 
 const listAnsibleCollections = `-- name: ListAnsibleCollections :many
-SELECT ac.id, ac.repository_id, ac.namespace, ac.name, ac.version, ac.filename, b.blob_key, b.size_bytes, b.sha256,
-       ac.dependencies, ac.metadata, ac.requires_ansible, ac.created_at, ac.updated_at
-FROM ansible_collections ac
-JOIN blobs b ON b.id = ac.blob_id
-WHERE ac.repository_id = $1 AND ac.deleted_at IS NULL
-ORDER BY ac.namespace, ac.name, ac.created_at, ac.id
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'namespace', '')::text AS namespace, COALESCE(p.attrs ->> 'name', '')::text AS name,
+       v.version, f.filename, b.blob_key, b.size_bytes, b.sha256, v.metadata, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL
+ORDER BY p.attrs ->> 'namespace', p.attrs ->> 'name', f.created_at, f.id
 `
 
 type ListAnsibleCollectionsRow struct {
-	ID              string          `db:"id" json:"id"`
-	RepositoryID    string          `db:"repository_id" json:"repository_id"`
-	Namespace       string          `db:"namespace" json:"namespace"`
-	Name            string          `db:"name" json:"name"`
-	Version         string          `db:"version" json:"version"`
-	Filename        string          `db:"filename" json:"filename"`
-	BlobKey         string          `db:"blob_key" json:"blob_key"`
-	SizeBytes       int64           `db:"size_bytes" json:"size_bytes"`
-	Sha256          string          `db:"sha256" json:"sha256"`
-	Dependencies    json.RawMessage `db:"dependencies" json:"dependencies"`
-	Metadata        json.RawMessage `db:"metadata" json:"metadata"`
-	RequiresAnsible string          `db:"requires_ansible" json:"requires_ansible"`
-	CreatedAt       time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt       time.Time       `db:"updated_at" json:"updated_at"`
+	ID           string          `db:"id" json:"id"`
+	RepositoryID string          `db:"repository_id" json:"repository_id"`
+	Namespace    string          `db:"namespace" json:"namespace"`
+	Name         string          `db:"name" json:"name"`
+	Version      string          `db:"version" json:"version"`
+	Filename     string          `db:"filename" json:"filename"`
+	BlobKey      string          `db:"blob_key" json:"blob_key"`
+	SizeBytes    int64           `db:"size_bytes" json:"size_bytes"`
+	Sha256       string          `db:"sha256" json:"sha256"`
+	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
+	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 // Every live version of every collection of the repository (backup export).
@@ -358,9 +322,7 @@ func (q *Queries) ListAnsibleCollections(ctx context.Context, repositoryID strin
 			&i.BlobKey,
 			&i.SizeBytes,
 			&i.Sha256,
-			&i.Dependencies,
 			&i.Metadata,
-			&i.RequiresAnsible,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {

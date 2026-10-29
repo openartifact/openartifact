@@ -8,26 +8,15 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
-// nullableJSON returns nil (SQL NULL) for empty JSON so COALESCE applies the default.
-func nullableJSON(b []byte) any {
-	if len(b) == 0 {
-		return nil
-	}
-
-	return string(b)
-}
-
-// RpmPackageExists reports whether the repository already has a package with the NEVRA.
-func (p *PostgresDB) RpmPackageExists(ctx context.Context, repoID, name, version, release string, epoch int, arch string) (bool, error) {
-	var exists bool
-
-	err := p.db.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM rpm_packages
-		  WHERE repository_id = $1 AND name = $2 AND version = $3 AND release = $4 AND epoch = $5 AND arch = $6 AND deleted_at IS NULL)`,
-		repoID, name, version, release, epoch, arch).Scan(&exists)
+// RpmPackageExists reports whether the repository already has a live package with the NEVRA.arch.
+func (p *RPMStore) RpmPackageExists(ctx context.Context, repoID, name, version, release string, epoch int, arch string) (bool, error) {
+	exists, err := p.q.RpmPackageExists(ctx, dbsqlc.RpmPackageExistsParams{
+		RepositoryID: repoID, NameKey: name, VersionKey: rpmVersionKey(version, release, epoch, arch),
+	})
 	if err != nil {
 		return false, fmt.Errorf("check rpm package exists: %w", err)
 	}
@@ -37,20 +26,24 @@ func (p *PostgresDB) RpmPackageExists(ctx context.Context, repoID, name, version
 
 // ListRpmPackagesForMetadata loads every rpm package of a repo with dependency,
 // file and changelog data plus the header range, for metadata generation.
-func (p *PostgresDB) ListRpmPackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error) {
+func (p *RPMStore) ListRpmPackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error) {
+	// Sorted in SQL over the whole repository, as the legacy query did.
 	rows, err := p.db.QueryContext(ctx, `
-		SELECT rp.name, rp.version, COALESCE(rp.release, ''), rp.epoch, COALESCE(rp.arch, ''),
-		       COALESCE(rp.summary, ''), COALESCE(rp.description, ''), COALESCE(rp.license, ''),
-		       COALESCE(rp.url, ''), COALESCE(rp.vendor, ''), COALESCE(rp.group_name, ''),
-		       COALESCE(rp.packager, ''), COALESCE(rp.source_rpm, ''), COALESCE(rp.build_host, ''),
-		       COALESCE(EXTRACT(EPOCH FROM rp.build_time)::bigint, 0),
-		       EXTRACT(EPOCH FROM rp.created_at)::bigint,
-		       COALESCE(rp.package_size, 0), COALESCE(rp.installed_size, 0), COALESCE(rp.archive_size, 0),
-		       b.sha256, rp.header_start, rp.header_end, rp.rpm_extra
-		FROM rpm_packages rp
-		JOIN blobs b ON b.id = rp.blob_id
-		WHERE rp.repository_id = $1 AND rp.deleted_at IS NULL
-		ORDER BY rp.name, rp.version, rp.release, rp.arch`, repoID)
+		SELECT p.name, v.version, COALESCE(f.attrs ->> 'release', ''), COALESCE((f.attrs ->> 'epoch')::bigint, 0), f.arch,
+		       COALESCE(v.metadata ->> 'summary', ''), COALESCE(v.metadata ->> 'description', ''), COALESCE(v.metadata ->> 'license', ''),
+		       COALESCE(v.metadata ->> 'url', ''), COALESCE(v.metadata ->> 'vendor', ''), COALESCE(v.metadata ->> 'group_name', ''),
+		       COALESCE(v.metadata ->> 'packager', ''), COALESCE(v.metadata ->> 'source_rpm', ''), COALESCE(v.metadata ->> 'build_host', ''),
+		       COALESCE((f.attrs ->> 'build_time')::bigint, 0),
+		       EXTRACT(EPOCH FROM f.created_at)::bigint,
+		       COALESCE(f.size_bytes, 0), COALESCE((f.attrs ->> 'installed_size')::bigint, 0), COALESCE((f.attrs ->> 'archive_size')::bigint, 0),
+		       b.sha256, r.header_start, r.header_end, r.rpm_extra
+		FROM package_files f
+		JOIN rpm_files r ON r.id = f.id
+		JOIN package_versions v ON v.id = f.version_id
+		JOIN packages p ON p.id = v.package_id
+		JOIN blobs b ON b.id = f.blob_id
+		WHERE f.repository_id = $1 AND f.deleted_at IS NULL
+		ORDER BY p.name, v.version, COALESCE(f.attrs ->> 'release', ''), f.arch`, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("query rpm packages for metadata: %w", err)
 	}
@@ -87,17 +80,12 @@ func (p *PostgresDB) ListRpmPackagesForMetadata(ctx context.Context, repoID stri
 // UpdateRpmPackageExtra replaces rpm_extra for the packages of a repo backed by
 // the blob with the given sha256. When the extra data carries sizes
 // (sizes_parsed, see pkgrpm.Package.MarshalExtra) the installed_size and
-// archive_size columns are corrected from it too: rows stored before the
+// archive_size attrs are corrected from it too: rows stored before the
 // header size tags were read properly hold 0.
-func (p *PostgresDB) UpdateRpmPackageExtra(ctx context.Context, repoID, sha256 string, extra []byte) error {
-	if _, err := p.db.ExecContext(ctx, `
-		UPDATE rpm_packages SET rpm_extra = $3::jsonb,
-		    installed_size = CASE WHEN ($3::jsonb ->> 'sizes_parsed') = 'true'
-		                          THEN COALESCE(($3::jsonb ->> 'installed_size')::bigint, 0) ELSE installed_size END,
-		    archive_size = CASE WHEN ($3::jsonb ->> 'sizes_parsed') = 'true'
-		                        THEN COALESCE(($3::jsonb ->> 'archive_size')::bigint, 0) ELSE archive_size END
-		WHERE repository_id = $1 AND deleted_at IS NULL AND blob_id IN (SELECT id FROM blobs WHERE sha256 = $2)`,
-		repoID, sha256, extra); err != nil {
+func (p *RPMStore) UpdateRpmPackageExtra(ctx context.Context, repoID, sha256 string, extra []byte) error {
+	if err := p.q.UpdateRpmPackageExtra(ctx, dbsqlc.UpdateRpmPackageExtraParams{
+		RepositoryID: repoID, Sha256: sha256, Extra: extra,
+	}); err != nil {
 		return fmt.Errorf("update rpm package extra: %w", err)
 	}
 

@@ -228,17 +228,17 @@ func (permTargetKind) Create(ctx context.Context, env *Env, o *Object) (string, 
 	body := Pick(o.Spec, "repository_filter", "path_pattern", "actions")
 	body["name"] = o.Name
 
-	var created permTargetResponse
-	if err := env.Client.Do(ctx, http.MethodPost, permTargetsPath, body, &created); err != nil {
-		return "", fmt.Errorf("create permission target %q: %w", o.Name, err)
+	id, err := env.Client.create(ctx, permTargetsPath, body, "permission target", o.Name)
+	if err != nil {
+		return "", err
 	}
 
-	empty := &Live{ID: created.ID, Spec: map[string]any{}}
+	empty := &Live{ID: id, Spec: map[string]any{}}
 	if err := permTargetReconcile(ctx, env, empty, o); err != nil {
-		return created.ID, err
+		return id, err
 	}
 
-	return created.ID, nil
+	return id, nil
 }
 
 func (permTargetKind) Update(ctx context.Context, env *Env, live *Live, o *Object, changes []Change) (string, error) {
@@ -344,9 +344,5 @@ func permTargetDiff(current, desired []string) ([]string, []string) {
 }
 
 func (permTargetKind) Delete(ctx context.Context, env *Env, live *Live) error {
-	if err := env.Client.Do(ctx, http.MethodDelete, permTargetsPath+"/"+PathEscape(live.ID), nil, nil); err != nil {
-		return fmt.Errorf("delete permission target %q: %w", live.Key, err)
-	}
-
-	return nil
+	return env.Client.remove(ctx, permTargetsPath+"/"+PathEscape(live.ID), "permission target", live.Key)
 }

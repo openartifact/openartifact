@@ -209,16 +209,45 @@ func readBackupArchive(t *testing.T, path string) (map[string]string, backup.Bac
 	}
 }
 
-// sweepQueuedBlobs runs the blob deletion sweeper once. Deleting a blob only
-// queues its bytes; with grace 0 and no running backup everything queued is due.
+// sweepRetries bounds how often sweepQueuedBlobs repeats a pass that left a
+// deletion failed.
+const sweepRetries = 5
+
+// sweepQueuedBlobs runs the blob deletion sweeper until every due deletion has
+// been processed. Deleting a blob only queues its bytes; with grace 0 and no
+// running backup everything queued is due.
+//
+// A deletion whose byte removal fails (the sweeper needs a second database
+// connection while it holds the blob lock, which a saturated server can refuse)
+// stays queued and is retried once its claim lapses. The claims are released
+// here instead of waiting for them, which is the production retry made
+// deterministic; a deletion that still fails after sweepRetries passes fails
+// the test with the sweeper's own counts.
 func sweepQueuedBlobs(t *testing.T, pg *database.PostgresDB, store storage.BlobStore) {
 	t.Helper()
 
 	sw := worker.NewBlobDeletionSweeper(pg, plainDeleter{store}, newTestLogger(t), 0, 500)
 
-	if _, err := sw.RunOnce(context.Background()); err != nil {
-		t.Fatalf("sweep queued blob deletions: %v", err)
+	var stats worker.BlobDeletionStats
+
+	for range sweepRetries {
+		var err error
+
+		stats, err = sw.RunOnce(context.Background())
+		if err != nil {
+			t.Fatalf("sweep queued blob deletions: %v", err)
+		}
+
+		if stats.Failed == 0 {
+			return
+		}
+
+		if _, err := pg.GetDB().ExecContext(context.Background(), `UPDATE blob_deletions SET claimed_until = NULL`); err != nil {
+			t.Fatalf("release failed blob deletions: %v", err)
+		}
 	}
+
+	t.Fatalf("sweep queued blob deletions: %d still failing after %d passes (%+v)", stats.Failed, sweepRetries, stats)
 }
 
 // getHookStore runs hook once, right before the first blob is read: that is

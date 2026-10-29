@@ -71,7 +71,7 @@ func serverRoutes(t *testing.T) chi.Router {
 		formatansible.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		formatterraform.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		formatgomod.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
-		api.NewNPMUploadHandler(log, nil, nil, "", nil).RegisterRepoRoutes(r)
+		api.NewNPMUploadHandler(log, nil, nil, nil).RegisterRepoRoutes(r)
 		// cmd/server dispatches PUT "/*" to npm publish or the GOPROXY upload.
 		r.Put("/*", func(http.ResponseWriter, *http.Request) {})
 	})
@@ -79,7 +79,7 @@ func serverRoutes(t *testing.T) chi.Router {
 	r.Route("/repos/maven/{name}", func(r chi.Router) { formatmaven.NewHTTPHandler(nil, nil, nil).RegisterRepoRoutes(r) })
 	r.Route("/repos/sbt/{name}", func(r chi.Router) { formatsbt.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
 	r.Route("/repos/ivy/{name}", func(r chi.Router) { formativy.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
-	formatdocker.NewHTTPHandler(nil, nil, nil, "").RegisterRoutes(r)
+	formatdocker.NewHTTPHandler(nil, nil, nil).RegisterRoutes(r)
 
 	api.NewDebUploadHandler(log, nil, nil, nil).Register(r)
 	formatapk.NewHTTPHandler(log, nil, nil, "").RegisterAPIRoutes(r)
@@ -147,7 +147,7 @@ func TestEveryFormatHasUploadLabel(t *testing.T) {
 	// directory under internal/format -> upload format label; "" is a support
 	// package without hosted uploads.
 	known := map[string]string{
-		"base": "", "filerepo": "", "formattest": "",
+		"base": "", "filerepo": "", "formattest": "", "lifecycle": "", "plugin": "", "storage": "",
 		"ansible": metrics.FormatAnsible, "apk": metrics.FormatApk, "cargo": metrics.FormatCargo,
 		"composer": metrics.FormatComposer, "conan": metrics.FormatConan, "conda": metrics.FormatConda,
 		"deb": metrics.FormatDeb, "docker": metrics.FormatDocker, "gomod": metrics.FormatGo, "helm": metrics.FormatHelm,

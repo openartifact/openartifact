@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"time"
 
+	"context"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/audit"
@@ -22,13 +24,26 @@ import (
 
 var groupNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{2,64}$`)
 
+// AdminGroupsStore is the part of the database AdminGroupsHandler needs.
+type AdminGroupsStore interface {
+	AddUserToGroup(ctx context.Context, userID string, groupID string) error
+	CreateGroup(ctx context.Context, group *models.Group) (*models.Group, error)
+	DeleteGroup(ctx context.Context, id string) error
+	GetGroupByID(ctx context.Context, id string) (*models.Group, error)
+	ListGroups(ctx context.Context) ([]*models.Group, error)
+	ListGroupsByUser(ctx context.Context, userID string) ([]*models.Group, error)
+	ListUsersByGroup(ctx context.Context, groupID string) ([]*models.User, error)
+	RemoveUserFromGroup(ctx context.Context, userID string, groupID string) error
+	UpdateGroup(ctx context.Context, group *models.Group) error
+}
+
 type AdminGroupsHandler struct {
-	db        database.Database
+	db        AdminGroupsStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 }
 
-func NewAdminGroupsHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *AdminGroupsHandler {
+func NewAdminGroupsHandler(db AdminGroupsStore, log *logger.Logger, evaluator *auth.Evaluator) *AdminGroupsHandler {
 	return &AdminGroupsHandler{db: db, log: log, evaluator: evaluator}
 }
 
@@ -90,43 +105,11 @@ func (h *AdminGroupsHandler) handleCreate(w http.ResponseWriter, r *http.Request
 }
 
 func (h *AdminGroupsHandler) handleList(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r, h.evaluator) {
-		return
-	}
-
-	groups, err := h.db.ListGroups(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-		return
-	}
-
-	data := make([]any, 0, len(groups))
-	for _, g := range groups {
-		data = append(data, groupToResponse(g))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	writeAdminList(w, r, h.evaluator, h.db.ListGroups, groupToResponse)
 }
 
 func (h *AdminGroupsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r, h.evaluator) {
-		return
-	}
-
-	id := urlparams.Vars(r)["id"]
-
-	group, err := h.db.GetGroupByID(r.Context(), id)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-		return
-	}
-
-	if group == nil {
-		writeError(w, http.StatusNotFound, "not_found", "group not found")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, groupToResponse(group))
+	writeAdminObject(w, r, h.evaluator, h.db.GetGroupByID, groupToResponse, "group")
 }
 
 func (h *AdminGroupsHandler) handlePatch(w http.ResponseWriter, r *http.Request) {
@@ -188,19 +171,7 @@ func (h *AdminGroupsHandler) handlePatch(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *AdminGroupsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r, h.evaluator) {
-		return
-	}
-
-	id := urlparams.Vars(r)["id"]
-	if err := h.db.DeleteGroup(r.Context(), id); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-		return
-	}
-
-	auditAdmin(r, audit.ActionGroupDeleted, "group", id, "group deleted")
-
-	writeNoContent(w)
+	deleteAdminObject(w, r, h.evaluator, h.db.DeleteGroup, audit.ActionGroupDeleted, "group", "group deleted")
 }
 
 func (h *AdminGroupsHandler) handleAddMember(w http.ResponseWriter, r *http.Request) {
@@ -242,24 +213,7 @@ func (h *AdminGroupsHandler) handleRemoveMember(w http.ResponseWriter, r *http.R
 }
 
 func (h *AdminGroupsHandler) handleListMembers(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r, h.evaluator) {
-		return
-	}
-
-	id := urlparams.Vars(r)["id"]
-
-	users, err := h.db.ListUsersByGroup(r.Context(), id)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-		return
-	}
-
-	data := make([]any, 0, len(users))
-	for _, u := range users {
-		data = append(data, userToResponse(u))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	writeAdminListByID(w, r, h.evaluator, h.db.ListUsersByGroup, userToResponse)
 }
 
 func (h *AdminGroupsHandler) handleSetMembers(w http.ResponseWriter, r *http.Request) {
@@ -349,24 +303,7 @@ func (h *AdminGroupsHandler) handleSetMembers(w http.ResponseWriter, r *http.Req
 }
 
 func (h *AdminGroupsHandler) handleListUserGroups(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r, h.evaluator) {
-		return
-	}
-
-	id := urlparams.Vars(r)["id"]
-
-	groups, err := h.db.ListGroupsByUser(r.Context(), id)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-		return
-	}
-
-	data := make([]any, 0, len(groups))
-	for _, g := range groups {
-		data = append(data, groupToResponse(g))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	writeAdminListByID(w, r, h.evaluator, h.db.ListGroupsByUser, groupToResponse)
 }
 
 func groupToResponse(g *models.Group) responses.GroupResponse {

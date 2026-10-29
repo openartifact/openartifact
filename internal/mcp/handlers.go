@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+//go:build !nomcp
+
 package mcp
 
 import (
@@ -17,7 +19,6 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/search"
-	"github.com/openartifact/openartifact/internal/worker"
 )
 
 // ── Tool Handlers ─────────────────────────────────────────────────────────────
@@ -141,7 +142,7 @@ func (s *Server) triggerAIAnalysis(ctx context.Context, in triggerAnalysisIn) (q
 		return queuedResult{}, errors.New(msg) //nolint:err113 // validation message meant for the model
 	}
 
-	if s.aiWorker == nil || !s.aiWorker.Enabled() {
+	if s.analyzer == nil || !s.analyzer.Enabled() {
 		return queuedResult{}, errAIDisabled
 	}
 
@@ -165,14 +166,8 @@ func (s *Server) triggerAIAnalysis(ctx context.Context, in triggerAnalysisIn) (q
 		return queuedResult{}, errRateLimited
 	}
 
-	s.aiWorker.Notify(worker.AIAnalysisRequest{
-		RepositoryID:    in.RepositoryID,
-		ArtifactID:      in.ArtifactID,
-		ArtifactFormat:  in.ArtifactFormat,
-		ArtifactName:    in.ArtifactName,
-		ArtifactVersion: in.ArtifactVersion,
-		ManifestText:    in.ManifestText,
-	})
+	// AIAnalysisRequest has the fields of the tool input; the conversion stops compiling if they diverge.
+	s.analyzer.Queue(AIAnalysisRequest(in))
 
 	return queuedResult{
 		Status:     "queued",

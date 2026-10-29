@@ -13,11 +13,12 @@ import (
 	"strings"
 	"time"
 
-	sq "github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/apk"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -36,12 +37,20 @@ func isApkIndexPath(path string) bool {
 	return len(parts) == 4 && parts[3] == formatapk.IndexName
 }
 
+// ApkMetadataStore is the part of the database ApkMetadataWorker needs.
+type ApkMetadataStore interface {
+	metadataBlobsStore
+	BeginTx(ctx context.Context) (database.Transaction, error)
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+	ListApkPackages(ctx context.Context, repoID string) ([]*models.ApkPackage, error)
+}
+
 // ApkMetadataWorker regenerates the signed APKINDEX.tar.gz of every
 // branch/repo/arch directory of hosted apk repositories, through the shared
 // coalescing RegenQueue (one running and one pending regeneration per
 // repository).
 type ApkMetadataWorker struct {
-	db        sq.Database
+	db        ApkMetadataStore
 	blobStore storage.BlobStore
 	signers   ApkSignerResolver
 	log       *logger.Logger
@@ -50,12 +59,25 @@ type ApkMetadataWorker struct {
 }
 
 // NewApkMetadataWorker builds the worker. signers may be nil (unsigned indexes).
-func NewApkMetadataWorker(db sq.Database, blobStore storage.BlobStore, signers ApkSignerResolver, log *logger.Logger) *ApkMetadataWorker {
+func NewApkMetadataWorker(
+	db ApkMetadataStore,
+	blobStore storage.BlobStore,
+	signers ApkSignerResolver,
+	log *logger.Logger,
+) *ApkMetadataWorker {
 	w := &ApkMetadataWorker{db: db, blobStore: blobStore, signers: signers, log: log}
 	w.q = newRegenQueue("apk", log, w.regenerate)
+	w.q.setCodec(stringRegenCodec())
 
 	return w
 }
+
+// ForwardTo makes NotifyStale write a worker request to s instead of scheduling
+// the regeneration here (server.role=web); see RegenRemote.
+func (w *ApkMetadataWorker) ForwardTo(s *workq.Store) { w.q.forwardTo(s) }
+
+// ServeFrom makes the worker regenerate what the requests claimed by c ask for.
+func (w *ApkMetadataWorker) ServeFrom(c *workq.Consumer) { w.q.serveFrom(c, w.NotifyStale) }
 
 // WithDebounce sets the quiet period a notification waits for.
 func (w *ApkMetadataWorker) WithDebounce(d time.Duration) *ApkMetadataWorker {
@@ -170,12 +192,16 @@ func ApkPackageDirs(rows []*models.ApkPackage) map[string][]apk.Package {
 	return byDir
 }
 
-// ApkRowPackage is the index entry of a stored package.
+// ApkRowPackage is the index entry of a stored package. Its architecture is the
+// one of the directory (what Alpine's `apk index --rewrite-arch` writes): a
+// noarch package lives in each arch directory, and apk fetches a package from
+// <repo>/<arch of its index entry>/, so an A:noarch entry would send apk to a
+// noarch directory that does not exist. The package file itself stays noarch.
 func ApkRowPackage(row *models.ApkPackage) apk.Package {
 	return apk.Package{
 		Name:             row.Name,
 		Version:          row.Version,
-		Arch:             row.PkgArch,
+		Arch:             row.Arch,
 		Description:      row.Description,
 		URL:              row.URL,
 		License:          row.License,
@@ -340,7 +366,7 @@ func apkBlobAttrs(repoID, path, sum string) map[string]string {
 }
 
 // listApkMetadata returns path -> blob sha256 of the generated index rows.
-func listApkMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map[string]string, error) {
+func listApkMetadata(ctx context.Context, tx database.Transaction, repoID string) (map[string]string, error) {
 	return queryMetadataSums(ctx, tx, "apk worker", "repo_metadata",
 		`SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1`, repoID)
 }

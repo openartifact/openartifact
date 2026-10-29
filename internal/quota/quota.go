@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 // ErrExceeded is returned by Enforce when storing the artifact would exceed the
@@ -24,20 +24,30 @@ var ErrExceeded = errors.New(Message)
 // the repository trash.
 const Message = "repository storage quota exceeded (bytes of trashed items count until purged; see the repository trash)"
 
+// EnforceStore is the part of the database Enforce needs.
+type EnforceStore interface {
+	EnforceNStore
+}
+
 // Enforce atomically reserves size bytes and one artifact slot in the
 // repository's storage quota. It returns ErrExceeded when the reservation does
 // not fit. Callers MUST pair a successful reservation with Release if the
 // artifact is not persisted afterwards, and call Release when the artifact is
 // deleted.
-func Enforce(ctx context.Context, db database.Database, repoID string, size int64) error {
+func Enforce(ctx context.Context, db EnforceStore, repoID string, size int64) error {
 	return EnforceN(ctx, db, repoID, size, 1)
+}
+
+// EnforceNStore is the part of the database EnforceN needs.
+type EnforceNStore interface {
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
 }
 
 // EnforceN is Enforce for an upload that stands for count artifacts (0 for the
 // bytes-only parts of one: a Go module's go.mod, a Docker layer blob). A
 // reservation of zero bytes and zero artifacts always fits. Pair it with
 // ReleaseN using the same size and count.
-func EnforceN(ctx context.Context, db database.Database, repoID string, size int64, count int) error {
+func EnforceN(ctx context.Context, db EnforceNStore, repoID string, size int64, count int) error {
 	if size < 0 {
 		size = 0
 	}
@@ -58,10 +68,15 @@ func EnforceN(ctx context.Context, db database.Database, repoID string, size int
 	return nil
 }
 
+// ChargeNStore is the part of the database ChargeN needs.
+type ChargeNStore interface {
+	ChargeStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+}
+
 // ChargeN adds the usage of count artifacts totalling size bytes whose rows
 // already exist, past any limit and without a reservation to match later: for
 // a row that was created although no reservation was made for it.
-func ChargeN(ctx context.Context, db database.Database, repoID string, size int64, count int) error {
+func ChargeN(ctx context.Context, db ChargeNStore, repoID string, size int64, count int) error {
 	if err := db.ChargeStorageUsage(ctx, repoID, max(size, 0), max(count, 0)); err != nil {
 		return fmt.Errorf("charge quota: %w", err)
 	}
@@ -69,11 +84,21 @@ func ChargeN(ctx context.Context, db database.Database, repoID string, size int6
 	return nil
 }
 
+// ReleaseStore is the part of the database Release needs.
+type ReleaseStore interface {
+	ReleaseNStore
+}
+
 // Release returns a previous reservation (size bytes and one artifact). It uses
 // a context detached from request cancellation so a client that hung up still
 // gets its reservation back.
-func Release(ctx context.Context, db database.Database, repoID string, size int64) error {
+func Release(ctx context.Context, db ReleaseStore, repoID string, size int64) error {
 	return ReleaseN(ctx, db, repoID, size, 1)
+}
+
+// ReleaseNStore is the part of the database ReleaseN needs.
+type ReleaseNStore interface {
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 }
 
 // ReleaseN returns the usage of count artifacts totalling size bytes, e.g. a
@@ -81,7 +106,7 @@ func Release(ctx context.Context, db database.Database, repoID string, size int6
 // row (its blob's size, counted once per row even when blobs are shared), the
 // same one Enforce reserves; the counters never go below zero. Like Release it
 // is detached from ctx cancellation.
-func ReleaseN(ctx context.Context, db database.Database, repoID string, size int64, count int) error {
+func ReleaseN(ctx context.Context, db ReleaseNStore, repoID string, size int64, count int) error {
 	if size < 0 {
 		size = 0
 	}
@@ -108,10 +133,15 @@ func WriteExceeded(w http.ResponseWriter) {
 	_, _ = w.Write([]byte(`{"error":"` + Message + `","code":"quota_exceeded"}` + "\n"))
 }
 
+// RoomStore is the part of the database Room needs.
+type RoomStore interface {
+	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
+}
+
 // Room returns how many more bytes the repository's size quota can take and
 // whether it is limited at all. It reserves nothing; see Precheck. Callers that
 // stream bytes of unknown length (a Docker layer) cap the stream at room.
-func Room(ctx context.Context, db database.Database, repoID string) (int64, bool, error) {
+func Room(ctx context.Context, db RoomStore, repoID string) (int64, bool, error) {
 	q, err := db.GetOrCreateStorageQuota(ctx, repoID)
 	if err != nil {
 		return 0, false, fmt.Errorf("quota room: %w", err)
@@ -124,6 +154,11 @@ func Room(ctx context.Context, db database.Database, repoID string) (int64, bool
 	return max(q.MaxSizeBytes-q.CurrentSizeBytes, 0), true, nil
 }
 
+// PrecheckStore is the part of the database Precheck needs.
+type PrecheckStore interface {
+	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
+}
+
 // Precheck reports ErrExceeded when size more bytes and one more artifact
 // cannot fit the repository's quota, without reserving anything. Handlers call
 // it with the declared Content-Length before spooling a body to disk so a
@@ -131,7 +166,7 @@ func Room(ctx context.Context, db database.Database, repoID string) (int64, bool
 // afterwards. It is advisory: a size <= 0 (unknown length) or a quota that
 // cannot be read passes, because the reservation (Enforce) stays authoritative
 // and reports such failures itself. It returns only nil or ErrExceeded.
-func Precheck(ctx context.Context, db database.Database, repoID string, size int64) error {
+func Precheck(ctx context.Context, db PrecheckStore, repoID string, size int64) error {
 	if size <= 0 {
 		return nil
 	}

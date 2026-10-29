@@ -34,7 +34,7 @@ type ProjectRoleGuard func(current string) error
 // recorded-owner and last-owner checks and the write see one consistent state
 // and concurrent changes serialize. The guard runs first; then the invariants
 // ErrProjectOwnerLocked and ErrLastProjectOwner apply.
-func (p *PostgresDB) ChangeProjectMember(ctx context.Context, projectID, userID, newRole string, guard ProjectRoleGuard) error {
+func (p *ProjectStore) ChangeProjectMember(ctx context.Context, projectID, userID, newRole string, guard ProjectRoleGuard) error {
 	defer p.authCache.invalidate()
 
 	tx, err := p.db.BeginTx(ctx, nil)
@@ -177,7 +177,7 @@ func writeMemberRole(ctx context.Context, tx *sql.Tx, projectID, userID, current
 // ChangeProjectGroup attaches a group with newRole, changes its role, or
 // detaches it (newRole == ""), in one transaction that holds the project row
 // lock; the guard sees the group's current role ("" when not attached).
-func (p *PostgresDB) ChangeProjectGroup(
+func (p *ProjectStore) ChangeProjectGroup(
 	ctx context.Context,
 	projectID, groupID, newRole string,
 	createdBy *string,
@@ -238,7 +238,7 @@ func (p *PostgresDB) ChangeProjectGroup(
 
 // ListProjectRepositories returns one page of the project's live repositories,
 // newest first, and their total number.
-func (p *PostgresDB) ListProjectRepositories(ctx context.Context, projectID string, page, limit int) ([]*models.Repository, int, error) {
+func (p *ProjectStore) ListProjectRepositories(ctx context.Context, projectID string, page, limit int) ([]*models.Repository, int, error) {
 	var total int
 
 	if err := p.db.QueryRowContext(ctx,
@@ -280,7 +280,7 @@ func (p *PostgresDB) ListProjectRepositories(ctx context.Context, projectID stri
 
 // CountRepositoriesByProject returns the number of live repositories per
 // project for the given project IDs (projects without any are absent).
-func (p *PostgresDB) CountRepositoriesByProject(ctx context.Context, projectIDs []string) (map[string]int, error) {
+func (p *ProjectStore) CountRepositoriesByProject(ctx context.Context, projectIDs []string) (map[string]int, error) {
 	counts := make(map[string]int, len(projectIDs))
 	if len(projectIDs) == 0 {
 		return counts, nil

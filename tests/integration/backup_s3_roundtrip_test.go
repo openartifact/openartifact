@@ -30,6 +30,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	formatmaven "github.com/openartifact/openartifact/internal/format/maven"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -250,8 +251,15 @@ func (s *bsrSide) stopWorkers() {
 	s.rpm.Stop()
 }
 
-func (s *bsrSide) regenerator() backup.Regenerator {
-	return api.NewWorkerRegenerator(s.deb, s.rpm, nil, nil, s.maven, s.npm)
+// workers are the metadata workers a restore enqueues its regenerations on.
+func (s *bsrSide) workers() *lifecycle.Workers {
+	w := lifecycle.NewWorkers()
+	w.Bind("deb", s.deb)
+	w.Bind("rpm", s.rpm)
+	w.Bind("maven", s.maven)
+	w.Bind("npm", s.npm)
+
+	return w
 }
 
 func (s *bsrSide) buildRouter() http.Handler {
@@ -650,7 +658,7 @@ func TestBackupRestoreS3RoundTrip(t *testing.T) {
 	}
 
 	engine := backup.NewEngine(dst.pg, store, debugLog, filepath.Join(t.TempDir(), "backups"))
-	engine.SetRegenerator(dst.regenerator())
+	engine.SetWorkers(dst.workers())
 
 	if err := engine.RunRestore(t.Context(), archive); err != nil {
 		t.Fatalf("RunRestore: %v", err)

@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -98,7 +97,7 @@ func TestArtifactPayload(t *testing.T) {
 
 // claimDB hands out one pending delivery and records new ones.
 type claimDB struct {
-	*databasetest.BaseMockDB
+	DispatcherStore
 
 	mu       sync.Mutex
 	hooks    []*models.Webhook
@@ -140,7 +139,7 @@ func newTestLogger(t *testing.T) *logger.Logger {
 }
 
 func TestDispatchInsertsLeasedDeliveries(t *testing.T) {
-	db := &claimDB{BaseMockDB: &databasetest.BaseMockDB{}, hooks: []*models.Webhook{{ID: "w1"}, {ID: "w2"}}}
+	db := &claimDB{hooks: []*models.Webhook{{ID: "w1"}, {ID: "w2"}}}
 	d := NewDispatcher(db, newTestLogger(t))
 
 	before := time.Now()
@@ -162,8 +161,30 @@ func TestDispatchInsertsLeasedDeliveries(t *testing.T) {
 	}
 }
 
+func TestDeferredDispatchRecordsDueDeliveriesForAWorkerProcess(t *testing.T) {
+	db := &claimDB{hooks: []*models.Webhook{{ID: "w1"}, {ID: "w2"}}}
+	d := NewDispatcher(db, newTestLogger(t))
+	d.DeferDeliveries()
+
+	d.Dispatch(context.Background(), "repo", EventRepoCreated, map[string]any{"a": 1})
+
+	if len(db.created) != 2 {
+		t.Fatalf("created %d deliveries, want 2", len(db.created))
+	}
+
+	for _, del := range db.created {
+		if del.Status != "pending" || del.NextRetryAt != nil {
+			t.Errorf("delivery = %+v, want pending and due at once so the worker claims it", del)
+		}
+	}
+
+	if n := len(d.queue); n != 0 {
+		t.Errorf("a deferring dispatcher queued %d deliveries in this process", n)
+	}
+}
+
 func TestPollPendingClaimsWithLeaseAndQueuesEachOnce(t *testing.T) {
-	db := &claimDB{BaseMockDB: &databasetest.BaseMockDB{}, claimed: []*models.WebhookDelivery{{ID: "a"}, {ID: "b"}}}
+	db := &claimDB{claimed: []*models.WebhookDelivery{{ID: "a"}, {ID: "b"}}}
 	d := NewDispatcher(db, newTestLogger(t))
 
 	d.pollPending()

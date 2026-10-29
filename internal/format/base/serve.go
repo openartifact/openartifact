@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -63,6 +62,11 @@ type BlobOptions struct {
 	LastModified bool
 }
 
+// ServeRepoMetadataStore is the part of the database ServeRepoMetadata needs.
+type ServeRepoMetadataStore interface {
+	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
+}
+
 // ServeRepoMetadata serves the pre-generated metadata blob stored under path.
 // The blob digest is the ETag, so a matching If-None-Match is answered without
 // reading the blob. It returns true when a response was written (the blob, a
@@ -71,7 +75,7 @@ func ServeRepoMetadata(
 	w http.ResponseWriter,
 	r *http.Request,
 	log *logger.Logger,
-	db database.Database,
+	db ServeRepoMetadataStore,
 	store storage.BlobStore,
 	repo *models.Repository,
 	path string,

@@ -22,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/iocopy"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/pkg/compactindex"
 )
 
@@ -94,40 +95,33 @@ func (s *Service) serveRubyGems(w http.ResponseWriter, r *http.Request, repo *mo
 	}
 
 	key := strings.TrimPrefix(relPath, "/")
-	resolve := func() (*resolution, error) {
-		return s.resolveWith(r.Context(), repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-			if p.Kind == compactindex.KindGem {
-				return s.fetchRubyGem(fctx, repo, p, key)
-			}
 
-			return s.fetchRubyGemsDoc(fctx, repo, p, key)
+	if p.Kind == compactindex.KindGem {
+		s.serveDownload(w, r, repo, key, func(ctx context.Context) (download, error) {
+			return s.locateRubyGem(ctx, repo, p, key)
 		})
-	}
 
-	res, err := resolve()
-	if err != nil {
-		s.writeResolveError(w, r, err)
 		return
 	}
 
-	s.serveResolved(w, r, repo, key, res, resolve)
+	s.serveVerbatim(w, r, repo, rubygemsDoc(key, p.Kind))
 }
 
-// fetchRubyGemsDoc fetches a compact index file, gemspec or legacy specs index
-// from the upstream, refusing a body that is not what its path names.
-func (s *Service) fetchRubyGemsDoc(
-	ctx context.Context,
-	repo *models.Repository,
-	p compactindex.Path,
-	key string,
-) (*models.ProxyCacheEntry, error) {
-	target, err := upstreamURL(repo.UpstreamURL, key)
-	if err != nil {
-		s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
-		return nil, errInternal
+// rubygemsDoc is a compact index file, gemspec or legacy specs index, cached
+// verbatim after a check that it is what its path names.
+func rubygemsDoc(key string, kind compactindex.Kind) metaDoc {
+	return metaDoc{
+		key:   key,
+		opts:  staticOpts(fetchOpts{verify: rubygemsVerifier(kind)}),
+		limit: compactindex.MaxInfoBytes,
+		what:  "gem info",
+		bad:   badDocUpstream,
 	}
+}
 
-	return s.fetchURL(ctx, repo, key, target, fetchOpts{verify: rubygemsVerifier(p.Kind)})
+// rubygemsInfoDoc is the compact index info file of a gem.
+func rubygemsInfoDoc(gem string) metaDoc {
+	return rubygemsDoc("info/"+gem, compactindex.KindInfo)
 }
 
 func rubygemsVerifier(kind compactindex.Kind) func(io.ReadSeeker) error {
@@ -188,64 +182,34 @@ func verifyMarshal(r io.Reader) error {
 	return nil
 }
 
-// resolveRubyGemsInfo returns the cache entry of a gem's info file.
-func (s *Service) resolveRubyGemsInfo(ctx context.Context, repo *models.Repository, gem string) (*resolution, error) {
-	p := compactindex.Path{Kind: compactindex.KindInfo, Gem: gem}
-	key := "info/" + gem
-
-	return s.resolveWith(ctx, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		return s.fetchRubyGemsDoc(fctx, repo, p, key)
-	})
-}
-
-// rubygemsInfoLine finds the info line of version of gem: the cached info file is
-// read under the packument gate. A missing gem is errNotFound, a missing version
-// is (nil, nil).
+// rubygemsInfoLine finds the info line of version of gem in its cached info
+// file. A missing gem is errNotFound, a missing version is (nil, nil).
 func (s *Service) rubygemsInfoLine(ctx context.Context, repo *models.Repository, gem, version string) (*compactindex.InfoLine, error) {
-	res, err := s.resolveRubyGemsInfo(ctx, repo, gem)
-	if err != nil {
-		return nil, err
-	}
+	line, _, err := parseDoc(ctx, s, repo, rubygemsInfoDoc(gem), func(doc []byte, _ *resolution) (*compactindex.InfoLine, error) {
+		lines, perr := compactindex.ParseInfoBytes(doc)
+		if perr != nil {
+			return nil, perr //nolint:wrapcheck // logged by parseDoc
+		}
 
-	if aerr := s.packuments.Acquire(ctx); aerr != nil {
-		return nil, aerr //nolint:wrapcheck // caller checks for cancellation
-	}
+		if l, ok := compactindex.FindInfo(lines, version); ok {
+			return &l, nil
+		}
 
-	defer s.packuments.Release()
+		return nil, nil //nolint:nilnil // the gem exists, the version does not
+	})
 
-	doc, err := s.readCachedDoc(ctx, res.entry, compactindex.MaxInfoBytes)
-	if err != nil {
-		s.log.Errorw("failed to read cached gem info", "repo", repo.Name, "gem", gem, "error", err)
-		return nil, errInternal
-	}
-
-	lines, err := compactindex.ParseInfoBytes(doc)
-	if err != nil {
-		s.log.Warnw("unreadable upstream gem info", "repo", repo.Name, "gem", gem, "error", err)
-		return nil, errUpstream
-	}
-
-	if l, ok := compactindex.FindInfo(lines, version); ok {
-		return &l, nil
-	}
-
-	return nil, nil //nolint:nilnil // the gem exists, the version does not
+	return line, err
 }
 
-// fetchRubyGem downloads one gem file and caches it only when it matches the
-// checksum of its info line. A version the info does not list is errNotFound
-// without a negative cache entry: the info may simply be stale. The file name
-// does not say where the name ends, so every reading is looked up.
-func (s *Service) fetchRubyGem(
-	ctx context.Context,
-	repo *models.Repository,
-	p compactindex.Path,
-	key string,
-) (*models.ProxyCacheEntry, error) {
+// locateRubyGem finds one gem file: its upstream URL, cached only when it
+// matches the checksum of its info line. A version the info does not list is
+// errNotFound without a negative cache entry: the info may simply be stale. The
+// file name does not say where the name ends, so every reading is looked up.
+func (s *Service) locateRubyGem(ctx context.Context, repo *models.Repository, p compactindex.Path, key string) (download, error) {
 	target, err := upstreamURL(repo.UpstreamURL, key)
 	if err != nil {
 		s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
-		return nil, errInternal
+		return download{}, errInternal
 	}
 
 	allMissing := true
@@ -257,7 +221,7 @@ func (s *Service) fetchRubyGem(
 		case errors.Is(lerr, errNotFound):
 			continue
 		case lerr != nil:
-			return nil, lerr
+			return download{}, lerr
 		}
 
 		allMissing = false
@@ -267,20 +231,20 @@ func (s *Service) fetchRubyGem(
 		}
 
 		if line.Checksum == "" {
-			return s.fetchURL(ctx, repo, key, target, fetchOpts{unverified: true})
+			return download{url: target, opts: fetchOpts{unverified: true}}, nil
 		}
 
-		return s.fetchURL(ctx, repo, key, target, fetchOpts{wantSHA256: line.Checksum})
+		return download{url: target, opts: fetchOpts{wantSHA256: line.Checksum}}, nil
 	}
 
 	if allMissing {
 		// No info for any reading: an upstream without a compact index. Its
 		// file cannot be checked, so it is cached for the repository TTL only
 		// and replaced on revalidation.
-		return s.fetchURL(ctx, repo, key, target, fetchOpts{unverified: true})
+		return download{url: target, opts: fetchOpts{unverified: true}}, nil
 	}
 
-	return nil, errNotFound
+	return download{}, errNotFound
 }
 
 // rubygemsCompact reports whether key is a compact index file served with
@@ -444,4 +408,31 @@ func byteRange(r *http.Request, size int64, etag string) (int64, int64, int) {
 	}
 
 	return start, end - start + 1, http.StatusPartialContent
+}
+
+// rubygemsPackageDir is the key prefix of gem files; everything outside it is
+// the compact index, gemspecs or legacy specs.
+const rubygemsPackageDir = "gems/"
+
+// RubyGemsHooks is the proxy hooks of the rubygems format.
+var RubyGemsHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve: (*Service).serveRubyGems,
+	// gems/<file>.gem, whose bytes are checked against the checksum of their
+	// info line.
+	Immutable: func(key string) bool {
+		return strings.HasPrefix(key, rubygemsPackageDir) && strings.HasSuffix(keyName(key), ".gem")
+	},
+	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, rubygemsPackageDir) },
+	WriteEntry: func(
+		s *Service, w http.ResponseWriter, r *http.Request, repo *models.Repository, entry *models.ProxyCacheEntry, key string, body io.Reader,
+	) bool {
+		if !rubygemsCompact(key) {
+			return false
+		}
+
+		s.writeCompactEntry(w, r, repo, entry, body)
+
+		return true
+	},
+	BlobPath: presign.RubyGemsBlobPath,
 }

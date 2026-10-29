@@ -24,7 +24,6 @@ import (
 
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -121,8 +120,14 @@ func (s *stagingBlobStore) WalkStaging(context.Context, time.Time, func([]string
 	return nil
 }
 
+// presignUploadDBStore is what presignUploadDB is used as.
+type presignUploadDBStore interface {
+	PresignedUploadStore
+	auth.EvaluatorStore
+}
+
 type presignUploadDB struct {
-	databasetest.BaseMockDB
+	presignUploadDBStore
 
 	repo      *models.Repository
 	uploads   map[string]*models.PresignedUpload
@@ -135,6 +140,9 @@ type presignUploadDB struct {
 	quotaUsed      int64
 	quotaArtifacts int
 }
+
+// BlobReferenceCount is not exercised by the tests.
+func (*presignUploadDB) BlobReferenceCount(context.Context, string) (int, error) { return 0, nil }
 
 func (d *presignUploadDB) ReserveStorageUsage(_ context.Context, _ string, size int64, count int) (bool, error) {
 	if d.quotaLimit > 0 && d.quotaUsed+size > d.quotaLimit {

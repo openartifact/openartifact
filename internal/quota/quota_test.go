@@ -11,13 +11,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 )
 
 type reserveMockDB struct {
-	databasetest.BaseMockDB
-
 	ok       bool
 	err      error
 	released int64

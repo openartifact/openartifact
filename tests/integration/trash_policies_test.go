@@ -73,10 +73,7 @@ func tpoNewEnv(t *testing.T) *tpoEnv {
 	t.Helper()
 	harness.Reset(t)
 
-	pg, ok := harness.Database.(*database.PostgresDB)
-	if !ok {
-		t.Fatalf("harness database is %T, want *database.PostgresDB", harness.Database)
-	}
+	pg := harness.Database
 
 	pg.SetTrashRetentionDays(7)
 	t.Cleanup(func() { pg.SetTrashRetentionDays(0) })
@@ -523,14 +520,14 @@ func TestTrashPolicies_PurgeFreesOnlyUnsharedBlobs(t *testing.T) {
 	tpoAssertBlobKept(t, "unique blob while trashed", unique)
 	tpoAssertBlobKept(t, "shared blob while trashed", shared)
 
-	tpoAge(t, "maven_artifacts", repoA, 8)
+	tpoAge(t, "package_files", repoA, 8)
 
 	stats := tpoRunPurge(t)
 	if stats.Purged != 2 || stats.Failed != 0 || stats.BlobErrors != 0 {
 		t.Fatalf("purge pass = %+v, want 2 purged without failures", stats)
 	}
 
-	if rows := tpoCount(t, `SELECT COUNT(*) FROM maven_artifacts WHERE repository_id = $1`, tpoRepoID(t, repoA)); rows != 0 {
+	if rows := tpoCount(t, `SELECT COUNT(*) FROM package_files WHERE repository_id = $1`, tpoRepoID(t, repoA)); rows != 0 {
 		t.Errorf("%d maven rows of %s survived the purge", rows, repoA)
 	}
 
@@ -560,7 +557,7 @@ func TestTrashPolicies_ManualPurgeIsAdminOnlyAndFreesBlob(t *testing.T) {
 	tpoExpectError(t, tpoSend(t, env, tpoWriter, http.MethodDelete, purge, nil), http.StatusForbidden, "forbidden", "purge as non-admin")
 	tpoExpectError(t, tpoSend(t, env, "", http.MethodDelete, purge, nil), http.StatusForbidden, "forbidden", "purge as anonymous")
 
-	if tpoCount(t, `SELECT COUNT(*) FROM maven_artifacts WHERE id = $1`, item.ID) != 1 {
+	if tpoCount(t, `SELECT COUNT(*) FROM package_files WHERE id = $1`, item.ID) != 1 {
 		t.Fatal("a refused purge removed the row")
 	}
 
@@ -568,7 +565,7 @@ func TestTrashPolicies_ManualPurgeIsAdminOnlyAndFreesBlob(t *testing.T) {
 
 	tpoExpect(t, tpoSend(t, env, tpoAdmin, http.MethodDelete, purge, nil), http.StatusNoContent, "purge as admin")
 
-	if tpoCount(t, `SELECT COUNT(*) FROM maven_artifacts WHERE id = $1`, item.ID) != 0 {
+	if tpoCount(t, `SELECT COUNT(*) FROM package_files WHERE id = $1`, item.ID) != 0 {
 		t.Error("the row survived an admin purge")
 	}
 
@@ -603,7 +600,7 @@ func TestTrashPolicies_RetentionZeroHardDeletes(t *testing.T) {
 	tpoAssertGone(t, env, tpoMavenURL(repo, path))
 
 	// No row at all, deleted or not.
-	if rows := tpoCount(t, `SELECT COUNT(*) FROM maven_artifacts WHERE repository_id = $1`, tpoRepoID(t, repo)); rows != 0 {
+	if rows := tpoCount(t, `SELECT COUNT(*) FROM package_files WHERE repository_id = $1`, tpoRepoID(t, repo)); rows != 0 {
 		t.Errorf("%d maven rows left after a retention-0 delete, want none", rows)
 	}
 
@@ -659,7 +656,7 @@ func tpoAssertRetention(t *testing.T, env *tpoEnv, repo, name string, wantDays i
 	t.Helper()
 
 	rows := tpoCount(t,
-		`SELECT COUNT(*) FROM raw_artifacts WHERE path = $1 AND repository_id = (SELECT id FROM repositories WHERE name = $2)`, name, repo)
+		`SELECT COUNT(*) FROM package_files WHERE path = $1 AND repository_id = (SELECT id FROM repositories WHERE name = $2)`, name, repo)
 
 	if wantDays == 0 {
 		if rows != 0 {
@@ -911,7 +908,7 @@ func TestTrashPolicies_RepositoryRetentionZeroHardDeletes(t *testing.T) {
 		t.Errorf("repository row survived a retention-0 delete (%d rows, trashed or not)", n)
 	}
 
-	if n := tpoCount(t, `SELECT COUNT(*) FROM raw_artifacts WHERE repository_id = $1`, repoID); n != 0 {
+	if n := tpoCount(t, `SELECT COUNT(*) FROM package_files WHERE repository_id = $1`, repoID); n != 0 {
 		t.Errorf("%d raw rows survived the repository delete", n)
 	}
 
@@ -1036,7 +1033,7 @@ func TestTrashPolicies_QuotaCountsTrashedBytesUntilPurge(t *testing.T) {
 	// So does the retention purge.
 	tpoExpect(t, tpoSend(t, env, tpoWriter, http.MethodDelete, tpoMavenURL(repo, secondPath), nil), http.StatusNoContent, "delete second")
 	tpoAssertQuota(t, repo, len(second), 1)
-	tpoAge(t, "maven_artifacts", repo, 8)
+	tpoAge(t, "package_files", repo, 8)
 
 	if stats := tpoRunPurge(t); stats.Purged != 1 {
 		t.Fatalf("purge pass = %+v, want 1 purged", stats)
@@ -1146,7 +1143,7 @@ func TestTrashPolicies_AuditTrail(t *testing.T) {
 
 	tpoPut(t, env, target, tpoContent("two"), http.StatusCreated)
 	trashed(tpoWriter)
-	tpoAge(t, "maven_artifacts", repo, 8)
+	tpoAge(t, "package_files", repo, 8)
 
 	if stats := tpoRunPurge(t); stats.Purged != 1 {
 		t.Fatalf("purge pass = %+v, want 1 purged", stats)

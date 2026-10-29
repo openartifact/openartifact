@@ -685,7 +685,7 @@ func TestImportDockerParsePath(t *testing.T) {
 		{"v2/a/manifests/b/manifests/1.0", "a/manifests/b", "1.0", true},
 		{"v2/smoke/hello/manifests/sha256:" + strings.Repeat("a", 64), "", "", false},
 		{"v2/-/blobs/sha256:" + strings.Repeat("a", 64), "", "", false},
-		{"v2/manifests/latest", "", "", false},
+		{"v2/manifests/latest", "", "latest", true}, // a tag pushed as <repo>:<tag>, with no image name
 		{"library/alpine/3.20/manifest.json", "library/alpine", "3.20", true},
 		{"library/alpine/3.20/list.manifest.json", "library/alpine", "3.20", true},
 		{"v2/odd/1.0/manifest.json", "v2/odd", "1.0", true},

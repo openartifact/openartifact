@@ -91,9 +91,14 @@ func GuardRelease(r *http.Request, repo *models.Repository, format, version stri
 	return ErrImmutableRelease
 }
 
+// GuardReleaseByNameStore is the part of the database GuardReleaseByName needs.
+type GuardReleaseByNameStore interface {
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+}
+
 // GuardReleaseByName is GuardRelease for handlers that only have the
 // repository name.
-func GuardReleaseByName(r *http.Request, db database.Database, repoName, format, version string) error {
+func GuardReleaseByName(r *http.Request, db GuardReleaseByNameStore, repoName, format, version string) error {
 	repo, err := db.GetRepositoryByName(r.Context(), repoName)
 	if err != nil {
 		return fmt.Errorf("look up repository: %w", err)
@@ -126,10 +131,10 @@ type Request struct {
 //
 // database.ErrTrashNotFound means the rows are no longer live in the
 // repository; handlers answer 404.
-func Delete(ctx context.Context, db database.Database, req Request, hard func() error) error {
+func Delete(ctx context.Context, db any, req Request, hard func() error) error {
 	soft := false
 
-	if store, ok := db.(database.TrashStore); ok {
+	if store, ok := db.(database.TrashOps); ok {
 		var err error
 
 		soft, err = store.TrashRows(ctx, req.RepoID, req.Kind, req.IDs, Actor(ctx))

@@ -29,13 +29,18 @@ import (
 	"github.com/openartifact/openartifact/pkg/composer/composertest"
 )
 
-// composerDB is an in-memory composer_packages table with its live unique key.
+// composerDB is an in-memory composer package table with its live unique key.
 type composerDB struct {
 	*formattest.DB
 
 	rows []*models.ComposerPackage
 
 	limit, used int64
+}
+
+// ListLicensePolicies is not exercised by the tests.
+func (*composerDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	return nil, nil
 }
 
 func (d *composerDB) ReserveStorageUsage(_ context.Context, _ string, size int64, _ int) (bool, error) {
@@ -235,9 +240,9 @@ func TestUploadReadDownloadDelete(t *testing.T) {
 		t.Errorf("branch version = %q, want dev-master", db.rows[1].Version)
 	}
 
-	// packages.json names the metadata URL and every package.
+	// packages.json names the metadata URL (path-absolute) and every package.
 	doc := decode(t, do(h, http.MethodGet, root+"packages.json", nil))
-	if doc["metadata-url"] != "http://localhost:8080/repos/myrepo/p2/%package%.json" ||
+	if doc["metadata-url"] != "/repos/myrepo/p2/%package%.json" ||
 		fmt.Sprint(doc["available-packages"]) != "[acme/tools]" {
 		t.Errorf("packages.json = %v", doc)
 	}

@@ -283,35 +283,15 @@ func (webhookKind) Create(ctx context.Context, env *Env, o *Object) (string, err
 	body := Omit(o.Spec)
 	body["name"] = o.Name
 
-	var resp struct {
-		ID string `json:"id"`
-	}
-
-	if err := env.Client.Do(ctx, http.MethodPost, path, body, &resp); err != nil {
-		return "", fmt.Errorf("create webhook %q: %w", (webhookKind{}).Key(o), err)
-	}
-
-	return resp.ID, nil
+	return env.Client.create(ctx, path, body, "webhook", (webhookKind{}).Key(o))
 }
 
 // Update PUTs only the changed fields; the endpoint leaves omitted fields as
 // they are.
 func (webhookKind) Update(ctx context.Context, env *Env, live *Live, _ *Object, changes []Change) (string, error) {
-	if len(changes) == 0 {
-		return live.ID, nil
-	}
-
-	if err := env.Client.Do(ctx, http.MethodPut, webhookPath+"/"+PathEscape(live.ID), PatchBody(changes), nil); err != nil {
-		return live.ID, fmt.Errorf("update webhook %q: %w", live.Key, err)
-	}
-
-	return live.ID, nil
+	return env.Client.updateChanges(ctx, http.MethodPut, webhookPath+"/"+PathEscape(live.ID), live, changes, "webhook")
 }
 
 func (webhookKind) Delete(ctx context.Context, env *Env, live *Live) error {
-	if err := env.Client.Do(ctx, http.MethodDelete, webhookPath+"/"+PathEscape(live.ID), nil, nil); err != nil {
-		return fmt.Errorf("delete webhook %q: %w", live.Key, err)
-	}
-
-	return nil
+	return env.Client.remove(ctx, webhookPath+"/"+PathEscape(live.ID), "webhook", live.Key)
 }

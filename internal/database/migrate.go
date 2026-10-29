@@ -20,6 +20,18 @@ import (
 
 var ErrChecksumDrift = errors.New("checksum drift")
 
+// ErrLegacySchema reports a database created by a release before 0.15, which
+// squashed its migrations into baselineVersion. Such a database is never
+// migrated in place; its data moves with `oa import`.
+var ErrLegacySchema = errors.New("database predates the 0.15 schema baseline")
+
+// baselineVersion is the migration every database created by 0.15 or later
+// starts with.
+const baselineVersion = "001_baseline.sql"
+
+// upgradeDoc is where the move from a pre-0.15 database is described.
+const upgradeDoc = "docs/getting-started/upgrading.md"
+
 const advisoryLockKey = `hashtext('openartifact-migrations')::bigint`
 
 const createTrackingTable = `CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -185,6 +197,10 @@ func (m *Migrator) Apply(ctx context.Context) error {
 		return fmt.Errorf("migrate: read embedded fs: %w", err)
 	}
 
+	if err := refuseLegacy(applied, entries); err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
+
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Name() < entries[j].Name()
 	})
@@ -217,4 +233,34 @@ func (m *Migrator) Apply(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// refuseLegacy reports ErrLegacySchema when the database recorded migrations
+// this binary does not ship and never ran the baseline: the migration list of
+// a release before 0.15.
+func refuseLegacy(applied map[string]string, entries []fs.DirEntry) error {
+	if _, ok := applied[baselineVersion]; ok {
+		return nil
+	}
+
+	known := make(map[string]struct{}, len(entries))
+	for _, e := range entries {
+		known[e.Name()] = struct{}{}
+	}
+
+	foreign := 0
+
+	for version := range applied {
+		if _, ok := known[version]; !ok {
+			foreign++
+		}
+	}
+
+	if foreign == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("%w: schema_migrations holds %d migrations this release does not ship and not %s; "+
+		"0.15 does not upgrade such a database in place: start it on an empty database and move the data with `oa import` (see %s)",
+		ErrLegacySchema, foreign, baselineVersion, upgradeDoc)
 }

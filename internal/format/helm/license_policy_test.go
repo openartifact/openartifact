@@ -8,6 +8,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"net/http"
 	"testing"
 
@@ -15,6 +16,19 @@ import (
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
 )
+
+// policyDB is a helmDB whose license policies are those of a policytest Case.
+type policyDB struct {
+	*helmDB
+
+	lister policytest.Lister
+}
+
+// ListLicensePolicies answers the case's policies; the double has its own, so the embedded
+// Lister would be ambiguous.
+func (d policyDB) ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error) {
+	return d.lister.ListLicensePolicies(ctx, repoID)
+}
 
 func createHelmChart(t *testing.T, chartYAML string) []byte {
 	t.Helper()
@@ -55,7 +69,7 @@ func TestUploadLicensePolicy(t *testing.T) {
 			db := newHelmDB()
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
-			h := NewHTTPHandler(formattest.NewLogger(t), c.DB(db), bs, "http://localhost")
+			h := NewHTTPHandler(formattest.NewLogger(t), policyDB{db, c.Lister()}, bs, "http://localhost")
 			h.SetPublisher(pub)
 
 			code, body := uploadWithPolicy(h, createHelmChart(t, gplChartYAML))
@@ -86,7 +100,7 @@ func TestUploadWithoutLicenseAdmittedUnderLicensePolicy(t *testing.T) {
 	policy := policytest.Policy("block", []string{"MIT"}, nil)
 	h := NewHTTPHandler(
 		formattest.NewLogger(t),
-		(&policytest.DB{Database: db, Policies: []*models.LicensePolicy{policy}}),
+		policyDB{db, policytest.Case{Policies: []*models.LicensePolicy{policy}}.Lister()},
 		formattest.NewBlobStore(),
 		"http://localhost",
 	)

@@ -15,6 +15,8 @@ import (
 	"os"
 	"time"
 
+	"database/sql"
+
 	"github.com/go-chi/chi/v5"
 	database "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -43,9 +45,25 @@ const (
 	maxCompsSize     = 10 * 1024 * 1024
 )
 
+// RPMUploadStore is the part of the database RPMUploadHandler needs.
+type RPMUploadStore interface {
+	DebUploadStore
+	CreateRPMRepo(ctx context.Context, repo *models.RPMRepo) error
+	CreateRpmPackage(ctx context.Context, pkg *models.Component) error
+	GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error)
+	GetComponentByID(ctx context.Context, id string) (*models.Component, error)
+	GetDB() *sql.DB
+	GetRPMRepo(ctx context.Context, repositoryID string) (*models.RPMRepo, error)
+	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
+	GetRpmPackageByID(ctx context.Context, id string) (*models.RpmPackage, error)
+	MarkRepoStale(ctx context.Context, repositoryID string) error
+	RpmPackageExists(ctx context.Context, repoID string, name string, version string, release string, epoch int, arch string) (bool, error)
+	UpsertRepoMetadata(ctx context.Context, meta *models.RepoMetadata) error
+}
+
 type RPMUploadHandler struct {
 	log        *logger.Logger
-	db         database.Database
+	db         RPMUploadStore
 	blobStore  storage.BlobStore
 	handler    *formatrpm.RepositoryHandler
 	reg        *metrics.Registry
@@ -57,7 +75,7 @@ type RPMUploadHandler struct {
 	keys           gpg.Resolver
 }
 
-func NewRPMUploadHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, reg *metrics.Registry) *RPMUploadHandler {
+func NewRPMUploadHandler(log *logger.Logger, db RPMUploadStore, blobStore storage.BlobStore, reg *metrics.Registry) *RPMUploadHandler {
 	return &RPMUploadHandler{
 		log:        log,
 		db:         db,
@@ -278,7 +296,7 @@ func parseSpooled(sp *rpmSpool) (*pkgrpm.Package, error) {
 	return pkg, nil
 }
 
-// newComponent builds the rpm_packages row for pkg referencing blob blobUUID.
+// newComponent builds the stored rpm package record for pkg referencing blob blobUUID.
 func newComponent(repoID, blobUUID, filename string, size int64, pkg *pkgrpm.Package, extra []byte, createdAt time.Time) *models.Component {
 	return &models.Component{
 		CreatedAt:     createdAt,
@@ -690,7 +708,7 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := trash.GuardRelease(r, repo, "rpm", rpmVersionRelease(comp.Version, comp.Release)); err != nil {
-		h.writeDeleteError(w, err, packageID)
+		writePackageDeleteError(w, h.log, err, packageID)
 		return
 	}
 
@@ -718,7 +736,7 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		return nil
 	})
 	if err != nil {
-		h.writeDeleteError(w, err, packageID)
+		writePackageDeleteError(w, h.log, err, packageID)
 		return
 	}
 
@@ -755,19 +773,6 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 			"package_id": packageID,
 		},
 	})
-}
-
-// writeDeleteError maps a delete failure to its HTTP answer.
-func (h *RPMUploadHandler) writeDeleteError(w http.ResponseWriter, err error, packageID string) {
-	switch {
-	case errors.Is(err, database.ErrTrashNotFound):
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "package not found")
-	case errors.Is(err, trash.ErrImmutableRelease):
-		writeError(w, http.StatusConflict, "IMMUTABLE_RELEASE", "release versions are immutable in this repository")
-	default:
-		h.log.Errorw("failed to delete component", "package_id", packageID, "error", err)
-		writeError(w, http.StatusInternalServerError, "DATABASE_ERROR", "failed to delete package")
-	}
 }
 
 func (h *RPMUploadHandler) handleCompsUpload(w http.ResponseWriter, r *http.Request) {

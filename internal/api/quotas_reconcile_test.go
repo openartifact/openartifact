@@ -14,14 +14,19 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// reconcileMockDBStore is what reconcileMockDB is used as.
+type reconcileMockDBStore interface {
+	QuotasStore
+	auth.EvaluatorStore
+}
+
 type reconcileMockDB struct {
-	databasetest.BaseMockDB
+	reconcileMockDBStore
 
 	known      bool
 	repoErr    error

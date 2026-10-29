@@ -16,7 +16,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -28,8 +27,17 @@ const (
 	testScanID   = "33333333-3333-3333-3333-333333333333"
 )
 
+// bundlesScansMockDBStore is what bundlesScansMockDB is used as.
+type bundlesScansMockDBStore interface {
+	BundlesStore
+	LicenseStore
+	SBOMStore
+	VulnStore
+	auth.EvaluatorStore
+}
+
 type bundlesScansMockDB struct {
-	databasetest.BaseMockDB
+	bundlesScansMockDBStore
 
 	policy *models.LicensePolicy
 

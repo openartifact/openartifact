@@ -55,9 +55,30 @@ var (
 	debSegmentRe       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._\-]*$`)
 )
 
+// DebUploadStore is the part of the database DebUploadHandler needs.
+type DebUploadStore interface {
+	ArtifactExists(ctx context.Context, sha256 string, repositoryID string) (bool, error)
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreateDebPackage(ctx context.Context, pkg *models.Component, distID string, compID string) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteComponent(ctx context.Context, componentID string) error
+	GetDebBlobInfo(ctx context.Context, blobID string) (string, int64, error)
+	GetDebPackageByID(ctx context.Context, id string) (*models.DebPackage, error)
+	GetDebianPackageByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error)
+	GetOrCreateDebianArchitecture(ctx context.Context, distID string, name string) (*models.DebianArchitecture, error)
+	GetOrCreateDebianComponent(ctx context.Context, distID string, name string) (*models.DebianComponent, error)
+	GetOrCreateDebianDistribution(ctx context.Context, repoID string, name string) (*models.DebianDistribution, error)
+	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	SetDebControlFields(ctx context.Context, packageID string, maintainer string, homepage string, fields map[string]string) error
+	UpsertBlob(ctx context.Context, sha256 string, blobKey string, sizeBytes int64) (string, error)
+}
+
 type DebUploadHandler struct {
 	log       *logger.Logger
-	db        database.Database
+	db        DebUploadStore
 	blobStore storage.BlobStore
 	reg       *metrics.Registry
 	debWorker *worker.DebMetadataWorker
@@ -69,7 +90,7 @@ func (h *DebUploadHandler) SetPublisher(p webhook.Publisher) {
 	h.publisher = p
 }
 
-func NewDebUploadHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, reg *metrics.Registry) *DebUploadHandler {
+func NewDebUploadHandler(log *logger.Logger, db DebUploadStore, blobStore storage.BlobStore, reg *metrics.Registry) *DebUploadHandler {
 	return &DebUploadHandler{
 		log:       log,
 		db:        db,
@@ -470,19 +491,6 @@ func (h *DebUploadHandler) hardDelete(ctx context.Context, repoID, repoName, pac
 	return nil
 }
 
-// writeDeleteError maps a delete failure to its HTTP answer.
-func (h *DebUploadHandler) writeDeleteError(w http.ResponseWriter, err error, packageID string) {
-	switch {
-	case errors.Is(err, database.ErrTrashNotFound):
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "package not found")
-	case errors.Is(err, trash.ErrImmutableRelease):
-		writeError(w, http.StatusConflict, "IMMUTABLE_RELEASE", "release versions are immutable in this repository")
-	default:
-		h.log.Errorw("failed to delete component", "package_id", packageID, "error", err)
-		writeError(w, http.StatusInternalServerError, "DATABASE_ERROR", "failed to delete package")
-	}
-}
-
 func (h *DebUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
@@ -524,7 +532,7 @@ func (h *DebUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := trash.GuardReleaseByName(r, h.db, repoName, "deb", comp.Version); err != nil {
-		h.writeDeleteError(w, err, packageID)
+		writePackageDeleteError(w, h.log, err, packageID)
 		return
 	}
 
@@ -539,7 +547,7 @@ func (h *DebUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		return h.hardDelete(r.Context(), repoID, repoName, packageID, sha, size)
 	})
 	if err != nil {
-		h.writeDeleteError(w, err, packageID)
+		writePackageDeleteError(w, h.log, err, packageID)
 		return
 	}
 

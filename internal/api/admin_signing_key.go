@@ -13,7 +13,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -28,11 +27,16 @@ type signingKeyService[I any] interface {
 	Import(ctx context.Context, repo *models.Repository, private, keyName, by string) (*I, error)
 }
 
+// signingKeyAdminStore is the part of the database signingKeyAdmin needs.
+type signingKeyAdminStore interface {
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+}
+
 // signingKeyAdmin manages the signing key of the repositories of one format
 // that sign with a key of their own (apk, nix), at
 // /api/v1/repositories/{name}/<route>. Every route needs an admin.
 type signingKeyAdmin[I any] struct {
-	db        database.Database
+	db        signingKeyAdminStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	keys      signingKeyService[I]

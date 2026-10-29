@@ -129,14 +129,14 @@ func (userKind) Create(ctx context.Context, env *Env, o *Object) (string, error)
 
 	body["username"] = o.Name
 
-	var created userResponse
-	if err := env.Client.Do(ctx, http.MethodPost, usersPath, body, &created); err != nil {
-		return "", fmt.Errorf("create user %q: %w", o.Name, err)
+	id, err := env.Client.create(ctx, usersPath, body, "user", o.Name)
+	if err != nil {
+		return "", err
 	}
 
 	env.ForgetIdents()
 
-	return created.ID, nil
+	return id, nil
 }
 
 func (userKind) Update(ctx context.Context, env *Env, live *Live, o *Object, changes []Change) (string, error) {
@@ -149,9 +149,5 @@ func (userKind) Update(ctx context.Context, env *Env, live *Live, o *Object, cha
 }
 
 func (userKind) Delete(ctx context.Context, env *Env, live *Live) error {
-	if err := env.Client.Do(ctx, http.MethodDelete, usersPath+"/"+PathEscape(live.ID), nil, nil); err != nil {
-		return fmt.Errorf("delete user %q: %w", live.Key, err)
-	}
-
-	return nil
+	return env.Client.remove(ctx, usersPath+"/"+PathEscape(live.ID), "user", live.Key)
 }

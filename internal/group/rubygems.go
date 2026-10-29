@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"net/http"
-	"strconv"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/repotype"
@@ -31,6 +30,12 @@ const (
 
 	rubygemsContentType = "text/plain; charset=utf-8"
 )
+
+// RubyGemsHooks is the rubygems group: merged compact index, gems first-hit.
+var RubyGemsHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: (*Handler).serveRubyGems,
+	PackageRef:  rubygemsRef,
+}
 
 // serveRubyGems answers the compact index of a rubygems group and reports
 // whether it handled the request; gem and gemspec downloads, and the paths a
@@ -93,17 +98,35 @@ func (h *Handler) serveRubyGems(
 	return true
 }
 
-// gemsDoc is one member's answer for a compact index document.
-type gemsDoc struct {
-	member *models.Repository
-	body   []byte
+// gemsETag is the validator of a compact index file: the MD5 of its body, as
+// rubygems.org sends.
+func gemsETag(body []byte) string {
+	return `"` + compactindex.InfoMD5(body) + `"`
 }
 
-// memberDocs asks the members for path and returns the bodies of those that have
-// it. When proxyOnce is set only the first proxy member that has it counts: the
-// members after it are not asked. failed reports that a member errored out, in
-// which case the result may be incomplete.
-func (h *Handler) memberDocs(
+// setGemsDigest adds the SHA-256 digest headers rubygems.org sends to a
+// complete compact index file.
+func setGemsDigest(w http.ResponseWriter, body []byte) {
+	sum := sha256.Sum256(body)
+	w.Header().Set("Digest", compactindex.DigestValue(sum[:]))
+	w.Header().Set("Repr-Digest", compactindex.DigestValue(sum[:]))
+}
+
+// writeGemsDoc writes a generated compact index file. A partial document (a
+// member failed while it was assembled) is sent uncacheable, without validator
+// and without digest.
+func writeGemsDoc(w http.ResponseWriter, r *http.Request, grp *models.Repository, body []byte, partial bool) {
+	if !partial {
+		setGemsDigest(w, body)
+	}
+
+	writeMerged(w, r, grp.Public, body, rubygemsContentType, gemsETag(body), rubygemsMaxAge, partial)
+}
+
+// collectGems asks the members for the compact index file path. With proxyOnce
+// only the first proxy member that has it counts: the proxy members after it
+// are not asked.
+func (h *Handler) collectGems(
 	r *http.Request,
 	sess *mergeSession,
 	members []*models.Repository,
@@ -111,60 +134,47 @@ func (h *Handler) memberDocs(
 	limit int,
 	proxyOnce bool,
 	be Backend,
-) ([]gemsDoc, bool) {
-	mr := r.Clone(r.Context())
-	mr.Method = http.MethodGet
-
-	for _, hdr := range []string{"If-None-Match", "If-Modified-Since", "If-Match", "If-Unmodified-Since", "If-Range", "Range"} {
-		mr.Header.Del(hdr)
+) collection {
+	ask := memberAsk{path: samePath(path), limit: limit}
+	if !proxyOnce {
+		return h.collect(r, sess, members, ask, be)
 	}
 
 	var (
-		docs       []gemsDoc
-		failed     bool
+		c          collection
 		proxyTaken bool
 	)
 
 	for _, m := range members {
-		if proxyOnce && proxyTaken && m.RepoType == repotype.Proxy {
+		isProxy := m.RepoType == repotype.Proxy
+		if proxyTaken && isProxy {
 			continue
 		}
 
-		cw := sess.capture(limit)
-		be.ServeMember(cw, mr, m, path)
-
-		switch {
-		case cw.status == http.StatusNotFound:
-		case cw.status == http.StatusOK && !cw.overflow:
-			docs = append(docs, gemsDoc{member: m, body: cw.body.Bytes()})
-			proxyTaken = proxyTaken || m.RepoType == repotype.Proxy
-		default:
-			h.log.Warnw("group member failed to serve a compact index file", "group_member", m.Name, "path", path, "status", cw.status)
-
-			failed = true
-		}
+		one := h.collect(r, sess, []*models.Repository{m}, ask, be)
+		c.docs = append(c.docs, one.docs...)
+		c.failed = append(c.failed, one.failed...)
+		proxyTaken = proxyTaken || (isProxy && len(one.docs) > 0)
 	}
 
-	return docs, failed
+	return c
 }
 
 // mergedInfo returns the info file the group serves for a gem its members'
-// docs describe: the single document as is, several merged by version. failed
-// reports a document that could not be read.
-func (h *Handler) mergedInfo(docs []gemsDoc, gem string) ([]byte, bool) {
-	if len(docs) == 1 {
-		return docs[0].body, false
+// docs describe: the single document as is, several merged by version. A
+// document that cannot be read is recorded as failed.
+func (h *Handler) mergedInfo(c *collection, gem string) []byte {
+	if len(c.docs) == 1 {
+		return c.docs[0].body
 	}
 
-	failed := false
-	sources := make([][]compactindex.InfoLine, 0, len(docs))
+	sources := make([][]compactindex.InfoLine, 0, len(c.docs))
 
-	for _, d := range docs {
+	for _, d := range c.docs {
 		lines, err := compactindex.ParseInfoBytes(d.body)
 		if err != nil {
 			h.log.Warnw("group member served an unparsable gem info file", "group_member", d.member.Name, "gem", gem, "error", err)
-
-			failed = true
+			c.fail(d.member)
 
 			continue
 		}
@@ -172,9 +182,11 @@ func (h *Handler) mergedInfo(docs []gemsDoc, gem string) ([]byte, bool) {
 		sources = append(sources, lines)
 	}
 
-	return compactindex.RenderInfo(compactindex.MergeInfo(sources...)), failed
+	return compactindex.RenderInfo(compactindex.MergeInfo(sources...))
 }
 
+// serveRubyGemsInfo answers info/<gem>. It does not use serveMergedDoc: only
+// the first proxy that has the gem is asked (collectGems).
 func (h *Handler) serveRubyGemsInfo(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -186,23 +198,17 @@ func (h *Handler) serveRubyGemsInfo(
 	sess := h.newSession(r.Context())
 	defer sess.release()
 
-	docs, failed := h.memberDocs(r, sess, members, "info/"+gem, compactindex.MaxInfoBytes, true, be)
-	if len(docs) == 0 {
-		if failed {
-			http.Error(w, "member repository error", http.StatusBadGateway)
-			return
-		}
-
-		http.NotFound(w, r)
-
+	c := h.collectGems(r, sess, members, "info/"+gem, compactindex.MaxInfoBytes, true, be)
+	if len(c.docs) == 0 {
+		writeNoDocument(w, r, c.partial())
 		return
 	}
 
-	body, unreadable := h.mergedInfo(docs, gem)
+	body := h.mergedInfo(&c, gem)
 
 	sess.release()
 
-	writeRubyGemsDoc(w, r, grp, body, failed || unreadable)
+	writeGemsDoc(w, r, grp, body, c.partial())
 }
 
 func (h *Handler) serveRubyGemsNames(
@@ -212,38 +218,40 @@ func (h *Handler) serveRubyGemsNames(
 	members []*models.Repository,
 	be Backend,
 ) {
-	sess := h.newSession(r.Context())
-	defer sess.release()
+	h.serveMergedDoc(w, r, grp, members, be, mergedDoc{
+		ask:         memberAsk{path: samePath("names"), limit: maxRubyGemsVersionsBytes},
+		what:        "rubygems names",
+		maxAge:      rubygemsMaxAge,
+		contentType: rubygemsContentType,
+		allowEmpty:  true,
+		etag:        gemsETag,
+		merge: func(c *collection) ([]byte, error) {
+			var names []string
 
-	docs, failed := h.memberDocs(r, sess, members, "names", maxRubyGemsVersionsBytes, false, be)
-	if len(docs) == 0 && failed {
-		http.Error(w, "member repository error", http.StatusBadGateway)
-		return
-	}
+			for _, d := range c.docs {
+				list, err := compactindex.ParseNames(bytes.NewReader(d.body))
+				if err != nil {
+					h.log.Warnw("group member served an unparsable names file", "group_member", d.member.Name, "error", err)
+					c.fail(d.member)
 
-	var names []string
+					continue
+				}
 
-	for _, d := range docs {
-		list, err := compactindex.ParseNames(bytes.NewReader(d.body))
-		if err != nil {
-			h.log.Warnw("group member served an unparsable names file", "group_member", d.member.Name, "error", err)
+				names = append(names, list...)
+			}
 
-			failed = true
+			if len(names) == 0 && c.partial() {
+				return nil, errMemberFailed
+			}
 
-			continue
-		}
+			body := compactindex.RenderNames(names)
+			if !c.partial() {
+				setGemsDigest(w, body)
+			}
 
-		names = append(names, list...)
-	}
-
-	if len(names) == 0 && failed {
-		http.Error(w, "member repository error", http.StatusBadGateway)
-		return
-	}
-
-	sess.release()
-
-	writeRubyGemsDoc(w, r, grp, compactindex.RenderNames(names), failed)
+			return body, nil
+		},
+	})
 }
 
 // versionsHolder is a member's versions entry for one gem.
@@ -259,6 +267,9 @@ type versionsSource struct {
 	created string
 }
 
+// serveRubyGemsVersions answers versions. It does not use serveMergedDoc: the
+// merge fetches the info files of the gems several members hold, within the
+// same session.
 func (h *Handler) serveRubyGemsVersions(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -269,16 +280,15 @@ func (h *Handler) serveRubyGemsVersions(
 	sess := h.newSession(r.Context())
 	defer sess.release()
 
-	docs, failed := h.memberDocs(r, sess, members, "versions", maxRubyGemsVersionsBytes, false, be)
+	c := h.collectGems(r, sess, members, "versions", maxRubyGemsVersionsBytes, false, be)
 
 	var sources []versionsSource
 
-	for _, d := range docs {
+	for _, d := range c.docs {
 		v, err := compactindex.ParseVersions(bytes.NewReader(d.body))
 		if err != nil {
 			h.log.Warnw("group member served an unparsable versions file", "group_member", d.member.Name, "error", err)
-
-			failed = true
+			c.fail(d.member)
 
 			continue
 		}
@@ -294,25 +304,19 @@ func (h *Handler) serveRubyGemsVersions(
 	}
 
 	if len(sources) == 0 {
-		if failed {
-			http.Error(w, "member repository error", http.StatusBadGateway)
-			return
-		}
-
-		http.NotFound(w, r)
-
+		writeNoDocument(w, r, c.partial())
 		return
 	}
 
 	out, mergeFailed, ok := h.mergeVersions(r, sess, grp, sources, be)
 	if !ok {
-		http.Error(w, "member repository error", http.StatusBadGateway)
+		writeNoDocument(w, r, true)
 		return
 	}
 
 	sess.release()
 
-	writeRubyGemsDoc(w, r, grp, out, failed || mergeFailed)
+	writeGemsDoc(w, r, grp, out, c.partial() || mergeFailed)
 }
 
 // mergeVersions combines the members' versions files under the rules of
@@ -414,12 +418,12 @@ func (h *Handler) mergedEntry(
 		members[i] = hd.member
 	}
 
-	docs, failed := h.memberDocs(r, sess, members, "info/"+name, compactindex.MaxInfoBytes, true, be)
-	if len(docs) == 0 {
+	c := h.collectGems(r, sess, members, "info/"+name, compactindex.MaxInfoBytes, true, be)
+	if len(c.docs) == 0 {
 		return holders[0].entry, false
 	}
 
-	body, unreadable := h.mergedInfo(docs, name)
+	body := h.mergedInfo(&c, name)
 
 	lines, err := compactindex.ParseInfoBytes(body)
 	if err != nil || len(lines) == 0 {
@@ -431,30 +435,32 @@ func (h *Handler) mergedEntry(
 		versions[i] = l.Version
 	}
 
-	return compactindex.Entry{Name: name, Versions: versions, InfoMD5: compactindex.InfoMD5(body)}, !failed && !unreadable
+	return compactindex.Entry{Name: name, Versions: versions, InfoMD5: compactindex.InfoMD5(body)}, !c.partial()
 }
 
-// writeRubyGemsDoc writes a generated compact index file with the MD5 ETag and
-// the SHA-256 digest headers rubygems.org sends. A partial document (a member
-// failed while it was assembled) is sent uncacheable and without validator.
-func writeRubyGemsDoc(w http.ResponseWriter, r *http.Request, grp *models.Repository, body []byte, partial bool) {
-	if revalidateMerged(w, r, grp.Public, `"`+compactindex.InfoMD5(body)+`"`, rubygemsMaxAge, partial) {
-		return
+func rubygemsRef(relPath string) (PkgRef, bool) {
+	p, ok := compactindex.ParsePath(relPath)
+	if !ok {
+		return PkgRef{}, false
 	}
 
-	h := w.Header()
+	switch p.Kind {
+	case compactindex.KindInfo:
+		return PkgRef{probe: "info/" + p.Gem}, true
+	case compactindex.KindGem, compactindex.KindGemspec:
+		split := compactindex.SplitFile(p.File)
+		if len(split) == 0 {
+			return PkgRef{}, false
+		}
 
-	if !partial {
-		sum := sha256.Sum256(body)
-		h.Set("Digest", compactindex.DigestValue(sum[:]))
-		h.Set("Repr-Digest", compactindex.DigestValue(sum[:]))
+		ref := PkgRef{probe: "info/" + split[0].Name, file: true}
+		for _, c := range split[1:] {
+			ref.altProbes = append(ref.altProbes, "info/"+c.Name)
+		}
+
+		return ref, true
+	case compactindex.KindVersions, compactindex.KindNames, compactindex.KindSpecs:
 	}
 
-	h.Set("Content-Type", rubygemsContentType)
-	h.Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
-	}
+	return PkgRef{}, false
 }

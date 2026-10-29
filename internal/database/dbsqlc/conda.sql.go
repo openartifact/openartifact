@@ -12,98 +12,53 @@ import (
 )
 
 const condaRepodataStamp = `-- name: CondaRepodataStamp :one
-SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(cp.id::text, 0)), 0)::text)::text AS stamp
-FROM conda_packages cp
-WHERE cp.repository_id = $1 AND cp.platform = $2 AND cp.deleted_at IS NULL
+SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(f.id::text, 0)), 0)::text)::text AS stamp
+FROM package_files f
+WHERE f.repository_id = $1 AND f.arch = $2 AND f.deleted_at IS NULL
 `
 
 type CondaRepodataStampParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Platform     string `db:"platform" json:"platform"`
+	Arch         string `db:"arch" json:"arch"`
 }
 
 // Fingerprint of the live packages of one platform (see HelmIndexStamp):
 // package rows are immutable, so count plus an ID hash tracks repodata.json.
 func (q *Queries) CondaRepodataStamp(ctx context.Context, arg CondaRepodataStampParams) (string, error) {
-	row := q.db.QueryRow(ctx, condaRepodataStamp, arg.RepositoryID, arg.Platform)
+	row := q.db.QueryRow(ctx, condaRepodataStamp, arg.RepositoryID, arg.Arch)
 	var stamp string
 	err := row.Scan(&stamp)
 	return stamp, err
 }
 
-const createCondaPackage = `-- name: CreateCondaPackage :one
-INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13::timestamptz, NOW()))
-ON CONFLICT (repository_id, name, version, build_string, platform, extension) WHERE deleted_at IS NULL DO NOTHING
-RETURNING id, created_at, updated_at
+const getCondaFileRepo = `-- name: GetCondaFileRepo :one
+SELECT repository_id FROM package_files WHERE id = $1 AND deleted_at IS NULL
 `
 
-type CreateCondaPackageParams struct {
-	RepositoryID string          `db:"repository_id" json:"repository_id"`
-	Name         string          `db:"name" json:"name"`
-	Version      string          `db:"version" json:"version"`
-	BuildString  string          `db:"build_string" json:"build_string"`
-	Platform     string          `db:"platform" json:"platform"`
-	Depends      []string        `db:"depends" json:"depends"`
-	BlobID       string          `db:"blob_id" json:"blob_id"`
-	Extension    string          `db:"extension" json:"extension"`
-	BuildNumber  int32           `db:"build_number" json:"build_number"`
-	Md5          string          `db:"md5" json:"md5"`
-	TimestampMs  int64           `db:"timestamp_ms" json:"timestamp_ms"`
-	IndexExtra   json.RawMessage `db:"index_extra" json:"index_extra"`
-	CreatedAt    *time.Time      `db:"created_at" json:"created_at"`
-}
-
-type CreateCondaPackageRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) CreateCondaPackage(ctx context.Context, arg CreateCondaPackageParams) (CreateCondaPackageRow, error) {
-	row := q.db.QueryRow(ctx, createCondaPackage,
-		arg.RepositoryID,
-		arg.Name,
-		arg.Version,
-		arg.BuildString,
-		arg.Platform,
-		arg.Depends,
-		arg.BlobID,
-		arg.Extension,
-		arg.BuildNumber,
-		arg.Md5,
-		arg.TimestampMs,
-		arg.IndexExtra,
-		arg.CreatedAt,
-	)
-	var i CreateCondaPackageRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
-const deleteCondaPackage = `-- name: DeleteCondaPackage :exec
-DELETE FROM conda_packages WHERE id = $1 AND deleted_at IS NULL
-`
-
-func (q *Queries) DeleteCondaPackage(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, deleteCondaPackage, id)
-	return err
+func (q *Queries) GetCondaFileRepo(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRow(ctx, getCondaFileRepo, id)
+	var repository_id string
+	err := row.Scan(&repository_id)
+	return repository_id, err
 }
 
 const getCondaPackageFile = `-- name: GetCondaPackageFile :one
-SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.build_string, cp.platform, cp.depends, cp.extension, cp.build_number, cp.md5, cp.timestamp_ms, cp.index_extra, b.blob_key, b.size_bytes, b.sha256, cp.created_at, cp.updated_at
-FROM conda_packages cp
-JOIN blobs b ON b.id = cp.blob_id
-WHERE cp.repository_id = $1 AND cp.name = $2 AND cp.version = $3 AND cp.build_string = $4 AND cp.platform = $5 AND cp.extension = $6 AND cp.deleted_at IS NULL
+
+SELECT f.id, f.repository_id, p.name, v.version, v.metadata, f.arch, f.attrs, f.checksums,
+       b.blob_key, b.size_bytes, b.sha256, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.path = $2 AND f.deleted_at IS NULL
+  AND p.name = $3::text AND v.version = $4::text
 `
 
 type GetCondaPackageFileParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Path         string `db:"path" json:"path"`
 	Name         string `db:"name" json:"name"`
 	Version      string `db:"version" json:"version"`
-	BuildString  string `db:"build_string" json:"build_string"`
-	Platform     string `db:"platform" json:"platform"`
-	Extension    string `db:"extension" json:"extension"`
 }
 
 type GetCondaPackageFileRow struct {
@@ -111,14 +66,10 @@ type GetCondaPackageFileRow struct {
 	RepositoryID string          `db:"repository_id" json:"repository_id"`
 	Name         string          `db:"name" json:"name"`
 	Version      string          `db:"version" json:"version"`
-	BuildString  string          `db:"build_string" json:"build_string"`
-	Platform     string          `db:"platform" json:"platform"`
-	Depends      []string        `db:"depends" json:"depends"`
-	Extension    string          `db:"extension" json:"extension"`
-	BuildNumber  int32           `db:"build_number" json:"build_number"`
-	Md5          string          `db:"md5" json:"md5"`
-	TimestampMs  int64           `db:"timestamp_ms" json:"timestamp_ms"`
-	IndexExtra   json.RawMessage `db:"index_extra" json:"index_extra"`
+	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
+	Arch         string          `db:"arch" json:"arch"`
+	Attrs        json.RawMessage `db:"attrs" json:"attrs"`
+	Checksums    json.RawMessage `db:"checksums" json:"checksums"`
 	BlobKey      string          `db:"blob_key" json:"blob_key"`
 	SizeBytes    int64           `db:"size_bytes" json:"size_bytes"`
 	Sha256       string          `db:"sha256" json:"sha256"`
@@ -126,14 +77,18 @@ type GetCondaPackageFileRow struct {
 	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
 
+// Conda on the generic package tables (see the mapping in pkg_conda.go). One
+// package per name, one version per build (version, build string, platform),
+// one file per extension of a build.
+// The path (platform/filename) is the unique live key; the name and version
+// conditions only disambiguate a filename that several (name, version) pairs
+// could spell.
 func (q *Queries) GetCondaPackageFile(ctx context.Context, arg GetCondaPackageFileParams) (GetCondaPackageFileRow, error) {
 	row := q.db.QueryRow(ctx, getCondaPackageFile,
 		arg.RepositoryID,
+		arg.Path,
 		arg.Name,
 		arg.Version,
-		arg.BuildString,
-		arg.Platform,
-		arg.Extension,
 	)
 	var i GetCondaPackageFileRow
 	err := row.Scan(
@@ -141,14 +96,10 @@ func (q *Queries) GetCondaPackageFile(ctx context.Context, arg GetCondaPackageFi
 		&i.RepositoryID,
 		&i.Name,
 		&i.Version,
-		&i.BuildString,
-		&i.Platform,
-		&i.Depends,
-		&i.Extension,
-		&i.BuildNumber,
-		&i.Md5,
-		&i.TimestampMs,
-		&i.IndexExtra,
+		&i.Metadata,
+		&i.Arch,
+		&i.Attrs,
+		&i.Checksums,
 		&i.BlobKey,
 		&i.SizeBytes,
 		&i.Sha256,
@@ -160,8 +111,9 @@ func (q *Queries) GetCondaPackageFile(ctx context.Context, arg GetCondaPackageFi
 
 const hasCondaPackageName = `-- name: HasCondaPackageName :one
 SELECT EXISTS (
-    SELECT 1 FROM conda_packages cp
-    WHERE cp.repository_id = $1 AND lower(cp.name) = lower($2::text) AND cp.deleted_at IS NULL
+    SELECT 1 FROM packages p
+    WHERE p.repository_id = $1 AND lower(p.name) = lower($2::text)
+      AND EXISTS (SELECT 1 FROM package_versions v WHERE v.package_id = p.id AND v.deleted_at IS NULL)
 )::boolean AS present
 `
 
@@ -177,79 +129,15 @@ func (q *Queries) HasCondaPackageName(ctx context.Context, arg HasCondaPackageNa
 	return present, err
 }
 
-const listAllCondaPackages = `-- name: ListAllCondaPackages :many
-SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.build_string, cp.platform, cp.depends, cp.extension, cp.build_number, cp.md5, cp.timestamp_ms, cp.index_extra, b.blob_key, b.size_bytes, b.sha256, cp.created_at, cp.updated_at
-FROM conda_packages cp
-JOIN blobs b ON b.id = cp.blob_id
-WHERE cp.repository_id = $1 AND cp.deleted_at IS NULL ORDER BY cp.name ASC, cp.version DESC, cp.platform ASC, cp.build_string ASC, cp.extension ASC
-`
-
-type ListAllCondaPackagesRow struct {
-	ID           string          `db:"id" json:"id"`
-	RepositoryID string          `db:"repository_id" json:"repository_id"`
-	Name         string          `db:"name" json:"name"`
-	Version      string          `db:"version" json:"version"`
-	BuildString  string          `db:"build_string" json:"build_string"`
-	Platform     string          `db:"platform" json:"platform"`
-	Depends      []string        `db:"depends" json:"depends"`
-	Extension    string          `db:"extension" json:"extension"`
-	BuildNumber  int32           `db:"build_number" json:"build_number"`
-	Md5          string          `db:"md5" json:"md5"`
-	TimestampMs  int64           `db:"timestamp_ms" json:"timestamp_ms"`
-	IndexExtra   json.RawMessage `db:"index_extra" json:"index_extra"`
-	BlobKey      string          `db:"blob_key" json:"blob_key"`
-	SizeBytes    int64           `db:"size_bytes" json:"size_bytes"`
-	Sha256       string          `db:"sha256" json:"sha256"`
-	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) ListAllCondaPackages(ctx context.Context, repositoryID string) ([]ListAllCondaPackagesRow, error) {
-	rows, err := q.db.Query(ctx, listAllCondaPackages, repositoryID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListAllCondaPackagesRow{}
-	for rows.Next() {
-		var i ListAllCondaPackagesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.RepositoryID,
-			&i.Name,
-			&i.Version,
-			&i.BuildString,
-			&i.Platform,
-			&i.Depends,
-			&i.Extension,
-			&i.BuildNumber,
-			&i.Md5,
-			&i.TimestampMs,
-			&i.IndexExtra,
-			&i.BlobKey,
-			&i.SizeBytes,
-			&i.Sha256,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listCondaPackageNames = `-- name: ListCondaPackageNames :many
-SELECT DISTINCT lower(cp.name)::text AS name
-FROM conda_packages cp
-WHERE cp.repository_id = $1 AND cp.deleted_at IS NULL
+SELECT DISTINCT lower(p.name)::text AS name
+FROM packages p
+WHERE p.repository_id = $1
+  AND EXISTS (SELECT 1 FROM package_versions v WHERE v.package_id = p.id AND v.deleted_at IS NULL)
 ORDER BY 1
 `
 
-// Distinct names of the live packages of a repository, in any platform, for a
+// Distinct names of the packages with a live release, in any platform, for a
 // group's hosted-wins rule (compared case-insensitively, as lowercase names).
 func (q *Queries) ListCondaPackageNames(ctx context.Context, repositoryID string) ([]string, error) {
 	rows, err := q.db.Query(ctx, listCondaPackageNames, repositoryID)
@@ -272,15 +160,19 @@ func (q *Queries) ListCondaPackageNames(ctx context.Context, repositoryID string
 }
 
 const listCondaPackages = `-- name: ListCondaPackages :many
-SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.build_string, cp.platform, cp.depends, cp.extension, cp.build_number, cp.md5, cp.timestamp_ms, cp.index_extra, b.blob_key, b.size_bytes, b.sha256, cp.created_at, cp.updated_at
-FROM conda_packages cp
-JOIN blobs b ON b.id = cp.blob_id
-WHERE cp.repository_id = $1 AND cp.platform = $2 AND cp.deleted_at IS NULL ORDER BY cp.name ASC, cp.version DESC, cp.build_string ASC, cp.extension ASC
+SELECT f.id, f.repository_id, p.name, v.version, v.metadata, f.arch, f.attrs, f.checksums,
+       b.blob_key, b.size_bytes, b.sha256, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.arch = $2 AND f.deleted_at IS NULL
+ORDER BY p.name ASC, v.version DESC, (v.metadata ->> 'build_string') ASC, (f.attrs ->> 'extension') ASC
 `
 
 type ListCondaPackagesParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Platform     string `db:"platform" json:"platform"`
+	Arch         string `db:"arch" json:"arch"`
 }
 
 type ListCondaPackagesRow struct {
@@ -288,14 +180,10 @@ type ListCondaPackagesRow struct {
 	RepositoryID string          `db:"repository_id" json:"repository_id"`
 	Name         string          `db:"name" json:"name"`
 	Version      string          `db:"version" json:"version"`
-	BuildString  string          `db:"build_string" json:"build_string"`
-	Platform     string          `db:"platform" json:"platform"`
-	Depends      []string        `db:"depends" json:"depends"`
-	Extension    string          `db:"extension" json:"extension"`
-	BuildNumber  int32           `db:"build_number" json:"build_number"`
-	Md5          string          `db:"md5" json:"md5"`
-	TimestampMs  int64           `db:"timestamp_ms" json:"timestamp_ms"`
-	IndexExtra   json.RawMessage `db:"index_extra" json:"index_extra"`
+	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
+	Arch         string          `db:"arch" json:"arch"`
+	Attrs        json.RawMessage `db:"attrs" json:"attrs"`
+	Checksums    json.RawMessage `db:"checksums" json:"checksums"`
 	BlobKey      string          `db:"blob_key" json:"blob_key"`
 	SizeBytes    int64           `db:"size_bytes" json:"size_bytes"`
 	Sha256       string          `db:"sha256" json:"sha256"`
@@ -304,7 +192,7 @@ type ListCondaPackagesRow struct {
 }
 
 func (q *Queries) ListCondaPackages(ctx context.Context, arg ListCondaPackagesParams) ([]ListCondaPackagesRow, error) {
-	rows, err := q.db.Query(ctx, listCondaPackages, arg.RepositoryID, arg.Platform)
+	rows, err := q.db.Query(ctx, listCondaPackages, arg.RepositoryID, arg.Arch)
 	if err != nil {
 		return nil, err
 	}
@@ -317,14 +205,10 @@ func (q *Queries) ListCondaPackages(ctx context.Context, arg ListCondaPackagesPa
 			&i.RepositoryID,
 			&i.Name,
 			&i.Version,
-			&i.BuildString,
-			&i.Platform,
-			&i.Depends,
-			&i.Extension,
-			&i.BuildNumber,
-			&i.Md5,
-			&i.TimestampMs,
-			&i.IndexExtra,
+			&i.Metadata,
+			&i.Arch,
+			&i.Attrs,
+			&i.Checksums,
 			&i.BlobKey,
 			&i.SizeBytes,
 			&i.Sha256,

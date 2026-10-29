@@ -39,12 +39,27 @@ type SSOClaims struct {
 	GroupsPresent bool
 }
 
+// ProvisionerStore is the part of the database Provisioner needs.
+type ProvisionerStore interface {
+	CreateUser(ctx context.Context, user *models.User) (*models.User, error)
+	GetGroupByName(ctx context.Context, name string) (*models.Group, error)
+	GetOrCreateGroup(ctx context.Context, name string) (*models.Group, error)
+	GetOrCreatePermissionAssignment(ctx context.Context, targetID string, principalType string, principalID string) error
+	GetPermissionTargetByName(ctx context.Context, name string) (*models.PermissionTarget, error)
+	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
+	GetUserByExternalID(ctx context.Context, externalID string, providerSlug string) (*models.User, error)
+	GetUserByUsername(ctx context.Context, username string) (*models.User, error)
+	SyncSSOGroups(ctx context.Context, userID string, groupIDs []string) error
+	UpdateUserSSO(ctx context.Context, userID string, externalID string, providerSlug string) error
+	UpdateUserSSOProfile(ctx context.Context, id string, email *string, fullName *string, lastLogin time.Time) error
+}
+
 type Provisioner struct {
-	db  database.Database
+	db  ProvisionerStore
 	log *logger.Logger
 }
 
-func NewProvisioner(db database.Database, log *logger.Logger) *Provisioner {
+func NewProvisioner(db ProvisionerStore, log *logger.Logger) *Provisioner {
 	return &Provisioner{db: db, log: log}
 }
 

@@ -9,7 +9,16 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/openartifact/openartifact/internal/formats"
 )
+
+// TestMain registers the formats, as main does.
+func TestMain(m *testing.M) {
+	formats.Register()
+
+	os.Exit(m.Run())
+}
 
 // TestCommittedFileIsCurrent is the drift check of the generated web
 // constants: it fails until `make generate` output is committed.
@@ -66,5 +75,41 @@ func TestWriteThenCheck(t *testing.T) {
 
 	if err := run(root, true); err == nil {
 		t.Fatal("check passed on a stale file")
+	}
+}
+
+func TestRenderClientSetup(t *testing.T) {
+	t.Parallel()
+
+	out := string(renderClientSetup())
+
+	for _, want := range []string{
+		"export const DEFAULT_BASE_TEMPLATE = '{{origin}}/repos/{{esc}}'",
+		"  docker: '{{origin}}',",
+		"  maven: '{{origin}}/repos/maven/{{esc}}',",
+		"  npm: {\n    hosted: [",
+		"    proxy: [", // apk, nix and pacman differ per repository type
+		"{{#http}}\\ncomposer config secure-http false{{/http}}",
+		"<TOKEN>",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("generated client setup lacks %q", want)
+		}
+	}
+
+	// npm snippets do not vary by repository type.
+	_, npm, _ := strings.Cut(out, "\n  npm: {")
+	npm, _, _ = strings.Cut(npm, "\n  },")
+
+	if strings.Contains(npm, "proxy:") || strings.Contains(npm, "group:") {
+		t.Errorf("npm lists a proxy or group variant identical to hosted:\n%s", npm)
+	}
+}
+
+func TestTSString(t *testing.T) {
+	t.Parallel()
+
+	if got, want := tsString("it's a\\b\nc\t\u2028"), `'it\'s a\\b\nc\t\u2028'`; got != want {
+		t.Errorf("tsString = %s, want %s", got, want)
 	}
 }

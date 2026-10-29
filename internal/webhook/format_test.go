@@ -20,7 +20,6 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -611,7 +610,7 @@ func TestDeliverUsesPayloadFormat(t *testing.T) {
 			}))
 			t.Cleanup(srv.Close)
 
-			db := &deliveryTestDB{BaseMockDB: &databasetest.BaseMockDB{}}
+			db := &deliveryTestDB{}
 			d := NewDispatcher(db, log)
 			d.SetBaseURL("https://oa.example.com")
 
@@ -657,7 +656,7 @@ func TestUnknownPayloadFormatFailsPermanently(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	db := &deliveryTestDB{BaseMockDB: &databasetest.BaseMockDB{}}
+	db := &deliveryTestDB{}
 	delivery := uploadedDelivery()
 
 	NewDispatcher(db, log).deliver(&models.Webhook{

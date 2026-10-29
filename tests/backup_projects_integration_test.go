@@ -19,7 +19,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-func newBackupEngine(t *testing.T, db database.Database) *backup.Engine {
+func newBackupEngine(t *testing.T, db backup.EngineStore) *backup.Engine {
 	t.Helper()
 
 	log, err := logger.New("error", "json", "stderr")

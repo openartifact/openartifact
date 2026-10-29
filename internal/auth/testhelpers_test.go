@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -23,8 +22,6 @@ func sha256ForString(s string) string {
 }
 
 type tokenMockDB struct {
-	databasetest.BaseMockDB
-
 	tokens     map[string]*models.Token
 	tokensByID map[string]*models.Token
 	users      map[string]*models.User

@@ -139,7 +139,7 @@ func TestPyPIProxy_ProjectPageRewritesLinksHTML(t *testing.T) {
 
 	body := w.Body.String()
 	for _, want := range []string{
-		`href="/repos/pypi-proxy/files/requests/` + wheelName + `#sha256=` + sum(wheelBody) + `"`,
+		`href="../../files/requests/` + wheelName + `#sha256=` + sum(wheelBody) + `"`,
 		`data-requires-python="&gt;=3.8"`,
 		`data-core-metadata="sha256=` + sum(metaBody) + `"`,
 		`data-dist-info-metadata="sha256=` + sum(metaBody) + `"`,
@@ -232,7 +232,7 @@ func TestPyPIProxy_Negotiation(t *testing.T) {
 			}
 
 			wheel, sdist := files[0], files[1]
-			if wheel.Filename != wheelName || wheel.URL != "/repos/pypi-proxy/files/requests/"+wheelName ||
+			if wheel.Filename != wheelName || wheel.URL != "../../files/requests/"+wheelName ||
 				wheel.SHA256() != sum(wheelBody) || wheel.RequiresPython != ">=3.8" ||
 				!wheel.CoreMetadata || wheel.MetadataSHA256() != sum(metaBody) || wheel.Yanked {
 				t.Errorf("wheel entry mangled: %+v", wheel)
@@ -332,7 +332,7 @@ func TestPyPIProxy_IndexRewritten(t *testing.T) {
 	}
 
 	html := f.do(http.MethodGet, "simple/").Body.String()
-	if !strings.Contains(html, `<a href="/repos/pypi-proxy/simple/zope-interface/">zope-interface</a>`) {
+	if !strings.Contains(html, `<a href="zope-interface/">zope-interface</a>`) {
 		t.Errorf("html index links not rewritten:\n%s", html)
 	}
 }

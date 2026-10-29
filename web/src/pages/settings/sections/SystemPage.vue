@@ -7,9 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <!-- Settings > System > Health: the state of every component, and which build is running. -->
 <template>
   <div class="space-y-5">
-    <SectionActions>
-      <AppButton variant="secondary" size="sm" class="max-md:h-11" :loading="loading" @click="load">{{ t('sx.refresh') }}</AppButton>
-    </SectionActions>
+    <SectionRefresh :loading="loading" @refresh="load" />
 
     <div v-if="loading && !info" role="status" class="rounded-lg border border-border bg-surface px-4 py-5 text-sm text-muted">
       {{ t('common.loading') }}
@@ -129,7 +127,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, onMounted, ref } from 'vue'
 import { ExclamationTriangleIcon } from '@heroicons/vue/20/solid'
 import AppButton from '../../../components/AppButton.vue'
-import SectionActions from '../../../components/SectionActions.vue'
+import SectionRefresh from '../../../components/SectionRefresh.vue'
 import StatusBadge from '../../../components/StatusBadge.vue'
 import CopyButton from '../../../components/ui/CopyButton.vue'
 import ListTable, { type ListColumn } from '../../../components/ui/ListTable.vue'

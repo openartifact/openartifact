@@ -9,10 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
-	db "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/iocopy"
@@ -21,16 +19,26 @@ import (
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	pkgdeb "github.com/openartifact/openartifact/pkg/deb"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// HTTPStore is the part of the database HTTPHandler needs.
+type HTTPStore interface {
+	StreamPackagesStore
+	StreamReleaseStore
+	GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error)
+	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+}
+
 type HTTPHandler struct {
 	log       *logger.Logger
-	db        db.Database
+	db        HTTPStore
 	blobStore storage.BlobStore
 }
 
-func NewHTTPHandler(log *logger.Logger, database db.Database, blobStore storage.BlobStore) *HTTPHandler {
+func NewHTTPHandler(log *logger.Logger, database HTTPStore, blobStore storage.BlobStore) *HTTPHandler {
 	return &HTTPHandler{
 		log:       log,
 		db:        database,
@@ -120,27 +128,17 @@ func (h *HTTPHandler) handleRelease(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) handleInRelease(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	dist := vars["dist"]
-	name := vars["name"]
-
-	repo, err := h.resolveRepo(r.Context(), name)
-	if err != nil {
-		h.log.Warnw("failed to resolve repository", "name", name, "error", err)
-		http.NotFound(w, r)
-
-		return
-	}
-
-	path := GetInReleasePath(dist)
-	if !h.tryServeRepoBlob(w, r, repo, path, "text/plain") {
-		http.NotFound(w, r)
-	}
+	h.serveDistBlob(w, r, GetInReleasePath, "text/plain")
 }
 
 func (h *HTTPHandler) handleReleaseGPG(w http.ResponseWriter, r *http.Request) {
+	h.serveDistBlob(w, r, GetReleaseGPGPath, "application/pgp-signature")
+}
+
+// serveDistBlob serves the pre-generated blob blobPath names for the request's
+// distribution, or answers 404 when the repository or the blob is missing.
+func (h *HTTPHandler) serveDistBlob(w http.ResponseWriter, r *http.Request, blobPath func(dist string) string, contentType string) {
 	vars := urlparams.Vars(r)
-	dist := vars["dist"]
 	name := vars["name"]
 
 	repo, err := h.resolveRepo(r.Context(), name)
@@ -151,8 +149,7 @@ func (h *HTTPHandler) handleReleaseGPG(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	path := GetReleaseGPGPath(dist)
-	if !h.tryServeRepoBlob(w, r, repo, path, "application/pgp-signature") {
+	if !h.tryServeRepoBlob(w, r, repo, blobPath(vars["dist"]), contentType) {
 		http.NotFound(w, r)
 	}
 }
@@ -291,17 +288,10 @@ func (h *HTTPHandler) handlePublicKey(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func GetPoolPath(component, packageName, version, filename string) string {
-	if packageName == "" {
-		return ""
-	}
-
-	prefix := string(packageName[0])
-	if strings.HasPrefix(packageName, "lib") && len(packageName) > 3 {
-		prefix = "lib" + string(packageName[3])
-	}
-
-	return "pool/" + component + "/" + prefix + "/" + packageName + "/" + filename
+// GetPoolPath renders the pool location of a package file (see pkgdeb.PoolPath).
+// The version is not part of the path; it is kept for the callers' symmetry.
+func GetPoolPath(component, packageName, _, filename string) string {
+	return pkgdeb.PoolPath(component, packageName, filename)
 }
 
 func GetPackagesPath(distribution, component, architecture string) string {

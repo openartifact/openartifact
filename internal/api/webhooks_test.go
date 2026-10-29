@@ -15,8 +15,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/netutil"
@@ -24,8 +22,14 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// webhooksMockDBStore is what webhooksMockDB is used as.
+type webhooksMockDBStore interface {
+	webhooksTestRouterWithStore
+	webhook.DispatcherStore
+}
+
 type webhooksMockDB struct {
-	databasetest.BaseMockDB
+	webhooksMockDBStore
 
 	stored *models.Webhook
 }
@@ -66,7 +70,17 @@ func newWebhooksTestRouter(t *testing.T, db *webhooksMockDB) (http.Handler, *htt
 	return newWebhooksTestRouterWith(t, db, nil)
 }
 
-func newWebhooksTestRouterWith(t *testing.T, db database.Database, dispatcher *webhook.Dispatcher) (http.Handler, *http.Request) {
+// webhooksTestRouterWithStore is the part of the database newWebhooksTestRouterWith needs.
+type webhooksTestRouterWithStore interface {
+	WebhooksStore
+	GetPermissionTargetByName(ctx context.Context, name string) (*models.PermissionTarget, error)
+	GetPermissionTargetsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]*models.PermissionTarget, error)
+	GetProjectByName(ctx context.Context, name string) (*models.Project, error)
+	ListProjectGrantsByUser(ctx context.Context, userID string) ([]*models.ProjectGrant, error)
+	ListPublicRepositoryNames(ctx context.Context) ([]string, error)
+}
+
+func newWebhooksTestRouterWith(t *testing.T, db webhooksTestRouterWithStore, dispatcher *webhook.Dispatcher) (http.Handler, *http.Request) {
 	t.Helper()
 
 	log, err := logger.New("error", "json", "stderr")

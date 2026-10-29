@@ -21,6 +21,7 @@ import (
 // Writing and deleting never wait for the replica.
 type Store struct {
 	*core
+	storage.StagingForwarder
 
 	repairs *repairer
 }
@@ -31,6 +32,14 @@ var (
 	_ storage.StagingStore          = (*Store)(nil)
 	_ storage.MultipartStagingStore = (*Store)(nil)
 )
+
+func newStore(c *core, repairs *repairer) *Store {
+	return &Store{
+		core:             c,
+		StagingForwarder: storage.NewStagingForwarder(func() storage.BlobStore { return c.inner }),
+		repairs:          repairs,
+	}
+}
 
 // Put writes the blob to the primary store and queues its copy.
 func (s *Store) Put(ctx context.Context, data io.Reader, metadata map[string]string) (string, error) {
@@ -357,135 +366,19 @@ func (s *Store) PresignGet(ctx context.Context, sha string, ttl time.Duration, o
 	return p.PresignGet(ctx, sha, ttl, opts) //nolint:wrapcheck // transparent wrapper
 }
 
-func (s *Store) staging() (storage.StagingStore, bool) {
-	st, ok := s.inner.(storage.StagingStore)
-
-	return st, ok
-}
-
-// StagingSupported implements storage.StagingStore.
-func (s *Store) StagingSupported() bool {
-	st, ok := s.staging()
-
-	return ok && st.StagingSupported()
-}
-
-// PresignStagingPut implements storage.StagingStore.
-func (s *Store) PresignStagingPut(ctx context.Context, id string, size int64, ttl time.Duration) (storage.PresignedPut, error) {
-	st, ok := s.staging()
-	if !ok {
-		return storage.PresignedPut{}, storage.ErrPresignNotSupported
-	}
-
-	return st.PresignStagingPut(ctx, id, size, ttl) //nolint:wrapcheck // transparent wrapper
-}
-
-// StatStaging implements storage.StagingStore.
-func (s *Store) StatStaging(ctx context.Context, id string) (storage.StagedObject, error) {
-	st, ok := s.staging()
-	if !ok {
-		return storage.StagedObject{}, storage.ErrPresignNotSupported
-	}
-
-	return st.StatStaging(ctx, id) //nolint:wrapcheck // transparent wrapper
-}
-
-// OpenStaging implements storage.StagingStore.
-func (s *Store) OpenStaging(ctx context.Context, id, version string) (io.ReadCloser, error) {
-	st, ok := s.staging()
-	if !ok {
-		return nil, storage.ErrPresignNotSupported
-	}
-
-	return st.OpenStaging(ctx, id, version) //nolint:wrapcheck // transparent wrapper
-}
-
 // PromoteStaging promotes the staged upload to its blob and queues the copy:
-// this is where a client-direct upload becomes a blob.
+// this is where a client-direct upload becomes a blob. The rest of the staging
+// and multipart staging calls go to the primary store unchanged (CompleteMultipart
+// only assembles the staging object; the blob and its queued copy come with
+// PromoteStaging).
 func (s *Store) PromoteStaging(ctx context.Context, id, sha, version string, metadata map[string]string) error {
-	st, ok := s.staging()
-	if !ok {
-		return storage.ErrPresignNotSupported
-	}
-
-	if err := st.PromoteStaging(ctx, id, sha, version, metadata); err != nil {
+	if err := s.StagingForwarder.PromoteStaging(ctx, id, sha, version, metadata); err != nil {
 		return err //nolint:wrapcheck // transparent wrapper
 	}
 
 	s.enqueueWritten(ctx, sha)
 
 	return nil
-}
-
-// DeleteStaging implements storage.StagingStore.
-func (s *Store) DeleteStaging(ctx context.Context, id string) error {
-	st, ok := s.staging()
-	if !ok {
-		return storage.ErrPresignNotSupported
-	}
-
-	return st.DeleteStaging(ctx, id) //nolint:wrapcheck // transparent wrapper
-}
-
-// WalkStaging implements storage.StagingStore.
-func (s *Store) WalkStaging(ctx context.Context, olderThan time.Time, fn func(ids []string) error) error {
-	st, ok := s.staging()
-	if !ok {
-		return storage.ErrPresignNotSupported
-	}
-
-	return st.WalkStaging(ctx, olderThan, fn) //nolint:wrapcheck // transparent wrapper
-}
-
-func (s *Store) multipart() (storage.MultipartStagingStore, bool) {
-	m, ok := s.inner.(storage.MultipartStagingStore)
-
-	return m, ok
-}
-
-// MultipartSupported implements storage.MultipartStagingStore.
-func (s *Store) MultipartSupported() bool {
-	m, ok := s.multipart()
-
-	return ok && m.MultipartSupported()
-}
-
-// InitiateMultipart implements storage.MultipartStagingStore.
-func (s *Store) InitiateMultipart(ctx context.Context, id string, size, partSize int64) (string, error) {
-	m, ok := s.multipart()
-	if !ok {
-		return "", storage.ErrPresignNotSupported
-	}
-
-	return m.InitiateMultipart(ctx, id, size, partSize) //nolint:wrapcheck // transparent wrapper
-}
-
-// PresignStagingPart implements storage.MultipartStagingStore.
-func (s *Store) PresignStagingPart(
-	ctx context.Context,
-	id, handle string,
-	number int,
-	length int64,
-	ttl time.Duration,
-) (storage.PresignedPut, error) {
-	m, ok := s.multipart()
-	if !ok {
-		return storage.PresignedPut{}, storage.ErrPresignNotSupported
-	}
-
-	return m.PresignStagingPart(ctx, id, handle, number, length, ttl) //nolint:wrapcheck // transparent wrapper
-}
-
-// CompleteMultipart implements storage.MultipartStagingStore. It only
-// assembles the staging object; the blob (and its queued copy) comes with
-// PromoteStaging.
-func (s *Store) CompleteMultipart(ctx context.Context, id, handle string, size, partSize int64) error {
-	m, ok := s.multipart()
-	if !ok {
-		return storage.ErrPresignNotSupported
-	}
-
-	return m.CompleteMultipart(ctx, id, handle, size, partSize) //nolint:wrapcheck // transparent wrapper
 }
 
 // HealthCheck probes the primary side. The replica is not part of it: a down

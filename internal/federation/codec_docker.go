@@ -36,10 +36,6 @@ const (
 	dockerRefIndexed  = "indexed"
 )
 
-func init() { //nolint:gochecknoinits // codec registry
-	register(dockerCodec{})
-}
-
 // dockerRef is one docker_manifest_refs row of a manifest.
 type dockerRef struct {
 	Kind   string `json:"kind"`
@@ -81,31 +77,28 @@ type dockerTagData struct {
 
 type dockerCodec struct{}
 
-func (dockerCodec) Format() string { return "docker" }
-
 // parseDockerManifestKey splits `m:<image>@<digest>` at its last '@'; the image
 // may be empty or contain '/'.
 func parseDockerManifestKey(key string) (string, string, bool) {
-	rest, found := strings.CutPrefix(key, dockerManifestPrefix)
-	if !found {
-		return "", "", false
-	}
-
-	image, digest, ok := strings.CutLast(rest, "@")
-
-	return image, digest, ok && digest != ""
+	return parseDockerKey(key, dockerManifestPrefix, "@")
 }
 
 // parseDockerTagKey splits `t:<image>:<name>` at its last ':'.
 func parseDockerTagKey(key string) (string, string, bool) {
-	rest, found := strings.CutPrefix(key, dockerTagPrefix)
+	return parseDockerKey(key, dockerTagPrefix, ":")
+}
+
+// parseDockerKey splits a unit key `<prefix><image><sep><last>` at its last sep
+// into image and last; last must not be empty.
+func parseDockerKey(key, prefix, sep string) (string, string, bool) {
+	rest, found := strings.CutPrefix(key, prefix)
 	if !found {
 		return "", "", false
 	}
 
-	image, name, ok := strings.CutLast(rest, ":")
+	image, last, ok := strings.CutLast(rest, sep)
 
-	return image, name, ok && name != ""
+	return image, last, ok && last != ""
 }
 
 func dockerManifestKey(image, digest string) string {
@@ -128,18 +121,18 @@ func (dockerCodec) Export(ctx context.Context, q Querier, repoID, key string) (*
 	return nil, errDockerKey(key)
 }
 
-func (dockerCodec) Usage(ctx context.Context, q Querier, repoID, key string, c *Content) (int64, int, error) {
+func (dockerCodec) Usage(ctx context.Context, q Querier, repoID, key string, c *Content) ([]Reservation, error) {
 	if _, _, ok := parseDockerManifestKey(key); !ok {
 		if _, _, ok := parseDockerTagKey(key); ok {
-			return 0, 0, nil
+			return nil, nil
 		}
 
-		return 0, 0, errDockerKey(key)
+		return nil, errDockerKey(key)
 	}
 
 	d, err := decodeDockerManifest(c)
 	if err != nil {
-		return 0, 0, err
+		return nil, err
 	}
 
 	size := d.Size
@@ -154,7 +147,7 @@ func (dockerCodec) Usage(ctx context.Context, q Querier, repoID, key string, c *
 	// quota triggers count docker_blobs rows with count 0 (migration 061).
 	held, err := dockerHeldDigests(ctx, q, repoID, d.Blobs)
 	if err != nil {
-		return 0, 0, err
+		return nil, err
 	}
 
 	for _, b := range d.Blobs {
@@ -163,8 +156,10 @@ func (dockerCodec) Usage(ctx context.Context, q Querier, repoID, key string, c *
 		}
 	}
 
-	return size, 1, nil
+	return []Reservation{{Size: size, Count: 1}}, nil
 }
+
+func (dockerCodec) LockTables() []string { return []string{"docker_manifests", "docker_tags"} }
 
 func (dockerCodec) Import(ctx context.Context, tx *sql.Tx, repoID, key string, c *Content, blobIDs map[string]string) (*Change, error) {
 	if image, digest, ok := parseDockerManifestKey(key); ok {
@@ -191,23 +186,21 @@ func (dockerCodec) Delete(ctx context.Context, tx *sql.Tx, repoID, key string, s
 }
 
 func (dockerCodec) Backfill(ctx context.Context, tx *sql.Tx, repoID string) error {
-	_, err := tx.ExecContext(ctx,
-		`SELECT federation_record($1::uuid, 'm:' || t.image || '@' || t.digest, $2, $3, t.digest, false, t.updated_at)
-		   FROM docker_manifests t WHERE t.repository_id = $1::uuid AND t.deleted_at IS NULL`,
-		repoID, KindArtifact, EventArtifactAdded)
-	if err != nil {
-		return fmt.Errorf("backfill docker_manifests: %w", err)
-	}
-
-	_, err = tx.ExecContext(ctx,
-		`SELECT federation_record($1::uuid, 't:' || t.image || ':' || t.name, $2, $3, t.manifest_digest, false, t.updated_at)
-		   FROM docker_tags t WHERE t.repository_id = $1::uuid AND t.deleted_at IS NULL`,
-		repoID, KindRef, EventRefMoved)
-	if err != nil {
-		return fmt.Errorf("backfill docker_tags: %w", err)
-	}
-
-	return nil
+	return backfillUnits(ctx, tx, repoID,
+		backfillSource{
+			table: "docker_manifests",
+			kind:  KindArtifact,
+			key:   "'m:' || t.image || '@' || t.digest",
+			ref:   "t.digest",
+			from:  "docker_manifests t WHERE " + liveRowsOfRepo,
+		},
+		backfillSource{
+			table: "docker_tags",
+			kind:  KindRef,
+			key:   "'t:' || t.image || ':' || t.name",
+			ref:   "t.manifest_digest",
+			from:  "docker_tags t WHERE " + liveRowsOfRepo,
+		})
 }
 
 func decodeDockerManifest(c *Content) (*dockerManifestData, error) {

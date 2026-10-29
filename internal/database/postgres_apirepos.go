@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -42,7 +43,7 @@ func IsForeignKeyViolation(err error) bool {
 // CreateRepositoryWithMembers inserts a repository and (for group repos) its
 // ordered member list in a single transaction, so a failing member insert
 // cannot leave a half-created group behind.
-func (p *PostgresDB) CreateRepositoryWithMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error {
+func (p *RepositoryStore) CreateRepositoryWithMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error {
 	return p.createRepository(ctx, repo, memberIDs, 0)
 }
 
@@ -50,7 +51,12 @@ func (p *PostgresDB) CreateRepositoryWithMembers(ctx context.Context, repo *mode
 // repository cap: with the project row locked it refuses (ErrProjectRepoLimit)
 // when the project already holds maxRepositories live repositories, so
 // concurrent creations cannot overshoot the cap.
-func (p *PostgresDB) CreateProjectRepository(ctx context.Context, repo *models.Repository, memberIDs []string, maxRepositories int) error {
+func (p *RepositoryStore) CreateProjectRepository(
+	ctx context.Context,
+	repo *models.Repository,
+	memberIDs []string,
+	maxRepositories int,
+) error {
 	return p.createRepository(ctx, repo, memberIDs, maxRepositories)
 }
 
@@ -58,7 +64,7 @@ func (p *PostgresDB) CreateProjectRepository(ctx context.Context, repo *models.R
 // target's repository cap when maxRepositories > 0 (ErrProjectRepoLimit). The
 // repository's storage usage moves between the projects' ceilings in the same
 // transaction and must fit the target's (ErrProjectQuotaExceeded).
-func (p *PostgresDB) MoveRepositoryToProject(ctx context.Context, repoID, toProjectID string, maxRepositories int) error {
+func (p *RepositoryStore) MoveRepositoryToProject(ctx context.Context, repoID, toProjectID string, maxRepositories int) error {
 	// Cached repository lookups carry the project; they must not outlive this write.
 	defer p.authCache.invalidate()
 
@@ -126,7 +132,7 @@ func lockProjectCap(ctx context.Context, tx *sql.Tx, projectID string, maxReposi
 	return nil
 }
 
-func (p *PostgresDB) createRepository(ctx context.Context, repo *models.Repository, memberIDs []string, maxRepositories int) error {
+func (p *RepositoryStore) createRepository(ctx context.Context, repo *models.Repository, memberIDs []string, maxRepositories int) error {
 	// A new repository joins the readable set of whoever's grants match it.
 	defer p.authCache.invalidate()
 
@@ -189,30 +195,9 @@ func (p *PostgresDB) createRepository(ctx context.Context, repo *models.Reposito
 	return nil
 }
 
-// ReplaceGroupMembers atomically replaces the member list of a group
-// repository. An empty memberIDs slice clears the group.
-func (p *PostgresDB) ReplaceGroupMembers(ctx context.Context, groupRepoID string, memberIDs []string) error {
-	tx, err := p.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-
-	defer func() { _ = tx.Rollback() }()
-
-	if err := replaceGroupMembersTx(ctx, tx, groupRepoID, memberIDs); err != nil {
-		return err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit group members: %w", err)
-	}
-
-	return nil
-}
-
 // UpdateRepositoryAndMembers updates the repository row and replaces its group
 // members in one transaction, so a failure of either leaves neither applied.
-func (p *PostgresDB) UpdateRepositoryAndMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error {
+func (p *RepositoryStore) UpdateRepositoryAndMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
@@ -289,15 +274,4 @@ func UniqueViolationConstraint(err error) string {
 	}
 
 	return ""
-}
-
-// CountBlobsOnStorageBackend returns how many blobs are recorded on a storage backend.
-func (p *PostgresDB) CountBlobsOnStorageBackend(ctx context.Context, backendID string) (int64, error) {
-	var n int64
-
-	if err := p.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM blobs WHERE storage_backend_id = $1`, backendID).Scan(&n); err != nil {
-		return 0, fmt.Errorf("failed to count blobs on storage backend: %w", err)
-	}
-
-	return n, nil
 }

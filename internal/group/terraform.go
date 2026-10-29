@@ -16,6 +16,7 @@ import (
 	"golang.org/x/mod/semver"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/publicurl"
 )
 
 // maxTerraformSegmentLen bounds one path segment of a registry request a group
@@ -112,22 +113,28 @@ func parseTerraformPath(relPath string) terraformPath {
 // module is held by a hosted member iff its version list answers 200, a
 // provider type likewise. The details of a version are package metadata (they
 // are rewritten for the group below), downloads are files.
-func terraformRef(relPath string) (pkgRef, bool) {
+func terraformRef(relPath string) (PkgRef, bool) {
 	p := parseTerraformPath(relPath)
 
 	switch p.kind {
 	case terraformModuleVersions, terraformModuleLatest, terraformModuleLatestDownload, terraformModuleVersion:
-		return pkgRef{probe: p.name + "/" + p.system + "/versions", accept: "application/json"}, true
+		return PkgRef{probe: p.name + "/" + p.system + "/versions", accept: "application/json"}, true
 	case terraformModuleDownload:
-		return pkgRef{probe: p.name + "/" + p.system + "/versions", accept: "application/json", file: true}, true
+		return PkgRef{probe: p.name + "/" + p.system + "/versions", accept: "application/json", file: true}, true
 	case terraformProviderVersions:
-		return pkgRef{probe: p.name + "/versions", accept: "application/json"}, true
+		return PkgRef{probe: p.name + "/versions", accept: "application/json"}, true
 	case terraformProviderDownload:
-		return pkgRef{probe: p.name + "/versions", accept: "application/json", file: true}, true
+		return PkgRef{probe: p.name + "/versions", accept: "application/json", file: true}, true
 	case terraformOther:
 	}
 
-	return pkgRef{}, false
+	return PkgRef{}, false
+}
+
+// TerraformHooks is the terraform group: merged version lists and discovery, downloads first-hit.
+var TerraformHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: (*Handler).serveTerraform,
+	PackageRef:  terraformRef,
 }
 
 // serveTerraform answers the requests of a terraform group that merge over its
@@ -166,7 +173,7 @@ func (h *Handler) serveTerraform(
 	case terraformModuleLatest, terraformModuleLatestDownload:
 		h.serveTerraformLatest(w, r, grp, p, members, be)
 	case terraformModuleVersion:
-		h.serveTerraformModuleDetails(w, r, grp, p, relPath, members, be)
+		h.serveTerraformModuleDetails(w, r, grp, relPath, members, be)
 	case terraformModuleDownload, terraformProviderDownload, terraformOther:
 		return false
 	}
@@ -413,25 +420,17 @@ func rewriteModuleDetails(doc []byte, group string) ([]byte, error) {
 	return append(body, '\n'), nil
 }
 
-// moduleVersionsOf reads the merged version entries of a module from the
-// members' answers; failed is set when a document could not be read or a member
-// failed.
-func (h *Handler) moduleVersionsOf(
-	r *http.Request,
-	grp *models.Repository,
-	p terraformPath,
-	members []*models.Repository,
-	be Backend,
-) ([]moduleVersion, bool) {
-	docs, failed := h.collectJSON(r, members, p.name+"/"+p.system+"/versions", "", be)
-	lists := make([][]moduleVersion, 0, len(docs))
+// mergeModuleVersionDocs merges the module version lists of the members'
+// answers; a document that cannot be read counts as a failed member. nil when
+// no document was usable.
+func (h *Handler) mergeModuleVersionDocs(grp *models.Repository, c *collection) []moduleVersion {
+	lists := make([][]moduleVersion, 0, len(c.docs))
 
-	for _, d := range docs {
+	for _, d := range c.docs {
 		l, err := parseModuleVersions(d.body)
 		if err != nil {
 			h.log.Warnw("member terraform module versions unreadable", "group", grp.Name, "member", d.member.Name, "error", err)
-
-			failed = true
+			c.fail(d.member)
 
 			continue
 		}
@@ -440,10 +439,15 @@ func (h *Handler) moduleVersionsOf(
 	}
 
 	if len(lists) == 0 {
-		return nil, failed
+		return nil
 	}
 
-	return mergeModuleVersions(lists...), failed
+	return mergeModuleVersions(lists...)
+}
+
+// moduleVersionsAsk asks the members for the version list of module p.
+func moduleVersionsAsk(p terraformPath) memberAsk {
+	return jsonAsk(p.name+"/"+p.system+"/versions", "", 0)
 }
 
 func (h *Handler) serveTerraformModuleVersions(
@@ -454,21 +458,20 @@ func (h *Handler) serveTerraformModuleVersions(
 	members []*models.Repository,
 	be Backend,
 ) {
-	merged, failed := h.moduleVersionsOf(r, grp, p, members, be)
-	if len(merged) == 0 {
-		h.writeMergedJSON(w, r, grp, nil, failed)
-		return
-	}
+	h.serveMergedDoc(w, r, grp, members, be, mergedDoc{
+		ask:         moduleVersionsAsk(p),
+		what:        "terraform module versions",
+		maxAge:      mergedDocMaxAge,
+		contentType: "application/json",
+		merge: func(c *collection) ([]byte, error) {
+			merged := h.mergeModuleVersionDocs(grp, c)
+			if len(merged) == 0 {
+				return nil, errNoDocument
+			}
 
-	body, err := renderModuleVersions(grp.Name+"/"+p.name+"/"+p.system, merged)
-	if err != nil {
-		h.log.Warnw("terraform module versions cannot be rendered", "group", grp.Name, "error", err)
-		h.writeMergedJSON(w, r, grp, nil, true)
-
-		return
-	}
-
-	h.writeMergedJSON(w, r, grp, body, failed)
+			return renderModuleVersions(grp.Name+"/"+p.name+"/"+p.system, merged)
+		},
+	})
 }
 
 func (h *Handler) serveTerraformProviderVersions(
@@ -479,37 +482,34 @@ func (h *Handler) serveTerraformProviderVersions(
 	members []*models.Repository,
 	be Backend,
 ) {
-	docs, failed := h.collectJSON(r, members, relPath, "", be)
-	lists := make([][]providerVersion, 0, len(docs))
+	h.serveMergedDoc(w, r, grp, members, be, mergedDoc{
+		ask:         jsonAsk(relPath, "", 0),
+		what:        "terraform provider versions",
+		maxAge:      mergedDocMaxAge,
+		contentType: "application/json",
+		merge: func(c *collection) ([]byte, error) {
+			lists := make([][]providerVersion, 0, len(c.docs))
 
-	for _, d := range docs {
-		l, err := parseProviderVersions(d.body)
-		if err != nil {
-			h.log.Warnw("member terraform provider versions unreadable", "group", grp.Name, "member", d.member.Name, "error", err)
+			for _, d := range c.docs {
+				l, err := parseProviderVersions(d.body)
+				if err != nil {
+					h.log.Warnw("member terraform provider versions unreadable", "group", grp.Name, "member", d.member.Name, "error", err)
+					c.fail(d.member)
 
-			failed = true
+					continue
+				}
 
-			continue
-		}
+				lists = append(lists, l)
+			}
 
-		lists = append(lists, l)
-	}
+			merged := mergeProviderVersions(lists...)
+			if len(merged) == 0 {
+				return nil, errNoDocument
+			}
 
-	merged := mergeProviderVersions(lists...)
-	if len(merged) == 0 {
-		h.writeMergedJSON(w, r, grp, nil, failed)
-		return
-	}
-
-	body, err := renderProviderVersions(merged)
-	if err != nil {
-		h.log.Warnw("terraform provider versions cannot be rendered", "group", grp.Name, "error", err)
-		h.writeMergedJSON(w, r, grp, nil, true)
-
-		return
-	}
-
-	h.writeMergedJSON(w, r, grp, body, failed)
+			return renderProviderVersions(merged)
+		},
+	})
 }
 
 // serveTerraformModuleDetails answers the description of one module version
@@ -518,26 +518,19 @@ func (h *Handler) serveTerraformModuleDetails(
 	w http.ResponseWriter,
 	r *http.Request,
 	grp *models.Repository,
-	_ terraformPath,
 	relPath string,
 	members []*models.Repository,
 	be Backend,
 ) {
-	docs, failed := h.collectJSONN(r, members, relPath, "", 1, be)
-	if len(docs) == 0 {
-		h.writeMergedJSON(w, r, grp, nil, failed)
-		return
-	}
-
-	body, err := rewriteModuleDetails(docs[0].body, grp.Name)
-	if err != nil {
-		h.log.Warnw("member terraform module details unreadable", "group", grp.Name, "member", docs[0].member.Name, "error", err)
-		h.writeMergedJSON(w, r, grp, nil, true)
-
-		return
-	}
-
-	h.writeMergedJSON(w, r, grp, body, false)
+	h.serveMergedDoc(w, r, grp, members, be, mergedDoc{
+		ask:         jsonAsk(relPath, "", 1),
+		what:        "terraform module details",
+		maxAge:      mergedDocMaxAge,
+		contentType: "application/json",
+		merge: func(c *collection) ([]byte, error) {
+			return rewriteModuleDetails(c.docs[0].body, grp.Name) //nolint:wrapcheck // logged by serveMergedDoc
+		},
+	})
 }
 
 // serveTerraformLatest answers {name}/{system} (the details of the latest
@@ -551,7 +544,13 @@ func (h *Handler) serveTerraformLatest(
 	members []*models.Repository,
 	be Backend,
 ) {
-	merged, failed := h.moduleVersionsOf(r, grp, p, members, be)
+	sess := h.newSession(r.Context())
+	defer sess.release()
+
+	c := h.collect(r, sess, members, moduleVersionsAsk(p), be)
+	merged := h.mergeModuleVersionDocs(grp, &c)
+
+	sess.release()
 
 	versions := make([]string, 0, len(merged))
 	for _, v := range merged {
@@ -560,7 +559,7 @@ func (h *Handler) serveTerraformLatest(
 
 	latest := latestTerraformVersion(versions)
 	if latest == "" {
-		h.writeMergedJSON(w, r, grp, nil, failed)
+		writeNoDocument(w, r, c.partial())
 		return
 	}
 
@@ -572,16 +571,11 @@ func (h *Handler) serveTerraformLatest(
 		return
 	}
 
-	h.serveTerraformModuleDetails(w, r, grp, p, p.name+"/"+p.system+"/"+latest, members, be)
+	h.serveTerraformModuleDetails(w, r, grp, p.name+"/"+p.system+"/"+latest, members, be)
 }
 
 // terraformRepoPath is the path a terraform repository is served under, below
 // the path of the server's base URL.
 func (h *Handler) terraformRepoPath(repoName string) string {
-	prefix := ""
-	if u, err := url.Parse(h.baseURL); err == nil {
-		prefix = strings.TrimSuffix(u.EscapedPath(), "/")
-	}
-
-	return prefix + "/repos/" + url.PathEscape(repoName)
+	return publicurl.PathPrefix(h.baseURL) + "/repos/" + url.PathEscape(repoName)
 }

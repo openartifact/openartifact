@@ -3,73 +3,178 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package clientsetup builds native client URLs and per-client configure /
-// publish snippets for a repository. It is the Go port of `repoBaseUrl` and
-// `clientSetup` in web/src/lib/installCommands.ts; keep the two in sync.
+// publish snippets for a repository. It is the single source of those snippets:
+// the per-format builders write templates with {{placeholders}}, Snippets renders
+// them for the Go callers (the MCP repository tool), and cmd/genformats writes
+// the same templates into web/src/lib/clientsetup.generated.ts, which the web UI
+// renders with a trivial TypeScript substituter (see render for the syntax).
 // Credentials are always the literal `<USERNAME>` / `<TOKEN>` placeholders.
 package clientsetup
 
 import (
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 
+	"github.com/openartifact/openartifact/internal/registry"
 	"github.com/openartifact/openartifact/internal/repotype"
 )
 
-// Snippet is the configure/publish commands for one client tool.
+// Snippet is the configure/publish commands for one client tool. In a template
+// (Templates) the fields carry {{placeholders}}; Snippets returns them rendered.
 type Snippet struct {
 	Client    string `json:"client"`
 	Configure string `json:"configure"`
 	Publish   string `json:"publish,omitempty"`
 }
 
-// target carries the values every snippet template needs.
+// Template placeholders. A builder writes these where the repository's real
+// values go; render substitutes them.
+const (
+	phOrigin   = "{{origin}}"   // server origin without trailing slash
+	phHost     = "{{host}}"     // host[:port] of the origin
+	phHostname = "{{hostname}}" // host of the origin without the port (what sbt and netrc match credentials on)
+	phRepo     = "{{repo}}"     // raw repository name
+	phEsc      = "{{esc}}"      // URL-path-escaped repository name
+	phBase     = "{{base}}"     // native repository base URL
+	phAuthBase = "{{authBase}}" // phBase with <USERNAME>:<TOKEN>@ after the scheme
+)
+
+// target carries the placeholders every snippet template needs, plus the
+// repository type the template is built for.
 type target struct {
-	origin   string // server origin without trailing slash
-	host     string // host[:port] of origin
-	name     string // host of origin without the port (what sbt matches credentials on)
-	repo     string // raw repository name
-	esc      string // URL-path-escaped repository name
-	base     string // native repository base URL
+	origin   string
+	host     string
+	name     string
+	repo     string
+	esc      string
+	base     string
+	authBase string
 	repoType string // hosted, proxy or group
 }
 
-// RepoBaseURL returns the native base URL of a repository for its format (no
-// trailing slash). Docker serves the registry API at the host root. origin
-// must not end in a slash.
-func RepoBaseURL(format, origin, repo string) string {
-	name := url.PathEscape(repo)
+// Repository types a template can differ by. Anything else is hosted.
+const (
+	typeHosted = repotype.Hosted
+	typeProxy  = repotype.Proxy
+	typeGroup  = repotype.Group
+)
 
+// Conditional blocks {{#http}}...{{/http}} are kept when the named condition
+// holds and dropped otherwise. The only condition is "http": the origin uses
+// plain http.
+var (
+	conditionRe = regexp.MustCompile(`(?s)\{\{#(\w+)\}\}(.*?)\{\{/\w+\}\}`)
+	// placeholderRe matches the {{name}} placeholders; nothing else in a
+	// template looks like one.
+	placeholderRe = regexp.MustCompile(`\{\{(\w+)\}\}`)
+)
+
+// BaseTemplate returns the native base URL template of a repository for its
+// format (no trailing slash): docker serves the registry API at the host root,
+// isolated formats live under /repos/<format>/, the rest under /repos/.
+func BaseTemplate(format string) string {
 	switch {
 	case format == "docker":
-		return origin
+		return phOrigin
 	case repotype.Isolated(format):
-		return origin + "/repos/" + format + "/" + name
+		return phOrigin + "/repos/" + format + "/" + phEsc
 	default:
-		return origin + "/repos/" + name
+		return phOrigin + "/repos/" + phEsc
 	}
+}
+
+// values are what the placeholders of a template stand for.
+type values map[string]string
+
+func valuesFor(format, origin, repo string) values {
+	v := values{
+		"origin":   origin,
+		"host":     hostOf(origin),
+		"hostname": hostnameOf(origin),
+		"repo":     repo,
+		"esc":      url.PathEscape(repo),
+	}
+	v["base"] = render(BaseTemplate(format), v)
+	v["authBase"] = authBaseOf(v["base"])
+
+	return v
+}
+
+// authBaseOf puts the credential placeholders after the scheme of a URL.
+func authBaseOf(base string) string {
+	if i := strings.Index(base, "://"); i >= 0 {
+		return base[:i+3] + "<USERNAME>:<TOKEN>@" + base[i+3:]
+	}
+
+	return base
+}
+
+// render substitutes a template: conditional blocks first, then each
+// {{placeholder}} in one pass, so substituted values are never rescanned. The
+// web renderer in web/src/lib/installCommands.ts implements the same two steps.
+func render(tmpl string, v values) string {
+	plain := strings.HasPrefix(v["origin"], "http://")
+
+	tmpl = conditionRe.ReplaceAllStringFunc(tmpl, func(m string) string {
+		sub := conditionRe.FindStringSubmatch(m)
+		if sub[1] == "http" && plain {
+			return sub[2]
+		}
+
+		return ""
+	})
+
+	return placeholderRe.ReplaceAllStringFunc(tmpl, func(m string) string {
+		return v[m[2:len(m)-2]]
+	})
+}
+
+// RepoBaseURL returns the native base URL of a repository for its format (no
+// trailing slash). origin must not end in a slash.
+func RepoBaseURL(format, origin, repo string) string {
+	return render(BaseTemplate(format), values{"origin": origin, "esc": url.PathEscape(repo)})
+}
+
+// Templates returns the unrendered snippets of a format for a repository type
+// ("hosted", "proxy" or "group"; anything else is hosted). Unknown formats
+// return a single bare-URL entry.
+func Templates(format, repoType string) []Snippet {
+	if repoType != typeProxy && repoType != typeGroup {
+		repoType = typeHosted
+	}
+
+	c := target{
+		origin:   phOrigin,
+		host:     phHost,
+		name:     phHostname,
+		repo:     phRepo,
+		esc:      phEsc,
+		base:     phBase,
+		authBase: phAuthBase,
+		repoType: repoType,
+	}
+
+	if build, ok := builders.Lookup(format); ok {
+		return build(c)
+	}
+
+	return []Snippet{{Client: "URL", Configure: phBase + "/"}}
 }
 
 // Snippets returns the configure/publish snippets for a repository of the
 // given format and type ("hosted", "proxy" or "group"; "" is hosted). Unknown
 // formats return a single bare-URL entry.
 func Snippets(format, origin, repo, repoType string) []Snippet {
-	origin = strings.TrimRight(origin, "/")
-	c := target{
-		origin:   origin,
-		host:     hostOf(origin),
-		name:     hostnameOf(origin),
-		repo:     repo,
-		esc:      url.PathEscape(repo),
-		base:     RepoBaseURL(format, origin, repo),
-		repoType: repoType,
+	v := valuesFor(format, strings.TrimRight(origin, "/"), repo)
+
+	out := Templates(format, repoType)
+	for i, s := range out {
+		out[i] = Snippet{Client: s.Client, Configure: render(s.Configure, v), Publish: render(s.Publish, v)}
 	}
 
-	if build := builderFor(format); build != nil {
-		return build(c)
-	}
-
-	return []Snippet{{Client: "URL", Configure: c.base + "/"}}
+	return out
 }
 
 func hostOf(origin string) string {
@@ -102,61 +207,22 @@ func hostnameOf(origin string) string {
 	return host
 }
 
-// builderFor returns the snippet builder for a format, or nil when unknown.
-//
-//nolint:gocyclo,cyclop // one case per format
-func builderFor(format string) func(target) []Snippet {
-	switch format {
-	case "npm":
-		return npmSnippets
-	case "docker":
-		return dockerSnippets
-	case "pypi":
-		return pypiSnippets
-	case "maven":
-		return mavenSnippets
-	case "helm":
-		return helmSnippets
-	case "deb":
-		return debSnippets
-	case "rpm":
-		return rpmSnippets
-	case "pacman":
-		return pacmanSnippets
-	case "nix":
-		return nixSnippets
-	case "cargo":
-		return cargoSnippets
-	case "composer":
-		return composerSnippets
-	case "go":
-		return gomodSnippets
-	case "nuget":
-		return nugetSnippets
-	case "rubygems":
-		return rubygemsSnippets
-	case "raw":
-		return rawSnippets
-	case "conda":
-		return condaSnippets
-	case "conan":
-		return conanSnippets
-	case "apk":
-		return apkSnippets
-	case "terraform":
-		return terraformSnippets
-	case "ansible":
-		return ansibleSnippets
-	case "sbt":
-		return sbtSnippets
-	case "ivy":
-		return ivySnippets
-	default:
-		return nil
-	}
+var builders registry.Registry[Builder] //nolint:gochecknoglobals // the format builder table, filled by Register at startup
+
+// Builder writes the snippet templates of one format for a target. The
+// per-format builders (NPMBuilder, DockerBuilder, ...) are registered by the
+// format plugin through Register; a format with no builder gets the bare-URL
+// fallback of Templates.
+type Builder func(target) []Snippet
+
+// Register adds the snippet builder of a format. It panics when the format is
+// registered twice.
+func Register(format string, b Builder) {
+	builders.Register(format, b)
 }
 
-func npmSnippets(c target) []Snippet {
+// NPMBuilder is the snippet builder of the npm format.
+func NPMBuilder(c target) []Snippet {
 	auth := fmt.Sprintf("//%s/repos/%s/:_authToken <TOKEN>", c.host, c.esc)
 
 	return []Snippet{
@@ -178,7 +244,8 @@ func npmSnippets(c target) []Snippet {
 	}
 }
 
-func dockerSnippets(c target) []Snippet {
+// DockerBuilder is the snippet builder of the docker format.
+func DockerBuilder(c target) []Snippet {
 	return []Snippet{{
 		Client:    "docker",
 		Configure: fmt.Sprintf("docker login %s -u <USERNAME> -p <TOKEN>", c.host),
@@ -187,7 +254,8 @@ func dockerSnippets(c target) []Snippet {
 	}}
 }
 
-func pypiSnippets(c target) []Snippet {
+// PyPIBuilder is the snippet builder of the pypi format.
+func PyPIBuilder(c target) []Snippet {
 	return []Snippet{
 		{
 			Client:    "pip",
@@ -205,7 +273,8 @@ func pypiSnippets(c target) []Snippet {
 	}
 }
 
-func mavenSnippets(c target) []Snippet {
+// MavenBuilder is the snippet builder of the maven format.
+func MavenBuilder(c target) []Snippet {
 	return []Snippet{
 		{
 			Client: "Maven",
@@ -220,7 +289,8 @@ func mavenSnippets(c target) []Snippet {
 	}
 }
 
-func helmSnippets(c target) []Snippet {
+// HelmBuilder is the snippet builder of the helm format.
+func HelmBuilder(c target) []Snippet {
 	return []Snippet{{
 		Client:    "helm",
 		Configure: fmt.Sprintf("helm repo add %s %s --username <USERNAME> --password <TOKEN>\nhelm repo update", c.repo, c.base),
@@ -228,7 +298,8 @@ func helmSnippets(c target) []Snippet {
 	}}
 }
 
-func debSnippets(c target) []Snippet {
+// DebBuilder is the snippet builder of the deb format.
+func DebBuilder(c target) []Snippet {
 	return []Snippet{
 		{
 			Client: "apt",
@@ -248,7 +319,8 @@ func debSnippets(c target) []Snippet {
 	}
 }
 
-func rpmSnippets(c target) []Snippet {
+// RPMBuilder is the snippet builder of the rpm format.
+func RPMBuilder(c target) []Snippet {
 	return []Snippet{
 		{
 			Client: "dnf / yum",
@@ -263,11 +335,11 @@ func rpmSnippets(c target) []Snippet {
 	}
 }
 
-// pacmanSnippets configures /etc/pacman.conf, trusts the repository key and
+// PacmanBuilder configures /etc/pacman.conf, trusts the repository key and
 // publishes a package (and optionally its detached signature) with a token PUT.
 // A group is read-only: it has nothing to publish, and its packages keep the
 // signatures of the members that hold them.
-func pacmanSnippets(c target) []Snippet {
+func PacmanBuilder(c target) []Snippet {
 	if c.repoType == "proxy" {
 		return pacmanProxySnippets(c)
 	}
@@ -305,13 +377,13 @@ func pacmanSnippets(c target) []Snippet {
 // that is the key clients must trust.
 const nixUpstreamKey = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
 
-// nixSnippets configures a Nix client to substitute from, and `nix copy` to,
+// NixBuilder configures a Nix client to substitute from, and `nix copy` to,
 // a hosted binary cache. The netrc carries the token of a private repository
 // for reads and for uploads; netrc matches the host name without the port. A
 // proxy and a group are read-only: a proxy serves the upstream's signatures, a
 // group signs what its hosted members serve with its own key and passes proxy
 // members' narinfo through untouched.
-func nixSnippets(c target) []Snippet {
+func NixBuilder(c target) []Snippet {
 	key := c.base + "/public.key"
 	trusted := "$(curl -fsS " + key + ")"
 
@@ -350,12 +422,8 @@ func pacmanProxySnippets(c target) []Snippet {
 	}}
 }
 
-func apkSnippets(c target) []Snippet {
-	authBase := c.base
-	if i := strings.Index(c.base, "://"); i >= 0 {
-		authBase = c.base[:i+3] + "<USERNAME>:<TOKEN>@" + c.base[i+3:]
-	}
-
+// APKBuilder is the snippet builder of the apk format.
+func APKBuilder(c target) []Snippet {
 	if c.repoType == "proxy" {
 		// The index keeps the upstream's signature, so no key comes from this
 		// server: the client verifies it with the keys it already trusts.
@@ -366,7 +434,7 @@ func apkSnippets(c target) []Snippet {
 					"# private repository: put the credentials in the URL, %[2]s/v3.20/main\n"+
 					"echo \"%[1]s/v3.20/main\" >> /etc/apk/repositories\n"+
 					"echo \"%[1]s/v3.20/community\" >> /etc/apk/repositories\napk update\napk add PACKAGE",
-				c.base, authBase,
+				c.base, c.authBase,
 			),
 		}}
 	}
@@ -382,7 +450,7 @@ func apkSnippets(c target) []Snippet {
 					"and fetch the key with wget --user <USERNAME> --password <TOKEN>\n"+
 					"wget -O /etc/apk/keys/openartifact-%[2]s.rsa.pub %[1]s/public.key\n"+
 					"echo \"%[1]s/v3.20/main\" >> /etc/apk/repositories\napk update\napk add PACKAGE",
-				c.base, c.repo, authBase,
+				c.base, c.repo, c.authBase,
 			),
 		}}
 	}
@@ -394,7 +462,7 @@ func apkSnippets(c target) []Snippet {
 				"and fetch the key with wget --user <USERNAME> --password <TOKEN>\n"+
 				"wget -O /etc/apk/keys/openartifact-%[2]s.rsa.pub %[1]s/public.key\n"+
 				"echo \"%[1]s/v3.20/main\" >> /etc/apk/repositories\napk update\napk add PACKAGE",
-			c.base, c.repo, authBase,
+			c.base, c.repo, c.authBase,
 		),
 		Publish: fmt.Sprintf(
 			"curl -T my-pkg-1.0-r0.apk -H \"Authorization: Bearer <TOKEN>\" %[1]s/v3.20/main/x86_64/my-pkg-1.0-r0.apk\n\n"+
@@ -406,7 +474,8 @@ func apkSnippets(c target) []Snippet {
 	}}
 }
 
-func cargoSnippets(c target) []Snippet {
+// CargoBuilder is the snippet builder of the cargo format.
+func CargoBuilder(c target) []Snippet {
 	return []Snippet{{
 		Client: "cargo",
 		Configure: fmt.Sprintf("# ~/.cargo/config.toml\n[registries.%s]\nindex = \"sparse+%s/index/\"\ntoken = \"Bearer <TOKEN>\"",
@@ -415,14 +484,16 @@ func cargoSnippets(c target) []Snippet {
 	}}
 }
 
-func gomodSnippets(c target) []Snippet {
+// GoBuilder is the snippet builder of the go format.
+func GoBuilder(c target) []Snippet {
 	return []Snippet{{
 		Client:    "go",
 		Configure: fmt.Sprintf("go env -w GOPROXY=%s,direct\ngo env -w GONOSUMDB=*", c.base),
 	}}
 }
 
-func nugetSnippets(c target) []Snippet {
+// NuGetBuilder is the snippet builder of the nuget format.
+func NuGetBuilder(c target) []Snippet {
 	return []Snippet{
 		{
 			Client: "dotnet",
@@ -436,7 +507,8 @@ func nugetSnippets(c target) []Snippet {
 	}
 }
 
-func rubygemsSnippets(c target) []Snippet {
+// RubyGemsBuilder is the snippet builder of the rubygems format.
+func RubyGemsBuilder(c target) []Snippet {
 	return []Snippet{{
 		Client:    "gem",
 		Configure: fmt.Sprintf("gem sources --add %s/", c.base),
@@ -444,7 +516,8 @@ func rubygemsSnippets(c target) []Snippet {
 	}}
 }
 
-func rawSnippets(c target) []Snippet {
+// RawBuilder is the snippet builder of the raw format.
+func RawBuilder(c target) []Snippet {
 	return []Snippet{{
 		Client:    "curl",
 		Configure: fmt.Sprintf("curl -fO %s/path/to/file.bin", c.base),
@@ -452,7 +525,8 @@ func rawSnippets(c target) []Snippet {
 	}}
 }
 
-func condaSnippets(c target) []Snippet {
+// CondaBuilder is the snippet builder of the conda format.
+func CondaBuilder(c target) []Snippet {
 	return []Snippet{
 		{
 			Client:    "conda",
@@ -465,7 +539,8 @@ func condaSnippets(c target) []Snippet {
 	}
 }
 
-func conanSnippets(c target) []Snippet {
+// ConanBuilder is the snippet builder of the conan format.
+func ConanBuilder(c target) []Snippet {
 	return []Snippet{{
 		Client:    "conan",
 		Configure: fmt.Sprintf("conan remote add %[1]s %[2]s\nconan remote login %[1]s <USERNAME> -p <TOKEN>", c.repo, c.base),
@@ -473,10 +548,10 @@ func conanSnippets(c target) []Snippet {
 	}}
 }
 
-// terraformSnippets configures both terraform and OpenTofu: the registry
+// TerraformBuilder configures both terraform and OpenTofu: the registry
 // namespace is the repository name, and the publish API is OpenArtifact's own
 // (no upstream protocol exists for uploads).
-func terraformSnippets(c target) []Snippet {
+func TerraformBuilder(c target) []Snippet {
 	const note = "# terraform and tofu need HTTPS and a hostname with a dot"
 
 	usage := fmt.Sprintf(
@@ -503,10 +578,10 @@ func terraformSnippets(c target) []Snippet {
 	}
 }
 
-// ansibleSnippets configures ansible-galaxy against the Galaxy v3 API rooted at
+// AnsibleBuilder configures ansible-galaxy against the Galaxy v3 API rooted at
 // the repository's /api/ path. Galaxy sends the API token as `Token <token>`.
 // Proxy and group repositories are read-only, so they carry no publish hint.
-func ansibleSnippets(c target) []Snippet {
+func AnsibleBuilder(c target) []Snippet {
 	api := c.base + "/api/"
 
 	publish := "ansible-galaxy collection publish NAMESPACE-NAME-VERSION.tar.gz --server openartifact"
@@ -526,25 +601,24 @@ func ansibleSnippets(c target) []Snippet {
 	}}
 }
 
-// composerSnippets configures Composer against the repository root, which
+// ComposerBuilder configures Composer against the repository root, which
 // serves packages.json. Composer matches http-basic credentials by host name
 // plus the port when the URL names one, and refuses plain http unless
 // secure-http is disabled.
 // Proxy and group repositories are read-only, so they carry no publish hint.
-func composerSnippets(c target) []Snippet {
+func ComposerBuilder(c target) []Snippet {
 	publish := "curl -T vendor-name-1.0.0.zip -H \"Authorization: Bearer <TOKEN>\" " + c.base + "/packages/upload/vendor/name/1.0.0"
 	if c.repoType == "proxy" || c.repoType == "group" {
 		publish = "" // proxy and group repositories are read-only
 	}
 
+	// secure-http only needs turning off for a plain-http origin.
 	configure := fmt.Sprintf(
 		"# composer.json\n{\n  \"repositories\": [{\"type\": \"composer\", \"url\": \"%[1]s\"}]\n}"+
 			"\n\n# or from the command line\ncomposer config repositories.openartifact composer %[1]s",
 		c.base,
 	)
-	if strings.HasPrefix(c.origin, "http://") {
-		configure += "\ncomposer config secure-http false"
-	}
+	configure += "{{#http}}\ncomposer config secure-http false{{/http}}"
 
 	configure += fmt.Sprintf(
 		"\n\n# auth (or auth.json: {\"http-basic\": {\"%[1]s\": {\"username\": \"token\", \"password\": \"<TOKEN>\"}}})"+
@@ -555,7 +629,8 @@ func composerSnippets(c target) []Snippet {
 	return []Snippet{{Client: "composer", Configure: configure, Publish: publish}}
 }
 
-func sbtSnippets(c target) []Snippet {
+// SBTBuilder is the snippet builder of the sbt format.
+func SBTBuilder(c target) []Snippet {
 	return []Snippet{
 		{
 			Client: "sbt",
@@ -571,7 +646,8 @@ func sbtSnippets(c target) []Snippet {
 	}
 }
 
-func ivySnippets(c target) []Snippet {
+// IvyBuilder is the snippet builder of the ivy format.
+func IvyBuilder(c target) []Snippet {
 	return []Snippet{
 		{
 			Client:    "Ivy",

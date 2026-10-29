@@ -5,12 +5,11 @@
 package group
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
-	"strconv"
+	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/base"
 	pkgcargo "github.com/openartifact/openartifact/pkg/cargo"
 )
 
@@ -22,6 +21,12 @@ const (
 	// cargoConfigMaxAge is the same for the generated config.json.
 	cargoConfigMaxAge = 300
 )
+
+// CargoHooks is the cargo group: merged sparse index entries, crate downloads first-hit.
+var CargoHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: (*Handler).serveCargo,
+	PackageRef:  cargoRef,
+}
 
 // serveCargo answers config.json and index files of a cargo group and
 // reports whether it handled the request; crate downloads fall through to the
@@ -62,7 +67,9 @@ func (h *Handler) serveCargo(
 }
 
 func (h *Handler) serveCargoConfig(w http.ResponseWriter, r *http.Request, grp *models.Repository) {
-	h.writeCargo(w, r, grp, pkgcargo.RenderConfig(h.baseURL, grp.Name, grp.Public), "application/json", cargoConfigMaxAge, false)
+	// The body carries the origin the client reached, so its content ETag differs per origin.
+	body := pkgcargo.RenderConfig(h.publicBase(w, r), grp.Name, grp.Public)
+	writeMerged(w, r, grp.Public, body, "application/json", base.ContentETag(body), cargoConfigMaxAge, false)
 }
 
 func (h *Handler) serveCargoIndex(
@@ -73,81 +80,35 @@ func (h *Handler) serveCargoIndex(
 	members []*models.Repository,
 	be Backend,
 ) {
-	// Members are asked for the file itself, always with GET and without the
-	// client's conditional headers.
-	mr := r.Clone(r.Context())
-	mr.Method = http.MethodGet
-	mr.Header.Del("If-None-Match")
-	mr.Header.Del("If-Modified-Since")
+	h.serveMergedDoc(w, r, grp, members, be, mergedDoc{
+		ask:         memberAsk{path: samePath("index/" + p.IndexPath), limit: pkgcargo.MaxIndexBytes},
+		what:        "cargo index files",
+		maxAge:      cargoIndexMaxAge,
+		contentType: "text/plain; charset=utf-8",
+		merge: func(c *collection) ([]byte, error) {
+			docs := make([][]byte, len(c.docs))
+			for i, d := range c.docs {
+				docs[i] = d.body
+			}
 
-	var (
-		docs   [][]byte
-		failed bool
-	)
-
-	sess := h.newSession(r.Context())
-	defer sess.release()
-
-	for _, m := range members {
-		cw := sess.capture(pkgcargo.MaxIndexBytes)
-		be.ServeMember(cw, mr, m, "index/"+p.IndexPath)
-
-		switch {
-		case cw.status == http.StatusNotFound:
-		case cw.status == http.StatusOK && !cw.overflow:
-			docs = append(docs, cw.body.Bytes())
-		default:
-			failed = true
-		}
-	}
-
-	if len(docs) == 0 {
-		if failed {
-			http.Error(w, "member repository error", http.StatusBadGateway)
-		} else {
-			http.NotFound(w, r)
-		}
-
-		return
-	}
-
-	body, err := pkgcargo.MergeIndex(docs)
-
-	sess.release()
-
-	if err != nil {
-		h.log.Errorw("failed to merge cargo index files", "group", grp.Name, "crate", p.Crate, "error", err)
-		http.Error(w, "member repository error", http.StatusBadGateway)
-
-		return
-	}
-
-	h.writeCargo(w, r, grp, body, "text/plain; charset=utf-8", cargoIndexMaxAge, failed)
+			return pkgcargo.MergeIndex(docs) //nolint:wrapcheck // logged by serveMergedDoc
+		},
+	})
 }
 
-// writeCargo answers a generated document with a content ETag, honoring
-// If-None-Match; partial (a member failed while it was assembled) sends it
-// uncacheable and without validator.
-func (h *Handler) writeCargo(
-	w http.ResponseWriter,
-	r *http.Request,
-	grp *models.Repository,
-	body []byte,
-	contentType string,
-	maxAge int,
-	partial bool,
-) {
-	sum := sha256.Sum256(body)
-
-	if revalidateMerged(w, r, grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, maxAge, partial) {
-		return
+func cargoRef(relPath string) (PkgRef, bool) {
+	p, err := pkgcargo.ParsePath(relPath)
+	if err != nil {
+		return PkgRef{}, false
 	}
 
-	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
+	switch p.Kind {
+	case pkgcargo.KindIndex:
+		return PkgRef{probe: "index/" + p.IndexPath}, true
+	case pkgcargo.KindDownload:
+		return PkgRef{probe: "index/" + pkgcargo.IndexPathFor(strings.ToLower(p.Crate)), file: true}, true
+	case pkgcargo.KindConfig:
 	}
+
+	return PkgRef{}, false
 }

@@ -5,6 +5,7 @@
 package recovery
 
 import (
+	"fmt"
 	"strconv"
 	"sync"
 	"testing"
@@ -21,7 +22,7 @@ func TestReportKeepsExactCountersBeyondTheListCap(t *testing.T) {
 
 	for i := range total {
 		wg.Go(func() {
-			it := Item{Table: "raw_artifacts", Key: strconv.Itoa(i), Reason: "r"}
+			it := Item{Table: "package_files", Key: strconv.Itoa(i), Reason: "r"}
 			rep.addUnrecoverable(it)
 			rep.addFailure(it)
 			rep.addMissingBlob(it)
@@ -68,11 +69,13 @@ func TestUnsupportedSidecarsAreNotInvalid(t *testing.T) {
 	r.classifyBad(rep, "a", ErrSidecarVersion)
 	r.classifyBad(rep, "b", ErrSidecarTable)
 	r.classifyBad(rep, "c", ErrSidecarDigest)
+	r.classifyBad(rep, "d", fmt.Errorf("%w (sidecar format 1)", ErrSidecarLegacy))
 
-	if rep.SidecarsUnsupported != 2 || rep.SidecarsInvalid != 1 || rep.ExitCode() != ExitFailed {
+	if rep.SidecarsUnsupported != 3 || rep.SidecarsLegacy != 1 || rep.SidecarsInvalid != 1 || rep.ExitCode() != ExitFailed {
 		t.Errorf(
-			"unsupported=%d invalid=%d exit=%d, want 2, 1 and a failed run",
+			"unsupported=%d legacy=%d invalid=%d exit=%d, want 3, 1, 1 and a failed run",
 			rep.SidecarsUnsupported,
+			rep.SidecarsLegacy,
 			rep.SidecarsInvalid,
 			rep.ExitCode(),
 		)

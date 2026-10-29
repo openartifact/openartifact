@@ -31,7 +31,7 @@ func TestNPMRegenerateComputesLatestFromLiveVersions(t *testing.T) {
 
 	var pkgID string
 	if err := s.pg.GetDB().QueryRowContext(ctx,
-		`INSERT INTO npm_packages (repository_id, name, full_name) VALUES ($1, 'lib', 'lib') RETURNING id`, repo.ID).
+		`INSERT INTO packages (repository_id, format, name, name_key, attrs) VALUES ($1, 'npm', 'lib', 'lib', '{"scope": "", "name": "lib"}') RETURNING id`, repo.ID).
 		Scan(&pkgID); err != nil {
 		t.Fatal(err)
 	}
@@ -43,8 +43,11 @@ func TestNPMRegenerateComputesLatestFromLiveVersions(t *testing.T) {
 
 		var id string
 		if err := s.pg.GetDB().QueryRowContext(ctx,
-			`INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, tarball_filename, blob_id)
-			 VALUES ($1, $2, $3::jsonb, 'i', 's', 'f.tgz', $4) RETURNING id`, pkgID, version, manifest, blobID).Scan(&id); err != nil {
+			`WITH v AS (INSERT INTO package_versions (package_id, repository_id, version, version_key, metadata)
+			            VALUES ($1, $2, $3::text, $3::text, jsonb_build_object('manifest_json', $4::jsonb)) RETURNING id)
+			 , f AS (INSERT INTO package_files (version_id, repository_id, path, filename, blob_id)
+			         SELECT v.id, $2, 'lib/-/lib-' || $3::text || '.tgz', 'lib-' || $3::text || '.tgz', $5 FROM v)
+			 SELECT id FROM v`, pkgID, repo.ID, version, manifest, blobID).Scan(&id); err != nil {
 			t.Fatal(err)
 		}
 
@@ -56,7 +59,7 @@ func TestNPMRegenerateComputesLatestFromLiveVersions(t *testing.T) {
 	pre := add("3.0.0-beta.1", `{}`)
 	trashed := add("2.1.0", `{}`)
 
-	s.exec(`UPDATE npm_versions SET deleted_at = now() WHERE id = $1`, trashed)
+	s.exec(`UPDATE package_versions SET deleted_at = now() WHERE id = $1`, trashed)
 
 	w := NewNPMMetadataWorker(s.pg, testLogger(t), s.pg.GetDB(), nil)
 	defer w.Stop()
@@ -69,7 +72,9 @@ func TestNPMRegenerateComputesLatestFromLiveVersions(t *testing.T) {
 		}
 
 		var v string
-		if err := s.pg.GetDB().QueryRowContext(ctx, `SELECT latest_version FROM npm_packages WHERE id = $1`, pkgID).Scan(&v); err != nil {
+		if err := s.pg.GetDB().
+			QueryRowContext(ctx, `SELECT COALESCE(attrs->>'latest_version', '') FROM packages WHERE id = $1`, pkgID).
+			Scan(&v); err != nil {
 			t.Fatal(err)
 		}
 
@@ -84,16 +89,27 @@ func TestNPMRegenerateComputesLatestFromLiveVersions(t *testing.T) {
 		{"a stable release beats a newer prerelease and a deprecated one", func() {}, "1.0.0"},
 		{
 			"a prerelease beats a deprecated stable release",
-			func() { s.exec(`UPDATE npm_versions SET deleted_at = now() WHERE id = $1`, stable) },
+			func() { s.exec(`UPDATE package_versions SET deleted_at = now() WHERE id = $1`, stable) },
 			"3.0.0-beta.1",
 		},
-		{"deprecated is the last resort", func() { s.exec(`UPDATE npm_versions SET deleted_at = now() WHERE id = $1`, pre) }, "2.0.0"},
+		{"deprecated is the last resort", func() { s.exec(`UPDATE package_versions SET deleted_at = now() WHERE id = $1`, pre) }, "2.0.0"},
 		{"an empty deprecation message is not a deprecation", func() {
-			s.exec(`UPDATE npm_versions SET manifest_json = '{"deprecated":""}' WHERE id = $1`, deprecated)
-			s.exec(`UPDATE npm_versions SET deleted_at = NULL WHERE id = $1`, stable)
+			s.exec(
+				`UPDATE package_versions SET metadata = jsonb_build_object('manifest_json', '{"deprecated":""}'::jsonb) WHERE id = $1`,
+				deprecated,
+			)
+			s.exec(`UPDATE package_versions SET deleted_at = NULL WHERE id = $1`, stable)
 		}, "2.0.0"},
-		{"a restored version counts again", func() { s.exec(`UPDATE npm_versions SET deleted_at = NULL WHERE id = $1`, trashed) }, "2.1.0"},
-		{"no live version clears latest", func() { s.exec(`UPDATE npm_versions SET deleted_at = now() WHERE package_id = $1`, pkgID) }, ""},
+		{
+			"a restored version counts again",
+			func() { s.exec(`UPDATE package_versions SET deleted_at = NULL WHERE id = $1`, trashed) },
+			"2.1.0",
+		},
+		{
+			"no live version clears latest",
+			func() { s.exec(`UPDATE package_versions SET deleted_at = now() WHERE package_id = $1`, pkgID) },
+			"",
+		},
 	}
 
 	for _, st := range steps {

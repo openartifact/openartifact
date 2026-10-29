@@ -35,7 +35,6 @@ import (
 	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
-	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -61,6 +60,24 @@ const (
 // would be stored but never retrievable through the URL routes.
 var validPackageID = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
 
+// HTTPStore is the part of the database HTTPHandler needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreateNuGetPackage(ctx context.Context, pkg *models.NuGetPackage) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteNuGetPackage(ctx context.Context, repoID string, packageID string, version string) error
+	GetNuGetPackage(ctx context.Context, repoID string, packageID string, version string) (*models.NuGetPackage, error)
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	IncrementNuGetDownloadCount(ctx context.Context, repoID string, packageID string, version string) error
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ListNuGetPackageVersions(ctx context.Context, repoID string, packageID string) ([]*models.NuGetPackage, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	SearchNuGetPackages(ctx context.Context, repoID string, query string, skip int, take int) ([]*models.NuGetPackage, int, error)
+	SetNuGetDependencyGroups(ctx context.Context, repoID string, packageID string, version string, groups []byte) error
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
+}
+
 type HTTPHandler struct {
 	*base.Handler
 
@@ -70,20 +87,23 @@ type HTTPHandler struct {
 	// concurrent nupkg reads behind cache misses.
 	deps       *depCache
 	nuspecGate base.Gate
+	DB         HTTPStore
 }
 
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
 	return &HTTPHandler{
 		Handler:    base.New(log, db, blobStore, baseURL),
 		maxPush:    maxNuGetPackageBytes,
 		deps:       newDepCache(depCacheEntries),
-		nuspecGate: base.NewGate(maxConcurrentNuspecReads),
+		nuspecGate: base.NewGate(maxConcurrentNuspecReads), DB: db,
 	}
 }
 
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 	r.Get("/v3/index.json", base.Compress(h.handleServiceIndex))
 	r.Put("/v3/package", h.handlePushPackage)
+	// dotnet nuget push appends a slash to the PackagePublish URL of the service index.
+	r.Put("/v3/package/", h.handlePushPackage)
 	r.Delete("/v3/package/{id}/{version}", h.handleDeletePackage)
 	r.Get("/v3/package/{id}/index.json", base.Compress(h.handleVersionIndex))
 	r.Get("/v3/package/{id}/{version}/{filename}", h.handleDownloadPackage)
@@ -106,21 +126,7 @@ func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
 // none (unknown repository or a lookup failure) it writes the response and
 // returns "".
 func (h *HTTPHandler) resolveRepo(w http.ResponseWriter, r *http.Request) string {
-	repoName := urlparams.Vars(r)["name"]
-
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return ""
-	}
-
-	if repoID == "" {
-		http.NotFound(w, r)
-	}
-
-	return repoID
+	return h.ResolveRepoIDOrRespond(w, r, urlparams.Vars(r)["name"])
 }
 
 // resolveRepoInfo is resolveRepo for handlers that also need the repository's
@@ -144,8 +150,12 @@ func (h *HTTPHandler) resolveRepoInfo(w http.ResponseWriter, r *http.Request) *m
 	return repo
 }
 
-func (h *HTTPHandler) repoBaseURL(r *http.Request) string {
-	return fmt.Sprintf("%s/repos/%s", h.BaseURL, urlparams.Vars(r)["name"])
+// repoBaseURL is the repository's root URL as the client reached it (BASE_URL
+// when set, else the request's origin). NuGet clients take the service index
+// @ids as full URLs, so every URL built from it is absolute and its document's
+// validator must carry it (registrationETag).
+func (h *HTTPHandler) repoBaseURL(w http.ResponseWriter, r *http.Request) string {
+	return h.PublicBase(w, r) + "/repos/" + urlparams.Vars(r)["name"]
 }
 
 func registrationIndexURL(baseURL, id string) string {
@@ -174,7 +184,7 @@ func (h *HTTPHandler) handleServiceIndex(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	baseURL := h.repoBaseURL(r)
+	baseURL := h.repoBaseURL(w, r)
 
 	index := map[string]any{
 		"version": "3.0.0",
@@ -409,22 +419,12 @@ func (h *HTTPHandler) handlePushPackage(w http.ResponseWriter, r *http.Request) 
 
 	// Reserve quota before anything is persisted; every failure path below
 	// returns the reservation.
-	if err := quota.Enforce(r.Context(), h.DB, repoID, pkg.PackageSize); err != nil {
-		if errors.Is(err, quota.ErrExceeded) {
-			quota.WriteExceeded(w)
-			return
-		}
-
-		h.Log.Errorw("failed to reserve quota", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
+	if !h.ReserveQuotaOrRespond(r.Context(), w, repoID, repoName, pkg.PackageSize) {
 		return
 	}
 
 	if err := h.storePackage(r.Context(), pkg, part); err != nil {
-		if relErr := quota.Release(r.Context(), h.DB, repoID, pkg.PackageSize); relErr != nil {
-			h.Log.Warnw("failed to release quota", "repo", repoName, "error", relErr)
-		}
+		h.ReleaseQuota(r.Context(), repoID, repoName, pkg.PackageSize)
 
 		if errors.Is(err, database.ErrDuplicate) || database.IsUniqueViolation(err) {
 			http.Error(w, "package version already exists", http.StatusConflict)
@@ -536,9 +536,7 @@ func (h *HTTPHandler) handleDeletePackage(w http.ResponseWriter, r *http.Request
 				return fmt.Errorf("delete nuget package: %w", err)
 			}
 
-			if relErr := quota.Release(r.Context(), h.DB, repoID, pkg.PackageSize); relErr != nil {
-				h.Log.Warnw("failed to release quota", "repo", repoName, "error", relErr)
-			}
+			h.ReleaseQuota(r.Context(), repoID, repoName, pkg.PackageSize)
 
 			// The blob is content-addressed and may be shared; remove it only once no
 			// row references it any more.
@@ -789,7 +787,9 @@ const registrationMaxAge = 60
 // registrationETag identifies the registration index of one package: it
 // changes when a version is added, removed or republished and never because of
 // download counters. Rows are immutable and a republish is a new row with a new
-// id, so the ids identify the content.
+// id, so the ids identify the content. baseURL is the repository root the URLs
+// of the document are built on, origin included: a document for one origin must
+// never revalidate (or be served from the render cache) for another.
 func registrationETag(repoID, baseURL, packageID string, pkgs []*models.NuGetPackage) string {
 	buf := make([]byte, 0, 64+len(pkgs)*48)
 
@@ -827,7 +827,7 @@ func (h *HTTPHandler) handleRegistrationIndex(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	baseURL := h.repoBaseURL(r)
+	baseURL := h.repoBaseURL(w, r)
 
 	// The validator comes from the rows already loaded, before any dependency
 	// groups are resolved or JSON is built.
@@ -921,7 +921,7 @@ func (h *HTTPHandler) handleRegistrationLeaf(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	baseURL := h.repoBaseURL(r)
+	baseURL := h.repoBaseURL(w, r)
 	leaf := registrationLeafURL(baseURL, packageID, pkg.Version)
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
@@ -1009,7 +1009,7 @@ func (h *HTTPHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	baseURL := h.repoBaseURL(r)
+	baseURL := h.repoBaseURL(w, r)
 	groups := groupByPackage(packages)
 	data := make([]map[string]any, len(groups))
 

@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/openartifact/openartifact/internal/formats"
 )
 
 // runAsServerEnv makes the re-executed test binary behave like the real server
@@ -23,6 +25,9 @@ func TestMain(m *testing.M) {
 		main()
 		os.Exit(0)
 	}
+
+	// The route tests read what the formats register; main registers them itself.
+	formats.Register()
 
 	os.Exit(m.Run())
 }

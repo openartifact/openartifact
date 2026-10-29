@@ -24,12 +24,22 @@ func TestListMavenGARefs(t *testing.T) {
 		t.Helper()
 
 		path := "com/example/" + artifact + "/" + version + "/" + artifact + "-" + version + "-" + classifier + "." + ext + "-" + ts
-		blob := seed.blob(1)
 
-		seed.exec(`INSERT INTO maven_artifacts (repository_id, group_id, artifact_id_coord, version, classifier, extension,
-		              snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path, blob_id, deleted_at)
-		           VALUES ($1, 'com.example', $2, $3, $4, $5, NULLIF($6, ''), $7, $6 <> '', $8, $9, CASE WHEN $10 THEN now() END)`,
-			seed.repo, artifact, version, classifier, ext, ts, build, path, blob, deleted)
+		art := &models.MavenArtifact{
+			RepositoryID: seed.repo, BlobID: seed.blob(1), GroupID: "com.example", ArtifactCoord: artifact, Version: version,
+			Classifier: classifier, Extension: ext, SnapshotTimestamp: ts, SnapshotBuildNumber: build, IsSnapshot: ts != "",
+			RepoPath: path,
+		}
+		if err := pg.CreateMavenArtifact(ctx, art); err != nil {
+			t.Fatalf("CreateMavenArtifact: %v", err)
+		}
+
+		if deleted {
+			// Trash stamps the file and, as its last live file, the version.
+			seed.exec(`UPDATE package_files SET deleted_at = now() WHERE id = $1`, art.ID)
+			seed.exec(`UPDATE package_versions SET deleted_at = now()
+			            WHERE id = (SELECT version_id FROM package_files WHERE id = $1)`, art.ID)
+		}
 	}
 
 	add(s, "app", "1.0", "", "jar", "", 0, false)

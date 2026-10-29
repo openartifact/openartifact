@@ -15,16 +15,26 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// repoPresignDBStore is what repoPresignDB is used as.
+type repoPresignDBStore interface {
+	RepositoriesStore
+	auth.EvaluatorStore
+}
+
 type repoPresignDB struct {
-	databasetest.BaseMockDB
+	repoPresignDBStore
 
 	repo    *models.Repository
 	targets []*models.PermissionTarget
 	updated int
+}
+
+// ListProjectGrantsByUser is not exercised by the tests.
+func (*repoPresignDB) ListProjectGrantsByUser(context.Context, string) ([]*models.ProjectGrant, error) {
+	return nil, nil
 }
 
 func (d *repoPresignDB) GetRepositoryByName(context.Context, string) (*models.Repository, error) {

@@ -7,8 +7,6 @@ package proxy
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +19,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/presign"
 	pkgansible "github.com/openartifact/openartifact/pkg/ansible"
 )
 
@@ -81,7 +80,7 @@ func (s *Service) serveAnsible(w http.ResponseWriter, r *http.Request, repo *mod
 			"available_versions": map[string]string{"v3": "v3/"},
 		})
 	case pkgansible.KindV3:
-		l := s.ansibleLinks(repo)
+		l := s.ansibleLinks(w, r, repo)
 		s.writeAnsibleDoc(w, r, repo, nil, map[string]string{"collections": l.Collections(), "artifacts": l.Artifacts()})
 	case pkgansible.KindCollection:
 		s.serveAnsibleCollection(w, r, repo, p)
@@ -97,9 +96,13 @@ func (s *Service) serveAnsible(w http.ResponseWriter, r *http.Request, repo *mod
 	}
 }
 
-// ansibleLinks builds the links of the repository's own Galaxy API.
-func (s *Service) ansibleLinks(repo *models.Repository) pkgansible.Links {
-	return pkgansible.Links{Root: strings.TrimSuffix(s.baseURL, "/") + "/repos/" + url.PathEscape(repo.Name) + "/api/v3"}
+// ansibleLinks builds the absolute links of the repository's own Galaxy API on
+// the origin of the request (BASE_URL when set; see publicBase). ansible-core
+// uses download_url as the server sent it, so it cannot be relative. The
+// documents carrying them are validated by their content digest, which holds the
+// origin, and are rendered per request from the cached upstream copy.
+func (s *Service) ansibleLinks(w http.ResponseWriter, r *http.Request, repo *models.Repository) pkgansible.Links {
+	return pkgansible.Links{Root: s.publicBase(w, r) + "/repos/" + url.PathEscape(repo.Name) + "/api/v3"}
 }
 
 func ansibleVersionsKey(namespace, name string) string {
@@ -122,53 +125,24 @@ func (s *Service) writeAnsibleDoc(w http.ResponseWriter, r *http.Request, repo *
 		return
 	}
 
-	s.writeGeneratedJSON(w, r, repo, res, body, ansibleMaxAge)
+	s.serveGeneratedJSON(w, r, repo, res, body, ansibleMaxAge)
 }
 
-// writeGeneratedJSON answers with an encoded JSON document, revalidated by its
-// digest and cacheable by shared caches for maxAge seconds when the repository
-// is public. res is the cache resolution it was built from (nil when it came
-// from no upstream copy): a stale one is flagged.
-func (s *Service) writeGeneratedJSON(
-	w http.ResponseWriter,
-	r *http.Request,
-	repo *models.Repository,
-	res *resolution,
-	body []byte,
-	maxAge int,
-) {
-	if res != nil && res.stale {
-		w.Header().Set("Warning", staleWarning)
+// ansibleVersionsDoc is the cached version list of a collection: the upstream's
+// pages merged into one, normalized and newest first.
+func (s *Service) ansibleVersionsDoc(repo *models.Repository, p pkgansible.Path) metaDoc {
+	return metaDoc{
+		key: ansibleVersionsKey(p.Namespace, p.Name),
+		opts: func(fctx context.Context, target string) fetchOpts {
+			o := jsonDocOpts(nil)
+			o.transform = func(resp *http.Response) error { return s.ansibleVersionsTransform(fctx, repo, target, resp) }
+
+			return o
+		},
+		limit: pkgansible.MaxDocBytes,
+		what:  "ansible version list",
+		bad:   badDocInternal,
 	}
-
-	sum := sha256.Sum256(body)
-	if base.Revalidate(w, r, repo.Public, `"`+hex.EncodeToString(sum[:16])+`"`, maxAge) {
-		return
-	}
-
-	w.Header().Set("Content-Type", jsonMediaType)
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
-	}
-}
-
-// readAnsibleDoc loads a cached document under the document gate.
-func (s *Service) readAnsibleDoc(ctx context.Context, repo *models.Repository, res *resolution) ([]byte, error) {
-	if err := s.packuments.Acquire(ctx); err != nil {
-		return nil, err //nolint:wrapcheck // caller checks for cancellation
-	}
-	defer s.packuments.Release()
-
-	doc, err := s.readCachedDoc(ctx, res.entry, pkgansible.MaxDocBytes)
-	if err != nil {
-		s.log.Errorw("failed to read cached ansible document", "repo", repo.Name, "key", res.entry.CacheKey, "error", err)
-		return nil, errInternal
-	}
-
-	return doc, nil
 }
 
 // ansibleVersionList returns the cached version list of a collection, newest
@@ -176,34 +150,12 @@ func (s *Service) readAnsibleDoc(ctx context.Context, repo *models.Repository, r
 func (s *Service) ansibleVersionList(
 	ctx context.Context, repo *models.Repository, p pkgansible.Path,
 ) (*resolution, []pkgansible.VersionRef, error) {
-	key := ansibleVersionsKey(p.Namespace, p.Name)
-
-	res, err := s.resolveWith(ctx, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		target, uerr := upstreamURL(repo.UpstreamURL, key)
-		if uerr != nil {
-			s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", uerr)
-			return nil, errInternal
-		}
-
-		return s.fetchURL(fctx, repo, key, target, fetchOpts{
-			accept:      jsonMediaType,
-			contentType: jsonMediaType,
-			transform:   func(resp *http.Response) error { return s.ansibleVersionsTransform(fctx, repo, target, resp) },
+	page, res, err := parseDoc(ctx, s, repo, s.ansibleVersionsDoc(repo, p),
+		func(doc []byte, _ *resolution) (*pkgansible.VersionPage, error) {
+			return pkgansible.ParseVersionPage(bytes.NewReader(doc)) //nolint:wrapcheck // logged by parseDoc
 		})
-	})
 	if err != nil {
 		return nil, nil, err
-	}
-
-	doc, err := s.readAnsibleDoc(ctx, repo, res)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	page, err := pkgansible.ParseVersionPage(bytes.NewReader(doc))
-	if err != nil {
-		s.log.Errorw("cached ansible version list is unusable", "repo", repo.Name, "key", key, "error", err)
-		return nil, nil, errInternal
 	}
 
 	return res, page.Versions, nil
@@ -353,7 +305,7 @@ func (s *Service) serveAnsibleCollection(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	s.writeAnsibleDoc(w, r, repo, res, pkgansible.NewCollectionDoc(s.ansibleLinks(repo), p.Namespace, p.Name, refs))
+	s.writeAnsibleDoc(w, r, repo, res, pkgansible.NewCollectionDoc(s.ansibleLinks(w, r, repo), p.Namespace, p.Name, refs))
 }
 
 func (s *Service) serveAnsibleVersions(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgansible.Path) {
@@ -369,7 +321,7 @@ func (s *Service) serveAnsibleVersions(w http.ResponseWriter, r *http.Request, r
 		return
 	}
 
-	l := s.ansibleLinks(repo)
+	l := s.ansibleLinks(w, r, repo)
 	window := append([]pkgansible.VersionRef{}, pkgansible.Window(refs, limit, offset)...)
 
 	for i := range window {
@@ -400,39 +352,28 @@ func ansibleVerifyDoc(p pkgansible.Path) func(io.ReadSeeker) error {
 	}
 }
 
+// ansibleVersionDocOf is the upstream detail document of one version, cached verbatim.
+func ansibleVersionDocOf(p pkgansible.Path) metaDoc {
+	return metaDoc{
+		key:   ansibleVersionKey(p.Namespace, p.Name, p.Version),
+		opts:  staticOpts(jsonDocOpts(ansibleVerifyDoc(p))),
+		limit: pkgansible.MaxDocBytes,
+		what:  "ansible version document",
+		bad:   badDocInternal,
+	}
+}
+
 // ansibleVersionDoc returns the cached detail document of a version, fetching it
 // when it is absent or expired.
 func (s *Service) ansibleVersionDoc(
 	ctx context.Context, repo *models.Repository, p pkgansible.Path,
 ) (*resolution, *pkgansible.VersionDoc, error) {
-	key := ansibleVersionKey(p.Namespace, p.Name, p.Version)
-
-	res, err := s.resolveWith(ctx, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		target, uerr := upstreamURL(repo.UpstreamURL, key)
-		if uerr != nil {
-			s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", uerr)
-			return nil, errInternal
-		}
-
-		return s.fetchURL(fctx, repo, key, target, fetchOpts{
-			accept:      jsonMediaType,
-			contentType: jsonMediaType,
-			verify:      ansibleVerifyDoc(p),
+	doc, res, err := parseDoc(ctx, s, repo, ansibleVersionDocOf(p),
+		func(raw []byte, _ *resolution) (*pkgansible.VersionDoc, error) {
+			return pkgansible.ParseVersionDoc(bytes.NewReader(raw), p.Namespace, p.Name, p.Version) //nolint:wrapcheck // logged by parseDoc
 		})
-	})
 	if err != nil {
 		return nil, nil, err
-	}
-
-	raw, err := s.readAnsibleDoc(ctx, repo, res)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	doc, err := pkgansible.ParseVersionDoc(bytes.NewReader(raw), p.Namespace, p.Name, p.Version)
-	if err != nil {
-		s.log.Errorw("cached ansible version document is unusable", "repo", repo.Name, "key", key, "error", err)
-		return nil, nil, errInternal
 	}
 
 	return res, doc, nil
@@ -445,25 +386,15 @@ func (s *Service) serveAnsibleVersion(w http.ResponseWriter, r *http.Request, re
 		return
 	}
 
-	doc.Relink(s.ansibleLinks(repo))
+	doc.Relink(s.ansibleLinks(w, r, repo))
 	s.writeAnsibleDoc(w, r, repo, res, doc)
 }
 
 func (s *Service) serveAnsibleDownload(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgansible.Path) {
 	key := ansibleArtifactDir + pkgansible.FileName(p.Namespace, p.Name, p.Version)
-	resolve := func() (*resolution, error) {
-		return s.resolveWith(r.Context(), repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-			return s.fetchAnsibleTarball(fctx, repo, p, key)
-		})
-	}
-
-	res, err := resolve()
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, resolve)
+	s.serveDownload(w, r, repo, key, func(ctx context.Context) (download, error) {
+		return s.locateAnsibleTarball(ctx, repo, p, key)
+	})
 }
 
 // ansibleDownloadTarget resolves the download_url of a version document against
@@ -489,33 +420,35 @@ func ansibleDownloadTarget(docURL, downloadURL string) (string, error) {
 	return target.String(), nil
 }
 
-// fetchAnsibleTarball downloads a collection tarball from the URL its version
-// document names and caches it only when it matches the document's digest. A
-// version the upstream does not list is errNotFound.
-func (s *Service) fetchAnsibleTarball(
-	ctx context.Context, repo *models.Repository, p pkgansible.Path, key string,
-) (*models.ProxyCacheEntry, error) {
+// locateAnsibleTarball finds a collection tarball at the URL its version
+// document names, cached only when it matches the document's digest. A version
+// the upstream does not list is errNotFound.
+func (s *Service) locateAnsibleTarball(ctx context.Context, repo *models.Repository, p pkgansible.Path, key string) (download, error) {
 	_, doc, err := s.ansibleVersionDoc(ctx, repo, p)
 	if err != nil {
-		return nil, err
+		return download{}, err
 	}
 
 	docURL, err := upstreamURL(repo.UpstreamURL, ansibleVersionKey(p.Namespace, p.Name, p.Version))
 	if err != nil {
 		s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
-		return nil, errInternal
+		return download{}, errInternal
 	}
 
 	target, err := ansibleDownloadTarget(docURL, doc.DownloadURL)
 	if err != nil {
 		s.log.Warnw("proxy upstream download url refused", "repo", repo.Name, "path", key, "error", err)
-		return nil, errUpstream
+		return download{}, errUpstream
 	}
 
-	return s.fetchURL(ctx, repo, key, target, fetchOpts{
-		// Credentials go only to the configured upstream, never to the host
-		// a document points downloads at.
-		noAuth:     !sameOriginStr(repo.UpstreamURL, target),
-		wantSHA256: doc.Artifact.SHA256,
-	})
+	return download{url: target, opts: fetchOpts{wantSHA256: doc.Artifact.SHA256}}, nil
+}
+
+// AnsibleHooks is the proxy hooks of the ansible format.
+var AnsibleHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve: (*Service).serveAnsible,
+	// Tarballs, checked against the artifact sha256 of their version document.
+	Immutable:  func(key string) bool { return strings.HasPrefix(key, ansibleArtifactDir) },
+	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, ansibleArtifactDir) },
+	BlobPath:   presign.AnsibleBlobPath,
 }

@@ -25,12 +25,30 @@ import (
 	"github.com/openartifact/openartifact/internal/webhook"
 )
 
+// policyDB is a pypiDB whose license policies are those of a policytest Case.
+type policyDB struct {
+	*pypiDB
+
+	lister policytest.Lister
+}
+
+// ListLicensePolicies answers the case's policies; the double has its own, so the embedded
+// Lister would be ambiguous.
+func (d policyDB) ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error) {
+	return d.lister.ListLicensePolicies(ctx, repoID)
+}
+
 type pypiDB struct {
 	*formattest.DB
 	quotaFake
 
 	pkgs      []*models.PyPIPackage
 	createErr error
+}
+
+// ListLicensePolicies is not exercised by the tests.
+func (*pypiDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	return nil, nil
 }
 
 func (d *pypiDB) CreatePyPIPackage(_ context.Context, p *models.PyPIPackage) error {
@@ -40,10 +58,6 @@ func (d *pypiDB) CreatePyPIPackage(_ context.Context, p *models.PyPIPackage) err
 
 	d.pkgs = append(d.pkgs, p)
 	return nil
-}
-
-func (d *pypiDB) ListPyPIPackages(_ context.Context, _ string) ([]*models.PyPIPackage, error) {
-	return d.pkgs, nil
 }
 
 func (d *pypiDB) ListPyPIPackageNames(_ context.Context, _ string) ([]string, error) {
@@ -184,9 +198,14 @@ func TestDownloadQuarantine(t *testing.T) {
 
 type pypiField struct{ key, value string }
 
+// uploadWithFieldsStore is the part of the database uploadWithFields needs.
+type uploadWithFieldsStore interface {
+	uploadFileStore
+}
+
 func uploadWithFields(
 	t *testing.T,
-	db database.Database,
+	db uploadWithFieldsStore,
 	bs *formattest.BlobStore,
 	pub *formattest.Publisher,
 	fields ...pypiField,
@@ -200,11 +219,16 @@ func uploadWithFields(
 	return uploadFile(t, db, bs, pub, "demo_pkg-1.0.tar.gz", sdist, fields...)
 }
 
+// uploadFileStore is the part of the database uploadFile needs.
+type uploadFileStore interface {
+	HTTPStore
+}
+
 // uploadFile uploads content as filename the way twine does, with the given
 // extra form fields (name and version are always sent).
 func uploadFile(
 	t *testing.T,
-	db database.Database,
+	db uploadFileStore,
 	bs *formattest.BlobStore,
 	pub *formattest.Publisher,
 	filename string,
@@ -277,7 +301,7 @@ func TestUploadLicensePolicy(t *testing.T) {
 				bs := formattest.NewBlobStore()
 				pub := &formattest.Publisher{}
 
-				w := uploadWithFields(t, c.DB(inner), bs, pub, fields...)
+				w := uploadWithFields(t, policyDB{inner, c.Lister()}, bs, pub, fields...)
 				c.AssertResponse(t, w.Code, w.Body.Bytes())
 				assertPkgStored(t, c, w.Code, inner, bs, pub)
 			})
@@ -304,7 +328,7 @@ func TestUploadLicensePolicyNoEnforceableLicenseAdmitted(t *testing.T) {
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
-			w := uploadWithFields(t, c.DB(inner), bs, pub, fields...)
+			w := uploadWithFields(t, policyDB{inner, c.Lister()}, bs, pub, fields...)
 			c.AssertResponse(t, w.Code, w.Body.Bytes())
 			assertPkgStored(t, c, w.Code, inner, bs, pub)
 		})
@@ -533,7 +557,7 @@ func TestUploadLicensePolicyReadsTheArtifact(t *testing.T) {
 				bs := formattest.NewBlobStore()
 				pub := &formattest.Publisher{}
 
-				w := uploadFile(t, c.DB(inner), bs, pub, demoWheel, wheelWith(t, metadata))
+				w := uploadFile(t, policyDB{inner, c.Lister()}, bs, pub, demoWheel, wheelWith(t, metadata))
 				c.AssertResponse(t, w.Code, w.Body.Bytes())
 				assertPkgStored(t, c, w.Code, inner, bs, pub)
 			})
@@ -572,7 +596,7 @@ func TestUploadLicensePolicyArtifactBeatsFormFields(t *testing.T) {
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
-			w := uploadFile(t, c.DB(inner), bs, pub, demoWheel, wheelWith(t, tc.metadata), tc.fields...)
+			w := uploadFile(t, policyDB{inner, c.Lister()}, bs, pub, demoWheel, wheelWith(t, tc.metadata), tc.fields...)
 			c.AssertResponse(t, w.Code, w.Body.Bytes())
 			assertPkgStored(t, c, w.Code, inner, bs, pub)
 		})
@@ -589,7 +613,7 @@ func TestUploadLicensePolicyDjangoStyleBSD(t *testing.T) {
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 
-	w := uploadFile(t, c.DB(inner), bs, pub, demoWheel, wheelWith(t, metadata))
+	w := uploadFile(t, policyDB{inner, c.Lister()}, bs, pub, demoWheel, wheelWith(t, metadata))
 	c.AssertResponse(t, w.Code, w.Body.Bytes())
 	assertPkgStored(t, c, w.Code, inner, bs, pub)
 }
@@ -608,7 +632,7 @@ func TestUploadSdistLicenseFromPKGINFO(t *testing.T) {
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 
-	w := uploadFile(t, c.DB(inner), bs, pub, "demo_pkg-1.0.tar.gz", sdist, pypiField{"license", "MIT"})
+	w := uploadFile(t, policyDB{inner, c.Lister()}, bs, pub, "demo_pkg-1.0.tar.gz", sdist, pypiField{"license", "MIT"})
 	c.AssertResponse(t, w.Code, w.Body.Bytes())
 	assertPkgStored(t, c, w.Code, inner, bs, pub)
 }
@@ -666,7 +690,7 @@ func TestUploadUnderivableLicenses(t *testing.T) {
 				bs := formattest.NewBlobStore()
 				pub := &formattest.Publisher{}
 
-				w := uploadFile(t, c.DB(inner), bs, pub, f.filename, f.content, pypiField{"license", "MIT"})
+				w := uploadFile(t, policyDB{inner, c.Lister()}, bs, pub, f.filename, f.content, pypiField{"license", "MIT"})
 				c.AssertResponse(t, w.Code, w.Body.Bytes())
 				assertPkgStored(t, c, w.Code, inner, bs, pub)
 			})

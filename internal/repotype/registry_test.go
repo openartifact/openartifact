@@ -59,10 +59,6 @@ func TestRegistryShape(t *testing.T) {
 
 		seen[s.Name] = true
 
-		if len(s.PackageTables) == 0 {
-			t.Errorf("%s: no package tables", s.Name)
-		}
-
 		if s.DefaultUpstream != "" && !s.Proxy {
 			t.Errorf("%s: has a default upstream but cannot be proxied", s.Name)
 		}
@@ -126,7 +122,13 @@ func TestPolicy(t *testing.T) {
 	}
 }
 
-var checkFormats = regexp.MustCompile(`(?s)chk_repo_format CHECK \(format IN \((.*?)\)\)`)
+// checkFormats is the chk_repo_format constraint on one line, in the hand-written
+// form (format IN ('a', 'b')) and in the pg_dump form of the baseline
+// ((format)::text = ANY ((ARRAY['a'::character varying, ...])::text[])).
+var (
+	checkFormats = regexp.MustCompile(`chk_repo_format CHECK ([^\n]*)`)
+	quotedName   = regexp.MustCompile(`'([a-z0-9-]+)'`)
+)
 
 // TestLatestMigrationAcceptsEveryFormat checks the chk_repo_format constraint
 // the newest migration that defines it against the registry in both
@@ -153,8 +155,12 @@ func TestLatestMigrationAcceptsEveryFormat(t *testing.T) {
 
 		var have []string
 
-		for f := range strings.SplitSeq(string(m[1]), ",") {
-			have = append(have, strings.Trim(strings.TrimSpace(f), "'"))
+		for _, q := range quotedName.FindAllSubmatch(m[1], -1) {
+			have = append(have, string(q[1]))
+		}
+
+		if len(have) == 0 {
+			t.Fatalf("chk_repo_format of %s lists no format: %s", e.Name(), m[1])
 		}
 
 		if names := missing(repotype.Names(), have); len(names) > 0 {
@@ -170,79 +176,6 @@ func TestLatestMigrationAcceptsEveryFormat(t *testing.T) {
 	}
 
 	t.Fatal("no migration defines chk_repo_format")
-}
-
-// queryBody returns the text of the named sqlc query of a file.
-func queryBody(t *testing.T, file, name string) string {
-	t.Helper()
-
-	src := read(t, file)
-
-	_, rest, ok := strings.Cut(src, "-- name: "+name+" ")
-	if !ok {
-		t.Fatalf("%s: query %s not found", file, name)
-	}
-
-	body, _, _ := strings.Cut(rest, "\n-- name: ")
-
-	return body
-}
-
-// TestComponentQueriesFilterEveryFormat checks that the package listing and
-// count queries have a branch that answers to each format's name.
-func TestComponentQueriesFilterEveryFormat(t *testing.T) {
-	t.Parallel()
-
-	const file = "../database/queries/components.sql"
-
-	for _, q := range []string{"ListRepoComponents", "ListRepoComponentsByName", "CountRepoComponents", "GetRepoComponentBlob"} {
-		body := queryBody(t, file, q)
-
-		for _, name := range repotype.Names() {
-			if !strings.Contains(body, "'"+name+"'") {
-				t.Errorf("%s: query %s has no branch for format %q: add the package table to the union", file, q, name)
-			}
-		}
-	}
-}
-
-// unions are the files that enumerate every package table, with the tables
-// they leave out on purpose.
-//
-//nolint:gochecknoglobals // test table
-var unions = map[string]map[string]string{
-	"../database/queries/components.sql":     nil,
-	"../database/queries/catalog_detail.sql": nil,
-	"../database/queries/security.sql":       {"docker_manifests": "docker images are scanned per tag, not per manifest row"},
-	"../database/queries/repo_usage.sql":     {"docker_manifests": "docker usage is accounted through its tags"},
-	"../database/catalog_branches.go":        nil,
-	"../database/postgres_quota.go":          {"docker_tags": "tags own no blob: the manifests carry the quota"},
-	"../database/postgres_tiering.go":        {"docker_tags": "tags own no blob: the manifests are tiered"},
-	"../database/trash_kinds.go":             nil,
-	"../recovery/tables.go":                  nil,
-	"../backup/backup.go":                    {"rubygems_gems": "exported through ListRubyGems, not by table name"},
-}
-
-// TestPackageTablesInUnions checks that every query or table list that unions
-// the package tables names the tables of every format.
-func TestPackageTablesInUnions(t *testing.T) {
-	t.Parallel()
-
-	for file, skip := range unions {
-		src := read(t, file)
-
-		for _, s := range repotypetest.Specs() {
-			for _, table := range s.PackageTables {
-				if _, ok := skip[table]; ok {
-					continue
-				}
-
-				if !regexp.MustCompile(`\b` + table + `\b`).MatchString(src) {
-					t.Errorf("%s does not reference %s, the package table of format %q: add it to the union", file, table, s.Name)
-				}
-			}
-		}
-	}
 }
 
 var sqlFormatList = regexp.MustCompile(`format IN \(([^)]*)\)`)
@@ -296,8 +229,9 @@ func TestSQLFormatLists(t *testing.T) {
 		}
 	}
 
-	// Groups that serve generated metadata.
-	check("../database/postgres_groupmeta.go", generated, 2)
+	// Groups that serve generated metadata: the queries take the list from
+	// repotype.GeneratedGroupMetadataFormats, no format is spelled out.
+	check("../database/repo_groups.go", generated, 0)
 	// Hosted repositories whose generated metadata is GPG-signed.
 	check("../database/queries/gpg.sql", gpgGenerated, 1)
 }

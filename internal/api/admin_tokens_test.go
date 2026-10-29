@@ -13,16 +13,21 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// tokenLookupMockDBStore is what tokenLookupMockDB is used as.
+type tokenLookupMockDBStore interface {
+	AdminTokensStore
+	auth.EvaluatorStore
+}
+
 // tokenLookupMockDB looks tokens up like the uuid-keyed table: an id that is
 // not a UUID is an error, an unknown UUID is "no such token".
 type tokenLookupMockDB struct {
-	databasetest.BaseMockDB
+	tokenLookupMockDBStore
 }
 
 func (db *tokenLookupMockDB) GetTokenByID(_ context.Context, id string) (*models.Token, error) {

@@ -32,7 +32,6 @@ import (
 	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
-	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -41,15 +40,32 @@ import (
 	"github.com/openartifact/openartifact/pkg/pyversion"
 )
 
+// HTTPStore is the part of the database HTTPHandler needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreatePyPIPackage(ctx context.Context, pkg *models.PyPIPackage) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeletePyPIPackage(ctx context.Context, repoID string, name string, version string, filename string) error
+	GetPyPIPackageByFilename(ctx context.Context, repoID string, filename string) (*models.PyPIPackage, error)
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ListPyPIPackageNames(ctx context.Context, repoID string) ([]string, error)
+	ListPyPIPackageVersions(ctx context.Context, repoID string, name string) ([]*models.PyPIPackage, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
+}
+
 type HTTPHandler struct {
 	*base.Handler
 
 	// maxUpload bounds one uploaded distribution file.
 	maxUpload int64
+	DB        HTTPStore
 }
 
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), maxUpload: maxUploadBytes}
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), maxUpload: maxUploadBytes, DB: db}
 }
 
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
@@ -217,8 +233,8 @@ func (h *HTTPHandler) handleSimpleIndex(w http.ResponseWriter, r *http.Request) 
 	html.WriteString("<!DOCTYPE html>\n<html><body>\n")
 
 	for _, name := range uniqueNames {
-		fmt.Fprintf(&html, `<a href="/repos/%s/simple/%s/">%s</a>`+"\n",
-			htmlesc.EscapeString(repoName), url.PathEscape(name), htmlesc.EscapeString(name))
+		fmt.Fprintf(&html, `<a href="%s/">%s</a>`+"\n",
+			htmlesc.EscapeString(url.PathEscape(name)), htmlesc.EscapeString(name))
 	}
 
 	html.WriteString("</body></html>\n")
@@ -265,7 +281,8 @@ func (h *HTTPHandler) handlePackageIndex(w http.ResponseWriter, r *http.Request)
 	html.WriteString("<!DOCTYPE html>\n<html><body>\n")
 
 	for _, pkg := range versions {
-		fileURL := fmt.Sprintf("/repos/%s/files/%s", htmlesc.EscapeString(repoName), url.PathEscape(pkg.Filename))
+		// Relative to the page URL ".../simple/<pkg>/" (PEP 503): no origin.
+		fileURL := htmlesc.EscapeString("../../files/" + url.PathEscape(pkg.Filename))
 		fmt.Fprintf(&html, `<a href="%s#sha256=%s"`, fileURL, htmlesc.EscapeString(pkg.SHA256Digest))
 
 		if pkg.RequiresPython != "" {
@@ -285,16 +302,8 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	repoName := vars["name"]
 	filename := vars["filename"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -421,16 +430,8 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -502,15 +503,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	// Reserve quota before anything is persisted; every failure path below
 	// returns the reservation.
-	if err := quota.Enforce(r.Context(), h.DB, repoID, pkg.SizeBytes); err != nil {
-		if errors.Is(err, quota.ErrExceeded) {
-			quota.WriteExceeded(w)
-			return
-		}
-
-		h.Log.Errorw("failed to reserve quota", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
+	if !h.ReserveQuotaOrRespond(r.Context(), w, repoID, repoName, pkg.SizeBytes) {
 		return
 	}
 
@@ -531,7 +524,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		pkg.CreatedAt = importmeta.CreatedAt(ctx)
 
 		if err := h.DB.CreatePyPIPackage(ctx, pkg); err != nil {
-			if strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "duplicate key") {
+			if errors.Is(err, database.ErrDuplicate) {
 				status, msg = http.StatusConflict, "file already exists"
 
 				return err
@@ -561,9 +554,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 			status, msg = http.StatusInternalServerError, "failed to create package"
 		}
 
-		if err := quota.Release(r.Context(), h.DB, repoID, pkg.SizeBytes); err != nil {
-			h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
-		}
+		h.ReleaseQuota(r.Context(), repoID, repoName, pkg.SizeBytes)
 
 		http.Error(w, msg, status)
 
@@ -589,16 +580,8 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	repoName := vars["name"]
 	filename := vars["filename"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -648,9 +631,7 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 				return fmt.Errorf("delete pypi package: %w", err)
 			}
 
-			if relErr := quota.Release(r.Context(), h.DB, repoID, pkg.SizeBytes); relErr != nil {
-				h.Log.Warnw("failed to release quota", "repo", repoName, "error", relErr)
-			}
+			h.ReleaseQuota(r.Context(), repoID, repoName, pkg.SizeBytes)
 
 			// Blob is content-addressed and may be shared by other artifacts; only
 			// remove it from storage once no other row references the same sha256.
@@ -691,16 +672,8 @@ func (h *HTTPHandler) handleJSON(w http.ResponseWriter, r *http.Request) {
 	repoName := vars["name"]
 	pkgName := vars["package"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -720,11 +693,15 @@ func (h *HTTPHandler) handleJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The legacy JSON API is consumed by tools that do not resolve references,
+	// so its file URLs are absolute (and, with no ETag, never cached).
+	publicBase := h.PublicBase(w, r)
+
 	// Build JSON response
 	releases := make(map[string][]map[string]any)
 
 	for _, pkg := range versions {
-		fileURL := fmt.Sprintf("%s/repos/%s/files/%s", h.BaseURL, repoName, url.PathEscape(pkg.Filename))
+		fileURL := fmt.Sprintf("%s/repos/%s/files/%s", publicBase, url.PathEscape(repoName), url.PathEscape(pkg.Filename))
 
 		fileInfo := map[string]any{
 			"filename": pkg.Filename,

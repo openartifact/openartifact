@@ -1,0 +1,161 @@
+// SPDX-FileCopyrightText: The OpenArtifact Authors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package database
+
+// PostgresDB is the PostgreSQL database: the composition root that embeds one
+// store per domain. Every store is a struct around the shared *core (pool,
+// sqlc queries, caches) and lives in its own file(s); the method sets are
+// promoted, so *PostgresDB satisfies whatever narrow interface a consumer
+// declares. Consumers never depend on this type but on the small interfaces
+// they declare themselves.
+//
+// Package storage is split per format: each pkg_<format>.go is the typed store of
+// one format over the generic tables packages, package_versions, package_files
+// and package_tags (plus the side tables conan_files, deb_files, maven_files,
+// pacman_files and rpm_files), written through writePackage/deleteFiles in
+// pkg_generic.go. Docker is the one format with dedicated tables (docker_*,
+// docker.go). Everything that spans formats reads the generic tables once and
+// never switches on the format: CatalogStore (listing, catalog_branches.go),
+// the blobRefSpecs in blob_refs.go (package_files.blob_id plus the docker and
+// side tables that own a blob column), TrashStore, tiering and quota usage. The
+// per-format differences are data: the storage.Storage descriptor each format
+// registers (internal/format/storage). A new format adds a pkg_<format>.go and
+// its queries, and no branch to any cross-format query.
+type PostgresDB struct {
+	*core
+	*BlobRefStore
+	*SettingsStore
+	*AuditStore
+	*ProxyCacheStore
+	*WebhookStore
+	*CleanupStore
+	*PresignedUploadStore
+	*PropertyStore
+	*DeltaStore
+	*DeclarativeStore
+	*GPGKeyStore
+	*BackupStore
+	*BundleStore
+	*QuarantineStore
+	*SecretScanStore
+	*LicenseStore
+	*SBOMStore
+	*VEXStore
+	*VulnStore
+	*ExploitStore
+	*OSVStore
+	*DependencyTrackStore
+	*AIAnalysisStore
+	*QuotaStore
+	*StorageBackendStore
+	*TieringStore
+	*ReplicationStore
+	*TrashStore
+	*RepoMetadataStore
+	*RepoGroupStore
+	*ComponentStore
+	*CatalogStore
+	*RepositoryStore
+	*UserStore
+	*SessionStore
+	*UserGroupStore
+	*TokenStore
+	*PermissionStore
+	*SSOStore
+	*ProjectStore
+	*DebStore
+	*RPMStore
+	*APKStore
+	*PacmanStore
+	*MavenStore
+	*NPMStore
+	*TerraformStore
+	*ComposerStore
+	*AnsibleStore
+	*NixStore
+	*GoModStore
+	*DockerStore
+	*HelmStore
+	*PyPIStore
+	*NuGetStore
+	*CargoStore
+	*RubyGemsStore
+	*RawStore
+	*CondaStore
+	*ConanStore
+	*IvyStore
+	*SBTStore
+	// STORES-STRUCT
+}
+
+// newPostgresDB wires one store per domain around the shared core c.
+func newPostgresDB(c *core) *PostgresDB {
+	return &PostgresDB{
+		core:                 c,
+		BlobRefStore:         &BlobRefStore{core: c},
+		SettingsStore:        &SettingsStore{core: c},
+		AuditStore:           &AuditStore{core: c},
+		ProxyCacheStore:      &ProxyCacheStore{core: c},
+		WebhookStore:         &WebhookStore{core: c},
+		CleanupStore:         &CleanupStore{core: c},
+		PresignedUploadStore: &PresignedUploadStore{core: c},
+		PropertyStore:        &PropertyStore{core: c},
+		DeltaStore:           &DeltaStore{core: c},
+		DeclarativeStore:     &DeclarativeStore{core: c},
+		GPGKeyStore:          &GPGKeyStore{core: c},
+		BackupStore:          &BackupStore{core: c},
+		BundleStore:          &BundleStore{core: c},
+		QuarantineStore:      &QuarantineStore{core: c},
+		SecretScanStore:      &SecretScanStore{core: c},
+		LicenseStore:         &LicenseStore{core: c},
+		SBOMStore:            &SBOMStore{core: c},
+		VEXStore:             &VEXStore{core: c},
+		VulnStore:            &VulnStore{core: c},
+		ExploitStore:         &ExploitStore{core: c},
+		OSVStore:             &OSVStore{core: c},
+		DependencyTrackStore: &DependencyTrackStore{core: c},
+		AIAnalysisStore:      &AIAnalysisStore{core: c},
+		QuotaStore:           &QuotaStore{core: c},
+		StorageBackendStore:  &StorageBackendStore{core: c},
+		TieringStore:         &TieringStore{core: c},
+		ReplicationStore:     &ReplicationStore{core: c},
+		TrashStore:           &TrashStore{core: c},
+		RepoMetadataStore:    &RepoMetadataStore{core: c},
+		RepoGroupStore:       &RepoGroupStore{core: c},
+		ComponentStore:       &ComponentStore{core: c},
+		CatalogStore:         &CatalogStore{core: c},
+		RepositoryStore:      &RepositoryStore{core: c},
+		UserStore:            &UserStore{core: c},
+		SessionStore:         &SessionStore{core: c},
+		UserGroupStore:       &UserGroupStore{core: c},
+		TokenStore:           &TokenStore{core: c},
+		PermissionStore:      &PermissionStore{core: c},
+		SSOStore:             &SSOStore{core: c},
+		ProjectStore:         &ProjectStore{core: c},
+		DebStore:             &DebStore{core: c},
+		RPMStore:             &RPMStore{core: c},
+		APKStore:             &APKStore{core: c},
+		PacmanStore:          &PacmanStore{core: c},
+		MavenStore:           &MavenStore{core: c},
+		NPMStore:             &NPMStore{core: c},
+		TerraformStore:       &TerraformStore{core: c},
+		ComposerStore:        &ComposerStore{core: c},
+		AnsibleStore:         &AnsibleStore{core: c},
+		NixStore:             &NixStore{core: c},
+		GoModStore:           &GoModStore{core: c},
+		DockerStore:          &DockerStore{core: c},
+		HelmStore:            &HelmStore{core: c},
+		PyPIStore:            &PyPIStore{core: c},
+		NuGetStore:           &NuGetStore{core: c},
+		CargoStore:           &CargoStore{core: c},
+		RubyGemsStore:        &RubyGemsStore{core: c},
+		RawStore:             &RawStore{core: c},
+		CondaStore:           &CondaStore{core: c},
+		ConanStore:           &ConanStore{core: c},
+		IvyStore:             &IvyStore{core: c},
+		SBTStore:             &SBTStore{core: c},
+		// STORES-INIT
+	}
+}

@@ -16,6 +16,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/publicurl"
 	pkgnpm "github.com/openartifact/openartifact/pkg/npm"
 )
 
@@ -30,9 +31,23 @@ const packumentMaxAge = 60
 // maxConcurrentMerges bounds the packument merges held in memory at once.
 const maxConcurrentMerges = 8
 
-// SetBaseURL sets the server base URL the merged packuments' tarball URLs
-// point at (the same value hosted npm repositories use).
+// SetBaseURL sets BASE_URL, the explicit override of the origin the merged
+// packuments' tarball URLs point at ("" derives it from each request).
 func (h *Handler) SetBaseURL(baseURL string) { h.baseURL = strings.TrimRight(baseURL, "/") }
+
+// publicBase is the origin of the absolute URLs a merged document hands to the
+// client for r: BASE_URL when set, else the request's origin (see
+// base.Handler.PublicBase). Call it before the response headers are written and
+// fold the result into the document's validator.
+func (h *Handler) publicBase(w http.ResponseWriter, r *http.Request) string {
+	return publicurl.Resolve(w, r, h.baseURL)
+}
+
+// NPMHooks is the npm group: merged packuments, tarballs first-hit.
+var NPMHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: (*Handler).serveNPM,
+	PackageRef:  npmRef,
+}
 
 // serveNPM answers packument and version-manifest requests by merging the
 // members' packuments; it reports false for every other path (tarballs), which
@@ -55,20 +70,18 @@ func (h *Handler) serveNPM(
 		return false
 	}
 
-	// Members are asked for the packument itself, always with GET and without
-	// the client's conditional headers. A version manifest is cut from the
-	// full packument.
-	mr := r.Clone(r.Context())
-	mr.Method = http.MethodGet
-	mr.Header.Del("If-None-Match")
-	mr.Header.Del("If-Modified-Since")
-
+	// Members are asked for the packument itself; a version manifest is cut
+	// from the full packument.
 	abbreviated := p.Kind == pkgnpm.KindPackument && pkgnpm.WantsAbbreviated(r.Header.Get("Accept"))
-	if p.Kind == pkgnpm.KindVersion || !abbreviated {
-		mr.Header.Set("Accept", "application/json")
+	ask := memberAsk{
+		path:  samePath(strings.Replace(p.Package, "/", "%2f", 1)),
+		limit: maxPackumentBytes,
+		prepare: func(mr *http.Request) {
+			if !abbreviated {
+				mr.Header.Set("Accept", "application/json")
+			}
+		},
 	}
-
-	memberPath := strings.Replace(p.Package, "/", "%2f", 1)
 
 	// Every member's packument is held whole until merged: bound how many
 	// merges run at once. The slot is taken only once a member starts
@@ -77,39 +90,22 @@ func (h *Handler) serveNPM(
 	sess := h.newSession(r.Context())
 	defer sess.release()
 
-	var (
-		docs   [][]byte
-		failed bool
-	)
-
-	for _, m := range members {
-		cw := sess.capture(maxPackumentBytes)
-		be.ServeMember(cw, mr, m, memberPath)
-
-		switch {
-		case cw.status == http.StatusNotFound:
-		case cw.status == http.StatusOK && !cw.overflow:
-			docs = append(docs, cw.body.Bytes())
-		default:
-			failed = true
-		}
+	c := h.collect(r, sess, members, ask, be)
+	if len(c.docs) == 0 {
+		writeNoDocument(w, r, c.partial())
+		return true
 	}
 
-	if len(docs) == 0 {
-		if failed {
-			http.Error(w, "member repository error", http.StatusBadGateway)
-		} else {
-			http.NotFound(w, r)
-		}
-
-		return true
+	docs := make([][]byte, len(c.docs))
+	for i, d := range c.docs {
+		docs[i] = d.body
 	}
 
 	// The merge is a pure function of the members' documents, so its result is
 	// cached under a digest of them and serves as the validator: a poll that
 	// changes nothing neither parses nor rewrites a thousand-version packument
 	// again.
-	tarballBase := h.baseURL + "/repos/" + grp.Name
+	tarballBase := h.publicBase(w, r) + "/repos/" + grp.Name
 	key := mergeKey(grp.ID, tarballBase, p, docs)
 
 	rendered, err := base.MergedRendered(r.Context(), key, func(context.Context) (*base.Rendered, error) {
@@ -137,7 +133,7 @@ func (h *Handler) serveNPM(
 
 	w.Header().Add("Vary", "Accept")
 
-	if revalidateMerged(w, r, grp.Public, `"`+key[:32]+`"`, packumentMaxAge, failed) {
+	if revalidateMerged(w, r, grp.Public, `"`+key[:32]+`"`, packumentMaxAge, c.partial()) {
 		return true
 	}
 
@@ -147,7 +143,7 @@ func (h *Handler) serveNPM(
 }
 
 // mergeKey is the hex SHA-256 over everything a merged document is built from:
-// the group, where its tarball URLs point, what was asked for, and the bytes of
+// the group, the origin and repository its tarball URLs point at, what was asked for, and the bytes of
 // every member document in order.
 func mergeKey(groupID, tarballBase string, p pkgnpm.Path, docs [][]byte) string {
 	h := sha256.New()
@@ -202,4 +198,17 @@ func mergePackuments(tarballBase string, p pkgnpm.Path, docs [][]byte) ([]byte, 
 	}
 
 	return manifest, nil
+}
+
+func npmRef(relPath string) (PkgRef, bool) {
+	p, err := pkgnpm.ParsePath(relPath)
+	if err != nil {
+		return PkgRef{}, false
+	}
+
+	return PkgRef{
+		probe:  strings.Replace(p.Package, "/", "%2f", 1),
+		accept: "application/json",
+		file:   p.Kind == pkgnpm.KindTarball,
+	}, true
 }

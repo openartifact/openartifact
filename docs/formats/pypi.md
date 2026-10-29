@@ -49,11 +49,11 @@ Relative to `HOST/repos/REPO`:
 | Request | Behaviour |
 |---|---|
 | `GET /simple/` | HTML index of all project names |
-| `GET /simple/<package>/` | HTML file list; links are `/repos/REPO/files/<file>#sha256=<digest>`, with `data-requires-python` when the upload set it |
+| `GET /simple/<package>/` | HTML file list; links are relative, `../../files/<project>/<file>#sha256=<digest>` (the root page links `<project>/`, PEP 691 JSON is the same), with `data-requires-python` when the upload set it |
 | `GET /files/<filename>` | download a distribution |
 | `POST /legacy/` | upload (multipart), `200` on success |
 | `DELETE /files/<filename>` | delete one distribution, `200` |
-| `GET /json/<package>` | `info` (name, version, summary, author, author_email, license, taken from the first stored file) and `releases` (per file: filename, `url`, digests) |
+| `GET /json/<package>` | `info` (name, version, summary, author, author_email, license, taken from the first stored file) and `releases` (per file: filename, `url`, digests); the `url` is absolute on the request origin (or `BASE_URL` when set) |
 
 Package names are normalized (lowercase, each `_` and `.` becomes `-`) on upload, so `My_Package` and `my-package` are one project.
 
@@ -70,7 +70,7 @@ Package names are normalized (lowercase, each `_` and `.` becomes `-`) on upload
 
 ## Proxy and group
 
-- **Proxy:** `pip install --index-url HOST/repos/PROXY/simple/ <package>` fetches the simple pages from `upstream_url` (default `https://pypi.org/simple`), rewrites every file link to `HOST/repos/PROXY/files/<project>/<filename>` keeping the hash, `requires-python`, metadata and yanked data, and caches pages (for `cache_ttl_seconds`, served stale when the upstream is down) and distribution files (immutable, verified against the index sha256). HTML and PEP 691 JSON are both served, chosen by `Accept`. Uploads are `405`.
+- **Proxy:** `pip install --index-url HOST/repos/PROXY/simple/ <package>` fetches the simple pages from `upstream_url` (default `https://pypi.org/simple`), rewrites every file link to the relative `../../files/<project>/<filename>` (resolved by pip against the page URL) keeping the hash, `requires-python`, metadata and yanked data, and caches pages (for `cache_ttl_seconds`, served stale when the upstream is down) and distribution files (immutable, verified against the index sha256). HTML and PEP 691 JSON are both served, chosen by `Accept`. Uploads are `405`.
 - **Group:** an ordered list of hosted and proxy pypi members. `simple/` and `simple/<project>/` are merged across members (union by filename, the first member wins a duplicate) and linked to the group; files are served from the first member that has them. Use `--index-url HOST/repos/GROUP/simple/`.
 
 Details, including failure behavior and credentials: [hosted, proxy, group](../repositories/hosted-proxy-group.md#pypi-proxies).

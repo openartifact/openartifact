@@ -18,8 +18,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openartifact/openartifact/internal/backup/backuptest"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -71,7 +71,7 @@ func TestExportBlobs_PaginatesUntilExhausted(t *testing.T) {
 	const total = blobPageSize + 5
 
 	store := newFakeBlobStore(total)
-	x := newExporter(t, store, &databasetest.LiveSnapshot{Blobs: store.rows()})
+	x := newExporter(t, store, &backuptest.LiveSnapshot{Blobs: store.rows()})
 
 	var buf bytes.Buffer
 
@@ -100,7 +100,7 @@ func TestExportBlobs_FailsOnMissingBytes(t *testing.T) {
 	rows := store.rows()
 	delete(store.data, rows[1].SHA256)
 
-	x := newExporter(t, store, &databasetest.LiveSnapshot{Blobs: rows})
+	x := newExporter(t, store, &backuptest.LiveSnapshot{Blobs: rows})
 
 	err := x.exportBlobs(context.Background(), tar.NewWriter(io.Discard), &BackupManifest{TableCounts: map[string]int{}})
 	if !errors.Is(err, ErrBlobMissing) || !strings.Contains(err.Error(), rows[1].SHA256) {
@@ -121,7 +121,7 @@ func TestExportBlobs_FailsOnCorruptBytes(t *testing.T) {
 			rows := store.rows()
 			store.data[rows[0].SHA256] = mutate(append([]byte{}, store.data[rows[0].SHA256]...))
 
-			x := newExporter(t, store, &databasetest.LiveSnapshot{Blobs: rows})
+			x := newExporter(t, store, &backuptest.LiveSnapshot{Blobs: rows})
 
 			err := x.exportBlobs(context.Background(), tar.NewWriter(io.Discard), &BackupManifest{TableCounts: map[string]int{}})
 			if !errors.Is(err, ErrBlobCorrupt) {
@@ -132,7 +132,7 @@ func TestExportBlobs_FailsOnCorruptBytes(t *testing.T) {
 }
 
 // shortSnapshot claims one more blob than it will ever list.
-type shortSnapshot struct{ *databasetest.LiveSnapshot }
+type shortSnapshot struct{ *backuptest.LiveSnapshot }
 
 func (s shortSnapshot) CountBlobs(ctx context.Context) (int64, error) {
 	n, err := s.LiveSnapshot.CountBlobs(ctx)
@@ -144,7 +144,7 @@ func (s shortSnapshot) CountBlobs(ctx context.Context) (int64, error) {
 // manifest's promise: fewer blobs than the snapshot counted is an error.
 func TestExportBlobs_FailsWhenArchiveHasFewerBlobsThanCounted(t *testing.T) {
 	store := newFakeBlobStore(2)
-	x := newExporter(t, store, shortSnapshot{&databasetest.LiveSnapshot{Blobs: store.rows()}})
+	x := newExporter(t, store, shortSnapshot{&backuptest.LiveSnapshot{Blobs: store.rows()}})
 
 	err := x.exportBlobs(context.Background(), tar.NewWriter(io.Discard), &BackupManifest{TableCounts: map[string]int{}})
 	if !errors.Is(err, ErrBlobCountMismatch) {

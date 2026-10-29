@@ -9,309 +9,182 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/storage"
 )
 
-// formatTable maps a repository format to the rows a cleanup policy ranks and
-// removes. Every table has an `id` PK, a `repository_id` (possibly through
-// `source`), `created_at`, `deleted_at` and FKs into the global blobs table.
-type formatTable struct {
-	// table is the table the rows are deleted from (and trashed in).
-	table string
-	// source is the FROM expression the selection reads, exposing id,
-	// repository_id, deleted_at, created_at and every column the expressions
-	// below use. Empty means the table itself.
-	source string
-	// nameCol is the package name, matched against name_pattern.
-	nameCol string
-	// versionCol is the version shown to the immutable-release guard; empty
-	// means the `version` column.
-	versionCol string
-	// tsCol is the timestamp that ages a row (keep_since_days) and orders
-	// versions (keep_last_n); empty means created_at.
-	tsCol string
-	// partitionCols identify "the same package" for keep_last_n: versions are
-	// only ranked against other versions of the same name and architecture /
-	// distribution, so a newer arm64 build never evicts the only amd64 one.
-	partitionCols []string
-	// versionExpr identifies one version; rows sharing it (e.g. a pypi sdist
-	// and wheel, or the jar and pom of a maven release) count as a single
-	// version for keep_last_n.
-	versionExpr string
-	// protectExpr is a boolean expression over source columns; rows for which
-	// it holds still occupy their rank but are never selected (npm versions a
-	// dist-tag points at, the newest build of a maven snapshot). Empty means
-	// no row is protected.
-	protectExpr string
-	// blobCols are the (possibly nullable) FK columns to blobs.id owned by the row.
-	blobCols []string
-	// quotaTracked marks formats whose uploads reserve storage quota (one
-	// artifact per row, the row's blob size). Deleting such a row must give that
-	// usage back. Every hosted format is metered except docker tags.
-	quotaTracked bool
-	// kind is the trash kind of the table's rows, for the soft-delete path.
+// dockerFormat is the one format the cleanup engine special-cases: it keeps
+// dedicated tables (tags are what a policy removes) and has no storage
+// descriptor.
+const dockerFormat = "docker"
+
+// cleanupTable says what the cleanup engine ranks and removes in a repository
+// of one format. Every package format except docker shares package_files: the
+// candidates are its live, listed files, ranked per the format's storage.Cleanup
+// descriptor and removed through the generic trash path.
+type cleanupTable struct {
+	format string
+	// kind is the trash kind of the rows, for the soft-delete path.
 	kind models.TrashKind
+	// docker selects the dedicated docker_tags code path.
+	docker bool
+	// cleanup is the ranking descriptor of a package format.
+	cleanup storage.Cleanup
+	// scope is how many files one candidate stands for.
+	scope storage.TrashScope
 }
 
-// sourceExpr is the FROM expression of the selection.
-func (t formatTable) sourceExpr() string {
-	if t.source != "" {
-		return t.source
+// cleanupTableFor returns the table of a format, false when cleanup policies do
+// not support it (no storage descriptor and not docker).
+func cleanupTableFor(format string) (cleanupTable, bool) {
+	if format == dockerFormat {
+		// Tags are what a policy removes; the manifests they leave untagged and
+		// their layers are reclaimed by registry garbage collection, which a
+		// cleanup run triggers once it removed tags.
+		return cleanupTable{format: format, kind: models.TrashKindDockerTag, docker: true}, true
 	}
 
-	return t.table
-}
-
-func (t formatTable) versionColumn() string {
-	if t.versionCol != "" {
-		return t.versionCol
+	s, ok := storage.Lookup(format)
+	if !ok {
+		return cleanupTable{}, false
 	}
 
-	return "version"
-}
-
-func (t formatTable) timeColumn() string {
-	if t.tsCol != "" {
-		return t.tsCol
-	}
-
-	return "created_at"
-}
-
-func (t formatTable) protection() string {
-	if t.protectExpr != "" {
-		return t.protectExpr
-	}
-
-	return "false"
+	return cleanupTable{
+		format:  format,
+		kind:    models.TrashKind(s.Trash.Kind),
+		cleanup: s.Cleanup,
+		scope:   s.Trash.Scope,
+	}, true
 }
 
 // CleanupFormatSupported reports whether the cleanup worker can run policies
 // for repositories of the given format; the API uses it to reject policies
 // that could never run.
 func CleanupFormatSupported(format string) bool {
-	return len(cleanupFormatTables(format)) > 0
+	_, ok := cleanupTableFor(format)
+
+	return ok
 }
 
-// Source of the npm rows: a version is a row of npm_versions, its repository
-// and name live on the package.
-const npmCleanupSource = `(SELECT v.id, v.package_id, v.version, v.created_at, v.blob_id, v.deleted_at,
-	np.repository_id, np.full_name
-	FROM npm_versions v JOIN npm_packages np ON np.id = v.package_id)`
-
-// Source of the docker rows: a tag, named by its full image name. A tag is
-// aged by its last update: re-tagging (latest, a moving 1.x tag) is activity.
-const dockerCleanupSource = `(SELECT t.id, t.repository_id, t.name, t.image, t.created_at, t.updated_at, t.deleted_at,
-	CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END AS full_name
-	FROM docker_tags t JOIN repositories r ON r.id = t.repository_id)`
-
-// cleanupFormatTables is the set of formats cleanup policies support and the
-// tables each stores its rows in (none for an unsupported format). Every hosted
-// format is listed. Every format but terraform has one table; the tables of a
-// format rank and delete independently.
-func cleanupFormatTables(format string) []formatTable {
-	if format == "terraform" {
-		return terraformCleanupTables()
-	}
-
-	if t, ok := cleanupFormatTable(format); ok {
-		return []formatTable{t}
-	}
-
-	return nil
+// candidateSQL are the pieces of the candidate query: it ranks the rows of one
+// repository and returns the ones a policy may remove.
+type candidateSQL struct {
+	// id, name, version, pkg, blobs and artifacts are the select-list
+	// expressions of the candidate columns (id text, name text, version text,
+	// package id text, comma-separated blob ids text, artifacts int).
+	id, name, version, pkg, blobs, artifacts string
+	// aged is the timestamp that ages a row (keep_since_days); ranked the one
+	// that orders versions (keep_last_n).
+	aged, ranked string
+	// protect is the boolean expression of rows that are never selected.
+	protect string
+	// partition are the expressions of "the same package"; versionExpr identifies
+	// one version inside it.
+	partition   []string
+	versionExpr string
+	// from is the FROM clause with its WHERE clause; $1 is the repository id.
+	from string
 }
 
-// terraformCleanupTables are the module archives and the provider platform
-// zips. A provider version is one version whatever its platforms: the rows of
-// its platforms rank together, and a policy removes them together.
-func terraformCleanupTables() []formatTable {
-	return []formatTable{
-		{
-			table:         "terraform_modules",
-			nameCol:       "'modules/' || name || '/' || system",
-			partitionCols: []string{"name", "system"},
-			versionExpr:   "version",
-			blobCols:      []string{"blob_id"},
-			quotaTracked:  true,
-			kind:          models.TrashKindTerraformModule,
-		},
-		{
-			table:         "terraform_providers",
-			nameCol:       "'providers/' || type",
-			partitionCols: []string{"type"},
-			versionExpr:   "version",
-			blobCols:      []string{"blob_id"},
-			quotaTracked:  true,
-			kind:          models.TrashKindTerraformProvider,
-		},
-	}
-}
-
-// cleanupFormatTable is the single-table part of cleanupFormatTables.
+// query renders the ranking query. conds are ANDed over the ranked rows.
 //
-//nolint:gocyclo,cyclop // one case per format
-func cleanupFormatTable(format string) (formatTable, bool) {
-	switch format {
-	case "rpm":
-		return formatTable{
-			table:         "rpm_packages",
-			nameCol:       "name",
-			partitionCols: []string{"name", "arch"},
-			versionExpr:   "version || '-' || release || ':' || epoch::text",
-			blobCols:      []string{"blob_id"},
-			quotaTracked:  true,
-			kind:          models.TrashKindRPM,
-		}, true
-	case "deb":
-		return formatTable{table: "deb_packages", nameCol: "name", partitionCols: []string{"name", "arch", "distribution_id::text"},
-			versionExpr: "version", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindDeb}, true
-	case "helm":
-		return formatTable{table: "helm_charts", nameCol: "name", partitionCols: []string{"name"},
-			versionExpr: "version", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindHelm}, true
-	case "pypi":
-		return formatTable{table: "pypi_packages", nameCol: "name", partitionCols: []string{"name"},
-			versionExpr: "version", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindPyPI}, true
-	case "nuget":
-		return formatTable{table: "nuget_packages", nameCol: "package_id", partitionCols: []string{"package_id"},
-			versionExpr: "version", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindNuGet}, true
-	case "go": // the format id is "go"; the table is gomod_modules (chk_repo_format)
-		return formatTable{table: "gomod_modules", nameCol: "module_path", partitionCols: []string{"module_path"},
-			versionExpr: "version", blobCols: []string{"zip_blob_id", "mod_blob_id"}, quotaTracked: true, kind: models.TrashKindGoMod}, true
-	case "npm":
-		// A version a dist-tag points at is never selected: removing it would
-		// leave the tag (latest, next, ...) dangling.
-		return formatTable{
-			table:         "npm_versions",
-			source:        npmCleanupSource,
-			nameCol:       "full_name",
-			partitionCols: []string{"package_id::text"},
-			versionExpr:   "version",
-			blobCols:      []string{"blob_id"},
-			quotaTracked:  true,
-			kind:          models.TrashKindNPM,
-			protectExpr:   "EXISTS (SELECT 1 FROM npm_dist_tags d WHERE d.package_id = src.package_id AND d.version = src.version)",
-		}, true
-	case "maven":
-		return mavenCleanupTable(), true
-	case "ivy":
-		return formatTable{table: "ivy_artifacts", nameCol: "organisation || ':' || module", versionCol: "revision",
-			partitionCols: []string{"organisation", "module"}, versionExpr: "revision",
-			blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindIvy}, true
-	case "sbt":
-		return formatTable{table: "sbt_artifacts", nameCol: "group_id || ':' || artifact_id",
-			partitionCols: []string{"group_id", "artifact_id", "scala_version"}, versionExpr: "version",
-			blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindSBT}, true
-	case "cargo":
-		return formatTable{table: "cargo_crates", nameCol: "name", partitionCols: []string{"name"},
-			versionExpr: "version", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindCargo}, true
-	case "composer":
-		// Ranked per package name: the newest versions of one vendor/package are kept.
-		return formatTable{table: "composer_packages", nameCol: "name", partitionCols: []string{"name"},
-			versionExpr: "version", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindComposer}, true
-	case "rubygems":
-		return formatTable{table: "rubygems_gems", nameCol: "name", partitionCols: []string{"name", "platform"},
-			versionExpr: "version", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindRubyGems}, true
-	case "conda":
-		// One version is one build; the .tar.bz2 and .conda files of a build
-		// count together. Ranked per package and subdir (platform).
-		return formatTable{
-			table:         "conda_packages",
-			nameCol:       "name",
-			partitionCols: []string{"name", "platform"},
-			versionExpr:   "version || '-' || build_string",
-			blobCols:      []string{"blob_id"},
-			quotaTracked:  true,
-			kind:          models.TrashKindConda,
-		}, true
-	case "ansible":
-		// Ranked per collection: the newest versions of one FQCN are kept.
-		return formatTable{table: "ansible_collections", nameCol: "namespace || '.' || name",
-			partitionCols: []string{"namespace", "name"}, versionExpr: "version",
-			blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindAnsible}, true
-	case "pacman":
-		// One row is one package file; ranked per package name and architecture.
-		return formatTable{table: "pacman_packages", nameCol: "name", partitionCols: []string{"name", "arch"},
-			versionExpr: "version", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindPacman}, true
-	case "conan":
-		// Every revision of a recipe version ranks and goes as one version.
-		return formatTable{
-			table:         "conan_packages",
-			nameCol:       "name",
-			partitionCols: []string{"name"},
-			versionExpr:   "version || '@' || user_channel",
-			blobCols:      []string{"blob_id"},
-			quotaTracked:  true,
-			kind:          models.TrashKindConan,
-		}, true
-	case "apk":
-		// Ranked per package within one branch, repo and architecture directory.
-		return formatTable{
-			table:         "apk_packages",
-			nameCol:       "branch || '/' || repo || '/' || name",
-			partitionCols: []string{"branch", "repo", "arch", "name"},
-			versionExpr:   "version",
-			blobCols:      []string{"blob_id"},
-			quotaTracked:  true,
-			kind:          models.TrashKindApk,
-		}, true
-	case "nix":
-		return formatTable{
-			table:         "nix_paths",
-			nameCol:       "name",
-			versionCol:    "store_hash",
-			partitionCols: []string{"name"},
-			versionExpr:   "store_hash",
-			blobCols:      []string{"blob_id"},
-			quotaTracked:  true,
-			kind:          models.TrashKindNix,
-		}, true
-	case "raw":
-		// A raw file has no version: files are ranked against the other files
-		// of their directory, newest first.
-		return formatTable{table: "raw_artifacts", nameCol: "path", versionCol: "''::text",
-			partitionCols: []string{"regexp_replace(path, '[^/]*$', '')"}, versionExpr: "path",
-			blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindRaw}, true
-	case "docker":
-		// Tags are what a policy removes; the manifests they leave untagged and
-		// their layers are reclaimed by registry garbage collection, which a
-		// cleanup run triggers once it removed tags.
-		return formatTable{table: "docker_tags", source: dockerCleanupSource, nameCol: "full_name", versionCol: "name", tsCol: "updated_at",
-			partitionCols: []string{"image"}, versionExpr: "name", kind: models.TrashKindDockerTag}, true
-	default:
-		return formatTable{}, false
+// Inner: the newest timestamp per (partition, version) so that multi-file
+// versions rank as one. Middle: dense rank of versions within a partition.
+// Outer: protected rows stay ranked (they occupy a slot) but are never selected.
+func (c candidateSQL) query(conds []string) string {
+	return fmt.Sprintf(`
+		SELECT id, cname, cver, pid, blobs, artifacts FROM (
+			SELECT id, cname, cver, pid, blobs, artifacts, created_at, prot,
+			       DENSE_RANK() OVER (PARTITION BY %[1]s ORDER BY vts DESC, ver DESC) AS rk
+			FROM (
+				SELECT %[2]s AS id, %[3]s AS cname, %[4]s AS cver, %[5]s AS pid, %[6]s AS blobs, %[7]s AS artifacts,
+				       %[8]s AS created_at,
+				       (%[9]s) AS prot,
+				       %[10]s,
+				       (%[11]s) AS ver,
+				       MAX(%[12]s) OVER (PARTITION BY %[13]s, (%[11]s)) AS vts
+				%[14]s
+			) base
+		) ranked
+		WHERE %[15]s`,
+		partitionAliases(len(c.partition)),
+		c.id, c.name, c.version, c.pkg, c.blobs, c.artifacts,
+		c.aged,
+		c.protect,
+		partitionSelect(c.partition),
+		c.versionExpr,
+		c.ranked,
+		strings.Join(c.partition, ", "),
+		c.from,
+		strings.Join(conds, " AND "))
+}
+
+// filesFrom is the FROM/WHERE of the package_files candidates: the live, listed
+// files of one repository with their version and package.
+const filesFrom = `FROM package_files f
+				JOIN package_versions v ON v.id = f.version_id
+				JOIN packages p ON p.id = v.package_id
+				WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND f.listed`
+
+// blobIDsSQL is the select expression of the comma-separated ids of the blobs
+// one candidate holds: its own file, or with ScopeVersion every live file of
+// its version (the go.mod goes with the zip).
+func blobIDsSQL(scope storage.TrashScope) string {
+	if scope == storage.ScopeVersion {
+		return `COALESCE((SELECT string_agg(sf.blob_id::text, ',') FROM package_files sf
+					WHERE sf.version_id = f.version_id AND sf.deleted_at IS NULL AND sf.blob_id IS NOT NULL), '')`
+	}
+
+	return `COALESCE(f.blob_id::text, '')`
+}
+
+// sql is the candidate query pieces of the table.
+func (t cleanupTable) sql() candidateSQL {
+	if t.docker {
+		// A tag is named by its full image name and aged by its last update:
+		// re-tagging (latest, a moving 1.x tag) is activity.
+		return candidateSQL{
+			id: "t.id::text", name: "CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END",
+			version: "t.name", pkg: "''::text", blobs: "''::text", artifacts: "0",
+			aged: "t.updated_at", ranked: "t.updated_at", protect: "false",
+			partition: []string{"t.image"}, versionExpr: "t.name",
+			from: `FROM docker_tags t JOIN repositories r ON r.id = t.repository_id
+				WHERE t.repository_id = $1 AND t.deleted_at IS NULL`,
+		}
+	}
+
+	return candidateSQL{
+		id: "f.id::text", name: "p.name", version: "v.version", pkg: "p.id::text",
+		blobs: blobIDsSQL(t.scope), artifacts: "(f.role = 'primary')::int",
+		aged: "f.created_at", ranked: "v.created_at",
+		protect:   t.cleanup.ProtectSQL(),
+		partition: t.cleanup.PartitionExprs(), versionExpr: t.cleanup.VersionSQL(),
+		from: filesFrom,
 	}
 }
 
-// mavenCleanupTable ranks releases against the other releases of their
-// artifact, and the timestamped builds of each snapshot version against each
-// other (a build is a version of its own). The newest build of a snapshot is
-// kept whatever its age: it is what clients resolve -SNAPSHOT to.
-func mavenCleanupTable() formatTable {
-	return formatTable{
-		table:   "maven_artifacts",
-		nameCol: "group_id || ':' || artifact_id_coord",
-		partitionCols: []string{
-			"group_id", "artifact_id_coord", "is_snapshot::text",
-			"CASE WHEN is_snapshot THEN version ELSE '' END",
-		},
-		versionExpr: "version || COALESCE('#' || snapshot_timestamp || '-' || snapshot_build_number::text, '')",
-		protectExpr: `is_snapshot AND DENSE_RANK() OVER (PARTITION BY group_id, artifact_id_coord, version
-			ORDER BY snapshot_timestamp DESC NULLS LAST, snapshot_build_number DESC) = 1`,
-		blobCols:     []string{"blob_id"},
-		quotaTracked: true,
-		kind:         models.TrashKindMaven,
+// idColumn is the qualified id column the candidates of the table are keyed by.
+func (t cleanupTable) idColumn() string {
+	if t.docker {
+		return "t.id"
 	}
+
+	return "f.id"
 }
 
-// blobSQL returns the select-list fragment reading the row's blob ids as text
-// (", COALESCE(col::text, ”) AS b0, ...") and the fragment re-selecting them
-// from a subquery (", b0, ..."). Both are empty for a format without blobs.
-func (t formatTable) blobSQL() (string, string) {
-	var s, o strings.Builder
-
-	for i, c := range t.blobCols {
-		fmt.Fprintf(&s, ", COALESCE(%s::text, '') AS b%d", c, i)
-		fmt.Fprintf(&o, ", b%d", i)
+func partitionAliases(n int) string {
+	parts := make([]string, n)
+	for i := range parts {
+		parts[i] = fmt.Sprintf("p%d", i)
 	}
 
-	return s.String(), o.String()
+	return strings.Join(parts, ", ")
+}
+
+func partitionSelect(cols []string) string {
+	parts := make([]string, len(cols))
+	for i, c := range cols {
+		parts[i] = fmt.Sprintf("%s AS p%d", c, i)
+	}
+
+	return strings.Join(parts, ", ")
 }

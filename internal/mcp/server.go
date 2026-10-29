@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+//go:build !nomcp
+
 // Package mcp exposes OpenArtifact to AI agents through the Model Context
 // Protocol (specification 2026-07-28, older revisions negotiated down by the
 // SDK). The endpoint is a stateless Streamable HTTP server: every request
@@ -20,14 +22,34 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	oaauth "github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/exploit"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/search"
-	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
+
+// AIAnalysisRequest is one artifact the trigger_ai_analysis tool queues.
+type AIAnalysisRequest struct {
+	RepositoryID    string
+	ArtifactID      string
+	ArtifactFormat  string
+	ArtifactName    string
+	ArtifactVersion string
+	// ManifestText is caller-supplied manifest content; empty makes the
+	// analyzer read it from the stored artifact.
+	ManifestText string
+}
+
+// AIAnalyzer is the AI analysis worker as the MCP server sees it. A nil
+// AIAnalyzer (a binary built with -tags noai, or the feature off) makes
+// trigger_ai_analysis answer that AI analysis is not enabled.
+type AIAnalyzer interface {
+	// Enabled reports whether the analysis currently has an LLM configured.
+	Enabled() bool
+	// Queue schedules one asynchronous analysis.
+	Queue(req AIAnalysisRequest)
+}
 
 // Authorizer reports whether the caller identified by ctx may perform action
 // ("read", "write", ...) on the named repository.
@@ -94,8 +116,10 @@ var (
 type Options struct {
 	// Version is the build version reported in the MCP serverInfo.
 	Version string
-	// BaseURL is the externally reachable server origin used for download and
-	// client-setup URLs (config BASE_URL). Empty yields relative download paths.
+	// BaseURL is BASE_URL as an explicit override of the origin used in download
+	// and client-setup URLs; empty derives it from the calling request (see
+	// internal/publicurl), and relative download paths result when the context
+	// carries none.
 	BaseURL string
 	// ResourceMetadataURL is the RFC 9728 metadata URL advertised in the
 	// WWW-Authenticate header of 401 responses. Empty omits the parameter.
@@ -109,14 +133,33 @@ type Options struct {
 	AITriggerPerMinute int
 }
 
+// ServerStore is the part of the database Server needs.
+type ServerStore interface {
+	GetAIAnalysis(ctx context.Context, repoID string, artifactID string) (*models.AIAnalysis, error)
+	GetRepoComponentBlob(ctx context.Context, repoID string, id string) (*models.ComponentBlob, error)
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListAIAnalyses(
+		ctx context.Context,
+		repoID string,
+		status string,
+		licenseReviewOnly bool,
+		limit int,
+		offset int,
+	) ([]*models.AIAnalysis, int, error)
+	ListComponentsByRepo(ctx context.Context, repoID string, formatFilter string, page int, limit int) ([]*models.Component, int, error)
+	ListRepositories(ctx context.Context, page int, limit int, formatFilter string) ([]*models.Repository, error)
+	ListVulnScanResults(ctx context.Context, repoID string, vulnerableOnly bool) ([]*models.VulnScanResult, error)
+}
+
 // Server wraps the MCP server with OpenArtifact dependencies.
 type Server struct {
 	authorizer Authorizer       // nil denies every repository-scoped call
 	readFilter ReadFilterFunc   // nil hides every repository from listings
 	searcher   ArtifactSearcher // nil disables cross-repository search
 	mcpServer  *sdk.Server
-	db         database.Database
-	aiWorker   *worker.AIAnalysisWorker
+	db         ServerStore
+	analyzer   AIAnalyzer
 	log        *logger.Logger
 	baseURL    string
 	// exploit annotates vulnerabilities with KEV/EPSS signals; never nil.
@@ -129,7 +172,7 @@ type Server struct {
 }
 
 // NewServer creates a new MCP server with all OpenArtifact tools registered.
-func NewServer(db database.Database, aiWorker *worker.AIAnalysisWorker, log *logger.Logger, opts Options) *Server {
+func NewServer(db ServerStore, analyzer AIAnalyzer, log *logger.Logger, opts Options) *Server {
 	version := opts.Version
 	if version == "" {
 		version = "dev"
@@ -142,7 +185,7 @@ func NewServer(db database.Database, aiWorker *worker.AIAnalysisWorker, log *log
 
 	s := &Server{
 		db:                  db,
-		aiWorker:            aiWorker,
+		analyzer:            analyzer,
 		log:                 log,
 		baseURL:             strings.TrimRight(opts.BaseURL, "/"),
 		exploit:             exploit.NewEnricher(nil, exploit.DefaultEPSSThreshold),

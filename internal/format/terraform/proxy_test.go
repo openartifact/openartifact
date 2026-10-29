@@ -35,7 +35,7 @@ func TestMinterTicketsAreRedeemedByTheHostedRoute(t *testing.T) {
 	stub := &stubProxy{}
 	e.h.WithProxy(stub)
 
-	m := NewMinter(registryHost+"/", []byte(testSecret))
+	m := NewMinter("", []byte(testSecret))
 	if !m.Enabled() {
 		t.Fatal("minter with a secret is not enabled")
 	}
@@ -93,7 +93,7 @@ func TestProxyTicketWithoutProxyServiceIsNotFound(t *testing.T) {
 	e.db.Repo.ID = "repo-proxy"
 	e.db.Repo.RepoType = "proxy"
 
-	link := NewMinter(registryHost, []byte(testSecret)).URL("repo-proxy", DownloadModule, "vpc", "aws", "1.2.3", "vpc-aws-1.2.3.zip")
+	link := NewMinter("", []byte(testSecret)).URL("repo-proxy", DownloadModule, "vpc", "aws", "1.2.3", "vpc-aws-1.2.3.zip")
 	e.now = time.Now()
 
 	if w := e.do(http.MethodGet, ticketPathOf(t, link), nil); w.Code != http.StatusNotFound {
@@ -102,17 +102,25 @@ func TestProxyTicketWithoutProxyServiceIsNotFound(t *testing.T) {
 }
 
 func TestMinterWithoutSecretMintsNothing(t *testing.T) {
-	m := NewMinter(registryHost, nil)
+	m := NewMinter("", nil)
 	if m.Enabled() || m.URL("r", DownloadModule, "a", "b", "1.0.0", "f.zip") != "" {
 		t.Fatal("a minter without a secret minted a URL")
 	}
 }
 
 func TestMinterURLShape(t *testing.T) {
-	m := NewMinter(registryHost+"/", []byte(testSecret))
+	m := NewMinter("", []byte(testSecret))
 	link := m.URL("repo-1", DownloadModule, "vpc", "aws", "1.2.3", "vpc-aws-1.2.3.zip")
 
-	if !strings.HasPrefix(link, registryHost+ticketPath) || !strings.HasSuffix(link, "/vpc-aws-1.2.3.zip") {
+	if !strings.HasPrefix(link, ticketPath) || !strings.HasSuffix(link, "/vpc-aws-1.2.3.zip") {
+		t.Fatalf("unexpected ticket URL %q", link)
+	}
+}
+
+func TestMinterKeepsOnlyThePathPrefix(t *testing.T) {
+	link := NewMinter("/artifacts", []byte(testSecret)).URL("repo-1", DownloadModule, "vpc", "aws", "1.2.3", "vpc-aws-1.2.3.zip")
+
+	if !strings.HasPrefix(link, "/artifacts"+ticketPath) || strings.Contains(link, "://") {
 		t.Fatalf("unexpected ticket URL %q", link)
 	}
 }

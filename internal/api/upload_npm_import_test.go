@@ -28,6 +28,11 @@ type npmPublishDB struct {
 	versions []*models.NPMVersion
 }
 
+// ListLicensePolicies is not exercised by the tests.
+func (*npmPublishDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	return nil, nil
+}
+
 func (d *npmPublishDB) ReserveStorageUsage(context.Context, string, int64, int) (bool, error) {
 	return true, nil
 }
@@ -79,7 +84,7 @@ func TestNPMPublishHonorsImportCreatedAt(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			db := &npmPublishDB{DB: formattest.NewDB()}
-			h := NewNPMUploadHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), "http://localhost", nil)
+			h := NewNPMUploadHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), nil)
 
 			payload := []byte("tarball-bytes")
 			body := npmBody("demo", "1.0.0", base64.StdEncoding.EncodeToString(payload), len(payload), "data-middle")

@@ -19,7 +19,6 @@ import (
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/attest"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/docker"
 	"github.com/openartifact/openartifact/internal/ocipath"
@@ -61,11 +60,19 @@ type ReferrerRegistry interface {
 	) (string, error)
 }
 
+// AttestationAttacherStore is the part of the database AttestationAttacher needs.
+type AttestationAttacherStore interface {
+	storedArtifactMetadataStore
+	GetDockerTag(ctx context.Context, repoID string, image string, name string) (*models.DockerTag, error)
+	GetRepositoryAttestationAttach(ctx context.Context, repoID string) (bool, error)
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+}
+
 // AttestationAttacher signs SBOMs and VEX documents and attaches them to the
 // image they describe as OCI referrers, so `cosign verify-attestation`,
 // `cosign tree` and `oras discover` find them next to the image.
 type AttestationAttacher struct {
-	db  database.Database
+	db  AttestationAttacherStore
 	log *logger.Logger
 	gen *sbom.Generator
 	svc *attest.Service
@@ -74,7 +81,7 @@ type AttestationAttacher struct {
 
 // NewAttestationAttacher builds the attacher.
 func NewAttestationAttacher(
-	db database.Database,
+	db AttestationAttacherStore,
 	log *logger.Logger,
 	gen *sbom.Generator,
 	svc *attest.Service,
@@ -319,23 +326,32 @@ func (a *AttestationAttacher) OnScan(ctx context.Context, repoID, artifactID str
 
 // ---- HTTP ---------------------------------------------------------------
 
+// AttestationAttachStore is the part of the database AttestationAttachHandler needs.
+type AttestationAttachStore interface {
+	repoAccessStore
+	GetRepositoryAttestationAttach(ctx context.Context, repoID string) (bool, error)
+	GetSBOMReportByID(ctx context.Context, repoID string, id string) (*models.SBOMReport, error)
+	SetRepositoryAttestationAttach(ctx context.Context, repoID string, enabled bool) error
+}
+
 // AttestationAttachHandler serves the attach endpoints and the per-repository switch.
 type AttestationAttachHandler struct {
 	repoAccess
 
 	attacher *AttestationAttacher
 	blobs    storage.BlobStore
+	db       AttestationAttachStore
 }
 
 // NewAttestationAttachHandler builds the handler.
 func NewAttestationAttachHandler(
-	db database.Database,
+	db AttestationAttachStore,
 	log *logger.Logger,
 	evaluator *auth.Evaluator,
 	attacher *AttestationAttacher,
 	blobs storage.BlobStore,
 ) *AttestationAttachHandler {
-	return &AttestationAttachHandler{repoAccess: newRepoAccess(db, log, evaluator), attacher: attacher, blobs: blobs}
+	return &AttestationAttachHandler{repoAccess: newRepoAccess(db, log, evaluator), attacher: attacher, blobs: blobs, db: db}
 }
 
 // RegisterAuthed registers the admin routes.

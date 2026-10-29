@@ -8,6 +8,7 @@ package recovery
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -44,7 +45,7 @@ func TestStatusReflectsTheJournal(t *testing.T) {
 		t.Errorf("last error = %q at %v, want the store failure recorded", st.LastError, st.LastErrorAt)
 	}
 
-	if st.TablesTotal != len(Tables) || st.BacklogCap == 0 || st.SchemaVersion == 0 {
+	if st.TablesTotal != j.reg.Len() || st.BacklogCap == 0 || st.SchemaVersion == 0 {
 		t.Errorf("static fields: %+v", st)
 	}
 
@@ -77,10 +78,16 @@ func TestJournalSwitchOffAndOn(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The migrations seed rows (the system project) before the journal is
+	// switched off; they stay queued.
+	const dirty = `SELECT table_name || ' ' || row_key FROM recovery_dirty ORDER BY 1`
+
+	seeded := queryStrings(t, db, dirty)
+
 	s := seedRaw(t, db, store, "raw1", "a.txt", []byte("hello"))
 
-	if n := mustCount(t, db, `SELECT count(*) FROM recovery_dirty`); n != 0 {
-		t.Fatalf("%d rows were marked while the journal is off", n)
+	if marked := queryStrings(t, db, dirty); !slices.Equal(marked, seeded) {
+		t.Fatalf("rows were marked while the journal is off: %v, before the changes %v", marked, seeded)
 	}
 
 	if st, err := j.Status(ctx); err != nil || st.Enabled {
@@ -93,7 +100,7 @@ func TestJournalSwitchOffAndOn(t *testing.T) {
 
 	reconcileAll(t, j)
 
-	if trackedSha(t, j, "raw_artifacts", s.artifactID) == "" {
+	if trackedSha(t, j, "package_files", s.artifactID) == "" {
 		t.Fatal("a row changed while the journal was off never got its sidecar")
 	}
 }

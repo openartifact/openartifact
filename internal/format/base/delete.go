@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 )
 
@@ -33,9 +32,7 @@ func (h *Handler) DeleteAccounted(
 		}
 	}()
 
-	if err := quota.Release(ctx, h.DB, repoID, size); err != nil {
-		h.Log.Warnw("failed to release quota", "repo", repoID, "error", err)
-	}
+	h.ReleaseQuota(ctx, repoID, repoID, size)
 
 	return nil
 }

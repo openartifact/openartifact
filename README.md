@@ -20,6 +20,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/go-1.27-00ADD8?logo=go&logoColor=white" alt="Go 1.27">
   <a href="https://api.reuse.software/info/github.com/openartifact/openartifact"><img src="https://api.reuse.software/badge/github.com/openartifact/openartifact" alt="REUSE"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/openartifact/openartifact"><img src="https://api.securityscorecards.dev/projects/github.com/openartifact/openartifact/badge" alt="OpenSSF Scorecard"></a>
 </p>
 
 <p align="center">
@@ -98,7 +99,7 @@ More: [installation](docs/getting-started/installation.md),
 | [Formats](docs/formats/README.md) | Client URLs and setup per format: [Ansible](docs/formats/ansible.md), [Cargo](docs/formats/cargo.md), [Composer](docs/formats/composer.md), [Conan](docs/formats/conan.md), [Conda](docs/formats/conda.md), [Debian](docs/formats/debian.md), [Docker](docs/formats/docker.md), [Go](docs/formats/go.md), [Helm](docs/formats/helm.md), [Ivy/sbt](docs/formats/ivy-sbt.md), [Maven](docs/formats/maven.md), [Nix](docs/formats/nix.md), [npm](docs/formats/npm.md), [NuGet](docs/formats/nuget.md), [Arch Linux](docs/formats/pacman.md), [PyPI](docs/formats/pypi.md), [raw](docs/formats/raw.md), [RPM](docs/formats/rpm.md), [RubyGems](docs/formats/rubygems.md), [Terraform/OpenTofu](docs/formats/terraform.md) |
 | [Repositories](docs/repositories/hosted-proxy-group.md) | [Hosted, proxy and group](docs/repositories/hosted-proxy-group.md), [cleanup and quotas](docs/repositories/cleanup-and-quotas.md), [properties](docs/repositories/properties.md), [release bundles](docs/repositories/release-bundles.md) |
 | [Security](docs/security/authentication.md) | [Authentication](docs/security/authentication.md), [SSO](docs/security/sso.md), [RBAC](docs/security/rbac.md), [scanning](docs/security/scanning.md), [signing and release verification](docs/security/signing.md) |
-| [Operations](docs/operations/storage.md) | [Storage](docs/operations/storage.md), [backup](docs/operations/backup.md), [monitoring](docs/operations/monitoring.md), [webhooks](docs/operations/webhooks.md), [performance](docs/operations/performance.md) |
+| [Operations](docs/operations/storage.md) | [Storage](docs/operations/storage.md), [backup](docs/operations/backup.md), [monitoring](docs/operations/monitoring.md), [scaling and roles](docs/operations/scaling.md), [webhooks](docs/operations/webhooks.md), [performance](docs/operations/performance.md) |
 | [Migration](docs/migration/nexus-artifactory.md) | Import from Nexus or Artifactory with `oa import` |
 | [Integrations](docs/integrations/cli.md) | [`oa` CLI](docs/integrations/cli.md), [MCP server](docs/integrations/mcp.md), [REST API](docs/integrations/api.md), [AI analysis](docs/integrations/ai-analysis.md) |
 | [Development](docs/development/README.md) | [Build, test, CI](docs/development/README.md), [architecture](docs/development/architecture.md) |

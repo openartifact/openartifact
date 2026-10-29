@@ -16,16 +16,25 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/gomod"
+	"github.com/openartifact/openartifact/internal/format/nix"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// fakeDBStore is what fakeDB is used as.
+type fakeDBStore interface {
+	gomod.HTTPStore
+	nix.HTTPStore
+	proxy.ServiceStore
+	DispatcherStore
+}
+
 type fakeDB struct {
-	databasetest.BaseMockDB
+	fakeDBStore
 
 	mu      sync.Mutex
 	repos   map[string]*models.Repository // by name

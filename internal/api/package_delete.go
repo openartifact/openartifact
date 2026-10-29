@@ -9,11 +9,13 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/worker"
+	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 // PackageDeleter deletes a package row of any hosted format by its listing id.
@@ -55,7 +57,7 @@ func (h *RPMUploadHandler) deleteOtherFormat(w http.ResponseWriter, r *http.Requ
 			return
 		}
 
-		h.writeDeleteError(w, err, packageID)
+		writePackageDeleteError(w, h.log, err, packageID)
 
 		return
 	}
@@ -97,4 +99,18 @@ func (h *RPMUploadHandler) deleteOtherFormat(w http.ResponseWriter, r *http.Requ
 			"trashed":    res.Trashed,
 		},
 	})
+}
+
+// writePackageDeleteError maps a deb/rpm/other-format package delete failure to
+// its HTTP answer.
+func writePackageDeleteError(w http.ResponseWriter, log *logger.Logger, err error, packageID string) {
+	switch {
+	case errors.Is(err, database.ErrTrashNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "package not found")
+	case errors.Is(err, trash.ErrImmutableRelease):
+		writeError(w, http.StatusConflict, "IMMUTABLE_RELEASE", "release versions are immutable in this repository")
+	default:
+		log.Errorw("failed to delete component", "package_id", packageID, "error", err)
+		writeError(w, http.StatusInternalServerError, "DATABASE_ERROR", "failed to delete package")
+	}
 }

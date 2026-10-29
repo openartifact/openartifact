@@ -47,11 +47,39 @@ import (
 // repository after it was looked up.
 var errMountSourceGone = errors.New("mount source blob no longer exists")
 
+// HTTPStore is the part of the database HTTPHandler needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	ChargeStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	CreateDockerBlob(ctx context.Context, blob *models.DockerBlob) error
+	CreateDockerManifest(ctx context.Context, m *models.DockerManifest) error
+	CreateDockerUpload(ctx context.Context, upload *models.DockerUpload) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteDockerBlob(ctx context.Context, repoID string, digest string) error
+	DeleteDockerManifest(ctx context.Context, repoID string, image string, digest string) error
+	DeleteDockerTag(ctx context.Context, repoID string, image string, name string) error
+	DeleteDockerTagsByDigest(ctx context.Context, repoID string, image string, digest string) error
+	DeleteDockerUpload(ctx context.Context, repositoryID string, uploadUUID string) error
+	DockerImageExists(ctx context.Context, repoID string, image string) (bool, error)
+	EnsureBlob(ctx context.Context, sha256 string, mediaType string, size int64) (string, error)
+	GetDockerBlob(ctx context.Context, repoID string, digest string) (*models.DockerBlob, error)
+	GetDockerManifest(ctx context.Context, repoID string, image string, digest string) (*models.DockerManifest, error)
+	GetDockerTag(ctx context.Context, repoID string, image string, name string) (*models.DockerTag, error)
+	GetDockerUpload(ctx context.Context, repositoryID string, uploadUUID string) (*models.DockerUpload, error)
+	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListDockerManifestsBySubject(ctx context.Context, repoID string, image string, subjectDigest string) ([]*models.DockerManifest, error)
+	ListDockerTags(ctx context.Context, repoID string, image string, last string, n int) ([]*models.DockerTag, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpdateDockerUploadOffset(ctx context.Context, repositoryID string, uploadUUID string, oldOffset int64, newOffset int64) (bool, error)
+	UpsertDockerTag(ctx context.Context, tag *models.DockerTag) error
+}
+
 type HTTPHandler struct {
 	log       *logger.Logger
-	db        database.Database
+	db        HTTPStore
 	blobStore storage.BlobStore
-	baseURL   string
 	publisher webhook.Publisher
 	authz     Authorizer
 	uploadDir string
@@ -73,8 +101,8 @@ const (
 	maxTagPage     = 1000
 )
 
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{log: log, db: db, blobStore: blobStore, baseURL: baseURL, uploadDir: DefaultUploadDir}
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore) *HTTPHandler {
+	return &HTTPHandler{log: log, db: db, blobStore: blobStore, uploadDir: DefaultUploadDir}
 }
 
 // SetUploadDir sets the directory blob uploads are staged in. It must be

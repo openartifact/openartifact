@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api"
@@ -48,6 +49,69 @@ func newRepo(t *testing.T, pg *database.PostgresDB, name, format string) string 
 	return repo.ID
 }
 
+// seedRow is one package file written straight into the generic tables.
+type seedRow struct {
+	repo, format, name, version, path, filename, arch string
+	// blobID is empty for a file without a blob.
+	blobID string
+	// size is the declared size_bytes (0 = NULL: the blob's size is the size).
+	size int64
+	// attrs is the JSON of package_files.attrs ("" = {}).
+	attrs string
+	// unlisted keeps the file out of the listing; role defaults to primary.
+	unlisted bool
+	role     string
+	// created is the file's created_at (zero = now).
+	created time.Time
+}
+
+// seedFile writes one package, version and file (reusing the live package and
+// version of the same name and version) and returns the file id.
+func seedFile(t *testing.T, pg *database.PostgresDB, r seedRow) string {
+	t.Helper()
+
+	if r.path == "" {
+		r.path = r.filename
+	}
+
+	if r.attrs == "" {
+		r.attrs = "{}"
+	}
+
+	if r.role == "" {
+		r.role = "primary"
+	}
+
+	var id string
+
+	err := pg.GetDB().QueryRowContext(context.Background(),
+		`WITH p AS (
+			INSERT INTO packages (repository_id, format, name, name_key) VALUES ($1, $2, $3, $3)
+			ON CONFLICT (repository_id, name_key) DO UPDATE SET name = EXCLUDED.name RETURNING id
+		), v AS (
+			INSERT INTO package_versions (package_id, repository_id, version, version_key) SELECT id, $1, $4, $4 FROM p
+			ON CONFLICT (package_id, version_key) WHERE deleted_at IS NULL DO UPDATE SET version = EXCLUDED.version RETURNING id
+		)
+		INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, size_bytes, role, listed, arch, attrs, created_at)
+		SELECT v.id, $1, $5, $6, NULLIF($7, '')::uuid, NULLIF($8::bigint, 0), $9, $10, $11, $12::jsonb, COALESCE($13::timestamptz, now()) FROM v RETURNING id`,
+		r.repo, r.format, r.name, r.version, r.path, r.filename, r.blobID, r.size, r.role, !r.unlisted, r.arch, r.attrs, nilTime(r.created),
+	).Scan(&id)
+	if err != nil {
+		t.Fatalf("seed %s %s@%s: %v", r.format, r.name, r.version, err)
+	}
+
+	return id
+}
+
+// nilTime maps the zero time to NULL.
+func nilTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+
+	return &t
+}
+
 type npmRawFixture struct {
 	pg               *database.PostgresDB
 	npmRepo, rawRepo string
@@ -73,45 +137,22 @@ func seedNpmAndRaw(t *testing.T, pg *database.PostgresDB) npmRawFixture {
 	}
 	otherNpmRepo := newRepo(t, pg, "npm-other", "npm")
 
-	pkgID := insertNpmPackage(t, pg, f.npmRepo, "@acme/widget")
 	for _, v := range []string{"1.0.0", "1.1.0"} {
-		insertNpmVersion(t, pg, pkgID, v, "widget-"+v+".tgz", blobID)
+		seedFile(
+			t,
+			pg,
+			seedRow{repo: f.npmRepo, format: "npm", name: "@acme/widget", version: v, filename: "widget-" + v + ".tgz", blobID: blobID},
+		)
 	}
 
 	// A package in another repository must not leak into npm-main.
-	insertNpmVersion(t, pg, insertNpmPackage(t, pg, otherNpmRepo, "leak"), "9.9.9", "leak-9.9.9.tgz", blobID)
+	seedFile(t, pg, seedRow{repo: otherNpmRepo, format: "npm", name: "leak", version: "9.9.9", filename: "leak-9.9.9.tgz", blobID: blobID})
 
-	execSQL(
-		t,
-		pg,
-		`INSERT INTO raw_artifacts (repository_id, path, blob_id) VALUES ($1, 'dir/a.txt', $2), ($1, 'b.bin', $2)`,
-		f.rawRepo,
-		blobID,
-	)
-
-	return f
-}
-
-func insertNpmPackage(t *testing.T, pg *database.PostgresDB, repoID, fullName string) string {
-	t.Helper()
-
-	var id string
-	if err := pg.GetDB().QueryRowContext(context.Background(),
-		`INSERT INTO npm_packages (repository_id, name, full_name) VALUES ($1, $2, $2) RETURNING id`, repoID, fullName,
-	).Scan(&id); err != nil {
-		t.Fatalf("insert npm_packages: %v", err)
+	for _, path := range []string{"dir/a.txt", "b.bin"} {
+		seedFile(t, pg, seedRow{repo: f.rawRepo, format: "raw", name: path, filename: path, blobID: blobID})
 	}
 
-	return id
-}
-
-func insertNpmVersion(t *testing.T, pg *database.PostgresDB, pkgID, version, tarball, blobID string) {
-	t.Helper()
-
-	execSQL(t, pg,
-		`INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, tarball_filename, blob_id)
-		 VALUES ($1, $2, '{}'::jsonb, 'sha512-x', 'abc', $3, $4)`,
-		pkgID, version, tarball, blobID)
+	return f
 }
 
 // listOK lists a repo's packages and fails the test on error or when the
@@ -183,8 +224,10 @@ func TestListComponentsByRepo_NpmAndRaw(t *testing.T) {
 	})
 }
 
-// TestListComponentsByRepo_AllFormats seeds one row in every per-format table
-// and checks each is listed exactly once with the documented mapping.
+// TestListComponentsByRepo_AllFormats seeds the files every format writes into
+// the generic tables (shapes from the format specs) and checks each is listed
+// exactly once, filtered by its format, with the documented mapping. One
+// repository holds them all so the format filter is what separates them.
 func TestListComponentsByRepo_AllFormats(t *testing.T) {
 	pg := freshPostgres(t, 5)
 	ctx := context.Background()
@@ -196,176 +239,79 @@ func TestListComponentsByRepo_AllFormats(t *testing.T) {
 
 	repo := newRepo(t, pg, "everything", "raw")
 
-	var distID, compID, npmPkgID string
-	if err := pg.GetDB().QueryRowContext(ctx,
-		`INSERT INTO debian_distributions (repository_id, name) VALUES ($1, 'stable') RETURNING id`, repo).Scan(&distID); err != nil {
-		t.Fatalf("insert debian_distributions: %v", err)
-	}
-
-	if err := pg.GetDB().QueryRowContext(ctx,
-		`INSERT INTO debian_components (distribution_id, name) VALUES ($1, 'main') RETURNING id`, distID).Scan(&compID); err != nil {
-		t.Fatalf("insert debian_components: %v", err)
-	}
-
-	if err := pg.GetDB().QueryRowContext(ctx,
-		`INSERT INTO npm_packages (repository_id, name, full_name) VALUES ($1, 'n', 'n') RETURNING id`, repo).Scan(&npmPkgID); err != nil {
-		t.Fatalf("insert npm_packages: %v", err)
-	}
+	// want is what the listing must show; the seed rows follow it.
+	type want struct{ format, name, version, arch, filename string }
 
 	seeds := []struct {
-		format, name, version, arch, filename string
-		query                                 string
-		args                                  []any
+		want
+
+		row seedRow
 	}{
-		{
-			"deb",
-			"dpkg",
-			"1.0",
-			"amd64",
-			"dpkg_1.0_amd64.deb",
-			`INSERT INTO deb_packages (repository_id, distribution_id, component_id, blob_id, name, version, arch, filename) VALUES ($1,$2,$3,$4,'dpkg','1.0','amd64','dpkg_1.0_amd64.deb')`,
-			[]any{repo, distID, compID, blobID},
-		},
-		{
-			"rpm",
-			"rpmpkg",
-			"2.0",
-			"x86_64",
-			"rpmpkg-2.0-1.x86_64.rpm",
-			`INSERT INTO rpm_packages (repository_id, blob_id, name, version, release, arch, filename, package_size) VALUES ($1,$2,'rpmpkg','2.0','1','x86_64','rpmpkg-2.0-1.x86_64.rpm',4096)`,
-			[]any{repo, blobID},
-		},
-		{
-			"npm",
-			"n",
-			"3.0.0",
-			"",
-			"n-3.0.0.tgz",
-			`INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, tarball_filename, blob_id) VALUES ($1,'3.0.0','{}'::jsonb,'i','s','n-3.0.0.tgz',$2)`,
-			[]any{npmPkgID, blobID},
-		},
-		{
-			"pypi",
-			"pyp",
-			"4.0",
-			"py3",
-			"pyp-4.0-py3-none-any.whl",
-			`INSERT INTO pypi_packages (repository_id, name, version, filename, package_type, python_version, blob_id) VALUES ($1,'pyp','4.0','pyp-4.0-py3-none-any.whl','bdist_wheel','py3',$2)`,
-			[]any{repo, blobID},
-		},
-		{
-			"maven",
-			"org.acme:lib",
-			"5.0",
-			"sources",
-			"org/acme/lib/5.0/lib-5.0-sources.jar",
-			`INSERT INTO maven_artifacts (repository_id, group_id, artifact_id_coord, version, classifier, extension, repo_path, blob_id) VALUES ($1,'org.acme','lib','5.0','sources','jar','org/acme/lib/5.0/lib-5.0-sources.jar',$2)`,
-			[]any{repo, blobID},
-		},
-		{
-			"ivy",
-			"org.acme:mod",
-			"6.0",
-			"",
-			"mod.jar",
-			`INSERT INTO ivy_artifacts (repository_id, organisation, module, revision, artifact_name, artifact_ext, blob_id) VALUES ($1,'org.acme','mod','6.0','mod','jar',$2)`,
-			[]any{repo, blobID},
-		},
-		{
-			"sbt",
-			"org.acme:lib_2.13",
-			"7.0",
-			"2.13",
-			"lib_2.13-7.0.jar",
-			`INSERT INTO sbt_artifacts (repository_id, group_id, artifact_id, version, scala_version, filename, blob_id) VALUES ($1,'org.acme','lib_2.13','7.0','2.13','lib_2.13-7.0.jar',$2)`,
-			[]any{repo, blobID},
-		},
-		{"nuget", "Acme.Lib", "8.0", "", "Acme.Lib.8.0.nupkg",
-			`INSERT INTO nuget_packages (repository_id, package_id, version, blob_id) VALUES ($1,'Acme.Lib','8.0',$2)`,
-			[]any{repo, blobID}},
-		{
-			"go",
-			"example.com/mod",
-			"v9.0.0",
-			"",
-			"v9.0.0.zip",
-			`INSERT INTO gomod_modules (repository_id, module_path, version, go_mod_content, zip_blob_id) VALUES ($1,'example.com/mod','v9.0.0','module example.com/mod',$2)`,
-			[]any{repo, blobID},
-		},
-		{"cargo", "crt", "10.0.0", "", "crt-10.0.0.crate",
-			`INSERT INTO cargo_crates (repository_id, name, version, blob_id) VALUES ($1,'crt','10.0.0',$2)`,
-			[]any{repo, blobID}},
-		{"rubygems", "gem", "11.0", "java", "gem-11.0-java.gem",
-			`INSERT INTO rubygems_gems (repository_id, name, version, platform, blob_id, size) VALUES ($1,'gem','11.0','java',$2,4096)`,
-			[]any{repo, blobID}},
-		{
-			"conda",
-			"cnd",
-			"12.0",
-			"linux-64",
-			"cnd-12.0-h0_0.tar.bz2",
-			`INSERT INTO conda_packages (repository_id, name, version, build_string, platform, blob_id) VALUES ($1,'cnd','12.0','h0_0','linux-64',$2)`,
-			[]any{repo, blobID},
-		},
-		{
-			"apk",
-			"v3.20/main/musl",
-			"1.2.5-r0",
-			"x86_64",
-			"musl-1.2.5-r0.apk",
-			`INSERT INTO apk_packages (repository_id, branch, repo, arch, pkg_arch, name, version, checksum, data_sha256, blob_id)
-			VALUES ($1,'v3.20','main','x86_64','x86_64','musl','1.2.5-r0','Q1x','dh',$2)`,
-			[]any{repo, blobID},
-		},
-		{"conan", "cn", "13.0", "", "cn/13.0@_/_#0",
-			`INSERT INTO conan_packages (repository_id, name, version) VALUES ($1,'cn','13.0')`,
-			[]any{repo}},
-		{"nix", "hello-2.12", "0123456789abcdfghijklmnpqrsvwxyz", "", "0123456789abcdfghijklmnpqrsvwxyz.narinfo",
-			`INSERT INTO nix_paths (repository_id, store_hash, name, nar_hash, nar_size, nar_file, compression, blob_id)
-			 VALUES ($1,'0123456789abcdfghijklmnpqrsvwxyz','hello-2.12','sha256:abc',100,'f.nar.xz','xz',$2)`,
-			[]any{repo, blobID}},
-		{"composer", "acme/tools", "v1.2.0", "", "acme-tools-v1.2.0.zip",
-			`INSERT INTO composer_packages (repository_id, name, version, version_normalized, blob_id, sha1)
-			 VALUES ($1,'acme/tools','v1.2.0','1.2.0.0',$2,'da39a3ee5e6b4b0d3255bfef95601890afd80709')`,
-			[]any{repo, blobID}},
-		{"ansible", "acme.tools", "1.2.0", "", "acme-tools-1.2.0.tar.gz",
-			`INSERT INTO ansible_collections (repository_id, namespace, name, version, filename, blob_id)
-			 VALUES ($1,'acme','tools','1.2.0','acme-tools-1.2.0.tar.gz',$2)`,
-			[]any{repo, blobID}},
-		{"pacman", "pm", "1:2.0-1", "x86_64", "pm-1:2.0-1-x86_64.pkg.tar.zst",
-			`INSERT INTO pacman_packages (repository_id, name, base, version, arch, repo_arch, filename, blob_id, md5)
-			 VALUES ($1,'pm','pm','1:2.0-1','x86_64','x86_64','pm-1:2.0-1-x86_64.pkg.tar.zst',$2,'abc')`,
-			[]any{repo, blobID}},
-		{
-			"terraform",
-			"modules/vpc/aws",
-			"15.0.0",
-			"",
-			"vpc-aws-15.0.0.zip",
-			`INSERT INTO terraform_modules (repository_id, name, system, version, archive_ext, blob_id) VALUES ($1,'vpc','aws','15.0.0','zip',$2)`,
-			[]any{repo, blobID},
-		},
-		{"helm", "chart", "14.0.0", "", "chart-14.0.0.tgz",
-			`INSERT INTO helm_charts (repository_id, name, version, blob_id) VALUES ($1,'chart','14.0.0',$2)`,
-			[]any{repo, blobID}},
-		{"raw", "some/file.txt", "", "", "some/file.txt",
-			`INSERT INTO raw_artifacts (repository_id, path, blob_id) VALUES ($1,'some/file.txt',$2)`,
-			[]any{repo, blobID}},
-		{
-			"docker",
-			"everything",
-			"latest",
-			"",
-			"sha256:" + componentsBlobSHA,
-			`WITH m AS (INSERT INTO docker_manifests (repository_id, digest, media_type, size, blob_id) VALUES ($1,'sha256:` + componentsBlobSHA + `','application/vnd.oci.image.manifest.v1+json',4096,$2) RETURNING repository_id, digest)
-			 INSERT INTO docker_tags (repository_id, name, manifest_digest) SELECT repository_id, 'latest', digest FROM m`,
-			[]any{repo, blobID},
-		},
+		{want{"deb", "dpkg", "1.0", "amd64", "dpkg_1.0_amd64.deb"}, seedRow{path: "pool/main/d/dpkg/dpkg_1.0_amd64.deb"}},
+		{want{"rpm", "rpmpkg", "2.0", "x86_64", "rpmpkg-2.0-1.x86_64.rpm"}, seedRow{size: 4096, attrs: `{"release":"1"}`}},
+		{want{"npm", "n", "3.0.0", "", "n-3.0.0.tgz"}, seedRow{}},
+		{want{"pypi", "pyp", "4.0", "py3", "pyp-4.0-py3-none-any.whl"}, seedRow{}},
+		{want{"maven", "org.acme:lib", "5.0", "sources", "org/acme/lib/5.0/lib-5.0-sources.jar"}, seedRow{}},
+		{want{"ivy", "org.acme:mod", "6.0", "", "mod.jar"}, seedRow{path: "org.acme/mod/6.0/mod.jar"}},
+		{want{"sbt", "org.acme:lib_2.13", "7.0", "2.13", "lib_2.13-7.0.jar"}, seedRow{}},
+		{want{"nuget", "Acme.Lib", "8.0", "", "Acme.Lib.8.0.nupkg"}, seedRow{}},
+		{want{"go", "example.com/mod", "v9.0.0", "", "v9.0.0.zip"}, seedRow{}},
+		{want{"cargo", "crt", "10.0.0", "", "crt-10.0.0.crate"}, seedRow{}},
+		{want{"rubygems", "gem", "11.0", "java", "gem-11.0-java.gem"}, seedRow{size: 4096}},
+		{want{"conda", "cnd", "12.0", "linux-64", "cnd-12.0-h0_0.tar.bz2"}, seedRow{attrs: `{"release":"h0_0"}`}},
+		{want{"apk", "v3.20/main/musl", "1.2.5-r0", "x86_64", "musl-1.2.5-r0.apk"}, seedRow{path: "v3.20/main/x86_64/musl-1.2.5-r0.apk"}},
+		// A conan recipe listed through its manifest has no blob in this seed.
+		{want{"conan", "cn", "13.0", "", "cn/13.0@_/_#0"}, seedRow{path: "cn/13.0/_/_/0/export/conanmanifest.txt"}},
+		{want{"nix", "hello-2.12", "0123456789abcdfghijklmnpqrsvwxyz", "", "0123456789abcdfghijklmnpqrsvwxyz.narinfo"}, seedRow{}},
+		{want{"composer", "acme/tools", "v1.2.0", "", "acme-tools-v1.2.0.zip"}, seedRow{}},
+		{want{"ansible", "acme.tools", "1.2.0", "", "acme-tools-1.2.0.tar.gz"}, seedRow{}},
+		{want{"pacman", "pm", "1:2.0-1", "x86_64", "pm-1:2.0-1-x86_64.pkg.tar.zst"}, seedRow{}},
+		{want{"terraform", "modules/vpc/aws", "15.0.0", "", "vpc-aws-15.0.0.zip"}, seedRow{}},
+		{want{"helm", "chart", "14.0.0", "", "chart-14.0.0.tgz"}, seedRow{}},
+		{want{"raw", "some/file.txt", "", "", "some/file.txt"}, seedRow{}},
 	}
 
 	for _, s := range seeds {
-		execSQL(t, pg, s.query, s.args...)
+		row := s.row
+		row.repo, row.format, row.name, row.version = repo, s.format, s.name, s.version
+		row.filename, row.arch = s.filename, s.arch
+
+		if row.path == "" {
+			row.path = s.filename
+		}
+
+		if s.format != "conan" {
+			row.blobID = blobID
+		}
+
+		seedFile(t, pg, row)
 	}
+
+	// The go .mod next to the module zip is not listed, and neither is a
+	// deleted file.
+	seedFile(t, pg, seedRow{
+		repo: repo, format: "go", name: "example.com/mod", version: "v9.0.0", path: "example.com/mod/@v/v9.0.0.mod",
+		filename: "v9.0.0.mod", blobID: blobID, role: "mod", unlisted: true,
+	})
+	execSQL(t, pg, `UPDATE package_files SET deleted_at = now() WHERE id = $1`,
+		seedFile(t, pg, seedRow{repo: repo, format: "cargo", name: "gone", version: "1", filename: "gone-1.crate", blobID: blobID}))
+
+	// Docker keeps its own tables: one row per tag.
+	execSQL(
+		t,
+		pg,
+		`WITH m AS (INSERT INTO docker_manifests (repository_id, digest, media_type, size, blob_id) VALUES ($1, $2, 'application/vnd.oci.image.manifest.v1+json', 4096, $3) RETURNING repository_id, digest)
+		INSERT INTO docker_tags (repository_id, name, manifest_digest) SELECT repository_id, 'latest', digest FROM m`,
+		repo,
+		"sha256:"+componentsBlobSHA,
+		blobID,
+	)
+
+	seeds = append(seeds, struct {
+		want
+
+		row seedRow
+	}{want{"docker", "everything", "latest", "", "sha256:" + componentsBlobSHA}, seedRow{}})
 
 	listOK(t, pg, repo, "", 1, 100, len(seeds), len(seeds))
 
@@ -375,37 +321,40 @@ func TestListComponentsByRepo_AllFormats(t *testing.T) {
 		checkDownloadLookupMatchesListing(t, pg, repo, got[0])
 	}
 
-	// The provider table lists under the same format as the module table, so it
-	// is checked once the one-row-per-format loop above is done.
-	execSQL(
-		t,
-		pg,
-		`INSERT INTO terraform_providers (repository_id, type, version, os, arch, blob_id) VALUES ($1,'null','16.0.0','linux','arm64',$2)`,
-		repo,
-		blobID,
-	)
+	// One package of several versions and platforms lists every file: the
+	// terraform provider platforms share one version.
+	for _, arch := range []string{"linux_amd64", "linux_arm64"} {
+		seedFile(t, pg, seedRow{
+			repo: repo, format: "terraform", name: "providers/null", version: "16.0.0", arch: arch,
+			filename: "terraform-provider-null_16.0.0_" + arch + ".zip", blobID: blobID,
+		})
+	}
 
-	found := false
+	got := listOK(t, pg, repo, "terraform", 1, 100, 3, 3)
 
-	for _, c := range listOK(t, pg, repo, "terraform", 1, 100, 2, 2) {
+	platforms := map[string]bool{}
+
+	for _, c := range got {
 		if c.Name == "providers/null" {
-			found = true
+			platforms[c.Arch] = true
 
-			checkSeededComponent(
-				t,
-				c,
-				"terraform",
-				"providers/null",
-				"16.0.0",
-				"linux_arm64",
-				"terraform-provider-null_16.0.0_linux_arm64.zip",
-			)
+			checkSeededComponent(t, c, "terraform", "providers/null", "16.0.0", c.Arch, "terraform-provider-null_16.0.0_"+c.Arch+".zip")
 			checkDownloadLookupMatchesListing(t, pg, repo, c)
 		}
 	}
 
-	if !found {
-		t.Error("the terraform provider row is not listed")
+	if len(platforms) != 2 {
+		t.Errorf("terraform provider platforms listed = %v, want linux_amd64 and linux_arm64", platforms)
+	}
+
+	// The by-name order and the name filter see the same rows.
+	byName, total, err := pg.SearchComponents(
+		ctx,
+		repo,
+		database.ComponentListOptions{Format: "terraform", Page: 1, Limit: 100, SortByName: true},
+	)
+	if err != nil || total != 3 || len(byName) != 3 || byName[0].Name != "modules/vpc/aws" {
+		t.Fatalf("sort by name: total=%d len=%d err=%v first=%+v", total, len(byName), err, byName)
 	}
 }
 
@@ -435,7 +384,7 @@ func checkDownloadLookupMatchesListing(t *testing.T, pg *database.PostgresDB, re
 		t.Errorf("%s: download lookup name/version %q %q differ from listing %q %q", c.Format, blob.Name, blob.Version, c.Name, c.Version)
 	}
 
-	other := newRepo(t, pg, "other-"+c.Format+"-"+c.Version, "raw")
+	other := newRepo(t, pg, "other-"+c.ID, "raw")
 	if foreign, err := pg.GetRepoComponentBlob(ctx, other, c.ID); err != nil || foreign != nil {
 		t.Errorf("%s: id resolved in another repository: %+v, %v", c.Format, foreign, err)
 	}
@@ -496,9 +445,13 @@ func TestDownloadPackage_NpmAndRaw(t *testing.T) {
 	}
 
 	npmRepo, rawRepo, otherNpm := newRepo(t, pg, "npm-main", "npm"), newRepo(t, pg, "raw-main", "raw"), newRepo(t, pg, "npm-other", "npm")
-	insertNpmVersion(t, pg, insertNpmPackage(t, pg, npmRepo, "@acme/widget"), "1.0.0", "widget-1.0.0.tgz", blobID)
-	insertNpmVersion(t, pg, insertNpmPackage(t, pg, otherNpm, "leak"), "9.9.9", "leak-9.9.9.tgz", blobID)
-	execSQL(t, pg, `INSERT INTO raw_artifacts (repository_id, path, blob_id) VALUES ($1, 'dir/a.txt', $2)`, rawRepo, blobID)
+	seedFile(
+		t,
+		pg,
+		seedRow{repo: npmRepo, format: "npm", name: "@acme/widget", version: "1.0.0", filename: "widget-1.0.0.tgz", blobID: blobID},
+	)
+	seedFile(t, pg, seedRow{repo: otherNpm, format: "npm", name: "leak", version: "9.9.9", filename: "leak-9.9.9.tgz", blobID: blobID})
+	seedFile(t, pg, seedRow{repo: rawRepo, format: "raw", name: "dir/a.txt", filename: "dir/a.txt", blobID: blobID})
 
 	log := newTestLogger(t)
 	db := downloadAdminDB{pg}

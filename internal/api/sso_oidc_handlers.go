@@ -13,16 +13,35 @@ import (
 	"errors"
 	"net/http"
 
+	"time"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// OIDCStore is the part of the database OIDCHandler needs.
+type OIDCStore interface {
+	completeLogoutStore
+	establishSSOSessionStore
+	CreateUser(ctx context.Context, user *models.User) (*models.User, error)
+	GetGroupByName(ctx context.Context, name string) (*models.Group, error)
+	GetOrCreateGroup(ctx context.Context, name string) (*models.Group, error)
+	GetOrCreatePermissionAssignment(ctx context.Context, targetID string, principalType string, principalID string) error
+	GetPermissionTargetByName(ctx context.Context, name string) (*models.PermissionTarget, error)
+	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
+	GetUserByExternalID(ctx context.Context, externalID string, providerSlug string) (*models.User, error)
+	GetUserByUsername(ctx context.Context, username string) (*models.User, error)
+	SyncSSOGroups(ctx context.Context, userID string, groupIDs []string) error
+	UpdateUserSSO(ctx context.Context, userID string, externalID string, providerSlug string) error
+	UpdateUserSSOProfile(ctx context.Context, id string, email *string, fullName *string, lastLogin time.Time) error
+}
+
 type OIDCHandler struct {
-	db        database.Database
+	db        OIDCStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	hmacKey   []byte
@@ -31,7 +50,7 @@ type OIDCHandler struct {
 	trustedProxies *middleware.TrustedProxies
 }
 
-func NewOIDCHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, hmacKey []byte, baseURL string) *OIDCHandler {
+func NewOIDCHandler(db OIDCStore, log *logger.Logger, evaluator *auth.Evaluator, hmacKey []byte, baseURL string) *OIDCHandler {
 	return &OIDCHandler{db: db, log: log, evaluator: evaluator, hmacKey: hmacKey, baseURL: baseURL}
 }
 
@@ -54,6 +73,47 @@ func ssoProviderUnavailable(w http.ResponseWriter, err error) bool {
 	return false
 }
 
+// ssoUpstreamFailure is the provider-specific load failure of a SSO flow: the
+// sentinel for an IdP that cannot be reached and the answer it maps to.
+type ssoUpstreamFailure struct {
+	err     error
+	status  int
+	code    string
+	message string
+}
+
+func oidcDiscoveryFailure() ssoUpstreamFailure {
+	return ssoUpstreamFailure{
+		err: auth.ErrOIDCDiscoveryFailed, status: http.StatusBadGateway,
+		code: "oidc_discovery_failed", message: "OIDC discovery failed",
+	}
+}
+
+func samlMetadataFailure() ssoUpstreamFailure {
+	return ssoUpstreamFailure{
+		err: auth.ErrIDPMetadataUnavailable, status: http.StatusServiceUnavailable,
+		code: "idp_metadata_unavailable", message: "IdP metadata unavailable",
+	}
+}
+
+// writeSSOLoadError maps a provider load failure onto the HTTP response shared
+// by the login and callback/ACS paths: 404 for an unknown or disabled
+// provider, the upstream failure's answer when the IdP is unreachable, else a
+// 500 logged under flow.
+func writeSSOLoadError(w http.ResponseWriter, log *logger.Logger, flow, slug string, err error, upstream ssoUpstreamFailure) {
+	if ssoProviderUnavailable(w, err) {
+		return
+	}
+
+	if errors.Is(err, upstream.err) {
+		writeError(w, upstream.status, upstream.code, upstream.message)
+		return
+	}
+
+	log.Errorw(flow+": load provider", "slug", slug, "error", err)
+	writeError(w, http.StatusInternalServerError, "internal_error", "failed to load provider")
+}
+
 func (h *OIDCHandler) RegisterPublic(public chi.Router) {
 	public.Get("/api/v1/auth/sso/oidc/{slug}/login", h.handleLogin)
 	public.Get("/api/v1/auth/sso/oidc/{slug}/callback", h.handleCallback)
@@ -66,7 +126,7 @@ func (h *OIDCHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := auth.LoadOIDCProvider(ctx, h.db, slug, h.baseURL)
 	if err != nil {
-		h.writeLoadError(w, "oidc login", slug, err)
+		writeSSOLoadError(w, h.log, "oidc login", slug, err, oidcDiscoveryFailure())
 		return
 	}
 
@@ -112,22 +172,6 @@ func (h *OIDCHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	//nolint:gosec // G710: redirect URL is validated against configured provider URLs
 	http.Redirect(w, r, provider.AuthURL(state, nonce, codeChallenge), http.StatusFound)
-}
-
-// writeLoadError maps a provider load failure onto the HTTP response shared
-// by login and callback.
-func (h *OIDCHandler) writeLoadError(w http.ResponseWriter, flow, slug string, err error) {
-	if ssoProviderUnavailable(w, err) {
-		return
-	}
-
-	if errors.Is(err, auth.ErrOIDCDiscoveryFailed) {
-		writeError(w, http.StatusBadGateway, "oidc_discovery_failed", "OIDC discovery failed")
-		return
-	}
-
-	h.log.Errorw(flow+": load provider", "slug", slug, "error", err)
-	writeError(w, http.StatusInternalServerError, "internal_error", "failed to load provider")
 }
 
 // writeSSOLoginDenied answers a policy rejection (ErrSSOLoginDenied) with the
@@ -204,7 +248,7 @@ func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := auth.LoadOIDCProvider(ctx, h.db, slug, h.baseURL)
 	if err != nil {
-		h.writeLoadError(w, "oidc callback", slug, err)
+		writeSSOLoadError(w, h.log, "oidc callback", slug, err, oidcDiscoveryFailure())
 		return
 	}
 
@@ -293,12 +337,18 @@ func (h *OIDCHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	completeLogout(w, r, h.db, h.log, h.baseURL, urlparams.Vars(r)["slug"])
 }
 
+// completeLogoutStore is the part of the database completeLogout needs.
+type completeLogoutStore interface {
+	rpLogoutURLStore
+	DeleteSession(ctx context.Context, tokenHash string) error
+}
+
 // completeLogout deletes the request's session, clears the session cookies and
 // answers 200 {"end_session_url"} when the session belongs to an OIDC provider
 // (restricted to onlySlug when non-empty) whose IdP supports RP-initiated
 // logout, else 204. Any failure to work out the IdP URL degrades to a plain
 // local logout. The caller has already enforced same-origin.
-func completeLogout(w http.ResponseWriter, r *http.Request, db database.Database, log *logger.Logger, baseURL, onlySlug string) {
+func completeLogout(w http.ResponseWriter, r *http.Request, db completeLogoutStore, log *logger.Logger, baseURL, onlySlug string) {
 	ctx := r.Context()
 	endSessionURL := ""
 
@@ -323,10 +373,16 @@ func completeLogout(w http.ResponseWriter, r *http.Request, db database.Database
 	writeNoContent(w)
 }
 
+// rpLogoutURLStore is the part of the database rpLogoutURL needs.
+type rpLogoutURLStore interface {
+	GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error)
+	GetSessionSSO(ctx context.Context, tokenHash string) (*models.SessionSSO, error)
+}
+
 // rpLogoutURL returns the IdP end_session URL for the session behind
 // cookieValue, or "" when the session is not an OIDC SSO session (of onlySlug,
 // when set) or the IdP has no end_session_endpoint.
-func rpLogoutURL(ctx context.Context, db database.Database, log *logger.Logger, baseURL, cookieValue, onlySlug string) string {
+func rpLogoutURL(ctx context.Context, db rpLogoutURLStore, log *logger.Logger, baseURL, cookieValue, onlySlug string) string {
 	info, err := auth.LookupSessionSSO(ctx, db, cookieValue)
 	if err != nil {
 		log.Warnw("logout: read session sso record", "error", err)

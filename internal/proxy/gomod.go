@@ -19,6 +19,7 @@ import (
 	"golang.org/x/mod/semver"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/presign"
 )
 
 // Go proxy repositories mirror a module proxy (default https://proxy.golang.org)
@@ -165,50 +166,43 @@ func (s *Service) serveGo(w http.ResponseWriter, r *http.Request, repo *models.R
 		return
 	}
 
-	resolve := func() (*resolution, error) { return s.resolveGo(r, repo, req) }
-
-	res, err := resolve()
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, resolve)
+	s.serveVerbatim(w, r, repo, s.goDoc(req))
 }
 
-func (s *Service) resolveGo(r *http.Request, repo *models.Repository, req goRequest) (*resolution, error) {
-	return s.resolveWith(r.Context(), repo, req.key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		target, err := goUpstreamURL(repo.UpstreamURL, req.key)
-		if err != nil {
-			s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
-			return nil, errInternal
-		}
+// goDoc is a GOPROXY resource, cached verbatim under its request path once it
+// passes the check for its kind.
+func (s *Service) goDoc(req goRequest) metaDoc {
+	return metaDoc{
+		key: req.key,
+		url: func(upstream string) (string, error) { return goUpstreamURL(upstream, req.key) },
+		opts: func(context.Context, string) fetchOpts {
+			var (
+				o       fetchOpts
+				vouched bool
+			)
 
-		var (
-			o       fetchOpts
-			vouched bool
-		)
+			switch req.kind {
+			case goList:
+				o.verify = verifyGoList
+			case goLatest:
+				o.verify = verifyGoInfo("")
+			case goInfo:
+				want := ""
+				if canonicalGoVersion(req.version) {
+					want = req.version
+				}
 
-		switch req.kind {
-		case goList:
-			o.verify = verifyGoList
-		case goLatest:
-			o.verify = verifyGoInfo("")
-		case goInfo:
-			want := ""
-			if canonicalGoVersion(req.version) {
-				want = req.version
+				o.verify = verifyGoInfo(want)
+			case goMod:
+				o.vouched, o.verify = &vouched, s.verifyGoMod(req.module, req.version, &vouched)
+			case goZip:
+				o.vouched, o.verify = &vouched, s.verifyGoZip(req.module, req.version, &vouched)
 			}
 
-			o.verify = verifyGoInfo(want)
-		case goMod:
-			o.vouched, o.verify = &vouched, s.verifyGoMod(req.module, req.version, &vouched)
-		case goZip:
-			o.vouched, o.verify = &vouched, s.verifyGoZip(req.module, req.version, &vouched)
-		}
-
-		return s.fetchURL(fctx, repo, req.key, target, o)
-	})
+			return o
+		},
+		what: "go module file",
+	}
 }
 
 // verifyGoList refuses a list that is not one version per line: an HTML error
@@ -255,4 +249,13 @@ func verifyGoInfo(want string) func(io.ReadSeeker) error {
 
 		return nil
 	}
+}
+
+// GoHooks is the proxy hooks of the go format.
+var GoHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve: (*Service).serveGo,
+	// .info/.mod/.zip of a canonical version, not list/@latest/queries.
+	Immutable:  goImmutable,
+	IsMetadata: func(key string) bool { return keyName(key) == "list" || strings.HasSuffix(key, "/@latest") },
+	BlobPath:   presign.GoBlobPath,
 }

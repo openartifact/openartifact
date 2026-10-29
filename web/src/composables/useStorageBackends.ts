@@ -41,33 +41,39 @@ export function useStorageBackends() {
     }
   }
 
-  async function testOne(name: string): Promise<void> {
-    testingOne.value = name
+  /** Runs one health check, reports its result and reloads; `busy` switches the caller's spinner. */
+  async function runCheck(
+    name: string,
+    check: () => Promise<{ ok: boolean; message?: string }>,
+    busy: (on: boolean) => void,
+  ): Promise<void> {
+    busy(true)
     try {
-      const res = await testStorageBackend(name)
+      const res = await check()
       if (res.ok) toasts.success(tp('adm.storage.pair', { label: name, value: t('adm.storage.status.healthy') }))
       else toasts.error(tp('adm.storage.pair', { label: name, value: res.message ?? t('adm.storage.testFailed') }))
       await load()
     } catch (err) {
       toasts.error(err instanceof Error ? err.message : t('adm.storage.testFailed'))
     } finally {
-      testingOne.value = null
+      busy(false)
     }
   }
 
-  async function testPrimary(): Promise<void> {
-    testingPrimary.value = true
-    try {
-      const res = await testStoragePrimary()
-      const name = primary.value?.name ?? 'primary'
-      if (res.ok) toasts.success(tp('adm.storage.pair', { label: name, value: t('adm.storage.status.healthy') }))
-      else toasts.error(tp('adm.storage.pair', { label: name, value: res.message ?? t('adm.storage.testFailed') }))
-      await load()
-    } catch (err) {
-      toasts.error(err instanceof Error ? err.message : t('adm.storage.testFailed'))
-    } finally {
-      testingPrimary.value = false
-    }
+  function testOne(name: string): Promise<void> {
+    return runCheck(
+      name,
+      () => testStorageBackend(name),
+      (on) => (testingOne.value = on ? name : null),
+    )
+  }
+
+  function testPrimary(): Promise<void> {
+    return runCheck(
+      primary.value?.name ?? 'primary',
+      testStoragePrimary,
+      (on) => (testingPrimary.value = on),
+    )
   }
 
   // The primary store is tested with the records. testStorageBackend resolves

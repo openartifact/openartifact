@@ -10,14 +10,12 @@ import (
 	"net/http"
 	"slices"
 	"testing"
-
-	"github.com/openartifact/openartifact/internal/database"
 )
 
 // moduleDB answers the module-ownership queries of hosted ivy and sbt members:
 // held lists "<member id>|<group>|<module>" triples; fail makes every query error.
 type moduleDB struct {
-	database.Database
+	HandlerStore
 
 	held []string
 	fail bool
@@ -86,7 +84,7 @@ func ivySbtFixture(t *testing.T, format string) (*fixture, *moduleDB) {
 	f := newFixture(t, format, member("hosted", format, "hosted"), member("mirror", format, "proxy"))
 	f.grp.MergeProxyVersions = false
 
-	db := &moduleDB{Database: f.h.db, held: []string{"id-hosted|org.example|lib"}}
+	db := &moduleDB{HandlerStore: f.h.db, held: []string{"id-hosted|org.example|lib"}}
 	f.h.db = db
 
 	f.set("hosted", "org.example/lib/1.0/jars/lib.jar", 200, "hosted-1.0")
@@ -126,7 +124,7 @@ func TestIvySbtGroup_HostedWins(t *testing.T) {
 func TestIvySbtGroup_MavenLayoutAndMetadata(t *testing.T) {
 	f := newFixture(t, "sbt", member("hosted", "sbt", "hosted"), member("mirror", "sbt", "proxy"))
 	f.grp.MergeProxyVersions = false
-	f.h.db = &moduleDB{Database: f.h.db, held: []string{"id-hosted|com.example|lib_2.12"}}
+	f.h.db = &moduleDB{HandlerStore: f.h.db, held: []string{"id-hosted|com.example|lib_2.12"}}
 
 	f.set("mirror", "com/example/lib_2.12/9.9.9/lib_2.12-9.9.9.jar", 200, "evil")
 	f.set("mirror", "com/example/lib_2.12/maven-metadata.xml", 200, "<metadata/>")

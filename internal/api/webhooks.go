@@ -16,7 +16,6 @@ import (
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/crypto"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -24,21 +23,33 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// WebhooksStore is the part of the database WebhooksHandler needs.
+type WebhooksStore interface {
+	repoAccessStore
+	CreateWebhook(ctx context.Context, wh *models.Webhook) error
+	DeleteWebhook(ctx context.Context, id string) error
+	GetWebhook(ctx context.Context, id string) (*models.Webhook, error)
+	ListWebhookDeliveries(ctx context.Context, webhookID string, limit int) ([]*models.WebhookDelivery, error)
+	ListWebhooks(ctx context.Context, repoID string) ([]*models.Webhook, error)
+	UpdateWebhook(ctx context.Context, wh *models.Webhook) error
+}
+
 type WebhooksHandler struct {
 	repoAccess
 
 	dispatcher *webhook.Dispatcher
+	db         WebhooksStore
 }
 
 func NewWebhooksHandler(
-	db database.Database,
+	db WebhooksStore,
 	log *logger.Logger,
 	evaluator *auth.Evaluator,
 	dispatcher *webhook.Dispatcher,
 ) *WebhooksHandler {
 	return &WebhooksHandler{
 		repoAccess: newRepoAccess(db, log, evaluator),
-		dispatcher: dispatcher,
+		dispatcher: dispatcher, db: db,
 	}
 }
 

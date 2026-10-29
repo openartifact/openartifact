@@ -83,7 +83,9 @@ func (s *Service) serveConanV1URLs(w http.ResponseWriter, r *http.Request, repo 
 		return
 	}
 
-	base := pkgconan.RepoURL(s.baseURL, repo.Name)
+	// Built per request from the origin the client reached; the cached upstream
+	// documents hold no URL of ours, and the answer is private and unvalidated.
+	base := pkgconan.RepoURL(s.publicBase(w, r), repo.Name)
 	urls := make(map[string]string, len(names))
 
 	for _, name := range names {

@@ -8,6 +8,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 `oa import` copies the hosted repositories of a Sonatype Nexus 3 or JFrog Artifactory server into OpenArtifact, for every format OpenArtifact hosts that the source offers. Files are streamed from the source into the normal upload endpoints, verified by SHA-256 against the source and against what the server stored, and keep their original creation time.
 
+To move from OpenArtifact 0.14 to 0.15, see [Migrating from OpenArtifact 0.14](openartifact.md).
+
 Supported formats:
 
 | Format in OpenArtifact | Nexus 3 | Artifactory (package type) |

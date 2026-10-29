@@ -15,28 +15,30 @@ import (
 )
 
 func TestTrashRepositoryRestoreKeepsRemainingWindow(t *testing.T) {
+	registerFixtures(t)
+
 	pg := newQuotaTestDB(t, 8)
 	pg.SetTrashRetentionDays(7)
 
 	ctx := context.Background()
 	s := newQuotaSeeder(t, pg, "trash-window", "docker")
 
-	s.maven(s.blob(1)) // maven row in a docker repo is fine for the schema
+	s.maven(s.blob(1)) // a package file in a docker repo is fine for the schema
 	mavenID := mavenArtifactID(t, s, "g/a1/1.0/a-1.0.jar")
 	manifestID, tagID := seedDockerImage(s, "sha256:bbbb", "v1")
 
-	for _, kind := range []struct {
-		k  models.TrashKind
-		id string
-	}{{models.TrashKindMaven, mavenID}, {models.TrashKindDockerManifest, manifestID}} {
-		if soft, err := pg.TrashRows(ctx, s.repo, kind.k, []string{kind.id}, "bob"); err != nil || !soft {
-			t.Fatalf("TrashRows %s = %v, %v", kind.k, soft, err)
-		}
+	if soft, err := pg.TrashRows(ctx, s.repo, models.TrashKindDockerManifest, []string{manifestID}, "bob"); err != nil || !soft {
+		t.Fatalf("TrashRows manifest = %v, %v", soft, err)
 	}
+
+	// A repository of a package format trashes its files through the descriptor
+	// engine; here the file is stamped directly together with its version, the
+	// way TrashRows leaves them.
+	s.exec(`UPDATE package_files SET deleted_at = now() - interval '3 days', deleted_by = 'bob' WHERE id = $1`, mavenID)
+	s.exec(`UPDATE package_versions SET deleted_at = now() - interval '3 days', deleted_by = 'bob' WHERE repository_id = $1`, s.repo)
 
 	// The maven item was trashed 3 days ago, the manifest (and its tag) 3 days
 	// ago too; the repository 2 days ago.
-	s.exec(`UPDATE maven_artifacts SET deleted_at = now() - interval '3 days' WHERE id = $1`, mavenID)
 	// One fixed instant keeps the cascade pair equal, as the real cascade does.
 	s.exec(`WITH ts AS (SELECT now() - interval '3 days' AS t),
 	        m AS (UPDATE docker_manifests SET deleted_at = (SELECT t FROM ts) WHERE id = $1)
@@ -57,7 +59,7 @@ func TestTrashRepositoryRestoreKeepsRemainingWindow(t *testing.T) {
 
 	var ageSecs float64
 	if err := pg.GetDB().QueryRowContext(ctx,
-		`SELECT EXTRACT(EPOCH FROM now() - deleted_at) FROM maven_artifacts WHERE id = $1`, mavenID).Scan(&ageSecs); err != nil {
+		`SELECT EXTRACT(EPOCH FROM now() - deleted_at) FROM package_files WHERE id = $1`, mavenID).Scan(&ageSecs); err != nil {
 		t.Fatal(err)
 	}
 

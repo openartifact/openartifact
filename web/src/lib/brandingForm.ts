@@ -9,6 +9,7 @@
 import type { BrandingAdmin, BrandingUpdate } from '../api/branding'
 import type { BrandingPalette } from './branding'
 import { IMAGE_MIME_TYPES, MAX_IMAGE_BYTES, hexToTriple, isHexColor, safeUrl } from './branding'
+import { relativeLuminance } from './brandColors'
 import type { TranslationKey } from '../i18n'
 
 const PRODUCT_NAME_MAX = 64
@@ -88,14 +89,6 @@ function channels(triple: string): [number, number, number] {
   return [r, g, b]
 }
 
-function luminance([r, g, b]: [number, number, number]): number {
-  const lin = (c: number) => {
-    const s = c / 255
-    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
-  }
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
-}
-
 function mix(a: [number, number, number], b: [number, number, number], weightA: number): string {
   return a.map((c, i) => Math.round(c * weightA + b[i]! * (1 - weightA))).join(' ')
 }
@@ -112,7 +105,7 @@ export function previewVars(hex: string, theme: 'light' | 'dark'): Record<string
   const triple = hexToTriple(hex.trim())
   if (!triple) return null
   const c = channels(triple)
-  const text = luminance(c) > 0.18 ? DARK_TEXT : LIGHT_TEXT
+  const text = relativeLuminance(...c) > 0.18 ? DARK_TEXT : LIGHT_TEXT
   const soft = theme === 'light' ? mix(c, [255, 255, 255], 0.12) : mix(c, [17, 20, 32], 0.2)
   return { '--color-primary': triple, '--color-primary-contrast': text, '--color-primary-soft': soft }
 }

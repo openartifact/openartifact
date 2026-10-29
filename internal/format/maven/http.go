@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/iocopy"
@@ -34,12 +33,35 @@ const maxMetadataBlobBytes = 16 << 20
 
 const metadataMaxAge = 300
 
-type HTTPHandler struct {
-	*base.Handler
+// HTTPStore is the part of the database HTTPHandler needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	GetLatestSnapshotFile(
+		ctx context.Context,
+		repoID string,
+		groupID string,
+		artifactID string,
+		version string,
+		classifier string,
+		extension string,
+	) (*models.MavenArtifact, error)
+	GetMavenArtifactByPath(ctx context.Context, repoID string, path string) (*models.MavenArtifact, error)
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
 }
 
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, "")}
+type HTTPHandler struct {
+	*base.Handler
+
+	DB HTTPStore
+}
+
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore) *HTTPHandler {
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, ""), DB: db}
 }
 
 // RegisterRepoRoutes registers Maven-specific routes on the provided sub-router.

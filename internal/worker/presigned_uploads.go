@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -20,6 +19,13 @@ const (
 	presignedUploadSweepTimeout  = 2 * time.Minute
 )
 
+// PresignedUploadStore is the part of the database PresignedUploadWorker needs.
+type PresignedUploadStore interface {
+	DeletePresignedUpload(ctx context.Context, id string) error
+	ExistingPresignedUploadIDs(ctx context.Context, ids []string) ([]string, error)
+	ListExpiredPresignedUploads(ctx context.Context, limit int) ([]string, error)
+}
+
 // PresignedUploadWorker expires presigned uploads that were never completed:
 // it deletes their staging object and their database row once the complete
 // deadline (URL expiry plus grace) has passed, so abandoned uploads do not
@@ -28,7 +34,7 @@ const (
 // was cleaned up or rejected, a repository deleted with uploads in flight) once
 // they are older than any URL could still be valid.
 type PresignedUploadWorker struct {
-	db      database.Database
+	db      PresignedUploadStore
 	staging storage.StagingStore
 	log     *logger.Logger
 	// orphanAge is how old a staging object without a row must be to be deleted.
@@ -45,7 +51,7 @@ type PresignedUploadWorker struct {
 // deleted once they are older than that plus the complete grace. A blobStore
 // that cannot stage uploads yields a worker that only removes the rows.
 func NewPresignedUploadWorker(
-	db database.Database,
+	db PresignedUploadStore,
 	blobStore storage.BlobStore,
 	urlTTL time.Duration,
 	log *logger.Logger,

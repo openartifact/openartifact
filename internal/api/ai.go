@@ -2,26 +2,43 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+//go:build !noai
+
 package api
 
 import (
 	"net/http"
 	"strconv"
 
+	"context"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// AIStore is the part of the database AIHandler needs.
+type AIStore interface {
+	GetAIAnalysis(ctx context.Context, repoID string, artifactID string) (*models.AIAnalysis, error)
+	GetRepoComponentBlob(ctx context.Context, repoID string, id string) (*models.ComponentBlob, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListAIAnalyses(
+		ctx context.Context,
+		repoID string,
+		status string,
+		licenseReviewOnly bool,
+		limit int,
+		offset int,
+	) ([]*models.AIAnalysis, int, error)
+}
+
 // AIHandler handles AI analysis REST endpoints.
 type AIHandler struct {
-	db        database.Database
+	db        AIStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	aiWorker  *worker.AIAnalysisWorker
@@ -30,12 +47,11 @@ type AIHandler struct {
 const (
 	// aiMaxManifestBytes caps manifest_text forwarded to the LLM.
 	aiMaxManifestBytes = 256 * 1024
-	aiMaxNameLen       = 512
 	aiMaxListOffset    = 1_000_000
 )
 
 // NewAIHandler creates a new AI analysis handler.
-func NewAIHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, aiWorker *worker.AIAnalysisWorker) *AIHandler {
+func NewAIHandler(db AIStore, log *logger.Logger, evaluator *auth.Evaluator, aiWorker *worker.AIAnalysisWorker) *AIHandler {
 	return &AIHandler{db: db, log: log, evaluator: evaluator, aiWorker: aiWorker}
 }
 
@@ -132,23 +148,6 @@ func (h *AIHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, analysis)
-}
-
-// ValidateAIArtifactIdentity checks the artifact_format, artifact_name and
-// artifact_version a caller supplies when triggering an analysis (REST and MCP
-// share it) and returns a message for the first problem, "" when acceptable.
-// The format is one of the repository formats, which are also the ids package
-// listings report.
-func ValidateAIArtifactIdentity(format, name, version string) string {
-	if format != "" && !repotype.Valid(format) {
-		return "artifact_format must be one of: " + validFormatList()
-	}
-
-	if len(name) > aiMaxNameLen || len(version) > aiMaxNameLen {
-		return "artifact_name/artifact_version too long"
-	}
-
-	return ""
 }
 
 func (h *AIHandler) handleTrigger(w http.ResponseWriter, r *http.Request) {

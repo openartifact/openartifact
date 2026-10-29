@@ -6,12 +6,9 @@ package group
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"net/http"
 	"path"
-	"strconv"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -35,6 +32,27 @@ func mavenMetadataPath(relPath string) (string, string, bool) {
 	return "", "", false
 }
 
+// MavenHooks is the maven group: merged maven-metadata.xml, everything else first-hit.
+var MavenHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: func(
+		h *Handler,
+		w http.ResponseWriter,
+		r *http.Request,
+		grp *models.Repository,
+		relPath string,
+		readable []*models.Repository,
+		be Backend,
+	) bool {
+		base, suffix, ok := mavenMetadataPath(relPath)
+		if ok {
+			h.serveMavenMetadata(w, r, grp, readable, base, suffix, be)
+		}
+
+		return ok
+	},
+	PackageRef: mavenRef,
+}
+
 // serveMavenMetadata answers a maven-metadata.xml (or checksum) request by
 // merging the document of every member that has one. With a single
 // contributing member its bytes are served unchanged. A member that errors is
@@ -42,58 +60,44 @@ func mavenMetadataPath(relPath string) (string, string, bool) {
 // answers 404, or 502 if a member failed. Hosted wins: members is already
 // narrowed by applyHostedWins, so a metadata document a hosted member holds is
 // never merged with the proxies' (unless the group merges proxy versions).
-func (h *Handler) serveMavenMetadata(w http.ResponseWriter, r *http.Request, members []*models.Repository, doc, suffix string, be Backend) {
-	var (
-		docs   [][]byte
-		failed bool
-	)
-
-	// Members are asked for the document itself, always with GET and without
-	// the client's conditional headers.
-	mr := r.Clone(r.Context())
-	mr.Method = http.MethodGet
-	mr.Header.Del("If-None-Match")
-	mr.Header.Del("If-Modified-Since")
-
-	sess := h.newSession(r.Context())
-	defer sess.release()
-
-	for _, m := range members {
-		cw := sess.capture(maxMetadataBytes)
-		be.ServeMember(cw, mr, m, doc)
-
-		switch {
-		case cw.status == http.StatusNotFound:
-		case cw.status == http.StatusOK && !cw.overflow:
-			docs = append(docs, cw.body.Bytes())
-		default:
-			failed = true
-		}
+func (h *Handler) serveMavenMetadata(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	members []*models.Repository,
+	doc, suffix string,
+	be Backend,
+) {
+	contentType := "application/xml"
+	if suffix != "" {
+		contentType = "text/plain"
 	}
 
-	if len(docs) == 0 {
-		if failed {
-			http.Error(w, "member repository error", http.StatusBadGateway)
-			return
-		}
+	// The merge changes with every publish to a member: shared caches
+	// revalidate it (maxAge 0) rather than reuse it.
+	h.serveMergedDoc(w, r, grp, members, be, mergedDoc{
+		ask:         memberAsk{path: samePath(doc), limit: maxMetadataBytes},
+		what:        "maven metadata",
+		contentType: contentType,
+		merge: func(c *collection) ([]byte, error) {
+			docs := make([][]byte, len(c.docs))
+			for i, d := range c.docs {
+				docs[i] = d.body
+			}
 
-		http.NotFound(w, r)
+			body, err := mergeDocuments(docs)
+			if err != nil || suffix == "" {
+				return body, err
+			}
 
-		return
-	}
+			sum, err := checksumOf(body, suffix)
+			if err != nil {
+				return nil, err
+			}
 
-	merged, err := mergeDocuments(docs)
-
-	sess.release()
-
-	if err != nil {
-		h.log.Errorw("failed to merge maven metadata", "path", doc, "error", err)
-		http.Error(w, "member repository error", http.StatusBadGateway)
-
-		return
-	}
-
-	h.writeMetadata(w, r, merged, doc, suffix)
+			return []byte(sum + "  " + path.Base(doc) + "\n"), nil
+		},
+	})
 }
 
 // mergeDocuments merges the members' metadata. One document is returned
@@ -131,43 +135,6 @@ func mergeDocuments(docs [][]byte) ([]byte, error) {
 	}
 
 	return merged.Marshal()
-}
-
-func (h *Handler) writeMetadata(w http.ResponseWriter, r *http.Request, body []byte, doc, suffix string) {
-	hdr := w.Header()
-
-	if suffix != "" {
-		sum, err := checksumOf(body, suffix)
-		if err != nil {
-			h.log.Errorw("failed to checksum merged maven metadata", "path", doc, "error", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-
-			return
-		}
-
-		out := sum + "  " + path.Base(doc) + "\n"
-
-		hdr.Set("Content-Type", "text/plain")
-		hdr.Set("Content-Length", strconv.Itoa(len(out)))
-		w.WriteHeader(http.StatusOK)
-
-		if r.Method != http.MethodHead {
-			_, _ = w.Write([]byte(out))
-		}
-
-		return
-	}
-
-	etag := sha256.Sum256(body)
-
-	hdr.Set("Content-Type", "application/xml")
-	hdr.Set("ETag", `"`+hex.EncodeToString(etag[:])+`"`)
-	hdr.Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
-	}
 }
 
 func checksumOf(body []byte, suffix string) (string, error) {
@@ -247,4 +214,26 @@ func (c *captureWriter) Write(b []byte) (int, error) {
 	}
 
 	return c.body.Write(b)
+}
+
+func mavenRef(relPath string) (PkgRef, bool) {
+	if doc, _, ok := mavenMetadataPath(relPath); ok {
+		return PkgRef{probe: doc}, true
+	}
+
+	rel := strings.TrimPrefix(relPath, "/")
+
+	// A signature or the like of the metadata document belongs to that
+	// document's package.
+	if strings.HasPrefix(path.Base(rel), "maven-metadata.xml") {
+		return PkgRef{probe: path.Dir(rel) + "/maven-metadata.xml", file: true}, true
+	}
+
+	// <group path>/<artifact>/<version>/<file>: the artifact's metadata is
+	// two levels up from the file.
+	if strings.Count(rel, "/") < 3 {
+		return PkgRef{}, false
+	}
+
+	return PkgRef{probe: path.Dir(path.Dir(rel)) + "/maven-metadata.xml", file: true}, true
 }

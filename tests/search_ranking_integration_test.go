@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/search"
 )
@@ -63,8 +64,10 @@ func newRankingFixture(t *testing.T) rankingFixture {
 		{"lib", "my-widget", "1.0.0", now.Add(-time.Minute)},
 		{"hidden", "widget", "9.9.9", now},
 	} {
-		execSQL(t, pg, `INSERT INTO helm_charts (repository_id, name, version, blob_id, created_at)
-			VALUES ((SELECT id FROM repositories WHERE name = $1), $2, $3, $4, $5)`, c.repo, c.name, c.version, blobID, c.at)
+		seedFile(t, pg, seedRow{
+			repo: searchRepoID(t, pg, c.repo), format: "helm", name: c.name, version: c.version,
+			filename: c.name + "-" + c.version + ".tgz", blobID: blobID, created: c.at,
+		})
 	}
 
 	log := newTestLogger(t)
@@ -243,9 +246,7 @@ func TestSearchTooBroadQueryIsRefused(t *testing.T) {
 
 	// 2500 charts x 4 versions = 10000 rows named bulk-N (exactly the cap),
 	// plus one more row for the 10001st.
-	execSQL(t, pg, `INSERT INTO helm_charts (repository_id, name, version, blob_id)
-		SELECT (SELECT id FROM repositories WHERE name = 'bulk'), 'bulk-' || c, v || '.0.0', $1
-		FROM generate_series(1, 2500) c, generate_series(1, 4) v`, blobID)
+	seedBulkCharts(t, pg, "bulk", "bulk-", blobID, 2500, 4, false)
 
 	log := newTestLogger(t)
 	h := search.NewHandler(pg.GetDB(), auth.NewEvaluator(pg, log, false), log)
@@ -270,15 +271,17 @@ func TestSearchTooBroadQueryIsRefused(t *testing.T) {
 			t.Errorf("group=%q at exactly the cap: status %d %s, want 200", group, code, body)
 		}
 
-		execSQL(t, pg, `INSERT INTO helm_charts (repository_id, name, version, blob_id)
-			VALUES ((SELECT id FROM repositories WHERE name = 'bulk'), 'bulk-extra-'||$2::text, '1.0.0', $1)`, blobID, group)
+		seedFile(t, pg, seedRow{
+			repo: searchRepoID(t, pg, "bulk"), format: "helm", name: "bulk-extra-" + group, version: "1.0.0",
+			filename: "bulk-extra-" + group + "-1.0.0.tgz", blobID: blobID,
+		})
 
 		code, body := status(params)
 		if code != http.StatusBadRequest || !strings.Contains(body, "query_too_broad") {
 			t.Errorf("group=%q above the cap: status %d %s, want 400 query_too_broad", group, code, body)
 		}
 
-		execSQL(t, pg, `DELETE FROM helm_charts WHERE name LIKE 'bulk-extra-%'`)
+		execSQL(t, pg, `DELETE FROM package_files WHERE filename LIKE 'bulk-extra-%'`)
 	}
 }
 
@@ -365,4 +368,36 @@ func TestRepositoryNameSearchUsesTrigramIndex(t *testing.T) {
 	if !strings.Contains(plan.String(), "idx_repositories_name_trgm") {
 		t.Errorf("plan does not use the trigram index:\n%s", plan.String())
 	}
+}
+
+// searchRepoID returns the id of the repository called name.
+func searchRepoID(t *testing.T, pg *database.PostgresDB, name string) string {
+	t.Helper()
+
+	var id string
+	if err := pg.GetDB().QueryRowContext(context.Background(), `SELECT id FROM repositories WHERE name = $1`, name).Scan(&id); err != nil {
+		t.Fatalf("lookup repository %s: %v", name, err)
+	}
+
+	return id
+}
+
+// seedBulkCharts writes pkgs helm packages named prefix<N>, each with vers
+// versions (one file each), straight into the generic tables. aged spreads the
+// created_at of the files over the past instead of using now().
+func seedBulkCharts(t *testing.T, pg *database.PostgresDB, repo, prefix, blobID string, pkgs, vers int, aged bool) {
+	t.Helper()
+
+	execSQL(t, pg, `WITH r AS (SELECT id FROM repositories WHERE name = $1),
+		p AS (
+			INSERT INTO packages (repository_id, format, name, name_key)
+			SELECT r.id, 'helm', $2 || c, $2 || c FROM r, generate_series(1, $4::int) c RETURNING id, repository_id, name
+		), v AS (
+			INSERT INTO package_versions (package_id, repository_id, version, version_key)
+			SELECT p.id, p.repository_id, n || '.0.0', n || '.0.0' FROM p, generate_series(1, $5::int) n RETURNING id, package_id, repository_id, version
+		)
+		INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, role, listed, created_at)
+		SELECT v.id, v.repository_id, p.name || '/' || v.version, p.name || '-' || v.version || '.tgz', $3::uuid, 'primary', true,
+		       CASE WHEN $6::bool THEN now() - (substring(p.name FROM '[0-9]+$')::int * split_part(v.version, '.', 1)::int) * interval '1 minute' ELSE now() END
+		FROM v JOIN p ON p.id = v.package_id`, repo, prefix, blobID, pkgs, vers, aged)
 }

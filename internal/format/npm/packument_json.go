@@ -335,8 +335,8 @@ type packumentWriter struct {
 	tarballPrefix []byte
 }
 
-func newPackumentWriter(repoName, packageName, baseURL string, capacity int) *packumentWriter {
-	prefix := appendJSONEscaped(nil, baseURL)
+func newPackumentWriter(repoName, packageName, origin string, capacity int) *packumentWriter {
+	prefix := appendJSONEscaped(nil, origin)
 	prefix = append(prefix, "/repos/"...)
 	prefix = appendJSONEscaped(prefix, repoName)
 	prefix = append(prefix, '/')
@@ -429,7 +429,7 @@ func (w *packumentWriter) dist(stored []byte, v *models.NPMVersion) error {
 	return nil
 }
 
-// tarballURL appends baseURL/repos/<repo>/<package>/-/<filename> as a JSON string.
+// tarballURL appends origin/repos/<repo>/<package>/-/<filename> as a JSON string.
 func (w *packumentWriter) tarballURL(filename string) {
 	w.buf = append(w.buf, '"')
 	w.buf = append(w.buf, w.tarballPrefix...)

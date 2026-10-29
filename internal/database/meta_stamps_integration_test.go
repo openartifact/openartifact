@@ -30,6 +30,8 @@ func stampMoves(t *testing.T, what string, stamp func() string, mutate func()) {
 // A stamp is the validator of a rendered metadata document, so it has to move
 // whenever the document would change (rows added, removed, yanked) and stay
 // put when only download counters move.
+//
+//nolint:gocyclo,cyclop // one subtest per format
 func TestMetadataStamps(t *testing.T) {
 	pg := newQuotaTestDB(t, 8)
 	ctx := context.Background()
@@ -47,7 +49,13 @@ func TestMetadataStamps(t *testing.T) {
 
 		empty := stamp()
 		add := func(version string) {
-			s.exec(`INSERT INTO helm_charts (repository_id, name, version, blob_id) VALUES ($1,'web',$2,$3)`, s.repo, version, s.blob(5))
+			c := &models.HelmChart{
+				RepositoryID: s.repo, Name: "web", Version: version, Digest: fmt.Sprintf("%064x", len(version)*100+int(version[2])),
+				BlobKey: "helm/" + version, SizeBytes: 5, APIVersion: "v2", Type: "application",
+			}
+			if err := pg.CreateHelmChart(ctx, c); err != nil {
+				t.Fatal(err)
+			}
 		}
 
 		stampMoves(t, "first chart", stamp, func() { add("1.0.0") })
@@ -55,7 +63,7 @@ func TestMetadataStamps(t *testing.T) {
 		one := stamp()
 		stampMoves(t, "second chart", stamp, func() { add("1.1.0") })
 		stampMoves(t, "trash a chart", stamp, func() {
-			s.exec(`UPDATE helm_charts SET deleted_at = now() WHERE repository_id = $1 AND version = '1.1.0'`, s.repo)
+			s.exec(`UPDATE package_files SET deleted_at = now() WHERE repository_id = $1 AND filename = 'web-1.1.0.tgz'`, s.repo)
 		})
 
 		if got := stamp(); got != one {
@@ -83,12 +91,7 @@ func TestMetadataStamps(t *testing.T) {
 		other := stamp("noarch")()
 
 		stampMoves(t, "package on platform", stamp("linux-64"), func() {
-			s.exec(
-				`INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra)
-			        VALUES ($1,'numpy','1.0','h1','linux-64','{}',$2,'.conda',0,'m',1,'{}')`,
-				s.repo,
-				s.blob(5),
-			)
+			addCondaBuild(t, pg, s.repo, "numpy", "1.0", "h1", "linux-64", models.CondaExtConda)
 		})
 
 		if got := stamp("noarch")(); got != other {
@@ -108,14 +111,18 @@ func TestMetadataStamps(t *testing.T) {
 		}
 
 		stampMoves(t, "publish", stamp, func() {
-			s.exec(
-				`INSERT INTO rubygems_gems (repository_id, name, version, platform, blob_id, size) VALUES ($1,'rake','1.0','ruby',$2,5)`,
-				s.repo,
-				s.blob(5),
-			)
+			gem := &models.RubyGem{
+				RepositoryID: s.repo, Name: "rake", Version: "1.0", Platform: "ruby",
+				ChecksumSHA256: langSHA("stamp-gem"), BlobKey: langSHA("stamp-gem"), Size: 5,
+			}
+			if err := pg.CreateRubyGem(ctx, gem); err != nil {
+				t.Fatal(err)
+			}
 		})
 		stampMoves(t, "yank", stamp, func() {
-			s.exec(`UPDATE rubygems_gems SET yanked = true WHERE repository_id = $1`, s.repo)
+			if err := pg.YankRubyGem(ctx, s.repo, "rake", "1.0", "", true); err != nil {
+				t.Fatal(err)
+			}
 		})
 
 		specs, err := pg.ListRubyGemSpecs(ctx, s.repo)
@@ -139,27 +146,30 @@ func TestMetadataStamps(t *testing.T) {
 			t.Fatalf("stamp of an unknown crate = %q, want 0:0", got)
 		}
 
-		insert := func(version string) {
-			s.exec(
-				`INSERT INTO cargo_crates (repository_id, name, version, metadata_json, blob_id) VALUES ($1,'serde',$2,'{}',$3)`,
-				s.repo,
-				version,
-				s.blob(5),
-			)
-		}
-
-		stampMoves(t, "publish (name matches case-insensitively)", stamp, func() { insert("1.0.0") })
+		stampMoves(t, "publish (name matches case-insensitively)", stamp, func() {
+			crate := &models.CargoCrate{
+				RepositoryID: s.repo, Name: "serde", Version: "1.0.0", Checksum: langSHA("stamp-crate"),
+				BlobKey: langSHA("stamp-crate"), SizeBytes: 5, MetadataJSON: []byte(`{}`),
+			}
+			if err := pg.CreateCargoCrate(ctx, crate); err != nil {
+				t.Fatal(err)
+			}
+		})
 
 		afterOne := stamp()
 
-		s.exec(`UPDATE cargo_crates SET download_count = download_count + 1, updated_at = now() WHERE repository_id = $1`, s.repo)
+		if err := pg.IncrementCargoDownloadCount(ctx, s.repo, "serde", "1.0.0"); err != nil {
+			t.Fatal(err)
+		}
 
 		if got := stamp(); got != afterOne {
 			t.Errorf("a download moved the stamp: %q -> %q", afterOne, got)
 		}
 
 		stampMoves(t, "yank", stamp, func() {
-			s.exec(`UPDATE cargo_crates SET yanked = true WHERE repository_id = $1`, s.repo)
+			if err := pg.YankCargoCrate(ctx, s.repo, "SERDE", "1.0.0", true); err != nil {
+				t.Fatal(err)
+			}
 		})
 
 		versions, err := pg.ListCargoIndexVersions(ctx, s.repo, "SERDE")
@@ -253,14 +263,7 @@ func TestCondaPackageNames(t *testing.T) {
 
 	s := newQuotaSeeder(t, pg, "names-conda", "conda")
 	add := func(name, platform string) {
-		s.exec(
-			`INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra)
-		        VALUES ($1,$2,'1.0','h1',$3,'{}',$4,'.conda',0,'m',1,'{}')`,
-			s.repo,
-			name,
-			platform,
-			s.blob(5),
-		)
+		addCondaBuild(t, pg, s.repo, name, "1.0", "h1", platform, models.CondaExtConda)
 	}
 
 	add("Demo", "linux-64")
@@ -278,7 +281,7 @@ func TestCondaPackageNames(t *testing.T) {
 		}
 	}
 
-	s.exec(`UPDATE conda_packages SET deleted_at = now() WHERE repository_id = $1 AND lower(name) = 'other'`, s.repo)
+	trashCondaPackage(t, s, "other")
 
 	if got, err := pg.HasCondaPackageName(ctx, s.repo, "other"); err != nil || got {
 		t.Errorf("a trashed package still counts: %v, %v", got, err)

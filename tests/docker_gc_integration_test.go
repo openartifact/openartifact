@@ -61,7 +61,7 @@ func newGCFixture(t *testing.T) *gcFixture {
 	gc := worker.NewDockerGCWorker(pg, store, log, 0, gcGrace)
 
 	r := chi.NewRouter()
-	formatdocker.NewHTTPHandler(log, pg, store, "http://localhost").RegisterRoutes(r)
+	formatdocker.NewHTTPHandler(log, pg, store).RegisterRoutes(r)
 	api.NewDockerGCHandler(pg, log, auth.NewEvaluator(pg, log, false), gc).RegisterAuthed(r)
 
 	repoID := newRepo(t, pg, "reg", "docker")

@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/crewjam/saml"
-
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 )
 
 func TestSAMLRequestTracker_RoundTrip(t *testing.T) {
@@ -57,8 +55,6 @@ func TestSAMLRequestTracker_Rejects(t *testing.T) {
 }
 
 type assertionDB struct {
-	databasetest.BaseMockDB
-
 	mu   sync.Mutex
 	seen map[string]bool
 	exp  time.Time

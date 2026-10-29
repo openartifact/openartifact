@@ -17,6 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/bgtask"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -34,6 +35,17 @@ const (
 	emptyTrashBatch    = 100
 )
 
+// TrashOps is the part of the database TrashHandler needs.
+type TrashOps interface {
+	collectOrphansAsyncStore
+	reclaimMetadataBlobsStore
+	repoAccessStore
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+	MarkPackumentStale(ctx context.Context, packageID string) error
+	MarkRepoStale(ctx context.Context, repositoryID string) error
+}
+
 // TrashHandler serves the trash API: listing, restoring and purging soft-deleted
 // packages and repositories.
 //
@@ -46,16 +58,17 @@ type TrashHandler struct {
 
 	blobStore storage.BlobStore
 	publisher webhook.Publisher
-	regen     TrashRegenerator
+	workers   *lifecycle.Workers
 	groupMeta GroupMetadataNotifier
 
 	// tasks runs the detached orphan-blob collections started by repository
 	// purges; they are cancelled at server shutdown.
 	tasks *bgtask.Runner
+	db    TrashOps
 }
 
-func NewTrashHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *TrashHandler {
-	return &TrashHandler{repoAccess: newRepoAccess(db, log, evaluator), tasks: bgtask.New(context.Background())}
+func NewTrashHandler(db TrashOps, log *logger.Logger, evaluator *auth.Evaluator) *TrashHandler {
+	return &TrashHandler{repoAccess: newRepoAccess(db, log, evaluator), tasks: bgtask.New(context.Background()), db: db}
 }
 
 // WithTasks runs the background orphan-blob collections under the server
@@ -80,9 +93,10 @@ func (h *TrashHandler) WithPublisher(p webhook.Publisher) *TrashHandler {
 	return h
 }
 
-// WithRegenerator enables the metadata refresh after a restore.
-func (h *TrashHandler) WithRegenerator(r TrashRegenerator) *TrashHandler {
-	h.regen = r
+// WithWorkers enables the metadata refresh after a restore: the format
+// lifecycles notify the metadata workers in ws.
+func (h *TrashHandler) WithWorkers(ws *lifecycle.Workers) *TrashHandler {
+	h.workers = ws
 
 	return h
 }
@@ -123,8 +137,8 @@ func trashItemResponse(it *models.TrashItem) responses.TrashItemResponse {
 }
 
 // store returns the trash storage, answering 501 when the database has none.
-func (h *TrashHandler) store(w http.ResponseWriter) (database.TrashStore, bool) {
-	store, ok := h.db.(database.TrashStore)
+func (h *TrashHandler) store(w http.ResponseWriter) (database.TrashOps, bool) {
+	store, ok := h.db.(database.TrashOps)
 	if !ok {
 		writeError(w, http.StatusNotImplemented, "not_implemented", "trash is not available")
 		return nil, false
@@ -201,7 +215,7 @@ func trashFilterFromQuery(r *http.Request) models.TrashFilter {
 	}
 }
 
-func (h *TrashHandler) writeList(ctx context.Context, w http.ResponseWriter, store database.TrashStore, filter models.TrashFilter) {
+func (h *TrashHandler) writeList(ctx context.Context, w http.ResponseWriter, store database.TrashOps, filter models.TrashFilter) {
 	items, total, err := store.ListTrash(ctx, filter)
 	if err != nil {
 		h.dbError(w, "list trash: db error", err)
@@ -288,7 +302,7 @@ func (h *TrashHandler) handleRestoreRepo(w http.ResponseWriter, r *http.Request)
 	h.restore(w, r, store, kind, id)
 }
 
-func (h *TrashHandler) restore(w http.ResponseWriter, r *http.Request, store database.TrashStore, kind models.TrashKind, id string) {
+func (h *TrashHandler) restore(w http.ResponseWriter, r *http.Request, store database.TrashOps, kind models.TrashKind, id string) {
 	ctx := r.Context()
 
 	item, err := store.RestoreTrash(ctx, kind, id)
@@ -468,7 +482,7 @@ func (h *TrashHandler) handleEmptyRepo(w http.ResponseWriter, r *http.Request) {
 // purgeBatch purges items one by one (blobs, quota, audit, events like the
 // single purge). An item that vanished meanwhile is skipped; any other failure
 // stops the batch and is returned with the number purged so far.
-func (h *TrashHandler) purgeBatch(ctx context.Context, store database.TrashStore, items []*models.TrashItem) (int, error) {
+func (h *TrashHandler) purgeBatch(ctx context.Context, store database.TrashOps, items []*models.TrashItem) (int, error) {
 	purged := 0
 
 	for _, it := range items {

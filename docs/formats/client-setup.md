@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Client setup
 
-Configure and publish commands for every client, for your own server URL and repository name. The snippets come from `web/src/lib/installCommands.ts`, the module behind the web UI's connect panel for a repository, so this page and the UI show the same commands. Credentials are always the placeholder `<TOKEN>`: create an API token as described in [authentication](../security/authentication.md).
+Configure and publish commands for every client, for your own server URL and repository name. The snippets come from `internal/clientsetup`, which the web UI's connect panel for a repository renders (through the templates generated into `web/src/lib/clientsetup.generated.ts`), so this page and the UI show the same commands. Credentials are always the placeholder `<TOKEN>`: create an API token as described in [authentication](../security/authentication.md).
 
 <ClientSnippets />
 

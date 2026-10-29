@@ -7,6 +7,7 @@ package dbsqlc
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -90,6 +91,69 @@ func (q *Queries) CreateDebianDistribution(ctx context.Context, arg CreateDebian
 	return i, err
 }
 
+const getDebPackageByID = `-- name: GetDebPackageByID :one
+SELECT f.id, f.repository_id, d.distribution_id, d.component_id, f.blob_id,
+       p.name, v.version, f.arch,
+       COALESCE(v.metadata ->> 'summary', '')::text AS summary,
+       COALESCE(v.metadata ->> 'description', '')::text AS description,
+       COALESCE(v.metadata ->> 'license', '')::text AS license,
+       COALESCE(v.metadata ->> 'maintainer', '')::text AS maintainer,
+       COALESCE(v.metadata ->> 'homepage', '')::text AS homepage,
+       f.filename,
+       COALESCE((f.attrs ->> 'installed_size')::bigint, 0)::bigint AS installed_size,
+       f.created_at, f.updated_at
+FROM package_files f
+JOIN deb_files d ON d.id = f.id
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+WHERE f.id = $1 AND f.deleted_at IS NULL
+`
+
+type GetDebPackageByIDRow struct {
+	ID             string    `db:"id" json:"id"`
+	RepositoryID   string    `db:"repository_id" json:"repository_id"`
+	DistributionID string    `db:"distribution_id" json:"distribution_id"`
+	ComponentID    string    `db:"component_id" json:"component_id"`
+	BlobID         *string   `db:"blob_id" json:"blob_id"`
+	Name           string    `db:"name" json:"name"`
+	Version        string    `db:"version" json:"version"`
+	Arch           string    `db:"arch" json:"arch"`
+	Summary        string    `db:"summary" json:"summary"`
+	Description    string    `db:"description" json:"description"`
+	License        string    `db:"license" json:"license"`
+	Maintainer     string    `db:"maintainer" json:"maintainer"`
+	Homepage       string    `db:"homepage" json:"homepage"`
+	Filename       string    `db:"filename" json:"filename"`
+	InstalledSize  int64     `db:"installed_size" json:"installed_size"`
+	CreatedAt      time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
+}
+
+func (q *Queries) GetDebPackageByID(ctx context.Context, id string) (GetDebPackageByIDRow, error) {
+	row := q.db.QueryRow(ctx, getDebPackageByID, id)
+	var i GetDebPackageByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.DistributionID,
+		&i.ComponentID,
+		&i.BlobID,
+		&i.Name,
+		&i.Version,
+		&i.Arch,
+		&i.Summary,
+		&i.Description,
+		&i.License,
+		&i.Maintainer,
+		&i.Homepage,
+		&i.Filename,
+		&i.InstalledSize,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getDebianArchitecturesByDist = `-- name: GetDebianArchitecturesByDist :many
 SELECT id, distribution_id, name, created_at, updated_at
 FROM debian_architectures
@@ -120,6 +184,22 @@ func (q *Queries) GetDebianArchitecturesByDist(ctx context.Context, distribution
 		return nil, err
 	}
 	return items, nil
+}
+
+const getDebianComponentName = `-- name: GetDebianComponentName :one
+
+SELECT name FROM debian_components WHERE id = $1
+`
+
+// Deb packages on the generic tables (see pkg_deb.go for the mapping): the
+// file is package_files, its version package_versions, its name packages, the
+// distribution/component/control stanza deb_files. Every read hides trashed
+// files (package_files.deleted_at).
+func (q *Queries) GetDebianComponentName(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRow(ctx, getDebianComponentName, id)
+	var name string
+	err := row.Scan(&name)
+	return name, err
 }
 
 const getDebianComponentsByDist = `-- name: GetDebianComponentsByDist :many
@@ -211,4 +291,376 @@ func (q *Queries) GetDebianDistributionsByRepo(ctx context.Context, repositoryID
 		return nil, err
 	}
 	return items, nil
+}
+
+const getDebianPackageByFilename = `-- name: GetDebianPackageByFilename :one
+SELECT f.id, f.repository_id, d.distribution_id, d.component_id,
+       COALESCE(b.sha256, '')::text AS sha256,
+       p.name, v.version, f.arch,
+       COALESCE(v.metadata ->> 'summary', '')::text AS summary,
+       COALESCE(v.metadata ->> 'description', '')::text AS description,
+       COALESCE(v.metadata ->> 'license', '')::text AS license,
+       COALESCE(v.metadata ->> 'maintainer', '')::text AS maintainer,
+       COALESCE(v.metadata ->> 'homepage', '')::text AS homepage,
+       f.filename,
+       COALESCE(b.size_bytes, 0)::bigint AS package_size,
+       COALESCE((f.attrs ->> 'installed_size')::bigint, 0)::bigint AS installed_size,
+       f.created_at, f.updated_at
+FROM package_files f
+JOIN deb_files d ON d.id = f.id
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+LEFT JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND f.filename = $2
+`
+
+type GetDebianPackageByFilenameParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Filename     string `db:"filename" json:"filename"`
+}
+
+type GetDebianPackageByFilenameRow struct {
+	ID             string    `db:"id" json:"id"`
+	RepositoryID   string    `db:"repository_id" json:"repository_id"`
+	DistributionID string    `db:"distribution_id" json:"distribution_id"`
+	ComponentID    string    `db:"component_id" json:"component_id"`
+	Sha256         string    `db:"sha256" json:"sha256"`
+	Name           string    `db:"name" json:"name"`
+	Version        string    `db:"version" json:"version"`
+	Arch           string    `db:"arch" json:"arch"`
+	Summary        string    `db:"summary" json:"summary"`
+	Description    string    `db:"description" json:"description"`
+	License        string    `db:"license" json:"license"`
+	Maintainer     string    `db:"maintainer" json:"maintainer"`
+	Homepage       string    `db:"homepage" json:"homepage"`
+	Filename       string    `db:"filename" json:"filename"`
+	PackageSize    int64     `db:"package_size" json:"package_size"`
+	InstalledSize  int64     `db:"installed_size" json:"installed_size"`
+	CreatedAt      time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// Download by file name and the upload duplicate check: idx_package_files_filename.
+func (q *Queries) GetDebianPackageByFilename(ctx context.Context, arg GetDebianPackageByFilenameParams) (GetDebianPackageByFilenameRow, error) {
+	row := q.db.QueryRow(ctx, getDebianPackageByFilename, arg.RepositoryID, arg.Filename)
+	var i GetDebianPackageByFilenameRow
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.DistributionID,
+		&i.ComponentID,
+		&i.Sha256,
+		&i.Name,
+		&i.Version,
+		&i.Arch,
+		&i.Summary,
+		&i.Description,
+		&i.License,
+		&i.Maintainer,
+		&i.Homepage,
+		&i.Filename,
+		&i.PackageSize,
+		&i.InstalledSize,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getDebianPackagesByDistComp = `-- name: GetDebianPackagesByDistComp :many
+SELECT f.id, f.repository_id, d.distribution_id, d.component_id,
+       COALESCE(b.sha256, '')::text AS sha256,
+       p.name, v.version, f.arch,
+       COALESCE(v.metadata ->> 'summary', '')::text AS summary,
+       COALESCE(v.metadata ->> 'description', '')::text AS description,
+       COALESCE(v.metadata ->> 'license', '')::text AS license,
+       COALESCE(v.metadata ->> 'maintainer', '')::text AS maintainer,
+       COALESCE(v.metadata ->> 'homepage', '')::text AS homepage,
+       f.filename,
+       COALESCE(b.size_bytes, 0)::bigint AS package_size,
+       COALESCE((f.attrs ->> 'installed_size')::bigint, 0)::bigint AS installed_size,
+       f.created_at, f.updated_at
+FROM package_files f
+JOIN deb_files d ON d.id = f.id
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN debian_distributions dd ON dd.id = d.distribution_id
+JOIN debian_components dc ON dc.id = d.component_id
+LEFT JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1
+  AND f.deleted_at IS NULL
+  AND ($2::text = '' OR dd.name = $2)
+  AND ($3::text = '' OR dc.name = $3)
+  AND ($4::text = '' OR f.arch = $4)
+`
+
+type GetDebianPackagesByDistCompParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Dist         string `db:"dist" json:"dist"`
+	Comp         string `db:"comp" json:"comp"`
+	Arch         string `db:"arch" json:"arch"`
+}
+
+type GetDebianPackagesByDistCompRow struct {
+	ID             string    `db:"id" json:"id"`
+	RepositoryID   string    `db:"repository_id" json:"repository_id"`
+	DistributionID string    `db:"distribution_id" json:"distribution_id"`
+	ComponentID    string    `db:"component_id" json:"component_id"`
+	Sha256         string    `db:"sha256" json:"sha256"`
+	Name           string    `db:"name" json:"name"`
+	Version        string    `db:"version" json:"version"`
+	Arch           string    `db:"arch" json:"arch"`
+	Summary        string    `db:"summary" json:"summary"`
+	Description    string    `db:"description" json:"description"`
+	License        string    `db:"license" json:"license"`
+	Maintainer     string    `db:"maintainer" json:"maintainer"`
+	Homepage       string    `db:"homepage" json:"homepage"`
+	Filename       string    `db:"filename" json:"filename"`
+	PackageSize    int64     `db:"package_size" json:"package_size"`
+	InstalledSize  int64     `db:"installed_size" json:"installed_size"`
+	CreatedAt      time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
+}
+
+func (q *Queries) GetDebianPackagesByDistComp(ctx context.Context, arg GetDebianPackagesByDistCompParams) ([]GetDebianPackagesByDistCompRow, error) {
+	rows, err := q.db.Query(ctx, getDebianPackagesByDistComp,
+		arg.RepositoryID,
+		arg.Dist,
+		arg.Comp,
+		arg.Arch,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetDebianPackagesByDistCompRow{}
+	for rows.Next() {
+		var i GetDebianPackagesByDistCompRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepositoryID,
+			&i.DistributionID,
+			&i.ComponentID,
+			&i.Sha256,
+			&i.Name,
+			&i.Version,
+			&i.Arch,
+			&i.Summary,
+			&i.Description,
+			&i.License,
+			&i.Maintainer,
+			&i.Homepage,
+			&i.Filename,
+			&i.PackageSize,
+			&i.InstalledSize,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const insertDebFile = `-- name: InsertDebFile :exec
+INSERT INTO deb_files (id, distribution_id, component_id) VALUES ($1, $2, $3)
+`
+
+type InsertDebFileParams struct {
+	ID             string `db:"id" json:"id"`
+	DistributionID string `db:"distribution_id" json:"distribution_id"`
+	ComponentID    string `db:"component_id" json:"component_id"`
+}
+
+func (q *Queries) InsertDebFile(ctx context.Context, arg InsertDebFileParams) error {
+	_, err := q.db.Exec(ctx, insertDebFile, arg.ID, arg.DistributionID, arg.ComponentID)
+	return err
+}
+
+const listDebPackageEntries = `-- name: ListDebPackageEntries :many
+SELECT f.id, p.name, v.version, f.arch, f.filename,
+       d.distribution_id, dd.name AS distribution, dc.name AS component_name,
+       COALESCE(b.sha256, '')::text AS sha256,
+       COALESCE(b.size_bytes, 0)::bigint AS size,
+       COALESCE((f.attrs ->> 'installed_size')::bigint, 0)::bigint AS installed_size,
+       d.control_fields
+FROM package_files f
+JOIN deb_files d ON d.id = f.id
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN debian_distributions dd ON dd.id = d.distribution_id
+JOIN debian_components dc ON dc.id = d.component_id
+LEFT JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL
+  AND ($2::text = '' OR dd.name = $2)
+  AND ($3::text = '' OR dc.name = $3)
+  AND ($4::text = '' OR f.arch = $4)
+ORDER BY dd.name, dc.name, f.arch, p.name, v.version
+`
+
+type ListDebPackageEntriesParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Dist         string `db:"dist" json:"dist"`
+	Comp         string `db:"comp" json:"comp"`
+	Arch         string `db:"arch" json:"arch"`
+}
+
+type ListDebPackageEntriesRow struct {
+	ID             string          `db:"id" json:"id"`
+	Name           string          `db:"name" json:"name"`
+	Version        string          `db:"version" json:"version"`
+	Arch           string          `db:"arch" json:"arch"`
+	Filename       string          `db:"filename" json:"filename"`
+	DistributionID string          `db:"distribution_id" json:"distribution_id"`
+	Distribution   string          `db:"distribution" json:"distribution"`
+	ComponentName  string          `db:"component_name" json:"component_name"`
+	Sha256         string          `db:"sha256" json:"sha256"`
+	Size           int64           `db:"size" json:"size"`
+	InstalledSize  int64           `db:"installed_size" json:"installed_size"`
+	ControlFields  json.RawMessage `db:"control_fields" json:"control_fields"`
+}
+
+// The Packages stanzas of a repository: ordered as the legacy query was
+// (distribution, component, architecture, name, version). Filtered calls
+// (streaming) use idx_deb_files_dist_comp.
+func (q *Queries) ListDebPackageEntries(ctx context.Context, arg ListDebPackageEntriesParams) ([]ListDebPackageEntriesRow, error) {
+	rows, err := q.db.Query(ctx, listDebPackageEntries,
+		arg.RepositoryID,
+		arg.Dist,
+		arg.Comp,
+		arg.Arch,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDebPackageEntriesRow{}
+	for rows.Next() {
+		var i ListDebPackageEntriesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Version,
+			&i.Arch,
+			&i.Filename,
+			&i.DistributionID,
+			&i.Distribution,
+			&i.ComponentName,
+			&i.Sha256,
+			&i.Size,
+			&i.InstalledSize,
+			&i.ControlFields,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDebPackagesByRepo = `-- name: ListDebPackagesByRepo :many
+SELECT f.id, f.repository_id, d.distribution_id, d.component_id, f.blob_id,
+       p.name, v.version, f.arch,
+       COALESCE(v.metadata ->> 'summary', '')::text AS summary,
+       COALESCE(v.metadata ->> 'description', '')::text AS description,
+       COALESCE(v.metadata ->> 'license', '')::text AS license,
+       COALESCE(v.metadata ->> 'maintainer', '')::text AS maintainer,
+       COALESCE(v.metadata ->> 'homepage', '')::text AS homepage,
+       f.filename,
+       COALESCE((f.attrs ->> 'installed_size')::bigint, 0)::bigint AS installed_size,
+       f.created_at, f.updated_at
+FROM package_files f
+JOIN deb_files d ON d.id = f.id
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL
+`
+
+type ListDebPackagesByRepoRow struct {
+	ID             string    `db:"id" json:"id"`
+	RepositoryID   string    `db:"repository_id" json:"repository_id"`
+	DistributionID string    `db:"distribution_id" json:"distribution_id"`
+	ComponentID    string    `db:"component_id" json:"component_id"`
+	BlobID         *string   `db:"blob_id" json:"blob_id"`
+	Name           string    `db:"name" json:"name"`
+	Version        string    `db:"version" json:"version"`
+	Arch           string    `db:"arch" json:"arch"`
+	Summary        string    `db:"summary" json:"summary"`
+	Description    string    `db:"description" json:"description"`
+	License        string    `db:"license" json:"license"`
+	Maintainer     string    `db:"maintainer" json:"maintainer"`
+	Homepage       string    `db:"homepage" json:"homepage"`
+	Filename       string    `db:"filename" json:"filename"`
+	InstalledSize  int64     `db:"installed_size" json:"installed_size"`
+	CreatedAt      time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
+}
+
+func (q *Queries) ListDebPackagesByRepo(ctx context.Context, repositoryID string) ([]ListDebPackagesByRepoRow, error) {
+	rows, err := q.db.Query(ctx, listDebPackagesByRepo, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDebPackagesByRepoRow{}
+	for rows.Next() {
+		var i ListDebPackagesByRepoRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepositoryID,
+			&i.DistributionID,
+			&i.ComponentID,
+			&i.BlobID,
+			&i.Name,
+			&i.Version,
+			&i.Arch,
+			&i.Summary,
+			&i.Description,
+			&i.License,
+			&i.Maintainer,
+			&i.Homepage,
+			&i.Filename,
+			&i.InstalledSize,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setDebControlFields = `-- name: SetDebControlFields :exec
+WITH target AS (
+    UPDATE deb_files d SET control_fields = $2::jsonb
+    FROM package_files f
+    WHERE d.id = $3 AND f.id = d.id AND f.deleted_at IS NULL
+    RETURNING f.version_id
+)
+UPDATE package_versions v SET metadata = v.metadata || $1::jsonb
+WHERE v.id IN (SELECT version_id FROM target)
+`
+
+type SetDebControlFieldsParams struct {
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	ControlFields json.RawMessage `db:"control_fields" json:"control_fields"`
+	ID            string          `db:"id" json:"id"`
+}
+
+// The control stanza and the maintainer/homepage of the version metadata, set
+// after the row is written. Only a live file is touched.
+func (q *Queries) SetDebControlFields(ctx context.Context, arg SetDebControlFieldsParams) error {
+	_, err := q.db.Exec(ctx, setDebControlFields, arg.Metadata, arg.ControlFields, arg.ID)
+	return err
 }

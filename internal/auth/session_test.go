@@ -12,13 +12,10 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 type sessionMockDB struct {
-	databasetest.BaseMockDB
-
 	sessions map[string]*models.Session
 }
 

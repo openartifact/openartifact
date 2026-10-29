@@ -17,7 +17,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -30,9 +29,18 @@ const (
 	platCursorID  = "aaaaaaaa-0000-4000-8000-000000000005"
 )
 
+// platformMockDBStore is what platformMockDB is used as.
+type platformMockDBStore interface {
+	AdminAuditStore
+	AdminTokensStore
+	QuotasStore
+	RepositoryActivityStore
+	auth.EvaluatorStore
+}
+
 // platformMockDB backs the token, quota, usage and activity endpoints.
 type platformMockDB struct {
-	databasetest.BaseMockDB
+	platformMockDBStore
 
 	repo      *models.Repository
 	repoErr   error
@@ -445,6 +453,8 @@ func platformNames() *models.AuditNames {
 }
 
 func TestRepositoryActivityResolvesNamesInOneBatch(t *testing.T) {
+	// A trash kind is a package subject once a format registered it; the
+	// package's TestMain registers the real ones.
 	db := &platformMockDB{
 		repo:  &models.Repository{ID: platRepoID, Name: "payments"},
 		audit: &models.AuditPage{Logs: platformAuditRows()},

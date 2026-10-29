@@ -4,6 +4,6 @@
   "minTokens": 50,
   "minLines": 5,
   "ignore": ["**/api/generated/**", "**/i18n/**", "**/__tests__/**", "**/*.json"],
-  "threshold": 0.5,
+  "threshold": 0,
   "reporters": ["console"]
 }

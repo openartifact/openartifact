@@ -22,7 +22,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/openartifact/openartifact/internal/limitio"
 	"github.com/openartifact/openartifact/internal/pathseg"
+	"github.com/openartifact/openartifact/internal/registry"
 )
 
 const (
@@ -116,11 +118,8 @@ func Supported(format, filename string) bool {
 // package (ivy/maven/sbt: pom, jar, sources, ...) are limited to the
 // descriptor so one upload yields one analysis.
 func AutoEligible(format, filename string) bool {
-	switch format {
-	case "ivy", "maven", "sbt":
-		base := path.Base(filename)
-
-		return strings.HasSuffix(base, ".pom") || base == "ivy.xml"
+	if rule, ok := rules.Lookup(format); ok && rule.AutoEligible != nil {
+		return rule.AutoEligible(filename)
 	}
 
 	return Supported(format, filename)
@@ -263,28 +262,6 @@ func (c ctxReader) Read(p []byte) (int, error) {
 	return c.r.Read(p)
 }
 
-// capReader fails with ErrTooLarge after n bytes instead of silently
-// truncating, so a decompression bomb is reported rather than half-read.
-type capReader struct {
-	r io.Reader
-	n int64
-}
-
-func (c *capReader) Read(p []byte) (int, error) {
-	if c.n <= 0 {
-		return 0, ErrTooLarge
-	}
-
-	if int64(len(p)) > c.n {
-		p = p[:c.n]
-	}
-
-	n, err := c.r.Read(p)
-	c.n -= int64(n)
-
-	return n, err
-}
-
 // readText reads up to l.n bytes of r. Extra input is ignored, or an
 // ErrTooLarge in strict mode.
 func readText(r io.Reader, l limits) (string, error) {
@@ -341,7 +318,7 @@ func openAt(ctx context.Context, open func() (io.ReadCloser, error)) (*readerAt,
 		_ = os.Remove(f.Name())
 	}
 
-	n, err := io.Copy(f, &capReader{r: ctxReader{ctx: ctx, r: rc}, n: maxSpoolBytes + 1})
+	n, err := io.Copy(f, limitio.Capped(ctxReader{ctx: ctx, r: rc}, maxSpoolBytes+1, ErrTooLarge))
 	if err != nil && !errors.Is(err, ErrTooLarge) {
 		release()
 		return nil, fmt.Errorf("spool artifact: %w", err)
@@ -429,63 +406,43 @@ func trimPyBody(s string) string {
 	return head + "\n\n" + body
 }
 
-// formatRule says which files of a format a manifest can be read from. An
-// empty suffix list accepts every file name.
-type formatRule struct {
-	suffixes []string
-	extract  extractor
+// Rule says which files of a format a manifest can be read from. Each format
+// has one exported value (NPMRule, PyPIRule, ...) defined next to its extractor
+// in formats.go and handed to Register by internal/format/plugin; a format with
+// no value has no manifest to extract (docker, apk, raw, terraform).
+type Rule struct {
+	// Suffixes lists the (lower-case) file name suffixes the manifest can be
+	// read from. Empty accepts every file name.
+	Suffixes []string
+	// Extract reads the manifest files of one artifact.
+	Extract extractor
+	// AutoEligible reports whether a file the rule accepts is the artifact that
+	// represents a package for unattended analysis. Nil means every accepted
+	// file is; the multi-file formats (ivy, maven, sbt: pom, jar, sources, ...)
+	// limit it to the descriptor so one upload yields one analysis. It is
+	// called with the file's path as given, not the lower-cased base name.
+	AutoEligible func(filename string) bool
 }
 
-func ruleFor(format string) (formatRule, bool) {
-	switch format {
-	case "npm":
-		return formatRule{[]string{".tgz", ".tar.gz"}, extractNPM}, true
-	case "pypi":
-		return formatRule{[]string{".whl", ".zip", ".egg", ".tar.gz", ".tgz", ".tar.bz2"}, extractPyPI}, true
-	case "maven":
-		return formatRule{[]string{".pom", ".jar"}, extractJVM}, true
-	case "ivy", "sbt":
-		return formatRule{[]string{".pom", ".xml", ".jar"}, extractJVM}, true
-	case "nuget":
-		return formatRule{[]string{".nupkg"}, extractNuGet}, true
-	case "cargo":
-		return formatRule{[]string{".crate"}, extractCargo}, true
-	case "composer":
-		return formatRule{[]string{".zip"}, extractComposer}, true
-	case "helm":
-		return formatRule{[]string{".tgz", ".tar.gz"}, extractHelm}, true
-	case "deb":
-		return formatRule{nil, extractDeb}, true
-	case "rpm":
-		return formatRule{nil, extractRPM}, true
-	case "pacman":
-		return formatRule{nil, extractPacman}, true
-	case "go":
-		return formatRule{[]string{".mod", ".zip"}, extractGoMod}, true
-	case "rubygems":
-		return formatRule{[]string{".gem"}, extractGem}, true
-	case "conda":
-		return formatRule{[]string{".tar.bz2", ".conda"}, extractConda}, true
-	case "conan":
-		return formatRule{nil, extractConan}, true
-	}
+var rules registry.Registry[Rule] //nolint:gochecknoglobals // the format hook table, filled by Register at startup
 
-	return formatRule{}, false
-}
+// Register adds the rule of a format. It panics when the format already has
+// one; it is meant to run once per format at startup.
+func Register(format string, r Rule) { rules.Register(format, r) }
 
 // pick selects the extractor for a format and file name.
 func pick(format, filename string) extractor {
-	rule, ok := ruleFor(format)
+	rule, ok := rules.Lookup(format)
 	if !ok {
 		return nil
 	}
 
 	name := strings.ToLower(path.Base(strings.ReplaceAll(filename, "\\", "/")))
-	if len(rule.suffixes) > 0 && !hasAnySuffix(name, rule.suffixes...) {
+	if len(rule.Suffixes) > 0 && !hasAnySuffix(name, rule.Suffixes...) {
 		return nil
 	}
 
-	return rule.extract
+	return rule.Extract
 }
 
 func hasAnySuffix(s string, suffixes ...string) bool {

@@ -14,15 +14,20 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// cleanupMockDBStore is what cleanupMockDB is used as.
+type cleanupMockDBStore interface {
+	CleanupStore
+	auth.EvaluatorStore
+}
+
 type cleanupMockDB struct {
-	databasetest.BaseMockDB
+	cleanupMockDBStore
 
 	policy  *models.CleanupPolicy
 	created int
@@ -122,6 +127,8 @@ func (f *fakeRunner) PreviewPolicy(_ context.Context, id string) (*worker.Cleanu
 func cleanupRequest(t *testing.T, db *cleanupMockDB, runner CleanupRunner, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 
+	// A format supports cleanup policies when it registered a storage descriptor;
+	// the package's TestMain registers the real ones.
 	log, err := logger.New("error", "json", "stderr")
 	if err != nil {
 		t.Fatalf("new logger: %v", err)

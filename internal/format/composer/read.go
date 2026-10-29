@@ -5,6 +5,7 @@
 package composer
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -41,7 +42,7 @@ func (h *HTTPHandler) handleRoot(w http.ResponseWriter, r *http.Request, repo *m
 		available[i] = n.Name
 	}
 
-	root := h.repoURL(repo.Name)
+	root := h.rootPath(repo.Name)
 
 	h.writeDoc(w, r, repo, map[string]any{
 		"packages":           []any{},
@@ -64,6 +65,8 @@ func (h *HTTPHandler) handleMetadata(w http.ResponseWriter, r *http.Request, rep
 		return
 	}
 
+	origin := h.PublicBase(w, r)
+
 	// Newest upload first, the order Packagist serves.
 	versions := make([]composer.Version, 0, len(rows))
 
@@ -74,7 +77,7 @@ func (h *HTTPHandler) handleMetadata(w http.ResponseWriter, r *http.Request, rep
 
 		v, err := composer.NewVersion(row.Name, row.ComposerJSON, composer.Release{
 			Version: row.Version, Normalized: row.VersionNormalized, Time: row.CreatedAt,
-			Dist: composer.Dist{URL: h.distURL(repo.Name, row), SHA1: row.SHA1, Reference: row.SHA256},
+			Dist: composer.Dist{URL: distURL(origin, repo.Name, row), SHA1: row.SHA1, Reference: row.SHA256},
 		})
 		if err != nil {
 			h.Log.Errorw("failed to build composer version", "package", row.Name, "version", row.Version, "error", err)
@@ -99,7 +102,7 @@ func (h *HTTPHandler) handleMetadata(w http.ResponseWriter, r *http.Request, rep
 		return
 	}
 
-	h.writeBody(w, r, repo, body)
+	h.writeBody(w, r, repo, body, origin)
 }
 
 // filterRegexp turns a list filter into a pattern: "*" matches anything, the
@@ -171,6 +174,7 @@ func (h *HTTPHandler) handleSearch(w http.ResponseWriter, r *http.Request, repo 
 		return
 	}
 
+	origin := h.PublicBase(w, r)
 	results := make([]searchResult, 0, min(len(names), maxSearchResults))
 	total := 0
 
@@ -184,12 +188,20 @@ func (h *HTTPHandler) handleSearch(w http.ResponseWriter, r *http.Request, repo 
 		if len(results) < maxSearchResults {
 			results = append(
 				results,
-				searchResult{Name: n.Name, Description: n.Description, URL: h.repoURL(repo.Name) + "/p2/" + n.Name + ".json"},
+				searchResult{Name: n.Name, Description: n.Description, URL: origin + repoPath(repo.Name) + "/p2/" + n.Name + ".json"},
 			)
 		}
 	}
 
-	h.writeDoc(w, r, repo, map[string]any{"results": results, "total": total})
+	body, err := json.Marshal(map[string]any{"results": results, "total": total})
+	if err != nil {
+		h.Log.Errorw("failed to encode composer document", "error", err)
+		writeError(w, http.StatusInternalServerError, "Internal error.")
+
+		return
+	}
+
+	h.writeBody(w, r, repo, body, origin)
 }
 
 // distFileName is the name a dist is saved under: "vendor-package-version.zip".

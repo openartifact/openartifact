@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -54,23 +53,7 @@ func (h *ProjectsHandler) loadProjectPolicy(w http.ResponseWriter, r *http.Reque
 //
 //	GET /api/v1/projects/{project}/cleanup-policies
 func (h *ProjectsHandler) handleListCleanupPolicies(w http.ResponseWriter, r *http.Request) {
-	access, ok := h.loadAccess(w, r, auth.ProjectActionRead)
-	if !ok {
-		return
-	}
-
-	policies, err := h.db.ListProjectCleanupPolicies(r.Context(), access.project.ID)
-	if err != nil {
-		h.dbError(w, "list project cleanup policies", err)
-		return
-	}
-
-	result := make([]responses.CleanupPolicyResponse, 0, len(policies))
-	for _, p := range policies {
-		result = append(result, policyToMap(p))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"policies": result})
+	writeProjectList(h, w, r, "policies", "list project cleanup policies", h.db.ListProjectCleanupPolicies, policyToMap)
 }
 
 // handleCreateCleanupPolicy creates a project default cleanup policy.

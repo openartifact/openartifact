@@ -10,9 +10,10 @@ import (
 )
 
 // The narrow view feeds the count and the page selection, so it must stay free
-// of the blobs table (joined for one page only) while keeping a branch for
-// every format that Search reports.
-func TestNarrowSearchView_NoBlobJoinEveryFormat(t *testing.T) {
+// of the blobs table (joined for one page only). It is one generic branch over
+// package_files/versions/packages plus the docker special case, with no
+// per-format table.
+func TestNarrowSearchView_GenericPlusDocker(t *testing.T) {
 	v := narrowSearchView()
 
 	for _, banned := range []string{"JOIN blobs", "b.sha256", "b.size_bytes", "docker_manifests"} {
@@ -21,38 +22,13 @@ func TestNarrowSearchView_NoBlobJoinEveryFormat(t *testing.T) {
 		}
 	}
 
-	formats := []string{
-		"apk",
-		"cargo",
-		"composer",
-		"conda",
-		"conan",
-		"terraform",
-		"terraform",
-		"docker",
-		"go",
-		"helm",
-		"ivy",
-		"maven",
-		"npm",
-		"pacman",
-		"nix",
-		"ansible",
-		"nuget",
-		"pypi",
-		"raw",
-		"rubygems",
-		"sbt",
-		"rpm",
-		"deb",
-	}
-	if got, want := strings.Count(v, "UNION ALL")+1, len(formats); got != want {
+	if got, want := strings.Count(v, "UNION ALL")+1, 2; got != want {
 		t.Errorf("narrow view has %d branches, want %d", got, want)
 	}
 
-	for _, f := range formats {
-		if !strings.Contains(v, "'"+f+"'::text AS format") {
-			t.Errorf("narrow view lost the %s branch", f)
+	for _, want := range []string{"FROM package_files f", "f.listed", "p.name::text AS name", "'docker'::text AS format"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("narrow view lost %q", want)
 		}
 	}
 }

@@ -88,14 +88,16 @@ func reGet(e *qrEnv, path string) (int, string) {
 }
 
 // reCompareTables requires every journaled table to hold the same rows in both
-// databases and returns how many of them carried rows.
-func reCompareTables(t *testing.T, srcDB, dstDB *database.PostgresDB) int {
+// databases and returns the names of those that carried rows.
+func reCompareTables(t *testing.T, srcDB, dstDB *database.PostgresDB) []string {
 	t.Helper()
 
-	populated := 0
+	var populated []string
 
-	for i := range recovery.Tables {
-		tbl := &recovery.Tables[i]
+	tables := recovery.NewRegistry().Tables()
+
+	for i := range tables {
+		tbl := &tables[i]
 
 		want := reRows(t, srcDB, tbl)
 		if got := reRows(t, dstDB, tbl); got != want {
@@ -103,11 +105,49 @@ func reCompareTables(t *testing.T, srcDB, dstDB *database.PostgresDB) int {
 		}
 
 		if want != "[]" {
-			populated++
+			populated = append(populated, tbl.Name)
 		}
 	}
 
 	return populated
+}
+
+// reRequirePopulated fails when the fixture no longer covers the generic tables
+// and the side tables of the formats that have one.
+func reRequirePopulated(t *testing.T, populated []string) {
+	t.Helper()
+
+	for _, name := range []string{
+		"packages", "package_versions", "package_files", "package_tags",
+		"maven_files", "rpm_files", "deb_files", "debian_distributions", "debian_components", "debian_architectures",
+	} {
+		if !slices.Contains(populated, name) {
+			t.Errorf("table %s carried no rows; the fixture no longer covers it (populated: %v)", name, populated)
+		}
+	}
+}
+
+// reAssertGenericCounts requires the generic package tables to be populated
+// and equally sized after the rebuild.
+func reAssertGenericCounts(t *testing.T, srcDB, dstDB *database.PostgresDB) {
+	t.Helper()
+
+	for _, table := range []string{"packages", "package_versions", "package_files", "package_tags"} {
+		var want, got int
+
+		q := `SELECT COUNT(*) FROM ` + table
+		if err := srcDB.GetDB().QueryRowContext(context.Background(), q).Scan(&want); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := dstDB.GetDB().QueryRowContext(context.Background(), q).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+
+		if got != want || want == 0 {
+			t.Errorf("%s: %d rows after the rebuild, %d before (a populated table is required)", table, got, want)
+		}
+	}
 }
 
 // TestRecoveryRebuildAllFormats publishes through the real handlers, lets the
@@ -206,9 +246,8 @@ func TestRecoveryRebuildAllFormats(t *testing.T) {
 		t.Fatalf("rebuild exit %d: %s", code, b)
 	}
 
-	if populated := reCompareTables(t, srcDB, dstDB); populated < 20 {
-		t.Errorf("only %d journaled tables carried rows; the fixture no longer covers the formats", populated)
-	}
+	reRequirePopulated(t, reCompareTables(t, srcDB, dstDB))
+	reAssertGenericCounts(t, srcDB, dstDB)
 
 	for _, g := range gets {
 		wantCode, want := reGet(g.e.src, g.path)
@@ -280,7 +319,7 @@ func reRegenerate(t *testing.T, pg *database.PostgresDB, bs storage.BlobStore, m
 	mw.NotifyStale(mavenRepo.repoID, "com.acme", "app")
 	dw.NotifyStale(debRepo.repoID)
 
-	rows, err := pg.GetDB().QueryContext(ctx, `SELECT id::text FROM npm_packages`)
+	rows, err := pg.GetDB().QueryContext(ctx, `SELECT id::text FROM packages WHERE format = 'npm'`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +378,7 @@ func TestRecoveryRebuildServedMetadata(t *testing.T) {
 	npm := newREEnv(t, srcDB, dstDB, bs, "npm", reMountServed(
 		func(t *testing.T, r chi.Router, pg *database.PostgresDB, bs storage.BlobStore) {
 			t.Helper()
-			api.NewNPMUploadHandler(newTestLogger(t), pg, bs, "http://localhost", nil).Register(r)
+			api.NewNPMUploadHandler(newTestLogger(t), pg, bs, nil).Register(r)
 		},
 		func(t *testing.T, r chi.Router, pg *database.PostgresDB, bs storage.BlobStore) {
 			t.Helper()
@@ -386,7 +425,8 @@ func TestRecoveryRebuildServedMetadata(t *testing.T) {
 	reRegenerate(t, dstDB, bs, mvn.dst, deb.dst)
 
 	var arch string
-	if err := srcDB.GetDB().QueryRowContext(context.Background(), `SELECT arch FROM deb_packages LIMIT 1`).Scan(&arch); err != nil {
+	if err := srcDB.GetDB().QueryRowContext(context.Background(),
+		`SELECT arch FROM package_files WHERE repository_id = $1 AND arch <> '' LIMIT 1`, deb.src.repoID).Scan(&arch); err != nil {
 		t.Fatal(err)
 	}
 

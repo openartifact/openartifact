@@ -23,7 +23,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/gpg"
 )
 
-// pacmanDB is an in-memory pacman_packages table with the unique live file name.
+// pacmanDB is an in-memory pacman package store with the unique live file name.
 type pacmanDB struct {
 	*formattest.DB
 
@@ -31,6 +31,11 @@ type pacmanDB struct {
 	meta map[string]*models.RepoMetadata
 
 	limit, used int64
+}
+
+// ListLicensePolicies is not exercised by the tests.
+func (*pacmanDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	return nil, nil
 }
 
 func (d *pacmanDB) ReserveStorageUsage(_ context.Context, _ string, size int64, _ int) (bool, error) {

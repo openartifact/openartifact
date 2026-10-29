@@ -47,7 +47,7 @@ func TestJournalLifecycle(t *testing.T) {
 		t.Fatalf("dirty marks left after drain = %d", n)
 	}
 
-	first := trackedSha(t, j, "raw_artifacts", s.artifactID)
+	first := trackedSha(t, j, "package_files", s.artifactID)
 	if first == "" {
 		t.Fatal("raw artifact has no sidecar")
 	}
@@ -65,16 +65,16 @@ func TestJournalLifecycle(t *testing.T) {
 	data, _ := io.ReadAll(rc)
 	_ = rc.Close()
 
-	sc, tbl, err := DecodeSidecar(first, data)
-	if err != nil || tbl.Name != "raw_artifacts" || sc.Key != s.artifactID {
+	sc, tbl, err := j.reg.DecodeSidecar(first, data)
+	if err != nil || tbl.Name != "package_files" || sc.Key != s.artifactID {
 		t.Fatalf("decode sidecar: %v %v %v", sc, tbl, err)
 	}
 
 	// An update writes a new sidecar and deletes the superseded one.
-	mustExec(t, db, `UPDATE raw_artifacts SET content_type = 'text/plain' WHERE id = $1`, s.artifactID)
+	mustExec(t, db, `UPDATE package_files SET attrs = jsonb_set(attrs, '{content_type}', '"text/plain"') WHERE id = $1`, s.artifactID)
 	drain(t, j)
 
-	second := trackedSha(t, j, "raw_artifacts", s.artifactID)
+	second := trackedSha(t, j, "package_files", s.artifactID)
 	if second == first || !blobExists(t, store, second) || blobExists(t, store, first) {
 		t.Fatalf("after update: first=%s second=%s exists(first)=%v", first, second, blobExists(t, store, first))
 	}
@@ -84,7 +84,7 @@ func TestJournalLifecycle(t *testing.T) {
 	}
 
 	// Deleting the row deletes its sidecar and tracking row.
-	mustExec(t, db, `DELETE FROM raw_artifacts WHERE id = $1`, s.artifactID)
+	mustExec(t, db, `DELETE FROM package_files WHERE id = $1`, s.artifactID)
 	drain(t, j)
 
 	if blobExists(t, store, second) || mustCount(t, db, `SELECT count(*) FROM recovery_sidecars WHERE row_key = $1`, s.artifactID) != 0 {
@@ -163,7 +163,7 @@ func TestJournalBacksOffAndRecovers(t *testing.T) {
 	mustExec(t, db, `UPDATE recovery_dirty SET retry_at = now()`)
 	drain(t, j)
 
-	if trackedSha(t, j, "raw_artifacts", s.artifactID) == "" {
+	if trackedSha(t, j, "package_files", s.artifactID) == "" {
 		t.Fatal("row never got its sidecar after the store recovered")
 	}
 
@@ -185,7 +185,7 @@ func TestJournalCleansPendingBlob(t *testing.T) {
 	}
 
 	mustExec(t, db, `UPDATE recovery_sidecars SET pending_sha256 = $1 WHERE row_key = $2`, orphan, s.artifactID)
-	mustExec(t, db, `UPDATE raw_artifacts SET content_type = 'x/y' WHERE id = $1`, s.artifactID)
+	mustExec(t, db, `UPDATE package_files SET attrs = jsonb_set(attrs, '{content_type}', '"x/y"') WHERE id = $1`, s.artifactID)
 	drain(t, j)
 
 	if blobExists(t, store, orphan) {
@@ -202,16 +202,16 @@ func TestReconcileBackfillsAndRemovesStale(t *testing.T) {
 	gone := seedRaw(t, db, store, "gone", "b.txt", []byte("gone"))
 	drain(t, j)
 
-	goneSidecar := trackedSha(t, j, "raw_artifacts", gone.artifactID)
+	goneSidecar := trackedSha(t, j, "package_files", gone.artifactID)
 
 	// Changes made while the journal is off are invisible to the triggers.
 	if err := j.SetEnabled(ctx, false); err != nil {
 		t.Fatal(err)
 	}
 
-	mustExec(t, db, `DELETE FROM raw_artifacts WHERE id = $1`, gone.artifactID)
+	mustExec(t, db, `DELETE FROM package_files WHERE id = $1`, gone.artifactID)
 	late := seedRaw(t, db, store, "late", "c.txt", []byte("late"))
-	mustExec(t, db, `UPDATE raw_artifacts SET content_type = 'changed/type' WHERE id = $1`, keep.artifactID)
+	mustExec(t, db, `UPDATE package_files SET attrs = jsonb_set(attrs, '{content_type}', '"changed/type"') WHERE id = $1`, keep.artifactID)
 
 	if n := mustCount(t, db, `SELECT count(*) FROM recovery_dirty`); n != 0 {
 		t.Fatalf("disabled journal still marked %d rows", n)
@@ -223,7 +223,7 @@ func TestReconcileBackfillsAndRemovesStale(t *testing.T) {
 
 	reconcileAll(t, j)
 
-	if trackedSha(t, j, "raw_artifacts", late.artifactID) == "" {
+	if trackedSha(t, j, "package_files", late.artifactID) == "" {
 		t.Fatal("row created while the journal was off was not backfilled")
 	}
 
@@ -232,7 +232,7 @@ func TestReconcileBackfillsAndRemovesStale(t *testing.T) {
 	}
 
 	// The full resync after re-enabling also catches the changed row.
-	sc := readTrackedSidecar(t, j, store, "raw_artifacts", keep.artifactID)
+	sc := readTrackedSidecar(t, j, store, "package_files", keep.artifactID)
 	if !strings.Contains(string(sc.Row), "changed/type") {
 		t.Fatalf("changed row not re-journaled: %s", sc.Row)
 	}
@@ -257,7 +257,7 @@ func readTrackedSidecar(t *testing.T, j *Journal, store storage.BlobStore, table
 
 	data, _ := io.ReadAll(rc)
 
-	sc, _, err := DecodeSidecar(id, data)
+	sc, _, err := j.reg.DecodeSidecar(id, data)
 	if err != nil {
 		t.Fatalf("decode sidecar: %v", err)
 	}

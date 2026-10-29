@@ -9,28 +9,43 @@ package base
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
 	"sync/atomic"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/presign"
+	"github.com/openartifact/openartifact/internal/publicurl"
 	"github.com/openartifact/openartifact/internal/quarantine"
+	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// HandlerStore is the part of the database Handler needs.
+type HandlerStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
+}
+
 // Handler provides shared fields and methods for artifact-level format HTTP handlers.
 // Embed this in format-specific HTTPHandler structs to eliminate duplicated boilerplate.
 type Handler struct {
 	Log       *logger.Logger
-	DB        database.Database
+	DB        HandlerStore
 	BlobStore storage.BlobStore
-	BaseURL   string
+	// BaseURL is the configured BASE_URL when the operator set one, "" otherwise.
+	// Read it only through PublicBase.
+	BaseURL string
 
 	// Publisher receives artifact.* events; nil disables event publishing.
 	Publisher webhook.Publisher
@@ -43,7 +58,7 @@ type Handler struct {
 var handlerSeq atomic.Uint64 //nolint:gochecknoglobals // numbers handlers for their render cache namespace
 
 // New creates a new base handler with the common dependencies.
-func New(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *Handler {
+func New(log *logger.Logger, db HandlerStore, blobStore storage.BlobStore, baseURL string) *Handler {
 	return &Handler{
 		Log:       log,
 		DB:        db,
@@ -51,6 +66,17 @@ func New(log *logger.Logger, db database.Database, blobStore storage.BlobStore, 
 		BaseURL:   baseURL,
 		renderNS:  strconv.FormatUint(handlerSeq.Add(1), 10) + "|",
 	}
+}
+
+// PublicBase returns the origin (scheme://host, plus BASE_URL's path prefix,
+// no trailing slash) this handler hands to clients in absolute URLs for the
+// request r: BASE_URL when it is set, else the request's own origin, with
+// X-Forwarded-* honored only from a trusted proxy (internal/publicurl). A
+// document built from it MUST carry the result in its validator or cache key,
+// and PublicBase MUST run before the response headers are written (it adds
+// Vary). Formats whose clients resolve relative URLs should emit those instead.
+func (h *Handler) PublicBase(w http.ResponseWriter, r *http.Request) string {
+	return publicurl.Resolve(w, r, h.BaseURL)
 }
 
 // Rendered returns the metadata document cached under key, rendering it with
@@ -87,6 +113,56 @@ func (h *Handler) ResolveRepoID(ctx context.Context, name string) (string, error
 		return "", nil
 	}
 	return repo.ID, nil
+}
+
+// ResolveRepoIDOrRespond is ResolveRepoID for handlers that answer the request
+// themselves: on a lookup failure it writes a 500, for an unknown repository a
+// 404, and returns "" in both cases; the caller MUST then return immediately.
+func (h *Handler) ResolveRepoIDOrRespond(w http.ResponseWriter, r *http.Request, name string) string {
+	repoID, err := h.ResolveRepoID(r.Context(), name)
+	if err != nil {
+		h.Log.Errorw("failed to resolve repo", "name", name, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return ""
+	}
+
+	if repoID == "" {
+		http.NotFound(w, r)
+	}
+
+	return repoID
+}
+
+// ReserveQuotaOrRespond reserves size bytes (one artifact) of the repository's
+// storage quota before an upload is persisted. When it cannot it writes the
+// response (the quota-exceeded one, or a 500 for a lookup failure) and returns
+// false; the caller MUST then return immediately. After a successful
+// reservation every failure path must return it with quota.Release.
+func (h *Handler) ReserveQuotaOrRespond(ctx context.Context, w http.ResponseWriter, repoID, repoName string, size int64) bool {
+	err := quota.Enforce(ctx, h.DB, repoID, size)
+	if err == nil {
+		return true
+	}
+
+	if errors.Is(err, quota.ErrExceeded) {
+		quota.WriteExceeded(w)
+
+		return false
+	}
+
+	h.Log.Errorw("failed to reserve quota", "repo", repoName, "error", err)
+	http.Error(w, "internal error", http.StatusInternalServerError)
+
+	return false
+}
+
+// ReleaseQuota returns size bytes (one artifact) to the repository's storage
+// quota; a failure is only logged, repoName names the repository in the log.
+func (h *Handler) ReleaseQuota(ctx context.Context, repoID, repoName string, size int64) {
+	if err := quota.Release(ctx, h.DB, repoID, size); err != nil {
+		h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
+	}
 }
 
 // TryPresign answers a blob download with a 307 to a presigned object-store URL

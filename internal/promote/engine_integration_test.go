@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/quota"
 )
 
@@ -47,13 +48,31 @@ func (f *fakeRegen) add(s string) {
 	f.calls = append(f.calls, s)
 }
 
-func (f *fakeRegen) NotifyDebStale(repoID string)    { f.add("deb:" + repoID) }
-func (f *fakeRegen) NotifyPacmanStale(repoID string) { f.add("pacman:" + repoID) }
-func (f *fakeRegen) NotifyRPMStale(repoID string)    { f.add("rpm:" + repoID) }
-func (f *fakeRegen) NotifyApkStale(repoID string)    { f.add("apk:" + repoID) }
-func (f *fakeRegen) NotifyNPMStale(pkgID string)     { f.add("npm:" + pkgID) }
-func (f *fakeRegen) NotifyMavenStale(repoID, group, artifact string) {
-	f.add("maven:" + repoID + ":" + group + ":" + artifact)
+// staleWorker is the metadata worker a recording hook finds bound for its format.
+type staleWorker struct {
+	f    *fakeRegen
+	name string
+}
+
+func (w staleWorker) NotifyStale(id string) { w.f.add(w.name + ":" + id) }
+
+type mavenStaleWorker struct{ f *fakeRegen }
+
+func (w mavenStaleWorker) NotifyStale(repoID, group, artifact string) {
+	w.f.add("maven:" + repoID + ":" + group + ":" + artifact)
+}
+
+// workers binds recording workers for the formats with generated metadata; the
+// Changed hooks that call them are the real ones, registered by TestMain.
+func (f *fakeRegen) workers() *lifecycle.Workers {
+	w := lifecycle.NewWorkers()
+	for _, name := range []string{"deb", "rpm", "pacman", "apk", "npm"} {
+		w.Bind(name, staleWorker{f, name})
+	}
+
+	w.Bind("maven", mavenStaleWorker{f})
+
+	return w
 }
 
 // newBundleEnv seeds n maven artifacts in a source repository and seals a
@@ -64,7 +83,9 @@ func newBundleEnv(t *testing.T, n int) *bundleEnv {
 	h := newHarness(t)
 	ctx := context.Background()
 	regen := &fakeRegen{}
-	env := &bundleEnv{h: h, engine: NewEngine(h.pg, h.log, regen), src: h.repo("maven", false), dst: h.repo("maven", true), regen: regen}
+	env := &bundleEnv{
+		h: h, engine: NewEngine(h.pg, h.log, regen.workers()), src: h.repo("maven", false), dst: h.repo("maven", true), regen: regen,
+	}
 
 	pipeline := &models.PromotionPipeline{
 		Name:   "pipe",
@@ -82,7 +103,7 @@ func newBundleEnv(t *testing.T, n int) *bundleEnv {
 	for i := range n {
 		blob, sha := h.blob(fmt.Sprintf("artifact %d", i))
 		path := fmt.Sprintf("com/acme/shop/1.0.0/shop%d-1.0.0.jar", i)
-		h.row("maven_artifacts", env.src.ID, "blob_id", blob, mavenCols(i, path))
+		h.file(env.src.ID, blob, mavenSeed(i, path))
 
 		item := &models.ReleaseBundleItem{
 			ID: uuid.NewString(), BundleID: env.bundle.ID, SourceRepoID: env.src.ID,
@@ -106,11 +127,8 @@ func newBundleEnv(t *testing.T, n int) *bundleEnv {
 	return env
 }
 
-func mavenCols(i int, path string) map[string]any {
-	return map[string]any{
-		"group_id": "com.acme", "artifact_id_coord": fmt.Sprintf("shop%d", i), "version": "1.0.0",
-		"extension": "jar", "repo_path": path,
-	}
+func mavenSeed(i int, path string) fileSeed {
+	return fileSeed{pkg: fmt.Sprintf("com.acme:shop%d", i), version: "1.0.0", path: path}
 }
 
 func (e *bundleEnv) reload() {
@@ -132,7 +150,7 @@ func (e *bundleEnv) params() Params {
 func (e *bundleEnv) assertUntouched() {
 	e.h.t.Helper()
 
-	if n := e.h.count(`SELECT COUNT(*) FROM maven_artifacts WHERE repository_id = $1`, e.dst.ID); n != 0 {
+	if n := e.h.count(`SELECT COUNT(*) FROM package_files WHERE repository_id = $1`, e.dst.ID); n != 0 {
 		e.h.t.Errorf("target holds %d rows after a failed promotion", n)
 	}
 
@@ -186,7 +204,7 @@ func TestEnginePromoteRecordsAndCharges(t *testing.T) {
 		t.Errorf("blobs rows %d -> %d: bytes must be shared, not duplicated", blobsBefore, got)
 	}
 
-	shared := env.h.count(`SELECT COUNT(*) FROM maven_artifacts s JOIN maven_artifacts d ON d.blob_id = s.blob_id
+	shared := env.h.count(`SELECT COUNT(*) FROM package_files s JOIN package_files d ON d.blob_id = s.blob_id
 		WHERE s.repository_id = $1 AND d.repository_id = $2`, env.src.ID, env.dst.ID)
 	if shared != 2 {
 		t.Errorf("%d target rows reference the source's blobs, want 2", shared)
@@ -212,7 +230,7 @@ func TestEnginePromoteIsAtomic(t *testing.T) {
 
 	// The second item's coordinates are taken in the target by other content.
 	other, _ := env.h.blob("someone else's jar")
-	env.h.row("maven_artifacts", env.dst.ID, "blob_id", other, mavenCols(1, "com/acme/shop/1.0.0/shop1-1.0.0.jar"))
+	env.h.file(env.dst.ID, other, mavenSeed(1, "com/acme/shop/1.0.0/shop1-1.0.0.jar"))
 
 	_, err := env.engine.Promote(context.Background(), env.params())
 
@@ -226,7 +244,7 @@ func TestEnginePromoteIsAtomic(t *testing.T) {
 		t.Errorf("err = %v, want it to name item %s", err, env.shas[1])
 	}
 
-	if n := env.h.count(`SELECT COUNT(*) FROM maven_artifacts WHERE repository_id = $1`, env.dst.ID); n != 1 {
+	if n := env.h.count(`SELECT COUNT(*) FROM package_files WHERE repository_id = $1`, env.dst.ID); n != 1 {
 		t.Errorf("target has %d rows, want only the pre-existing one: the first item's copy must roll back", n)
 	}
 
@@ -285,8 +303,8 @@ func TestEnginePromoteLicensePolicy(t *testing.T) {
 	src, dst := h.repo("pypi", false), h.repo("pypi", false)
 
 	blob, sha := h.blob("gpl wheel")
-	h.row("pypi_packages", src.ID, "blob_id", blob, map[string]any{
-		"name": "shop", "version": "1.0", "filename": "shop-1.0.whl", "package_type": "bdist_wheel", "license": "GPL-3.0",
+	h.file(src.ID, blob, fileSeed{
+		pkg: "shop", version: "1.0", path: "shop-1.0.whl", versionMeta: `{"license": "GPL-3.0"}`,
 	})
 
 	policy := &models.LicensePolicy{
@@ -310,7 +328,7 @@ func TestEnginePromoteLicensePolicy(t *testing.T) {
 		t.Fatalf("err = %v, want a LicenseBlockedError", err)
 	}
 
-	if n := h.count(`SELECT COUNT(*) FROM pypi_packages WHERE repository_id = $1`, dst.ID); n != 0 {
+	if n := h.count(`SELECT COUNT(*) FROM package_files WHERE repository_id = $1`, dst.ID); n != 0 {
 		t.Errorf("target holds %d rows after a blocked promotion", n)
 	}
 }
@@ -433,12 +451,12 @@ func TestEnginePromoteRejectsBadRepositories(t *testing.T) {
 
 func TestEngineNotifyDispatchesByKind(t *testing.T) {
 	regen := &fakeRegen{}
-	e := &Engine{regen: regen}
+	e := &Engine{regen: regen.workers()}
 	e.notify([]Regen{
-		{Kind: RegenDeb, RepoID: "r1"},
-		{Kind: RegenRPM, RepoID: "r2"},
-		{Kind: RegenMaven, RepoID: "r3", GroupID: "g", ArtifactID: "a"},
-		{Kind: RegenNPM, PackageID: "p1"},
+		{Format: "deb", RepoID: "r1"},
+		{Format: "rpm", RepoID: "r2"},
+		{Format: "maven", RepoID: "r3", GroupID: "g", ArtifactID: "a"},
+		{Format: "npm", PackageID: "p1"},
 	})
 
 	want := []string{"deb:r1", "rpm:r2", "maven:r3:g:a", "npm:p1"}

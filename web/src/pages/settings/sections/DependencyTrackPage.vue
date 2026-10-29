@@ -33,48 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
 
         <div class="grid grid-cols-2 gap-x-4 gap-y-4">
-          <div class="col-span-2 sm:col-span-1">
-            <label for="dt-base-url" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.dt.baseUrl') }}</label>
-            <input id="dt-base-url" v-model="form.base_url" type="text" placeholder="https://dtrack.example.com" :class="inputClass" />
-            <p class="text-caption text-muted mt-1">{{ t('adm.dt.baseUrlHint') }}</p>
-          </div>
-
-          <div class="col-span-2 sm:col-span-1">
-            <label for="dt-api-key" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.dt.apiKey') }}</label>
-            <input
-              id="dt-api-key"
-              v-model="apiKey"
-              type="password"
-              autocomplete="new-password"
-              :placeholder="t('adm.dt.apiKeyPlaceholder')"
-              :class="inputClass"
-            />
-            <div class="flex items-center gap-3 mt-1">
-              <span class="text-caption" :class="apiKeySet ? 'text-success' : 'text-muted'" data-testid="dt-key-state">
-                {{ apiKeySet ? t('adm.dt.apiKeyStored') : t('adm.dt.apiKeyNone') }}
-              </span>
-              <button
-                v-if="apiKeySet"
-                type="button"
-                class="text-caption font-medium text-muted hover:text-danger transition-colors"
-                :disabled="saving"
-                @click="removeKey"
-              >
-                {{ t('adm.dt.removeKey') }}
-              </button>
-            </div>
-            <p class="text-caption text-muted mt-1">{{ t('adm.dt.apiKeyHint') }}</p>
-          </div>
-
-          <div class="col-span-2 sm:col-span-1">
-            <label for="dt-project-name" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.dt.projectName') }}</label>
-            <input id="dt-project-name" v-model="form.project_name" type="text" :placeholder="t('adm.dt.projectNamePlaceholder')" :class="inputClass" />
-          </div>
-          <div class="col-span-2 sm:col-span-1">
-            <label for="dt-project-version" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.dt.projectVersion') }}</label>
-            <input id="dt-project-version" v-model="form.project_version" type="text" :placeholder="t('adm.dt.projectVersionPlaceholder')" :class="inputClass" />
-          </div>
-          <p class="col-span-2 text-caption text-muted -mt-2">{{ t('adm.dt.templateHint') }}</p>
+          <DependencyTrackFields v-model:form="form" v-model:api-key="apiKey" global :api-key-set="apiKeySet" :saving="saving" @remove-key="removeKey" />
         </div>
 
         <div class="flex items-start gap-4">
@@ -93,11 +52,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
       </section>
 
-      <DependencyTrackTestResult v-if="testResult" :result="testResult" />
-      <div v-if="testError" class="rounded-xl border border-danger/30 bg-danger-soft p-4 text-sm text-danger" role="alert">
-        <p class="font-semibold">{{ t('adm.dt.testFailed') }}</p>
-        <p class="text-xs mt-0.5 font-mono break-all">{{ testError }}</p>
-      </div>
+      <DependencyTrackTestResult :result="testResult" :error="testError" />
 
       <DependencyTrackRepoPanel />
     </template>
@@ -109,6 +64,7 @@ import { reactive, ref, onMounted } from 'vue'
 import SectionActions from '../../../components/SectionActions.vue'
 import AppButton from '../../../components/AppButton.vue'
 import AppToggle from '../../../components/AppToggle.vue'
+import DependencyTrackFields from './DependencyTrackFields.vue'
 import DependencyTrackTestResult from './DependencyTrackTestResult.vue'
 import DependencyTrackRepoPanel from './DependencyTrackRepoPanel.vue'
 import { useToastStore } from '../../../stores/toast'
@@ -119,9 +75,6 @@ import {
 } from '../../../api/dependencyTrack'
 import type { DependencyTrackSettings, DependencyTrackTest } from '../../../api/dependencyTrack'
 import { t } from '../../../i18n'
-
-const inputClass =
-  'w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors'
 
 const toasts = useToastStore()
 

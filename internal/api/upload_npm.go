@@ -44,11 +44,32 @@ const maxConcurrentNPMPublishes = 4
 // maxNPMDistTagBody caps the dist-tag PUT body, a JSON string holding a version.
 const maxNPMDistTagBody int64 = 1 << 10
 
+// NPMUploadStore is the part of the database NPMUploadHandler needs.
+type NPMUploadStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreateNPMPackage(ctx context.Context, p *models.NPMPackage) (*models.NPMPackage, error)
+	CreateNPMVersion(ctx context.Context, v *models.NPMVersion) (*models.NPMVersion, error)
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteNPMDistTag(ctx context.Context, packageID string, tag string) error
+	DeleteNPMPackage(ctx context.Context, packageID string) error
+	DeleteNPMVersion(ctx context.Context, packageID string, version string) error
+	GetNPMDistTags(ctx context.Context, packageID string) (map[string]string, error)
+	GetNPMPackageByName(ctx context.Context, repoID string, fullName string) (*models.NPMPackage, error)
+	GetNPMVersion(ctx context.Context, packageID string, version string) (*models.NPMVersion, error)
+	GetNPMVersionsByPackage(ctx context.Context, packageID string) ([]*models.NPMVersion, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	MarkPackumentStale(ctx context.Context, packageID string) error
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpdateNPMVersionManifest(ctx context.Context, packageID string, version string, manifest []byte) error
+	UpsertBlob(ctx context.Context, sha256 string, blobKey string, sizeBytes int64) (string, error)
+	UpsertNPMDistTag(ctx context.Context, t *models.NPMDistTag) (*models.NPMDistTag, error)
+}
+
 type NPMUploadHandler struct {
 	log       *logger.Logger
-	db        database.Database
+	db        NPMUploadStore
 	blobStore storage.BlobStore
-	baseURL   string
 	reg       *metrics.Registry
 	npmWorker *worker.NPMMetadataWorker
 	publisher webhook.Publisher
@@ -58,12 +79,11 @@ type NPMUploadHandler struct {
 
 func NewNPMUploadHandler(
 	log *logger.Logger,
-	db database.Database,
+	db NPMUploadStore,
 	blobStore storage.BlobStore,
-	baseURL string,
 	reg *metrics.Registry,
 ) *NPMUploadHandler {
-	return &NPMUploadHandler{log: log, db: db, blobStore: blobStore, baseURL: baseURL, reg: reg,
+	return &NPMUploadHandler{log: log, db: db, blobStore: blobStore, reg: reg,
 		publishSlots: make(chan struct{}, maxConcurrentNPMPublishes)}
 }
 
@@ -677,7 +697,7 @@ func (h *NPMUploadHandler) storeNPMVersion(ctx context.Context, repoID, pkgID st
 	})
 
 	err = storage.CommitBlob(ctx, h.db, h.blobStore, blob, func(ctx context.Context, _ string) error {
-		// Upsert into blobs table to get UUID for npm_versions.blob_id FK.
+		// Upsert into blobs table to get the UUID package_files.blob_id references.
 		blobUUID, err := h.db.UpsertBlob(ctx, pv.sha256Hex, pv.sha256Hex, size)
 		if err != nil {
 			return fmt.Errorf("failed to upsert npm blob: %w", err)

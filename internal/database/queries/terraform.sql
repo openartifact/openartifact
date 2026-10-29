@@ -1,88 +1,97 @@
--- name: CreateTerraformModule :one
-INSERT INTO terraform_modules (repository_id, name, system, version, archive_ext, blob_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
-RETURNING id, created_at, updated_at;
+-- Terraform modules and providers on the generic package tables (mapping spec in
+-- pkg_terraform.go). Both share the packages of a repository and are told apart by
+-- packages.attrs->>'kind'.
 
 -- name: GetTerraformModule :one
-SELECT tm.id, tm.repository_id, tm.name, tm.system, tm.version, tm.archive_ext, b.blob_key, b.sha256 AS checksum, b.size_bytes, tm.download_count, tm.created_at, tm.updated_at
-FROM terraform_modules tm
-JOIN blobs b ON b.id = tm.blob_id
-WHERE tm.repository_id = $1 AND tm.name = $2 AND tm.system = $3 AND tm.version = $4 AND tm.deleted_at IS NULL;
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'name', '')::text AS name, COALESCE(p.attrs ->> 'system', '')::text AS system,
+       v.version, COALESCE(f.attrs ->> 'archive_ext', '')::text AS archive_ext, b.blob_key, b.sha256 AS checksum, b.size_bytes,
+       f.download_count, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = sqlc.arg(version) AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(name_key);
 
 -- name: ListTerraformModuleVersions :many
-SELECT tm.id, tm.repository_id, tm.name, tm.system, tm.version, tm.archive_ext, b.blob_key, b.sha256 AS checksum, b.size_bytes, tm.download_count, tm.created_at, tm.updated_at
-FROM terraform_modules tm
-JOIN blobs b ON b.id = tm.blob_id
-WHERE tm.repository_id = $1 AND tm.name = $2 AND tm.system = $3 AND tm.deleted_at IS NULL
-ORDER BY tm.created_at, tm.id;
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'name', '')::text AS name, COALESCE(p.attrs ->> 'system', '')::text AS system,
+       v.version, COALESCE(f.attrs ->> 'archive_ext', '')::text AS archive_ext, b.blob_key, b.sha256 AS checksum, b.size_bytes,
+       f.download_count, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(name_key)
+ORDER BY f.created_at, f.id;
 
 -- name: ListTerraformModules :many
-SELECT tm.id, tm.repository_id, tm.name, tm.system, tm.version, tm.archive_ext, b.blob_key, b.sha256 AS checksum, b.size_bytes, tm.download_count, tm.created_at, tm.updated_at
-FROM terraform_modules tm
-JOIN blobs b ON b.id = tm.blob_id
-WHERE tm.repository_id = $1 AND tm.deleted_at IS NULL
-ORDER BY tm.name, tm.system, tm.created_at, tm.id;
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'name', '')::text AS name, COALESCE(p.attrs ->> 'system', '')::text AS system,
+       v.version, COALESCE(f.attrs ->> 'archive_ext', '')::text AS archive_ext, b.blob_key, b.sha256 AS checksum, b.size_bytes,
+       f.download_count, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND p.attrs ->> 'kind' = 'module'
+ORDER BY p.attrs ->> 'name', p.attrs ->> 'system', f.created_at, f.id;
 
--- name: DeleteTerraformModule :exec
-DELETE FROM terraform_modules WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL;
-
--- name: IncrementTerraformModuleDownloadCount :exec
-UPDATE terraform_modules SET download_count = download_count + 1
+-- name: IncrementTerraformDownloadCount :exec
+-- One download of a module archive or a provider zip.
+UPDATE package_files SET download_count = download_count + 1
 WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL;
 
--- name: TerraformModuleStamp :one
--- Fingerprint of the live versions of one module: their count and an
--- order-independent hash of their IDs. Rows are immutable apart from the
--- download counter (updated_at moves with every download, so it is no
+-- name: TerraformPackageStamp :one
+-- Fingerprint of the live files of one module or provider type: their count
+-- and an order-independent hash of their IDs. Files are immutable apart from
+-- the download counter (updated_at moves with every download, so it is no
 -- validator), and trash/restore changes membership.
-SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(tm.id::text, 0)), 0)::text)::text AS stamp
-FROM terraform_modules tm
-WHERE tm.repository_id = $1 AND tm.name = $2 AND tm.system = $3 AND tm.deleted_at IS NULL;
-
--- name: CreateTerraformProvider :one
-INSERT INTO terraform_providers (repository_id, type, version, os, arch, protocols, blob_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
-RETURNING id, created_at, updated_at;
+SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(f.id::text, 0)), 0)::text)::text AS stamp
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+WHERE p.repository_id = $1 AND p.name_key = $2;
 
 -- name: GetTerraformProvider :one
-SELECT tp.id, tp.repository_id, tp.type, tp.version, tp.os, tp.arch, tp.protocols, b.blob_key, b.sha256 AS checksum, b.size_bytes, tp.download_count, tp.created_at, tp.updated_at
-FROM terraform_providers tp
-JOIN blobs b ON b.id = tp.blob_id
-WHERE tp.repository_id = $1 AND tp.type = $2 AND tp.version = $3 AND tp.os = $4 AND tp.arch = $5 AND tp.deleted_at IS NULL;
+-- The platform zip by its path (uq_package_files_path).
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'type', '')::text AS type, v.version,
+       COALESCE(f.attrs ->> 'os', '')::text AS os, COALESCE(f.attrs ->> 'arch', '')::text AS arch, v.metadata,
+       b.blob_key, b.sha256 AS checksum, b.size_bytes, f.download_count, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.path = $2 AND f.deleted_at IS NULL;
 
 -- name: ListTerraformProviderPlatforms :many
 -- Every live platform zip of one provider type, all versions.
-SELECT tp.id, tp.repository_id, tp.type, tp.version, tp.os, tp.arch, tp.protocols, b.blob_key, b.sha256 AS checksum, b.size_bytes, tp.download_count, tp.created_at, tp.updated_at
-FROM terraform_providers tp
-JOIN blobs b ON b.id = tp.blob_id
-WHERE tp.repository_id = $1 AND tp.type = $2 AND tp.deleted_at IS NULL
-ORDER BY tp.version, tp.os, tp.arch;
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'type', '')::text AS type, v.version,
+       COALESCE(f.attrs ->> 'os', '')::text AS os, COALESCE(f.attrs ->> 'arch', '')::text AS arch, v.metadata,
+       b.blob_key, b.sha256 AS checksum, b.size_bytes, f.download_count, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(name_key)
+ORDER BY v.version, f.arch;
 
 -- name: ListTerraformProviderVersionPlatforms :many
 -- Every live platform zip of one provider version.
-SELECT tp.id, tp.repository_id, tp.type, tp.version, tp.os, tp.arch, tp.protocols, b.blob_key, b.sha256 AS checksum, b.size_bytes, tp.download_count, tp.created_at, tp.updated_at
-FROM terraform_providers tp
-JOIN blobs b ON b.id = tp.blob_id
-WHERE tp.repository_id = $1 AND tp.type = $2 AND tp.version = $3 AND tp.deleted_at IS NULL
-ORDER BY tp.os, tp.arch;
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'type', '')::text AS type, v.version,
+       COALESCE(f.attrs ->> 'os', '')::text AS os, COALESCE(f.attrs ->> 'arch', '')::text AS arch, v.metadata,
+       b.blob_key, b.sha256 AS checksum, b.size_bytes, f.download_count, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = sqlc.arg(version) AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(name_key)
+ORDER BY f.arch;
 
 -- name: ListTerraformProviders :many
-SELECT tp.id, tp.repository_id, tp.type, tp.version, tp.os, tp.arch, tp.protocols, b.blob_key, b.sha256 AS checksum, b.size_bytes, tp.download_count, tp.created_at, tp.updated_at
-FROM terraform_providers tp
-JOIN blobs b ON b.id = tp.blob_id
-WHERE tp.repository_id = $1 AND tp.deleted_at IS NULL
-ORDER BY tp.type, tp.version, tp.os, tp.arch;
-
--- name: DeleteTerraformProvider :exec
-DELETE FROM terraform_providers WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL;
-
--- name: IncrementTerraformProviderDownloadCount :exec
-UPDATE terraform_providers SET download_count = download_count + 1
-WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL;
-
--- name: TerraformProviderStamp :one
--- Fingerprint of the live platforms of one provider type (see
--- TerraformModuleStamp).
-SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(tp.id::text, 0)), 0)::text)::text AS stamp
-FROM terraform_providers tp
-WHERE tp.repository_id = $1 AND tp.type = $2 AND tp.deleted_at IS NULL;
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'type', '')::text AS type, v.version,
+       COALESCE(f.attrs ->> 'os', '')::text AS os, COALESCE(f.attrs ->> 'arch', '')::text AS arch, v.metadata,
+       b.blob_key, b.sha256 AS checksum, b.size_bytes, f.download_count, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND p.attrs ->> 'kind' = 'provider'
+ORDER BY p.attrs ->> 'type', v.version, f.arch;

@@ -25,7 +25,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"context"
+
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -40,14 +41,39 @@ const FormatName = "ansible"
 // metadata before revalidating.
 const metadataMaxAge = 60
 
+// HTTPStore is the part of the database HTTPHandler needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreateAnsibleCollection(ctx context.Context, c *models.AnsibleCollection) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteAnsibleCollection(ctx context.Context, repoID string, id string) error
+	GetAnsibleCollection(
+		ctx context.Context,
+		repoID string,
+		namespace string,
+		name string,
+		version string,
+	) (*models.AnsibleCollection, error)
+	GetAnsibleCollectionByID(ctx context.Context, repoID string, id string) (*models.AnsibleCollection, error)
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListAnsibleCollectionNames(ctx context.Context, repoID string, limit int, offset int) ([]*models.AnsibleCollectionName, int, error)
+	ListAnsibleCollectionVersions(ctx context.Context, repoID string, namespace string, name string) ([]*models.AnsibleCollection, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
+}
+
 // HTTPHandler serves hosted Ansible collection repositories.
 type HTTPHandler struct {
 	*base.Handler
+
+	DB HTTPStore
 }
 
 // NewHTTPHandler creates the handler.
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL)}
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 
 // route registers h for pattern with and without the trailing slash: the
@@ -112,11 +138,12 @@ func param(r *http.Request, key string) string {
 	return v
 }
 
-// apiPath is the absolute URL of the repository's v3 API root, without a
-// trailing slash. Every link the API hands out is absolute: ansible-core 2.15
-// cannot resolve a root-relative download_url.
-func (h *HTTPHandler) apiPath(repoName string) string {
-	return strings.TrimSuffix(h.BaseURL, "/") + "/repos/" + url.PathEscape(repoName) + "/api/v3"
+// apiPath is the absolute URL of the repository's v3 API root below origin (the
+// BASE_URL or the request's origin, see PublicBase), without a trailing slash.
+// Every link the API hands out is absolute: ansible-core 2.15 cannot resolve a
+// root-relative download_url.
+func apiPath(origin, repoName string) string {
+	return origin + "/repos/" + url.PathEscape(repoName) + "/api/v3"
 }
 
 // errorBody is the error document of the Galaxy API.
@@ -144,8 +171,10 @@ func writeError(w http.ResponseWriter, status int, code, title, detail string) {
 	base.WriteJSON(w, status, b)
 }
 
-// writeDoc answers with a JSON document, revalidated by the digest of its text.
-func (h *HTTPHandler) writeDoc(w http.ResponseWriter, r *http.Request, repo *models.Repository, doc any) {
+// writeDoc answers with a JSON document, revalidated by the digest of its text
+// and by origin, the origin its absolute links were built from ("" when it has
+// none): a client holding an ETag for one origin never gets a 304 for another.
+func (h *HTTPHandler) writeDoc(w http.ResponseWriter, r *http.Request, repo *models.Repository, origin string, doc any) {
 	body, err := json.Marshal(doc)
 	if err != nil {
 		h.Log.Errorw("failed to encode ansible document", "error", err)
@@ -155,7 +184,13 @@ func (h *HTTPHandler) writeDoc(w http.ResponseWriter, r *http.Request, repo *mod
 	}
 
 	sum := sha256.Sum256(body)
-	if base.Revalidate(w, r, repo.Public, `"`+hex.EncodeToString(sum[:16])+`"`, metadataMaxAge) {
+
+	etag := hex.EncodeToString(sum[:16])
+	if origin != "" {
+		etag += "-" + base.OriginTag(origin)
+	}
+
+	if base.Revalidate(w, r, repo.Public, `"`+etag+`"`, metadataMaxAge) {
 		return
 	}
 
@@ -168,7 +203,7 @@ func (h *HTTPHandler) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.writeDoc(w, r, repo, map[string]any{
+	h.writeDoc(w, r, repo, "", map[string]any{
 		"description":        "Galaxy API of an OpenArtifact Ansible collection repository",
 		"available_versions": map[string]string{"v3": "v3/"},
 	})
@@ -180,9 +215,10 @@ func (h *HTTPHandler) handleV3(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	root := h.apiPath(repo.Name)
+	origin := h.PublicBase(w, r)
+	root := apiPath(origin, repo.Name)
 
-	h.writeDoc(w, r, repo, map[string]string{
+	h.writeDoc(w, r, repo, origin, map[string]string{
 		"collections": root + "/collections/",
 		"artifacts":   root + "/artifacts/collections/",
 	})

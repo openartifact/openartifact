@@ -30,7 +30,7 @@ func (e *cleanupQuotaEnv) versions(repoID string) int {
 
 	var n int
 	if err := e.pg.GetDB().
-		QueryRowContext(context.Background(), `SELECT COUNT(*) FROM helm_charts WHERE repository_id = $1`, repoID).
+		QueryRowContext(context.Background(), `SELECT COUNT(*) FROM package_files WHERE repository_id = $1`, repoID).
 		Scan(&n); err != nil {
 		e.t.Fatalf("count versions: %v", err)
 	}

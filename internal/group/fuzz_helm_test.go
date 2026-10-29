@@ -87,12 +87,12 @@ func FuzzServeHelmGroup(f *testing.F) {
 	f.Fuzz(helmFuzzServe)
 }
 
-// helmFuzzCheckURLs checks that every URL of the served index is the group's
+// helmFuzzCheckURLs checks that every URL of the served index is relative to the group repository
 // and names a file one of the members listed.
 func helmFuzzCheckURLs(t *testing.T, merged *pkghelm.Index, hostedDoc, mirrorDoc []byte) {
 	t.Helper()
 
-	const chartBase = helmBase + "/repos/all/charts/"
+	const chartBase = "charts/"
 
 	listed := map[string]bool{}
 
@@ -119,7 +119,7 @@ func helmFuzzCheckURLs(t *testing.T, merged *pkghelm.Index, hostedDoc, mirrorDoc
 		for _, u := range cv.URLs {
 			tail, ok := strings.CutPrefix(u, chartBase)
 			if !ok {
-				t.Fatalf("%s %s URL %q does not point at the group", cv.Name, cv.Version, u)
+				t.Fatalf("%s %s URL %q is not relative to the group repository", cv.Name, cv.Version, u)
 			}
 
 			file, err := url.PathUnescape(tail)
@@ -132,7 +132,6 @@ func helmFuzzCheckURLs(t *testing.T, merged *pkghelm.Index, hostedDoc, mirrorDoc
 
 func helmFuzzServe(t *testing.T, hostedDoc, mirrorDoc []byte) {
 	fx := newFixture(t, "helm", member("hosted", "helm", "hosted"), member("mirror", "helm", "proxy"))
-	fx.h.SetBaseURL(helmBase + "/")
 	fx.grp.MergeProxyVersions = false
 	fx.set("hosted", "index.yaml", http.StatusOK, string(hostedDoc))
 	fx.set("mirror", "index.yaml", http.StatusOK, string(mirrorDoc))

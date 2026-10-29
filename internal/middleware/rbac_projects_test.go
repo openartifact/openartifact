@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"errors"
+
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -28,6 +30,11 @@ type projectRBACDB struct {
 	selfCreate  string
 	settingsErr error
 }
+
+var errNotImplemented = errors.New("not implemented")
+
+// UpdateTokenLastUsed is not exercised by the tests.
+func (*projectRBACDB) UpdateTokenLastUsed(context.Context, string) error { return errNotImplemented }
 
 func (d *projectRBACDB) GetProjectByName(_ context.Context, name string) (*models.Project, error) {
 	switch name {

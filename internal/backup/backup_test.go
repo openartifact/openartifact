@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,20 +21,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/backup/backuptest"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// fakeDB embeds databasetest.BaseMockDB (stub-everything) and overrides only the
-// handful of methods this test actually drives. Every other Database method
-// returns BaseMockDB's "not implemented" error, which every backup/restore
-// helper here already treats as "log a warning and skip" — exactly the
-// caveat behavior described in the assignment.
+// fakeDB embeds the engine's store interfaces (nil) and overrides only the
+// handful of methods this test actually drives. A method it does not drive
+// panics unless a stub answers "not implemented", which every backup/restore
+// helper here treats as "log a warning and skip".
 type fakeDB struct {
-	databasetest.BaseMockDB
+	testEngineStore
 
 	salt   string
 	nextID int64
@@ -41,11 +41,9 @@ type fakeDB struct {
 	repos           map[string]*models.Repository
 	users           map[string]*models.User
 	groups          map[string]*models.Group
-	rpmComponents   map[string][]models.Component // keyed by repository id
 	jobs            map[string]*models.BackupJob
-	npmPackages     map[string][]*models.NPMPackage     // keyed by repository id
-	npmVersions     map[string][]*models.NPMVersion     // keyed by package id
-	npmDistTags     map[string][]*models.NPMDistTag     // keyed by package id
+	pkgRows         map[string]map[string][]string      // exported package rows: repository id -> table -> JSON rows
+	restoredRows    []restoredBatch                     // package rows a restore handed to RestorePackageRows
 	dockerManifests map[string][]*models.DockerManifest // keyed by repository id
 	extra           *r2State
 	access          *accessState
@@ -56,17 +54,19 @@ type fakeDB struct {
 	released    int                // snapshots released
 }
 
+var errNotImplemented = errors.New("not implemented")
+
+// ReconcileAllStorageUsage is not exercised by the tests.
+func (*fakeDB) ReconcileAllStorageUsage(context.Context) (int64, error) { return 0, errNotImplemented }
+
 func newFakeDB(salt string) *fakeDB {
 	return &fakeDB{
 		salt:            salt,
 		repos:           map[string]*models.Repository{},
 		users:           map[string]*models.User{},
 		groups:          map[string]*models.Group{},
-		rpmComponents:   map[string][]models.Component{},
+		pkgRows:         map[string]map[string][]string{},
 		jobs:            map[string]*models.BackupJob{},
-		npmPackages:     map[string][]*models.NPMPackage{},
-		npmVersions:     map[string][]*models.NPMVersion{},
-		npmDistTags:     map[string][]*models.NPMDistTag{},
 		dockerManifests: map[string][]*models.DockerManifest{},
 	}
 }
@@ -94,17 +94,17 @@ func (f *fakeDB) BeginBackupSnapshot(context.Context, time.Duration) (database.S
 
 // snapshotOf is BeginBackupSnapshot for a type that embeds the fake and
 // overrides some reads: the snapshot must read through the outer type.
-func (f *fakeDB) snapshotOf(reader database.Database) (database.SnapshotReader, error) {
+func (f *fakeDB) snapshotOf(reader database.SnapshotReads) (database.SnapshotReader, error) {
 	if f.snapshotErr != nil {
 		return nil, f.snapshotErr
 	}
 
 	f.snapshots++
 
-	return &databasetest.LiveSnapshot{
-		Database:  reader,
-		Blobs:     slices.Clone(f.blobs),
-		OnRelease: func() { f.released++ },
+	return &backuptest.LiveSnapshot{
+		SnapshotReads: reader,
+		Blobs:         slices.Clone(f.blobs),
+		OnRelease:     func() { f.released++ },
 	}, nil
 }
 
@@ -179,64 +179,40 @@ func (f *fakeDB) CreateGroup(_ context.Context, group *models.Group) (*models.Gr
 	return group, nil
 }
 
-func (f *fakeDB) GetComponentsByRepo(_ context.Context, repoID string) ([]models.Component, error) {
-	return f.rpmComponents[repoID], nil
-}
-
 // UpsertBlob mirrors the real content-addressed contract: the blob store
 // key/id and the blobs-table dedup key are both the sha256.
 func (f *fakeDB) UpsertBlob(_ context.Context, sha256Hex, _ string, _ int64) (string, error) {
 	return sha256Hex, nil
 }
 
-func (f *fakeDB) CreateRpmPackage(_ context.Context, pkg *models.Component) error {
-	pkg.ID = f.newID("rpmpkg")
-	f.rpmComponents[pkg.RepositoryID] = append(f.rpmComponents[pkg.RepositoryID], *pkg)
+// restoredBatch is one RestorePackageRows call.
+type restoredBatch struct {
+	repoID string
+	table  string
+	rows   []string
+}
+
+// ExportPackageRows streams the rows seeded in pkgRows.
+func (f *fakeDB) ExportPackageRows(_ context.Context, set database.PackageRowSet, repoID string, fn func([]byte) error) error {
+	for _, row := range f.pkgRows[repoID][set.Name()] {
+		if err := fn([]byte(row)); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
 
-func (f *fakeDB) ListAllNPMPackages(_ context.Context, repoID string) ([]*models.NPMPackage, error) {
-	return f.npmPackages[repoID], nil
-}
-
-func (f *fakeDB) CreateNPMPackage(_ context.Context, pkg *models.NPMPackage) (*models.NPMPackage, error) {
-	pkg.ID = f.newID("npmpkg")
-	f.npmPackages[pkg.RepositoryID] = append(f.npmPackages[pkg.RepositoryID], pkg)
-
-	return pkg, nil
-}
-
-func (f *fakeDB) ListNPMVersionsByRepo(_ context.Context, repoID string) ([]*models.NPMVersion, error) {
-	var out []*models.NPMVersion
-	for _, pkg := range f.npmPackages[repoID] {
-		out = append(out, f.npmVersions[pkg.ID]...)
+// RestorePackageRows records the batch.
+func (f *fakeDB) RestorePackageRows(_ context.Context, set database.PackageRowSet, repoID string, rows []json.RawMessage) (int, error) {
+	batch := restoredBatch{repoID: repoID, table: set.Name()}
+	for _, r := range rows {
+		batch.rows = append(batch.rows, string(r))
 	}
 
-	return out, nil
-}
+	f.restoredRows = append(f.restoredRows, batch)
 
-func (f *fakeDB) CreateNPMVersion(_ context.Context, v *models.NPMVersion) (*models.NPMVersion, error) {
-	v.ID = f.newID("npmver")
-	f.npmVersions[v.PackageID] = append(f.npmVersions[v.PackageID], v)
-
-	return v, nil
-}
-
-func (f *fakeDB) GetNPMDistTags(_ context.Context, packageID string) (map[string]string, error) {
-	tags := map[string]string{}
-	for _, t := range f.npmDistTags[packageID] {
-		tags[t.Tag] = t.Version
-	}
-
-	return tags, nil
-}
-
-func (f *fakeDB) UpsertNPMDistTag(_ context.Context, t *models.NPMDistTag) (*models.NPMDistTag, error) {
-	t.ID = f.newID("npmtag")
-	f.npmDistTags[t.PackageID] = append(f.npmDistTags[t.PackageID], t)
-
-	return t, nil
+	return 0, nil
 }
 
 func (f *fakeDB) ListDockerManifestsByRepo(_ context.Context, repoID string) ([]*models.DockerManifest, error) {
@@ -255,7 +231,13 @@ func (f *fakeDB) EnsureBlob(_ context.Context, sha256Hex, _ string, _ int64) (st
 	return sha256Hex, nil
 }
 
-func newTestEngine(t *testing.T, db database.Database) (*Engine, storage.BlobStore) {
+// testEngineStore is the part of the database newTestEngine needs.
+type testEngineStore interface {
+	EngineStore
+	database.SnapshotReads // read through the in-memory snapshot
+}
+
+func newTestEngine(t *testing.T, db testEngineStore) (*Engine, storage.BlobStore) {
 	t.Helper()
 
 	log, err := logger.New("error", "json", "stderr")
@@ -273,19 +255,16 @@ func newTestEngine(t *testing.T, db database.Database) (*Engine, storage.BlobSto
 	return NewEngine(db, blobStore, log, filepath.Join(dir, "backups")), blobStore
 }
 
-// TestBackupRestore_RpmPackageRoundTrips verifies that a "full" backup
-// includes package rows and their blobs, not just repositories/users/groups.
-// This exercises: seed one rpm package + its blob -> RunBackup -> RunRestore
-// into a *fresh* DB/blob store -> the package and its blob content both land
-// under the repository's NEW server-generated id.
-func TestBackupRestore_RpmPackageRoundTrips(t *testing.T) {
-	const blobContent = "rpm package bytes"
+// TestBackupRestore_PackageRowsAndBlobsRoundTrip verifies that a "full" backup
+// carries every table of the format's descriptor, in the descriptor's restore
+// order, under the repository's NEW id, and its blob.
+func TestBackupRestore_PackageRowsAndBlobsRoundTrip(t *testing.T) {
+	const blobContent = "package bytes"
 
 	ctx := context.Background()
 	sum := sha256.Sum256([]byte(blobContent))
 	sha := hex.EncodeToString(sum[:])
 
-	// --- Source side: seed one rpm repo with one package. ---
 	srcDB := newFakeDB("src")
 	srcEngine, srcBlobStore := newTestEngine(t, srcDB)
 
@@ -295,24 +274,19 @@ func TestBackupRestore_RpmPackageRoundTrips(t *testing.T) {
 
 	srcDB.addBlobRow(sha, int64(len(blobContent)))
 
-	repo := &models.Repository{Name: "myrepo-rpm", Format: "rpm", RepoType: "hosted"}
+	repo := &models.Repository{Name: "myrepo-deb", Format: "deb", RepoType: "hosted"}
 	if err := srcDB.CreateRepository(ctx, repo); err != nil {
 		t.Fatalf("failed to seed repository: %v", err)
 	}
 
-	if _, err := srcDB.CreateUser(ctx, &models.User{Username: "alice"}); err != nil {
-		t.Fatalf("failed to seed user: %v", err)
+	srcDB.pkgRows[repo.ID] = map[string][]string{
+		"debian_distributions": {`{"id":"d1","name":"stable"}`},
+		"packages":             {`{"id":"p1","name":"mypkg"}`},
+		"package_files":        {`{"id":"f1","blob_sha256":"` + sha + `"}`, `{"id":"f2"}`},
+		"deb_files":            {`{"id":"f1","distribution_id":"d1"}`},
+		"package_tags":         {`{"id":"t1"}`},
+		"package_versions":     {`{"id":"v1","package_id":"p1"}`},
 	}
-
-	srcDB.rpmComponents[repo.ID] = []models.Component{{
-		RepositoryID: repo.ID,
-		SHA256:       sha,
-		Format:       "rpm",
-		Name:         "mypkg",
-		Version:      "1.0",
-		Filename:     "mypkg-1.0.rpm",
-		PackageSize:  int64(len(blobContent)),
-	}}
 
 	job := &models.BackupJob{ID: "job1", Status: "pending", Type: "full"}
 	if err := srcDB.CreateBackupJob(ctx, job); err != nil {
@@ -328,7 +302,12 @@ func TestBackupRestore_RpmPackageRoundTrips(t *testing.T) {
 		t.Fatalf("backup job status = %q, want completed (error: %s)", finished.Status, finished.ErrorMessage)
 	}
 
-	// --- Target side: fresh DB + fresh blob store, restore into it. ---
+	manifest, _ := readArchive(t, finished.StoragePath)
+	if manifest.Version != ArchiveVersion || manifest.TableCounts["package_files"] != 2 ||
+		manifest.TableCounts["debian_distributions"] != 1 {
+		t.Fatalf("manifest = %+v", manifest)
+	}
+
 	dstDB := newFakeDB("dst")
 	dstEngine, dstBlobStore := newTestEngine(t, dstDB)
 
@@ -336,39 +315,38 @@ func TestBackupRestore_RpmPackageRoundTrips(t *testing.T) {
 		t.Fatalf("RunRestore failed: %v", err)
 	}
 
-	if len(dstDB.repos) != 1 {
-		t.Fatalf("expected 1 restored repository, got %d", len(dstDB.repos))
-	}
-
 	var newRepoID string
 
-	for id, r := range dstDB.repos {
+	for id := range dstDB.repos {
 		newRepoID = id
+	}
 
-		if r.Name != "myrepo-rpm" || r.Format != "rpm" {
-			t.Fatalf("restored repo mismatch: %+v", r)
+	if newRepoID == "" || newRepoID == repo.ID {
+		t.Fatalf("repository did not restore under a new server-generated id: %q", newRepoID)
+	}
+
+	var got []string
+
+	for _, b := range dstDB.restoredRows {
+		if b.repoID != newRepoID {
+			t.Fatalf("rows of %s restored into %s, want the new repository %s", b.table, b.repoID, newRepoID)
 		}
+
+		got = append(got, b.table+"="+strings.Join(b.rows, ","))
 	}
 
-	if newRepoID == repo.ID {
-		t.Fatal("restored repository reused the source id instead of getting a new server-generated one")
+	want := []string{
+		`debian_distributions={"id":"d1","name":"stable"}`,
+		`packages={"id":"p1","name":"mypkg"}`,
+		`package_versions={"id":"v1","package_id":"p1"}`,
+		`package_files={"id":"f1","blob_sha256":"` + sha + `"},{"id":"f2"}`,
+		`deb_files={"id":"f1","distribution_id":"d1"}`,
+		`package_tags={"id":"t1"}`,
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("restored rows =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 
-	pkgs := dstDB.rpmComponents[newRepoID]
-	if len(pkgs) != 1 {
-		t.Fatalf("expected 1 restored rpm package under the new repository id, got %d", len(pkgs))
-	}
-
-	if pkgs[0].SHA256 != sha || pkgs[0].Filename != "mypkg-1.0.rpm" {
-		t.Fatalf("restored rpm package mismatch: %+v", pkgs[0])
-	}
-
-	if len(dstDB.users) != 1 {
-		t.Fatalf("expected 1 restored user, got %d", len(dstDB.users))
-	}
-
-	// The blob content itself must have made the round trip too — otherwise
-	// even a correctly-restored DB row would point at nothing.
 	blob, err := dstBlobStore.Get(ctx, sha)
 	if err != nil {
 		t.Fatalf("restored blob store Get(%q) failed: %v", sha, err)
@@ -377,69 +355,35 @@ func TestBackupRestore_RpmPackageRoundTrips(t *testing.T) {
 	data, err := io.ReadAll(blob)
 	_ = blob.Close()
 
-	if err != nil {
-		t.Fatalf("failed to read restored blob: %v", err)
-	}
-
-	if string(data) != blobContent {
-		t.Fatalf("restored blob content = %q, want %q", string(data), blobContent)
+	if err != nil || string(data) != blobContent {
+		t.Fatalf("restored blob content = %q (err %v), want %q", string(data), err, blobContent)
 	}
 }
 
-// TestBackupRestore_NPMAndDockerManifestRoundTrip verifies that a "full"
-// backup includes npm packages/versions and docker manifests (so docker_tags
-// do not point at missing manifests). This exercises: seed one npm package+version+
-// dist-tag and one docker manifest, each with its own blob -> RunBackup ->
-// RunRestore into a *fresh* DB/blob store -> everything lands under the
-// repositories' NEW server-generated ids, with blob content intact and the
-// npm version's PackageID correctly remapped to the new package id.
-func TestBackupRestore_NPMAndDockerManifestRoundTrip(t *testing.T) {
-	const (
-		npmTarball = "npm tarball bytes"
-		dockerBlob = "docker manifest json bytes"
-	)
+// TestBackupRestore_DockerManifestRoundTrip verifies that docker, which keeps
+// its dedicated tables, still archives its manifests (so docker_tags do not
+// point at missing manifests) and restores them under the new repository id
+// with the blob content intact.
+func TestBackupRestore_DockerManifestRoundTrip(t *testing.T) {
+	const dockerBlob = "docker manifest json bytes"
 
 	ctx := context.Background()
-	npmSum := sha256.Sum256([]byte(npmTarball))
-	npmSHA := hex.EncodeToString(npmSum[:])
 	dockerSum := sha256.Sum256([]byte(dockerBlob))
 	dockerSHA := hex.EncodeToString(dockerSum[:])
 
-	// --- Source side ---
 	srcDB := newFakeDB("src")
 	srcEngine, srcBlobStore := newTestEngine(t, srcDB)
-
-	if _, err := srcBlobStore.Put(ctx, strings.NewReader(npmTarball), map[string]string{"sha256": npmSHA}); err != nil {
-		t.Fatalf("failed to seed npm blob: %v", err)
-	}
 
 	if _, err := srcBlobStore.Put(ctx, strings.NewReader(dockerBlob), map[string]string{"sha256": dockerSHA}); err != nil {
 		t.Fatalf("failed to seed docker blob: %v", err)
 	}
 
-	srcDB.addBlobRow(npmSHA, int64(len(npmTarball)))
 	srcDB.addBlobRow(dockerSHA, int64(len(dockerBlob)))
-
-	npmRepo := &models.Repository{Name: "myrepo-npm", Format: "npm", RepoType: "hosted"}
-	if err := srcDB.CreateRepository(ctx, npmRepo); err != nil {
-		t.Fatalf("failed to seed npm repository: %v", err)
-	}
 
 	dockerRepo := &models.Repository{Name: "myrepo-docker", Format: "docker", RepoType: "hosted"}
 	if err := srcDB.CreateRepository(ctx, dockerRepo); err != nil {
 		t.Fatalf("failed to seed docker repository: %v", err)
 	}
-
-	npmPkg := &models.NPMPackage{RepositoryID: npmRepo.ID, Name: "mypkg", FullName: "mypkg", LatestVersion: "1.0.0"}
-	srcDB.npmPackages[npmRepo.ID] = []*models.NPMPackage{npmPkg}
-	srcDB.npmVersions[npmPkg.ID] = []*models.NPMVersion{{
-		PackageID:       npmPkg.ID,
-		Version:         "1.0.0",
-		TarballFilename: "mypkg-1.0.0.tgz",
-		BlobSHA256:      npmSHA,
-		BlobSizeBytes:   int64(len(npmTarball)),
-	}}
-	srcDB.npmDistTags[npmPkg.ID] = []*models.NPMDistTag{{PackageID: npmPkg.ID, Tag: "latest", Version: "1.0.0"}}
 
 	srcDB.dockerManifests[dockerRepo.ID] = []*models.DockerManifest{{
 		RepositoryID: dockerRepo.ID,
@@ -463,7 +407,6 @@ func TestBackupRestore_NPMAndDockerManifestRoundTrip(t *testing.T) {
 		t.Fatalf("backup job status = %q, want completed (error: %s)", finished.Status, finished.ErrorMessage)
 	}
 
-	// --- Target side: fresh DB + fresh blob store, restore into it. ---
 	dstDB := newFakeDB("dst")
 	dstEngine, dstBlobStore := newTestEngine(t, dstDB)
 
@@ -471,78 +414,19 @@ func TestBackupRestore_NPMAndDockerManifestRoundTrip(t *testing.T) {
 		t.Fatalf("RunRestore failed: %v", err)
 	}
 
-	if len(dstDB.repos) != 2 {
-		t.Fatalf("expected 2 restored repositories, got %d", len(dstDB.repos))
-	}
-
-	var newNPMRepoID, newDockerRepoID string
+	var newDockerRepoID string
 
 	for id, r := range dstDB.repos {
-		switch r.Name {
-		case "myrepo-npm":
-			newNPMRepoID = id
-		case "myrepo-docker":
+		if r.Name == "myrepo-docker" {
 			newDockerRepoID = id
 		}
-	}
-
-	if newNPMRepoID == "" || newNPMRepoID == npmRepo.ID {
-		t.Fatalf("npm repository did not restore under a new server-generated id: %q", newNPMRepoID)
 	}
 
 	if newDockerRepoID == "" || newDockerRepoID == dockerRepo.ID {
 		t.Fatalf("docker repository did not restore under a new server-generated id: %q", newDockerRepoID)
 	}
 
-	assertRestoredNPM(t, dstDB, dstBlobStore, newNPMRepoID, npmPkg.ID, npmSHA, npmTarball)
 	assertRestoredDocker(t, dstDB, dstBlobStore, newDockerRepoID, dockerSHA, dockerBlob)
-}
-
-func assertRestoredNPM(t *testing.T, dstDB *fakeDB, dstBlobStore storage.BlobStore, newNPMRepoID, srcPkgID, npmSHA, npmTarball string) {
-	t.Helper()
-
-	ctx := context.Background()
-
-	// --- npm package/version/dist-tag ---
-	restoredPkgs := dstDB.npmPackages[newNPMRepoID]
-	if len(restoredPkgs) != 1 {
-		t.Fatalf("expected 1 restored npm package, got %d", len(restoredPkgs))
-	}
-
-	newPkg := restoredPkgs[0]
-	if newPkg.FullName != "mypkg" || newPkg.ID == srcPkgID {
-		t.Fatalf("restored npm package mismatch or reused source id: %+v", newPkg)
-	}
-
-	restoredVersions := dstDB.npmVersions[newPkg.ID]
-	if len(restoredVersions) != 1 {
-		t.Fatalf("expected 1 restored npm version under the new package id, got %d", len(restoredVersions))
-	}
-
-	if restoredVersions[0].Version != "1.0.0" || restoredVersions[0].PackageID != newPkg.ID {
-		t.Fatalf("restored npm version mismatch: %+v", restoredVersions[0])
-	}
-
-	if restoredVersions[0].BlobID != npmSHA {
-		t.Fatalf("restored npm version blob id = %q, want %q (fakeDB.UpsertBlob is identity on sha256)", restoredVersions[0].BlobID, npmSHA)
-	}
-
-	restoredTags := dstDB.npmDistTags[newPkg.ID]
-	if len(restoredTags) != 1 || restoredTags[0].Tag != "latest" || restoredTags[0].Version != "1.0.0" {
-		t.Fatalf("expected 1 restored npm dist tag under the new package id, got %+v", restoredTags)
-	}
-
-	npmBlob, err := dstBlobStore.Get(ctx, npmSHA)
-	if err != nil {
-		t.Fatalf("restored npm blob store Get(%q) failed: %v", npmSHA, err)
-	}
-
-	npmData, err := io.ReadAll(npmBlob)
-	_ = npmBlob.Close()
-
-	if err != nil || string(npmData) != npmTarball {
-		t.Fatalf("restored npm blob content = %q (err %v), want %q", string(npmData), err, npmTarball)
-	}
 }
 
 func assertRestoredDocker(t *testing.T, dstDB *fakeDB, dstBlobStore storage.BlobStore, newDockerRepoID, dockerSHA, dockerBlob string) {

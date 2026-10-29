@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
-	"strings"
 
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/database"
@@ -40,14 +39,7 @@ func securityCSVHeader() []string {
 
 // securityExportFormat reads ?format: csv, json (default) or vex.
 func securityExportFormat(r *http.Request) (string, bool) {
-	switch f := strings.ToLower(r.URL.Query().Get("format")); f {
-	case "":
-		return exportFormatJSON, true
-	case exportFormatCSV, exportFormatJSON, exportFormatVEX:
-		return f, true
-	}
-
-	return "", false
+	return queryExportFormat(r, exportFormatCSV, exportFormatJSON, exportFormatVEX)
 }
 
 // collectFindings reads every page of the selection, up to limit findings.

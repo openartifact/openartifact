@@ -15,7 +15,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -132,7 +131,7 @@ func BenchmarkPackagesJSON(b *testing.B) {
 }
 
 type benchPackagesDB struct {
-	databasetest.BaseMockDB
+	RepositoriesStore
 
 	repo       *models.Repository
 	components []*models.Component

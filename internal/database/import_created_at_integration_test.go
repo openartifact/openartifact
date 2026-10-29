@@ -87,7 +87,7 @@ func (e *importEnv) createNpm(t *testing.T, repo string, at time.Time) (string, 
 		t.Fatal(err)
 	}
 
-	return "npm_versions", v.ID
+	return "package_files", v.ID
 }
 
 func (e *importEnv) createPypi(t *testing.T, repo string, at time.Time) (string, string) {
@@ -99,7 +99,7 @@ func (e *importEnv) createPypi(t *testing.T, repo string, at time.Time) (string,
 		t.Fatal(err)
 	}
 
-	return "pypi_packages", p.ID
+	return "package_files", p.ID
 }
 
 func (e *importEnv) createHelm(t *testing.T, repo string, at time.Time) (string, string) {
@@ -111,7 +111,7 @@ func (e *importEnv) createHelm(t *testing.T, repo string, at time.Time) (string,
 		t.Fatal(err)
 	}
 
-	return "helm_charts", c.ID
+	return "package_files", c.ID
 }
 
 func (e *importEnv) createNuget(t *testing.T, repo string, at time.Time) (string, string) {
@@ -122,7 +122,7 @@ func (e *importEnv) createNuget(t *testing.T, repo string, at time.Time) (string
 		t.Fatal(err)
 	}
 
-	return "nuget_packages", p.ID
+	return "package_files", p.ID
 }
 
 func (e *importEnv) createRubygems(t *testing.T, repo string, at time.Time) (string, string) {
@@ -134,7 +134,7 @@ func (e *importEnv) createRubygems(t *testing.T, repo string, at time.Time) (str
 		t.Fatal(err)
 	}
 
-	return "rubygems_gems", g.ID
+	return "package_files", g.ID
 }
 
 func (e *importEnv) createCargo(t *testing.T, repo string, at time.Time) (string, string) {
@@ -146,7 +146,7 @@ func (e *importEnv) createCargo(t *testing.T, repo string, at time.Time) (string
 		t.Fatal(err)
 	}
 
-	return "cargo_crates", c.ID
+	return "package_files", c.ID
 }
 
 func (e *importEnv) createGo(t *testing.T, repo string, at time.Time) (string, string) {
@@ -158,7 +158,7 @@ func (e *importEnv) createGo(t *testing.T, repo string, at time.Time) (string, s
 		t.Fatal(err)
 	}
 
-	return "gomod_modules", m.ID
+	return "package_files", m.ID
 }
 
 func (e *importEnv) createConda(t *testing.T, repo string, at time.Time) (string, string) {
@@ -170,7 +170,7 @@ func (e *importEnv) createConda(t *testing.T, repo string, at time.Time) (string
 		t.Fatal(err)
 	}
 
-	return "conda_packages", p.ID
+	return "package_files", p.ID
 }
 
 func (e *importEnv) createComposer(t *testing.T, repo string, at time.Time) (string, string) {
@@ -192,7 +192,7 @@ func (e *importEnv) createComposer(t *testing.T, repo string, at time.Time) (str
 		t.Fatal(err)
 	}
 
-	return "composer_packages", p.ID
+	return "package_files", p.ID
 }
 
 func (e *importEnv) createAnsible(t *testing.T, repo string, at time.Time) (string, string) {
@@ -204,7 +204,7 @@ func (e *importEnv) createAnsible(t *testing.T, repo string, at time.Time) (stri
 		t.Fatal(err)
 	}
 
-	return "ansible_collections", c.ID
+	return "package_files", c.ID
 }
 
 func (e *importEnv) createPacman(t *testing.T, repo string, at time.Time) (string, string) {
@@ -216,7 +216,7 @@ func (e *importEnv) createPacman(t *testing.T, repo string, at time.Time) (strin
 		t.Fatal(err)
 	}
 
-	return "pacman_packages", p.ID
+	return "package_files", p.ID
 }
 
 func (e *importEnv) createNix(t *testing.T, repo string, at time.Time) (string, string) {
@@ -228,7 +228,7 @@ func (e *importEnv) createNix(t *testing.T, repo string, at time.Time) (string, 
 		t.Fatal(err)
 	}
 
-	return "nix_paths", p.ID
+	return "package_files", p.ID
 }
 
 func (e *importEnv) createConan(t *testing.T, repo string, at time.Time) (string, string) {
@@ -252,7 +252,7 @@ func (e *importEnv) createConan(t *testing.T, repo string, at time.Time) (string
 		t.Fatal(err)
 	}
 
-	return "conan_packages", p.ID
+	return "package_files", p.ID
 }
 
 func (e *importEnv) createIvy(t *testing.T, repo string, at time.Time) (string, string) {
@@ -264,7 +264,7 @@ func (e *importEnv) createIvy(t *testing.T, repo string, at time.Time) (string, 
 		t.Fatal(err)
 	}
 
-	return "ivy_artifacts", a.ID
+	return "package_files", a.ID
 }
 
 func (e *importEnv) createSbt(t *testing.T, repo string, at time.Time) (string, string) {
@@ -276,7 +276,7 @@ func (e *importEnv) createSbt(t *testing.T, repo string, at time.Time) (string, 
 		t.Fatal(err)
 	}
 
-	return "sbt_artifacts", a.ID
+	return "package_files", a.ID
 }
 
 func (e *importEnv) createApk(t *testing.T, repo string, at time.Time) (string, string) {
@@ -288,7 +288,7 @@ func (e *importEnv) createApk(t *testing.T, repo string, at time.Time) (string, 
 		t.Fatal(err)
 	}
 
-	return "apk_packages", a.ID
+	return "package_files", a.ID
 }
 
 func (e *importEnv) createTerraformModule(t *testing.T, repo string, at time.Time) (string, string) {
@@ -300,7 +300,7 @@ func (e *importEnv) createTerraformModule(t *testing.T, repo string, at time.Tim
 		t.Fatal(err)
 	}
 
-	return "terraform_modules", m.ID
+	return "package_files", m.ID
 }
 
 func (e *importEnv) createTerraformProvider(t *testing.T, repo string, at time.Time) (string, string) {
@@ -312,7 +312,7 @@ func (e *importEnv) createTerraformProvider(t *testing.T, repo string, at time.T
 		t.Fatal(err)
 	}
 
-	return "terraform_providers", p.ID
+	return "package_files", p.ID
 }
 
 func TestImportCreatedAt(t *testing.T) {

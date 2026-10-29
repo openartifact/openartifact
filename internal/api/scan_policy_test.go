@@ -21,7 +21,6 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/bgtask"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/exploit"
 	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
@@ -33,10 +32,16 @@ const quarantineScanID = "66666666-6666-6666-6666-666666666666"
 
 var errScannerBroke = errors.New("exec /usr/bin/trivy: permission denied (db token=hunter2)")
 
+// scanPolicyDBStore is what scanPolicyDB is used as.
+type scanPolicyDBStore interface {
+	LicenseStore
+	VulnStore
+}
+
 // scanPolicyDB is an in-memory database for the vuln scan and license policy
 // handler tests.
 type scanPolicyDB struct {
-	databasetest.BaseMockDB
+	scanPolicyDBStore
 
 	mu sync.Mutex
 

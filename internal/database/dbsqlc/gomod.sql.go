@@ -10,57 +10,26 @@ import (
 	"time"
 )
 
-const createGoModule = `-- name: CreateGoModule :one
-INSERT INTO gomod_modules (repository_id, module_path, version, go_mod_content, zip_blob_id, mod_blob_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()))
-RETURNING id, created_at, updated_at
-`
-
-type CreateGoModuleParams struct {
-	RepositoryID string     `db:"repository_id" json:"repository_id"`
-	ModulePath   string     `db:"module_path" json:"module_path"`
-	Version      string     `db:"version" json:"version"`
-	GoModContent string     `db:"go_mod_content" json:"go_mod_content"`
-	ZipBlobID    *string    `db:"zip_blob_id" json:"zip_blob_id"`
-	ModBlobID    *string    `db:"mod_blob_id" json:"mod_blob_id"`
-	CreatedAt    *time.Time `db:"created_at" json:"created_at"`
-}
-
-type CreateGoModuleRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) CreateGoModule(ctx context.Context, arg CreateGoModuleParams) (CreateGoModuleRow, error) {
-	row := q.db.QueryRow(ctx, createGoModule,
-		arg.RepositoryID,
-		arg.ModulePath,
-		arg.Version,
-		arg.GoModContent,
-		arg.ZipBlobID,
-		arg.ModBlobID,
-		arg.CreatedAt,
-	)
-	var i CreateGoModuleRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
 const getGoModule = `-- name: GetGoModule :one
-SELECT gm.id, gm.repository_id, gm.module_path, gm.version, gm.go_mod_content,
-       COALESCE(zb.blob_key, '') AS zip_blob_key, COALESCE(mb.blob_key, '') AS mod_blob_key,
-       COALESCE(zb.size_bytes, 0) AS zip_size_bytes, COALESCE(zb.sha256, '') AS zip_hash, gm.created_at, gm.updated_at
-FROM gomod_modules gm
-LEFT JOIN blobs zb ON zb.id = gm.zip_blob_id
-LEFT JOIN blobs mb ON mb.id = gm.mod_blob_id
-WHERE gm.repository_id = $1 AND gm.deleted_at IS NULL AND gm.module_path = $2 AND gm.version = $3
+
+SELECT zf.id, zf.repository_id, p.name AS module_path, v.version,
+       COALESCE(mf.attrs->>'go_mod_content', '')::text AS go_mod_content,
+       COALESCE(zb.blob_key, '')::text AS zip_blob_key, COALESCE(mb.blob_key, '')::text AS mod_blob_key,
+       COALESCE(zb.size_bytes, 0)::bigint AS zip_size_bytes, COALESCE(zb.sha256, '')::text AS zip_hash,
+       v.created_at, zf.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = $1 AND v.deleted_at IS NULL
+JOIN package_files zf ON zf.version_id = v.id AND zf.role = 'primary' AND zf.deleted_at IS NULL
+LEFT JOIN package_files mf ON mf.version_id = v.id AND mf.role = 'mod' AND mf.deleted_at IS NULL
+LEFT JOIN blobs zb ON zb.id = zf.blob_id
+LEFT JOIN blobs mb ON mb.id = mf.blob_id
+WHERE p.repository_id = $2 AND p.name_key = $3
 `
 
 type GetGoModuleParams struct {
+	Version      string `db:"version" json:"version"`
 	RepositoryID string `db:"repository_id" json:"repository_id"`
 	ModulePath   string `db:"module_path" json:"module_path"`
-	Version      string `db:"version" json:"version"`
 }
 
 type GetGoModuleRow struct {
@@ -77,8 +46,13 @@ type GetGoModuleRow struct {
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// Go modules on the generic package tables (see the mapping in pkg_gomod.go): one
+// package per module path, one version per module version, two files per version
+// (the listed zip with role 'primary' and the unlisted go.mod with role 'mod').
+// The writes go through writePackage; these are the typed reads. Every read
+// starts at the zip file: a version without a live zip is not served.
 func (q *Queries) GetGoModule(ctx context.Context, arg GetGoModuleParams) (GetGoModuleRow, error) {
-	row := q.db.QueryRow(ctx, getGoModule, arg.RepositoryID, arg.ModulePath, arg.Version)
+	row := q.db.QueryRow(ctx, getGoModule, arg.Version, arg.RepositoryID, arg.ModulePath)
 	var i GetGoModuleRow
 	err := row.Scan(
 		&i.ID,
@@ -97,14 +71,19 @@ func (q *Queries) GetGoModule(ctx context.Context, arg GetGoModuleParams) (GetGo
 }
 
 const listGoModuleVersions = `-- name: ListGoModuleVersions :many
-SELECT gm.id, gm.repository_id, gm.module_path, gm.version, gm.go_mod_content,
-       COALESCE(zb.blob_key, '') AS zip_blob_key, COALESCE(mb.blob_key, '') AS mod_blob_key,
-       COALESCE(zb.size_bytes, 0) AS zip_size_bytes, COALESCE(zb.sha256, '') AS zip_hash, gm.created_at, gm.updated_at
-FROM gomod_modules gm
-LEFT JOIN blobs zb ON zb.id = gm.zip_blob_id
-LEFT JOIN blobs mb ON mb.id = gm.mod_blob_id
-WHERE gm.repository_id = $1 AND gm.deleted_at IS NULL AND gm.module_path = $2
-ORDER BY gm.created_at, gm.id
+SELECT zf.id, zf.repository_id, p.name AS module_path, v.version,
+       COALESCE(mf.attrs->>'go_mod_content', '')::text AS go_mod_content,
+       COALESCE(zb.blob_key, '')::text AS zip_blob_key, COALESCE(mb.blob_key, '')::text AS mod_blob_key,
+       COALESCE(zb.size_bytes, 0)::bigint AS zip_size_bytes, COALESCE(zb.sha256, '')::text AS zip_hash,
+       v.created_at, zf.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files zf ON zf.version_id = v.id AND zf.role = 'primary' AND zf.deleted_at IS NULL
+LEFT JOIN package_files mf ON mf.version_id = v.id AND mf.role = 'mod' AND mf.deleted_at IS NULL
+LEFT JOIN blobs zb ON zb.id = zf.blob_id
+LEFT JOIN blobs mb ON mb.id = mf.blob_id
+WHERE p.repository_id = $1 AND p.name_key = $2
+ORDER BY v.created_at, zf.id
 `
 
 type ListGoModuleVersionsParams struct {
@@ -135,63 +114,6 @@ func (q *Queries) ListGoModuleVersions(ctx context.Context, arg ListGoModuleVers
 	items := []ListGoModuleVersionsRow{}
 	for rows.Next() {
 		var i ListGoModuleVersionsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.RepositoryID,
-			&i.ModulePath,
-			&i.Version,
-			&i.GoModContent,
-			&i.ZipBlobKey,
-			&i.ModBlobKey,
-			&i.ZipSizeBytes,
-			&i.ZipHash,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listGoModulesByRepo = `-- name: ListGoModulesByRepo :many
-SELECT gm.id, gm.repository_id, gm.module_path, gm.version, gm.go_mod_content,
-       COALESCE(zb.blob_key, '') AS zip_blob_key, COALESCE(mb.blob_key, '') AS mod_blob_key,
-       COALESCE(zb.size_bytes, 0) AS zip_size_bytes, COALESCE(zb.sha256, '') AS zip_hash, gm.created_at, gm.updated_at
-FROM gomod_modules gm
-LEFT JOIN blobs zb ON zb.id = gm.zip_blob_id
-LEFT JOIN blobs mb ON mb.id = gm.mod_blob_id
-WHERE gm.repository_id = $1 AND gm.deleted_at IS NULL
-ORDER BY gm.module_path, gm.version DESC
-`
-
-type ListGoModulesByRepoRow struct {
-	ID           string    `db:"id" json:"id"`
-	RepositoryID string    `db:"repository_id" json:"repository_id"`
-	ModulePath   string    `db:"module_path" json:"module_path"`
-	Version      string    `db:"version" json:"version"`
-	GoModContent string    `db:"go_mod_content" json:"go_mod_content"`
-	ZipBlobKey   string    `db:"zip_blob_key" json:"zip_blob_key"`
-	ModBlobKey   string    `db:"mod_blob_key" json:"mod_blob_key"`
-	ZipSizeBytes int64     `db:"zip_size_bytes" json:"zip_size_bytes"`
-	ZipHash      string    `db:"zip_hash" json:"zip_hash"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) ListGoModulesByRepo(ctx context.Context, repositoryID string) ([]ListGoModulesByRepoRow, error) {
-	rows, err := q.db.Query(ctx, listGoModulesByRepo, repositoryID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListGoModulesByRepoRow{}
-	for rows.Next() {
-		var i ListGoModulesByRepoRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.RepositoryID,

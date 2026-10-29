@@ -50,6 +50,11 @@ type npmMemDB struct {
 	fail         map[string]error // method name -> error to return
 }
 
+// ListLicensePolicies is not exercised by the tests.
+func (*npmMemDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	return nil, nil
+}
+
 // failure returns the error injected for the named database method.
 func (d *npmMemDB) failure(method string) error {
 	d.mu.Lock()
@@ -297,8 +302,6 @@ func (d *npmMemDB) staleCount() int {
 	return d.stale
 }
 
-var _ database.Database = (*npmMemDB)(nil)
-
 type npmEnv struct {
 	db     *npmMemDB
 	h      *NPMUploadHandler
@@ -313,7 +316,7 @@ func newNPMEnv(t *testing.T) *npmEnv {
 	blobs := formattest.NewBlobStore()
 	events := &formattest.Publisher{}
 	db.fail = map[string]error{}
-	h := NewNPMUploadHandler(formattest.NewLogger(t), db, blobs, "http://localhost", nil)
+	h := NewNPMUploadHandler(formattest.NewLogger(t), db, blobs, nil)
 	h.SetPublisher(events)
 
 	return &npmEnv{db: db, h: h, blobs: blobs, events: events}
@@ -1108,7 +1111,7 @@ func TestIsUniqueViolation(t *testing.T) {
 // no longer live.
 type npmTrashDB struct {
 	*npmMemDB
-	database.TrashStore
+	database.TrashOps
 
 	notLive bool
 	trashed []string
@@ -1131,6 +1134,19 @@ type npmRBACDB struct {
 
 	tokens  map[string]*models.Token
 	targets map[string][]*models.PermissionTarget // user ID -> targets
+}
+
+// ListProjectGrantsByUser is not exercised by the tests.
+func (*npmRBACDB) ListProjectGrantsByUser(context.Context, string) ([]*models.ProjectGrant, error) {
+	return nil, nil
+}
+
+// UpdateTokenLastUsed is not exercised by the tests.
+func (*npmRBACDB) UpdateTokenLastUsed(context.Context, string) error { return errNotImplemented }
+
+// ListGroupsByUser is not exercised by the tests.
+func (*npmRBACDB) ListGroupsByUser(context.Context, string) ([]*models.Group, error) {
+	return nil, errNotImplemented
 }
 
 func (d *npmRBACDB) GetTokenByHash(_ context.Context, hash string) (*models.Token, error) {

@@ -15,7 +15,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/formattest"
 )
 
-// conanDB is an in-memory conan_packages table with the semantics of the real
+// conanDB is an in-memory set of conan files with the semantics of the real
 // one: one live row per ConanFileKey, an upsert replacing the blob, and a clock
 // that advances one second per write so "latest" is deterministic.
 type conanDB struct {

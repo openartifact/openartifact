@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+
+	formatstorage "github.com/openartifact/openartifact/internal/format/storage"
 )
 
 const (
@@ -29,10 +31,12 @@ type applyState struct {
 	ids          idSet
 	missingBlob  map[string]string // blobs.id -> sha256 whose bytes are gone
 	touchedRepos map[string]struct{}
-	npmPackages  map[string]struct{}
-	recovered    []string
-	columns      map[string][]string
-	stmts        map[string]string
+	// packages are the ids of the packages that received a row of their own, a
+	// version or a tag.
+	packages  map[string]struct{}
+	recovered []string
+	columns   map[string][]string
+	stmts     map[string]string
 }
 
 // cand is a sidecar row prepared for insertion.
@@ -44,7 +48,7 @@ type cand struct {
 
 func (r *Rebuilder) apply(ctx context.Context, rep *Report, ids idSet, winners map[string]*entry) error {
 	st := &applyState{
-		ids: ids, missingBlob: map[string]string{}, touchedRepos: map[string]struct{}{}, npmPackages: map[string]struct{}{},
+		ids: ids, missingBlob: map[string]string{}, touchedRepos: map[string]struct{}{}, packages: map[string]struct{}{},
 		columns: map[string][]string{}, stmts: map[string]string{},
 	}
 
@@ -55,8 +59,8 @@ func (r *Rebuilder) apply(ctx context.Context, rep *Report, ids idSet, winners m
 
 	presentBlobs := 0
 
-	for i := range Tables {
-		t := &Tables[i]
+	for i := range r.reg.tables {
+		t := &r.reg.tables[i]
 
 		es := byTable[t.Name]
 		if len(es) == 0 {
@@ -97,15 +101,65 @@ func (r *Rebuilder) postSteps(ctx context.Context, rep *Report, st *applyState) 
 		}
 	}
 
-	if r.hooks.Regenerate != nil && (len(st.touchedRepos) > 0 || len(st.npmPackages) > 0) {
-		if err := r.hooks.Regenerate(ctx, keys(st.touchedRepos), keys(st.npmPackages)); err != nil {
-			rep.addFailure(Item{Reason: "regenerate metadata: " + err.Error()})
-		} else {
-			rep.PostSteps = append(rep.PostSteps, "metadata regeneration")
-		}
+	if r.hooks.Regenerate != nil && (len(st.touchedRepos) > 0 || len(st.packages) > 0) {
+		r.regenerate(ctx, rep, st)
 	}
 
 	return nil
+}
+
+// regenerate hands the touched repositories and npm packages to the hook; a
+// failure is reported, not returned: the rows are restored either way.
+func (r *Rebuilder) regenerate(ctx context.Context, rep *Report, st *applyState) {
+	npmIDs, err := r.resolvePackages(ctx, st)
+	if err == nil {
+		err = r.hooks.Regenerate(ctx, keys(st.touchedRepos), npmIDs)
+	}
+
+	if err != nil {
+		rep.addFailure(Item{Reason: "regenerate metadata: " + err.Error()})
+
+		return
+	}
+
+	rep.PostSteps = append(rep.PostSteps, "metadata regeneration")
+}
+
+// resolvePackages adds the repositories of the packages that received rows to
+// the touched set (package_tags rows carry no repository id) and returns the
+// ids of the packages among them whose format regenerates its metadata per
+// package (its descriptor's Backup.Regen is RegenNPM, the packument), sorted.
+func (r *Rebuilder) resolvePackages(ctx context.Context, st *applyState) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id::text, repository_id::text, format FROM packages WHERE id = ANY($1::uuid[])`, keys(st.packages))
+	if err != nil {
+		return nil, fmt.Errorf("resolve restored packages: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	var npmIDs []string
+
+	for rows.Next() {
+		var id, repoID, format string
+		if err := rows.Scan(&id, &repoID, &format); err != nil {
+			return nil, fmt.Errorf("scan restored package: %w", err)
+		}
+
+		st.touchedRepos[repoID] = struct{}{}
+
+		if d, ok := formatstorage.Lookup(format); ok && d.Backup.Regen == formatstorage.RegenNPM {
+			npmIDs = append(npmIDs, id)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("resolve restored packages: %w", err)
+	}
+
+	sort.Strings(npmIDs)
+
+	return npmIDs, nil
 }
 
 func keys(m map[string]struct{}) []string {
@@ -263,18 +317,18 @@ func (r *Rebuilder) checkBlobs(rep *Report, st *applyState, t *Table, cs []*cand
 	return out
 }
 
-// note records which repositories and npm packages received rows.
+// note records which repositories and packages received rows.
 func (r *Rebuilder) note(st *applyState, t *Table, inserted []*cand) {
 	for _, c := range inserted {
 		switch t.Name {
 		case "repositories":
 			st.touchedRepos[c.e.key] = struct{}{}
 			st.recovered = append(st.recovered, strField(c.m, "name"))
-		case "npm_packages":
-			st.npmPackages[c.e.key] = struct{}{}
-		case "npm_versions", "npm_dist_tags":
+		case "packages":
+			st.packages[c.e.key] = struct{}{}
+		case "package_versions", "package_tags":
 			if id := strField(c.m, "package_id"); id != "" {
-				st.npmPackages[id] = struct{}{}
+				st.packages[id] = struct{}{}
 			}
 		}
 

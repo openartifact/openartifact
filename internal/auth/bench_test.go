@@ -13,17 +13,24 @@ import (
 
 	"github.com/openartifact/openartifact/internal/passwd"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 //nolint:gochecknoglobals // benchmark sizes
 var benchTargetCounts = []int{1, 10, 100}
 
+// benchAuthDBStore is what benchAuthDB is used as.
+type benchAuthDBStore interface {
+	CreateTokenStore
+	EvaluatorStore
+	TouchTokenStore
+	ValidateTokenStore
+}
+
 // benchAuthDB serves the lookups the permission evaluator and token validation
 // make on the request path.
 type benchAuthDB struct {
-	databasetest.BaseMockDB
+	benchAuthDBStore
 
 	targets []*models.PermissionTarget
 	repos   map[string]*models.Repository
@@ -302,8 +309,6 @@ func BenchmarkValidateSession(b *testing.B) {
 }
 
 type benchSessionDB struct {
-	databasetest.BaseMockDB
-
 	sessions map[string]*models.Session
 }
 

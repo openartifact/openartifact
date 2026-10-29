@@ -7,12 +7,12 @@
 // upload and which reject it.
 //
 // A format's upload test runs the same upload once per Case, with the
-// repository's database wrapped by Case.DB, and checks the response with
-// Case.AssertResponse:
+// repository's database answering Case.Lister's policies, and checks the
+// response with Case.AssertResponse:
 //
 //	for _, c := range policytest.Cases("GPL-3.0") {
 //		t.Run(c.Name, func(t *testing.T) {
-//			rec := upload(t, c.DB(mockDB)) // publish a package declaring GPL-3.0
+//			rec := upload(t, policyDB{mockDB, c.Lister()}) // publish a package declaring GPL-3.0
 //			c.AssertResponse(t, rec.Code, rec.Body.Bytes())
 //			// c.Want == policytest.Blocked => also assert nothing was stored.
 //		})
@@ -27,7 +27,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 )
@@ -49,17 +48,22 @@ const (
 
 var errStore = errors.New("policytest: policy store unavailable")
 
-// DB overlays license policies on any database.Database.
-type DB struct {
-	database.Database
-
-	Policies []*models.LicensePolicy
-	Err      error
+// Lister answers the license policies of a Case. A test double wraps it with a
+// ListLicensePolicies method that forwards here (an embedded Lister would be
+// ambiguous with a double that declares the method itself):
+//
+//	type policyDB struct {
+//		*myDB
+//		lister policytest.Lister
+//	}
+type Lister struct {
+	policies []*models.LicensePolicy
+	err      error
 }
 
-// ListLicensePolicies returns the configured policies (or Err).
-func (d *DB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
-	return d.Policies, d.Err
+// ListLicensePolicies returns the configured policies (or the case's error).
+func (l Lister) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	return l.policies, l.err
 }
 
 // Policy returns an enabled global policy with the given action and lists.
@@ -82,9 +86,9 @@ type Case struct {
 	Want     Outcome
 }
 
-// DB wraps inner so that the repository has this case's policies.
-func (c Case) DB(inner database.Database) *DB {
-	return &DB{Database: inner, Policies: c.Policies, Err: c.Err}
+// Lister returns the policy source of this case.
+func (c Case) Lister() Lister {
+	return Lister{policies: c.Policies, err: c.Err}
 }
 
 // Cases returns the scenarios for an upload declaring license: each policy

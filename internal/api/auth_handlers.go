@@ -19,7 +19,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -246,8 +245,23 @@ func limiterKey(prefix, username string) string {
 	return prefix + key
 }
 
+// AuthStore is the part of the database AuthHandler needs.
+type AuthStore interface {
+	completeLogoutStore
+	CreateSession(ctx context.Context, session *models.Session) (*models.Session, error)
+	DeleteOtherSessionsByUser(ctx context.Context, userID string, keepTokenHash string) error
+	DeleteSessionsByUser(ctx context.Context, userID string) error
+	GetPasswordExpiry(ctx context.Context, userID string) (*time.Time, error)
+	GetUserByID(ctx context.Context, id string) (*models.User, error)
+	GetUserByUsername(ctx context.Context, username string) (*models.User, error)
+	ListGroupsByUser(ctx context.Context, userID string) ([]*models.Group, error)
+	ListProjects(ctx context.Context, userID string) ([]*models.Project, error)
+	UpdateUserLastLogin(ctx context.Context, id string, at time.Time) error
+	UpdateUserPassword(ctx context.Context, id string, passwordHash string, mustChange bool) error
+}
+
 type AuthHandler struct {
-	db               database.Database
+	db               AuthStore
 	log              *logger.Logger
 	evaluator        *auth.Evaluator
 	loginIPLimiter   *slidingWindowLimiter
@@ -265,7 +279,7 @@ type AuthHandler struct {
 }
 
 func NewAuthHandler(
-	db database.Database,
+	db AuthStore,
 	log *logger.Logger,
 	evaluator *auth.Evaluator,
 	trustedProxies *middleware.TrustedProxies,

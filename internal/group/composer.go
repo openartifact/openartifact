@@ -11,6 +11,8 @@ import (
 	"slices"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/publicurl"
 	"github.com/openartifact/openartifact/internal/repotype"
 	pkgcomposer "github.com/openartifact/openartifact/pkg/composer"
 )
@@ -23,6 +25,12 @@ const (
 	// composerMaxDoc bounds a member's document held in memory.
 	composerMaxDoc = 64 << 20
 )
+
+// ComposerHooks is the composer group: merged p2 documents, dists first-hit.
+var ComposerHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: (*Handler).serveComposer,
+	PackageRef:  composerRef,
+}
 
 // serveComposer answers the Composer metadata requests of a composer group and
 // reports whether it handled the request; dist downloads fall through to the
@@ -54,12 +62,15 @@ func (h *Handler) serveComposer(
 		return true
 	}
 
-	root := h.baseURL + "/repos/" + url.PathEscape(grp.Name)
-
 	switch p.Kind {
 	case pkgcomposer.KindRoot:
-		h.serveComposerRoot(w, r, grp, root, members, be)
+		h.serveComposerRoot(w, r, grp, members, be)
 	case pkgcomposer.KindMetadata:
+		// dist.url is downloaded by Composer as-is, so it is absolute; the
+		// merged document carries the origin and its content digest is the
+		// validator, so no origin ever revalidates against another's.
+		root := h.publicBase(w, r) + "/repos/" + url.PathEscape(grp.Name)
+
 		h.serveComposerMetadata(w, r, grp, root, p, relPath, members, be)
 	case pkgcomposer.KindDist:
 		return false
@@ -74,11 +85,14 @@ func (h *Handler) serveComposerRoot(
 	w http.ResponseWriter,
 	r *http.Request,
 	grp *models.Repository,
-	root string,
 	members []*models.Repository,
 	be Backend,
 ) {
-	doc := map[string]any{"packages": []any{}, "metadata-url": root + "/p2/%package%.json"}
+	// metadata-url is path-absolute: Composer resolves a value starting with "/"
+	// against the scheme and host of the repository URL
+	// (ComposerRepository::canonicalizeUrl), so the document names no origin.
+	prefix := publicurl.PathPrefix(h.baseURL)
+	doc := map[string]any{"packages": []any{}, "metadata-url": prefix + "/repos/" + url.PathEscape(grp.Name) + "/p2/%package%.json"}
 
 	if names, ok := h.composerAvailable(r, members, be); ok {
 		doc["available-packages"] = names
@@ -92,42 +106,34 @@ func (h *Handler) serveComposerRoot(
 		return
 	}
 
-	writeMergedJSON(w, r, grp, body, composerMetaMaxAge, false)
+	writeMerged(w, r, grp.Public, body, "application/json", base.ContentETag(body), composerMetaMaxAge, false)
 }
 
 // composerAvailable is the union of the "available-packages" of the members'
 // packages.json, sorted. It is only known when there are members, every one of
 // them is hosted and each answered with such a list.
 func (h *Handler) composerAvailable(r *http.Request, members []*models.Repository, be Backend) ([]string, bool) {
-	if len(members) == 0 {
+	if len(members) == 0 || slices.ContainsFunc(members, func(m *models.Repository) bool { return m.RepoType == repotype.Proxy }) {
 		return nil, false
 	}
-
-	mr := memberGetRequest(r)
 
 	sess := h.newSession(r.Context())
 	defer sess.release()
 
+	c := h.collect(r, sess, members, memberAsk{path: samePath("packages.json"), limit: composerMaxDoc}, be)
+	if c.partial() || len(c.docs) != len(members) {
+		return nil, false
+	}
+
 	seen := map[string]bool{}
 	names := []string{}
 
-	for _, m := range members {
-		if m.RepoType == repotype.Proxy {
-			return nil, false
-		}
-
-		cw := sess.capture(composerMaxDoc)
-		be.ServeMember(cw, mr, m, "packages.json")
-
-		if cw.status == 0 {
-			cw.status = http.StatusOK
-		}
-
+	for _, d := range c.docs {
 		var doc struct {
 			Available *[]string `json:"available-packages"` //nolint:tagliatelle // Composer wire format
 		}
 
-		if cw.status != http.StatusOK || cw.overflow || json.Unmarshal(cw.body.Bytes(), &doc) != nil || doc.Available == nil {
+		if json.Unmarshal(d.body, &doc) != nil || doc.Available == nil {
 			return nil, false
 		}
 
@@ -154,65 +160,59 @@ func (h *Handler) serveComposerMetadata(
 	members []*models.Repository,
 	be Backend,
 ) {
-	mr := memberGetRequest(r)
+	h.serveMergedDoc(w, r, grp, members, be, mergedDoc{
+		ask:         memberAsk{path: samePath(relPath), limit: composerMaxDoc},
+		what:        "composer metadata",
+		maxAge:      composerMetaMaxAge,
+		contentType: "application/json",
+		merge: func(c *collection) ([]byte, error) {
+			var (
+				merged []pkgcomposer.Version
+				seen   = map[string]bool{}
+			)
 
-	sess := h.newSession(r.Context())
-	defer sess.release()
+			for _, d := range c.docs {
+				versions, err := pkgcomposer.ParseDocument(d.body, p.Name)
+				if err != nil {
+					c.fail(d.member)
+					continue
+				}
 
-	var (
-		merged []pkgcomposer.Version
-		seen   = map[string]bool{}
-		failed bool
-	)
+				pkgcomposer.RelinkMember(versions, p.Name, root)
 
-	for _, m := range members {
-		cw := sess.capture(composerMaxDoc)
-		be.ServeMember(cw, mr, m, relPath)
+				for _, v := range versions {
+					if key := v.MergeKey(); !seen[key] {
+						seen[key] = true
 
-		if cw.status == 0 {
-			cw.status = http.StatusOK
-		}
-
-		if cw.status == http.StatusNotFound {
-			continue
-		}
-
-		versions, err := pkgcomposer.ParseDocument(cw.body.Bytes(), p.Name)
-		if cw.status != http.StatusOK || cw.overflow || err != nil {
-			failed = true
-			continue
-		}
-
-		pkgcomposer.RelinkMember(versions, p.Name, root)
-
-		for _, v := range versions {
-			if key := v.MergeKey(); !seen[key] {
-				seen[key] = true
-
-				merged = append(merged, v)
+						merged = append(merged, v)
+					}
+				}
 			}
-		}
+
+			if len(merged) == 0 {
+				return nil, errNoDocument
+			}
+
+			return pkgcomposer.EncodeDocument(
+				map[string][]pkgcomposer.Version{p.Name: merged},
+				true,
+			) //nolint:wrapcheck // logged by serveMergedDoc
+		},
+	})
+}
+
+// composerRef: a hosted member holds a package when its stable or its "~dev"
+// p2 document exists; its dists are files of the package.
+func composerRef(relPath string) (PkgRef, bool) {
+	p, ok := pkgcomposer.ParsePath(relPath)
+	if !ok || (p.Kind != pkgcomposer.KindMetadata && p.Kind != pkgcomposer.KindDist) {
+		return PkgRef{}, false
 	}
 
-	sess.release()
-
-	if len(merged) == 0 {
-		if failed {
-			http.Error(w, "member repository error", http.StatusBadGateway)
-		} else {
-			http.NotFound(w, r)
-		}
-
-		return
-	}
-
-	body, err := pkgcomposer.EncodeDocument(map[string][]pkgcomposer.Version{p.Name: merged}, true)
-	if err != nil {
-		h.log.Errorw("failed to encode composer metadata", "group", grp.Name, "package", p.Name, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	writeMergedJSON(w, r, grp, body, composerMetaMaxAge, failed)
+	return PkgRef{
+		probe:     "p2/" + p.Name + ".json",
+		altProbes: []string{"p2/" + p.Name + "~dev.json"},
+		accept:    "application/json",
+		file:      p.Kind == pkgcomposer.KindDist,
+	}, true
 }

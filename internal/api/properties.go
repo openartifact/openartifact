@@ -13,7 +13,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/license"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -25,15 +24,16 @@ type PropertiesHandler struct {
 	repoAccess
 
 	licenses artifactLicenseSource
+	db       LicenseStore
 }
 
 // NewPropertiesHandler returns the artifact properties handler. blobs is the
 // store read to re-evaluate license policies on the artifact's own declared
 // licenses when a license property changes.
-func NewPropertiesHandler(log *logger.Logger, db database.Database, blobs storage.BlobStore) *PropertiesHandler {
+func NewPropertiesHandler(log *logger.Logger, db LicenseStore, blobs storage.BlobStore) *PropertiesHandler {
 	return &PropertiesHandler{
 		repoAccess: newRepoAccess(db, log, nil),
-		licenses:   artifactLicenseSource{db: db, blobs: blobs, log: log, detector: license.NewDetector(log)},
+		licenses:   artifactLicenseSource{db: db, blobs: blobs, log: log, detector: license.NewDetector(log)}, db: db,
 	}
 }
 
@@ -44,17 +44,9 @@ func validatePropertyKey(key string) string {
 		return "property key must not be empty"
 	case len(key) > maxPropertyKeyLen:
 		return "property key is too long (max 255 bytes)"
-	case !utf8.ValidString(key):
-		return "property key must be valid UTF-8"
 	}
 
-	for _, r := range key {
-		if r < 0x20 || r == 0x7f {
-			return "property key must not contain control characters"
-		}
-	}
-
-	return ""
+	return plainTextProblem("property key", key)
 }
 
 // decodeProperties reads a properties request body and validates it. The body

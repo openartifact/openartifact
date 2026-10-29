@@ -64,9 +64,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import AppButton from '../components/AppButton.vue'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { changePassword } from '../api/auth'
 import { useSessionStore } from '../stores/session'
 import { useToastStore } from '../stores/toast'
+import { usePasswordChange } from '../composables/usePasswordChange'
 import { useSignOut } from '../composables/useSignOut'
 import { safeNextPath } from '../lib/safeRedirect'
 import FormField from '../components/FormField.vue'
@@ -80,47 +80,26 @@ const session = useSessionStore()
 const toasts = useToastStore()
 const handleLogout = useSignOut()
 
-const form = ref({ current_password: '', new_password: '', confirm_password: '' })
-const errors = ref<Record<string, string>>({})
-const loading = ref(false)
+const { form, errors, loading, submit } = usePasswordChange()
 const errorMsg = ref('')
 
 async function handleSubmit(): Promise<void> {
-  errors.value = {}
   errorMsg.value = ''
-
-  if (form.value.new_password.length < 12) {
-    errors.value.new_password = t('auth.passwordMinError')
-    return
-  }
-  if (form.value.new_password !== form.value.confirm_password) {
-    errors.value.confirm_password = t('auth.passwordMismatch')
-    return
-  }
-  if (form.value.new_password === form.value.current_password) {
-    errors.value.new_password = t('auth.passwordSame')
-    return
-  }
-
-  loading.value = true
-  try {
-    await changePassword({
-      current_password: form.value.current_password,
-      new_password: form.value.new_password,
-    })
-    await session.fetchMe()
-    if (!session.isAuthenticated || session.mustChangePassword) {
-      // The password change itself succeeded, but we cannot continue into the app.
-      session.clearSession()
-      toasts.warning(t('auth.passwordNotApplied'))
-      await router.replace({ name: 'login' })
-      return
-    }
-    await router.replace(safeNextPath(route.query.next))
-  } catch (err: unknown) {
-    errorMsg.value = err instanceof Error ? err.message : t('auth.passwordChangeFailed')
-  } finally {
-    loading.value = false
-  }
+  await submit(
+    async () => {
+      await session.fetchMe()
+      if (!session.isAuthenticated || session.mustChangePassword) {
+        // The password change itself succeeded, but we cannot continue into the app.
+        session.clearSession()
+        toasts.warning(t('auth.passwordNotApplied'))
+        await router.replace({ name: 'login' })
+        return
+      }
+      await router.replace(safeNextPath(route.query.next))
+    },
+    (message) => {
+      errorMsg.value = message
+    },
+  )
 }
 </script>

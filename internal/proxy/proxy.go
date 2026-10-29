@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/crypto"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/format/terraform"
@@ -42,7 +41,6 @@ import (
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/telemetry"
-	"github.com/openartifact/openartifact/pkg/conda"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -117,16 +115,25 @@ var (
 // (RFC 7234 section 5.5.1, "Response is Stale").
 const staleWarning = `110 - "Response is Stale"`
 
+// ServiceStore is the part of the database Service needs.
+type ServiceStore interface {
+	DeleteProxyCacheEntry(ctx context.Context, repoID string, cacheKey string) error
+	EnsureBlob(ctx context.Context, sha256 string, mediaType string, size int64) (string, error)
+	GetProxyCacheEntry(ctx context.Context, repoID string, cacheKey string) (*models.ProxyCacheEntry, error)
+	UpsertProxyCacheEntry(ctx context.Context, entry *models.ProxyCacheEntry) error
+}
+
 // Service fetches and caches upstream files for proxy repositories.
 type Service struct {
 	log       *logger.Logger
-	db        database.Database
+	db        ServiceStore
 	blobStore storage.BlobStore
 	client    *http.Client
 	flights   flightGroup
 	tokens    tokenCache // docker upstream bearer tokens
 
-	// baseURL is the server URL rewritten metadata points at (npm tarballs).
+	// baseURL is BASE_URL when the operator set one, "" otherwise; read it
+	// through publicBase (the origin rewritten metadata points at).
 	baseURL string
 
 	// dockerDigestTTL is how long a docker manifest or blob addressed by digest
@@ -174,7 +181,7 @@ type Service struct {
 // NewService creates the proxy service. Upstream requests use an SSRF-safe
 // client: blocked destination addresses are refused at dial time and on every
 // redirect hop.
-func NewService(log *logger.Logger, db database.Database, blobStore storage.BlobStore) *Service {
+func NewService(log *logger.Logger, db ServiceStore, blobStore storage.BlobStore) *Service {
 	client := upstreamClient(DefaultUpstreamStallTimeout)
 
 	return &Service{
@@ -235,18 +242,8 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 		return
 	}
 
-	if serve := s.formatServer(repo.Format); serve != nil {
-		serve(w, r, repo, relPath)
-		return
-	}
-
-	if repo.Format == "conda" {
-		s.serveConda(w, r, repo, relPath)
-		return
-	}
-
-	if repo.Format == "conan" {
-		s.serveConan(w, r, repo, relPath)
+	if h, ok := hooks.Lookup(repo.Format); ok && h.Serve != nil {
+		h.Serve(s, w, r, repo, relPath)
 		return
 	}
 
@@ -265,35 +262,6 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 	s.serveResolved(w, r, repo, key, res, func() (*resolution, error) {
 		return s.resolve(r.Context(), repo, key)
 	})
-}
-
-// formatServer returns the handler of the formats that map upstream paths to
-// their own cache keys and verification, nil for the formats served by path.
-func (s *Service) formatServer(format string) func(http.ResponseWriter, *http.Request, *models.Repository, string) {
-	switch format {
-	case "pypi":
-		return s.servePyPI
-	case "npm":
-		return s.serveNPM
-	case "helm":
-		return s.serveHelm
-	case "cargo":
-		return s.serveCargo
-	case "go":
-		return s.serveGo
-	case "nuget":
-		return s.serveNuGet
-	case "rubygems":
-		return s.serveRubyGems
-	case "terraform":
-		return s.serveTerraform
-	case "ansible":
-		return s.serveAnsible
-	case "composer":
-		return s.serveComposer
-	}
-
-	return nil
 }
 
 // serveResolved streams the cached file of res to the client after the
@@ -365,12 +333,7 @@ func (s *Service) serveResolved(
 		w.Header().Set("Warning", staleWarning)
 	}
 
-	if repo.Format == "rubygems" && rubygemsCompact(key) {
-		s.writeCompactEntry(w, r, repo, entry, rc)
-		return
-	}
-
-	if repo.Format == "pacman" && pacmanNotModified(w, r, entry, key) {
+	if h, ok := hooks.Lookup(repo.Format); ok && h.WriteEntry != nil && h.WriteEntry(s, w, r, repo, entry, key, rc) {
 		return
 	}
 
@@ -566,20 +529,11 @@ func (s *Service) fetch(ctx context.Context, repo *models.Repository, key string
 		return nil, errInternal
 	}
 
-	var o fetchOpts
-
-	switch {
-	case isIvyFormat(repo.Format):
-		o = s.ivyFetchOpts(ctx, repo, key)
-	case repo.Format == "nix":
-		return s.fetchNix(ctx, repo, key, target)
-	case repo.Format == "apk":
-		if o, err = s.apkFetchOpts(ctx, repo, key); err != nil {
-			return nil, err
-		}
+	if h, ok := hooks.Lookup(repo.Format); ok && h.Fetch != nil {
+		return h.Fetch(s, ctx, repo, key, target)
 	}
 
-	return s.fetchURL(ctx, repo, key, target, o)
+	return s.fetchURL(ctx, repo, key, target, fetchOpts{})
 }
 
 // fetchOpts tunes one upstream fetch.
@@ -760,6 +714,21 @@ func (s *Service) newUpstreamRequest(ctx context.Context, repo *models.Repositor
 	return req, nil
 }
 
+// bodyLimit is the largest body the proxy accepts for key: the file limit,
+// lowered to the index limit for the metadata files of format.
+func (s *Service) bodyLimit(format, key string) int64 {
+	h, _ := hooks.Lookup(format)
+
+	switch {
+	case h.IsLargeMetadata != nil && h.IsLargeMetadata(key):
+		return min(s.maxBody, s.maxCondaIndex)
+	case h.IsMetadata != nil && h.IsMetadata(key):
+		return min(s.maxBody, s.maxMeta)
+	}
+
+	return s.maxBody
+}
+
 // store spools the response, enforcing the size limit, then writes the blob
 // and cache entry under the blob lock.
 func (s *Service) store(
@@ -769,14 +738,7 @@ func (s *Service) store(
 	resp *http.Response,
 	o fetchOpts,
 ) (*models.ProxyCacheEntry, error) {
-	limit := s.maxBody
-
-	switch {
-	case repo.Format == "conda" && isCondaIndexKey(key):
-		limit = min(limit, s.maxCondaIndex)
-	case isMetadataKey(repo.Format, key):
-		limit = min(limit, s.maxMeta)
-	}
+	limit := s.bodyLimit(repo.Format, key)
 
 	if resp.ContentLength > limit {
 		s.log.Warnw("proxy upstream file exceeds size limit", "repo", repo.Name, "path", key, "size", resp.ContentLength)
@@ -946,264 +908,18 @@ func (o fetchOpts) pinnable(resp *http.Response) bool {
 // publishes a digest, was checked against it; otherwise the repository TTL
 // applies so a truncated or unverified copy is revalidated.
 func ttlFor(repo *models.Repository, key string, pinnable bool) time.Duration {
-	if pinnable && Immutable(repo.Format, key) {
+	h, _ := hooks.Lookup(repo.Format)
+
+	if pinnable && h.Immutable != nil && h.Immutable(key) {
 		return immutableTTL
 	}
 
 	ttl := time.Duration(repo.CacheTTLSeconds) * time.Second
-	if repo.Format == "pacman" && isPacmanDatabase(key) {
-		return min(ttl, pacmanDBMaxTTL)
+	if h.CapTTL != nil {
+		return h.CapTTL(key, ttl)
 	}
 
 	return ttl
-}
-
-// Immutable reports whether the file at key never changes once published, so a
-// cached copy never needs revalidation. Formats whose bodies are verified
-// against a published digest (see fetchOpts) pin by name alone; the ones that
-// have no such check here (deb, Maven, pacman, rpm) pin only under layouts whose file
-// names are never reused, and everything else is cached for the repository TTL
-// so a wrong copy is replaced on revalidation:
-//   - apk: `.apk` files of a `<branch>/<repo>/<arch>/<file>` key; they are
-//     only cached once their checksum matched the upstream index (apk.go).
-//   - composer: dists of released versions (not branches), which are refused
-//     when they differ from a non-empty shasum; the reference in the key names
-//     the content (composer.go).
-//   - deb: .deb/.udeb below a pool/ directory (the Debian archive layout, where
-//     a file name is never reused); the same names in a flat repository, where
-//     a publisher may overwrite a package, use the repository TTL.
-//   - ivy, sbt: released files, not checksum or signature files, maven-metadata*.xml
-//     or -SNAPSHOT files; a file is pinned only when its body matched the
-//     checksum the upstream publishes (ivy.go), otherwise the repository TTL
-//     applies.
-//   - maven: released artifacts, not maven-metadata*.xml, archetype-catalog.xml
-//     (both are regenerated in place) or -SNAPSHOT files; a checksum or
-//     signature file (.md5 .sha1 .sha256 .sha512 .asc) is as immutable as the
-//     file it belongs to.
-//   - nix: nar/ files, cached only after their body matched the FileHash and
-//     FileSize of their narinfo (nix.go); narinfo and nix-cache-info move.
-//   - pacman: nothing. A mirror may republish a package file name, so package
-//     files use the repository TTL.
-//   - rpm: .rpm below a Packages/ directory (the layout of Fedora, CentOS, RHEL
-//     and most vendor repositories, whose NEVRA-named files are not rebuilt in
-//     place); flat or other layouts use the repository TTL. No cheap integrity
-//     signal (the repodata checksums are not checked by this proxy) exists to
-//     pin the rest.
-//
-//nolint:gocyclo,cyclop // one case per format
-func Immutable(format, key string) bool {
-	name := key[strings.LastIndexByte(key, '/')+1:]
-
-	switch format {
-	case "ansible":
-		// Tarballs, checked against the artifact sha256 of their version document.
-		return strings.HasPrefix(key, ansibleArtifactDir)
-	case "apk":
-		// Packages whose checksum matched the upstream index; see apkFetchOpts.
-		return apkPackageKey(key)
-	case "cargo":
-		// Crate files, not index files or config.json.
-		return strings.HasPrefix(key, "api/v1/crates/") && name == "download"
-	case "composer":
-		// Dists of released versions; the reference in their key names the content.
-		return composerDistImmutable(key)
-	case "conan":
-		// File lists and files below a revision, which a digest of its
-		// content names; revision lists and latest move.
-		return conanRevisionFile(key)
-	case "conda":
-		// Package files, verified against the repodata digest; repodata moves.
-		return condaImmutable(name)
-	case "deb", "rpm":
-		return debRPMImmutable(format, key, name)
-	case "docker":
-		// Blobs and manifests addressed by digest; tags move.
-		return digestRE.MatchString(name)
-	case "go":
-		// .info/.mod/.zip of a canonical version, not list/@latest/queries.
-		return goImmutable(key)
-	case "helm":
-		// Chart archives (charts/<file>), not index.yaml or provenance files.
-		return strings.HasPrefix(key, helmChartsDir) && !strings.HasSuffix(name, helmProvExt)
-	case "ivy", "sbt":
-		// Released files that matched the upstream's checksum; see ivyFetchOpts.
-		return ivyImmutable(key)
-	case "maven":
-		return mavenImmutable(key)
-	case "nix":
-		// NARs, which are only cached once they matched the FileHash and
-		// FileSize of their narinfo (nix.go); narinfo and cache-info move.
-		return nixNarKey(key)
-	case "npm":
-		// Tarballs (<pkg>/-/<file>), not packuments.
-		return strings.HasSuffix(name, ".tgz") && strings.Contains(key, "/-/")
-	case "nuget", "rubygems":
-		return packageFileImmutable(format, key, name)
-	case "pypi":
-		// Distribution files (and their PEP 658 metadata), not the index pages.
-		return strings.HasPrefix(key, "files/")
-	case "terraform":
-		// Provider zips, checked against the SHA256SUMS and package document
-		// checksums; module archives have no checksum upstream (see terraform.go).
-		return tfProviderZipKey(key)
-	}
-
-	return false
-}
-
-// debRPMImmutable is Immutable for deb and rpm: packages below the pool/ or
-// Packages/ directory of the archive layout.
-func debRPMImmutable(format, key, name string) bool {
-	if format == "deb" {
-		return inDir(key, "pool") && (strings.HasSuffix(name, ".deb") || strings.HasSuffix(name, ".udeb"))
-	}
-
-	return inDir(key, "Packages") && strings.HasSuffix(name, ".rpm")
-}
-
-// packageFileImmutable is Immutable for the formats whose package files live
-// under a fixed prefix: NuGet's flat container files (not version lists or
-// registrations) and RubyGems' gems/<file>.gem, whose bytes are checked against
-// the checksum of their info line (not the compact index, gemspecs or legacy
-// specs).
-func packageFileImmutable(format, key, name string) bool {
-	if format == "nuget" {
-		return nugetImmutable(key)
-	}
-
-	return strings.HasPrefix(key, "gems/") && strings.HasSuffix(name, ".gem")
-}
-
-// nugetImmutable reports whether key is a package file of the flat container.
-func nugetImmutable(key string) bool {
-	return strings.HasPrefix(key, "v3/package/") && (strings.HasSuffix(key, ".nupkg") || strings.HasSuffix(key, ".nuspec"))
-}
-
-// conanRevisionFile reports whether key is the file list or a file of a
-// recipe or package revision.
-func conanRevisionFile(key string) bool {
-	return strings.Contains(key, "/revisions/") && (strings.HasSuffix(key, "/files") || strings.Contains(key, "/files/"))
-}
-
-// condaImmutable reports whether name is a conda package file.
-func condaImmutable(name string) bool {
-	return strings.HasSuffix(name, conda.ExtConda) || strings.HasSuffix(name, conda.ExtTarBz2)
-}
-
-// isMetadataKey reports whether key names an index or metadata file of format
-// (small by nature, capped at DefaultMaxMetadata) rather than a package file.
-//
-//nolint:gocyclo,cyclop // one case per format
-func isMetadataKey(format, key string) bool {
-	name := key[strings.LastIndexByte(key, '/')+1:]
-
-	switch format {
-	case "ansible":
-		return !strings.HasPrefix(key, ansibleArtifactDir)
-	case "apk":
-		return apkIndexKey(key)
-	case "cargo", "nuget", "rubygems":
-		return !strings.HasPrefix(key, packageDir(format))
-	case "composer":
-		return !strings.HasPrefix(key, composerDistDir)
-	case "conan":
-		return !strings.Contains(key, "/files/")
-	case "conda":
-		// Repodata is capped by maxCondaIndex instead; this covers channeldata.json.
-		return !strings.HasSuffix(name, conda.ExtConda) && !strings.HasSuffix(name, conda.ExtTarBz2)
-	case "deb":
-		return inDir(key, "dists")
-	case "go":
-		return name == "list" || strings.HasSuffix(key, "/@latest")
-	case "helm":
-		return name == helmIndexKey
-	case "ivy", "sbt":
-		return isIvyMetadata(key) || isIvySidecar(key) || name == "ivy.xml"
-	case "maven":
-		return strings.HasPrefix(name, "maven-metadata")
-	case "nix":
-		return nixMetadataKey(key)
-	case "npm":
-		return !strings.Contains(key, "/-/")
-	case "pacman":
-		return isPacmanDatabase(key)
-	case "pypi":
-		return !strings.HasPrefix(key, "files/")
-	case "rpm":
-		return inDir(key, "repodata")
-	case "terraform":
-		return !tfArchiveKey(key)
-	}
-
-	return false
-}
-
-// packageDir is the key prefix under which a cargo, nuget or rubygems upstream
-// keeps its package files; everything outside it is metadata.
-func packageDir(format string) string {
-	switch format {
-	case "cargo":
-		return "api/v1/crates/"
-	case "nuget":
-		return "v3/package/"
-	}
-
-	return "gems/"
-}
-
-// mavenSidecarExts are the checksum and signature files published next to a
-// Maven file; each is immutable exactly when the file it belongs to is.
-var mavenSidecarExts = []string{".md5", ".sha1", ".sha256", ".sha512", ".asc"} //nolint:gochecknoglobals // read-only table
-
-// mavenImmutable reports whether key is a released, never-rewritten Maven file.
-func mavenImmutable(key string) bool {
-	for _, ext := range mavenSidecarExts {
-		if owner, ok := strings.CutSuffix(key, ext); ok {
-			return mavenImmutable(owner)
-		}
-	}
-
-	name := key[strings.LastIndexByte(key, '/')+1:]
-
-	return name != "" &&
-		!strings.HasPrefix(name, "maven-metadata") &&
-		name != "archetype-catalog.xml" &&
-		!strings.Contains(key, "-SNAPSHOT")
-}
-
-// inDir reports whether key lies below a directory named dir, at the root of
-// the upstream or deeper (an upstream URL may already include a path prefix).
-func inDir(key, dir string) bool {
-	return strings.HasPrefix(key, dir+"/") || strings.Contains(key, "/"+dir+"/")
-}
-
-// packageExts lists, for the formats whose files are not checked against a
-// digest, the file extensions that name a binary package.
-var packageExts = map[string][]string{ //nolint:gochecknoglobals // read-only table
-	"maven":  {".jar", ".pom", ".zip", ".war", ".ear", ".aar", ".module", ".gz"},
-	"deb":    {".deb", ".udeb"},
-	"rpm":    {".rpm"},
-	"nix":    {".nar", ".nar.xz", ".nar.zst", ".nar.bz2", ".nar.br", ".nar.gz", ".nar.lz4"},
-	"pacman": {".pkg.tar.zst", ".pkg.tar.xz", ".pkg.tar.gz", ".pkg.tar.bz2", ".pkg.tar.lz4", ".pkg.tar"},
-	"ivy":    ivyPackageExts,
-	"sbt":    ivyPackageExts,
-	"conda":  {conda.ExtConda, conda.ExtTarBz2},
-	// Module archives and provider zips; also the keys that are not metadata.
-	"terraform": tfArchiveExts,
-}
-
-// isHTMLForPackage reports whether the upstream answered a package file's path
-// with an HTML page: a captive portal, WAF challenge or proxy error page
-// returned as 200. For the formats in packageExts nothing else would catch it,
-// and caching it as the release would pin the page forever (and serve it to
-// every client), so the body is refused instead.
-func isHTMLForPackage(format, key string, resp *http.Response) bool {
-	ct := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
-	if !strings.HasPrefix(ct, "text/html") && !strings.HasPrefix(ct, "application/xhtml+xml") {
-		return false
-	}
-
-	return slices.ContainsFunc(packageExts[format], func(ext string) bool { return strings.HasSuffix(key, ext) })
 }
 
 // CleanPath validates a client-supplied repository-relative path and returns

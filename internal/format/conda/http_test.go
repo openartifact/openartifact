@@ -20,7 +20,7 @@ import (
 	"github.com/openartifact/openartifact/internal/webhook"
 )
 
-// condaDB is an in-memory conda_packages table: lookups match on the full
+// condaDB is an in-memory package table: lookups match on the full
 // file key (name, version, build, platform, extension), like the real
 // queries, and creating a key twice yields database.ErrDuplicate.
 type condaDB struct {
@@ -30,6 +30,11 @@ type condaDB struct {
 	// pkg is the most recently stored package, nil after it was deleted.
 	pkg  *models.CondaPackage
 	pkgs []*models.CondaPackage
+}
+
+// ListLicensePolicies is not exercised by the tests.
+func (*condaDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	return nil, nil
 }
 
 func (d *condaDB) find(name, version, build, platform, ext string) *models.CondaPackage {

@@ -9,10 +9,18 @@ import (
 	"fmt"
 	"sort"
 
+	"database/sql"
+
 	sq "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
+
+// metadataBlobsStore is the part of the database metadataBlobs needs.
+type metadataBlobsStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	GetDB() *sql.DB
+}
 
 // metadataBlobs keeps the blob-store objects behind generated
 // repository_metadata rows consistent. Identical metadata content (the empty
@@ -29,7 +37,7 @@ import (
 // storage.SafeDeleteBlob is not used because it only counts package-table
 // rows, not repository_metadata.
 type metadataBlobs struct {
-	db    sq.Database
+	db    metadataBlobsStore
 	store storage.BlobStore
 	log   *logger.Logger
 	who   string // log prefix, e.g. "rpm worker"

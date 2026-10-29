@@ -81,40 +81,39 @@ const failed = ref(false)
 // response for a previous project or page must not overwrite newer data.
 let generation = 0
 
+/** Fetches one page (the first when `cursor` is null) and replaces or extends the list with it. */
+async function fetchPage(cursor: string | null): Promise<void> {
+  const mine = generation
+  try {
+    const page = await listProjectActivity(props.project, cursor ? { cursor, limit: PAGE_SIZE } : { limit: PAGE_SIZE })
+    if (mine !== generation) return
+    entries.value = cursor ? [...entries.value, ...page.items] : page.items
+    nextCursor.value = page.hasMore ? page.nextCursor : null
+  } catch {
+    if (mine === generation) failed.value = true
+  } finally {
+    if (mine === generation) {
+      loading.value = false
+      loadingMore.value = false
+    }
+  }
+}
+
 async function loadFirst(): Promise<void> {
-  const mine = ++generation
+  generation++
   loading.value = true
   loadingMore.value = false
   failed.value = false
   entries.value = []
   nextCursor.value = null
-  try {
-    const page = await listProjectActivity(props.project, { limit: PAGE_SIZE })
-    if (mine !== generation) return
-    entries.value = page.items
-    nextCursor.value = page.hasMore ? page.nextCursor : null
-  } catch {
-    if (mine === generation) failed.value = true
-  } finally {
-    if (mine === generation) loading.value = false
-  }
+  await fetchPage(null)
 }
 
 async function loadMore(): Promise<void> {
   if (!nextCursor.value || loadingMore.value) return
-  const mine = generation
   loadingMore.value = true
   failed.value = false
-  try {
-    const page = await listProjectActivity(props.project, { cursor: nextCursor.value, limit: PAGE_SIZE })
-    if (mine !== generation) return
-    entries.value = [...entries.value, ...page.items]
-    nextCursor.value = page.hasMore ? page.nextCursor : null
-  } catch {
-    if (mine === generation) failed.value = true
-  } finally {
-    if (mine === generation) loadingMore.value = false
-  }
+  await fetchPage(nextCursor.value)
 }
 
 const exportActivity = (format: ExportFormat) => downloadProjectActivityExport(props.project, format)

@@ -96,13 +96,22 @@ func ServableFiles(files []File) []File {
 	return out
 }
 
-// ProjectURL is the URL of a project's simple page in a repository.
-func ProjectURL(repoName, project string) string {
-	return "/repos/" + url.PathEscape(repoName) + "/simple/" + url.PathEscape(project) + "/"
+// ProjectURL is the reference to a project's simple page, relative to the
+// simple index page ("simple/", whose URL ends in a slash).
+func ProjectURL(project string) string {
+	return segment(project) + "/"
 }
 
-// FileURL is the URL a repository serves a project's file from (proxy and
-// group repositories; hosted repositories use /files/<filename>).
-func FileURL(repoName, project, filename string) string {
-	return "/repos/" + url.PathEscape(repoName) + "/files/" + url.PathEscape(project) + "/" + url.PathEscape(filename)
+// FileURL is the reference to a project's file, relative to the project page
+// "simple/<project>/" (whose URL ends in a slash): proxy and group
+// repositories serve it from files/<project>/<filename>.
+func FileURL(project, filename string) string {
+	return "../../files/" + segment(project) + "/" + segment(filename)
+}
+
+// segment escapes name as one path segment of a relative reference.
+// url.PathEscape keeps ':', which in a reference's first segment would be read
+// as a scheme ("javascript:x/"), so it is escaped too.
+func segment(name string) string {
+	return strings.ReplaceAll(url.PathEscape(name), ":", "%3A")
 }

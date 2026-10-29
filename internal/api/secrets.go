@@ -21,16 +21,32 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// SecretsStore is the part of the database SecretsHandler needs.
+type SecretsStore interface {
+	repoAccessStore
+	CreateSecretScanResult(ctx context.Context, result *models.SecretScanResult) error
+	DeleteSecretScanResult(ctx context.Context, repoID string, id string) error
+	GetPermissionTargetByName(ctx context.Context, name string) (*models.PermissionTarget, error)
+	GetPermissionTargetsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]*models.PermissionTarget, error)
+	GetProjectByName(ctx context.Context, name string) (*models.Project, error)
+	GetSecretScanResult(ctx context.Context, repoID string, artifactID string) (*models.SecretScanResult, error)
+	ListProjectGrantsByUser(ctx context.Context, userID string) ([]*models.ProjectGrant, error)
+	ListPublicRepositoryNames(ctx context.Context) ([]string, error)
+	ListSecretScanResults(ctx context.Context, repoID string, flaggedOnly bool) ([]*models.SecretScanResult, error)
+	QuarantineArtifact(ctx context.Context, repoID string, artifactID string, quarantined bool) error
+}
+
 type SecretsHandler struct {
 	repoAccess
 
 	scanner *secrets.Scanner
+	db      SecretsStore
 }
 
-func NewSecretsHandler(db database.Database, log *logger.Logger, scanner *secrets.Scanner) *SecretsHandler {
+func NewSecretsHandler(db SecretsStore, log *logger.Logger, scanner *secrets.Scanner) *SecretsHandler {
 	return &SecretsHandler{
 		repoAccess: newRepoAccess(db, log, auth.NewEvaluator(db, log, false)),
-		scanner:    scanner,
+		scanner:    scanner, db: db,
 	}
 }
 

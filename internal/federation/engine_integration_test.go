@@ -62,9 +62,13 @@ type engNotifier struct {
 	npm []string
 }
 
-func (n *engNotifier) NotifyMaven(_, _, _ string) {}
+func (n *engNotifier) Notify(r Regen) {
+	if r.Format != "npm" {
+		return
+	}
 
-func (n *engNotifier) NotifyNPM(packageID string) {
+	packageID := r.PackageID
+
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
@@ -143,6 +147,8 @@ func engCtx(t *testing.T) context.Context {
 // newEngSite creates a site with a federated repository named name of format.
 func newEngSite(t *testing.T, name, format string) *engSite {
 	t.Helper()
+
+	registerFixtureFormats()
 
 	t.Setenv(netutil.EnvAllowPrivate, "true")
 
@@ -296,7 +302,7 @@ func (s *engSite) putIn(t *testing.T, repoID, path, content string) {
 	blobID, _ := seedBlob(t, s.db, content)
 
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE raw_artifacts SET blob_id = $3 WHERE repository_id = $1 AND path = $2 AND deleted_at IS NULL`, repoID, path, blobID)
+		`UPDATE package_files SET blob_id = $3 WHERE repository_id = $1 AND path = $2 AND deleted_at IS NULL`, repoID, path, blobID)
 	if err != nil {
 		t.Fatalf("%s: update artifact: %v", s.name, err)
 	}
@@ -305,7 +311,14 @@ func (s *engSite) putIn(t *testing.T, repoID, path, content string) {
 		return
 	}
 
-	s.exec(t, `INSERT INTO raw_artifacts (repository_id, path, blob_id) VALUES ($1, $2, $3)`, repoID, path, blobID)
+	// A raw file is one package, one version ('') and one file, all named by the path.
+	s.exec(t, `INSERT INTO packages (repository_id, format, name, name_key) VALUES ($1, 'raw', $2, $2)
+	           ON CONFLICT (repository_id, name_key) DO NOTHING`, repoID, path)
+	s.exec(t, `INSERT INTO package_versions (package_id, repository_id, version, version_key)
+	           SELECT id, repository_id, '', '' FROM packages WHERE repository_id = $1 AND name_key = $2`, repoID, path)
+	s.exec(t, `INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, unit_key)
+	           SELECT v.id, $1, $2, $2, $3, $2 FROM package_versions v JOIN packages p ON p.id = v.package_id
+	            WHERE p.repository_id = $1 AND p.name_key = $2 AND v.deleted_at IS NULL`, repoID, path, blobID)
 }
 
 func (s *engSite) trash(t *testing.T, path string) {
@@ -313,16 +326,29 @@ func (s *engSite) trash(t *testing.T, path string) {
 
 	s.exec(
 		t,
-		`UPDATE raw_artifacts SET deleted_at = now(), deleted_by = 'test' WHERE repository_id = $1 AND path = $2 AND deleted_at IS NULL`,
+		`UPDATE package_files SET deleted_at = now(), deleted_by = 'test' WHERE repository_id = $1 AND path = $2 AND deleted_at IS NULL`,
 		s.repoID,
 		path,
 	)
+	s.exec(t, `UPDATE package_versions v SET deleted_at = now(), deleted_by = 'test' FROM packages p
+	            WHERE p.id = v.package_id AND p.repository_id = $1 AND p.name_key = $2 AND v.deleted_at IS NULL`, s.repoID, path)
 }
 
 func (s *engSite) purge(t *testing.T, path string) {
 	t.Helper()
 
-	s.exec(t, `DELETE FROM raw_artifacts WHERE repository_id = $1 AND path = $2 AND deleted_at IS NULL`, s.repoID, path)
+	purgeRaw(t, s.exec, s.repoID, path)
+}
+
+// purgeRaw hard-deletes the live file of a raw path with its emptied version and package.
+func purgeRaw(t *testing.T, exec func(*testing.T, string, ...any), repoID, path string) {
+	t.Helper()
+
+	exec(t, `DELETE FROM package_files WHERE repository_id = $1 AND path = $2 AND deleted_at IS NULL`, repoID, path)
+	exec(t, `DELETE FROM package_versions v USING packages p WHERE p.id = v.package_id AND p.repository_id = $1 AND p.name_key = $2
+	           AND NOT EXISTS (SELECT 1 FROM package_files f WHERE f.version_id = v.id)`, repoID, path)
+	exec(t, `DELETE FROM packages p WHERE p.repository_id = $1 AND p.name_key = $2
+	           AND NOT EXISTS (SELECT 1 FROM package_versions v WHERE v.package_id = p.id)`, repoID, path)
 }
 
 // live returns path -> sha256 of the live raw artifacts of the site's repository.
@@ -330,7 +356,7 @@ func (s *engSite) live(t *testing.T) map[string]string {
 	t.Helper()
 
 	rows, err := s.db.QueryContext(context.Background(),
-		`SELECT r.path, b.sha256 FROM raw_artifacts r JOIN blobs b ON b.id = r.blob_id
+		`SELECT r.path, b.sha256 FROM package_files r JOIN blobs b ON b.id = r.blob_id
 		  WHERE r.repository_id = $1 AND r.deleted_at IS NULL`, s.repoID)
 	if err != nil {
 		t.Fatalf("%s: list artifacts: %v", s.name, err)
@@ -1053,7 +1079,7 @@ func TestEngineDeleteIsAppliedLikeALocalDelete(t *testing.T) {
 
 			trashed := b.scalar(
 				t,
-				`SELECT count(*) FROM raw_artifacts WHERE repository_id = $1 AND path = 'f' AND deleted_by = 'federation:site-a'`,
+				`SELECT count(*) FROM package_files WHERE repository_id = $1 AND path = 'f' AND deleted_by = 'federation:site-a'`,
 				b.repoID,
 			)
 			_, inTable := b.hasBlob(t, engSHA("payload"))
@@ -1063,7 +1089,7 @@ func TestEngineDeleteIsAppliedLikeALocalDelete(t *testing.T) {
 				engEqual(t, "blob kept for the trash", inTable, true)
 			} else {
 				engEqual(t, "trashed rows", trashed, int64(0))
-				engEqual(t, "rows of f", b.scalar(t, `SELECT count(*) FROM raw_artifacts WHERE repository_id = $1`, b.repoID), int64(0))
+				engEqual(t, "rows of f", b.scalar(t, `SELECT count(*) FROM package_files WHERE repository_id = $1`, b.repoID), int64(0))
 				engEqual(t, "blob released", inTable, false)
 			}
 
@@ -1896,7 +1922,7 @@ func TestEngineFailedApplyReleasesQuotaAndIsParkedAfterThreePulls(t *testing.T) 
 	// The unit named boom cannot be written at b, whatever the peer sends.
 	b.exec(t, `CREATE FUNCTION eng_poison() RETURNS trigger LANGUAGE plpgsql AS $$
 	           BEGIN IF NEW.path = 'boom' THEN RAISE EXCEPTION 'poison unit'; END IF; RETURN NEW; END $$`)
-	b.exec(t, `CREATE TRIGGER eng_poison BEFORE INSERT ON raw_artifacts FOR EACH ROW EXECUTE FUNCTION eng_poison()`)
+	b.exec(t, `CREATE TRIGGER eng_poison BEFORE INSERT ON package_files FOR EACH ROW EXECUTE FUNCTION eng_poison()`)
 
 	a.put(t, "fine", "fine!")
 	a.put(t, "boom", "boom-content")
@@ -2102,7 +2128,7 @@ func TestEngineTombstoneGCRemovesOnlyExpiredTombstones(t *testing.T) {
 		a.trash(t, k)
 	}
 
-	a.exec(t, `DELETE FROM raw_artifacts WHERE repository_id = $1 AND path = 'other-dead-old'`, otherID)
+	purgeRaw(t, a.exec, otherID, "other-dead-old")
 
 	age(a.repoID, "live-old", 90)
 	age(a.repoID, "dead-old", 40)
@@ -2222,17 +2248,19 @@ func (c *engPanicCodec) Import(
 	return c.Codec.Import(ctx, tx, repoID, key, content, blobIDs)
 }
 
-// engInjectPanics swaps the codec of format for a panicking wrapper (armed)
-// until the test ends.
-func engInjectPanics(t *testing.T, format string) *engPanicCodec {
+// engInjectPanics makes the engine of s use a panicking wrapper (armed) of the
+// codec of format.
+func engInjectPanics(t *testing.T, s *engSite, format string) *engPanicCodec {
 	t.Helper()
 
-	orig := codecs[format]
+	orig, err := CodecFor(format)
+	if err != nil {
+		t.Fatalf("codec of %s: %v", format, err)
+	}
+
 	pc := &engPanicCodec{Codec: orig}
 	pc.armed.Store(true)
-	codecs[format] = pc
-
-	t.Cleanup(func() { codecs[format] = orig })
+	s.eng.codecFor = func(string) (Codec, error) { return pc, nil }
 
 	return pc
 }
@@ -2242,7 +2270,7 @@ func TestEnginePanicInAPullIsRecordedAsPeerErrorAndTheEngineRecovers(t *testing.
 
 	a.put(t, "u1", "one")
 
-	pc := engInjectPanics(t, "raw")
+	pc := engInjectPanics(t, b, "raw")
 	peer := b.addPeer(t, a)
 
 	err := b.pull(t, peer)
@@ -2284,7 +2312,7 @@ func TestEngineWorkerSurvivesAPanickingPullAndKeepsPulling(t *testing.T) {
 
 	a.put(t, "w1", "first")
 
-	pc := engInjectPanics(t, "raw")
+	pc := engInjectPanics(t, b, "raw")
 	peer := b.addPeer(t, a)
 	b.eng.PollInterval = 50 * time.Millisecond
 
@@ -2321,8 +2349,8 @@ func TestEngineNPMTagPulledBeforeItsVersionAppliesTheVersionFirst(t *testing.T) 
 	seedNPMContent(t, a.db, a.repoID)
 
 	// Changing the manifest of 1.1.0 moves its log entry behind the dist-tags that point at it.
-	a.exec(t, `UPDATE npm_versions v SET manifest_json = manifest_json || '{"deprecated": "use 1.2"}'::jsonb
-	             FROM npm_packages p WHERE p.id = v.package_id AND p.repository_id = $1 AND v.version = '1.1.0'`, a.repoID)
+	a.exec(t, `UPDATE package_versions v SET metadata = metadata || '{"deprecated": "use 1.2"}'::jsonb
+	             FROM packages p WHERE p.id = v.package_id AND p.repository_id = $1 AND v.version = '1.1.0'`, a.repoID)
 
 	if a.entry(t, npmTagNext).Seq > a.entry(t, npmVerKey2).Seq {
 		t.Fatal("precondition: the tag must be logged before the version it points at")
@@ -2340,7 +2368,7 @@ func TestEngineNPMTagPulledBeforeItsVersionAppliesTheVersionFirst(t *testing.T) 
 
 	rows, err := b.db.QueryContext(
 		context.Background(),
-		`SELECT p.full_name || '#' || d.tag, d.version FROM npm_dist_tags d JOIN npm_packages p ON p.id = d.package_id WHERE p.repository_id = $1`,
+		`SELECT p.name || '#' || d.tag, d.version FROM package_tags d JOIN packages p ON p.id = d.package_id WHERE p.repository_id = $1`,
 		b.repoID,
 	)
 	if err != nil {
@@ -2363,10 +2391,10 @@ func TestEngineNPMTagPulledBeforeItsVersionAppliesTheVersionFirst(t *testing.T) 
 
 	engEqual(t, "dist-tags", tags, map[string]string{npmTagKey: "1.0.0", npmTagNext: "1.1.0", npmPlainTag: "2.0.0"})
 	engEqual(t, "versions", b.scalar(t,
-		`SELECT count(*) FROM npm_versions v JOIN npm_packages p ON p.id = v.package_id WHERE p.repository_id = $1`, b.repoID), int64(3))
+		`SELECT count(*) FROM package_versions v JOIN packages p ON p.id = v.package_id WHERE p.repository_id = $1`, b.repoID), int64(3))
 	engEqual(t, "deprecation of 1.1.0", b.scalar(t,
-		`SELECT count(*) FROM npm_versions v JOIN npm_packages p ON p.id = v.package_id
-		  WHERE p.repository_id = $1 AND v.version = '1.1.0' AND v.manifest_json->>'deprecated' = 'use 1.2'`, b.repoID), int64(1))
+		`SELECT count(*) FROM package_versions v JOIN packages p ON p.id = v.package_id
+		  WHERE p.repository_id = $1 AND v.version = '1.1.0' AND v.metadata->>'deprecated' = 'use 1.2'`, b.repoID), int64(1))
 
 	for _, c := range tarballs {
 		if inStore, inTable := b.hasBlob(t, engSHA(c)); !inStore || !inTable {

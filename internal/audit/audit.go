@@ -15,7 +15,6 @@ import (
 	otellog "go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -107,9 +106,14 @@ type entry struct {
 	span trace.SpanContext
 }
 
+// LoggerStore is the part of the database Logger needs.
+type LoggerStore interface {
+	InsertAuditLog(ctx context.Context, event *models.AuditLog) error
+}
+
 type Logger struct {
 	ch     chan entry
-	db     database.Database
+	db     LoggerStore
 	log    *logger.Logger
 	reg    *metrics.Registry
 	stream otellog.Logger // nil unless WithOTLP
@@ -122,7 +126,7 @@ type Logger struct {
 // Option configures a Logger.
 type Option func(*Logger)
 
-func NewLogger(db database.Database, log *logger.Logger, reg *metrics.Registry, bufferSize int, opts ...Option) *Logger {
+func NewLogger(db LoggerStore, log *logger.Logger, reg *metrics.Registry, bufferSize int, opts ...Option) *Logger {
 	if bufferSize <= 0 {
 		bufferSize = 1000
 	}

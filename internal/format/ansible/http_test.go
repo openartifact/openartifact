@@ -38,6 +38,11 @@ type ansibleDB struct {
 	limit, used int64
 }
 
+// ListLicensePolicies is not exercised by the tests.
+func (*ansibleDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	return nil, nil
+}
+
 func (d *ansibleDB) ReserveStorageUsage(_ context.Context, _ string, size int64, _ int) (bool, error) {
 	if d.limit > 0 && d.used+size > d.limit {
 		return false, nil

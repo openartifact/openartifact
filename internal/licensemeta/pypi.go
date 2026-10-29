@@ -4,7 +4,11 @@
 
 package licensemeta
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/openartifact/openartifact/internal/ai/manifest"
+)
 
 // maxLicenseFieldLen bounds a "License:" value that is treated as a license
 // name; longer values are the license text and cannot name a license.
@@ -12,6 +16,12 @@ const maxLicenseFieldLen = 100
 
 // licenseClassifierPrefix starts a trove license classifier.
 const licenseClassifierPrefix = "License ::"
+
+// PyPIHooks reads the licenses of pypi.
+var PyPIHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Expected: expectAlways,
+	Parse:    func(_ string, parts []manifest.Part) (Result, error) { return parsePyPI(parts[0].Body), nil },
+}
 
 // parsePyPI reads the licenses of a METADATA / PKG-INFO header block in order
 // of authority:

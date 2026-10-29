@@ -53,7 +53,7 @@ Relative to `HOST/repos/REPO`:
 
 | Method and path | Purpose |
 |---|---|
-| `GET /index/config.json` (also `GET /config.json`) | `{"dl": ".../repos/REPO/api/v1/crates", "api": ".../repos/REPO"}`, built from `base_url`; a private repository adds `"auth-required": true` |
+| `GET /index/config.json` (also `GET /config.json`) | `{"dl": ".../repos/REPO/api/v1/crates", "api": ".../repos/REPO"}`, absolute URLs on the request origin (or `BASE_URL` when set), because `dl` is a URL template and cargo does not resolve it against anything; the response has an `ETag` and `Cache-Control` of 300 s; a private repository adds `"auth-required": true` |
 | `GET /index/<crate>`, `/index/<p1>/<crate>`, `/index/<p1>/<p2>/<crate>` | sparse index entry, newline-delimited JSON |
 | `GET /api/v1/crates/<crate>/<version>/download` | `.crate` file; yanked versions are served too |
 | `PUT /api/v1/crates/new` | publish |

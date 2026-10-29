@@ -14,7 +14,7 @@ import (
 // projects.selfCreate config value (OPENARTIFACT_PROJECTS_SELF_CREATE) decides.
 const SettingProjectsSelfCreate = "projects.self_create"
 
-// SettingStore reads and writes system settings (database.Database satisfies it).
+// SettingStore reads and writes system settings (*database.PostgresDB satisfies it).
 type SettingStore interface {
 	GetSystemSetting(ctx context.Context, key string) (string, error)
 	SetSystemSetting(ctx context.Context, key, value string) error

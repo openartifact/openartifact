@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -42,21 +41,7 @@ func newDownloadClient(timeout time.Duration, trustedHost string, proxy func(*ht
 	trusted := dialAddress(trustedHost, "443")
 	proxies := &proxySet{}
 
-	dialer := &net.Dialer{
-		Timeout: 10 * time.Second,
-		Control: func(_, address string, _ syscall.RawConn) error {
-			ap, err := netip.ParseAddrPort(address)
-			if err != nil {
-				return err
-			}
-
-			if blockedIP(ap.Addr()) {
-				return ErrBlockedAddress
-			}
-
-			return nil
-		},
-	}
+	dialer := safeDialer()
 	// The operator chose the trusted host and the proxy: no address filter.
 	trustedDialer := &net.Dialer{Timeout: 10 * time.Second}
 

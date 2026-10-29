@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -60,6 +59,11 @@ type BlobDeletionStats struct {
 	Pending int64
 }
 
+// BlobDeletionSweeperStore is the part of the database BlobDeletionSweeper needs.
+type BlobDeletionSweeperStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+}
+
 // BlobDeletionSweeper removes the bytes of deleted blobs and retired tier
 // copies that SafeDeleteBlob and the tier mover queued (database.BlobDeletion).
 //
@@ -76,7 +80,9 @@ type BlobDeletionStats struct {
 // with FOR UPDATE SKIP LOCKED and held for a claim period, and the per-blob lock
 // serializes the actual deletion.
 type BlobDeletionSweeper struct {
-	db        database.Database
+	*lifecycle
+
+	db        BlobDeletionSweeperStore
 	queue     database.BlobDeletionStore
 	placement placementReader
 	store     BlobByteStore
@@ -84,14 +90,6 @@ type BlobDeletionSweeper struct {
 	interval  time.Duration
 	batch     int
 	reg       *metrics.Registry
-
-	startOnce sync.Once
-	stopOnce  sync.Once
-	stopCh    chan struct{}
-	doneCh    chan struct{}
-	// runCtx is cancelled by Stop so an in-flight pass stops promptly.
-	runCtx context.Context //nolint:containedctx // lifecycle context of the worker
-	cancel context.CancelFunc
 }
 
 // NewBlobDeletionSweeper creates the sweeper. interval is the pause between
@@ -99,22 +97,19 @@ type BlobDeletionSweeper struct {
 // works) and batch the number of deletions claimed at a time. Without a
 // database that implements database.BlobDeletionStore the sweeper does nothing.
 func NewBlobDeletionSweeper(
-	db database.Database,
+	db BlobDeletionSweeperStore,
 	store BlobByteStore,
 	log *logger.Logger,
 	interval time.Duration,
 	batch int,
 ) *BlobDeletionSweeper {
-	runCtx, cancel := context.WithCancel(context.Background())
-
 	queue, _ := db.(database.BlobDeletionStore)
 	placement, _ := db.(placementReader)
 
 	return &BlobDeletionSweeper{
-		db: db, queue: queue, placement: placement, store: store, log: log,
+		lifecycle: newLifecycle(),
+		db:        db, queue: queue, placement: placement, store: store, log: log,
 		interval: interval, batch: max(batch, 1),
-		stopCh: make(chan struct{}), doneCh: make(chan struct{}),
-		runCtx: runCtx, cancel: cancel,
 	}
 }
 
@@ -128,45 +123,7 @@ func (w *BlobDeletionSweeper) WithMetrics(reg *metrics.Registry) *BlobDeletionSw
 // Start begins the scheduled passes. It does nothing when the interval is not
 // positive or the database has no deletion queue. Only the first call counts.
 func (w *BlobDeletionSweeper) Start() {
-	w.startOnce.Do(func() {
-		if w.interval <= 0 || w.queue == nil {
-			close(w.doneCh)
-
-			return
-		}
-
-		go w.loop()
-	})
-}
-
-// Stop cancels an in-flight pass and waits for the schedule goroutine to exit.
-// It is idempotent and safe without Start.
-func (w *BlobDeletionSweeper) Stop() {
-	w.stopOnce.Do(func() {
-		close(w.stopCh)
-		w.cancel()
-	})
-
-	// Never started: nothing will close doneCh, and a later Start must not.
-	w.startOnce.Do(func() { close(w.doneCh) })
-
-	<-w.doneCh
-}
-
-func (w *BlobDeletionSweeper) loop() {
-	defer close(w.doneCh)
-
-	ticker := time.NewTicker(w.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			w.runScheduled()
-		case <-w.stopCh:
-			return
-		}
-	}
+	w.startEvery(w.queue != nil, w.interval, w.runScheduled)
 }
 
 // runScheduled runs one pass of the schedule. A panic ends the pass, not the

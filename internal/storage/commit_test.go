@@ -12,15 +12,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 )
 
 // lockDB is a database whose per-blob lock is observable: held reports whether
 // any lock is currently held.
 type lockDB struct {
-	databasetest.BaseMockDB
-
 	mu    sync.Mutex
 	depth int
 	taken []string

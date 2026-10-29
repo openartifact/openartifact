@@ -78,6 +78,68 @@ const (
 	generationTimeout = 2 * time.Minute
 )
 
+// debRPMFormat is what differs between the deb, pacman and rpm groups serveDebRPM
+// answers.
+type debRPMFormat struct {
+	// classify classifies a request path of the group, public.key aside.
+	classify func(relPath string) debRPMPath
+	files    groupFiles
+}
+
+// groupFiles is how a generated-metadata group resolves a package file to the
+// member that owns it (serveGroupFile). The zero value is the plain rule: the
+// merged index names the owner of the request path, and a file it does not
+// list does not exist.
+type groupFiles struct {
+	// sigOfPackage looks a ".sig" file up as the package it signs (pacman: the
+	// signature belongs to the member that owns the package).
+	sigOfPackage bool
+	// unlistedPassthrough serves a file the index does not list from the proxy
+	// members that have no repodata at their root (rpm: a proxy over a tree of
+	// repositories, servePassthrough).
+	unlistedPassthrough bool
+}
+
+//nolint:gochecknoglobals // immutable format hook values
+var (
+	debFormat = debRPMFormat{classify: classifyDeb}
+	rpmFormat = debRPMFormat{classify: classifyRPM, files: groupFiles{unlistedPassthrough: true}}
+)
+
+// DebHooks is the deb group: merged Release and Packages, files from the
+// member the merged index lists them for.
+var DebHooks = debFormat.hooks() //nolint:gochecknoglobals // immutable format hook value
+
+// RPMHooks is the rpm group: merged repodata, files from the member the merged
+// index lists them for.
+var RPMHooks = rpmFormat.hooks() //nolint:gochecknoglobals // immutable format hook value
+
+func (f debRPMFormat) hooks() Hooks {
+	return Hooks{ServeMerged: func(
+		h *Handler,
+		w http.ResponseWriter,
+		r *http.Request,
+		grp *models.Repository,
+		relPath string,
+		readable []*models.Repository,
+		be Backend,
+	) bool {
+		h.serveDebRPM(w, r, grp, readable, relPath, be, f)
+
+		return true
+	}}
+}
+
+// classifyPath classifies relPath: the group's public key is the same for
+// every format.
+func (f debRPMFormat) classifyPath(relPath string) debRPMPath {
+	if relPath == "public.key" {
+		return debRPMPath{class: classMetadata, contentType: "application/pgp-keys", maxAge: publicKeyMaxAge}
+	}
+
+	return f.classify(relPath)
+}
+
 // serveDebRPM answers a request of a deb, pacman or rpm group: the merged
 // metadata from the group's own generated rows, and package files from the
 // member the merged index lists them for. readable are the members the caller may read.
@@ -88,6 +150,7 @@ func (h *Handler) serveDebRPM(
 	readable []*models.Repository,
 	relPath string,
 	be Backend,
+	f debRPMFormat,
 ) {
 	if h.metadata == nil || h.blobs == nil {
 		http.Error(w, "deb, pacman and rpm groups are not available", http.StatusNotImplemented)
@@ -101,7 +164,7 @@ func (h *Handler) serveDebRPM(
 		return
 	}
 
-	kind := classifyDebRPM(grp.Format, relPath)
+	kind := f.classifyPath(relPath)
 	if kind.class == classNone {
 		http.NotFound(w, r)
 		return
@@ -136,7 +199,7 @@ func (h *Handler) serveDebRPM(
 
 		h.serveGroupMetadata(w, r, grp, kind, relPath, scope, ids)
 	case classFile:
-		h.serveGroupFile(w, r, grp, readable, scope, relPath, be)
+		h.serveGroupFile(w, r, grp, readable, scope, relPath, be, f.files)
 	default:
 		http.NotFound(w, r)
 	}
@@ -172,21 +235,6 @@ type debRPMPath struct {
 	storedAs    string
 	contentType string
 	maxAge      int
-}
-
-func classifyDebRPM(format, relPath string) debRPMPath {
-	if relPath == "public.key" {
-		return debRPMPath{class: classMetadata, contentType: "application/pgp-keys", maxAge: publicKeyMaxAge}
-	}
-
-	switch format {
-	case "deb":
-		return classifyDeb(relPath)
-	case "pacman":
-		return classifyPacman(relPath)
-	}
-
-	return classifyRPM(relPath)
 }
 
 func classifyDeb(relPath string) debRPMPath {
@@ -486,11 +534,12 @@ func (h *Handler) serveGroupFile(
 	readable []*models.Repository,
 	scope, relPath string,
 	be Backend,
+	files groupFiles,
 ) {
 	// The classifiers only admit relative paths of plain segments. The
 	// signature of a pacman package belongs to the member that owns the package.
 	key := relPath
-	if grp.Format == "pacman" {
+	if files.sigOfPackage {
 		key = strings.TrimSuffix(relPath, ".sig")
 	}
 
@@ -503,7 +552,7 @@ func (h *Handler) serveGroupFile(
 	}
 
 	if !ok {
-		if grp.Format == "rpm" {
+		if files.unlistedPassthrough {
 			h.servePassthrough(w, r, readable, relPath, be)
 			return
 		}

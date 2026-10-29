@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+//go:build !noai
+
 package api
 
 import (
@@ -14,21 +16,26 @@ import (
 	"github.com/openartifact/openartifact/internal/ai"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/crypto"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// AdminAIStore is the part of the database AdminAIHandler needs.
+type AdminAIStore interface {
+	GetSystemSetting(ctx context.Context, key string) (string, error)
+	SetSystemSetting(ctx context.Context, key string, value string) error
+}
+
 type AdminAIHandler struct {
-	db        database.Database
+	db        AdminAIStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	aiWorker  *worker.AIAnalysisWorker
 	envAI     ai.Settings
 }
 
-func NewAdminAIHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *AdminAIHandler {
+func NewAdminAIHandler(db AdminAIStore, log *logger.Logger, evaluator *auth.Evaluator) *AdminAIHandler {
 	return &AdminAIHandler{db: db, log: log, evaluator: evaluator}
 }
 
@@ -62,20 +69,7 @@ func (h *AdminAIHandler) Register(r chi.Router) {
 }
 
 func (h *AdminAIHandler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(r.Context(), p, h.evaluator)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
-		return false
-	}
-
-	if !isAdmin {
-		writeError(w, http.StatusForbidden, "admin_required", "admin access required")
-		return false
-	}
-
-	return true
+	return requireAdminCode(w, r, h.evaluator, "admin_required")
 }
 
 // loadConfigFromDB reads AI config from system_settings table.

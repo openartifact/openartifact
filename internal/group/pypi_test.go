@@ -22,6 +22,12 @@ const (
 	hashC = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 )
 
+// memberPage is a member's canned reply to a simple page request.
+type memberPage struct {
+	body        []byte
+	contentType string
+}
+
 // pypiMembers fakes the member side of a pypi group: simple pages by member
 // name and path, plus the paths each member was asked for.
 type pypiMembers struct {
@@ -70,7 +76,7 @@ func hostedPage(files ...string) memberPage {
 
 	for i := 0; i+1 < len(files); i += 2 {
 		b.WriteString(
-			`<a href="/repos/hosted/files/` + files[i] + `#sha256=` + files[i+1] + `" data-requires-python="&gt;=3.9">` + files[i] + "</a>\n",
+			`<a href="../../files/` + files[i] + `#sha256=` + files[i+1] + `" data-requires-python="&gt;=3.9">` + files[i] + "</a>\n",
 		)
 	}
 
@@ -161,7 +167,7 @@ func TestPyPIGroup_MergePrecedenceAndRewrite(t *testing.T) {
 	}
 
 	for _, f := range files {
-		if want := "/repos/all/files/foo/" + f.Filename; f.URL != want {
+		if want := "../../files/foo/" + f.Filename; f.URL != want {
 			t.Errorf("link %q not rewritten to the group, want %q", f.URL, want)
 		}
 	}
@@ -195,7 +201,7 @@ func TestPyPIGroup_JSONAndHTMLResponses(t *testing.T) {
 		t.Errorf("default content type = %q", ct)
 	}
 
-	if !strings.Contains(html.Body.String(), `href="/repos/all/files/foo/foo-1.0.tar.gz#sha256=`+hashB+`"`) {
+	if !strings.Contains(html.Body.String(), `href="../../files/foo/foo-1.0.tar.gz#sha256=`+hashB+`"`) {
 		t.Errorf("html:\n%s", html.Body.String())
 	}
 
@@ -204,7 +210,7 @@ func TestPyPIGroup_JSONAndHTMLResponses(t *testing.T) {
 		t.Errorf("json content type = %q", ct)
 	}
 
-	if !strings.Contains(js.Body.String(), `"url":"/repos/all/files/foo/foo-1.0.tar.gz"`) ||
+	if !strings.Contains(js.Body.String(), `"url":"../../files/foo/foo-1.0.tar.gz"`) ||
 		!strings.Contains(js.Body.String(), `"sha256":"`+hashB+`"`) {
 		t.Errorf("json:\n%s", js.Body.String())
 	}
@@ -234,7 +240,7 @@ func TestPyPIGroup_NormalizesProjectName(t *testing.T) {
 		}
 	}
 
-	if f := parse(t, w); len(f) != 1 || f[0].URL != "/repos/all/files/foo-bar/foo_bar-1.0.tar.gz" {
+	if f := parse(t, w); len(f) != 1 || f[0].URL != "../../files/foo-bar/foo_bar-1.0.tar.gz" {
 		t.Errorf("files = %+v", f)
 	}
 }
@@ -243,7 +249,7 @@ func TestPyPIGroup_Index(t *testing.T) {
 	g := newPypiGroup(t)
 	g.members.pages["hosted"]["simple/"] = memberPage{
 		body: []byte(
-			`<html><body><a href="/repos/hosted/simple/zeta/">zeta</a><a href="/repos/hosted/simple/foo/">foo</a></body></html>`,
+			`<html><body><a href="zeta/">zeta</a><a href="foo/">foo</a></body></html>`,
 		),
 		contentType: "text/html",
 	}
@@ -267,7 +273,7 @@ func TestPyPIGroup_Index(t *testing.T) {
 	}
 
 	html := g.get(http.MethodGet, "simple/", "").Body.String()
-	if !strings.Contains(html, `<a href="/repos/all/simple/alpha/">alpha</a>`) {
+	if !strings.Contains(html, `<a href="alpha/">alpha</a>`) {
 		t.Errorf("index links not pointing at the group:\n%s", html)
 	}
 }

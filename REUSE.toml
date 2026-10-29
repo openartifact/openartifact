@@ -25,7 +25,6 @@ path = [
   "web/src/**/__snapshots__/**",
   "web/src/i18n/locales/**/*.json",
   "web/src/i18n/glossary/*.csv",
-  "internal/clientsetup/testdata/web_parity.json",
   "internal/repotype/testdata/web_parity.json",
   "pkg/nix/testdata/cache_nixos_org_hello.narinfo",
   "VERSION",

@@ -12,25 +12,36 @@ import (
 	"sort"
 	"time"
 
-	sq "github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 // listOldMetadata returns path -> blob sha256 of the generated dists/ metadata rows.
-func listOldMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map[string]string, error) {
+func listOldMetadata(ctx context.Context, tx database.Transaction, repoID string) (map[string]string, error) {
 	return queryMetadataSums(ctx, tx, "deb worker", "repo_metadata",
 		`SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND (path LIKE 'dists/%' OR path = 'public.key')`,
 		repoID,
 	)
 }
 
+// DebMetadataStore is the part of the database DebMetadataWorker needs.
+type DebMetadataStore interface {
+	metadataBlobsStore
+	BeginTx(ctx context.Context) (database.Transaction, error)
+	GetDebianArchitecturesByDist(ctx context.Context, distID string) ([]models.DebianArchitecture, error)
+	GetDebianComponentsByDist(ctx context.Context, distID string) ([]models.DebianComponent, error)
+	GetDebianDistributionsByRepo(ctx context.Context, repoID string) ([]models.DebianDistribution, error)
+	ListDebPackageEntries(ctx context.Context, repoID string, dist string, comp string, arch string) ([]models.DebPackageEntry, error)
+}
+
 type DebMetadataWorker struct {
-	db        sq.Database
+	db        DebMetadataStore
 	blobStore storage.BlobStore
 	signers   gpg.Resolver
 	log       *logger.Logger
@@ -38,12 +49,20 @@ type DebMetadataWorker struct {
 	onStale   func(repoID string)
 }
 
-func NewDebMetadataWorker(db sq.Database, blobStore storage.BlobStore, signers gpg.Resolver, log *logger.Logger) *DebMetadataWorker {
+func NewDebMetadataWorker(db DebMetadataStore, blobStore storage.BlobStore, signers gpg.Resolver, log *logger.Logger) *DebMetadataWorker {
 	w := &DebMetadataWorker{db: db, blobStore: blobStore, signers: signers, log: log}
 	w.q = newRegenQueue("deb", log, w.regenerate)
+	w.q.setCodec(stringRegenCodec())
 
 	return w
 }
+
+// ForwardTo makes NotifyStale write a worker request to s instead of scheduling
+// the regeneration here (server.role=web); see RegenRemote.
+func (w *DebMetadataWorker) ForwardTo(s *workq.Store) { w.q.forwardTo(s) }
+
+// ServeFrom makes the worker regenerate what the requests claimed by c ask for.
+func (w *DebMetadataWorker) ServeFrom(c *workq.Consumer) { w.q.serveFrom(c, w.NotifyStale) }
 
 func (w *DebMetadataWorker) WithDebounce(d time.Duration) *DebMetadataWorker {
 	w.q.setDebounce(d)
@@ -67,23 +86,6 @@ func (w *DebMetadataWorker) WithDrainTimeout(d time.Duration) *DebMetadataWorker
 func (w *DebMetadataWorker) WithRegenLimiter(l *RegenLimiter) *DebMetadataWorker {
 	w.q.setLimiter(l)
 	return w
-}
-
-// signerFor returns the signer of the repository's metadata, nil when it is
-// unsigned. A resolution failure aborts the regeneration: replacing signed
-// metadata with unsigned metadata because of a transient error would break
-// every client that verifies it.
-func (w *DebMetadataWorker) signerFor(ctx context.Context, repoID string) (gpg.Signer, error) {
-	if w.signers == nil {
-		return nil, nil //nolint:nilnil // nil signer means unsigned
-	}
-
-	signer, err := w.signers.SignerForRepo(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("deb worker: resolving signing key: %w", err)
-	}
-
-	return signer, nil
 }
 
 // WithStaleHook calls fn with the repository id on every NotifyStale: the group
@@ -144,7 +146,7 @@ func (w *DebMetadataWorker) regenerate(ctx context.Context, repoID string) error
 		byDist[e.Distribution] = append(byDist[e.Distribution], e)
 	}
 
-	signer, err := w.signerFor(ctx, repoID)
+	signer, err := metadataSigner(ctx, w.signers, repoID, "deb worker")
 	if err != nil {
 		return err
 	}

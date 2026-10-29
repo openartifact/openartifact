@@ -19,17 +19,16 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// fakeDB satisfies database.Database by embedding the interface; only the
+// fakeDB satisfies the handler store by embedding the interface; only the
 // handful of methods used by the blob-upload paths are implemented. Any other
 // call panics, which keeps the fake honest about what the handlers touch.
 type fakeDB struct {
-	database.Database
+	testHandlerStore
 
 	repo   *models.Repository
 	upload *models.DockerUpload
@@ -118,7 +117,12 @@ func (f *fakeDB) DeleteDockerUpload(_ context.Context, repositoryID, uploadUUID 
 	return nil
 }
 
-func newTestHandler(t *testing.T, db database.Database) (*HTTPHandler, storage.BlobStore) {
+// testHandlerStore is the part of the database newTestHandler needs.
+type testHandlerStore interface {
+	HTTPStore
+}
+
+func newTestHandler(t *testing.T, db testHandlerStore) (*HTTPHandler, storage.BlobStore) {
 	t.Helper()
 
 	log, err := logger.New("error", "console", "stderr")
@@ -131,7 +135,7 @@ func newTestHandler(t *testing.T, db database.Database) (*HTTPHandler, storage.B
 		t.Fatalf("store: %v", err)
 	}
 
-	h := NewHTTPHandler(log, db, store, "http://localhost")
+	h := NewHTTPHandler(log, db, store)
 	h.SetUploadDir(testUploadDir(t))
 	return h, store
 }

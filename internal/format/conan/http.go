@@ -5,19 +5,22 @@
 // Package conan serves a hosted Conan 2 remote: the REST API (v2) the conan
 // client speaks, with revisions.
 //
-// Every stored file is one conan_packages row, addressed by its recipe
-// revision, package id, package revision and path; a revision "exists" on the
-// remote once its conanmanifest.txt is stored, which the client uploads last.
+// Every stored file is one package_files row (plus its conan_files row),
+// addressed by its recipe revision, package id, package revision and path; a
+// revision "exists" on the remote once its conanmanifest.txt is stored, which
+// the client uploads last.
 package conan
 
 import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
 	"unicode/utf8"
 
+	"context"
+
 	"github.com/go-chi/chi/v5"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/pathseg"
@@ -36,18 +39,43 @@ const (
 
 	// maxRefPart bounds one recipe reference component (name, version, user,
 	// channel); maxRevisionLen and maxFilenameLen bound the other URL segments
-	// (conan_packages.recipe_revision/package_id/package_revision are varchar(64)).
+	// (conan_files.package_id/package_revision are varchar(64)).
 	maxRefPart     = 100
 	maxRevisionLen = 64
 	maxFilenameLen = 512
 )
 
-type HTTPHandler struct {
-	*base.Handler
+// HTTPStore is the part of the database HTTPHandler needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreateConanPackage(ctx context.Context, pkg *models.ConanPackage) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteConanPackage(ctx context.Context, id string) error
+	FindConanPackageBySHA1(ctx context.Context, repoID string, sha1 string) (*models.ConanPackage, error)
+	GetConanPackage(ctx context.Context, repoID string, key models.ConanFileKey) (*models.ConanPackage, error)
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListConanRecipeFiles(
+		ctx context.Context,
+		repoID string,
+		name string,
+		version string,
+		userChannel string,
+	) ([]*models.ConanPackage, error)
+	ListConanRecipes(ctx context.Context, repoID string) ([]models.ConanRecipe, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	SetConanPackageDigests(ctx context.Context, id string, md5 string, sha1 string) error
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
 }
 
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL)}
+type HTTPHandler struct {
+	*base.Handler
+
+	DB HTTPStore
+}
+
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 
 // RegisterRepoRoutes registers Conan-specific routes on the provided sub-router.
@@ -291,10 +319,13 @@ func (h *HTTPHandler) resolveRepo(w http.ResponseWriter, r *http.Request, s *sco
 }
 
 // validRef reports whether name, version, user and channel are usable
-// reference components ("_" stands for an absent user or channel).
+// reference components ("_" stands for an absent user or channel). '@' and '#'
+// are no reference characters (conan's own charset is [A-Za-z0-9_.+-]); they
+// delimit the coordinates of a file's repository path, so a component carrying
+// one could make two different keys render the same path.
 func validRef(parts ...string) bool {
 	for _, p := range parts {
-		if len(p) > maxRefPart || !pathseg.Name(p) || !plainText(p) {
+		if len(p) > maxRefPart || !pathseg.Name(p) || !plainText(p) || strings.ContainsAny(p, "@#") {
 			return false
 		}
 	}
@@ -322,9 +353,11 @@ func validRevision(s string) bool {
 }
 
 // validFilename reports whether name is a relative path of plain segments, as
-// conan names its files (conanfile.py, metadata/sign/signature.json).
+// conan names its files (conanfile.py, metadata/sign/signature.json). '#' is
+// refused: it delimits the package id and revision in a file's repository path,
+// so a recipe file named "id#rev/x" would collide with a package file.
 func validFilename(name string) bool {
-	return len(name) <= maxFilenameLen && plainText(name) && pathseg.Path(name)
+	return len(name) <= maxFilenameLen && plainText(name) && pathseg.Path(name) && !strings.Contains(name, "#")
 }
 
 // plainText reports whether s is valid UTF-8 without control characters.

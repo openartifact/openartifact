@@ -26,6 +26,17 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// SBOMStore is the part of the database SBOMHandler needs.
+type SBOMStore interface {
+	repoAccessStore
+	storedArtifactMetadataStore
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreateSBOMReport(ctx context.Context, report *models.SBOMReport) error
+	DeleteSBOMReportInRepo(ctx context.Context, repoID string, id string) (string, error)
+	GetSBOMReportByID(ctx context.Context, repoID string, id string) (*models.SBOMReport, error)
+	ListSBOMReports(ctx context.Context, repoID string) ([]*models.SBOMReport, error)
+}
+
 type SBOMHandler struct {
 	repoAccess
 
@@ -33,6 +44,7 @@ type SBOMHandler struct {
 	blobStore storage.BlobStore
 	attest    *attest.Service
 	attacher  *AttestationAttacher
+	db        SBOMStore
 }
 
 // WithAttacher attaches each generated SBOM to its docker image as an OCI
@@ -49,7 +61,7 @@ func (h *SBOMHandler) WithAttestation(svc *attest.Service) *SBOMHandler {
 }
 
 func NewSBOMHandler(
-	db database.Database,
+	db SBOMStore,
 	log *logger.Logger,
 	evaluator *auth.Evaluator,
 	generator *sbom.Generator,
@@ -58,7 +70,7 @@ func NewSBOMHandler(
 	return &SBOMHandler{
 		repoAccess: newRepoAccess(db, log, evaluator),
 		generator:  generator,
-		blobStore:  blobStore,
+		blobStore:  blobStore, db: db,
 	}
 }
 

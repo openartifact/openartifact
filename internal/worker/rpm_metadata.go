@@ -8,23 +8,33 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"fmt"
 	"io"
 	"strconv"
 	"time"
 
-	sq "github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
-	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
+	"github.com/openartifact/openartifact/pkg/rpm"
 )
 
+// RPMetadataStore is the part of the database RPMetadataWorker needs.
+type RPMetadataStore interface {
+	metadataBlobsStore
+	BeginTx(ctx context.Context) (database.Transaction, error)
+	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
+	ListRpmPackagesForMetadata(ctx context.Context, repoID string) ([]rpm.Package, error)
+	UpdateRpmPackageExtra(ctx context.Context, repoID string, sha256 string, extra []byte) error
+}
+
 type RPMetadataWorker struct {
-	db        sq.Database
+	db        RPMetadataStore
 	blobStore storage.BlobStore
 	signers   gpg.Resolver
 	log       *logger.Logger
@@ -33,7 +43,7 @@ type RPMetadataWorker struct {
 }
 
 func NewRPMetadataWorker(
-	db sq.Database,
+	db RPMetadataStore,
 	blobStore storage.BlobStore,
 	signers gpg.Resolver,
 	log *logger.Logger,
@@ -41,10 +51,18 @@ func NewRPMetadataWorker(
 ) *RPMetadataWorker {
 	w := &RPMetadataWorker{db: db, blobStore: blobStore, signers: signers, log: log}
 	w.q = newRegenQueue("rpm", log, w.Regenerate)
+	w.q.setCodec(stringRegenCodec())
 	w.q.setMetrics(reg)
 
 	return w
 }
+
+// ForwardTo makes NotifyStale write a worker request to s instead of scheduling
+// the regeneration here (server.role=web); see RegenRemote.
+func (w *RPMetadataWorker) ForwardTo(s *workq.Store) { w.q.forwardTo(s) }
+
+// ServeFrom makes the worker regenerate what the requests claimed by c ask for.
+func (w *RPMetadataWorker) ServeFrom(c *workq.Consumer) { w.q.serveFrom(c, w.NotifyStale) }
 
 func (w *RPMetadataWorker) WithDebounce(d time.Duration) *RPMetadataWorker {
 	w.q.setDebounce(d)
@@ -62,23 +80,6 @@ func (w *RPMetadataWorker) WithDrainTimeout(d time.Duration) *RPMetadataWorker {
 func (w *RPMetadataWorker) WithRegenLimiter(l *RegenLimiter) *RPMetadataWorker {
 	w.q.setLimiter(l)
 	return w
-}
-
-// signerFor returns the signer of the repository's metadata, nil when it is
-// unsigned. A resolution failure aborts the regeneration: replacing signed
-// metadata with unsigned metadata because of a transient error would break
-// every client that verifies it.
-func (w *RPMetadataWorker) signerFor(ctx context.Context, repoID string) (gpg.Signer, error) {
-	if w.signers == nil {
-		return nil, nil //nolint:nilnil // nil signer means unsigned
-	}
-
-	signer, err := w.signers.SignerForRepo(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("rpm worker: resolving signing key: %w", err)
-	}
-
-	return signer, nil
 }
 
 // WithStaleHook calls fn with the repository id on every NotifyStale: the group
@@ -260,7 +261,7 @@ func (w *RPMetadataWorker) Regenerate(ctx context.Context, repoID string) error 
 
 // PackagesForMetadata returns every package of the repository with the data its
 // metadata needs, completing rows stored by older versions from their blobs.
-func (w *RPMetadataWorker) PackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error) {
+func (w *RPMetadataWorker) PackagesForMetadata(ctx context.Context, repoID string) ([]rpm.Package, error) {
 	packages, err := w.db.ListRpmPackagesForMetadata(ctx, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("rpm worker: loading packages: %w", err)
@@ -276,7 +277,7 @@ func (w *RPMetadataWorker) PackagesForMetadata(ctx context.Context, repoID strin
 // archive sizes were stored correctly, updates the in-memory packages and
 // persists the result. Failures are logged and leave the package as it was
 // rather than failing the regeneration.
-func (w *RPMetadataWorker) backfillFromBlob(ctx context.Context, repoID string, packages []pkgrpm.Package) {
+func (w *RPMetadataWorker) backfillFromBlob(ctx context.Context, repoID string, packages []rpm.Package) {
 	for i := range packages {
 		pkg := &packages[i]
 		if pkg.WeakDepsParsed && pkg.SizesParsed {
@@ -306,14 +307,14 @@ func (w *RPMetadataWorker) backfillFromBlob(ctx context.Context, repoID string, 
 	}
 }
 
-func (w *RPMetadataWorker) readPackageBlob(ctx context.Context, sha256 string) (*pkgrpm.Package, error) {
+func (w *RPMetadataWorker) readPackageBlob(ctx context.Context, sha256 string) (*rpm.Package, error) {
 	rc, err := w.blobStore.Get(ctx, sha256)
 	if err != nil {
 		return nil, fmt.Errorf("opening blob: %w", err)
 	}
 	defer func() { _ = rc.Close() }()
 
-	parsed, err := pkgrpm.ParseRPM(rc)
+	parsed, err := rpm.ParseRPM(rc)
 	if err != nil {
 		return nil, fmt.Errorf("parsing rpm: %w", err)
 	}
@@ -325,13 +326,15 @@ func (w *RPMetadataWorker) readPackageBlob(ctx context.Context, sha256 string) (
 // runs once at startup so migrations that invalidate metadata take effect
 // without waiting for an upload.
 func (w *RPMetadataWorker) RegenerateStale(ctx context.Context) {
-	rows, err := w.db.GetDB().QueryContext(ctx, `SELECT repository_id FROM rpm_repos WHERE metadata_stale`)
+	const query = `SELECT repository_id FROM rpm_repos WHERE metadata_stale`
+
+	rows, err := w.db.GetDB().QueryContext(ctx, query) //nolint:rowserrcheck // ScanStrings checks Err
 	if err != nil {
 		w.log.Warnw("listing stale rpm repos failed", "error", err)
 		return
 	}
 
-	ids, err := scanStaleRepoIDs(rows)
+	ids, err := database.ScanStrings(rows)
 	if err != nil {
 		w.log.Warnw("listing stale rpm repos failed", "error", err)
 		return
@@ -344,31 +347,14 @@ func (w *RPMetadataWorker) RegenerateStale(ctx context.Context) {
 	}
 }
 
-func scanStaleRepoIDs(rows *sql.Rows) ([]string, error) {
-	defer func() { _ = rows.Close() }()
-
-	var ids []string
-
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("scan repo id: %w", err)
-		}
-
-		ids = append(ids, id)
-	}
-
-	return ids, rows.Err()
-}
-
 // buildMetadata renders every generated metadata file, keyed by repo-relative path.
-func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, packages []pkgrpm.Package) (map[string][]byte, error) {
+func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, packages []rpm.Package) (map[string][]byte, error) {
 	revision := strconv.FormatInt(time.Now().Unix(), 10)
 	ts := time.Now().Unix()
 
 	type kind struct {
 		name  string
-		write func(io.Writer, []pkgrpm.Package) error
+		write func(io.Writer, []rpm.Package) error
 	}
 
 	// Typical uncompressed XML bytes per package, used only to size the xz dictionary.
@@ -423,7 +409,7 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 
 	blobs["repodata/repomd.xml"] = repomdXML
 
-	signer, err := w.signerFor(ctx, repoID)
+	signer, err := metadataSigner(ctx, w.signers, repoID, "rpm worker")
 	if err != nil {
 		return nil, err
 	}
@@ -450,7 +436,7 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 // listOldRPMMetadata returns path -> blob sha256 of the metadata rows this
 // worker generates (repodata/* and public.key). comps.xml is uploaded by users
 // and is deliberately excluded.
-func listOldRPMMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map[string]string, error) {
+func listOldRPMMetadata(ctx context.Context, tx database.Transaction, repoID string) (map[string]string, error) {
 	return queryMetadataSums(ctx, tx, "rpm worker", "repository_metadata",
 		`SELECT path, blob_sha256 FROM repository_metadata
 		WHERE repository_id = $1 AND (path LIKE 'repodata/%' OR path = 'public.key')`,

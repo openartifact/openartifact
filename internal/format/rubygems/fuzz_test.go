@@ -307,6 +307,11 @@ type fuzzGemsDB struct {
 	artifacts int
 }
 
+// ListLicensePolicies is not exercised by the tests.
+func (*fuzzGemsDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	return nil, nil
+}
+
 func (d *fuzzGemsDB) CreateRubyGem(_ context.Context, g *models.RubyGem) error {
 	if err := pgRejects(g); err != nil {
 		return err
@@ -429,7 +434,7 @@ func pgJSONB(raw []byte) bool {
 	return ok(v)
 }
 
-// pgRejects mirrors the rubygems_gems column types (migrations/001): the
+// pgRejects mirrors the generic package column types: the
 // varchar lengths count characters, text and text[] need valid text, and
 // dependencies and metadata_json are jsonb.
 func pgRejects(g *models.RubyGem) error {

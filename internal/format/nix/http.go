@@ -26,7 +26,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/iocopy"
@@ -69,17 +68,36 @@ type KeyProvider interface {
 	SecretKeyForRepo(ctx context.Context, repo *models.Repository) (*nix.SecretKey, error)
 }
 
+// HTTPStore is the part of the database HTTPHandler needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreateNixPath(ctx context.Context, p *models.NixPath) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteNixPath(ctx context.Context, repoID string, id string) error
+	GetNixPathByHash(ctx context.Context, repoID string, storeHash string) (*models.NixPath, error)
+	GetNixPathByNarFile(ctx context.Context, repoID string, narFile string) (*models.NixPath, error)
+	GetNixPendingNar(ctx context.Context, repoID string, sha256 string) (*models.NixPendingNar, error)
+	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	IncrementNixDownloadCount(ctx context.Context, id string, repoID string) error
+	PutNixPendingNar(ctx context.Context, n *models.NixPendingNar) error
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
+}
+
 // HTTPHandler serves hosted Nix binary caches.
 type HTTPHandler struct {
 	*base.Handler
 
 	keys    KeyProvider
 	metrics *metrics.Registry
+	DB      HTTPStore
 }
 
 // NewHTTPHandler creates the handler.
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL)}
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 
 // WithMetrics counts a committed path (a narinfo PUT) as an upload.

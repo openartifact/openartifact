@@ -100,7 +100,7 @@ func (r *dockerRun) listed(ix *targetIndex, dst string, id dockerTagID) (listedP
 		}
 	})
 
-	p, ok := l.rows[dockerListKey{name: dst + "/" + id.Image, tag: id.Tag}]
+	p, ok := l.rows[dockerListKey{name: ociListName(dst, id.Image), tag: id.Tag}]
 
 	return p, ok
 }

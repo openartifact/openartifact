@@ -22,8 +22,25 @@ import (
 	"github.com/openartifact/openartifact/internal/exploit"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/vuln"
+	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
+
+// VulnStore is the part of the database VulnHandler needs.
+type VulnStore interface {
+	repoAccessStore
+	CreateVulnScanResult(ctx context.Context, result *models.VulnScanResult) error
+	DeleteVulnScanResult(ctx context.Context, repoID string, id string) error
+	GetComponentByID(ctx context.Context, id string) (*models.Component, error)
+	GetDebPackageByID(ctx context.Context, id string) (*models.DebPackage, error)
+	GetDebianDistributionsByRepo(ctx context.Context, repoID string) ([]models.DebianDistribution, error)
+	GetVulnScanResultByID(ctx context.Context, repoID string, id string) (*models.VulnScanResult, error)
+	ListVulnScanOverview(ctx context.Context, params models.VulnScanListParams) (*models.VulnScanOverviewPage, error)
+	ListVulnScanResults(ctx context.Context, repoID string, vulnerableOnly bool) ([]*models.VulnScanResult, error)
+	SetVulnScanQuarantine(ctx context.Context, repoID string, id string, quarantined bool) error
+	UpdateVulnScanResult(ctx context.Context, result *models.VulnScanResult) error
+	VulnScanOverviewSummary(ctx context.Context, repoName string) (*models.VulnScanSummary, error)
+}
 
 // VulnHandler handles vulnerability scanning endpoints.
 type VulnHandler struct {
@@ -49,6 +66,11 @@ type VulnHandler struct {
 
 	// exploit marks findings with the KEV and EPSS signals; never nil.
 	exploit *exploit.Enricher
+
+	// fwd, when set (server.role=web), receives the scans for a worker process
+	// to run (ForwardScansTo).
+	fwd *workq.Store
+	db  VulnStore
 }
 
 // WithExploit sets the enricher that marks findings with the CISA KEV and
@@ -130,7 +152,7 @@ func normalizeVulnScanners(single string, list []string) ([]string, bool) {
 // NewVulnHandler creates a new vulnerability handler. scanners provides the
 // scanner backends and their availability; nil means the defaults (trivy and
 // grype from PATH, no database refresh).
-func NewVulnHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, scanners *vuln.Registry) *VulnHandler {
+func NewVulnHandler(db VulnStore, log *logger.Logger, evaluator *auth.Evaluator, scanners *vuln.Registry) *VulnHandler {
 	if scanners == nil {
 		scanners = vuln.NewRegistry(log, vuln.Options{})
 	}
@@ -141,7 +163,7 @@ func NewVulnHandler(db database.Database, log *logger.Logger, evaluator *auth.Ev
 		scanners:   scanners,
 		newBackend: scanners.Backend,
 		tasks:      bgtask.New(context.Background()),
-		exploit:    exploit.NewEnricher(nil, exploit.DefaultEPSSThreshold),
+		exploit:    exploit.NewEnricher(nil, exploit.DefaultEPSSThreshold), db: db,
 	}
 }
 
@@ -251,9 +273,8 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 
 	// Reserve a background-scan slot before creating any state, so a flood of
 	// requests cannot spawn unbounded goroutines or leave rows stuck "scanning".
-	select {
-	case h.scanSem <- struct{}{}:
-	default:
+	// A handler that forwards its scans runs none, so it has no slot.
+	if !h.reserveScanSlot() {
 		w.Header().Set("Retry-After", "10")
 		writeError(w, http.StatusTooManyRequests, "too_many_scans", "too many vulnerability scans in progress")
 
@@ -277,7 +298,7 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.db.CreateVulnScanResult(ctx, scanResult); err != nil {
-		<-h.scanSem
+		h.releaseScanSlot()
 
 		h.log.Errorw("scan vuln: db error creating scan result", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -285,16 +306,9 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The goroutine owns its own copy: the handler keeps reading scanResult
-	// below while the scan mutates its result, which would be a data race.
-	job := *scanResult
-
-	// Run scan asynchronously
-	h.tasks.Go(func(ctx context.Context) {
-		defer func() { <-h.scanSem }()
-
-		h.performScan(ctx, &job, pkg)
-	})
+	if !h.startScan(ctx, w, repo.ID, scanResult, pkg) {
+		return
+	}
 
 	resp, err := h.scanResponse(ctx, scanResult)
 	if err != nil {
@@ -303,6 +317,65 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// reserveScanSlot reserves a background-scan slot; it is false when all are
+// taken.
+func (h *VulnHandler) reserveScanSlot() bool {
+	if h.fwd != nil {
+		return true
+	}
+
+	select {
+	case h.scanSem <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *VulnHandler) releaseScanSlot() {
+	if h.fwd == nil {
+		<-h.scanSem
+	}
+}
+
+// startScan runs the scan of the stored result in the background, or hands it
+// to a worker process. It answers the request and returns false when it could
+// not.
+func (h *VulnHandler) startScan(
+	ctx context.Context,
+	w http.ResponseWriter,
+	repoID string,
+	scanResult *models.VulnScanResult,
+	pkg vuln.Package,
+) bool {
+	if h.fwd != nil {
+		if err := h.forwardScan(ctx, scanResult, pkg); err != nil {
+			// A row nobody will scan would stay "scanning" for ever.
+			if delErr := h.db.DeleteVulnScanResult(context.WithoutCancel(ctx), repoID, scanResult.ID); delErr != nil {
+				h.log.Errorw("scan vuln: removing the scan that could not be queued", "error", delErr)
+			}
+
+			h.dbError(w, "scan vuln: queueing the scan for the worker", err)
+
+			return false
+		}
+
+		return true
+	}
+
+	// The goroutine owns its own copy: the handler keeps reading scanResult
+	// while the scan mutates its result, which would be a data race.
+	job := *scanResult
+
+	h.tasks.Go(func(ctx context.Context) {
+		defer h.releaseScanSlot()
+
+		h.performScan(ctx, &job, pkg)
+	})
+
+	return true
 }
 
 // performScan performs the actual vulnerability scan of pkg with the scanners

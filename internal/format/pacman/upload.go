@@ -20,7 +20,6 @@ import (
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
-	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/webhook"
@@ -183,22 +182,12 @@ func (h *HTTPHandler) commitPackage(
 	row *models.PacmanPackage,
 	spool *base.Spool,
 ) {
-	if err := quota.Enforce(r.Context(), h.DB, repo.ID, row.SizeBytes); err != nil {
-		if errors.Is(err, quota.ErrExceeded) {
-			quota.WriteExceeded(w)
-			return
-		}
-
-		h.Log.Errorw("failed to reserve quota", "repo", repo.Name, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
+	if !h.ReserveQuotaOrRespond(r.Context(), w, repo.ID, repo.Name, row.SizeBytes) {
 		return
 	}
 
 	if err := h.storePackage(r.Context(), row, spool); err != nil {
-		if relErr := quota.Release(r.Context(), h.DB, repo.ID, row.SizeBytes); relErr != nil {
-			h.Log.Warnw("failed to release quota", "repo", repo.Name, "error", relErr)
-		}
+		h.ReleaseQuota(r.Context(), repo.ID, repo.Name, row.SizeBytes)
 
 		if errors.Is(err, database.ErrDuplicate) || database.IsUniqueViolation(err) {
 			http.Error(w, "package file or version already exists", http.StatusConflict)
@@ -422,9 +411,7 @@ func (h *HTTPHandler) hardDelete(ctx context.Context, repo *models.Repository, p
 		}
 	}
 
-	if err := quota.Release(ctx, h.DB, repo.ID, size); err != nil {
-		h.Log.Warnw("failed to release quota", "repo", repo.Name, "error", err)
-	}
+	h.ReleaseQuota(ctx, repo.ID, repo.Name, size)
 
 	if err := storage.SafeDeleteBlob(ctx, h.DB, h.BlobStore, pkg.SHA256); err != nil {
 		h.Log.Warnw("failed to clean up blob after pacman delete", "sha256", pkg.SHA256, "error", err)

@@ -28,11 +28,11 @@ type NameVersion struct {
 // the mirror is enabled and populated, and what the continuous re-match of the
 // stored packages evaluates.
 type Mirror struct {
-	store database.OSVStore
+	store database.OSVMirror
 }
 
 // NewMirror creates a Mirror over the advisory store.
-func NewMirror(store database.OSVStore) *Mirror { return &Mirror{store: store} }
+func NewMirror(store database.OSVMirror) *Mirror { return &Mirror{store: store} }
 
 // Ready reports whether the mirror holds a completed import of an OSV
 // ecosystem, so a match against it is meaningful. A mirror that was never

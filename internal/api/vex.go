@@ -29,6 +29,15 @@ const (
 	maxStatementLen = 4096
 )
 
+// VEXStore is the part of the database VEXHandler needs.
+type VEXStore interface {
+	repoAccessStore
+	storedArtifactMetadataStore
+	DeleteVEXStatement(ctx context.Context, repoID string, id string) error
+	ListVEXStatements(ctx context.Context, repoID string, artifactID string) ([]*models.VEXStatement, error)
+	UpsertVEXStatement(ctx context.Context, s *models.VEXStatement) error
+}
+
 // VEXHandler serves VEX documents built from the scan results and manages the
 // admin VEX decisions.
 type VEXHandler struct {
@@ -36,6 +45,7 @@ type VEXHandler struct {
 
 	generator *sbom.Generator
 	attest    *attest.Service
+	db        VEXStore
 }
 
 // WithAttestation enables signed documents (`?attest=true`).
@@ -44,8 +54,8 @@ func (h *VEXHandler) WithAttestation(svc *attest.Service) *VEXHandler {
 	return h
 }
 
-func NewVEXHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, generator *sbom.Generator) *VEXHandler {
-	return &VEXHandler{repoAccess: newRepoAccess(db, log, evaluator), generator: generator}
+func NewVEXHandler(db VEXStore, log *logger.Logger, evaluator *auth.Evaluator, generator *sbom.Generator) *VEXHandler {
+	return &VEXHandler{repoAccess: newRepoAccess(db, log, evaluator), generator: generator, db: db}
 }
 
 func (h *VEXHandler) RegisterAuthed(r chi.Router) {

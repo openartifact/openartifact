@@ -10,12 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 type nixPendingDB struct {
-	databasetest.BaseMockDB
+	CleanupStore
 
 	batches [][]string
 	calls   int

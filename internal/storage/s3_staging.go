@@ -6,7 +6,6 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,9 +13,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/smithy-go"
 	"github.com/google/uuid"
 )
 
@@ -167,13 +164,7 @@ func (s *S3BlobStore) PromoteStaging(ctx context.Context, id, sha256, version st
 
 // isPreconditionFailed reports an S3 412 (a failed If-Match / x-amz-copy-source-if-match).
 func isPreconditionFailed(err error) bool {
-	if apiErr, ok := errors.AsType[smithy.APIError](err); ok && apiErr.ErrorCode() == "PreconditionFailed" {
-		return true
-	}
-
-	respErr, ok := errors.AsType[*awshttp.ResponseError](err)
-
-	return ok && respErr.HTTPStatusCode() == http.StatusPreconditionFailed
+	return hasS3Code(err, "PreconditionFailed") || hasS3Status(err, http.StatusPreconditionFailed)
 }
 
 // WalkStaging lists staging objects last modified before olderThan.

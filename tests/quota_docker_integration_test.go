@@ -54,7 +54,7 @@ func newQDFixture(t *testing.T) *qdFixture {
 
 	log := newTestLogger(t)
 
-	h := formatdocker.NewHTTPHandler(log, pg, store, "http://localhost")
+	h := formatdocker.NewHTTPHandler(log, pg, store)
 	h.SetAuthorizer(qdAllowAll{})
 
 	r := chi.NewRouter()

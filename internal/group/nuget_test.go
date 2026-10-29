@@ -24,8 +24,11 @@ func nugetGroup(t *testing.T) *fixture {
 }
 
 // nugetItem is a registration item as member serves it.
-func nugetItem(member, id, version string) string {
-	v3 := nugetBase + "/repos/" + member + "/v3/"
+func nugetItem(member, id, version string) string { return nugetItemAt(nugetBase, member, id, version) }
+
+// nugetItemAt is nugetItem for a member reached at origin.
+func nugetItemAt(origin, member, id, version string) string {
+	v3 := origin + "/repos/" + member + "/v3/"
 
 	return fmt.Sprintf(
 		`{"@id":"%[1]sregistration/%[2]s/%[3]s.json","catalogEntry":{"@id":"%[1]sregistration/%[2]s/%[3]s.json","version":%[3]q,"marker":%[4]q},`+
@@ -39,11 +42,16 @@ func nugetItem(member, id, version string) string {
 
 // nugetInlineIndex is an index with one inline page holding the versions.
 func nugetInlineIndex(member, id string, versions ...string) string {
-	idx := nugetBase + "/repos/" + member + "/v3/registration/" + id + "/index.json"
+	return nugetInlineIndexAt(nugetBase, member, id, versions...)
+}
+
+// nugetInlineIndexAt is nugetInlineIndex for a member reached at origin.
+func nugetInlineIndexAt(origin, member, id string, versions ...string) string {
+	idx := origin + "/repos/" + member + "/v3/registration/" + id + "/index.json"
 
 	items := make([]string, len(versions))
 	for i, v := range versions {
-		items[i] = nugetItem(member, id, v)
+		items[i] = nugetItemAt(origin, member, id, v)
 	}
 
 	return fmt.Sprintf(

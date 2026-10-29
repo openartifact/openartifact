@@ -16,7 +16,7 @@ import (
 
 // ListPermissionAssignments returns every permission assignment (user and
 // group principals alike).
-func (p *PostgresDB) ListPermissionAssignments(ctx context.Context) ([]*models.PermissionAssignment, error) {
+func (p *PermissionStore) ListPermissionAssignments(ctx context.Context) ([]*models.PermissionAssignment, error) {
 	rows, err := p.db.QueryContext(ctx,
 		`SELECT id, permission_target_id, principal_type, principal_id, created_at
 		   FROM permission_assignments ORDER BY created_at, id`)
@@ -37,53 +37,6 @@ func (p *PostgresDB) ListPermissionAssignments(ctx context.Context) ([]*models.P
 				&v.PrincipalType,
 				&v.PrincipalID,
 				&v.CreatedAt,
-			) //nolint:wrapcheck // collectRows wraps
-		},
-	)
-}
-
-// ListUserGroupMemberships returns every user-to-group membership, including
-// the ones an SSO login manages.
-func (p *PostgresDB) ListUserGroupMemberships(ctx context.Context) ([]*models.UserGroup, error) {
-	rows, err := p.db.QueryContext(ctx,
-		`SELECT user_id, group_id, is_sso_managed FROM auth_user_groups ORDER BY group_id, user_id`)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list user group memberships: %w", err)
-	}
-
-	return collectRows(
-		rows,
-		"failed to scan user group membership",
-		"failed to list user group memberships",
-		func(row rowScanner) (*models.UserGroup, error) {
-			v := &models.UserGroup{}
-
-			return v, row.Scan(&v.UserID, &v.GroupID, &v.SSOManaged) //nolint:wrapcheck // collectRows wraps
-		},
-	)
-}
-
-// ListStorageQuotas returns every repository's quota row.
-func (p *PostgresDB) ListStorageQuotas(ctx context.Context) ([]*models.StorageQuota, error) {
-	rows, err := p.db.QueryContext(ctx,
-		`SELECT repository_id, max_size_bytes, max_artifact_count, warn_threshold_percent
-		   FROM storage_quotas ORDER BY repository_id`)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list storage quotas: %w", err)
-	}
-
-	return collectRows(
-		rows,
-		"failed to scan storage quota",
-		"failed to list storage quotas",
-		func(row rowScanner) (*models.StorageQuota, error) {
-			v := &models.StorageQuota{}
-
-			return v, row.Scan(
-				&v.RepositoryID,
-				&v.MaxSizeBytes,
-				&v.MaxArtifactCount,
-				&v.WarnThresholdPercent,
 			) //nolint:wrapcheck // collectRows wraps
 		},
 	)

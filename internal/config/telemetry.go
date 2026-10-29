@@ -92,14 +92,5 @@ func overrideExporter(cfg *bool, key string) {
 }
 
 func overrideFloat(cfg *float64, key string) {
-	if v, ok := os.LookupEnv(key); ok {
-		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
-		if err != nil {
-			warnBadEnv(key, v, err)
-
-			return
-		}
-
-		*cfg = f
-	}
+	overrideParsed(cfg, key, trimmed(func(s string) (float64, error) { return strconv.ParseFloat(s, 64) }))
 }

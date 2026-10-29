@@ -7,58 +7,9 @@ package dbsqlc
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
-
-const createNixPath = `-- name: CreateNixPath :one
-INSERT INTO nix_paths (repository_id, store_hash, name, nar_hash, nar_size, nar_file, compression, refs, deriver, ca, signatures,
-                       blob_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13::timestamptz, NOW()))
-RETURNING id, created_at, updated_at
-`
-
-type CreateNixPathParams struct {
-	RepositoryID string     `db:"repository_id" json:"repository_id"`
-	StoreHash    string     `db:"store_hash" json:"store_hash"`
-	Name         string     `db:"name" json:"name"`
-	NarHash      string     `db:"nar_hash" json:"nar_hash"`
-	NarSize      int64      `db:"nar_size" json:"nar_size"`
-	NarFile      string     `db:"nar_file" json:"nar_file"`
-	Compression  string     `db:"compression" json:"compression"`
-	Refs         []string   `db:"refs" json:"refs"`
-	Deriver      string     `db:"deriver" json:"deriver"`
-	Ca           string     `db:"ca" json:"ca"`
-	Signatures   []string   `db:"signatures" json:"signatures"`
-	BlobID       string     `db:"blob_id" json:"blob_id"`
-	CreatedAt    *time.Time `db:"created_at" json:"created_at"`
-}
-
-type CreateNixPathRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) CreateNixPath(ctx context.Context, arg CreateNixPathParams) (CreateNixPathRow, error) {
-	row := q.db.QueryRow(ctx, createNixPath,
-		arg.RepositoryID,
-		arg.StoreHash,
-		arg.Name,
-		arg.NarHash,
-		arg.NarSize,
-		arg.NarFile,
-		arg.Compression,
-		arg.Refs,
-		arg.Deriver,
-		arg.Ca,
-		arg.Signatures,
-		arg.BlobID,
-		arg.CreatedAt,
-	)
-	var i CreateNixPathRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
 
 const createNixSigningKeyIfAbsent = `-- name: CreateNixSigningKeyIfAbsent :execrows
 INSERT INTO nix_signing_keys (repository_id, key_name, public_key, private_key, created_by)
@@ -86,20 +37,6 @@ func (q *Queries) CreateNixSigningKeyIfAbsent(ctx context.Context, arg CreateNix
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const deleteNixPath = `-- name: DeleteNixPath :exec
-DELETE FROM nix_paths WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL
-`
-
-type DeleteNixPathParams struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-}
-
-func (q *Queries) DeleteNixPath(ctx context.Context, arg DeleteNixPathParams) error {
-	_, err := q.db.Exec(ctx, deleteNixPath, arg.ID, arg.RepositoryID)
-	return err
 }
 
 const deleteNixPendingNar = `-- name: DeleteNixPendingNar :exec
@@ -155,55 +92,50 @@ func (q *Queries) DeleteStaleNixPendingNars(ctx context.Context, arg DeleteStale
 }
 
 const getNixPathByHash = `-- name: GetNixPathByHash :one
-SELECT np.id, np.repository_id, np.store_hash, np.name, np.nar_hash, np.nar_size, np.nar_file, np.compression, np.refs, np.deriver, np.ca,
-       np.signatures, np.download_count, b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, np.created_at, np.updated_at
-FROM nix_paths np
-JOIN blobs b ON b.id = np.blob_id
-WHERE np.repository_id = $1 AND np.store_hash = $2 AND np.deleted_at IS NULL
+
+SELECT f.id, f.repository_id, v.version AS store_hash, p.name, v.metadata, f.download_count,
+       b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.path = $2 AND f.deleted_at IS NULL
 `
 
 type GetNixPathByHashParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	StoreHash    string `db:"store_hash" json:"store_hash"`
+	Path         string `db:"path" json:"path"`
 }
 
 type GetNixPathByHashRow struct {
-	ID            string    `db:"id" json:"id"`
-	RepositoryID  string    `db:"repository_id" json:"repository_id"`
-	StoreHash     string    `db:"store_hash" json:"store_hash"`
-	Name          string    `db:"name" json:"name"`
-	NarHash       string    `db:"nar_hash" json:"nar_hash"`
-	NarSize       int64     `db:"nar_size" json:"nar_size"`
-	NarFile       string    `db:"nar_file" json:"nar_file"`
-	Compression   string    `db:"compression" json:"compression"`
-	Refs          []string  `db:"refs" json:"refs"`
-	Deriver       string    `db:"deriver" json:"deriver"`
-	Ca            string    `db:"ca" json:"ca"`
-	Signatures    []string  `db:"signatures" json:"signatures"`
-	DownloadCount int64     `db:"download_count" json:"download_count"`
-	BlobKey       string    `db:"blob_key" json:"blob_key"`
-	BlobSha256    string    `db:"blob_sha256" json:"blob_sha256"`
-	SizeBytes     int64     `db:"size_bytes" json:"size_bytes"`
-	CreatedAt     time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
+	ID            string          `db:"id" json:"id"`
+	RepositoryID  string          `db:"repository_id" json:"repository_id"`
+	StoreHash     string          `db:"store_hash" json:"store_hash"`
+	Name          string          `db:"name" json:"name"`
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	DownloadCount int64           `db:"download_count" json:"download_count"`
+	BlobKey       string          `db:"blob_key" json:"blob_key"`
+	BlobSha256    string          `db:"blob_sha256" json:"blob_sha256"`
+	SizeBytes     int64           `db:"size_bytes" json:"size_bytes"`
+	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
+// Nix store paths on the generic package tables (mapping spec in pkg_nix.go). One
+// store path (narinfo plus the NAR it points at) is one package_versions row
+// with one package_files row; the store path name is the package and the store
+// hash is the version. nix_pending_nars and nix_signing_keys are not package
+// data and stay as they are.
+// By the path of the narinfo file (uq_package_files_path).
 func (q *Queries) GetNixPathByHash(ctx context.Context, arg GetNixPathByHashParams) (GetNixPathByHashRow, error) {
-	row := q.db.QueryRow(ctx, getNixPathByHash, arg.RepositoryID, arg.StoreHash)
+	row := q.db.QueryRow(ctx, getNixPathByHash, arg.RepositoryID, arg.Path)
 	var i GetNixPathByHashRow
 	err := row.Scan(
 		&i.ID,
 		&i.RepositoryID,
 		&i.StoreHash,
 		&i.Name,
-		&i.NarHash,
-		&i.NarSize,
-		&i.NarFile,
-		&i.Compression,
-		&i.Refs,
-		&i.Deriver,
-		&i.Ca,
-		&i.Signatures,
+		&i.Metadata,
 		&i.DownloadCount,
 		&i.BlobKey,
 		&i.BlobSha256,
@@ -215,12 +147,20 @@ func (q *Queries) GetNixPathByHash(ctx context.Context, arg GetNixPathByHashPara
 }
 
 const getNixPathByNarFile = `-- name: GetNixPathByNarFile :one
-SELECT np.id, np.repository_id, np.store_hash, np.name, np.nar_hash, np.nar_size, np.nar_file, np.compression, np.refs, np.deriver, np.ca,
-       np.signatures, np.download_count, b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, np.created_at, np.updated_at
-FROM nix_paths np
-JOIN blobs b ON b.id = np.blob_id
-WHERE np.repository_id = $1 AND np.nar_file = $2 AND np.deleted_at IS NULL
-ORDER BY np.created_at, np.id
+SELECT f.id, f.repository_id, v.version AS store_hash, p.name, v.metadata, f.download_count,
+       b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, f.created_at, f.updated_at
+FROM (
+    SELECT v0.id, v0.package_id, v0.version, v0.metadata, v0.created_at
+    FROM package_versions v0
+    WHERE v0.repository_id = $1 AND v0.metadata ->> 'nar_file' = $2::text
+      AND v0.deleted_at IS NULL AND v0.metadata ? 'nar_file'
+    ORDER BY v0.created_at, v0.id
+    LIMIT 1
+) v
+JOIN packages p ON p.id = v.package_id
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+ORDER BY f.created_at, f.id
 LIMIT 1
 `
 
@@ -230,26 +170,21 @@ type GetNixPathByNarFileParams struct {
 }
 
 type GetNixPathByNarFileRow struct {
-	ID            string    `db:"id" json:"id"`
-	RepositoryID  string    `db:"repository_id" json:"repository_id"`
-	StoreHash     string    `db:"store_hash" json:"store_hash"`
-	Name          string    `db:"name" json:"name"`
-	NarHash       string    `db:"nar_hash" json:"nar_hash"`
-	NarSize       int64     `db:"nar_size" json:"nar_size"`
-	NarFile       string    `db:"nar_file" json:"nar_file"`
-	Compression   string    `db:"compression" json:"compression"`
-	Refs          []string  `db:"refs" json:"refs"`
-	Deriver       string    `db:"deriver" json:"deriver"`
-	Ca            string    `db:"ca" json:"ca"`
-	Signatures    []string  `db:"signatures" json:"signatures"`
-	DownloadCount int64     `db:"download_count" json:"download_count"`
-	BlobKey       string    `db:"blob_key" json:"blob_key"`
-	BlobSha256    string    `db:"blob_sha256" json:"blob_sha256"`
-	SizeBytes     int64     `db:"size_bytes" json:"size_bytes"`
-	CreatedAt     time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
+	ID            string          `db:"id" json:"id"`
+	RepositoryID  string          `db:"repository_id" json:"repository_id"`
+	StoreHash     string          `db:"store_hash" json:"store_hash"`
+	Name          string          `db:"name" json:"name"`
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	DownloadCount int64           `db:"download_count" json:"download_count"`
+	BlobKey       string          `db:"blob_key" json:"blob_key"`
+	BlobSha256    string          `db:"blob_sha256" json:"blob_sha256"`
+	SizeBytes     int64           `db:"size_bytes" json:"size_bytes"`
+	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
+// The oldest live path whose NAR file is nar_file. The metadata ? predicate is
+// what makes idx_package_versions_nix_nar_file (a partial index) applicable.
 func (q *Queries) GetNixPathByNarFile(ctx context.Context, arg GetNixPathByNarFileParams) (GetNixPathByNarFileRow, error) {
 	row := q.db.QueryRow(ctx, getNixPathByNarFile, arg.RepositoryID, arg.NarFile)
 	var i GetNixPathByNarFileRow
@@ -258,14 +193,7 @@ func (q *Queries) GetNixPathByNarFile(ctx context.Context, arg GetNixPathByNarFi
 		&i.RepositoryID,
 		&i.StoreHash,
 		&i.Name,
-		&i.NarHash,
-		&i.NarSize,
-		&i.NarFile,
-		&i.Compression,
-		&i.Refs,
-		&i.Deriver,
-		&i.Ca,
-		&i.Signatures,
+		&i.Metadata,
 		&i.DownloadCount,
 		&i.BlobKey,
 		&i.BlobSha256,
@@ -332,7 +260,7 @@ func (q *Queries) GetNixSigningKey(ctx context.Context, repositoryID string) (Ni
 }
 
 const incrementNixDownloadCount = `-- name: IncrementNixDownloadCount :exec
-UPDATE nix_paths SET download_count = download_count + 1
+UPDATE package_files SET download_count = download_count + 1
 WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL
 `
 
@@ -347,33 +275,28 @@ func (q *Queries) IncrementNixDownloadCount(ctx context.Context, arg IncrementNi
 }
 
 const listNixPaths = `-- name: ListNixPaths :many
-SELECT np.id, np.repository_id, np.store_hash, np.name, np.nar_hash, np.nar_size, np.nar_file, np.compression, np.refs, np.deriver, np.ca,
-       np.signatures, np.download_count, b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, np.created_at, np.updated_at
-FROM nix_paths np
-JOIN blobs b ON b.id = np.blob_id
-WHERE np.repository_id = $1 AND np.deleted_at IS NULL
-ORDER BY np.store_hash
+SELECT f.id, f.repository_id, v.version AS store_hash, p.name, v.metadata, f.download_count,
+       b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL
+ORDER BY f.path
 `
 
 type ListNixPathsRow struct {
-	ID            string    `db:"id" json:"id"`
-	RepositoryID  string    `db:"repository_id" json:"repository_id"`
-	StoreHash     string    `db:"store_hash" json:"store_hash"`
-	Name          string    `db:"name" json:"name"`
-	NarHash       string    `db:"nar_hash" json:"nar_hash"`
-	NarSize       int64     `db:"nar_size" json:"nar_size"`
-	NarFile       string    `db:"nar_file" json:"nar_file"`
-	Compression   string    `db:"compression" json:"compression"`
-	Refs          []string  `db:"refs" json:"refs"`
-	Deriver       string    `db:"deriver" json:"deriver"`
-	Ca            string    `db:"ca" json:"ca"`
-	Signatures    []string  `db:"signatures" json:"signatures"`
-	DownloadCount int64     `db:"download_count" json:"download_count"`
-	BlobKey       string    `db:"blob_key" json:"blob_key"`
-	BlobSha256    string    `db:"blob_sha256" json:"blob_sha256"`
-	SizeBytes     int64     `db:"size_bytes" json:"size_bytes"`
-	CreatedAt     time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
+	ID            string          `db:"id" json:"id"`
+	RepositoryID  string          `db:"repository_id" json:"repository_id"`
+	StoreHash     string          `db:"store_hash" json:"store_hash"`
+	Name          string          `db:"name" json:"name"`
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	DownloadCount int64           `db:"download_count" json:"download_count"`
+	BlobKey       string          `db:"blob_key" json:"blob_key"`
+	BlobSha256    string          `db:"blob_sha256" json:"blob_sha256"`
+	SizeBytes     int64           `db:"size_bytes" json:"size_bytes"`
+	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) ListNixPaths(ctx context.Context, repositoryID string) ([]ListNixPathsRow, error) {
@@ -390,14 +313,7 @@ func (q *Queries) ListNixPaths(ctx context.Context, repositoryID string) ([]List
 			&i.RepositoryID,
 			&i.StoreHash,
 			&i.Name,
-			&i.NarHash,
-			&i.NarSize,
-			&i.NarFile,
-			&i.Compression,
-			&i.Refs,
-			&i.Deriver,
-			&i.Ca,
-			&i.Signatures,
+			&i.Metadata,
 			&i.DownloadCount,
 			&i.BlobKey,
 			&i.BlobSha256,

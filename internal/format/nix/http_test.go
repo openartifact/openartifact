@@ -20,6 +20,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/ulikunitz/xz"
 
+	"errors"
+
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
@@ -38,6 +40,13 @@ type nixDB struct {
 
 	limit, used int64
 	downloads   map[string]int
+}
+
+var errNotImplemented = errors.New("not implemented")
+
+// GetOrCreateStorageQuota is not exercised by the tests.
+func (*nixDB) GetOrCreateStorageQuota(context.Context, string) (*models.StorageQuota, error) {
+	return nil, errNotImplemented
 }
 
 func newNixDB() *nixDB {

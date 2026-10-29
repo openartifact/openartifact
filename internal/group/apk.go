@@ -57,6 +57,25 @@ func classifyApk(relPath string) apkPath {
 	return apkPath{}
 }
 
+// ApkHooks is the apk group: merged signed indexes from the group's own
+// generated rows, files from the member the index lists them for. No
+// hosted-wins: the index is resolved member by member.
+var ApkHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: func(
+		h *Handler,
+		w http.ResponseWriter,
+		r *http.Request,
+		grp *models.Repository,
+		relPath string,
+		readable []*models.Repository,
+		be Backend,
+	) bool {
+		h.serveApk(w, r, grp, readable, relPath, be)
+
+		return true
+	},
+}
+
 // serveApk answers a request of an apk group: the group's public key, the
 // merged signed index of a directory from the group's own generated rows, and
 // package files from the member the merged index lists them for. readable are
@@ -114,7 +133,7 @@ func (h *Handler) serveApk(
 	relPath = strings.Trim(relPath, "/")
 
 	if p.class == classFile {
-		h.serveGroupFile(w, r, grp, readable, scope, relPath, be)
+		h.serveGroupFile(w, r, grp, readable, scope, relPath, be, groupFiles{})
 		return
 	}
 

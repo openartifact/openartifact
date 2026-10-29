@@ -27,11 +27,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"context"
+
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/middleware"
+	"github.com/openartifact/openartifact/internal/publicurl"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/composer"
@@ -49,16 +51,33 @@ const metadataMaxAge = 60
 // under its content-addressed URL.
 const distMaxAge = 3600
 
+// HTTPStore is the part of the database HTTPHandler needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreateComposerPackage(ctx context.Context, p *models.ComposerPackage) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteComposerPackage(ctx context.Context, repoID string, id string) error
+	GetComposerPackage(ctx context.Context, repoID string, name string, versionNormalized string) (*models.ComposerPackage, error)
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListComposerPackageNames(ctx context.Context, repoID string) ([]*models.ComposerPackageName, error)
+	ListComposerPackageVersions(ctx context.Context, repoID string, name string) ([]*models.ComposerPackage, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
+}
+
 // HTTPHandler serves hosted Composer repositories.
 type HTTPHandler struct {
 	*base.Handler
 
 	metrics *metrics.Registry
+	DB      HTTPStore
 }
 
 // NewHTTPHandler creates the handler.
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL)}
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 
 // WithMetrics counts a committed upload in openartifact_uploads_total.
@@ -147,16 +166,27 @@ func (h *HTTPHandler) serve(w http.ResponseWriter, r *http.Request, name string,
 	}
 }
 
-// repoURL is the absolute URL of the repository root, without a trailing slash:
-// every link the metadata hands out is absolute.
-func (h *HTTPHandler) repoURL(repoName string) string {
-	return strings.TrimSuffix(h.BaseURL, "/") + "/repos/" + url.PathEscape(repoName)
+// repoPath is the path of the repository root below an origin or prefix, without
+// a trailing slash.
+func repoPath(repoName string) string {
+	return "/repos/" + url.PathEscape(repoName)
 }
 
-// distURL is the download URL of one version: the coordinates and the content
-// reference (the sha256 of the zip), so a URL never changes its bytes.
-func (h *HTTPHandler) distURL(repoName string, p *models.ComposerPackage) string {
-	return h.repoURL(repoName) + "/" + composer.DistPath(p.Name, p.Version, p.SHA256)
+// rootPath is the path-absolute URL of the repository root ("/repos/<name>",
+// behind BASE_URL's path prefix when the operator set one). The fields of
+// packages.json use it: Composer resolves a value that starts with "/" against
+// the scheme and host of the URL the repository was configured with
+// (ComposerRepository::canonicalizeUrl), so the document names no origin and
+// is the same whatever host it was fetched through.
+func (h *HTTPHandler) rootPath(repoName string) string {
+	return publicurl.PathPrefix(h.BaseURL) + repoPath(repoName)
+}
+
+// distURL is the absolute download URL of one version below origin (Composer
+// downloads dist.url as-is): the coordinates and the content reference (the
+// sha256 of the zip), so a URL never changes its bytes.
+func distURL(origin, repoName string, p *models.ComposerPackage) string {
+	return origin + repoPath(repoName) + "/" + composer.DistPath(p.Name, p.Version, p.SHA256)
 }
 
 // errorBody is the error document of the repository, the shape Packagist uses.
@@ -176,7 +206,8 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	base.WriteJSON(w, status, b)
 }
 
-// writeDoc answers with a JSON document, revalidated by the digest of its text.
+// writeDoc answers with a JSON document that names no origin, revalidated by
+// the digest of its text.
 func (h *HTTPHandler) writeDoc(w http.ResponseWriter, r *http.Request, repo *models.Repository, doc any) {
 	body, err := json.Marshal(doc)
 	if err != nil {
@@ -186,13 +217,21 @@ func (h *HTTPHandler) writeDoc(w http.ResponseWriter, r *http.Request, repo *mod
 		return
 	}
 
-	h.writeBody(w, r, repo, body)
+	h.writeBody(w, r, repo, body, "")
 }
 
-// writeBody answers with an encoded document, revalidated by its digest.
-func (h *HTTPHandler) writeBody(w http.ResponseWriter, r *http.Request, repo *models.Repository, body []byte) {
+// writeBody answers with an encoded document, revalidated by its digest and by
+// the origin its absolute URLs were built from ("" when it has none), so a
+// client holding an ETag for one origin never gets a 304 for another.
+func (h *HTTPHandler) writeBody(w http.ResponseWriter, r *http.Request, repo *models.Repository, body []byte, origin string) {
 	sum := sha256.Sum256(body)
-	if base.Revalidate(w, r, repo.Public, `"`+hex.EncodeToString(sum[:16])+`"`, metadataMaxAge) {
+
+	etag := hex.EncodeToString(sum[:16])
+	if origin != "" {
+		etag += "-" + base.OriginTag(origin)
+	}
+
+	if base.Revalidate(w, r, repo.Public, `"`+etag+`"`, metadataMaxAge) {
 		return
 	}
 

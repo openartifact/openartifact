@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/importmeta"
@@ -34,6 +33,11 @@ type debAPIDB struct {
 	reserved  int
 	released  int64
 	decrCalls int
+}
+
+// GetOrCreateStorageQuota is not exercised by the tests.
+func (*debAPIDB) GetOrCreateStorageQuota(context.Context, string) (*models.StorageQuota, error) {
+	return nil, errNotImplemented
 }
 
 func (d *debAPIDB) ReserveStorageUsage(_ context.Context, _ string, size int64, _ int) (bool, error) {
@@ -280,9 +284,27 @@ func TestDebUploadImportCreatedAt(t *testing.T) {
 	}
 }
 
+// debPolicyDB is a debAPIDB whose license policies are those of a policytest Case.
+type debPolicyDB struct {
+	*debAPIDB
+
+	lister policytest.Lister
+}
+
+// ListLicensePolicies answers the case's policies; the double has its own, so the embedded
+// Lister would be ambiguous.
+func (d debPolicyDB) ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error) {
+	return d.lister.ListLicensePolicies(ctx, repoID)
+}
+
+// uploadDebWithLicenseStore is the part of the database uploadDebWithLicense needs.
+type uploadDebWithLicenseStore interface {
+	DebUploadStore
+}
+
 func uploadDebWithLicense(
 	t *testing.T,
-	db database.Database,
+	db uploadDebWithLicenseStore,
 	bs *formattest.BlobStore,
 	pub *formattest.Publisher,
 	license string,
@@ -320,7 +342,7 @@ func TestDebUploadLicensePolicy(t *testing.T) {
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
-			w := uploadDebWithLicense(t, c.DB(db), bs, pub, "GPL-3.0")
+			w := uploadDebWithLicense(t, debPolicyDB{db, c.Lister()}, bs, pub, "GPL-3.0")
 			c.AssertResponse(t, w.Code, w.Body.Bytes())
 
 			if c.Stopped() {
@@ -354,7 +376,7 @@ func TestDebUploadNoLicenseAdmittedUnderBlockPolicy(t *testing.T) {
 
 	c := policytest.Case{Policies: []*models.LicensePolicy{policytest.Policy(licensepolicy.ActionBlock, []string{"MIT"}, nil)}}
 
-	w := uploadDebWithLicense(t, c.DB(db), formattest.NewBlobStore(), &formattest.Publisher{}, "")
+	w := uploadDebWithLicense(t, debPolicyDB{db, c.Lister()}, formattest.NewBlobStore(), &formattest.Publisher{}, "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
 	}

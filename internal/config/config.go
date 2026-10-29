@@ -137,9 +137,15 @@ type Config struct {
 	Exploit ExploitConfig `yaml:"exploit"`
 	// OSVMirror configures the local OSV vulnerability mirror (see docs/security/scanning.md).
 	OSVMirror OSVMirrorConfig `yaml:"osvMirror"`
-	// BaseURL is the public URL of the server; it is used for generated links
-	// and SSO callbacks, so set it when the server runs behind a reverse proxy.
+	// BaseURL is the public URL of the server. SSO callbacks, SAML metadata,
+	// webhook sources and anything else sent outside a client's own request
+	// always use it. Package-client URLs (npm tarballs, the Cargo config.json,
+	// NuGet resources, Composer dists, ...) are derived from the request when
+	// it is unset (see internal/publicurl) and use it as an override when set.
 	BaseURL string `yaml:"baseUrl"`
+	// BaseURLSet reports that the operator configured BaseURL (YAML or env);
+	// false means BaseURL holds the localhost default.
+	BaseURLSet bool `yaml:"-"`
 
 	// The replica lives under storage.replica in the YAML file; loadReplicaFromYAML
 	// decodes it, which is why the field itself carries no yaml key.
@@ -396,6 +402,12 @@ type ServerConfig struct {
 	Host string `yaml:"host"`
 	// Port is the listen port.
 	Port int `yaml:"port"`
+	// Role selects what this process does: "all" (the default) serves HTTP and
+	// runs every background worker; "web" only serves HTTP, handing metadata
+	// regeneration, scans and the like to a "worker" process through the
+	// database; "worker" runs the background workers and serves only /health,
+	// /ready and /metrics. See docs/operations/scaling.md.
+	Role string `yaml:"role"`
 	// ReadTimeout bounds an entire request (headers + body), in seconds. 0
 	// (the default) means no limit so large artifact uploads are never
 	// truncated; slowloris protection instead comes from readHeaderTimeout.
@@ -593,6 +605,7 @@ func defaultConfig() *Config {
 		Server: ServerConfig{
 			Host:              "0.0.0.0",
 			Port:              8080,
+			Role:              RoleAll,
 			ReadTimeout:       0,
 			WriteTimeout:      0,
 			ReadHeaderTimeout: 20,
@@ -753,7 +766,6 @@ func defaultConfig() *Config {
 			Grype:           GrypeScanner{Install: InstallNone},
 		},
 		Exploit: defaultExploitConfig(),
-		BaseURL: "http://localhost:8080",
 	}
 }
 
@@ -776,6 +788,7 @@ func applyEnvOverrides(cfg *Config) {
 	// Server config
 	overrideString(&cfg.Server.Host, "SERVER_HOST")
 	overrideInt(&cfg.Server.Port, "SERVER_PORT")
+	overrideString(&cfg.Server.Role, "OPENARTIFACT_ROLE")
 	overrideInt(&cfg.Server.ReadTimeout, "SERVER_READ_TIMEOUT")
 	overrideInt(&cfg.Server.WriteTimeout, "SERVER_WRITE_TIMEOUT")
 	overrideInt(&cfg.Server.ReadHeaderTimeout, "SERVER_READ_HEADER_TIMEOUT")
@@ -995,16 +1008,31 @@ func applyEnvOverrides(cfg *Config) {
 
 // finalizeConfig handles special configuration cases.
 func finalizeConfig(cfg *Config) {
-	// Handle BASE_URL default
-	if cfg.BaseURL == "" {
+	// Handle BASE_URL default: SSO callbacks and webhook sources need a
+	// configured value; package-client URLs follow the request instead.
+	cfg.BaseURLSet = cfg.BaseURL != ""
+	if !cfg.BaseURLSet {
 		cfg.BaseURL = "http://localhost:8080"
 
-		fmt.Fprintln(os.Stderr, "WARN: BASE_URL not set, defaulting to localhost — SSO callbacks will not work behind a proxy")
+		fmt.Fprintln(os.Stderr, "WARN: BASE_URL not set, defaulting to localhost — package-client URLs follow the request host, "+
+			"but SSO callbacks and webhook links will not work behind a proxy")
 	}
 
 	// Server-relayed presigned uploads (filesystem and oci storage) point
-	// clients at this server.
-	cfg.Storage.PublicURL = cfg.BaseURL
+	// clients at this server: at BASE_URL when set, else at the request's origin.
+	cfg.Storage.PublicURL = cfg.ClientBaseURL()
+	cfg.Storage.PublicURLFromRequest = !cfg.BaseURLSet
+}
+
+// ClientBaseURL is the operator's BASE_URL as an explicit override for the URLs
+// handed to package clients, or "" when it was not set and those URLs are
+// derived from each request (internal/publicurl).
+func (c *Config) ClientBaseURL() string {
+	if c.BaseURLSet {
+		return c.BaseURL
+	}
+
+	return ""
 }
 
 // ValidateFile validates a config file without loading it into the application.
@@ -1031,8 +1059,8 @@ func (c *Config) validateProxyWorkers() error {
 
 // Validate validates the configuration.
 func (c *Config) Validate() error {
-	if c.Server.Port < 1 || c.Server.Port > 65535 {
-		return fmt.Errorf("%w: %d", errInvalidPort, c.Server.Port)
+	if err := c.Server.validateListen(); err != nil {
+		return err
 	}
 
 	if c.Database.Driver == "" {
@@ -1051,7 +1079,7 @@ func (c *Config) Validate() error {
 		return errTLSFilesRequired
 	}
 
-	if err := c.validateMCP(); err != nil {
+	if err := c.validateAIAndMCP(); err != nil {
 		return err
 	}
 
@@ -1244,9 +1272,12 @@ func overrideString(cfg *string, key string) {
 	}
 }
 
-func overrideInt(cfg *int, key string) {
+// overrideParsed sets cfg from the environment variable key when it is set,
+// parsing the raw value with parse; a value that does not parse is reported and
+// leaves cfg alone.
+func overrideParsed[T any](cfg *T, key string, parse func(string) (T, error)) {
 	if v, ok := os.LookupEnv(key); ok {
-		n, err := strconv.Atoi(strings.TrimSpace(v))
+		n, err := parse(v)
 		if err != nil {
 			warnBadEnv(key, v, err)
 			return
@@ -1254,28 +1285,19 @@ func overrideInt(cfg *int, key string) {
 		*cfg = n
 	}
 }
+
+// trimmed makes parse ignore the spaces around its input.
+func trimmed[T any](parse func(string) (T, error)) func(string) (T, error) {
+	return func(s string) (T, error) { return parse(strings.TrimSpace(s)) }
+}
+
+func overrideInt(cfg *int, key string) { overrideParsed(cfg, key, trimmed(strconv.Atoi)) }
 
 func overrideInt64(cfg *int64, key string) {
-	if v, ok := os.LookupEnv(key); ok {
-		n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
-		if err != nil {
-			warnBadEnv(key, v, err)
-			return
-		}
-		*cfg = n
-	}
+	overrideParsed(cfg, key, trimmed(func(s string) (int64, error) { return strconv.ParseInt(s, 10, 64) }))
 }
 
-func overrideBool(cfg *bool, key string) {
-	if v, ok := os.LookupEnv(key); ok {
-		b, err := strconv.ParseBool(strings.TrimSpace(v))
-		if err != nil {
-			warnBadEnv(key, v, err)
-			return
-		}
-		*cfg = b
-	}
-}
+func overrideBool(cfg *bool, key string) { overrideParsed(cfg, key, trimmed(strconv.ParseBool)) }
 
 func overrideSlice(cfg *[]string, key string) {
 	if v, ok := os.LookupEnv(key); ok {
@@ -1323,16 +1345,7 @@ func overrideKeyValues(dst *map[string]string, key string) {
 	}
 }
 
-func overrideDuration(cfg *time.Duration, key string) {
-	if v, ok := os.LookupEnv(key); ok {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			warnBadEnv(key, v, err)
-			return
-		}
-		*cfg = d
-	}
-}
+func overrideDuration(cfg *time.Duration, key string) { overrideParsed(cfg, key, time.ParseDuration) }
 
 // validateMCP checks the MCP transport, limits and Origin allowlist entries
 // when MCP is enabled.

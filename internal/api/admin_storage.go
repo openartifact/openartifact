@@ -34,8 +34,21 @@ const storageTestTimeout = 10 * time.Second
 
 var storageBackendNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
 
+// AdminStorageStore is the part of the database AdminStorageHandler needs.
+type AdminStorageStore interface {
+	CountBlobsOnStorageBackend(ctx context.Context, backendID string) (int64, error)
+	CreateStorageBackend(ctx context.Context, backend *models.StorageBackend) error
+	DeleteStorageBackend(ctx context.Context, id string) error
+	GetStorageBackend(ctx context.Context, name string) (*models.StorageBackend, error)
+	ListStorageBackends(ctx context.Context) ([]*models.StorageBackend, error)
+	StorageBackendBusyReason(ctx context.Context, backendID string) (string, error)
+	StorageTierUsage(ctx context.Context) ([]models.TierUsage, error)
+	UpdateStorageBackend(ctx context.Context, backend *models.StorageBackend) error
+	UpdateStorageBackendStatus(ctx context.Context, id string, status string, message *string) error
+}
+
 type AdminStorageHandler struct {
-	db        database.Database
+	db        AdminStorageStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 
@@ -43,7 +56,7 @@ type AdminStorageHandler struct {
 	primary *primaryStore
 }
 
-func NewAdminStorageHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *AdminStorageHandler {
+func NewAdminStorageHandler(db AdminStorageStore, log *logger.Logger, evaluator *auth.Evaluator) *AdminStorageHandler {
 	return &AdminStorageHandler{db: db, log: log, evaluator: evaluator}
 }
 
@@ -115,23 +128,6 @@ func (h *AdminStorageHandler) Register(r chi.Router) {
 	r.Patch("/api/v1/admin/storage/{name}", h.handleUpdate)
 	r.Delete("/api/v1/admin/storage/{name}", h.handleDelete)
 	r.Post("/api/v1/admin/storage/{name}/test", h.handleTest)
-}
-
-func (h *AdminStorageHandler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(r.Context(), p, h.evaluator)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
-		return false
-	}
-
-	if !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return false
-	}
-
-	return true
 }
 
 // writeStorageWriteError maps persistence errors to 409 on unique violations.
@@ -301,7 +297,7 @@ func validateStorageConfig(ctx context.Context, kind string, cfg map[string]any)
 }
 
 func (h *AdminStorageHandler) handleList(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return
 	}
 
@@ -340,7 +336,7 @@ func (h *AdminStorageHandler) handleList(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *AdminStorageHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return
 	}
 
@@ -390,7 +386,7 @@ func (h *AdminStorageHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *AdminStorageHandler) handleGet(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return
 	}
 
@@ -447,7 +443,7 @@ func (h *AdminStorageHandler) backendUsage(ctx context.Context) (backendUsageByI
 }
 
 func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return
 	}
 
@@ -575,7 +571,7 @@ func storageLocation(raw []byte) (map[string]any, bool) {
 }
 
 func (h *AdminStorageHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return
 	}
 
@@ -631,7 +627,7 @@ type storageTestResult struct {
 }
 
 func (h *AdminStorageHandler) handleTest(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return
 	}
 

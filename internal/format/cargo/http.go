@@ -28,20 +28,41 @@ import (
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
-	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
+	pkgcargo "github.com/openartifact/openartifact/pkg/cargo"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-type HTTPHandler struct {
-	*base.Handler
+// HTTPStore is the part of the database HTTPHandler needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CargoIndexStamp(ctx context.Context, repoID string, name string) (string, error)
+	CreateCargoCrate(ctx context.Context, crate *models.CargoCrate) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	GetCargoCrate(ctx context.Context, repoID string, name string, version string) (*models.CargoCrate, error)
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	IncrementCargoDownloadCount(ctx context.Context, repoID string, name string, version string) error
+	ListCargoCrateVersions(ctx context.Context, repoID string, name string) ([]*models.CargoCrate, error)
+	ListCargoIndexVersions(ctx context.Context, repoID string, name string) ([]*models.CargoCrate, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	SearchCargoCrateSummaries(ctx context.Context, repoID string, query string, limit int) ([]*models.CargoCrateSummary, int, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
+	YankCargoCrate(ctx context.Context, repoID string, name string, version string, yanked bool) error
 }
 
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL)}
+type HTTPHandler struct {
+	*base.Handler
+
+	DB HTTPStore
+}
+
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 
 // RegisterRepoRoutes registers Cargo-specific routes on the provided sub-router.
@@ -84,25 +105,29 @@ func (h *HTTPHandler) handleConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	config := map[string]any{
-		"dl":  fmt.Sprintf("%s/repos/%s/api/v1/crates", h.BaseURL, repoName),
-		"api": fmt.Sprintf("%s/repos/%s", h.BaseURL, repoName),
-	}
+	// dl and api are absolute: cargo concatenates the dl template and does not
+	// resolve it against the index URL, so they carry the origin the client
+	// reached (BASE_URL when set). The body is the validator's input, so the
+	// ETag differs per origin; a private repository tells cargo to send its
+	// token with every request instead of trying anonymously first.
+	body := pkgcargo.RenderConfig(h.PublicBase(w, r), repoName, repo.Public)
 
-	// A private repository needs credentials for the index and the downloads
-	// too; this tells cargo to send its token with every request instead of
-	// trying anonymously first.
-	if !repo.Public {
-		config["auth-required"] = true
+	if base.Revalidate(w, r, repo.Public, base.ContentETag(body), configMaxAge) {
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	if encErr := json.NewEncoder(w).Encode(config); encErr != nil {
-		_ = encErr // response header already written
+	if r.Method != http.MethodHead {
+		//nolint:gosec // G705: a JSON document whose only request-derived part is a validated host, not HTML
+		_, _ = w.Write(body)
 	}
 }
+
+// configMaxAge is how long shared caches may reuse a public repository's
+// config.json before revalidating.
+const configMaxAge = 300
 
 // indexMaxAge is how long shared caches may reuse a public repository's sparse
 // index entry before revalidating.
@@ -204,16 +229,8 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	crateName := vars["crate"]
 	version := vars["version"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -329,16 +346,8 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -477,15 +486,7 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 
 	// Reserve quota before anything is persisted; every failure path below
 	// returns the reservation.
-	if err := quota.Enforce(r.Context(), h.DB, repoID, crate.SizeBytes); err != nil {
-		if errors.Is(err, quota.ErrExceeded) {
-			quota.WriteExceeded(w)
-			return
-		}
-
-		h.Log.Errorw("failed to reserve quota", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
+	if !h.ReserveQuotaOrRespond(r.Context(), w, repoID, repoName, crate.SizeBytes) {
 		return
 	}
 
@@ -509,12 +510,10 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 
 		return nil
 	}); err != nil {
-		if relErr := quota.Release(r.Context(), h.DB, repoID, crate.SizeBytes); relErr != nil {
-			h.Log.Warnw("failed to release quota", "repo", repoName, "error", relErr)
-		}
+		h.ReleaseQuota(r.Context(), repoID, repoName, crate.SizeBytes)
 
 		// A concurrent publish of the same version won the race.
-		if database.IsUniqueViolation(err) {
+		if errors.Is(err, database.ErrDuplicate) || database.IsUniqueViolation(err) {
 			writePublishError(w, http.StatusConflict, fmt.Sprintf("crate version `%s@%s` is already uploaded", crateName, version))
 			return
 		}
@@ -562,16 +561,8 @@ func (h *HTTPHandler) setYanked(w http.ResponseWriter, r *http.Request, yanked b
 	crateName := vars["crate"]
 	version := vars["version"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -630,16 +621,8 @@ func (h *HTTPHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 

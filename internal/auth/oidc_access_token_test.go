@@ -20,7 +20,6 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	josejwt "github.com/go-jose/go-jose/v4/jwt"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -37,8 +36,6 @@ var errAccessTokenDB = errors.New("db unavailable")
 // access token verifier reads. Disabled providers are filtered out like the
 // real ListEnabledSSOProviders does.
 type accessTokenDB struct {
-	databasetest.BaseMockDB
-
 	providers []*models.SSOProvider
 	users     map[string]*models.User // key: slug + "|" + subject
 	listErr   error

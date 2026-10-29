@@ -16,6 +16,13 @@ import (
 // are revalidated within a minute, package files never change under their name.
 const pacmanMetadataMaxAge = 60
 
+// PacmanHooks is the pacman group: merged databases per architecture, files
+// (and their signatures) from the member that owns the package.
+var PacmanHooks = pacmanFormat.hooks() //nolint:gochecknoglobals // immutable format hook value
+
+//nolint:gochecknoglobals // immutable format hook value
+var pacmanFormat = debRPMFormat{classify: classifyPacman, files: groupFiles{sigOfPackage: true}}
+
 // classifyPacman classifies a request path of a pacman group, which has the
 // layout of a hosted repository: os/ARCH/FILE below the group, plus the public
 // key. The databases (and their signatures) are generated metadata of the

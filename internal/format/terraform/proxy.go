@@ -7,7 +7,6 @@ package terraform
 import (
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -72,16 +71,19 @@ func (h *HTTPHandler) serveProxyTicket(w http.ResponseWriter, r *http.Request, r
 // Minter mints the ticketed download URLs a proxy repository puts into the
 // documents it serves.
 type Minter struct {
-	key     []byte
-	baseURL string
-	now     func() time.Time
+	key    []byte
+	prefix string
+	now    func() time.Time
 }
 
-// NewMinter creates a Minter for the server at baseURL (the external URL, as
-// for NewHTTPHandler) with the ticket key derived from the server HMAC secret.
-// An empty secret yields a Minter that mints nothing.
-func NewMinter(baseURL string, secret []byte) *Minter {
-	return &Minter{key: deriveTicketKey(secret), baseURL: strings.TrimRight(baseURL, "/"), now: time.Now}
+// NewMinter creates a Minter whose URLs are path-absolute references
+// ("<pathPrefix>/terraform/dl/..."): clients resolve them against the URL of
+// the document they came in, so no origin is needed. pathPrefix is the path of
+// the configured base URL ("" when the server is not published under a path).
+// The ticket key is derived from the server HMAC secret; an empty secret
+// yields a Minter that mints nothing.
+func NewMinter(pathPrefix string, secret []byte) *Minter {
+	return &Minter{key: deriveTicketKey(secret), prefix: pathPrefix, now: time.Now}
 }
 
 // Enabled reports whether the Minter has a key.
@@ -97,7 +99,7 @@ func (m *Minter) URL(repoID string, kind DownloadKind, a, b, c, file string) str
 
 	t := ticket{repoID: repoID, kind: ticketKind(kind), a: a, b: b, c: c, expires: m.now().Add(ticketTTL)}
 
-	return m.baseURL + ticketPath + encodeTicket(m.key, t) + "/" + url.PathEscape(file)
+	return m.prefix + ticketPath + encodeTicket(m.key, t) + "/" + url.PathEscape(file)
 }
 
 // ValidName reports whether s is a namespace, module name, module system or
@@ -121,17 +123,6 @@ func LatestVersion(versions []string) string { return latestVersion(versions) }
 // ModuleFileName is the file name a module archive is downloaded as.
 func ModuleFileName(name, system, version, ext string) string {
 	return moduleFileName(name, system, version, ext)
-}
-
-// PathPrefix returns the path of baseURL, the part before /repos when the
-// server is published under a prefix.
-func PathPrefix(baseURL string) string {
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		return ""
-	}
-
-	return strings.TrimSuffix(u.EscapedPath(), "/")
 }
 
 // RegistryBasePath is the path a repository is served under.

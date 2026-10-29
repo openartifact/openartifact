@@ -14,14 +14,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <EllipsisHorizontalIcon class="h-4 w-4" aria-hidden="true" />
       {{ t('bundles.more') }}
     </MenuButton>
-    <transition
-      enter-active-class="motion-safe:transition motion-safe:duration-100 motion-safe:ease-out"
-      enter-from-class="motion-safe:opacity-0 motion-safe:scale-95"
-      enter-to-class="motion-safe:opacity-100 motion-safe:scale-100"
-      leave-active-class="motion-safe:transition motion-safe:duration-75 motion-safe:ease-in"
-      leave-from-class="motion-safe:opacity-100 motion-safe:scale-100"
-      leave-to-class="motion-safe:opacity-0 motion-safe:scale-95"
-    >
+    <PopupTransition>
       <MenuItems class="absolute right-0 z-40 mt-2 w-56 origin-top-right rounded-md border border-border bg-surface py-1 shadow-lg focus:outline-none">
         <MenuItem v-for="item in items" :key="item.id" v-slot="{ active }">
           <button
@@ -35,13 +28,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </button>
         </MenuItem>
       </MenuItems>
-    </transition>
+    </PopupTransition>
   </Menu>
 </template>
 
 <script setup lang="ts">
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
 import { EllipsisHorizontalIcon } from '@heroicons/vue/24/outline'
+import PopupTransition from '../ui/PopupTransition.vue'
 import { t } from '../../i18n'
 
 export interface MoreMenuItem {

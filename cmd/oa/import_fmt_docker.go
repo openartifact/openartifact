@@ -41,7 +41,14 @@ func init() { //nolint:gochecknoinits // formats register themselves (see regist
 	})
 }
 
-// dockerTagID identifies a tagged image in a source repository.
+// dockerRootManifests prefixes the source paths of the manifests of an image
+// that has no name of its own: a docker repository of OpenArtifact also holds
+// the tags pushed as <host>/<repository>:<tag>, whose registry address is
+// /v2/<repository>/manifests/<tag>. The image of such a tag is empty.
+const dockerRootManifests = "v2/manifests/"
+
+// dockerTagID identifies a tagged image in a source repository. An empty
+// Image is the repository's own image (see dockerRootManifests).
 type dockerTagID struct{ Image, Tag string }
 
 func (id dockerTagID) String() string { return id.Image + ":" + id.Tag }
@@ -51,6 +58,13 @@ func (id dockerTagID) String() string { return id.Image + ":" + id.Tag }
 // list.manifest.json Artifactory keeps in the tag's folder <image>/<tag>/. The
 // manifests addressed by digest and the blobs are not tags.
 func dockerParsePath(p string) (dockerTagID, bool) {
+	if tag, ok := strings.CutPrefix(p, dockerRootManifests); ok {
+		id, valid := dockerTagOf("-", tag)
+		id.Image = ""
+
+		return id, valid
+	}
+
 	if rest, ok := strings.CutPrefix(p, "v2/"); ok {
 		if i := strings.LastIndex(rest, "/manifests/"); i > 0 {
 			return dockerTagOf(rest[:i], rest[i+len("/manifests/"):])
@@ -106,6 +120,10 @@ func (id dockerDigestID) String() string { return id.Image + "@" + id.Digest }
 // by digest: v2/<image>/manifests/sha256:<hex> in Nexus, and the manifest.json
 // (or list.manifest.json) in the folder <image>/sha256__<hex>/ of Artifactory.
 func dockerParseDigestPath(p string) (dockerDigestID, bool) {
+	if d, ok := strings.CutPrefix(p, dockerRootManifests); ok && ociValidDigest(d) {
+		return dockerDigestID{Digest: d}, true
+	}
+
 	if rest, ok := strings.CutPrefix(p, "v2/"); ok {
 		if i := strings.LastIndex(rest, "/manifests/"); i > 0 {
 			if d := rest[i+len("/manifests/"):]; ociValidDigest(d) {

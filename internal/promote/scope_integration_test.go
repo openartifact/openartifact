@@ -16,52 +16,6 @@ import (
 	"github.com/openartifact/openartifact/internal/quota"
 )
 
-// TestPromotersOnlySeeTheSourceRepository: content that lives in another
-// repository, or only in the source's trash, is not promotable.
-func TestPromotersOnlySeeTheSourceRepository(t *testing.T) {
-	t.Parallel()
-
-	for _, fx := range fixtures() {
-		t.Run(fx.format, func(t *testing.T) {
-			t.Parallel()
-
-			h := newHarness(t)
-			p := promoterFor(t, fx.format)
-
-			holder, empty, dst := h.repo(fx.format, false), h.repo(fx.format, false), h.repo(fx.format, false)
-			blob, sha := h.blob("content of " + fx.format)
-			fx.seed(h, holder.ID, blob)
-
-			t.Run("content of another repository", func(t *testing.T) {
-				_, err := h.promoteOnce(p, Request{Src: empty, Dst: dst, SHA256: sha, Path: fx.path})
-				if !errors.Is(err, ErrItemNotFound) {
-					t.Fatalf("err = %v, want ErrItemNotFound", err)
-				}
-			})
-
-			t.Run("trashed source", func(t *testing.T) {
-				for _, table := range fx.tables {
-					h.exec(`UPDATE `+table+` SET deleted_at = now() WHERE repository_id = $1`, holder.ID)
-				}
-
-				_, err := h.promoteOnce(p, Request{Src: holder, Dst: dst, SHA256: sha, Path: fx.path})
-				if !errors.Is(err, ErrItemNotFound) {
-					t.Fatalf("err = %v, want ErrItemNotFound", err)
-				}
-			})
-
-			for _, table := range fx.tables {
-				if n := h.count(`SELECT COUNT(*) FROM `+table+` WHERE repository_id = $1`, dst.ID); n != 0 {
-					t.Errorf("%s: target holds %d rows after refused promotions", table, n)
-				}
-			}
-		})
-	}
-}
-
-// TestEngineRefundsAndSkipsNotifyWhenRecordingFails: the quota reserved for a
-// promotion is given back and no metadata refresh is enqueued when the
-// promotion row cannot be written, and nothing is left in the target.
 func TestEngineRefundsAndSkipsNotifyWhenRecordingFails(t *testing.T) {
 	env := newBundleEnv(t, 2)
 
@@ -87,7 +41,7 @@ func TestEngineForcedPromotionReportsReplaced(t *testing.T) {
 	env := newBundleEnv(t, 2)
 
 	other, _ := env.h.blob("someone else's jar")
-	env.h.row("maven_artifacts", env.dst.ID, "blob_id", other, mavenCols(1, "com/acme/shop/1.0.0/shop1-1.0.0.jar"))
+	env.h.file(env.dst.ID, other, mavenSeed(1, "com/acme/shop/1.0.0/shop1-1.0.0.jar"))
 
 	p := env.params()
 	if _, err := env.engine.Promote(context.Background(), p); !errors.Is(err, ErrConflict) {
@@ -105,12 +59,12 @@ func TestEngineForcedPromotionReportsReplaced(t *testing.T) {
 		t.Errorf("copied %d replaced %d, want 2 and 1", report.Copied, report.Replaced)
 	}
 
-	if n := env.h.count(`SELECT COUNT(*) FROM maven_artifacts WHERE repository_id = $1 AND deleted_at IS NULL`, env.dst.ID); n != 2 {
+	if n := env.h.count(`SELECT COUNT(*) FROM package_files WHERE repository_id = $1 AND deleted_at IS NULL`, env.dst.ID); n != 2 {
 		t.Errorf("target has %d live rows, want 2", n)
 	}
 
 	if n := env.h.count(
-		`SELECT COUNT(*) FROM maven_artifacts WHERE repository_id = $1 AND deleted_at IS NOT NULL AND deleted_by = 'alice'`,
+		`SELECT COUNT(*) FROM package_files WHERE repository_id = $1 AND deleted_at IS NOT NULL AND deleted_by = 'alice'`,
 		env.dst.ID,
 	); n != 1 {
 		t.Errorf("%d rows trashed by the promoter, want 1", n)

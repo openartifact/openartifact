@@ -16,14 +16,14 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// tarballMockDB provides just enough of database.Database for handleTarball.
+// tarballMockDB provides just enough of the database for handleTarball.
 type tarballMockDB struct {
-	databasetest.BaseMockDB
+	HTTPStore
 
 	repo     *models.Repository
 	pkg      *models.NPMPackage
@@ -54,6 +54,10 @@ func (m *tarballMockDB) GetRepositoryByName(_ context.Context, _ string) (*model
 
 func (m *tarballMockDB) GetNPMPackageByName(_ context.Context, _, _ string) (*models.NPMPackage, error) {
 	return m.pkg, nil
+}
+
+func (m *tarballMockDB) GetNPMDistTags(_ context.Context, _ string) (map[string]string, error) {
+	return map[string]string{"latest": "1.0.0"}, nil
 }
 
 func (m *tarballMockDB) GetNPMVersionsByPackage(_ context.Context, _ string) ([]*models.NPMVersion, error) {
@@ -330,7 +334,8 @@ func TestHandlePackument_ConditionalSkipsVersionLoad(t *testing.T) {
 	router := chi.NewRouter()
 	router.Route("/repos/{name}", func(r chi.Router) { h.RegisterRepoRoutes(r) })
 
-	etag := fmt.Sprintf(`"%x"`, updated.UnixNano())
+	// The configured BASE_URL is the origin of the tarball URLs, so it is in the validator.
+	etag := fmt.Sprintf(`"%x-%s"`, updated.UnixNano(), base.OriginTag("http://localhost:8080"))
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/repos/myrepo/lodash", nil)
 	req.Header.Set("If-None-Match", etag)
 

@@ -7,11 +7,11 @@ package recovery
 import (
 	"context"
 	"database/sql"
-	"database/sql/driver"
-	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/pglock"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -39,6 +39,9 @@ type Worker struct {
 	// lock takes the cluster-wide lock; tests replace it to simulate another replica.
 	lock func(ctx context.Context) (release func(), acquired bool, err error)
 
+	// registryChecked is set once the registry-vs-schema check has run.
+	registryChecked atomic.Bool
+
 	startOnce sync.Once
 	stopOnce  sync.Once
 	stopCh    chan struct{}
@@ -56,7 +59,7 @@ func NewWorker(j *Journal, log *logger.Logger, interval time.Duration) *Worker {
 		stopCh: make(chan struct{}), doneCh: make(chan struct{}),
 		runCtx: runCtx, cancel: cancel,
 	}
-	w.lock = func(ctx context.Context) (func(), bool, error) { return tryAdvisoryLock(ctx, w.db, journalLockKey) }
+	w.lock = func(ctx context.Context) (func(), bool, error) { return pglock.Try(ctx, w.db, journalLockKey) }
 
 	return w
 }
@@ -120,6 +123,8 @@ func (w *Worker) RunPass(ctx context.Context) bool {
 	ctx, cancel := context.WithTimeout(ctx, passTimeout)
 	defer cancel()
 
+	w.checkRegistry(ctx)
+
 	if _, failed, err := w.j.Drain(ctx); err != nil {
 		if ctx.Err() == nil {
 			w.log.Errorw("recovery journal: drain", "error", err)
@@ -157,47 +162,36 @@ func (w *Worker) RunPass(ctx context.Context) bool {
 	return true
 }
 
+// checkRegistry reports once per process the tables that carry the journal
+// trigger but are not in the registry: a format's descriptor
+// (storage.Storage.SideTables) was not registered before the journal was
+// built, so rows of that table are queued but never mirrored.
+func (w *Worker) checkRegistry(ctx context.Context) {
+	if w.registryChecked.Load() {
+		return
+	}
+
+	missing, err := w.j.UnregisteredTables(ctx)
+	if err != nil {
+		if ctx.Err() == nil {
+			w.log.Warnw("recovery journal: registry check", "error", err)
+		}
+
+		return
+	}
+
+	w.registryChecked.Store(true)
+
+	if len(missing) > 0 {
+		w.log.Errorw("recovery journal: tables with a journal trigger are not registered, their rows are not mirrored",
+			"tables", missing)
+	}
+}
+
 func (w *Worker) runPass() {
 	if w.runCtx.Err() != nil {
 		return
 	}
 
 	w.RunPass(w.runCtx)
-}
-
-// tryAdvisoryLock takes a session advisory lock on a pinned connection. It
-// returns acquired=false (and a nil error) when another session holds it; the
-// release func is always non-nil.
-func tryAdvisoryLock(ctx context.Context, db *sql.DB, key string) (func(), bool, error) {
-	noop := func() {}
-
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return noop, false, fmt.Errorf("pin connection for advisory lock: %w", err)
-	}
-
-	var locked bool
-	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock(hashtext($1))", key).Scan(&locked); err != nil {
-		_ = conn.Close()
-
-		return noop, false, fmt.Errorf("advisory lock query: %w", err)
-	}
-
-	if !locked {
-		_ = conn.Close()
-
-		return noop, false, nil
-	}
-
-	return func() {
-		uctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		if _, err := conn.ExecContext(uctx, "SELECT pg_advisory_unlock(hashtext($1))", key); err != nil {
-			// Unlock failed: drop the physical connection so the session lock dies with it.
-			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
-		}
-
-		_ = conn.Close()
-	}, true, nil
 }

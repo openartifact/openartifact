@@ -16,6 +16,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/pkg/conda"
 )
 
@@ -34,75 +35,65 @@ const DefaultMaxCondaIndex int64 = 2 << 30
 // back to the plain files.
 func (s *Service) serveConda(w http.ResponseWriter, r *http.Request, repo *models.Repository, relPath string) {
 	p, ok := conda.ParsePath(relPath)
-	if !ok || p.Kind == conda.KindOther {
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 
-	key := p.Key()
-
-	fetch := func(ctx context.Context) (*models.ProxyCacheEntry, error) {
-		return s.fetchConda(ctx, repo, p)
+	switch p.Kind {
+	case conda.KindRepodata, conda.KindChanneldata:
+		s.serveVerbatim(w, r, repo, s.condaDoc(p))
+	case conda.KindPackage:
+		s.serveDownload(w, r, repo, p.Key(), func(ctx context.Context) (download, error) {
+			return s.locateCondaPackage(ctx, repo, p)
+		})
+	case conda.KindOther:
+		http.NotFound(w, r)
 	}
-
-	res, err := s.resolveWith(r.Context(), repo, key, fetch)
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, func() (*resolution, error) {
-		return s.resolveWith(r.Context(), repo, key, fetch)
-	})
 }
 
-// fetchConda downloads one channel file and caches it.
-func (s *Service) fetchConda(ctx context.Context, repo *models.Repository, p conda.Path) (*models.ProxyCacheEntry, error) {
-	key := p.Key()
-
-	target, err := upstreamURL(repo.UpstreamURL, key)
-	if err != nil {
-		s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
-		return nil, errInternal
-	}
+// condaDoc is a repodata or channeldata file of the channel, fetched and
+// checked as a whole.
+func (s *Service) condaDoc(p conda.Path) metaDoc {
+	d := metaDoc{key: p.Key(), what: "conda " + p.File}
 
 	switch p.Kind {
 	case conda.KindRepodata:
 		limit := s.condaIndexLimit()
 
-		return s.fetchURL(ctx, repo, key, target, fetchOpts{verify: func(spool io.ReadSeeker) error {
+		d.opts = staticOpts(fetchOpts{verify: func(spool io.ReadSeeker) error {
 			return conda.ValidateIndex(spool, p.Comp, limit)
 		}})
 	case conda.KindChanneldata:
-		return s.fetchURL(ctx, repo, key, target, fetchOpts{verify: func(spool io.ReadSeeker) error {
+		d.opts = staticOpts(fetchOpts{verify: func(spool io.ReadSeeker) error {
 			return conda.ValidateJSONObject(spool, s.maxMeta)
 		}})
-	case conda.KindPackage:
-		return s.fetchCondaPackage(ctx, repo, p, key, target)
-	case conda.KindOther:
+	case conda.KindPackage, conda.KindOther:
 	}
 
-	return nil, errNotFound
+	return d
 }
 
 func (s *Service) condaIndexLimit() int64 { return min(s.maxBody, s.maxCondaIndex) }
 
-// fetchCondaPackage downloads a package file the upstream's repodata lists,
-// verified against the digest it lists: a file the repodata does not list is
-// not served at all.
-func (s *Service) fetchCondaPackage(
-	ctx context.Context,
-	repo *models.Repository,
-	p conda.Path,
-	key, target string,
-) (*models.ProxyCacheEntry, error) {
+// locateCondaPackage finds a package file in the upstream's repodata and the
+// digest it lists: a file the repodata does not list is not served at all.
+func (s *Service) locateCondaPackage(ctx context.Context, repo *models.Repository, p conda.Path) (download, error) {
+	key := p.Key()
+
+	target, err := upstreamURL(repo.UpstreamURL, key)
+	if err != nil {
+		s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
+		return download{}, errInternal
+	}
+
 	entry, err := s.condaEntry(ctx, repo, p)
 	if errors.Is(err, errNotFound) {
 		s.recordNegative(ctx, repo, key)
 	}
 
 	if err != nil {
-		return nil, err
+		return download{}, err
 	}
 
 	opts := fetchOpts{wantSHA256: entry.SHA256}
@@ -113,7 +104,7 @@ func (s *Service) fetchCondaPackage(
 		opts.verify = func(spool io.ReadSeeker) error { return verifyCondaFile(spool, entry, &vouched) }
 	}
 
-	return s.fetchURL(ctx, repo, key, target, opts)
+	return download{url: target, opts: opts}, nil
 }
 
 // verifyCondaFile checks a package that its repodata entry lists without a
@@ -181,12 +172,11 @@ func unlisted(err error) error {
 // repodata idx. A cache row whose blob is gone is dropped and fetched once
 // more; an index that no longer parses is dropped and refused.
 func (s *Service) lookupCondaEntry(ctx context.Context, repo *models.Repository, idx conda.Path, file string) (conda.Entry, error) {
-	key := idx.Key()
-
-	fetch := func(fctx context.Context) (*models.ProxyCacheEntry, error) { return s.fetchConda(fctx, repo, idx) }
+	d := s.condaDoc(idx)
+	key := d.key
 
 	for attempt := 0; ; attempt++ {
-		res, err := s.resolveWith(ctx, repo, key, fetch)
+		res, err := s.resolveDoc(ctx, repo, d)
 		if err != nil {
 			return conda.Entry{}, err
 		}
@@ -259,4 +249,21 @@ func (s *Service) badCondaIndex(ctx context.Context, repo *models.Repository, ke
 // files that outgrow the common metadata limit.
 func isCondaIndexKey(key string) bool {
 	return strings.Contains(key[strings.LastIndexByte(key, '/')+1:], "repodata")
+}
+
+// condaImmutable reports whether name is a conda package file.
+func condaImmutable(name string) bool {
+	return strings.HasSuffix(name, conda.ExtConda) || strings.HasSuffix(name, conda.ExtTarBz2)
+}
+
+// CondaHooks is the proxy hooks of the conda format.
+var CondaHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve: (*Service).serveConda,
+	// Package files, verified against the repodata digest; repodata moves.
+	Immutable: func(key string) bool { return condaImmutable(keyName(key)) },
+	// channeldata.json; repodata is capped by IsLargeMetadata instead.
+	IsMetadata:      func(key string) bool { return !condaImmutable(keyName(key)) },
+	IsLargeMetadata: isCondaIndexKey,
+	PackageExts:     []string{conda.ExtConda, conda.ExtTarBz2},
+	BlobPath:        presign.CondaBlobPath,
 }

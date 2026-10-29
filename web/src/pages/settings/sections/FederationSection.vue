@@ -7,9 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <!-- Settings > Operations > Federation: the server state and every federated repository with how its peers are doing. -->
 <template>
   <div class="space-y-5">
-    <SectionActions>
-      <AppButton variant="secondary" size="sm" class="max-md:h-11" :loading="loading" @click="refresh">{{ t('sx.refresh') }}</AppButton>
-    </SectionActions>
+    <SectionRefresh :loading="loading" @refresh="refresh" />
 
     <div v-if="loading && !overview" role="status" class="rounded-lg border border-border bg-surface px-4 py-5 text-sm text-muted">
       {{ t('common.loading') }}
@@ -111,7 +109,7 @@ import { ArrowTopRightOnSquareIcon } from '@heroicons/vue/20/solid'
 import AppButton from '../../../components/AppButton.vue'
 import CopyButton from '../../../components/ui/CopyButton.vue'
 import FormatBadge from '../../../components/FormatBadge.vue'
-import SectionActions from '../../../components/SectionActions.vue'
+import SectionRefresh from '../../../components/SectionRefresh.vue'
 import StatusBadge from '../../../components/StatusBadge.vue'
 import ListTable, { type ListColumn } from '../../../components/ui/ListTable.vue'
 import RowActions from '../../../components/ui/RowActions.vue'

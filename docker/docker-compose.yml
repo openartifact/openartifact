@@ -2,6 +2,85 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+# Shared by the openartifact and openartifact-worker services.
+x-openartifact-build: &openartifact-build
+  context: ..
+  dockerfile: docker/Dockerfile
+  args:
+    # Stamped by `make docker-up`; compose cannot read the VERSION file or run git.
+    VERSION: ${OPENARTIFACT_VERSION:-dev}
+    COMMIT: ${OPENARTIFACT_COMMIT:-unknown}
+    BUILD_TIME: ${OPENARTIFACT_BUILD_TIME:-unknown}
+    # dhi needs `docker login dhi.io`; set OPENARTIFACT_RUNTIME=distroless otherwise.
+    RUNTIME: ${OPENARTIFACT_RUNTIME:-dhi}
+    # Bundle vulnerability scanners: none (default), trivy, grype or all.
+    # The first scan needs egress to download the databases (see
+    # docs/security/scanning.md).
+    SCANNERS: ${OPENARTIFACT_SCANNERS:-none}
+
+x-openartifact-env: &openartifact-env
+  # Process role (docs/operations/scaling.md): all (default, everything in one
+  # process), web (API and formats, no background workers) or worker. To split,
+  # set OPENARTIFACT_ROLE=web in docker/.env and start the `worker` profile.
+  OPENARTIFACT_ROLE: ${OPENARTIFACT_ROLE:-all}
+  SERVER_HOST: 0.0.0.0
+  SERVER_PORT: 8080
+  # Read/write timeouts default to 0 (unlimited) so large uploads are not truncated.
+  SERVER_SHUTDOWN_TIMEOUT: 30
+  DB_DRIVER: postgres
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_USER: ${POSTGRES_USER:-postgres}
+  DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in docker/.env}
+  DB_NAME: ${POSTGRES_DB:-artifact_repo}
+  # The bundled Postgres is local-only and does not enable TLS.
+  DB_SSLMODE: disable
+  STORAGE_BACKEND: filesystem
+  STORAGE_PATH: /var/lib/artifacts
+  # Required for OIDC/SAML login state to survive restarts. Set in docker/.env.
+  AUTH_HMAC_KEY: ${AUTH_HMAC_KEY:-}
+  # Encrypts upstream passwords, webhook secrets and other stored credentials
+  # at rest. Empty means they are stored in plaintext. Keep it stable: a
+  # changed key cannot decrypt what the old one sealed. Set in docker/.env.
+  OPENARTIFACT_SECRET_KEY: ${OPENARTIFACT_SECRET_KEY:-}
+  # First admin password; empty generates one and prints it once (24h validity).
+  # Prefer a file mount plus OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE for real deployments.
+  OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD: ${OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD:-}
+  # Public URL SSO callbacks and webhook links use (e.g. https://artifacts.example.com).
+  # Empty: package-client URLs follow the request's host.
+  BASE_URL: ${BASE_URL:-}
+  # CIDRs of reverse proxies whose X-Forwarded-For/-Host/-Proto are believed
+  # (comma-separated); empty trusts none.
+  OPENARTIFACT_TRUSTED_PROXIES: ${OPENARTIFACT_TRUSTED_PROXIES:-}
+  OPENARTIFACT_BACKUP_DIR: /var/lib/openartifact/backups
+  # Vulnerability scanners (bundled with OPENARTIFACT_SCANNERS at build time, or installed at runtime).
+  # Offline mode never downloads; mirrors replace ghcr.io / grype.anchore.io.
+  # Set in docker/.env; see docs/security/scanning.md.
+  OPENARTIFACT_SCANNER_OFFLINE: ${OPENARTIFACT_SCANNER_OFFLINE:-false}
+  OPENARTIFACT_SCANNER_UPDATE_INTERVAL: ${OPENARTIFACT_SCANNER_UPDATE_INTERVAL:-6h}
+  # "auto" downloads the pinned release into the scanner_cache volume when
+  # the image does not bundle the scanner (needs egress to github.com or the mirror).
+  OPENARTIFACT_TRIVY_INSTALL: ${OPENARTIFACT_TRIVY_INSTALL:-none}
+  OPENARTIFACT_GRYPE_INSTALL: ${OPENARTIFACT_GRYPE_INSTALL:-none}
+  OPENARTIFACT_SCANNER_DOWNLOAD_BASE_URL: ${OPENARTIFACT_SCANNER_DOWNLOAD_BASE_URL:-https://github.com}
+  OPENARTIFACT_TRIVY_DB_REPOSITORY: ${OPENARTIFACT_TRIVY_DB_REPOSITORY:-}
+  OPENARTIFACT_GRYPE_DB_URL: ${OPENARTIFACT_GRYPE_DB_URL:-}
+  LOG_LEVEL: info
+  LOG_FORMAT: json
+  # OpenTelemetry, off by default. The default endpoint is the Collector of
+  # the otel-collector profile. The switches have no value here, so they
+  # reach the server only when set in docker/.env and never override a
+  # mounted config file otherwise; see docs/operations/monitoring.md.
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
+  OPENARTIFACT_OTLP_ENABLED:
+  OTEL_TRACES_EXPORTER:
+  OTEL_METRICS_EXPORTER:
+  OTEL_LOGS_EXPORTER:
+  OPENARTIFACT_OTLP_AUDIT:
+  # Experimental frontend telemetry; the relay speaks OTLP/HTTP (port 4318).
+  OPENARTIFACT_TELEMETRY_FRONTEND_ENABLED:
+  OPENARTIFACT_TELEMETRY_FRONTEND_ENDPOINT: ${OPENARTIFACT_TELEMETRY_FRONTEND_ENDPOINT:-http://otel-collector:4318}
+
 services:
   postgres:
     image: docker.io/postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
@@ -32,77 +111,13 @@ services:
       - artifact-repo-network
 
   openartifact:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        # Stamped by `make docker-up`; compose cannot read the VERSION file or run git.
-        VERSION: ${OPENARTIFACT_VERSION:-dev}
-        COMMIT: ${OPENARTIFACT_COMMIT:-unknown}
-        BUILD_TIME: ${OPENARTIFACT_BUILD_TIME:-unknown}
-        # dhi needs `docker login dhi.io`; set OPENARTIFACT_RUNTIME=distroless otherwise.
-        RUNTIME: ${OPENARTIFACT_RUNTIME:-dhi}
-        # Bundle vulnerability scanners: none (default), trivy, grype or all.
-        # The first scan needs egress to download the databases (see
-        # docs/security/scanning.md).
-        SCANNERS: ${OPENARTIFACT_SCANNERS:-none}
+    build: *openartifact-build
+    image: openartifact:${OPENARTIFACT_VERSION:-dev}
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      SERVER_HOST: 0.0.0.0
-      SERVER_PORT: 8080
-      # Read/write timeouts default to 0 (unlimited) so large uploads are not truncated.
-      SERVER_SHUTDOWN_TIMEOUT: 30
-      DB_DRIVER: postgres
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: ${POSTGRES_USER:-postgres}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in docker/.env}
-      DB_NAME: ${POSTGRES_DB:-artifact_repo}
-      # The bundled Postgres is local-only and does not enable TLS.
-      DB_SSLMODE: disable
-      STORAGE_BACKEND: filesystem
-      STORAGE_PATH: /var/lib/artifacts
-      # Required for OIDC/SAML login state to survive restarts. Set in docker/.env.
-      AUTH_HMAC_KEY: ${AUTH_HMAC_KEY:-}
-      # Encrypts upstream passwords, webhook secrets and other stored credentials
-      # at rest. Empty means they are stored in plaintext. Keep it stable: a
-      # changed key cannot decrypt what the old one sealed. Set in docker/.env.
-      OPENARTIFACT_SECRET_KEY: ${OPENARTIFACT_SECRET_KEY:-}
-      # First admin password; empty generates one and prints it once (24h validity).
-      # Prefer a file mount plus OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE for real deployments.
-      OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD: ${OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD:-}
-      # Public URL clients and SSO callbacks use (e.g. https://artifacts.example.com).
-      BASE_URL: ${BASE_URL:-}
-      OPENARTIFACT_BACKUP_DIR: /var/lib/openartifact/backups
-      # Vulnerability scanners (bundled with OPENARTIFACT_SCANNERS at build time, or installed at runtime).
-      # Offline mode never downloads; mirrors replace ghcr.io / grype.anchore.io.
-      # Set in docker/.env; see docs/security/scanning.md.
-      OPENARTIFACT_SCANNER_OFFLINE: ${OPENARTIFACT_SCANNER_OFFLINE:-false}
-      OPENARTIFACT_SCANNER_UPDATE_INTERVAL: ${OPENARTIFACT_SCANNER_UPDATE_INTERVAL:-6h}
-      # "auto" downloads the pinned release into the scanner_cache volume when
-      # the image does not bundle the scanner (needs egress to github.com or the mirror).
-      OPENARTIFACT_TRIVY_INSTALL: ${OPENARTIFACT_TRIVY_INSTALL:-none}
-      OPENARTIFACT_GRYPE_INSTALL: ${OPENARTIFACT_GRYPE_INSTALL:-none}
-      OPENARTIFACT_SCANNER_DOWNLOAD_BASE_URL: ${OPENARTIFACT_SCANNER_DOWNLOAD_BASE_URL:-https://github.com}
-      OPENARTIFACT_TRIVY_DB_REPOSITORY: ${OPENARTIFACT_TRIVY_DB_REPOSITORY:-}
-      OPENARTIFACT_GRYPE_DB_URL: ${OPENARTIFACT_GRYPE_DB_URL:-}
-      LOG_LEVEL: info
-      LOG_FORMAT: json
-      # OpenTelemetry, off by default. The default endpoint is the Collector of
-      # the otel-collector profile. The switches have no value here, so they
-      # reach the server only when set in docker/.env and never override a
-      # mounted config file otherwise; see docs/operations/monitoring.md.
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
-      OPENARTIFACT_OTLP_ENABLED:
-      OTEL_TRACES_EXPORTER:
-      OTEL_METRICS_EXPORTER:
-      OTEL_LOGS_EXPORTER:
-      OPENARTIFACT_OTLP_AUDIT:
-      # Experimental frontend telemetry; the relay speaks OTLP/HTTP (port 4318).
-      OPENARTIFACT_TELEMETRY_FRONTEND_ENABLED:
-      OPENARTIFACT_TELEMETRY_FRONTEND_ENDPOINT: ${OPENARTIFACT_TELEMETRY_FRONTEND_ENDPOINT:-http://otel-collector:4318}
+      <<: *openartifact-env
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -119,6 +134,44 @@ services:
       - artifacts_data:/var/lib/artifacts
       - backups_data:/var/lib/openartifact/backups
       # Trivy / Grype vulnerability databases (OPENARTIFACT_SCANNER_CACHE_DIR).
+      - scanner_cache:/var/cache/openartifact/scanners
+    networks:
+      - artifact-repo-network
+    healthcheck:
+      test:
+        ["CMD", "/app/openartifact", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # Opt-in background worker: `--profile worker`. Runs every background worker
+  # and scheduler and serves only /health, /ready and /metrics. Use it together
+  # with OPENARTIFACT_ROLE=web in docker/.env, which turns the openartifact
+  # service into a web-only process; see docs/operations/scaling.md. It must
+  # share the database and the volumes below with the openartifact service.
+  openartifact-worker:
+    build: *openartifact-build
+    image: openartifact:${OPENARTIFACT_VERSION:-dev}
+    profiles: [worker]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *openartifact-env
+      OPENARTIFACT_ROLE: worker
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # No published ports: nothing outside the compose network talks to a worker.
+    volumes:
+      - artifacts_data:/var/lib/artifacts
+      - backups_data:/var/lib/openartifact/backups
       - scanner_cache:/var/cache/openartifact/scanners
     networks:
       - artifact-repo-network

@@ -1,47 +1,52 @@
--- name: CreateCondaPackage :one
-INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
-ON CONFLICT (repository_id, name, version, build_string, platform, extension) WHERE deleted_at IS NULL DO NOTHING
-RETURNING id, created_at, updated_at;
+-- Conda on the generic package tables (see the mapping in pkg_conda.go). One
+-- package per name, one version per build (version, build string, platform),
+-- one file per extension of a build.
 
 -- name: GetCondaPackageFile :one
-SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.build_string, cp.platform, cp.depends, cp.extension, cp.build_number, cp.md5, cp.timestamp_ms, cp.index_extra, b.blob_key, b.size_bytes, b.sha256, cp.created_at, cp.updated_at
-FROM conda_packages cp
-JOIN blobs b ON b.id = cp.blob_id
-WHERE cp.repository_id = $1 AND cp.name = $2 AND cp.version = $3 AND cp.build_string = $4 AND cp.platform = $5 AND cp.extension = $6 AND cp.deleted_at IS NULL;
+-- The path (platform/filename) is the unique live key; the name and version
+-- conditions only disambiguate a filename that several (name, version) pairs
+-- could spell.
+SELECT f.id, f.repository_id, p.name, v.version, v.metadata, f.arch, f.attrs, f.checksums,
+       b.blob_key, b.size_bytes, b.sha256, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.path = $2 AND f.deleted_at IS NULL
+  AND p.name = sqlc.arg(name)::text AND v.version = sqlc.arg(version)::text;
 
--- name: DeleteCondaPackage :exec
-DELETE FROM conda_packages WHERE id = $1 AND deleted_at IS NULL;
+-- name: GetCondaFileRepo :one
+SELECT repository_id FROM package_files WHERE id = $1 AND deleted_at IS NULL;
 
 -- name: ListCondaPackages :many
-SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.build_string, cp.platform, cp.depends, cp.extension, cp.build_number, cp.md5, cp.timestamp_ms, cp.index_extra, b.blob_key, b.size_bytes, b.sha256, cp.created_at, cp.updated_at
-FROM conda_packages cp
-JOIN blobs b ON b.id = cp.blob_id
-WHERE cp.repository_id = $1 AND cp.platform = $2 AND cp.deleted_at IS NULL ORDER BY cp.name ASC, cp.version DESC, cp.build_string ASC, cp.extension ASC;
-
--- name: ListAllCondaPackages :many
-SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.build_string, cp.platform, cp.depends, cp.extension, cp.build_number, cp.md5, cp.timestamp_ms, cp.index_extra, b.blob_key, b.size_bytes, b.sha256, cp.created_at, cp.updated_at
-FROM conda_packages cp
-JOIN blobs b ON b.id = cp.blob_id
-WHERE cp.repository_id = $1 AND cp.deleted_at IS NULL ORDER BY cp.name ASC, cp.version DESC, cp.platform ASC, cp.build_string ASC, cp.extension ASC;
+SELECT f.id, f.repository_id, p.name, v.version, v.metadata, f.arch, f.attrs, f.checksums,
+       b.blob_key, b.size_bytes, b.sha256, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.arch = $2 AND f.deleted_at IS NULL
+ORDER BY p.name ASC, v.version DESC, (v.metadata ->> 'build_string') ASC, (f.attrs ->> 'extension') ASC;
 
 -- name: CondaRepodataStamp :one
 -- Fingerprint of the live packages of one platform (see HelmIndexStamp):
 -- package rows are immutable, so count plus an ID hash tracks repodata.json.
-SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(cp.id::text, 0)), 0)::text)::text AS stamp
-FROM conda_packages cp
-WHERE cp.repository_id = $1 AND cp.platform = $2 AND cp.deleted_at IS NULL;
+SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(f.id::text, 0)), 0)::text)::text AS stamp
+FROM package_files f
+WHERE f.repository_id = $1 AND f.arch = $2 AND f.deleted_at IS NULL;
 
 -- name: ListCondaPackageNames :many
--- Distinct names of the live packages of a repository, in any platform, for a
+-- Distinct names of the packages with a live release, in any platform, for a
 -- group's hosted-wins rule (compared case-insensitively, as lowercase names).
-SELECT DISTINCT lower(cp.name)::text AS name
-FROM conda_packages cp
-WHERE cp.repository_id = $1 AND cp.deleted_at IS NULL
+SELECT DISTINCT lower(p.name)::text AS name
+FROM packages p
+WHERE p.repository_id = $1
+  AND EXISTS (SELECT 1 FROM package_versions v WHERE v.package_id = p.id AND v.deleted_at IS NULL)
 ORDER BY 1;
 
 -- name: HasCondaPackageName :one
 SELECT EXISTS (
-    SELECT 1 FROM conda_packages cp
-    WHERE cp.repository_id = $1 AND lower(cp.name) = lower(sqlc.arg(name)::text) AND cp.deleted_at IS NULL
+    SELECT 1 FROM packages p
+    WHERE p.repository_id = $1 AND lower(p.name) = lower(sqlc.arg(name)::text)
+      AND EXISTS (SELECT 1 FROM package_versions v WHERE v.package_id = p.id AND v.deleted_at IS NULL)
 )::boolean AS present;

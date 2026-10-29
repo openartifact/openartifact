@@ -19,7 +19,7 @@ OpenArtifact is one Go binary (`cmd/server`) that serves the REST API, the nativ
 | `internal/format/<fmt>` | Native protocol handlers per package format (`/repos/{name}/...`, `/v2/...`); `base` holds the shared handler plumbing, `filerepo` the one handler behind ivy and sbt, `formattest` test helpers |
 | `internal/middleware` | Security headers, recovery, request ID, tracing, metrics, logging, CORS, IP allowlist, rate limit, RBAC, CSRF, audit |
 | `internal/auth` | Sessions, tokens, permission evaluation, OIDC/SAML, SSO provisioning, bootstrap |
-| `internal/database` | `Database` interface (`interfaces.go`), Postgres implementation (`postgres*.go`), sqlc code in `dbsqlc/`, queries in `queries/*.sql` |
+| `internal/database` | `PostgresDB` composition root (`stores.go`) over one store type per domain, sqlc code in `dbsqlc/`, queries in `queries/*.sql` |
 | `internal/storage` | Blob stores: filesystem, S3, GCS, Azure, OCI; `SafeDeleteBlob` refcounting |
 | `internal/worker` | Background workers: per-format metadata regeneration, cleanup, Docker registry GC, proxy cache, auth purge, AI analysis, blob deletion sweeper (deferred byte removal, see [storage](../operations/storage.md#deferred-blob-deletion)) |
 | `internal/repodispatch` | Chi middleware that serves proxy and group repositories in front of the per-format routes |
@@ -28,7 +28,7 @@ OpenArtifact is one Go binary (`cmd/server`) that serves the REST API, the nativ
 | `internal/repotype` | Which formats may be proxy or group repositories (shared by repo creation and dispatch) |
 | `internal/ocipath` | Parses `/v2/<name>/...` paths; shared by RBAC and the docker handler so both agree on the repository |
 | `internal/importmeta` | Admin-only `X-OA-Import-Created-At` header that preserves origin timestamps during migrations |
-| `internal/clientsetup` | Native client URLs and configure/publish snippets per format (Go port of `web/src/lib/installCommands.ts`; keep both in sync; a shared golden file in `testdata/` makes either side's tests fail on drift) |
+| `internal/clientsetup` | Native client URLs and configure/publish snippets per format (the single source: the web UI renders the templates `cmd/genformats` generates from it into `web/src/lib/clientsetup.generated.ts`, and CI fails when that file is stale) |
 | `internal/quarantine` | Blocks downloads of artifacts flagged by vulnerability/secret scans |
 | `internal/quota` | Reserves/releases repository storage quota on upload, delete and cleanup-policy deletes (the database's `ReconcileStorageUsage` recounts the counters from the package rows) |
 | `internal/netutil` | SSRF-safe outbound HTTP helpers (webhooks, proxy upstreams) |
@@ -82,11 +82,29 @@ Every repo-scoped format handler registers **relative** routes on the single `/r
 - Group repositories read hosted members through in-memory routers of the same cargo, Conan, conda, Go, Helm, Maven, npm, NuGet, PyPI, raw, RubyGems and Terraform handlers.
 - `cmd/server/routes_test.go` guards the registration order against chi `Mount()` panics.
 
+## Proxy and group pipeline
+
+A format does not re-implement caching, revalidation, SSRF checks or member merging; it supplies hooks to one pipeline per side.
+
+**Proxy** (`internal/proxy/pipeline.go`). Stages: fetch the upstream metadata, cache it with serve-stale, render it (rewrite download URLs to the repository), resolve a download only from the cached metadata, SSRF-check the target, store it content-addressed. A format describes its documents with a `metaDoc` (cache key, upstream URL, fetch options and verification, size limit, what to do with an unparsable copy) and plugs into three entry points:
+
+| Entry point | Used for | Format hook |
+|---|---|---|
+| `serveVerbatim` | metadata served byte for byte (cargo index, go `@v`, rubygems, conan) | `metaDoc` |
+| `serveRendered` | metadata rewritten per request (npm packument, pypi simple pages, helm index, composer p2, ansible, nuget) | `render`, `etag` |
+| `serveDownload` | files named by cached metadata (npm tarball, pypi file, helm chart, cargo crate, composer dist, ansible tarball, gem, conda package, terraform archive) | `locate`: parse the cached metadata, return the URL and the digest the bytes must have |
+
+Credentials go only to the upstream's own origin (the pipeline forces `noAuth` for any other), a file is cached only when its digest matches what the metadata promised, and a missing blob of a cached row is refetched. Docker has its own OCI path (`internal/proxy/oci*.go`); apk, deb, ivy, maven, nix, pacman, rpm and sbt mirror the upstream path by path and use the generic `Serve` route (`fetch`/`fetchURL`), which is the same fetch, cache and store stages without a metadata parser.
+
+**Group** (`internal/group/pipeline.go`). Files and every path a format does not merge are first-hit (first readable member that has them, hosted first when hosted wins applies, `applyHostedWins` in `hostedwins.go`). A merged document is described by a `mergedDoc` (what to ask every member, size limit, merge hook, content type, cache lifetime) and served by `serveMergedDoc`: collect the members' 200 answers (404 skipped, a failing member recorded), merge by the format's key (the first member that has an entry wins), answer with a content ETag, and send a partial merge (a failed member left out) uncacheable.
+
+Adding a format: write its `pkg/<format>` grammar and parsers, then its proxy hooks (`internal/proxy/<format>.go`) and merge hook (`internal/group/<format>.go`); do not copy the resolve/revalidate/read/gate sequence.
+
 ## Storage and database
 
 - **Blob store** (`storage.BlobStore`): `Put/Get/Delete/Exists/GetMetadata/List/GetSize/ExistsBySHA256/PresignURL`. Blobs are content-addressed by sha256 and deduplicated across repositories, so deletes go through `storage.SafeDeleteBlob` (refcounting). Backends are chosen by `storage.type`; see [../operations/storage.md](../operations/storage.md). The server wraps the store in `NewMetricsBlobStore` for Prometheus metrics.
 - **Presigned URLs** ([../operations/storage.md#presigned-urls](../operations/storage.md#presigned-urls)): the S3 and Azure stores implement the optional `storage.Presigner` interface, and every store implements `storage.StagingStore` and `storage.MultipartStagingStore` (S3, Azure natively; filesystem and OCI through the HMAC relay in `internal/storage/relay.go`) (`MetricsBlobStore` forwards them). The `presign.Store` decorator in `internal/presign` wraps the blob store and decides, per request, whether to answer a blob download with a `307` to a presigned GET URL (global switch, per-repository `presign_downloads`, `presignMinSize`, backend support). Handlers built on `base.Handler` call the `TryPresign` hook after the authorisation check; handlers without it (docker, deb, rpm) call `presign.Try` directly. Metadata responses never use it. Presigned raw uploads live in `internal/api/presigned_uploads.go` (create and complete), share the write path with the raw `PUT` through `raw.Commit`, and stale staging objects are removed by `worker.PresignedUploadWorker`.
-- **Database** (`database.Database`): the interface in `internal/database/interfaces.go` is what handlers and workers depend on; `postgres*.go` implements it, hand-written SQL goes in `queries/*.sql` and sqlc generates `dbsqlc/` (never edited by hand). `ListRepoComponents` unions every per-format package table, so a new format needs a branch there.
+- **Database** (`database.PostgresDB`): one store type per domain, each in its own file and each a `struct{ *core }` over the shared connection state (`core`: pool, sqlc queries, logger, auth cache): `RepositoryStore` (`repositories.go`), `UserStore`, `TokenStore`, `QuotaStore`, `BlobRefStore`, `CatalogStore` (cross-format package listing), one `*Store` per package format (`pkg_<format>.go`) and so on. `PostgresDB` (`stores.go`) embeds them all, so the methods stay reachable as `db.Method(...)` and a `*PostgresDB` satisfies any consumer interface. There is no whole-database interface: every handler, worker and middleware declares the small interface of the methods it calls next to the code that uses it (for example `api.BundlesStore`, `quota.EnforceStore`, `worker.CleanupStore`), and tests give those interfaces small local fakes. Hand-written SQL goes in `queries/*.sql` and sqlc generates `dbsqlc/` (never edited by hand). A new package format adds its own `pkg_<format>.go` store, a row in `blobRefSpecs` (`blob_refs.go`) and `internal/recovery/tables.go`, and a branch in `ListRepoComponents` (`CatalogStore`).
 - **Migrations** are `migrations/*.sql`, embedded (`migrations/embed.go`) and applied at startup unless `MIGRATE_ON_START=false`; `openartifact -migrate` applies them and exits. They are forward-only: the migrator aborts on checksum drift of an applied file.
 
 ## Workers

@@ -11,104 +11,16 @@ import (
 )
 
 const countRepoComponents = `-- name: CountRepoComponents :one
-SELECT COUNT(*)::bigint FROM (
-    -- deb
-    SELECT 1 FROM deb_packages t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'deb') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- rpm
-    SELECT 1 FROM rpm_packages t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'rpm') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- npm
-    SELECT 1 FROM npm_versions t JOIN npm_packages np ON np.id = t.package_id
-    WHERE t.deleted_at IS NULL AND np.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'npm') AND ($3::text = '' OR np.full_name = $3::text) AND ($4::text = '' OR strpos(lower(np.full_name), lower($4::text)) > 0 OR strpos(lower(t.version), lower($4::text)) > 0)
-    UNION ALL
-    -- pypi
-    SELECT 1 FROM pypi_packages t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'pypi') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- maven
-    SELECT 1 FROM maven_artifacts t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'maven') AND ($3::text = '' OR (group_id || ':' || artifact_id_coord) = $3::text) AND ($4::text = '' OR strpos(lower((group_id || ':' || artifact_id_coord)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- ivy
-    SELECT 1 FROM ivy_artifacts t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'ivy') AND ($3::text = '' OR (organisation || ':' || module) = $3::text) AND ($4::text = '' OR strpos(lower((organisation || ':' || module)), lower($4::text)) > 0 OR strpos(lower(revision), lower($4::text)) > 0)
-    UNION ALL
-    -- sbt
-    SELECT 1 FROM sbt_artifacts t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'sbt') AND ($3::text = '' OR (group_id || ':' || artifact_id) = $3::text) AND ($4::text = '' OR strpos(lower((group_id || ':' || artifact_id)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- nuget
-    SELECT 1 FROM nuget_packages t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'nuget') AND ($3::text = '' OR package_id = $3::text) AND ($4::text = '' OR strpos(lower(package_id), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- gomod
-    SELECT 1 FROM gomod_modules t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'go') AND ($3::text = '' OR module_path = $3::text) AND ($4::text = '' OR strpos(lower(module_path), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- cargo
-    SELECT 1 FROM cargo_crates t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'cargo') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- rubygems
-    SELECT 1 FROM rubygems_gems t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'rubygems') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- conda
-    SELECT 1 FROM conda_packages t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conda') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- composer
-    SELECT 1 FROM composer_packages t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'composer') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- ansible
-    SELECT 1 FROM ansible_collections t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'ansible') AND ($3::text = '' OR (namespace || '.' || name) = $3::text) AND ($4::text = '' OR strpos(lower((namespace || '.' || name)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- pacman
-    SELECT 1 FROM pacman_packages t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'pacman') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- nix
-    SELECT 1 FROM nix_paths t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'nix') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(store_hash), lower($4::text)) > 0)
-    UNION ALL
-    -- conan
-    SELECT 1 FROM conan_packages t
-    WHERE t.deleted_at IS NULL AND t.package_id = '' AND t.filename IN ('', 'conanmanifest.txt') AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conan') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- apk
-    SELECT 1 FROM apk_packages t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'apk') AND ($3::text = '' OR (branch || '/' || repo || '/' || name) = $3::text) AND ($4::text = '' OR strpos(lower((branch || '/' || repo || '/' || name)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- terraform modules
-    SELECT 1 FROM terraform_modules t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'terraform') AND ($3::text = '' OR ('modules/' || name || '/' || system) = $3::text) AND ($4::text = '' OR strpos(lower(('modules/' || name || '/' || system)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- terraform providers
-    SELECT 1 FROM terraform_providers t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'terraform') AND ($3::text = '' OR ('providers/' || type) = $3::text) AND ($4::text = '' OR strpos(lower(('providers/' || type)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- helm
-    SELECT 1 FROM helm_charts t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'helm') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
-    UNION ALL
-    -- raw
-    SELECT 1 FROM raw_artifacts t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'raw') AND ($3::text = '' OR path = $3::text) AND ($4::text = '' OR strpos(lower(path), lower($4::text)) > 0)
-    UNION ALL
+SELECT (
+    -- generic files without name/q filter: package_files alone (index-only scan of idx_package_files_listing)
+    (SELECT COUNT(*) FROM package_files f WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $2::text = '' AND $3::text = '' AND $4::text = '')
+    + (SELECT COUNT(*) FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $3::text <> '' AND ($2::text = '' OR pk.format = $2::text) AND pk.name = $3::text AND ($4::text = '' OR strpos(lower(pk.name), lower($4::text)) > 0 OR strpos(lower(v.version), lower($4::text)) > 0))
+    + (SELECT COUNT(*) FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $3::text = '' AND ($2::text <> '' OR $4::text <> '') AND ($2::text = '' OR pk.format = $2::text) AND ($3::text = '' OR pk.name = $3::text) AND ($4::text = '' OR strpos(lower(pk.name), lower($4::text)) > 0 OR strpos(lower(v.version), lower($4::text)) > 0))
     -- proxy cache
-    SELECT 1 FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id
-    WHERE r.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL
-      AND ($2::text = '' OR $2::text = r.format) AND ($3::text = '' OR cache_key = $3::text) AND ($4::text = '' OR strpos(lower(cache_key), lower($4::text)) > 0)
-    UNION ALL
-    -- docker
-    SELECT 1 FROM docker_tags t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'docker') AND ($3::text = '' OR (CASE WHEN image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = repository_id) || '/' || image END) = $3::text) AND ($4::text = '' OR strpos(lower((CASE WHEN image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = repository_id) || '/' || image END)), lower($4::text)) > 0 OR strpos(lower(name), lower($4::text)) > 0)
-) AS p
+    + (SELECT COUNT(*) FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id WHERE r.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL AND ($2::text = '' OR $2::text = r.format) AND ($3::text = '' OR t.cache_key = $3::text) AND ($4::text = '' OR strpos(lower(t.cache_key), lower($4::text)) > 0))
+    -- docker tags
+    + (SELECT COUNT(*) FROM docker_tags t WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'docker') AND ($3::text = '' OR (CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END) = $3::text) AND ($4::text = '' OR strpos(lower((CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END)), lower($4::text)) > 0 OR strpos(lower(t.name), lower($4::text)) > 0))
+)::bigint
 `
 
 type CountRepoComponentsParams struct {
@@ -130,313 +42,37 @@ func (q *Queries) CountRepoComponents(ctx context.Context, arg CountRepoComponen
 	return column_1, err
 }
 
-const getDebianPackageByFilename = `-- name: GetDebianPackageByFilename :one
-
-SELECT dp.id, dp.repository_id, dp.distribution_id, dp.component_id,
-       COALESCE(b.sha256, '') AS sha256,
-       dp.name, dp.version, dp.arch,
-       COALESCE(dp.summary, '') AS summary,
-       COALESCE(dp.description, '') AS description,
-       COALESCE(dp.license, '') AS license,
-       COALESCE(dp.maintainer, '') AS maintainer,
-       COALESCE(dp.homepage, '') AS homepage,
-       COALESCE(dp.filename, '') AS filename,
-       COALESCE(b.size_bytes, 0) AS package_size,
-       COALESCE(dp.installed_size, 0) AS installed_size,
-       dp.created_at, dp.updated_at
-FROM deb_packages dp
-LEFT JOIN blobs b ON b.id = dp.blob_id
-WHERE dp.repository_id = $1 AND dp.deleted_at IS NULL AND dp.filename = $2
-`
-
-type GetDebianPackageByFilenameParams struct {
-	RepositoryID string  `db:"repository_id" json:"repository_id"`
-	Filename     *string `db:"filename" json:"filename"`
-}
-
-type GetDebianPackageByFilenameRow struct {
-	ID             string    `db:"id" json:"id"`
-	RepositoryID   string    `db:"repository_id" json:"repository_id"`
-	DistributionID string    `db:"distribution_id" json:"distribution_id"`
-	ComponentID    string    `db:"component_id" json:"component_id"`
-	Sha256         string    `db:"sha256" json:"sha256"`
-	Name           string    `db:"name" json:"name"`
-	Version        string    `db:"version" json:"version"`
-	Arch           string    `db:"arch" json:"arch"`
-	Summary        string    `db:"summary" json:"summary"`
-	Description    string    `db:"description" json:"description"`
-	License        string    `db:"license" json:"license"`
-	Maintainer     string    `db:"maintainer" json:"maintainer"`
-	Homepage       string    `db:"homepage" json:"homepage"`
-	Filename       string    `db:"filename" json:"filename"`
-	PackageSize    int64     `db:"package_size" json:"package_size"`
-	InstalledSize  int64     `db:"installed_size" json:"installed_size"`
-	CreatedAt      time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
-}
-
-// Debian package queries against deb_packages. Package data lives in the
-// per-format rpm_packages and deb_packages tables; their blob_id FKs point
-// into the global blobs table, which carries the sha256/size columns.
-//
-// RPM-side lookups (GetComponentByID, GetComponentByFilename,
-// GetComponentsByRepo, DeleteComponent) are hand-written in postgres.go
-// because they must try both rpm_packages and deb_packages (IDs are shared
-// across the historical split) — no sqlc query is generated for them.
-func (q *Queries) GetDebianPackageByFilename(ctx context.Context, arg GetDebianPackageByFilenameParams) (GetDebianPackageByFilenameRow, error) {
-	row := q.db.QueryRow(ctx, getDebianPackageByFilename, arg.RepositoryID, arg.Filename)
-	var i GetDebianPackageByFilenameRow
-	err := row.Scan(
-		&i.ID,
-		&i.RepositoryID,
-		&i.DistributionID,
-		&i.ComponentID,
-		&i.Sha256,
-		&i.Name,
-		&i.Version,
-		&i.Arch,
-		&i.Summary,
-		&i.Description,
-		&i.License,
-		&i.Maintainer,
-		&i.Homepage,
-		&i.Filename,
-		&i.PackageSize,
-		&i.InstalledSize,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getDebianPackagesByDistComp = `-- name: GetDebianPackagesByDistComp :many
-SELECT dp.id, dp.repository_id, dp.distribution_id, dp.component_id,
-       COALESCE(b.sha256, '') AS sha256,
-       dp.name, dp.version, dp.arch,
-       COALESCE(dp.summary, '') AS summary,
-       COALESCE(dp.description, '') AS description,
-       COALESCE(dp.license, '') AS license,
-       COALESCE(dp.maintainer, '') AS maintainer,
-       COALESCE(dp.homepage, '') AS homepage,
-       COALESCE(dp.filename, '') AS filename,
-       COALESCE(b.size_bytes, 0) AS package_size,
-       COALESCE(dp.installed_size, 0) AS installed_size,
-       dp.created_at, dp.updated_at
-FROM deb_packages dp
-LEFT JOIN blobs b ON b.id = dp.blob_id
-JOIN debian_distributions dd ON dd.id = dp.distribution_id
-JOIN debian_components dc ON dc.id = dp.component_id
-WHERE dp.repository_id = $1
-  AND dp.deleted_at IS NULL
-  AND ($2::text = '' OR dd.name = $2)
-  AND ($3::text = '' OR dc.name = $3)
-  AND ($4::text = '' OR dp.arch = $4)
-`
-
-type GetDebianPackagesByDistCompParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Dist         string `db:"dist" json:"dist"`
-	Comp         string `db:"comp" json:"comp"`
-	Arch         string `db:"arch" json:"arch"`
-}
-
-type GetDebianPackagesByDistCompRow struct {
-	ID             string    `db:"id" json:"id"`
-	RepositoryID   string    `db:"repository_id" json:"repository_id"`
-	DistributionID string    `db:"distribution_id" json:"distribution_id"`
-	ComponentID    string    `db:"component_id" json:"component_id"`
-	Sha256         string    `db:"sha256" json:"sha256"`
-	Name           string    `db:"name" json:"name"`
-	Version        string    `db:"version" json:"version"`
-	Arch           string    `db:"arch" json:"arch"`
-	Summary        string    `db:"summary" json:"summary"`
-	Description    string    `db:"description" json:"description"`
-	License        string    `db:"license" json:"license"`
-	Maintainer     string    `db:"maintainer" json:"maintainer"`
-	Homepage       string    `db:"homepage" json:"homepage"`
-	Filename       string    `db:"filename" json:"filename"`
-	PackageSize    int64     `db:"package_size" json:"package_size"`
-	InstalledSize  int64     `db:"installed_size" json:"installed_size"`
-	CreatedAt      time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) GetDebianPackagesByDistComp(ctx context.Context, arg GetDebianPackagesByDistCompParams) ([]GetDebianPackagesByDistCompRow, error) {
-	rows, err := q.db.Query(ctx, getDebianPackagesByDistComp,
-		arg.RepositoryID,
-		arg.Dist,
-		arg.Comp,
-		arg.Arch,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []GetDebianPackagesByDistCompRow{}
-	for rows.Next() {
-		var i GetDebianPackagesByDistCompRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.RepositoryID,
-			&i.DistributionID,
-			&i.ComponentID,
-			&i.Sha256,
-			&i.Name,
-			&i.Version,
-			&i.Arch,
-			&i.Summary,
-			&i.Description,
-			&i.License,
-			&i.Maintainer,
-			&i.Homepage,
-			&i.Filename,
-			&i.PackageSize,
-			&i.InstalledSize,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getRepoComponentBlob = `-- name: GetRepoComponentBlob :one
 
 SELECT id, format, filename, name, version, sha256, size_bytes, media_type
 FROM (
-    SELECT t.id::uuid AS id, 'deb'::text AS format, COALESCE(t.filename, '')::text AS filename, t.name::text AS name, t.version::text AS version,
+    -- generic files: the listed live file of the repository; the size is the blob's
+    SELECT f.id::uuid AS id, pk.format::text AS format, COALESCE(f.filename, '')::text AS filename, pk.name::text AS name, v.version::text AS version,
            COALESCE(b.sha256, '')::text AS sha256, COALESCE(b.size_bytes, 0)::bigint AS size_bytes, COALESCE(b.media_type, '')::text AS media_type
-    FROM deb_packages t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'rpm'::text, COALESCE(t.filename, '')::text, t.name::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM rpm_packages t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'npm'::text, t.tarball_filename::text, np.full_name::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM npm_versions t JOIN npm_packages np ON np.id = t.package_id LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND np.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'pypi'::text, t.filename::text, t.name::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM pypi_packages t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'maven'::text, t.repo_path::text, t.group_id || ':' || t.artifact_id_coord::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM maven_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'ivy'::text, t.artifact_name || '.' || t.artifact_ext::text, t.organisation || ':' || t.module::text, t.revision::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM ivy_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'sbt'::text, t.filename::text, t.group_id || ':' || t.artifact_id::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM sbt_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'nuget'::text, t.package_id || '.' || t.version || '.nupkg'::text, t.package_id::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM nuget_packages t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'go'::text, t.version || CASE WHEN t.zip_blob_id IS NOT NULL THEN '.zip' ELSE '.mod' END::text, t.module_path::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM gomod_modules t LEFT JOIN blobs b ON b.id = COALESCE(t.zip_blob_id, t.mod_blob_id)
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'cargo'::text, t.name || '-' || t.version || '.crate'::text, t.name::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM cargo_crates t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'rubygems'::text, t.name || '-' || t.version || CASE WHEN t.platform = 'ruby' THEN '' ELSE '-' || t.platform END || '.gem'::text, t.name::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM rubygems_gems t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'conda'::text, t.name || '-' || t.version || '-' || t.build_string || t.extension::text, t.name::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM conda_packages t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'composer'::text, (replace(t.name, '/', '-') || '-' || t.version || '.zip')::text, t.name::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM composer_packages t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'ansible'::text, t.filename::text, (t.namespace || '.' || t.name)::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM ansible_collections t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'pacman'::text, t.filename::text, t.name::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM pacman_packages t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'nix'::text, (t.store_hash || '.narinfo')::text, t.name::text, t.store_hash::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM nix_paths t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'conan'::text, t.name || '/' || t.version || '@' || t.user_channel || '#' || t.recipe_revision::text, t.name::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM conan_packages t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'apk'::text, t.name || '-' || t.version || '.apk'::text, (t.branch || '/' || t.repo || '/' || t.name)::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM apk_packages t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'terraform'::text, t.name || '-' || t.system || '-' || t.version || '.' || t.archive_ext::text, ('modules/' || t.name || '/' || t.system)::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM terraform_modules t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'terraform'::text, 'terraform-provider-' || t.type || '_' || t.version || '_' || t.os || '_' || t.arch || '.zip'::text, ('providers/' || t.type)::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM terraform_providers t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'helm'::text, t.name || '-' || t.version || '.tgz'::text, t.name::text, t.version::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM helm_charts t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
-    UNION ALL
-    SELECT t.id::uuid, 'raw'::text, t.path::text, t.path::text, ''::text,
-           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
-    FROM raw_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
+    FROM package_files f
+    JOIN package_versions v ON v.id = f.version_id
+    JOIN packages pk ON pk.id = v.package_id
+    LEFT JOIN blobs b ON b.id = f.blob_id
+    WHERE f.id = $1::uuid AND f.repository_id = $2::uuid AND f.deleted_at IS NULL AND f.listed
     UNION ALL
     -- proxy cache: a cached upstream file; the filename is its upstream-relative path.
     SELECT t.id::uuid, r.format::text, t.cache_key::text, t.cache_key::text, ''::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, t.size_bytes, 0)::bigint, COALESCE(NULLIF(t.content_type, ''), b.media_type, '')::text
     FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id LEFT JOIN blobs b ON b.sha256 = t.blob_key
-    WHERE r.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL
+    WHERE r.deleted_at IS NULL AND t.repository_id = $2::uuid AND t.id = $1::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL
     UNION ALL
     -- docker: the manifest blob; media type is the manifest's own.
     SELECT t.id::uuid, 'docker'::text, t.manifest_digest::text, (CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)::text, t.name::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(dm.media_type, '')::text
     FROM docker_tags t JOIN repositories r ON r.id = t.repository_id AND r.deleted_at IS NULL LEFT JOIN docker_manifests dm ON dm.repository_id = t.repository_id AND dm.image = t.image AND dm.digest = t.manifest_digest AND dm.deleted_at IS NULL LEFT JOIN blobs b ON b.id = dm.blob_id
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
+    WHERE t.deleted_at IS NULL AND t.repository_id = $2::uuid AND t.id = $1::uuid
 ) AS p
 LIMIT 1
 `
 
 type GetRepoComponentBlobParams struct {
-	RepoID string `db:"repo_id" json:"repo_id"`
 	ID     string `db:"id" json:"id"`
+	RepoID string `db:"repo_id" json:"repo_id"`
 }
 
 type GetRepoComponentBlobRow struct {
@@ -452,12 +88,11 @@ type GetRepoComponentBlobRow struct {
 
 // Download lookup for one listed package (backs
 // GET /api/v1/repositories/{name}/packages/{id}/download). Every branch
-// mirrors the same-named ListRepoComponents branch (same id, repository scope,
-// blob join and filename expression), so an id the listing returns resolves
-// here to the blob it shows. Rows without a blob (conan recipes without one)
-// come back with an empty sha256. Keep in sync with ListRepoComponents.
+// mirrors the same-named ListRepoComponents branch (same id and repository
+// scope), so an id the listing returns resolves here to the blob it shows. Rows
+// without a blob (a conan recipe without one) come back with an empty sha256.
 func (q *Queries) GetRepoComponentBlob(ctx context.Context, arg GetRepoComponentBlobParams) (GetRepoComponentBlobRow, error) {
-	row := q.db.QueryRow(ctx, getRepoComponentBlob, arg.RepoID, arg.ID)
+	row := q.db.QueryRow(ctx, getRepoComponentBlob, arg.ID, arg.RepoID)
 	var i GetRepoComponentBlobRow
 	err := row.Scan(
 		&i.ID,
@@ -473,191 +108,56 @@ func (q *Queries) GetRepoComponentBlob(ctx context.Context, arg GetRepoComponent
 }
 
 const listRepoComponents = `-- name: ListRepoComponents :many
-
-SELECT p.id::uuid AS id, p.repository_id::uuid AS repository_id, p.name::text AS name, p.version::text AS version,
-       p.format::text AS format, p.arch::text AS arch,
+SELECT p.id::uuid AS id, p.repository_id::uuid AS repository_id, COALESCE(p.name, pk.name)::text AS name, COALESCE(p.version, v.version)::text AS version,
+       COALESCE(p.format, pk.format)::text AS format, p.arch::text AS arch,
        COALESCE(COALESCE(bi.sha256, bs.sha256), '')::text AS sha256,
-       p.release::text AS release, p.epoch::int AS epoch, p.build_time::bigint AS build_time,
-       p.archive_size::bigint AS archive_size,
+       COALESCE(p.attrs->>'release', '')::text AS release, COALESCE((p.attrs->>'epoch')::int, 0)::int AS epoch,
+       COALESCE((p.attrs->>'build_time')::bigint, 0)::bigint AS build_time,
+       COALESCE((p.attrs->>'archive_size')::bigint, 0)::bigint AS archive_size,
        COALESCE(p.pref_size, bi.size_bytes, bs.size_bytes, p.fb_size, 0)::bigint AS package_size,
-       p.installed_size::bigint AS installed_size, p.filename::text AS filename,
+       COALESCE((p.attrs->>'installed_size')::bigint, 0)::bigint AS installed_size, p.filename::text AS filename,
        p.created_at::timestamptz AS created_at, p.updated_at::timestamptz AS updated_at
 FROM (
-    SELECT id, repository_id, name, version, format, arch, release, epoch, build_time, archive_size, pref_size, fb_size, installed_size, filename, blob_id, blob_key, created_at, updated_at FROM (
-    -- deb: one row per deb_packages row; size = blob size.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'deb'::text AS format, t.arch::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, COALESCE(t.installed_size, 0)::bigint AS installed_size,
-           COALESCE(t.filename, '')::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, distribution_id, component_id, blob_id, name, version, arch, summary, description, license, maintainer, homepage, filename, installed_size, created_at, updated_at, control_fields, deleted_at, deleted_by FROM deb_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'deb') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- rpm: one row per rpm_packages row; the package's own size wins over the blob size.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'rpm'::text AS format, t.arch::text AS arch, t.release::text AS release, t.epoch::int AS epoch, COALESCE(EXTRACT(EPOCH FROM t.build_time)::bigint, 0)::bigint AS build_time,
-           COALESCE(t.archive_size, 0)::bigint AS archive_size, t.package_size::bigint AS pref_size, NULL::bigint::bigint AS fb_size, COALESCE(t.installed_size, 0)::bigint AS installed_size,
-           COALESCE(t.filename, '')::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, blob_id, name, version, release, epoch, arch, summary, description, license, url, vendor, group_name, packager, source_rpm, build_host, build_time, filename, package_size, installed_size, archive_size, created_at, updated_at, header_start, header_end, rpm_extra, deleted_at, deleted_by FROM rpm_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'rpm') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- npm: one row per published version (scoped name in full_name).
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.full_name::text AS name, t.version::text AS version,
-           'npm'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.tarball_filename::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT v.id, v.package_id, v.version, v.manifest_json, v.integrity, v.shasum, v.tarball_filename, v.created_at, v.blob_id, v.updated_at, v.deleted_at, v.deleted_by, np.repository_id, np.full_name FROM npm_versions v JOIN npm_packages np ON np.id = v.package_id WHERE v.deleted_at IS NULL AND np.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'npm') AND ($3::text = '' OR np.full_name = $3::text) AND ($4::text = '' OR strpos(lower(np.full_name), lower($4::text)) > 0 OR strpos(lower(v.version), lower($4::text)) > 0) ORDER BY v.created_at DESC, v.id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- pypi: one row per distribution file; arch = python_version tag.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'pypi'::text AS format, COALESCE(t.python_version, '')::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.filename::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, version, filename, package_type, python_version, requires_python, summary, author, author_email, license, keywords, classifiers, created_at, updated_at, blob_id, deleted_at, deleted_by FROM pypi_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'pypi') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- maven: one row per stored file (jar, pom, ...); name = group:artifact, arch = classifier, filename = repo path.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.group_id || ':' || t.artifact_id_coord::text AS name, t.version::text AS version,
-           'maven'::text AS format, t.classifier::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.repo_path::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, group_id, artifact_id_coord, version, classifier, extension, snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path, created_at, updated_at, blob_id, md5, sha1, sha512, deleted_at, deleted_by FROM maven_artifacts WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'maven') AND ($3::text = '' OR (group_id || ':' || artifact_id_coord) = $3::text) AND ($4::text = '' OR strpos(lower((group_id || ':' || artifact_id_coord)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- ivy: one row per artifact file; name = organisation:module.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.organisation || ':' || t.module::text AS name, t.revision::text AS version,
-           'ivy'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.artifact_name || '.' || t.artifact_ext::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, organisation, module, revision, artifact_name, artifact_type, artifact_ext, created_at, updated_at, blob_id, deleted_at, deleted_by FROM ivy_artifacts WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'ivy') AND ($3::text = '' OR (organisation || ':' || module) = $3::text) AND ($4::text = '' OR strpos(lower((organisation || ':' || module)), lower($4::text)) > 0 OR strpos(lower(revision), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- sbt: one row per artifact file; arch = scala_version.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.group_id || ':' || t.artifact_id::text AS name, t.version::text AS version,
-           'sbt'::text AS format, t.scala_version::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.filename::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, group_id, artifact_id, version, scala_version, filename, created_at, updated_at, blob_id, deleted_at, deleted_by FROM sbt_artifacts WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'sbt') AND ($3::text = '' OR (group_id || ':' || artifact_id) = $3::text) AND ($4::text = '' OR strpos(lower((group_id || ':' || artifact_id)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- nuget: one row per package version.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.package_id::text AS name, t.version::text AS version,
-           'nuget'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.package_id || '.' || t.version || '.nupkg'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, package_id, version, title, description, summary, authors, owners, tags, project_url, license_url, icon_url, require_license_acceptance, is_prerelease, min_client_version, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by, dependency_groups FROM nuget_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'nuget') AND ($3::text = '' OR package_id = $3::text) AND ($4::text = '' OR strpos(lower(package_id), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- gomod: one row per module version; the zip blob is preferred, the .mod blob otherwise.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.module_path::text AS name, t.version::text AS version,
-           'go'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.version || CASE WHEN t.zip_blob_id IS NOT NULL THEN '.zip' ELSE '.mod' END::text AS filename, COALESCE(t.zip_blob_id, t.mod_blob_id)::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, module_path, version, go_mod_content, created_at, updated_at, zip_blob_id, mod_blob_id, deleted_at, deleted_by FROM gomod_modules WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'go') AND ($3::text = '' OR module_path = $3::text) AND ($4::text = '' OR strpos(lower(module_path), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- cargo: one row per crate version (yanked included).
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'cargo'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.name || '-' || t.version || '.crate'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, version, description, homepage, documentation, repository, license, keywords, categories, authors, readme, metadata_json, yanked, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by FROM cargo_crates WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'cargo') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- rubygems: one row per gem version/platform; arch = platform; a non-zero recorded size wins over the blob size.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'rubygems'::text AS format, t.platform::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULLIF(t.size, 0)::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.name || '-' || t.version || CASE WHEN t.platform = 'ruby' THEN '' ELSE '-' || t.platform END || '.gem'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, version, platform, description, summary, homepage, authors, licenses, dependencies, metadata_json, yanked, download_count, created_at, updated_at, blob_id, size, deleted_at, deleted_by FROM rubygems_gems WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'rubygems') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- conda: one row per build; arch = platform (subdir), release = build_string.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'conda'::text AS format, t.platform::text AS arch, t.build_string::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.name || '-' || t.version || '-' || t.build_string || t.extension::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, version, build_string, platform, depends, created_at, updated_at, blob_id, deleted_at, deleted_by, extension, build_number, md5, timestamp_ms, index_extra FROM conda_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conda') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- pacman: one row per package file; arch = package architecture.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'pacman'::text AS format, t.arch::text AS arch, ''::text::text AS release, 0::int::int AS epoch, t.build_date::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, t.installed_size::bigint AS installed_size,
-           t.filename::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, base, version, arch, repo_arch, filename, blob_id, md5, description, url, packager, build_date, installed_size, licenses, package_groups, replaces, conflicts, provides, depends, optdepends, makedepends, checkdepends, file_list, signature, signature_source, signature_key, created_at, updated_at, deleted_at, deleted_by FROM pacman_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'pacman') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- nix: one row per store path; name = store path name, version = store hash, filename = narinfo.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.store_hash::text AS version,
-           'nix'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint AS installed_size,
-           (t.store_hash || '.narinfo')::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, store_hash, name, nar_hash, nar_size, nar_file, compression, refs, deriver, ca, signatures, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by FROM nix_paths WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'nix') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(store_hash), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- composer: one row per package version; filename = vendor-name-version.zip.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'composer'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           (replace(t.name, '/', '-') || '-' || t.version || '.zip')::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, version, version_normalized, blob_id, sha1, composer_json, created_at, updated_at, deleted_at, deleted_by FROM composer_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'composer') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- ansible: one row per collection version; name = NAMESPACE.NAME.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.namespace || '.' || t.name::text AS name, t.version::text AS version,
-           'ansible'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.filename::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, namespace, name, version, filename, blob_id, dependencies, metadata, requires_ansible, created_at, updated_at, deleted_at, deleted_by FROM ansible_collections WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'ansible') AND ($3::text = '' OR (namespace || '.' || name) = $3::text) AND ($4::text = '' OR strpos(lower((namespace || '.' || name)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- conan: one row per recipe revision (its conanmanifest.txt, or a pre-0.5.0 row with no file name);
-    -- release = recipe_revision, filename = full reference.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'conan'::text AS format, ''::text AS arch, t.recipe_revision::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.name || '/' || t.version || '@' || t.user_channel || '#' || t.recipe_revision::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, version, user_channel, recipe_revision, conanfile, conaninfo, created_at, updated_at, blob_id, deleted_at, deleted_by, package_id, package_revision, filename, md5, sha1 FROM conan_packages WHERE deleted_at IS NULL AND package_id = '' AND filename IN ('', 'conanmanifest.txt') AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conan') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- apk: one row per .apk; name = BRANCH/REPO/NAME, arch = architecture.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.branch || '/' || t.repo || '/' || t.name::text AS name, t.version::text AS version,
-           'apk'::text AS format, t.arch::text AS arch, ''::text::text AS release, 0::int::int AS epoch, t.build_time::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, t.installed_size::bigint AS installed_size,
-           t.name || '-' || t.version || '.apk'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, branch, repo, arch, pkg_arch, name, version, checksum, data_sha256, description, url, license, origin, maintainer, commit, build_time, installed_size, depends, provides, install_if, provider_priority, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by FROM apk_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'apk') AND ($3::text = '' OR (branch || '/' || repo || '/' || name) = $3::text) AND ($4::text = '' OR strpos(lower((branch || '/' || repo || '/' || name)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- terraform modules: one row per module version; name = modules/NAME/SYSTEM.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, 'modules/' || t.name || '/' || t.system::text AS name, t.version::text AS version,
-           'terraform'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.name || '-' || t.system || '-' || t.version || '.' || t.archive_ext::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, system, version, archive_ext, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by FROM terraform_modules WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'terraform') AND ($3::text = '' OR ('modules/' || name || '/' || system) = $3::text) AND ($4::text = '' OR strpos(lower(('modules/' || name || '/' || system)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- terraform providers: one row per platform zip; name = providers/TYPE, arch = OS_ARCH.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, 'providers/' || t.type::text AS name, t.version::text AS version,
-           'terraform'::text AS format, t.os || '_' || t.arch::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           'terraform-provider-' || t.type || '_' || t.version || '_' || t.os || '_' || t.arch || '.zip'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, type, version, os, arch, protocols, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by FROM terraform_providers WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'terraform') AND ($3::text = '' OR ('providers/' || type) = $3::text) AND ($4::text = '' OR strpos(lower(('providers/' || type)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- helm: one row per chart version.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'helm'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.name || '-' || t.version || '.tgz'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, version, app_version, description, keywords, home, sources, maintainers, icon, api_version, type, created_at, updated_at, blob_id, deleted_at, deleted_by FROM helm_charts WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'helm') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- raw: one row per stored path; name = filename = path, no version.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.path::text AS name, ''::text AS version,
-           'raw'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.path::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, path, content_type, metadata, created_at, updated_at, blob_id, deleted_at, deleted_by FROM raw_artifacts WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'raw') AND ($3::text = '' OR path = $3::text) AND ($4::text = '' OR strpos(lower(path), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
+    SELECT id, repository_id, version_id, name, version, format, arch, attrs, pref_size, fb_size, filename, blob_id, blob_key, created_at, updated_at FROM (
+    -- generic files (every format but docker): stage 1 cuts the top rows of the repository's listed live files
+    -- from package_files (plus versions/packages only when the filters need them); name, version and format are
+    -- resolved for the page rows only (here only when the sort needs them).
+    SELECT f.id AS id, f.repository_id AS repository_id, f.version_id AS version_id, f.pname AS name, f.pversion AS version, f.pformat AS format,
+           f.arch AS arch, f.attrs AS attrs, f.size_bytes AS pref_size, NULL::bigint AS fb_size,
+           f.filename AS filename, f.blob_id AS blob_id, NULL::text AS blob_key, f.created_at AS created_at, f.updated_at AS updated_at
+    FROM (
+        (SELECT f.id, f.repository_id, f.version_id, f.filename, f.arch, f.attrs, f.size_bytes, f.blob_id, f.created_at, f.updated_at, NULL::text AS pname, NULL::text AS pversion, NULL::text AS pformat FROM package_files f
+         WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $2::text = '' AND $3::text = '' AND $4::text = ''
+         ORDER BY f.created_at DESC, f.id LIMIT ($5::int + $6::int))
+        UNION ALL
+        (SELECT f.id, f.repository_id, f.version_id, f.filename, f.arch, f.attrs, f.size_bytes, f.blob_id, f.created_at, f.updated_at, NULL::text, NULL::text, NULL::text FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id
+         WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $3::text <> '' AND ($2::text = '' OR pk.format = $2::text) AND pk.name = $3::text AND ($4::text = '' OR strpos(lower(pk.name), lower($4::text)) > 0 OR strpos(lower(v.version), lower($4::text)) > 0)
+         ORDER BY f.created_at DESC, f.id LIMIT ($5::int + $6::int))
+        UNION ALL
+        (SELECT f.id, f.repository_id, f.version_id, f.filename, f.arch, f.attrs, f.size_bytes, f.blob_id, f.created_at, f.updated_at, NULL::text, NULL::text, NULL::text FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id
+         WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $3::text = '' AND ($2::text <> '' OR $4::text <> '') AND ($2::text = '' OR pk.format = $2::text) AND ($3::text = '' OR pk.name = $3::text) AND ($4::text = '' OR strpos(lower(pk.name), lower($4::text)) > 0 OR strpos(lower(v.version), lower($4::text)) > 0)
+         ORDER BY f.created_at DESC, f.id LIMIT ($5::int + $6::int))
+    ) f
     UNION ALL
     -- proxy cache: one row per cached upstream file of a proxy repository (any format); name = filename = upstream-relative path; the blob is resolved by sha256 and wins over the recorded size.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.cache_key::text AS name, ''::text AS version,
-           t.repo_format::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, t.size_bytes::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.cache_key::text AS filename, NULL::uuid AS blob_id, t.blob_key::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT p.id, p.repository_id, p.cache_key, p.blob_key, p.content_type, p.status_code, p.size_bytes, p.hit_count, p.last_hit_at, p.expires_at, p.created_at, p.updated_at, r.format AS repo_format FROM proxy_cache_entries p JOIN repositories r ON r.id = p.repository_id WHERE r.deleted_at IS NULL AND p.repository_id = $1::uuid AND p.status_code = 200 AND p.blob_key IS NOT NULL AND ($2::text = '' OR $2::text = r.format) AND ($3::text = '' OR cache_key = $3::text) AND ($4::text = '' OR strpos(lower(cache_key), lower($4::text)) > 0) ORDER BY p.created_at DESC, p.id LIMIT ($5::int + $6::int)) t
+    SELECT t.id::uuid, t.repository_id::uuid, NULL::uuid, t.cache_key::text, ''::text, t.repo_format::text,
+           ''::text, NULL::jsonb, NULL::bigint, t.size_bytes::bigint,
+           t.cache_key::text, NULL::uuid, t.blob_key::text, t.created_at::timestamptz, t.updated_at::timestamptz
+    FROM (SELECT t.id, t.repository_id, t.cache_key, t.blob_key, t.content_type, t.status_code, t.size_bytes, t.hit_count, t.last_hit_at, t.expires_at, t.created_at, t.updated_at, r.format AS repo_format FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id WHERE r.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL AND ($2::text = '' OR $2::text = r.format) AND ($3::text = '' OR t.cache_key = $3::text) AND ($4::text = '' OR strpos(lower(t.cache_key), lower($4::text)) > 0) ORDER BY t.created_at DESC, t.id LIMIT ($5::int + $6::int)) t
     UNION ALL
     -- docker: one row per tag (the registry image name is the repository name, plus the image path inside it); size = manifest size, blob = manifest blob, filename = manifest digest.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, (CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)::text AS name, t.name::text AS version,
-           'docker'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, COALESCE(dm.size, 0)::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.manifest_digest::text AS filename, dm.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, manifest_digest, created_at, updated_at, image, deleted_at, deleted_by FROM docker_tags WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'docker') AND ($3::text = '' OR (CASE WHEN image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = repository_id) || '/' || image END) = $3::text) AND ($4::text = '' OR strpos(lower((CASE WHEN image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = repository_id) || '/' || image END)), lower($4::text)) > 0 OR strpos(lower(name), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
+    SELECT t.id::uuid, t.repository_id::uuid, NULL::uuid, (CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)::text, t.name::text, 'docker'::text,
+           ''::text, NULL::jsonb, COALESCE(dm.size, 0)::bigint, NULL::bigint,
+           t.manifest_digest::text, dm.blob_id::uuid, NULL::text, t.created_at::timestamptz, t.updated_at::timestamptz
+    FROM (SELECT t.id, t.repository_id, t.name, t.manifest_digest, t.created_at, t.updated_at, t.image, t.deleted_at, t.deleted_by FROM docker_tags t WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'docker') AND ($3::text = '' OR (CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END) = $3::text) AND ($4::text = '' OR strpos(lower((CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END)), lower($4::text)) > 0 OR strpos(lower(t.name), lower($4::text)) > 0) ORDER BY t.created_at DESC, t.id LIMIT ($5::int + $6::int)) t
     JOIN repositories r ON r.id = t.repository_id AND r.deleted_at IS NULL
     LEFT JOIN docker_manifests dm ON dm.repository_id = t.repository_id AND dm.image = t.image AND dm.digest = t.manifest_digest AND dm.deleted_at IS NULL
     ) AS u
     ORDER BY u.created_at DESC, u.id
     LIMIT $5::int OFFSET $6::int
 ) AS p
+LEFT JOIN package_versions v ON v.id = p.version_id
+LEFT JOIN packages pk ON pk.id = v.package_id
 LEFT JOIN LATERAL (SELECT sha256, size_bytes FROM blobs WHERE id = p.blob_id) AS bi ON true
 LEFT JOIN LATERAL (SELECT sha256, size_bytes FROM blobs WHERE sha256 = p.blob_key) AS bs ON true
 ORDER BY p.created_at DESC, p.id
@@ -692,27 +192,42 @@ type ListRepoComponentsRow struct {
 }
 
 // Repository package listing across every format (backs
-// GET /api/v1/repositories/{name}/packages). Each branch maps one per-format
-// table onto the shared models.Component shape; columns with no equivalent
-// default to ”/0. The format filter is applied inside every branch so the
-// planner can discard the other formats' tables. Keep ListRepoComponents,
-// ListRepoComponentsByName and CountRepoComponents in sync (same branches, same
-// filters). name_filter is an exact match on the listed name; q is a
-// case-insensitive substring match on the listed name or version.
+// GET /api/v1/repositories/{name}/packages). One generic branch reads the
+// listed live files of package_files (every format but docker) and maps them
+// onto the shared models.Component shape; two pseudo-branches add the docker
+// tags and the proxy cache entries. Columns with no equivalent default to ”/0.
+// Where the shape comes from (see the format specs for the keys):
+//
+//	name = packages.name, version = package_versions.version, format =
+//	packages.format, arch = package_files.arch, filename = package_files.filename;
+//	release, epoch, build_time, archive_size, installed_size = package_files.attrs
+//	keys of that name; package_size = COALESCE(size_bytes, blob size, 0).
+//
+// A file the plugin marks unlisted (go .mod, conan binaries) never shows.
+// Keep ListRepoComponents, ListRepoComponentsByName and CountRepoComponents in
+// sync (same branches, same filters). name_filter is an exact match on the
+// listed name; q is a case-insensitive substring match on the listed name or
+// version (on the name only for proxy cache entries).
 //
 // ListRepoComponentsByName is ListRepoComponents in (name, version, id) order
-// instead of newest first: every branch picks its top rows by that order (a
-// bounded sort of the repository's rows in the branch table), so it backs the
-// browser's "sort by name" but not the default listing.
+// instead of newest first: its stage 1 sorts the repository's files by that
+// order, so it backs the browser's "sort by name" but not the default listing.
 //
 // The listing is built in two stages so that no row outside the requested page
-// ever touches the blobs table: every branch first picks its own top
-// (page_limit + page_offset) rows in the final (created_at DESC, id) order from
-// the narrow base table and maps them to the shared shape, the union is sorted
-// and cut to the page, and only then are blob sha256/size resolved for those
-// rows. The branch columns pref_size/fb_size carry the per-format size rules
+// ever touches the versions, packages or blobs tables: every branch first picks
+// its own top (page_limit + page_offset) rows in the final (created_at DESC, id)
+// order and carries the raw file columns; for the generic branch that is an
+// ordered scan of idx_package_files_listing that stops at the limit. With none
+// of format_filter, name_filter and q stage 1 reads package_files alone; the
+// other two generic branches, with versions and packages joined for those
+// predicates, are switched on only when one of them is set (a one-time filter
+// skips the others): one for name_filter, whose equality lets the planner start
+// from packages, one for format_filter and q, which walk the listing index. The union is sorted and cut to the page, and only then are the name,
+// version and format (versions/packages by primary key), the attrs columns and
+// the blob sha256/size resolved. pref_size/fb_size carry the size rules
 // (package_size = COALESCE(pref_size, blob size, fb_size, 0)); blob_id or
-// blob_key (proxy cache, resolved by sha256) locate the blob.
+// blob_key (proxy cache, resolved by sha256) locate the blob. The by-name
+// variant needs the name to sort, so its stage 1 always joins and carries it.
 func (q *Queries) ListRepoComponents(ctx context.Context, arg ListRepoComponentsParams) ([]ListRepoComponentsRow, error) {
 	rows, err := q.db.Query(ctx, listRepoComponents,
 		arg.RepoID,
@@ -758,190 +273,49 @@ func (q *Queries) ListRepoComponents(ctx context.Context, arg ListRepoComponents
 }
 
 const listRepoComponentsByName = `-- name: ListRepoComponentsByName :many
-SELECT p.id::uuid AS id, p.repository_id::uuid AS repository_id, p.name::text AS name, p.version::text AS version,
-       p.format::text AS format, p.arch::text AS arch,
+SELECT p.id::uuid AS id, p.repository_id::uuid AS repository_id, COALESCE(p.name, pk.name)::text AS name, COALESCE(p.version, v.version)::text AS version,
+       COALESCE(p.format, pk.format)::text AS format, p.arch::text AS arch,
        COALESCE(COALESCE(bi.sha256, bs.sha256), '')::text AS sha256,
-       p.release::text AS release, p.epoch::int AS epoch, p.build_time::bigint AS build_time,
-       p.archive_size::bigint AS archive_size,
+       COALESCE(p.attrs->>'release', '')::text AS release, COALESCE((p.attrs->>'epoch')::int, 0)::int AS epoch,
+       COALESCE((p.attrs->>'build_time')::bigint, 0)::bigint AS build_time,
+       COALESCE((p.attrs->>'archive_size')::bigint, 0)::bigint AS archive_size,
        COALESCE(p.pref_size, bi.size_bytes, bs.size_bytes, p.fb_size, 0)::bigint AS package_size,
-       p.installed_size::bigint AS installed_size, p.filename::text AS filename,
+       COALESCE((p.attrs->>'installed_size')::bigint, 0)::bigint AS installed_size, p.filename::text AS filename,
        p.created_at::timestamptz AS created_at, p.updated_at::timestamptz AS updated_at
 FROM (
-    SELECT id, repository_id, name, version, format, arch, release, epoch, build_time, archive_size, pref_size, fb_size, installed_size, filename, blob_id, blob_key, created_at, updated_at FROM (
-    -- deb: one row per deb_packages row; size = blob size.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'deb'::text AS format, t.arch::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, COALESCE(t.installed_size, 0)::bigint AS installed_size,
-           COALESCE(t.filename, '')::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, distribution_id, component_id, blob_id, name, version, arch, summary, description, license, maintainer, homepage, filename, installed_size, created_at, updated_at, control_fields, deleted_at, deleted_by FROM deb_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'deb') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY name, version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- rpm: one row per rpm_packages row; the package's own size wins over the blob size.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'rpm'::text AS format, t.arch::text AS arch, t.release::text AS release, t.epoch::int AS epoch, COALESCE(EXTRACT(EPOCH FROM t.build_time)::bigint, 0)::bigint AS build_time,
-           COALESCE(t.archive_size, 0)::bigint AS archive_size, t.package_size::bigint AS pref_size, NULL::bigint::bigint AS fb_size, COALESCE(t.installed_size, 0)::bigint AS installed_size,
-           COALESCE(t.filename, '')::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, blob_id, name, version, release, epoch, arch, summary, description, license, url, vendor, group_name, packager, source_rpm, build_host, build_time, filename, package_size, installed_size, archive_size, created_at, updated_at, header_start, header_end, rpm_extra, deleted_at, deleted_by FROM rpm_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'rpm') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY name, version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- npm: one row per published version (scoped name in full_name).
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.full_name::text AS name, t.version::text AS version,
-           'npm'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.tarball_filename::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT v.id, v.package_id, v.version, v.manifest_json, v.integrity, v.shasum, v.tarball_filename, v.created_at, v.blob_id, v.updated_at, v.deleted_at, v.deleted_by, np.repository_id, np.full_name FROM npm_versions v JOIN npm_packages np ON np.id = v.package_id WHERE v.deleted_at IS NULL AND np.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'npm') AND ($3::text = '' OR np.full_name = $3::text) AND ($4::text = '' OR strpos(lower(np.full_name), lower($4::text)) > 0 OR strpos(lower(v.version), lower($4::text)) > 0) ORDER BY np.full_name, v.version, v.id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- pypi: one row per distribution file; arch = python_version tag.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'pypi'::text AS format, COALESCE(t.python_version, '')::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.filename::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, version, filename, package_type, python_version, requires_python, summary, author, author_email, license, keywords, classifiers, created_at, updated_at, blob_id, deleted_at, deleted_by FROM pypi_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'pypi') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY name, version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- maven: one row per stored file (jar, pom, ...); name = group:artifact, arch = classifier, filename = repo path.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.group_id || ':' || t.artifact_id_coord::text AS name, t.version::text AS version,
-           'maven'::text AS format, t.classifier::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.repo_path::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, group_id, artifact_id_coord, version, classifier, extension, snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path, created_at, updated_at, blob_id, md5, sha1, sha512, deleted_at, deleted_by FROM maven_artifacts WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'maven') AND ($3::text = '' OR (group_id || ':' || artifact_id_coord) = $3::text) AND ($4::text = '' OR strpos(lower((group_id || ':' || artifact_id_coord)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY (group_id || ':' || artifact_id_coord), version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- ivy: one row per artifact file; name = organisation:module.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.organisation || ':' || t.module::text AS name, t.revision::text AS version,
-           'ivy'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.artifact_name || '.' || t.artifact_ext::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, organisation, module, revision, artifact_name, artifact_type, artifact_ext, created_at, updated_at, blob_id, deleted_at, deleted_by FROM ivy_artifacts WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'ivy') AND ($3::text = '' OR (organisation || ':' || module) = $3::text) AND ($4::text = '' OR strpos(lower((organisation || ':' || module)), lower($4::text)) > 0 OR strpos(lower(revision), lower($4::text)) > 0) ORDER BY (organisation || ':' || module), revision, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- sbt: one row per artifact file; arch = scala_version.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.group_id || ':' || t.artifact_id::text AS name, t.version::text AS version,
-           'sbt'::text AS format, t.scala_version::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.filename::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, group_id, artifact_id, version, scala_version, filename, created_at, updated_at, blob_id, deleted_at, deleted_by FROM sbt_artifacts WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'sbt') AND ($3::text = '' OR (group_id || ':' || artifact_id) = $3::text) AND ($4::text = '' OR strpos(lower((group_id || ':' || artifact_id)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY (group_id || ':' || artifact_id), version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- nuget: one row per package version.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.package_id::text AS name, t.version::text AS version,
-           'nuget'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.package_id || '.' || t.version || '.nupkg'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, package_id, version, title, description, summary, authors, owners, tags, project_url, license_url, icon_url, require_license_acceptance, is_prerelease, min_client_version, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by, dependency_groups FROM nuget_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'nuget') AND ($3::text = '' OR package_id = $3::text) AND ($4::text = '' OR strpos(lower(package_id), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY package_id, version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- gomod: one row per module version; the zip blob is preferred, the .mod blob otherwise.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.module_path::text AS name, t.version::text AS version,
-           'go'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.version || CASE WHEN t.zip_blob_id IS NOT NULL THEN '.zip' ELSE '.mod' END::text AS filename, COALESCE(t.zip_blob_id, t.mod_blob_id)::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, module_path, version, go_mod_content, created_at, updated_at, zip_blob_id, mod_blob_id, deleted_at, deleted_by FROM gomod_modules WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'go') AND ($3::text = '' OR module_path = $3::text) AND ($4::text = '' OR strpos(lower(module_path), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY module_path, version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- cargo: one row per crate version (yanked included).
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'cargo'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.name || '-' || t.version || '.crate'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, version, description, homepage, documentation, repository, license, keywords, categories, authors, readme, metadata_json, yanked, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by FROM cargo_crates WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'cargo') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY name, version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- rubygems: one row per gem version/platform; arch = platform; a non-zero recorded size wins over the blob size.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'rubygems'::text AS format, t.platform::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULLIF(t.size, 0)::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.name || '-' || t.version || CASE WHEN t.platform = 'ruby' THEN '' ELSE '-' || t.platform END || '.gem'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, version, platform, description, summary, homepage, authors, licenses, dependencies, metadata_json, yanked, download_count, created_at, updated_at, blob_id, size, deleted_at, deleted_by FROM rubygems_gems WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'rubygems') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY name, version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- conda: one row per build; arch = platform (subdir), release = build_string.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'conda'::text AS format, t.platform::text AS arch, t.build_string::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.name || '-' || t.version || '-' || t.build_string || t.extension::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, version, build_string, platform, depends, created_at, updated_at, blob_id, deleted_at, deleted_by, extension, build_number, md5, timestamp_ms, index_extra FROM conda_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conda') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY name, version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- pacman: one row per package file; arch = package architecture.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'pacman'::text AS format, t.arch::text AS arch, ''::text::text AS release, 0::int::int AS epoch, t.build_date::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, t.installed_size::bigint AS installed_size,
-           t.filename::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, base, version, arch, repo_arch, filename, blob_id, md5, description, url, packager, build_date, installed_size, licenses, package_groups, replaces, conflicts, provides, depends, optdepends, makedepends, checkdepends, file_list, signature, signature_source, signature_key, created_at, updated_at, deleted_at, deleted_by FROM pacman_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'pacman') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY name, version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- nix: one row per store path; name = store path name, version = store hash, filename = narinfo.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.store_hash::text AS version,
-           'nix'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint AS installed_size,
-           (t.store_hash || '.narinfo')::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, store_hash, name, nar_hash, nar_size, nar_file, compression, refs, deriver, ca, signatures, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by FROM nix_paths WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'nix') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(store_hash), lower($4::text)) > 0) ORDER BY name, store_hash, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- composer: one row per package version; filename = vendor-name-version.zip.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'composer'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           (replace(t.name, '/', '-') || '-' || t.version || '.zip')::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, version, version_normalized, blob_id, sha1, composer_json, created_at, updated_at, deleted_at, deleted_by FROM composer_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'composer') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY name, version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- ansible: one row per collection version; name = NAMESPACE.NAME.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.namespace || '.' || t.name::text AS name, t.version::text AS version,
-           'ansible'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.filename::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, namespace, name, version, filename, blob_id, dependencies, metadata, requires_ansible, created_at, updated_at, deleted_at, deleted_by FROM ansible_collections WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'ansible') AND ($3::text = '' OR (namespace || '.' || name) = $3::text) AND ($4::text = '' OR strpos(lower((namespace || '.' || name)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY (namespace || '.' || name), version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- conan: one row per recipe revision (its conanmanifest.txt, or a pre-0.5.0 row with no file name);
-    -- release = recipe_revision, filename = full reference.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'conan'::text AS format, ''::text AS arch, t.recipe_revision::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.name || '/' || t.version || '@' || t.user_channel || '#' || t.recipe_revision::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, version, user_channel, recipe_revision, conanfile, conaninfo, created_at, updated_at, blob_id, deleted_at, deleted_by, package_id, package_revision, filename, md5, sha1 FROM conan_packages WHERE deleted_at IS NULL AND package_id = '' AND filename IN ('', 'conanmanifest.txt') AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conan') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY name, version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- apk: one row per .apk; name = BRANCH/REPO/NAME, arch = architecture.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.branch || '/' || t.repo || '/' || t.name::text AS name, t.version::text AS version,
-           'apk'::text AS format, t.arch::text AS arch, ''::text::text AS release, 0::int::int AS epoch, t.build_time::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, t.installed_size::bigint AS installed_size,
-           t.name || '-' || t.version || '.apk'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, branch, repo, arch, pkg_arch, name, version, checksum, data_sha256, description, url, license, origin, maintainer, commit, build_time, installed_size, depends, provides, install_if, provider_priority, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by FROM apk_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'apk') AND ($3::text = '' OR (branch || '/' || repo || '/' || name) = $3::text) AND ($4::text = '' OR strpos(lower((branch || '/' || repo || '/' || name)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY (branch || '/' || repo || '/' || name), version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- terraform modules: one row per module version; name = modules/NAME/SYSTEM.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, 'modules/' || t.name || '/' || t.system::text AS name, t.version::text AS version,
-           'terraform'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.name || '-' || t.system || '-' || t.version || '.' || t.archive_ext::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, system, version, archive_ext, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by FROM terraform_modules WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'terraform') AND ($3::text = '' OR ('modules/' || name || '/' || system) = $3::text) AND ($4::text = '' OR strpos(lower(('modules/' || name || '/' || system)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY ('modules/' || name || '/' || system), version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- terraform providers: one row per platform zip; name = providers/TYPE, arch = OS_ARCH.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, 'providers/' || t.type::text AS name, t.version::text AS version,
-           'terraform'::text AS format, t.os || '_' || t.arch::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           'terraform-provider-' || t.type || '_' || t.version || '_' || t.os || '_' || t.arch || '.zip'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, type, version, os, arch, protocols, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by FROM terraform_providers WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'terraform') AND ($3::text = '' OR ('providers/' || type) = $3::text) AND ($4::text = '' OR strpos(lower(('providers/' || type)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY ('providers/' || type), version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- helm: one row per chart version.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
-           'helm'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.name || '-' || t.version || '.tgz'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, version, app_version, description, keywords, home, sources, maintainers, icon, api_version, type, created_at, updated_at, blob_id, deleted_at, deleted_by FROM helm_charts WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'helm') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY name, version, id LIMIT ($5::int + $6::int)) t
-    UNION ALL
-    -- raw: one row per stored path; name = filename = path, no version.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.path::text AS name, ''::text AS version,
-           'raw'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.path::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, path, content_type, metadata, created_at, updated_at, blob_id, deleted_at, deleted_by FROM raw_artifacts WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'raw') AND ($3::text = '' OR path = $3::text) AND ($4::text = '' OR strpos(lower(path), lower($4::text)) > 0) ORDER BY path, id LIMIT ($5::int + $6::int)) t
+    SELECT id, repository_id, version_id, name, version, format, arch, attrs, pref_size, fb_size, filename, blob_id, blob_key, created_at, updated_at FROM (
+    -- generic files (every format but docker): stage 1 cuts the top rows of the repository's listed live files
+    -- from package_files (plus versions/packages only when the filters need them); name, version and format are
+    -- resolved for the page rows only (here only when the sort needs them).
+    SELECT f.id AS id, f.repository_id AS repository_id, f.version_id AS version_id, f.pname AS name, f.pversion AS version, f.pformat AS format,
+           f.arch AS arch, f.attrs AS attrs, f.size_bytes AS pref_size, NULL::bigint AS fb_size,
+           f.filename AS filename, f.blob_id AS blob_id, NULL::text AS blob_key, f.created_at AS created_at, f.updated_at AS updated_at
+    FROM (
+        (SELECT f.id, f.repository_id, f.version_id, f.filename, f.arch, f.attrs, f.size_bytes, f.blob_id, f.created_at, f.updated_at, pk.name AS pname, v.version AS pversion, pk.format AS pformat FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id
+         WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND ($2::text = '' OR pk.format = $2::text) AND ($3::text = '' OR pk.name = $3::text)
+           AND ($4::text = '' OR strpos(lower(pk.name), lower($4::text)) > 0 OR strpos(lower(v.version), lower($4::text)) > 0)
+         ORDER BY pk.name, v.version, f.id LIMIT ($5::int + $6::int))
+    ) f
     UNION ALL
     -- proxy cache: one row per cached upstream file of a proxy repository (any format); name = filename = upstream-relative path; the blob is resolved by sha256 and wins over the recorded size.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.cache_key::text AS name, ''::text AS version,
-           t.repo_format::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, t.size_bytes::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.cache_key::text AS filename, NULL::uuid AS blob_id, t.blob_key::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT p.id, p.repository_id, p.cache_key, p.blob_key, p.content_type, p.status_code, p.size_bytes, p.hit_count, p.last_hit_at, p.expires_at, p.created_at, p.updated_at, r.format AS repo_format FROM proxy_cache_entries p JOIN repositories r ON r.id = p.repository_id WHERE r.deleted_at IS NULL AND p.repository_id = $1::uuid AND p.status_code = 200 AND p.blob_key IS NOT NULL AND ($2::text = '' OR $2::text = r.format) AND ($3::text = '' OR cache_key = $3::text) AND ($4::text = '' OR strpos(lower(cache_key), lower($4::text)) > 0) ORDER BY cache_key, p.id LIMIT ($5::int + $6::int)) t
+    SELECT t.id::uuid, t.repository_id::uuid, NULL::uuid, t.cache_key::text, ''::text, t.repo_format::text,
+           ''::text, NULL::jsonb, NULL::bigint, t.size_bytes::bigint,
+           t.cache_key::text, NULL::uuid, t.blob_key::text, t.created_at::timestamptz, t.updated_at::timestamptz
+    FROM (SELECT t.id, t.repository_id, t.cache_key, t.blob_key, t.content_type, t.status_code, t.size_bytes, t.hit_count, t.last_hit_at, t.expires_at, t.created_at, t.updated_at, r.format AS repo_format FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id WHERE r.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL AND ($2::text = '' OR $2::text = r.format) AND ($3::text = '' OR t.cache_key = $3::text) AND ($4::text = '' OR strpos(lower(t.cache_key), lower($4::text)) > 0) ORDER BY t.cache_key, t.id LIMIT ($5::int + $6::int)) t
     UNION ALL
     -- docker: one row per tag (the registry image name is the repository name, plus the image path inside it); size = manifest size, blob = manifest blob, filename = manifest digest.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, (CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)::text AS name, t.name::text AS version,
-           'docker'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
-           0::bigint::bigint AS archive_size, COALESCE(dm.size, 0)::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.manifest_digest::text AS filename, dm.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, manifest_digest, created_at, updated_at, image, deleted_at, deleted_by FROM docker_tags WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'docker') AND ($3::text = '' OR (CASE WHEN image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = repository_id) || '/' || image END) = $3::text) AND ($4::text = '' OR strpos(lower((CASE WHEN image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = repository_id) || '/' || image END)), lower($4::text)) > 0 OR strpos(lower(name), lower($4::text)) > 0) ORDER BY (CASE WHEN image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = repository_id) || '/' || image END), name, id LIMIT ($5::int + $6::int)) t
+    SELECT t.id::uuid, t.repository_id::uuid, NULL::uuid, (CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)::text, t.name::text, 'docker'::text,
+           ''::text, NULL::jsonb, COALESCE(dm.size, 0)::bigint, NULL::bigint,
+           t.manifest_digest::text, dm.blob_id::uuid, NULL::text, t.created_at::timestamptz, t.updated_at::timestamptz
+    FROM (SELECT t.id, t.repository_id, t.name, t.manifest_digest, t.created_at, t.updated_at, t.image, t.deleted_at, t.deleted_by FROM docker_tags t WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'docker') AND ($3::text = '' OR (CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END) = $3::text) AND ($4::text = '' OR strpos(lower((CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END)), lower($4::text)) > 0 OR strpos(lower(t.name), lower($4::text)) > 0) ORDER BY (CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END), t.name, t.id LIMIT ($5::int + $6::int)) t
     JOIN repositories r ON r.id = t.repository_id AND r.deleted_at IS NULL
     LEFT JOIN docker_manifests dm ON dm.repository_id = t.repository_id AND dm.image = t.image AND dm.digest = t.manifest_digest AND dm.deleted_at IS NULL
     ) AS u
     ORDER BY u.name, u.version, u.id
     LIMIT $5::int OFFSET $6::int
 ) AS p
+LEFT JOIN package_versions v ON v.id = p.version_id
+LEFT JOIN packages pk ON pk.id = v.package_id
 LEFT JOIN LATERAL (SELECT sha256, size_bytes FROM blobs WHERE id = p.blob_id) AS bi ON true
 LEFT JOIN LATERAL (SELECT sha256, size_bytes FROM blobs WHERE sha256 = p.blob_key) AS bs ON true
 ORDER BY p.name, p.version, p.id
@@ -1023,71 +397,11 @@ const resolveComponentNames = `-- name: ResolveComponentNames :many
 
 SELECT repository_id, id, name, version
 FROM (
-    SELECT t.repository_id::uuid AS repository_id, t.id::uuid AS id, t.name::text AS name, t.version::text AS version
-    FROM deb_packages t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, t.name::text, t.version::text
-    FROM rpm_packages t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT np.repository_id, t.id, np.full_name::text, t.version::text
-    FROM npm_versions t JOIN npm_packages np ON np.id = t.package_id WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, t.name::text, t.version::text
-    FROM pypi_packages t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, (t.group_id || ':' || t.artifact_id_coord)::text, t.version::text
-    FROM maven_artifacts t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, (t.organisation || ':' || t.module)::text, t.revision::text
-    FROM ivy_artifacts t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, (t.group_id || ':' || t.artifact_id)::text, t.version::text
-    FROM sbt_artifacts t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, t.package_id::text, t.version::text
-    FROM nuget_packages t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, t.module_path::text, t.version::text
-    FROM gomod_modules t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, t.name::text, t.version::text
-    FROM cargo_crates t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, t.name::text, t.version::text
-    FROM rubygems_gems t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, t.name::text, t.version::text
-    FROM conda_packages t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, t.name::text, t.version::text
-    FROM composer_packages t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, (t.namespace || '.' || t.name)::text, t.version::text
-    FROM ansible_collections t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, t.name::text, t.version::text
-    FROM pacman_packages t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, t.name::text, t.store_hash::text
-    FROM nix_paths t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, t.name::text, t.version::text
-    FROM conan_packages t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, (t.branch || '/' || t.repo || '/' || t.name)::text, t.version::text
-    FROM apk_packages t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, ('modules/' || t.name || '/' || t.system)::text, t.version::text
-    FROM terraform_modules t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, ('providers/' || t.type)::text, t.version::text
-    FROM terraform_providers t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, t.name::text, t.version::text
-    FROM helm_charts t WHERE t.id = ANY($1::uuid[])
-    UNION ALL
-    SELECT t.repository_id, t.id, t.path::text, ''::text
-    FROM raw_artifacts t WHERE t.id = ANY($1::uuid[])
+    SELECT f.repository_id::uuid AS repository_id, f.id::uuid AS id, pk.name::text AS name, v.version::text AS version
+    FROM package_files f
+    JOIN package_versions v ON v.id = f.version_id
+    JOIN packages pk ON pk.id = v.package_id
+    WHERE f.id = ANY($1::uuid[])
     UNION ALL
     SELECT t.repository_id, t.id, t.cache_key::text, ''::text
     FROM proxy_cache_entries t WHERE t.id = ANY($1::uuid[])
@@ -1106,9 +420,8 @@ type ResolveComponentNamesRow struct {
 
 // Display names of listed package rows by id (the finding lists show a scanned
 // artifact as name and version, and scans of the package pages record the row
-// id as artifact_id). Same name and version expressions as GetRepoComponentBlob
-// (keep in sync with it); soft-deleted rows resolve too, so a finding of a
-// trashed package keeps its name.
+// id as artifact_id). Soft-deleted rows resolve too, so a finding of a trashed
+// package keeps its name.
 func (q *Queries) ResolveComponentNames(ctx context.Context, ids []string) ([]ResolveComponentNamesRow, error) {
 	rows, err := q.db.Query(ctx, resolveComponentNames, ids)
 	if err != nil {

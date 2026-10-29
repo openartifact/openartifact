@@ -100,8 +100,19 @@ func npmImportTags(ctx context.Context, im *importer, j importJob) {
 //
 // Nexus serves the packument at the package name, next to the "-/" directory of
 // the tarballs. Artifactory keeps it in a dot directory, which the payload
-// listing leaves out, at .npm/<package>/package.json.
+// listing leaves out, at .npm/<package>/package.json. OpenArtifact serves it at
+// /repos/<repository>/<package> (a scope separator escaped as %2F), while the
+// URL of a listed tarball is the REST download of the listing row.
 func npmPackumentLocation(kind string, tarball sourceAsset, name string) (string, string, error) {
+	if kind == kindOpenArtifact {
+		root, _, ok := strings.Cut(tarball.URL, "/api/v1/")
+		if !ok || tarball.Repo == "" {
+			return "", "", fmt.Errorf("%w: %s", errNPMPackument, name)
+		}
+
+		return name, root + "/repos/" + url.PathEscape(tarball.Repo) + "/" + url.PathEscape(name), nil
+	}
+
 	if kind == "artifactory" {
 		where := ".npm/" + name + "/package.json"
 

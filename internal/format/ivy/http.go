@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/format/filerepo"
@@ -18,22 +17,34 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// Store is the database the Ivy handler needs: the file repository basics and
+// the Ivy artifact rows.
+type Store interface {
+	filerepo.HandlerStore
+	CreateIvyArtifact(ctx context.Context, artifact *models.IvyArtifact) error
+	GetIvyArtifact(
+		ctx context.Context,
+		repoID, organisation, module, revision, artifactName, artifactExt string,
+	) (*models.IvyArtifact, error)
+	DeleteIvyArtifact(ctx context.Context, id string) error
+}
+
 // HTTPHandler serves hosted Ivy repositories. Ivy publishes with
 // overwrite="true", so re-publishing different bytes replaces the file unless
 // the repository has immutable releases and the version is a release.
 type HTTPHandler struct {
-	*filerepo.Handler[models.IvyArtifact]
+	*filerepo.Handler[models.IvyArtifact, Store]
 }
 
 // extOf is the artifact extension the table is keyed by: the file name's last
 // dot suffix without the dot.
 func extOf(filename string) string { return strings.TrimPrefix(path.Ext(filename), ".") }
 
-var spec = filerepo.Spec[models.IvyArtifact]{ //nolint:gochecknoglobals // immutable format description
+var spec = filerepo.Spec[models.IvyArtifact, Store]{ //nolint:gochecknoglobals // immutable format description
 	Format:    "ivy",
 	TrashKind: models.TrashKindIvy,
 	GroupKey:  "org",
-	Get: func(ctx context.Context, db database.Database, repoID string, c base.ArtifactPath) (*models.IvyArtifact, error) {
+	Get: func(ctx context.Context, db Store, repoID string, c base.ArtifactPath) (*models.IvyArtifact, error) {
 		return db.GetIvyArtifact(ctx, repoID, c.Group, c.Module, c.Version, c.Filename, extOf(c.Filename))
 	},
 	New: func(repoID string, c base.ArtifactPath, size int64, sha256Hex string) *models.IvyArtifact {
@@ -49,10 +60,10 @@ var spec = filerepo.Spec[models.IvyArtifact]{ //nolint:gochecknoglobals // immut
 			SHA256:       sha256Hex,
 		}
 	},
-	Create: func(ctx context.Context, db database.Database, a *models.IvyArtifact) error {
+	Create: func(ctx context.Context, db Store, a *models.IvyArtifact) error {
 		return db.CreateIvyArtifact(ctx, a)
 	},
-	Delete: func(ctx context.Context, db database.Database, id string) error {
+	Delete: func(ctx context.Context, db Store, id string) error {
 		return db.DeleteIvyArtifact(ctx, id)
 	},
 	View: func(a *models.IvyArtifact) filerepo.Row {
@@ -64,6 +75,6 @@ var spec = filerepo.Spec[models.IvyArtifact]{ //nolint:gochecknoglobals // immut
 	},
 }
 
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+func NewHTTPHandler(log *logger.Logger, db Store, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
 	return &HTTPHandler{Handler: filerepo.New(spec, log, db, blobStore, baseURL)}
 }

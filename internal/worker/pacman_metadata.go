@@ -14,14 +14,26 @@ import (
 	"strings"
 	"time"
 
-	sq "github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"github.com/openartifact/openartifact/pkg/pacman"
 )
+
+// PacmanMetadataStore is the part of the database PacmanMetadataWorker needs.
+type PacmanMetadataStore interface {
+	metadataBlobsStore
+	BeginTx(ctx context.Context) (database.Transaction, error)
+	ListPacmanFileLists(ctx context.Context, repoID string) (map[string]string, error)
+	ListPacmanPackages(ctx context.Context, repoID string) ([]*models.PacmanPackage, error)
+	ListPacmanPackagesWithoutFileList(ctx context.Context, repoID string) ([]*models.PacmanPackage, error)
+	SetPacmanFileList(ctx context.Context, repoID string, id string, fileList string) error
+	SetPacmanSignature(ctx context.Context, repoID string, id string, signature string, source string, key string) error
+}
 
 // PacmanMetadataWorker regenerates the pacman databases of hosted pacman
 // repositories: for each architecture directory the "db" and "files" archives
@@ -29,7 +41,7 @@ import (
 // also signs, with the same key, the packages the uploader did not sign. Runs
 // are coalesced by the regeneration queue.
 type PacmanMetadataWorker struct {
-	db        sq.Database
+	db        PacmanMetadataStore
 	blobStore storage.BlobStore
 	signers   gpg.Resolver
 	log       *logger.Logger
@@ -38,12 +50,25 @@ type PacmanMetadataWorker struct {
 }
 
 // NewPacmanMetadataWorker creates the worker.
-func NewPacmanMetadataWorker(db sq.Database, blobStore storage.BlobStore, signers gpg.Resolver, log *logger.Logger) *PacmanMetadataWorker {
+func NewPacmanMetadataWorker(
+	db PacmanMetadataStore,
+	blobStore storage.BlobStore,
+	signers gpg.Resolver,
+	log *logger.Logger,
+) *PacmanMetadataWorker {
 	w := &PacmanMetadataWorker{db: db, blobStore: blobStore, signers: signers, log: log}
 	w.q = newRegenQueue("pacman", log, w.regenerate)
+	w.q.setCodec(stringRegenCodec())
 
 	return w
 }
+
+// ForwardTo makes NotifyStale write a worker request to s instead of scheduling
+// the regeneration here (server.role=web); see RegenRemote.
+func (w *PacmanMetadataWorker) ForwardTo(s *workq.Store) { w.q.forwardTo(s) }
+
+// ServeFrom makes the worker regenerate what the requests claimed by c ask for.
+func (w *PacmanMetadataWorker) ServeFrom(c *workq.Consumer) { w.q.serveFrom(c, w.NotifyStale) }
 
 // WithDebounce sets how long a burst of uploads is coalesced.
 func (w *PacmanMetadataWorker) WithDebounce(d time.Duration) *PacmanMetadataWorker {
@@ -92,22 +117,6 @@ func (w *PacmanMetadataWorker) blobs() metadataBlobs {
 	return metadataBlobs{db: w.db, store: w.blobStore, log: w.log, who: "pacman worker"}
 }
 
-// signerFor returns the signer of the repository, nil when it is unsigned. A
-// resolution failure aborts the run: replacing signed metadata with unsigned
-// metadata because of a transient error would break every client that verifies it.
-func (w *PacmanMetadataWorker) signerFor(ctx context.Context, repoID string) (gpg.Signer, error) {
-	if w.signers == nil {
-		return nil, nil //nolint:nilnil // nil signer means unsigned
-	}
-
-	signer, err := w.signers.SignerForRepo(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("pacman worker: resolving signing key: %w", err)
-	}
-
-	return signer, nil
-}
-
 func (w *PacmanMetadataWorker) regenerate(ctx context.Context, repoID string) error {
 	if sqlDB := w.db.GetDB(); sqlDB != nil {
 		release, err := lockForRegeneration(ctx, sqlDB, "pacman:"+repoID)
@@ -118,7 +127,7 @@ func (w *PacmanMetadataWorker) regenerate(ctx context.Context, repoID string) er
 		defer release()
 	}
 
-	signer, err := w.signerFor(ctx, repoID)
+	signer, err := metadataSigner(ctx, w.signers, repoID, "pacman worker")
 	if err != nil {
 		return err
 	}
@@ -421,7 +430,7 @@ func pacmanEntries(pkgs []*models.PacmanPackage, lists map[string]string, arch s
 }
 
 // listPacmanMetadata returns path -> blob sha256 of the generated metadata rows.
-func listPacmanMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map[string]string, error) {
+func listPacmanMetadata(ctx context.Context, tx database.Transaction, repoID string) (map[string]string, error) {
 	return queryMetadataSums(ctx, tx, "pacman worker", "repo_metadata",
 		`SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND (path LIKE 'os/%' OR path = 'public.key')`,
 		repoID,

@@ -13,7 +13,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -38,7 +37,12 @@ type DockerGCHandler struct {
 	runner DockerGCRunner
 }
 
-func NewDockerGCHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, runner DockerGCRunner) *DockerGCHandler {
+// DockerGCHandlerStore is the part of the database NewDockerGCHandler needs.
+type DockerGCHandlerStore interface {
+	repoAccessStore
+}
+
+func NewDockerGCHandler(db DockerGCHandlerStore, log *logger.Logger, evaluator *auth.Evaluator, runner DockerGCRunner) *DockerGCHandler {
 	return &DockerGCHandler{repoAccess: newRepoAccess(db, log, evaluator), runner: runner}
 }
 

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"time"
 
+	"context"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -21,17 +23,40 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// LicenseStore is the part of the database LicenseHandler needs.
+type LicenseStore interface {
+	inheritedPOMLicensesStore
+	repoAccessStore
+	storedArtifactMetadataStore
+	CreateLicensePolicy(ctx context.Context, policy *models.LicensePolicy) error
+	CreateLicenseScanResult(ctx context.Context, result *models.LicenseScanResult) error
+	DeleteArtifactProperty(ctx context.Context, repoID string, artifactID string, key string) error
+	DeleteLicensePolicy(ctx context.Context, id string) error
+	GetLicensePolicy(ctx context.Context, id string) (*models.LicensePolicy, error)
+	GetLicenseScanResult(ctx context.Context, repoID string, artifactID string) (*models.LicenseScanResult, error)
+	GetLicenseScanResultByID(ctx context.Context, repoID string, id string) (*models.LicenseScanResult, error)
+	GetRepoComponentBlob(ctx context.Context, repoID string, id string) (*models.ComponentBlob, error)
+	ListGlobalLicensePolicies(ctx context.Context) ([]*models.LicensePolicy, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ListLicenseScanResults(ctx context.Context, repoID string) ([]*models.LicenseScanResult, error)
+	SearchByProperty(ctx context.Context, repoID string, key string, value string) ([]string, error)
+	SetArtifactProperties(ctx context.Context, repoID string, artifactID string, props map[string]string, replace bool) error
+	SetLicenseScanQuarantine(ctx context.Context, repoID string, id string, quarantined bool) error
+	UpdateLicensePolicy(ctx context.Context, policy *models.LicensePolicy) error
+}
+
 type LicenseHandler struct {
 	repoAccess
 
 	detector *license.Detector
 	licenses artifactLicenseSource
+	db       LicenseStore
 }
 
 // NewLicenseHandler returns the license scan and policy handler. blobs is the
 // store the scan reads artifact files from to find their declared licenses.
 func NewLicenseHandler(
-	db database.Database,
+	db LicenseStore,
 	log *logger.Logger,
 	evaluator *auth.Evaluator,
 	detector *license.Detector,
@@ -40,7 +65,7 @@ func NewLicenseHandler(
 	return &LicenseHandler{
 		repoAccess: newRepoAccess(db, log, evaluator),
 		detector:   detector,
-		licenses:   artifactLicenseSource{db: db, blobs: blobs, log: log, detector: detector},
+		licenses:   artifactLicenseSource{db: db, blobs: blobs, log: log, detector: detector}, db: db,
 	}
 }
 

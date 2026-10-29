@@ -9,6 +9,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"io/fs"
 	"strings"
 	"sync"
@@ -217,5 +218,59 @@ func TestAdvisoryLockConcurrent(t *testing.T) {
 	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version='001_concurrent.sql'`).Scan(&count)
 	if count != 1 {
 		t.Errorf("expected exactly 1 schema_migrations row for concurrent test, got %d", count)
+	}
+}
+
+// A database a release before 0.15 migrated holds its own migration list and
+// no baseline: the migrator stops with ErrLegacySchema and leaves it alone.
+func TestApplyRefusesLegacyDatabase(t *testing.T) {
+	db := scratchDB(t)
+	ctx := context.Background()
+
+	mustExec(t, db, createTrackingTable)
+	mustExec(t, db, `INSERT INTO schema_migrations (version, checksum) VALUES ('001_initial_schema.sql', 'x'), ('097_last.sql', 'y')`)
+	mustExec(t, db, `CREATE TABLE legacy_marker (id int)`)
+
+	err := NewMigrator(db).Apply(ctx)
+	if !errors.Is(err, ErrLegacySchema) {
+		t.Fatalf("Apply on a pre-0.15 database = %v, want ErrLegacySchema", err)
+	}
+
+	if !strings.Contains(err.Error(), "oa import") {
+		t.Errorf("error %q does not point to oa import", err)
+	}
+
+	if n := mustScan[int](t, db, `SELECT count(*) FROM schema_migrations`); n != 2 {
+		t.Errorf("schema_migrations has %d rows after the refusal, want the 2 it had", n)
+	}
+
+	if mustScan[bool](t, db, `SELECT to_regclass('public.packages') IS NOT NULL`) {
+		t.Error("the refused migrator created the generic tables")
+	}
+}
+
+// An empty database gets the baseline, and a second start changes nothing.
+func TestApplyBaselineOnEmptyDatabase(t *testing.T) {
+	db := scratchDB(t)
+	ctx := context.Background()
+
+	for range 2 {
+		if err := NewMigrator(db).Apply(ctx); err != nil {
+			t.Fatalf("Apply: %v", err)
+		}
+	}
+
+	if got := mustScan[string](t, db, `SELECT string_agg(version, ',') FROM schema_migrations`); got != baselineVersion {
+		t.Errorf("schema_migrations = %q, want %q", got, baselineVersion)
+	}
+
+	for _, table := range []string{"packages", "package_versions", "package_files", "package_tags", "docker_manifests"} {
+		if !mustScan[bool](t, db, `SELECT to_regclass('public.`+table+`') IS NOT NULL`) {
+			t.Errorf("baseline did not create %s", table)
+		}
+	}
+
+	if mustScan[bool](t, db, `SELECT to_regclass('public.npm_packages') IS NOT NULL`) {
+		t.Error("baseline created the legacy npm_packages table")
 	}
 }

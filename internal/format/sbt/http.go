@@ -8,7 +8,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/format/filerepo"
@@ -16,17 +15,26 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// Store is the database the sbt handler needs: the file repository basics and
+// the sbt artifact rows.
+type Store interface {
+	filerepo.HandlerStore
+	CreateSBTArtifact(ctx context.Context, artifact *models.SBTArtifact) error
+	GetSBTArtifact(ctx context.Context, repoID, groupID, artifactID, version, filename string) (*models.SBTArtifact, error)
+	DeleteSBTArtifact(ctx context.Context, id string) error
+}
+
 // HTTPHandler serves hosted sbt repositories: different bytes replace a file
 // unless the repository has immutable releases and the version is a release.
 type HTTPHandler struct {
-	*filerepo.Handler[models.SBTArtifact]
+	*filerepo.Handler[models.SBTArtifact, Store]
 }
 
-var spec = filerepo.Spec[models.SBTArtifact]{ //nolint:gochecknoglobals // immutable format description
+var spec = filerepo.Spec[models.SBTArtifact, Store]{ //nolint:gochecknoglobals // immutable format description
 	Format:    "sbt",
 	TrashKind: models.TrashKindSBT,
 	GroupKey:  "group",
-	Get: func(ctx context.Context, db database.Database, repoID string, c base.ArtifactPath) (*models.SBTArtifact, error) {
+	Get: func(ctx context.Context, db Store, repoID string, c base.ArtifactPath) (*models.SBTArtifact, error) {
 		return db.GetSBTArtifact(ctx, repoID, c.Group, c.Module, c.Version, c.Filename)
 	},
 	New: func(repoID string, c base.ArtifactPath, size int64, sha256Hex string) *models.SBTArtifact {
@@ -41,10 +49,10 @@ var spec = filerepo.Spec[models.SBTArtifact]{ //nolint:gochecknoglobals // immut
 			SHA256:       sha256Hex,
 		}
 	},
-	Create: func(ctx context.Context, db database.Database, a *models.SBTArtifact) error {
+	Create: func(ctx context.Context, db Store, a *models.SBTArtifact) error {
 		return db.CreateSBTArtifact(ctx, a)
 	},
-	Delete: func(ctx context.Context, db database.Database, id string) error {
+	Delete: func(ctx context.Context, db Store, id string) error {
 		return db.DeleteSBTArtifact(ctx, id)
 	},
 	View: func(a *models.SBTArtifact) filerepo.Row {
@@ -56,6 +64,6 @@ var spec = filerepo.Spec[models.SBTArtifact]{ //nolint:gochecknoglobals // immut
 	},
 }
 
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+func NewHTTPHandler(log *logger.Logger, db Store, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
 	return &HTTPHandler{Handler: filerepo.New(spec, log, db, blobStore, baseURL)}
 }

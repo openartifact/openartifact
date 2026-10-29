@@ -61,25 +61,13 @@ func generatePURL(format, name, version string) string {
 	return generatePURLNS(format, "", name, version)
 }
 
-// generatePURLNS is generatePURL with an explicit namespace for the types that
-// require one (deb: the distribution, rpm: the vendor); other types ignore it.
+// generatePURLNS is generatePURL with an explicit namespace for the formats that
+// require one (deb: the distribution, rpm: the vendor); other formats ignore it.
 func generatePURLNS(format, namespace, name, version string) string {
 	typ := purlType(format)
 
-	switch typ {
-	case "maven":
-		if g, a, ok := strings.Cut(name, ":"); ok {
-			name = g + "/" + a
-		}
-	case "pypi":
-		name = strings.ToLower(strings.ReplaceAll(name, "_", "-"))
-	case "alpm":
-		// pkg:alpm/arch/NAME@VERSION: Arch Linux is the only pacman distro.
-		name = "arch/" + name
-	}
-
-	if namespace != "" && (typ == "deb" || typ == "rpm") {
-		name = namespace + "/" + name
+	if h, ok := hooks.Lookup(strings.ToLower(format)); ok && h.PURLName != nil {
+		name = h.PURLName(namespace, name)
 	}
 
 	purl := "pkg:" + typ + "/" + purlPath(name)

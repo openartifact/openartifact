@@ -13,26 +13,41 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/metrics"
+	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/logger"
+	"github.com/openartifact/openartifact/pkg/npm"
 )
 
+// NPMMetadataStore is the part of the database NPMMetadataWorker needs.
+type NPMMetadataStore interface {
+	GetNPMVersionStates(ctx context.Context, packageID string) ([]models.NPMVersionState, error)
+	UpdateNPMPackageLatestVersion(ctx context.Context, packageID string, latestVersion string) error
+}
+
 type NPMMetadataWorker struct {
-	db    database.Database
+	db    NPMMetadataStore
 	log   *logger.Logger
 	sqlDB *sql.DB
 	q     *regenQueue[string]
 }
 
-func NewNPMMetadataWorker(db database.Database, log *logger.Logger, sqlDB *sql.DB, reg *metrics.Registry) *NPMMetadataWorker {
+func NewNPMMetadataWorker(db NPMMetadataStore, log *logger.Logger, sqlDB *sql.DB, reg *metrics.Registry) *NPMMetadataWorker {
 	w := &NPMMetadataWorker{db: db, log: log, sqlDB: sqlDB}
 	w.q = newRegenQueue("npm", log, w.regenerate)
+	w.q.setCodec(stringRegenCodec())
 	w.q.setMetrics(reg)
 
 	return w
 }
+
+// ForwardTo makes NotifyStale write a worker request to s instead of scheduling
+// the regeneration here (server.role=web); see RegenRemote.
+func (w *NPMMetadataWorker) ForwardTo(s *workq.Store) { w.q.forwardTo(s) }
+
+// ServeFrom makes the worker regenerate what the requests claimed by c ask for.
+func (w *NPMMetadataWorker) ServeFrom(c *workq.Consumer) { w.q.serveFrom(c, w.q.Notify) }
 
 func (w *NPMMetadataWorker) WithDebounce(d time.Duration) *NPMMetadataWorker {
 	w.q.setDebounce(d)
@@ -151,28 +166,12 @@ func compareSemver(a, b string) int {
 
 	ai, bi := strings.Split(aPre, "."), strings.Split(bPre, ".")
 	for i := 0; i < len(ai) && i < len(bi); i++ {
-		if c := comparePreIdent(ai[i], bi[i]); c != 0 {
+		if c := npm.ComparePrerelease(ai[i], bi[i]); c != 0 {
 			return c
 		}
 	}
 
 	return cmp.Compare(len(ai), len(bi))
-}
-
-func comparePreIdent(a, b string) int {
-	an, aErr := strconv.ParseUint(a, 10, 64)
-	bn, bErr := strconv.ParseUint(b, 10, 64)
-
-	switch {
-	case aErr == nil && bErr == nil:
-		return cmp.Compare(an, bn)
-	case aErr == nil:
-		return -1
-	case bErr == nil:
-		return 1
-	}
-
-	return strings.Compare(a, b)
 }
 
 func semverParts(v string) ([3]uint64, string) {

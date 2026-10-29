@@ -7,8 +7,9 @@ package worker
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
+
+	"database/sql"
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -17,7 +18,7 @@ import (
 
 const (
 	// auditRetentionLockKey names the cluster-wide advisory lock (hashed by
-	// tryAdvisoryLock) that the replica running a retention pass holds.
+	// pglock.Try) that the replica running a retention pass holds.
 	auditRetentionLockKey = "openartifact:audit-retention"
 
 	// auditRetentionBatchPause is the pace of a pass: after a full batch the
@@ -43,6 +44,11 @@ type AuditRetentionStats struct {
 	Busy bool
 }
 
+// AuditRetentionStore is the part of the database AuditRetentionWorker needs.
+type AuditRetentionStore interface {
+	GetDB() *sql.DB
+}
+
 // AuditRetentionWorker deletes audit entries older than audit.retentionDays,
 // oldest first in batches of a fixed size, paced by a ticker. Replicas are
 // excluded from each other by a Postgres advisory lock held on a pinned
@@ -52,7 +58,9 @@ type AuditRetentionStats struct {
 //
 // Nothing is exported before the deletion; see docs/operations/audit-retention.md.
 type AuditRetentionWorker struct {
-	db            database.Database
+	*lifecycle
+
+	db            AuditRetentionStore
 	store         database.AuditRetentionStore
 	log           *logger.Logger
 	retentionDays int
@@ -65,14 +73,6 @@ type AuditRetentionWorker struct {
 	// are fields so tests can simulate another replica and move time.
 	lock func(ctx context.Context) (release func(), acquired bool, err error)
 	now  func() time.Time
-
-	startOnce sync.Once
-	stopOnce  sync.Once
-	stopCh    chan struct{}
-	doneCh    chan struct{}
-	// runCtx is cancelled by Stop so an in-flight pass stops promptly.
-	runCtx context.Context //nolint:containedctx // lifecycle context of the worker
-	cancel context.CancelFunc
 }
 
 // NewAuditRetentionWorker creates the worker. retentionDays is the age past
@@ -81,23 +81,20 @@ type AuditRetentionWorker struct {
 // one delete statement removes. Without a database that implements
 // database.AuditRetentionStore the worker does nothing.
 func NewAuditRetentionWorker(
-	db database.Database,
+	db AuditRetentionStore,
 	log *logger.Logger,
 	retentionDays int,
 	interval time.Duration,
 	batch int,
 ) *AuditRetentionWorker {
-	runCtx, cancel := context.WithCancel(context.Background())
-
 	store, _ := db.(database.AuditRetentionStore)
 
 	w := &AuditRetentionWorker{
-		db: db, store: store, log: log,
+		lifecycle: newLifecycle(),
+		db:        db, store: store, log: log,
 		retentionDays: retentionDays, interval: interval, batch: max(batch, 1),
-		pause:  auditRetentionBatchPause,
-		now:    time.Now,
-		stopCh: make(chan struct{}), doneCh: make(chan struct{}),
-		runCtx: runCtx, cancel: cancel,
+		pause: auditRetentionBatchPause,
+		now:   time.Now,
 	}
 	w.lock = w.acquireLock
 
@@ -128,20 +125,6 @@ func (w *AuditRetentionWorker) Start() {
 
 		go w.loop()
 	})
-}
-
-// Stop cancels an in-flight pass and waits for the schedule goroutine to exit.
-// It is idempotent and safe without Start.
-func (w *AuditRetentionWorker) Stop() {
-	w.stopOnce.Do(func() {
-		close(w.stopCh)
-		w.cancel()
-	})
-
-	// Never started: nothing will close doneCh, and a later Start must not.
-	w.startOnce.Do(func() { close(w.doneCh) })
-
-	<-w.doneCh
 }
 
 func (w *AuditRetentionWorker) loop() {
@@ -226,12 +209,7 @@ func (w *AuditRetentionWorker) RunOnce(ctx context.Context) (AuditRetentionStats
 // acquireLock takes the advisory lock on a pinned connection. A database
 // without an SQL pool (test fakes) has no other replicas to exclude.
 func (w *AuditRetentionWorker) acquireLock(ctx context.Context) (func(), bool, error) {
-	sqlDB := w.db.GetDB()
-	if sqlDB == nil {
-		return func() {}, true, nil
-	}
-
-	return tryAdvisoryLock(ctx, sqlDB, auditRetentionLockKey)
+	return tryClusterLock(ctx, w.db.GetDB(), auditRetentionLockKey)
 }
 
 // purgeBefore deletes batches until one is short. The ticker, not a sleep,

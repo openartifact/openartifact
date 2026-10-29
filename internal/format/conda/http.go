@@ -26,7 +26,6 @@ import (
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
-	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -37,12 +36,38 @@ import (
 
 const maxCondaUploadBytes = 500 << 20
 
-type HTTPHandler struct {
-	*base.Handler
+// HTTPStore is the part of the database HTTPHandler needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CondaRepodataStamp(ctx context.Context, repoID string, platform string) (string, error)
+	CreateCondaPackage(ctx context.Context, pkg *models.CondaPackage) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteCondaPackage(ctx context.Context, id string) error
+	GetCondaPackageFile(
+		ctx context.Context,
+		repoID string,
+		name string,
+		version string,
+		buildString string,
+		platform string,
+		extension string,
+	) (*models.CondaPackage, error)
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListCondaPackages(ctx context.Context, repoID string, platform string) ([]*models.CondaPackage, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
 }
 
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL)}
+type HTTPHandler struct {
+	*base.Handler
+
+	DB HTTPStore
+}
+
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 
 // RegisterRepoRoutes registers Conda-specific routes on the provided sub-router.
@@ -61,7 +86,7 @@ func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
 	h.Log.Infow("conda handler registered", "prefix", prefix)
 }
 
-// platformOf returns the platform the URL names. One the conda_packages column
+// platformOf returns the platform the URL names. One the package_files column
 // cannot hold is answered 400 here, instead of failing in the database as a 500.
 func platformOf(w http.ResponseWriter, r *http.Request) (string, bool) {
 	platform := urlparams.Vars(r)["platform"]
@@ -77,21 +102,7 @@ func platformOf(w http.ResponseWriter, r *http.Request) (string, bool) {
 // none (unknown repository or a lookup failure) it writes the response and
 // returns "".
 func (h *HTTPHandler) resolveRepo(w http.ResponseWriter, r *http.Request) string {
-	repoName := urlparams.Vars(r)["name"]
-
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return ""
-	}
-
-	if repoID == "" {
-		http.NotFound(w, r)
-	}
-
-	return repoID
+	return h.ResolveRepoIDOrRespond(w, r, urlparams.Vars(r)["name"])
 }
 
 // repodataEntry is the repodata.json record of one package file.
@@ -349,22 +360,12 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	// Reserve quota before anything is persisted; every failure path below
 	// returns the reservation.
-	if err := quota.Enforce(r.Context(), h.DB, repoID, pkg.SizeBytes); err != nil {
-		if errors.Is(err, quota.ErrExceeded) {
-			quota.WriteExceeded(w)
-			return
-		}
-
-		h.Log.Errorw("failed to reserve quota", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
+	if !h.ReserveQuotaOrRespond(r.Context(), w, repoID, repoName, pkg.SizeBytes) {
 		return
 	}
 
 	if err := h.storePackage(r.Context(), pkg, filename, spool); err != nil {
-		if relErr := quota.Release(r.Context(), h.DB, repoID, pkg.SizeBytes); relErr != nil {
-			h.Log.Warnw("failed to release quota", "repo", repoName, "error", relErr)
-		}
+		h.ReleaseQuota(r.Context(), repoID, repoName, pkg.SizeBytes)
 
 		if errors.Is(err, database.ErrDuplicate) || database.IsUniqueViolation(err) {
 			http.Error(w, "package file already exists", http.StatusConflict)
@@ -517,9 +518,7 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 			return fmt.Errorf("delete conda package: %w", delErr)
 		}
 
-		if relErr := quota.Release(r.Context(), h.DB, repoID, size); relErr != nil {
-			h.Log.Warnw("failed to release quota", "repo", repoName, "error", relErr)
-		}
+		h.ReleaseQuota(r.Context(), repoID, repoName, size)
 
 		// The blob is content-addressed and may be shared; remove it only once
 		// no row references it any more.

@@ -242,9 +242,9 @@ func tfModuleRedeem(file string) terraform.Download {
 func ticketFile(t *testing.T, link string) string {
 	t.Helper()
 
-	rest, ok := strings.CutPrefix(link, tfTestBase+"/terraform/dl/")
+	rest, ok := strings.CutPrefix(link, "/terraform/dl/")
 	if !ok {
-		t.Fatalf("%q is not a ticket URL of %s", link, tfTestBase)
+		t.Fatalf("%q is not a path-absolute ticket URL", link)
 	}
 
 	_, file, ok := strings.Cut(rest, "/")
@@ -595,6 +595,37 @@ func TestTerraformDownloadsNeedATicketKey(t *testing.T) {
 
 // ---- providers ----
 
+// The package document's URLs are path-absolute references: never an origin,
+// the path prefix of an explicit base URL only.
+func TestTerraformProviderPackageURLsCarryNoOrigin(t *testing.T) {
+	for _, tc := range []struct{ baseURL, prefix string }{
+		{"", ""},
+		{tfTestBase, ""},
+		{tfTestBase + "/pre/", "/pre"},
+	} {
+		t.Run(tc.baseURL, func(t *testing.T) {
+			f := newTFFake(t)
+			f.fixture.svc.SetBaseURL(tc.baseURL)
+
+			w := f.get("random/3.5.1/download/linux/amd64")
+			if w.Code != http.StatusOK {
+				t.Fatalf("status %d: %s", w.Code, w.Body)
+			}
+
+			if w.Header().Get("ETag") != "" {
+				t.Errorf("a ticket document must not carry a validator, got %q", w.Header().Get("ETag"))
+			}
+
+			doc := decodeJSON[tfPackageDoc](t, w)
+			for name, link := range map[string]string{"download_url": doc.DownloadURL, "shasums_url": doc.ShasumsURL, "sig": doc.ShasumsSignatureURL} {
+				if !strings.HasPrefix(link, tc.prefix+"/terraform/dl/") || strings.Contains(link, "://") {
+					t.Errorf("%s = %q, want a path-absolute reference under %q", name, link, tc.prefix)
+				}
+			}
+		})
+	}
+}
+
 func TestTerraformProviderPackageRewritesURLsAndKeepsKeys(t *testing.T) {
 	f := newTFFake(t)
 
@@ -613,7 +644,7 @@ func TestTerraformProviderPackageRewritesURLsAndKeepsKeys(t *testing.T) {
 	}
 
 	for name, link := range map[string]string{"download_url": doc.DownloadURL, "shasums_url": doc.ShasumsURL, "shasums_signature_url": doc.ShasumsSignatureURL} {
-		if !strings.HasPrefix(link, tfTestBase+"/terraform/dl/") {
+		if !strings.HasPrefix(link, "/terraform/dl/") {
 			t.Errorf("%s = %q is not a ticket URL of this server", name, link)
 		}
 	}

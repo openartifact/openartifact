@@ -53,12 +53,15 @@ func (f *rpmFixture) pkg(name string) string {
 
 	blobID, _ := f.blob(fmt.Sprintf("rpm %s %d", name, f.seq), time.Hour)
 
-	var id string
-	if err := f.pg.GetDB().QueryRowContext(context.Background(),
-		`INSERT INTO rpm_packages (repository_id, blob_id, name, version, arch) VALUES ($1, $2, $3, '1.0', 'x86_64') RETURNING id`,
-		f.repoID, blobID, name).Scan(&id); err != nil {
+	comp := &models.Component{
+		RepositoryID: f.repoID, ArtifactID: blobID, Name: name, Version: "1.0", Release: "1", Arch: "x86_64",
+		Filename: name + "-1.0-1.x86_64.rpm",
+	}
+	if err := f.pg.CreateRpmPackage(context.Background(), comp); err != nil {
 		f.t.Fatal(err)
 	}
+
+	id := comp.ID
 
 	return id
 }
@@ -129,7 +132,7 @@ func TestRPMRegenerateHonoursStaleFlagAndLivePackages(t *testing.T) {
 	f.pkg("alpha")
 	beta := f.pkg("beta")
 	gone := f.pkg("gamma")
-	f.exec(`UPDATE rpm_packages SET deleted_at = now() WHERE id = $1`, gone)
+	f.exec(`UPDATE package_files SET deleted_at = now() WHERE id = $1`, gone)
 
 	f.exec(`UPDATE rpm_repos SET metadata_stale = false WHERE repository_id = $1`, f.repoID)
 	f.regenerate()
@@ -163,7 +166,7 @@ func TestRPMRegenerateHonoursStaleFlagAndLivePackages(t *testing.T) {
 	}
 
 	// A package leaves: the new index drops it and the old one is freed.
-	f.exec(`DELETE FROM rpm_packages WHERE id = $1`, beta)
+	f.exec(`DELETE FROM package_files WHERE id = $1`, beta)
 	f.markStale()
 	f.regenerate()
 

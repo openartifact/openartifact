@@ -97,7 +97,7 @@ type Options struct {
 
 // Importer downloads OSV exports and applies them to the mirror.
 type Importer struct {
-	store  database.OSVStore
+	store  database.OSVMirror
 	base   *url.URL
 	client *http.Client
 	opts   Options
@@ -109,7 +109,7 @@ type Importer struct {
 // connects to the configured host even when it is on a private network (an
 // air-gapped mirror is), honours the proxy environment, and only follows
 // redirects that stay on https.
-func NewImporter(store database.OSVStore, opts Options, log *logger.Logger) (*Importer, error) {
+func NewImporter(store database.OSVMirror, opts Options, log *logger.Logger) (*Importer, error) {
 	if opts.BaseURL == "" {
 		opts.BaseURL = DefaultBaseURL
 	}

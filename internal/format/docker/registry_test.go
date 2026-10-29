@@ -19,7 +19,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -27,13 +26,19 @@ import (
 
 var errDuplicateKey = errors.New("duplicate key value violates unique constraint")
 
+// regFakeDBStore is what regFakeDB is used as.
+type regFakeDBStore interface {
+	HTTPStore
+	registryStore
+}
+
 // regFakeDB is an in-memory multi-repository registry database. Like the real
 // tables, blobs are scoped per repository and manifests/tags per
 // (repository, image); CreateDockerBlob fails on a duplicate (the handler must
 // not insert one) while manifest create/tag upsert are idempotent like the
 // real ON CONFLICT queries.
 type regFakeDB struct {
-	databasetest.BaseMockDB
+	regFakeDBStore
 	formattest.Quarantine
 
 	repos     map[string]*models.Repository
@@ -288,9 +293,14 @@ type registry struct {
 	router chi.Router
 }
 
+// registryStore is the part of the database newRegistry needs.
+type registryStore interface {
+	testHandlerStore
+}
+
 // newRegistry serves h over a real chi router, so every request goes through
 // the same /v2/* routing production uses.
-func newRegistry(t *testing.T, db database.Database) *registry {
+func newRegistry(t *testing.T, db registryStore) *registry {
 	t.Helper()
 
 	h, _ := newTestHandler(t, db)

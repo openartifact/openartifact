@@ -132,8 +132,7 @@ func TestSearchCargoCrateSummariesGroupsByCrate(t *testing.T) {
 	}
 }
 
-// Matching is by name or description, literally and case-insensitively; the
-// per-version listing that backups use is unaffected.
+// Matching is by name or description, literally and case-insensitively.
 func TestSearchCargoCrateSummariesMatching(t *testing.T) {
 	pg, repoID := seedSearchFixture(t)
 	ctx := context.Background()
@@ -145,11 +144,5 @@ func TestSearchCargoCrateSummariesMatching(t *testing.T) {
 
 	if none, total, err := pg.SearchCargoCrateSummaries(ctx, repoID, "%", 100); err != nil || len(none) != 0 || total != 0 {
 		t.Fatalf("a literal %% matched %d crates (total %d, err %v)", len(none), total, err)
-	}
-
-	// Per-version listing (backup export) keeps one row per version.
-	rows, err := pg.SearchCargoCrates(ctx, repoID, "", 100)
-	if err != nil || len(rows) != 6 {
-		t.Fatalf("SearchCargoCrates = %d rows, %v; want 6 (one per version)", len(rows), err)
 	}
 }

@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/openartifact/openartifact/internal/publicurl"
 )
 
 const relayTestID = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
@@ -104,6 +106,9 @@ func sha256Of(b []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// newRelay opens a relay whose upload URLs point at the configured publicURL.
+func newRelay(dir, publicURL string) *relay { return openRelay(dir, publicURL, false) }
+
 func TestRelayStagingSupportedNeedsPublicURL(t *testing.T) {
 	t.Parallel()
 
@@ -116,6 +121,54 @@ func TestRelayStagingSupportedNeedsPublicURL(t *testing.T) {
 		t.Fatal("staging must be unsupported without PublicURL")
 	}
 
+	if _, err := fsys.PresignStagingPut(context.Background(), relayTestID, 1, time.Minute); !errors.Is(err, ErrPresignNotSupported) {
+		t.Fatalf("err = %v, want ErrPresignNotSupported", err)
+	}
+}
+
+func TestRelayUploadURLFollowsTheRequestOrigin(t *testing.T) {
+	t.Parallel()
+
+	fsys, err := NewFilesystemBlobStore(StorageConfig{Type: "filesystem", Path: t.TempDir(), PublicURLFromRequest: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !fsys.StagingSupported() {
+		t.Fatal("staging must be supported when the origin comes from the request")
+	}
+
+	presignOn := func(host string) (string, error) {
+		var (
+			url string
+			err error
+		)
+
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/uploads", http.NoBody)
+		req.Host = host
+
+		publicurl.Middleware("", "http://fallback.test", nil)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			var put PresignedPut
+
+			put, err = fsys.PresignStagingPut(r.Context(), relayTestID, 1, time.Minute)
+			url = put.URL
+		})).ServeHTTP(httptest.NewRecorder(), req)
+
+		return url, err
+	}
+
+	for _, host := range []string{"127.0.0.1:18080", "localhost:18080"} {
+		url, err := presignOn(host)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if want := "http://" + host + relayPathPrefix + relayTestID + "/1?"; !strings.HasPrefix(url, want) {
+			t.Fatalf("url = %q, want prefix %q", url, want)
+		}
+	}
+
+	// No origin anywhere (a context outside any request): nothing to point at.
 	if _, err := fsys.PresignStagingPut(context.Background(), relayTestID, 1, time.Minute); !errors.Is(err, ErrPresignNotSupported) {
 		t.Fatalf("err = %v, want ErrPresignNotSupported", err)
 	}

@@ -18,7 +18,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
 )
@@ -47,9 +46,15 @@ func (p *recordingPublisher) all() []recordedEvent {
 	return append([]recordedEvent(nil), p.events...)
 }
 
+// repoLifecycleDBStore is what repoLifecycleDB is used as.
+type repoLifecycleDBStore interface {
+	RepositoriesStore
+	auth.EvaluatorStore
+}
+
 // repoLifecycleDB models a repository whose delete orphans one blob.
 type repoLifecycleDB struct {
-	databasetest.BaseMockDB
+	repoLifecycleDBStore
 
 	repo        *models.Repository
 	blobs       map[string]*models.ComponentBlob // listing row id -> blob, all in repo
@@ -58,6 +63,16 @@ type repoLifecycleDB struct {
 	orphans     []string
 	minAge      time.Duration
 	targets     []*models.PermissionTarget
+}
+
+// GetRepoMetadataByRepo is not exercised by the tests.
+func (*repoLifecycleDB) GetRepoMetadataByRepo(context.Context, string) ([]models.RepoMetadata, error) {
+	return nil, errNotImplemented
+}
+
+// GetProject is not exercised by the tests.
+func (*repoLifecycleDB) GetProject(context.Context, string) (*models.Project, error) {
+	return nil, errNotImplemented
 }
 
 func (db *repoLifecycleDB) GetPermissionTargetsForPrincipal(context.Context, string, []string) ([]*models.PermissionTarget, error) {

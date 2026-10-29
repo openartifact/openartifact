@@ -116,7 +116,9 @@ type RecentPackage struct {
 	CreatedAt  time.Time
 }
 
-// ComponentDetail is one package row with the metadata its table stores.
+// ComponentDetail is one package file (the artifact a listing row id names) with
+// the metadata its format's storage.Detail descriptor reads out of the generic
+// tables.
 type ComponentDetail struct {
 	ID          string
 	Format      string
@@ -136,7 +138,8 @@ type ComponentDetail struct {
 	UpdatedAt   time.Time
 	// Info holds the format-specific display fields (empty values dropped).
 	Info map[string]string
-	// Deps is the raw column dependencies are decoded from; its shape depends
-	// on Format.
-	Deps []byte
+	// Deps is the raw JSON the dependencies are decoded from, decoded by the
+	// decoder named DepsDecoder; empty when the format shows none.
+	Deps        []byte
+	DepsDecoder string
 }

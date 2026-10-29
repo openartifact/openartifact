@@ -15,15 +15,20 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 )
 
+// groupMembersMockDBStore is what groupMembersMockDB is used as.
+type groupMembersMockDBStore interface {
+	AdminGroupsStore
+	auth.EvaluatorStore
+}
+
 // groupMembersMockDB is an empty group whose membership insert fails like
 // auth_user_groups does for a user id that does not exist.
 type groupMembersMockDB struct {
-	databasetest.BaseMockDB
+	groupMembersMockDBStore
 }
 
 func (db *groupMembersMockDB) GetGroupByID(_ context.Context, id string) (*models.Group, error) {

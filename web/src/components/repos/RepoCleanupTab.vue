@@ -14,42 +14,32 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <p class="text-sm text-muted mt-0.5">{{ t('cleanup.subtitle') }}</p>
         <p class="text-xs text-muted mt-1 max-w-2xl" data-testid="cleanup-warning">{{ t('cleanup.deletesHint') }}</p>
       </div>
-      <AppButton size="sm" class="shrink-0" @click="openDrawer('create')">
+      <AppButton size="sm" class="shrink-0" @click="openDrawer()">
         <PlusIcon class="w-4 h-4" aria-hidden="true" />
         {{ t('cleanup.add') }}
       </AppButton>
     </div>
 
     <!-- ─── Loading skeleton ────────────────────────────────────────────────── -->
-    <div v-if="loading" class="bg-surface rounded-xl border border-border overflow-hidden">
-      <div v-for="i in 3" :key="i" class="flex items-center gap-4 px-5 py-4 border-b border-border last:border-0">
-        <div class="h-4 w-36 rounded skel" />
-        <div class="h-5 w-24 rounded skel" />
-        <div class="h-4 w-28 rounded skel" />
-        <div class="flex-1" />
-        <div class="w-8 h-5 rounded-full skel" />
-        <div class="flex gap-1">
-          <div class="w-7 h-7 rounded-md skel" />
-          <div class="w-7 h-7 rounded-md skel" />
-          <div class="w-7 h-7 rounded-md skel" />
-        </div>
-      </div>
-    </div>
+    <SkeletonRows v-if="loading" actions>
+      <div class="h-4 w-36 rounded skel" />
+      <div class="h-5 w-24 rounded skel" />
+      <div class="h-4 w-28 rounded skel" />
+      <div class="flex-1" />
+      <div class="w-8 h-5 rounded-full skel" />
+    </SkeletonRows>
 
     <!-- ─── Table ───────────────────────────────────────────────────────────── -->
     <div v-else class="bg-surface rounded-xl border border-border overflow-hidden">
       <!-- Empty state -->
-      <div v-if="items.length === 0" class="py-16 text-center">
-        <div class="w-12 h-12 rounded-full bg-surface-hover mx-auto flex items-center justify-center mb-3">
-          <TrashIcon class="w-6 h-6 text-muted" aria-hidden="true" />
-        </div>
-        <p class="text-sm font-medium text-foreground">{{ t('cleanup.empty') }}</p>
-        <p class="text-xs text-muted mt-1 mb-4">{{ t('cleanup.emptyHint') }}</p>
-        <AppButton size="sm" @click="openDrawer('create')">
-          <PlusIcon class="w-4 h-4" aria-hidden="true" />
-          {{ t('cleanup.add') }}
-        </AppButton>
-      </div>
+      <IconEmptyState
+        v-if="items.length === 0"
+        :icon="TrashIcon"
+        :title="t('cleanup.empty')"
+        :hint="t('cleanup.emptyHint')"
+        :action-label="t('cleanup.add')"
+        @action="openDrawer()"
+      />
 
       <!-- Data table -->
       <TableScroller v-else>
@@ -131,7 +121,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
             <!-- Actions -->
             <td class="px-5 py-3.5" :class="ACTIONS_CELL">
-              <RowActions :actions="policyActions(policy)" :subject="policy.name" :inline="4" @action="(key) => onPolicyAction(key, policy)" />
+              <RowActions :actions="rowActions(policy.id, runningId)" :subject="policy.name" :inline="4" @action="(key) => onPolicyAction(key, policy)" />
             </td>
           </tr>
         </tbody>
@@ -139,29 +129,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </TableScroller>
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════════════════════
-         SLIDE-RIGHT DRAWER
-    ════════════════════════════════════════════════════════════════════════════ -->
-    <AdminDialog
-      drawer
-      max-width="max-w-md"
+    <CleanupPolicyDrawer
+      v-model="form"
       :open="drawerOpen"
-      :eyebrow="drawerMode === 'create' ? t('cleanup.newLabel') : t('cleanup.editTitle')"
-      :title="drawerMode === 'create' ? t('cleanup.addTitle') : `${t('cleanup.editTitle')} · ${editingPolicy?.name}`"
+      :editing-name="editingPolicy?.name ?? null"
+      :saving="savingDrawer"
       @close="closeDrawer"
-    >
-      <CleanupPolicyForm v-model="form" />
-      <template #footer>
-        <AppButton variant="ghost" @click="closeDrawer">{{ t('common.cancel') }}</AppButton>
-        <AppButton :disabled="!formValid" :loading="savingDrawer" @click="saveDrawer">
-          {{ drawerMode === 'create' ? t('cleanup.create') : t('common.save') }}
-        </AppButton>
-      </template>
-    </AdminDialog>
+      @save="saveDrawer"
+    />
 
-    <!-- ═══════════════════════════════════════════════════════════════════════
-         DELETE CONFIRMATION MODAL
-    ════════════════════════════════════════════════════════════════════════════ -->
     <CleanupDryRunDialog
       :open="preview !== null"
       :title="preview?.name ?? ''"
@@ -169,29 +145,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       @close="preview = null"
     />
 
-    <ConfirmDialog
-      :open="!!deleteTarget"
-      :title="t('cleanup.deleteTitle')"
-      :confirm-label="t('common.delete')"
+    <CleanupDeleteDialog
+      :name="deleteTarget?.name ?? null"
       :busy="deleting"
       @confirm="confirmDelete"
       @close="cancelDelete"
-    >
-      <p class="text-sm text-muted">
-        <span class="font-mono font-semibold text-foreground">{{ deleteTarget?.name }}</span>
-        {{ t('cleanup.deleteBody') }}
-      </p>
-    </ConfirmDialog>
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, reactive } from 'vue'
-import AdminDialog from '../AdminDialog.vue'
+import { ref, onMounted } from 'vue'
 import AppButton from '../AppButton.vue'
 import AppToggle from '../AppToggle.vue'
-import CleanupPolicyForm from '../CleanupPolicyForm.vue'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import CleanupPolicyDrawer from '../CleanupPolicyDrawer.vue'
+import CleanupDeleteDialog from '../CleanupDeleteDialog.vue'
 import CleanupDryRunDialog from '../CleanupDryRunDialog.vue'
 import {
   createCleanupPolicy,
@@ -200,31 +168,18 @@ import {
   listCleanupPolicies,
   runCleanupPolicy,
   updateCleanupPolicy,
-  type CleanupPreview,
 } from '../../api/cleanup'
 import { formatDateTime } from '../../lib/datetime'
-import {
-  cleanupFormFrom,
-  cleanupFormValid,
-  cleanupPayload,
-  cleanupPolicyFromApi,
-  emptyCleanupForm,
-  type CleanupPolicyView as CleanupPolicy,
-} from '../../lib/cleanupPolicy'
+import { cleanupPayload, cleanupPolicyFromApi, type CleanupPolicyView as CleanupPolicy } from '../../lib/cleanupPolicy'
+import { useCleanupPolicyPanel } from '../../composables/useCleanupPolicyPanel'
 import { t, tp } from '../../i18n'
 import { useToastStore } from '../../stores/toast'
-import RowActions, { type RowAction } from '../ui/RowActions.vue'
+import RowActions from '../ui/RowActions.vue'
+import IconEmptyState from '../ui/IconEmptyState.vue'
+import SkeletonRows from '../ui/SkeletonRows.vue'
 import TableScroller from '../ui/TableScroller.vue'
 import { ACTIONS_CELL, ACTIONS_HEAD, GROW_CELL } from '../ui/tableStyles'
-import {
-  PlusIcon,
-  PencilSquareIcon,
-  TrashIcon,
-  PlayIcon,
-  EyeIcon,
-  QueueListIcon,
-  CalendarIcon,
-} from '@heroicons/vue/20/solid'
+import { PlusIcon, TrashIcon, QueueListIcon, CalendarIcon } from '@heroicons/vue/20/solid'
 
 const props = defineProps<{
   repoName: string
@@ -235,27 +190,22 @@ const toasts = useToastStore()
 const items = ref<CleanupPolicy[]>([])
 const loading = ref(true)
 
-// Running
+const {
+  drawerOpen,
+  editing: editingPolicy,
+  form,
+  formValid,
+  saving: savingDrawer,
+  togglingId,
+  deleteTarget,
+  deleting,
+  previewingId,
+  preview,
+  openDrawer,
+  closeDrawer,
+  rowActions,
+} = useCleanupPolicyPanel()
 const runningId = ref<string | null>(null)
-const previewingId = ref<string | null>(null)
-const preview = ref<{ name: string; repositories: CleanupPreview[] } | null>(null)
-const togglingId = ref<string | null>(null)
-
-// Drawer
-const drawerOpen = ref(false)
-const drawerMode = ref<'create' | 'edit'>('create')
-const editingPolicy = ref<CleanupPolicy | null>(null)
-const savingDrawer = ref(false)
-
-const form = reactive(emptyCleanupForm())
-
-// Delete
-const deleteTarget = ref<CleanupPolicy | null>(null)
-const deleting = ref(false)
-
-const formValid = computed(() => cleanupFormValid(form))
-
-// ─── Helpers ───────────────────────────────────────────────────────────────────
 
 // ─── Data Loading ──────────────────────────────────────────────────────────────
 
@@ -311,39 +261,18 @@ async function previewPolicy(policy: CleanupPolicy): Promise<void> {
   }
 }
 
-// ─── Drawer Actions ────────────────────────────────────────────────────────────
-
-
-
-function openDrawer(mode: 'create' | 'edit', policy?: CleanupPolicy): void {
-  drawerMode.value = mode
-  if (mode === 'edit' && policy) {
-    editingPolicy.value = policy
-    Object.assign(form, cleanupFormFrom(policy))
-  } else {
-    Object.assign(form, emptyCleanupForm())
-    editingPolicy.value = null
-  }
-  drawerOpen.value = true
-}
-
-function closeDrawer(): void {
-  drawerOpen.value = false
-  editingPolicy.value = null
-}
-
 async function saveDrawer(): Promise<void> {
   if (!formValid.value) return
   savingDrawer.value = true
   try {
-    const payload = cleanupPayload(form)
+    const payload = cleanupPayload(form.value)
 
-    if (drawerMode.value === 'create') {
+    if (!editingPolicy.value) {
       await createCleanupPolicy(props.repoName, payload)
-      toasts.success(tp('cleanup.created', { name: form.name }))
-    } else if (editingPolicy.value) {
+      toasts.success(tp('cleanup.created', { name: form.value.name }))
+    } else {
       await updateCleanupPolicy(props.repoName, editingPolicy.value.id, payload)
-      toasts.success(tp('cleanup.updated', { name: form.name }))
+      toasts.success(tp('cleanup.updated', { name: form.value.name }))
     }
 
     closeDrawer()
@@ -384,19 +313,10 @@ async function confirmDelete(): Promise<void> {
 
 onMounted(load)
 
-function policyActions(policy: CleanupPolicy): RowAction[] {
-  return [
-    { key: 'run', label: t('cleanup.run'), icon: PlayIcon, loading: runningId.value === policy.id },
-    { key: 'dry-run', label: t('cleanup.dryRun'), icon: EyeIcon, loading: previewingId.value === policy.id },
-    { key: 'edit', label: t('cleanup.editTitle'), icon: PencilSquareIcon },
-    { key: 'delete', label: t('cleanup.deleteTitle'), icon: TrashIcon, tone: 'danger' },
-  ]
-}
-
 function onPolicyAction(key: string, policy: CleanupPolicy): void {
   if (key === 'run') void runPolicy(policy)
   else if (key === 'dry-run') void previewPolicy(policy)
-  else if (key === 'edit') openDrawer('edit', policy)
+  else if (key === 'edit') openDrawer(policy)
   else if (key === 'delete') openDeleteModal(policy)
 }
 </script>

@@ -12,8 +12,15 @@ import (
 	"sync"
 	"time"
 
+	"database/sql"
+
 	"github.com/openartifact/openartifact/internal/database"
 )
+
+// SafeDeleteBlobStore is the part of the database SafeDeleteBlob needs.
+type SafeDeleteBlobStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+}
 
 // SafeDeleteBlob deletes the blob identified by sha256 only if no package-table
 // row still references it (db.BlobReferenceCount == 0).
@@ -27,7 +34,7 @@ import (
 // Callers MUST delete their own DB row referencing the blob BEFORE calling
 // this function, otherwise BlobReferenceCount will still see that row and
 // the blob will never be removed from storage.
-func SafeDeleteBlob(ctx context.Context, db database.Database, blobStore BlobStore, sha256 string) error {
+func SafeDeleteBlob(ctx context.Context, db SafeDeleteBlobStore, blobStore BlobStore, sha256 string) error {
 	if err := ValidateBlobID(sha256); err != nil {
 		return err
 	}
@@ -72,7 +79,7 @@ type blobLocker interface {
 // takes, so an uploader can store a blob and insert its referencing row
 // without a concurrent SafeDeleteBlob removing the blob in between. When the
 // database does not support locking, fn runs unguarded.
-func WithBlobLock(ctx context.Context, db database.Database, sha256 string, fn func(ctx context.Context) error) error {
+func WithBlobLock(ctx context.Context, db any, sha256 string, fn func(ctx context.Context) error) error {
 	if l, ok := db.(blobLocker); ok {
 		return l.WithBlobLock(ctx, sha256, fn)
 	}
@@ -89,7 +96,7 @@ type blobMultiLocker interface {
 // in a deterministic order on a single connection. Databases that only support
 // single-blob locks get nested WithBlobLock calls in the same order; databases
 // without locking support run fn unguarded.
-func WithBlobLocks(ctx context.Context, db database.Database, shas []string, fn func(ctx context.Context) error) error {
+func WithBlobLocks(ctx context.Context, db any, shas []string, fn func(ctx context.Context) error) error {
 	if l, ok := db.(blobMultiLocker); ok {
 		return l.WithBlobLocks(ctx, shas, fn)
 	}
@@ -136,6 +143,11 @@ var orphanCursor struct { //nolint:gochecknoglobals // process-wide sweep positi
 // OrphanBatch bounds how many orphan blobs one CollectOrphanBlobs call removes.
 const OrphanBatch = 500
 
+// CollectOrphanBlobsStore is the part of the database CollectOrphanBlobs needs.
+type CollectOrphanBlobsStore interface {
+	collectOrphanWindowStore
+}
+
 // CollectOrphanBlobs deletes blobs (storage object + blobs row) that no
 // package row references any more — e.g. after a repository delete cascaded
 // its package rows away. Only blobs older than minAge are considered. It
@@ -147,10 +159,21 @@ const OrphanBatch = 500
 // A blob that cannot be removed (storage error, invalid id) does not stop the
 // pass: the remaining blobs are still processed and every failure is returned
 // joined, so one poisoned blob cannot starve the rest of the batch forever.
-func CollectOrphanBlobs(ctx context.Context, db database.Database, blobStore BlobStore, minAge time.Duration, batch int) (int, error) {
+func CollectOrphanBlobs(
+	ctx context.Context,
+	db CollectOrphanBlobsStore,
+	blobStore BlobStore,
+	minAge time.Duration,
+	batch int,
+) (int, error) {
 	removed, _, err := collectOrphanWindow(ctx, db, blobStore, minAge, batch)
 
 	return removed, err
+}
+
+// CollectOrphanBlobsSweepStore is the part of the database CollectOrphanBlobsSweep needs.
+type CollectOrphanBlobsSweepStore interface {
+	collectOrphanWindowStore
 }
 
 // CollectOrphanBlobsSweep runs up to maxWindows consecutive CollectOrphanBlobs
@@ -159,7 +182,7 @@ func CollectOrphanBlobs(ctx context.Context, db database.Database, blobStore Blo
 // that a large table is covered within one tick, in bounded steps.
 func CollectOrphanBlobsSweep(
 	ctx context.Context,
-	db database.Database,
+	db CollectOrphanBlobsSweepStore,
 	blobStore BlobStore,
 	minAge time.Duration,
 	batch, maxWindows int,
@@ -184,10 +207,15 @@ func CollectOrphanBlobsSweep(
 	return total, errors.Join(errs...)
 }
 
+// collectOrphanWindowStore is the part of the database collectOrphanWindow needs.
+type collectOrphanWindowStore interface {
+	SafeDeleteBlobStore
+}
+
 // collectOrphanWindow does one window and reports the cursor it left behind.
 func collectOrphanWindow(
 	ctx context.Context,
-	db database.Database,
+	db collectOrphanWindowStore,
 	blobStore BlobStore,
 	minAge time.Duration,
 	batch int,
@@ -234,6 +262,12 @@ func collectOrphanWindow(
 	return removed, next, errors.Join(errs...)
 }
 
+// ReclaimMetadataBlobStore is the part of the database ReclaimMetadataBlob needs.
+type ReclaimMetadataBlobStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	GetDB() *sql.DB
+}
+
 // ReclaimMetadataBlob deletes a superseded generated-metadata blob (maven
 // maven-metadata.xml, ...) when nothing references it any more. Such blobs have
 // no blobs row, so neither SafeDeleteBlob's package-table count nor the orphan
@@ -241,7 +275,7 @@ func collectOrphanWindow(
 // another repository may share) and the package tables are checked here, under
 // the per-blob lock a generator holds while it stores the blob and commits its
 // row, so a concurrent regeneration of the same content is never undercut.
-func ReclaimMetadataBlob(ctx context.Context, db database.Database, blobStore BlobStore, sha string) error {
+func ReclaimMetadataBlob(ctx context.Context, db ReclaimMetadataBlobStore, blobStore BlobStore, sha string) error {
 	if err := ValidateBlobID(sha); err != nil {
 		return err
 	}
@@ -286,7 +320,7 @@ type blobDeletionQueue interface {
 // content (an upload of byte-identical content that was deleted since) and must
 // find its bytes. The sweeper re-checks references before it removes anything.
 // Databases without the queue (test doubles) delete right away.
-func DiscardUnreferencedBytes(ctx context.Context, db database.Database, blobStore BlobStore, sha string) error {
+func DiscardUnreferencedBytes(ctx context.Context, db any, blobStore BlobStore, sha string) error {
 	if q, ok := db.(blobDeletionQueue); ok {
 		if err := q.EnqueueBlobDeletion(ctx, sha, database.BlobDeletionScopeAll); err != nil {
 			return fmt.Errorf("queue metadata blob %s for deletion: %w", sha, err)

@@ -37,6 +37,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	formatmaven "github.com/openartifact/openartifact/internal/format/maven"
 	formatnpm "github.com/openartifact/openartifact/internal/format/npm"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -188,7 +189,7 @@ func (e *tprEnv) buildRouter() http.Handler {
 	mavenUpload := api.NewMavenUploadHandler(log, db, bs, nil)
 	mavenUpload.SetMavenWorker(mavenW)
 
-	npmUpload := api.NewNPMUploadHandler(log, db, bs, tprBaseURL, nil)
+	npmUpload := api.NewNPMUploadHandler(log, db, bs, nil)
 	npmUpload.SetNPMWorker(npmW)
 
 	debUpload := api.NewDebUploadHandler(log, db, bs, nil)
@@ -198,9 +199,14 @@ func (e *tprEnv) buildRouter() http.Handler {
 	npmRead := formatnpm.NewHTTPHandler(log, db, bs, tprBaseURL)
 	debRead := formatdeb.NewHTTPHandler(log, db, bs)
 
+	trashWorkers := lifecycle.NewWorkers()
+	trashWorkers.Bind("deb", debW)
+	trashWorkers.Bind("maven", mavenW)
+	trashWorkers.Bind("npm", npmW)
+
 	trashHandler := api.NewTrashHandler(db, log, evaluator).
 		WithBlobStore(bs).
-		WithRegenerator(api.NewWorkerRegenerator(debW, nil, nil, nil, mavenW, npmW))
+		WithWorkers(trashWorkers)
 
 	r := chi.NewRouter()
 	r.Use(e.authenticate)

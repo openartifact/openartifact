@@ -77,7 +77,6 @@ type staleEnv struct {
 	router http.Handler
 	repoID string
 	repo   string
-	seq    int
 }
 
 func newStaleEnv(
@@ -122,15 +121,6 @@ func (e *staleEnv) scan(query string, args ...any) string {
 	}
 
 	return out
-}
-
-// blob inserts a fresh blob row and returns its id.
-func (e *staleEnv) blob() string {
-	e.seq++
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s/%d", e.repoID, e.seq)))
-	sha := hex.EncodeToString(sum[:])
-
-	return e.scan(`INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES ($1::text, 5, $1::text) RETURNING id`, sha)
 }
 
 func (e *staleEnv) url(suffix string) string { return "/repos/" + e.repo + suffix }
@@ -305,12 +295,6 @@ func (e *staleEnv) compare(s staleStep, d staleDoc, before staleResp) {
 	}
 }
 
-func (e *staleEnv) withBlob(sql string, args ...any) {
-	e.t.Helper()
-
-	e.exec(sql, append(args, e.blob())...)
-}
-
 // --- mounts --------------------------------------------------------------
 
 func mountRepoRoutes(
@@ -335,11 +319,19 @@ func TestCachedIndexStaysCurrentHelm(t *testing.T) {
 
 	add := func(version string) func() {
 		return func() {
-			e.withBlob(`INSERT INTO helm_charts (repository_id, name, version, blob_id) VALUES ($1,'web',$2,$3)`, e.repoID, version)
+			sha := fmt.Sprintf("%064x", len(version)*7919+int(version[0])+int(version[2]))
+			chart := &models.HelmChart{
+				RepositoryID: e.repoID, Name: "web", Version: version, BlobKey: sha, Digest: sha, SizeBytes: 5,
+			}
+
+			if err := e.pg.CreateHelmChart(context.Background(), chart); err != nil {
+				t.Fatalf("CreateHelmChart(%s): %v", version, err)
+			}
 		}
 	}
 	chart := func() string {
-		return e.id(`SELECT id FROM helm_charts WHERE repository_id = $1 AND version = '1.1.0'`, e.repoID)
+		return e.id(`SELECT f.id FROM package_files f JOIN package_versions v ON v.id = f.version_id
+		                 WHERE f.repository_id = $1 AND v.version = '1.1.0'`, e.repoID)
 	}
 
 	add("1.0.0")()
@@ -352,7 +344,9 @@ func TestCachedIndexStaysCurrentHelm(t *testing.T) {
 		staleStep{name: "trash", do: func() { e.trash(models.TrashKindHelm, chart()) }, changes: []string{"index"}},
 		staleStep{name: "restore", do: func() { e.restore(models.TrashKindHelm, chart()) }, changes: []string{"index"}},
 		staleStep{name: "hard delete", do: func() {
-			e.exec(`DELETE FROM helm_charts WHERE repository_id = $1 AND version = '1.1.0'`, e.repoID)
+			if err := e.pg.DeleteHelmChart(context.Background(), e.repoID, "web", "1.1.0"); err != nil {
+				t.Fatalf("DeleteHelmChart: %v", err)
+			}
 		}, changes: []string{"index"}},
 	)
 
@@ -368,17 +362,23 @@ func TestCachedRepodataStaysCurrentConda(t *testing.T) {
 
 	add := func(platform, name string) func() {
 		return func() {
-			e.withBlob(
-				`INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra)
-			            VALUES ($1,$2,'1.0','h1',$3,'{}',$4,'.conda',0,'m',1,'{}')`,
-				e.repoID,
-				name,
-				platform,
-			)
+			sum := sha256.Sum256([]byte(e.repoID + platform + name))
+			sha := hex.EncodeToString(sum[:])
+
+			pkg := &models.CondaPackage{
+				RepositoryID: e.repoID, Name: name, Version: "1.0", BuildString: "h1", Platform: platform,
+				Extension: models.CondaExtConda, Timestamp: 1, Depends: []string{}, MD5: "m",
+				BlobKey: sha, SHA256: sha, SizeBytes: 5,
+			}
+
+			if err := e.pg.CreateCondaPackage(context.Background(), pkg); err != nil {
+				t.Fatalf("CreateCondaPackage(%s/%s): %v", platform, name, err)
+			}
 		}
 	}
 	pkg := func() string {
-		return e.id(`SELECT id FROM conda_packages WHERE repository_id = $1 AND name = 'numpy'`, e.repoID)
+		return e.id(`SELECT f.id FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages p ON p.id = v.package_id
+		                 WHERE f.repository_id = $1 AND p.name = 'numpy'`, e.repoID)
 	}
 
 	add("linux-64", "base")()
@@ -415,15 +415,20 @@ func TestCachedSpecsStayCurrentRubyGems(t *testing.T) {
 
 	add := func(version string) func() {
 		return func() {
-			e.withBlob(
-				`INSERT INTO rubygems_gems (repository_id, name, version, platform, blob_id, size) VALUES ($1,'rake',$2,'ruby',$3,5)`,
-				e.repoID,
-				version,
-			)
+			sha := fmt.Sprintf("%064x", len(version)*7919+int(version[0]))
+			gem := &models.RubyGem{
+				RepositoryID: e.repoID, Name: "rake", Version: version, Platform: "ruby",
+				BlobKey: sha, ChecksumSHA256: sha, Size: 5,
+			}
+
+			if err := e.pg.CreateRubyGem(context.Background(), gem); err != nil {
+				t.Fatalf("CreateRubyGem(%s): %v", version, err)
+			}
 		}
 	}
 	gem := func() string {
-		return e.id(`SELECT id FROM rubygems_gems WHERE repository_id = $1 AND version = '1.0'`, e.repoID)
+		return e.id(`SELECT f.id FROM package_files f JOIN package_versions v ON v.id = f.version_id
+		                 WHERE f.repository_id = $1 AND v.version = '1.0'`, e.repoID)
 	}
 	setYanked := func(version string, yanked bool) {
 		if err := e.pg.YankRubyGem(context.Background(), e.repoID, "rake", version, "ruby", yanked); err != nil {
@@ -447,7 +452,10 @@ func TestCachedSpecsStayCurrentRubyGems(t *testing.T) {
 
 	add("0.9")()
 	add("1.0")()
-	e.exec(`UPDATE rubygems_gems SET version = '1.0.pre' WHERE repository_id = $1 AND version = '0.9'`, e.repoID)
+	e.exec(
+		`UPDATE package_versions SET version = '1.0.pre', version_key = '1.0.pre' WHERE repository_id = $1 AND version = '0.9'`,
+		e.repoID,
+	)
 
 	steps := []staleStep{
 		{name: "publish", do: add("2.0"), changes: []string{"specs", "latest"}},
@@ -474,15 +482,20 @@ func TestCachedIndexStaysCurrentCargo(t *testing.T) {
 
 	add := func(version string) func() {
 		return func() {
-			e.withBlob(
-				`INSERT INTO cargo_crates (repository_id, name, version, metadata_json, blob_id) VALUES ($1,'serde',$2,'{}',$3)`,
-				e.repoID,
-				version,
-			)
+			sha := fmt.Sprintf("%064x", len(version)*7919+int(version[0])+int(version[2]))
+			crate := &models.CargoCrate{
+				RepositoryID: e.repoID, Name: "serde", Version: version, MetadataJSON: []byte(`{}`),
+				BlobKey: sha, Checksum: sha, SizeBytes: 5,
+			}
+
+			if err := e.pg.CreateCargoCrate(context.Background(), crate); err != nil {
+				t.Fatalf("CreateCargoCrate(%s): %v", version, err)
+			}
 		}
 	}
 	crate := func() string {
-		return e.id(`SELECT id FROM cargo_crates WHERE repository_id = $1 AND version = '1.1.0'`, e.repoID)
+		return e.id(`SELECT f.id FROM package_files f JOIN package_versions v ON v.id = f.version_id
+		                 WHERE f.repository_id = $1 AND v.version = '1.1.0'`, e.repoID)
 	}
 	setYanked := func(method, verb string) func() {
 		return func() {
@@ -500,7 +513,7 @@ func TestCachedIndexStaysCurrentCargo(t *testing.T) {
 		{name: "yank", do: setYanked(http.MethodDelete, "yank"), changes: []string{"index"}},
 		{name: "unyank", do: setYanked(http.MethodPut, "unyank"), changes: []string{"index"}},
 		{name: "download count", do: func() {
-			e.exec(`UPDATE cargo_crates SET download_count = download_count + 1, updated_at = now() WHERE repository_id = $1`, e.repoID)
+			e.exec(`UPDATE package_files SET download_count = download_count + 1, updated_at = now() WHERE repository_id = $1`, e.repoID)
 		}},
 	}
 	steps = append(steps, e.policySteps("serde-1.1.0.crate", e.url("/api/v1/crates/serde/1.1.0/download"))...)
@@ -534,7 +547,8 @@ func TestCachedRegistrationStaysCurrentNuGet(t *testing.T) {
 		}
 	}
 	pkg := func() string {
-		return e.id(`SELECT id FROM nuget_packages WHERE repository_id = $1 AND version = '2.0.0'`, e.repoID)
+		return e.id(`SELECT f.id FROM package_files f JOIN package_versions v ON v.id = f.version_id
+		                 WHERE f.repository_id = $1 AND v.version = '2.0.0'`, e.repoID)
 	}
 
 	add("1.0.0")()
@@ -635,7 +649,7 @@ func TestCachedPackumentStaysCurrentNPM(t *testing.T) {
 		router.Use(authenticateTestBearer)
 		router.Route("/repos/{name}", func(r chi.Router) {
 			formatnpm.NewHTTPHandler(log, pg, bs, stalenessBaseURL).RegisterRepoRoutes(r)
-			api.NewNPMUploadHandler(log, pg, bs, stalenessBaseURL, nil).RegisterRepoRoutes(r)
+			api.NewNPMUploadHandler(log, pg, bs, nil).RegisterRepoRoutes(r)
 		})
 
 		return router
@@ -653,10 +667,11 @@ func TestCachedPackumentStaysCurrentNPM(t *testing.T) {
 		return func() { call(http.MethodPut, e.url("/demo"), buildPublishBody(t, "demo", version)) }
 	}
 	pkgID := func() string {
-		return e.id(`SELECT id FROM npm_packages WHERE repository_id = $1 AND full_name = 'demo'`, e.repoID)
+		return e.id(`SELECT id FROM packages WHERE repository_id = $1 AND name = 'demo'`, e.repoID)
 	}
 	version := func(v string) string {
-		return e.id(`SELECT id FROM npm_versions WHERE package_id = $1 AND version = $2`, pkgID(), v)
+		return e.id(`SELECT f.id FROM package_files f JOIN package_versions v ON v.id = f.version_id
+		                 WHERE v.package_id = $1 AND v.version = $2`, pkgID(), v)
 	}
 	distTag := func(method, tag string) func() {
 		return func() { call(method, e.url("/-/package/demo/dist-tags/"+tag), []byte(`"1.0.0"`)) }

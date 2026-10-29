@@ -20,8 +20,8 @@ import (
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/middleware"
 )
 
@@ -32,15 +32,22 @@ const (
 	trashPkgName = "com.acme:lib"
 )
 
-// fakeTrashDB is a database.Database + database.TrashStore double. It records
+// fakeTrashDBStore is what fakeTrashDB is used as.
+type fakeTrashDBStore interface {
+	RepositoriesStore
+	TrashOps
+	auth.EvaluatorStore
+}
+
+// fakeTrashDB is a double of the repositories store and database.TrashOps. It records
 // what the handlers asked of it.
 type fakeTrashDB struct {
-	databasetest.BaseMockDB
+	fakeTrashDBStore
 
 	targets []*models.PermissionTarget
 	repos   map[string]*models.Repository
 
-	// TrashStore behaviour.
+	// TrashOps behaviour.
 	trashRepoSoft  bool
 	trashRepoCalls int
 	trashRepoBy    string
@@ -63,6 +70,11 @@ type fakeTrashDB struct {
 	decrements     []int
 	trashedNames   map[string]bool
 	createErr      error
+}
+
+// GetRepoMetadataByRepo is not exercised by the tests.
+func (*fakeTrashDB) GetRepoMetadataByRepo(context.Context, string) ([]models.RepoMetadata, error) {
+	return nil, errNotImplemented
 }
 
 func (db *fakeTrashDB) GetPermissionTargetsForPrincipal(context.Context, string, []string) ([]*models.PermissionTarget, error) {
@@ -179,7 +191,7 @@ func (db *fakeTrashDB) ListExpiredTrash(context.Context, int) ([]models.TrashRef
 	return nil, nil
 }
 
-var _ database.TrashStore = (*fakeTrashDB)(nil)
+var _ database.TrashOps = (*fakeTrashDB)(nil)
 
 type regenCall struct{ kind, repoID, a, b string }
 
@@ -204,6 +216,30 @@ func (f *fakeRegen) NotifyMavenStale(repoID, g, a string) {
 }
 func (f *fakeRegen) NotifyNPMStale(pkgID string) { f.add(regenCall{"npm", "", pkgID, ""}) }
 
+type (
+	// stalePing adapts a recording method to the narrow notifier interface of
+	// the metadata workers.
+	stalePing    func(string)
+	artifactPing func(repoID, groupID, artifactID string)
+)
+
+func (p stalePing) NotifyStale(id string) { p(id) }
+
+func (p artifactPing) NotifyStale(repoID, groupID, artifactID string) { p(repoID, groupID, artifactID) }
+
+// workers binds the recorder as the metadata workers of every format that has one.
+func (f *fakeRegen) workers() *lifecycle.Workers {
+	ws := lifecycle.NewWorkers()
+	ws.Bind("deb", stalePing(f.NotifyDebStale))
+	ws.Bind("rpm", stalePing(f.NotifyRPMStale))
+	ws.Bind("pacman", stalePing(f.NotifyPacmanStale))
+	ws.Bind("apk", stalePing(f.NotifyApkStale))
+	ws.Bind("maven", artifactPing(f.NotifyMavenStale))
+	ws.Bind("npm", stalePing(f.NotifyNPMStale))
+
+	return ws
+}
+
 func adminOnlyTargets() []*models.PermissionTarget {
 	return []*models.PermissionTarget{{RepositoryFilter: `.*`, PathPattern: `.*`, Actions: []string{"read", "write", "delete", "manage"}}}
 }
@@ -227,7 +263,7 @@ func newTrashFixture(t *testing.T, targets []*models.PermissionTarget) (*fakeTra
 	regen := &fakeRegen{}
 	pub := &pubRecorder{}
 
-	h := NewTrashHandler(db, log, auth.NewEvaluator(db, log, false)).WithPublisher(pub).WithRegenerator(regen)
+	h := NewTrashHandler(db, log, auth.NewEvaluator(db, log, false)).WithPublisher(pub).WithWorkers(regen.workers())
 	r := chi.NewRouter()
 	h.RegisterAuthed(r)
 
@@ -463,20 +499,21 @@ func TestTrashRestoreRegenByFormat(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		kind      models.TrashKind
+		format    string
 		wantRegen []regenCall
 		wantRepo  int
 		wantPack  []string
 	}{
-		{"deb", models.TrashKindDeb, []regenCall{{"deb", trashRepoID, "", ""}}, 0, nil},
-		{"rpm", models.TrashKindRPM, []regenCall{{"rpm", trashRepoID, "", ""}}, 1, nil},
-		{"maven", models.TrashKindMaven, []regenCall{{"maven", trashRepoID, "pkg-a", "pkg-b"}}, 0, nil},
-		{"npm", models.TrashKindNPM, []regenCall{{"npm", "", "pkg-a", ""}}, 0, []string{"pkg-a"}},
-		{"raw has no generated metadata", models.TrashKindRaw, nil, 0, nil},
+		{"deb", models.TrashKindDeb, "deb", []regenCall{{"deb", trashRepoID, "", ""}}, 0, nil},
+		{"rpm", models.TrashKindRPM, "rpm", []regenCall{{"rpm", trashRepoID, "", ""}}, 1, nil},
+		{"maven", models.TrashKindMaven, "maven", []regenCall{{"maven", trashRepoID, "pkg-a", "pkg-b"}}, 0, nil},
+		{"npm", models.TrashKindNPM, "npm", []regenCall{{"npm", "", "pkg-a", ""}}, 0, []string{"pkg-a"}},
+		{"raw has no generated metadata", models.TrashKindRaw, "raw", nil, 0, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db, regen, _, r := newTrashFixture(t, adminOnlyTargets())
 			it := mavenItem(trashRepoID, "app")
-			it.Kind = tc.kind
+			it.Kind, it.Format = tc.kind, tc.format
 			db.items[string(tc.kind)+"/"+trashItemID] = it
 			db.regenA, db.regenB = "pkg-a", "pkg-b"
 
@@ -775,6 +812,11 @@ type captureCreateDB struct {
 	*fakeTrashDB
 
 	created *models.Repository
+}
+
+// GetProject is not exercised by the tests.
+func (*captureCreateDB) GetProject(context.Context, string) (*models.Project, error) {
+	return nil, errNotImplemented
 }
 
 func (c *captureCreateDB) CreateRepositoryWithMembers(_ context.Context, repo *models.Repository, _ []string) error {

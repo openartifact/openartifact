@@ -35,16 +35,30 @@ func (a *app) registerOperationalRoutes() {
 
 	router.Get("/health", a.handleHealth)
 
-	metricsToken := os.Getenv("METRICS_AUTH_TOKEN")
-	metricsAnonymous := os.Getenv("METRICS_ALLOW_ANONYMOUS") == "true"
+	auth := a.operationalAuth()
 
-	if metricsToken == "" && !metricsAnonymous {
+	router.Method("GET", "/metrics", auth(promhttp.Handler()))
+
+	router.Get("/ready", a.handleReady)
+
+	// A worker process has no authenticated API to hang the profiler on.
+	if !a.cfg.Server.ServesAPI() && a.cfg.Server.PprofEnabled {
+		registerWorkerPprof(router, auth)
+		a.log.Warnw("pprof enabled at /debug/pprof/ (METRICS_AUTH_TOKEN); disable outside diagnostics")
+	}
+}
+
+// operationalAuth is the bearer-token check of /metrics (and of the profiler of
+// a worker process); it fails closed, see metricsAuthMiddleware.
+func (a *app) operationalAuth() func(http.Handler) http.Handler {
+	token := os.Getenv("METRICS_AUTH_TOKEN")
+	anonymous := os.Getenv("METRICS_ALLOW_ANONYMOUS") == "true"
+
+	if token == "" && !anonymous {
 		a.log.Warnw("/metrics is disabled: set METRICS_AUTH_TOKEN (or METRICS_ALLOW_ANONYMOUS=true to expose it without authentication)")
 	}
 
-	router.Method("GET", "/metrics", metricsAuthMiddleware(metricsToken, metricsAnonymous)(promhttp.Handler()))
-
-	router.Get("/ready", a.handleReady)
+	return metricsAuthMiddleware(token, anonymous)
 }
 
 // storageHealth is the readiness check of the object store: it only waits for

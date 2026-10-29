@@ -142,3 +142,46 @@ func apiMessage(body []byte) string {
 
 	return strings.TrimSpace(string(body))
 }
+
+// create POSTs body to path and returns the id of the created object. A
+// failure reads `create <what> "<name>": ...`.
+func (c *Client) create(ctx context.Context, path string, body map[string]any, what, name string) (string, error) {
+	var resp struct {
+		ID string `json:"id"`
+	}
+
+	if err := c.Do(ctx, http.MethodPost, path, body, &resp); err != nil {
+		return "", fmt.Errorf("create %s %q: %w", what, name, err)
+	}
+
+	return resp.ID, nil
+}
+
+// update sends body to path with method and returns the id of live, with or
+// without an error. A failure reads `update <what> "<live.Key>": ...`.
+func (c *Client) update(ctx context.Context, method, path string, body any, live *Live, what string) (string, error) {
+	if err := c.Do(ctx, method, path, body, nil); err != nil {
+		return live.ID, fmt.Errorf("update %s %q: %w", what, live.Key, err)
+	}
+
+	return live.ID, nil
+}
+
+// updateChanges is update with the PatchBody of changes; with no changes it
+// sends nothing.
+func (c *Client) updateChanges(ctx context.Context, method, path string, live *Live, changes []Change, what string) (string, error) {
+	if len(changes) == 0 {
+		return live.ID, nil
+	}
+
+	return c.update(ctx, method, path, PatchBody(changes), live, what)
+}
+
+// remove DELETEs path. A failure reads `delete <what> "<name>": ...`.
+func (c *Client) remove(ctx context.Context, path, what, name string) error {
+	if err := c.Do(ctx, http.MethodDelete, path, nil, nil); err != nil {
+		return fmt.Errorf("delete %s %q: %w", what, name, err)
+	}
+
+	return nil
+}

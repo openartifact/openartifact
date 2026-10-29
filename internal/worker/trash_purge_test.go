@@ -19,9 +19,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
+	"database/sql"
+
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -35,12 +36,10 @@ type purgeQuotaCall struct {
 	count  int
 }
 
-// trashPurgeDB is a database.TrashStore over an in-memory list of expired
+// trashPurgeDB is a database.TrashOps over an in-memory list of expired
 // items. Blob references, orphans and quota calls are recorded or scripted so
 // tests can observe what the worker does through storage.SafeDeleteBlob.
 type trashPurgeDB struct {
-	databasetest.BaseMockDB
-
 	mu sync.Mutex
 
 	expired  []models.TrashRef
@@ -58,6 +57,9 @@ type trashPurgeDB struct {
 	quota         []purgeQuotaCall
 	audits        []*models.AuditLog
 }
+
+// GetDB is not exercised by the tests.
+func (*trashPurgeDB) GetDB() *sql.DB { return nil }
 
 func newTrashPurgeDB() *trashPurgeDB {
 	return &trashPurgeDB{
@@ -165,7 +167,7 @@ func (d *trashPurgeDB) purgedRefs() []models.TrashRef {
 	return append([]models.TrashRef(nil), d.purged...)
 }
 
-// The rest of the TrashStore is not exercised by the worker.
+// The rest of the TrashOps is not exercised by the worker.
 var errTrashPurgeFake = errors.New("trash purge fake: not implemented")
 
 func (d *trashPurgeDB) TrashRows(context.Context, string, models.TrashKind, []string, string) (bool, error) {

@@ -8,9 +8,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	formatstorage "github.com/openartifact/openartifact/internal/format/storage"
 )
 
 const (
@@ -18,12 +21,12 @@ const (
 	testRow = `{"id":"` + testID + `","path":"a/b.txt"}`
 )
 
-func rawTable(t *testing.T) *Table {
+func fileTable(t *testing.T) *Table {
 	t.Helper()
 
-	tbl, ok := Lookup("raw_artifacts")
+	tbl, ok := NewRegistry().Lookup("package_files")
 	if !ok {
-		t.Fatal("raw_artifacts is not journaled")
+		t.Fatal("package_files is not journaled")
 	}
 
 	return tbl
@@ -38,27 +41,27 @@ func sha(b []byte) string {
 func TestSidecarRoundTrip(t *testing.T) {
 	at := time.Date(2026, 1, 2, 3, 4, 5, 600, time.UTC)
 
-	data, id, err := EncodeSidecar(rawTable(t), testID, 68, at, []byte(testRow))
+	data, id, err := EncodeSidecar(fileTable(t), testID, 68, at, []byte(testRow))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if id != sha(data) || !LooksLikeSidecar(data) || !strings.HasPrefix(string(data), `{"openartifact_sidecar":1,`) {
+	if id != sha(data) || !LooksLikeSidecar(data) || !strings.HasPrefix(string(data), `{"openartifact_sidecar":2,`) {
 		t.Fatalf("encoded sidecar = %s (id %s)", data, id)
 	}
 
-	sc, tbl, err := DecodeSidecar(id, data)
+	sc, tbl, err := NewRegistry().DecodeSidecar(id, data)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if tbl.Name != "raw_artifacts" || sc.Key != testID || !sc.WrittenAt.Equal(at) || sc.Schema != 68 || string(sc.Row) != testRow {
+	if tbl.Name != "package_files" || sc.Key != testID || !sc.WrittenAt.Equal(at) || sc.Schema != 68 || string(sc.Row) != testRow {
 		t.Fatalf("decoded = %+v table %s", sc, tbl.Name)
 	}
 }
 
 func TestDecodeSidecarRejects(t *testing.T) {
-	good, goodID, err := EncodeSidecar(rawTable(t), testID, 68, time.Now(), []byte(testRow))
+	good, goodID, err := EncodeSidecar(fileTable(t), testID, 68, time.Now(), []byte(testRow))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,11 +84,13 @@ func TestDecodeSidecarRejects(t *testing.T) {
 		doc  string
 		want error
 	}{
-		"future version": {`{"openartifact_sidecar":2,"table":"raw_artifacts","key":"` + testID + `","row":` + testRow + `}`, ErrSidecarVersion},
-		"unknown table":  {`{"openartifact_sidecar":1,"table":"users","key":"` + testID + `","row":` + testRow + `}`, ErrSidecarTable},
-		"key mismatch":   {`{"openartifact_sidecar":1,"table":"raw_artifacts","key":"` + strings.Replace(testID, "6f", "7f", 1) + `","row":` + testRow + `}`, ErrSidecarKey},
-		"bad key shape":  {`{"openartifact_sidecar":1,"table":"raw_artifacts","key":"not-a-uuid","row":{"id":"not-a-uuid"}}`, ErrSidecarKey},
-		"row not object": {`{"openartifact_sidecar":1,"table":"raw_artifacts","key":"` + testID + `","row":[1]}`, ErrSidecarRow},
+		"future version": {`{"openartifact_sidecar":3,"table":"package_files","key":"` + testID + `","row":` + testRow + `}`, ErrSidecarVersion},
+		"zero version":   {`{"openartifact_sidecar":0,"table":"package_files","key":"` + testID + `","row":` + testRow + `}`, ErrSidecarVersion},
+		"legacy version": {`{"openartifact_sidecar":1,"table":"raw_artifacts","key":"` + testID + `","row":` + testRow + `}`, ErrSidecarLegacy},
+		"unknown table":  {`{"openartifact_sidecar":2,"table":"users","key":"` + testID + `","row":` + testRow + `}`, ErrSidecarTable},
+		"key mismatch":   {`{"openartifact_sidecar":2,"table":"package_files","key":"` + strings.Replace(testID, "6f", "7f", 1) + `","row":` + testRow + `}`, ErrSidecarKey},
+		"bad key shape":  {`{"openartifact_sidecar":2,"table":"package_files","key":"not-a-uuid","row":{"id":"not-a-uuid"}}`, ErrSidecarKey},
+		"row not object": {`{"openartifact_sidecar":2,"table":"package_files","key":"` + testID + `","row":[1]}`, ErrSidecarRow},
 	} {
 		d, id := mk(doc.doc)
 		tests = append(tests, struct {
@@ -98,7 +103,7 @@ func TestDecodeSidecarRejects(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, _, err := DecodeSidecar(tc.id, tc.data); !errors.Is(err, tc.want) {
+			if _, _, err := NewRegistry().DecodeSidecar(tc.id, tc.data); !errors.Is(err, tc.want) {
 				t.Fatalf("err = %v, want %v", err, tc.want)
 			}
 		})
@@ -111,7 +116,7 @@ func TestSidecarMetadataMarker(t *testing.T) {
 		meta map[string]string
 		want bool
 	}{
-		{"as written", SidecarMetadata("raw_artifacts", "x"), true},
+		{"as written", SidecarMetadata("package_files", "x"), true},
 		{"s3 lower-cased", map[string]string{"oakind": "sidecar"}, true},
 		{"azure canonicalised", map[string]string{"Oakind": "sidecar"}, true},
 		{"other kind", map[string]string{"oakind": "blob"}, false},
@@ -128,7 +133,7 @@ func TestSidecarMetadataMarker(t *testing.T) {
 }
 
 func TestSplitKey(t *testing.T) {
-	composite, ok := Lookup("docker_manifest_refs")
+	composite, ok := NewRegistry().Lookup("docker_manifest_refs")
 	if !ok {
 		t.Fatal("docker_manifest_refs missing")
 	}
@@ -139,9 +144,9 @@ func TestSplitKey(t *testing.T) {
 		key   string
 		ok    bool
 	}{
-		{"uuid", rawTable(t), testID, true},
-		{"upper-case uuid", rawTable(t), strings.ToUpper(testID), false},
-		{"uuid with suffix", rawTable(t), testID + "x", false},
+		{"uuid", fileTable(t), testID, true},
+		{"upper-case uuid", fileTable(t), strings.ToUpper(testID), false},
+		{"uuid with suffix", fileTable(t), testID + "x", false},
 		{"composite", composite, `["` + testID + `","manifest","sha256:abc"]`, true},
 		{"composite wrong arity", composite, `["` + testID + `"]`, false},
 		{"composite bad uuid", composite, `["zz","manifest","sha256:abc"]`, false},
@@ -157,9 +162,10 @@ func TestSplitKey(t *testing.T) {
 }
 
 func TestRegistryShape(t *testing.T) {
+	pacman := descriptors{"pacman": {SideTables: []formatstorage.SideTable{{Name: "pacman_files"}}}}
 	seen := map[string]bool{}
 
-	for _, tbl := range Tables {
+	for _, tbl := range newRegistry(pacman).Tables() {
 		if seen[tbl.Name] {
 			t.Errorf("table %s listed twice", tbl.Name)
 		}
@@ -179,6 +185,63 @@ func TestRegistryShape(t *testing.T) {
 		if why == "" {
 			t.Errorf("exempt table %s has no reason", name)
 		}
+	}
+}
+
+// TestRegistryFollowsDescriptors: side tables come from the registered storage
+// descriptors, right after their parent package_files and before the docker
+// tables, once each, with the excluded columns of the descriptor.
+func TestRegistryFollowsDescriptors(t *testing.T) {
+	bare := newRegistry(nil)
+	if _, ok := bare.Lookup("rpm_files"); ok {
+		t.Fatal("rpm_files is journaled without a registered format")
+	}
+
+	reg := newRegistry(descriptors{
+		"rpm": {SideTables: []formatstorage.SideTable{
+			{Name: "rpm_files", Exclude: []string{"rpm_extra"}},
+			{Name: "package_files"}, // a core table: ignored
+		}},
+		"rpm2": {SideTables: []formatstorage.SideTable{{Name: "rpm_files"}}}, // shared: once
+	})
+	names := reg.Names()
+
+	if reg.Len() != bare.Len()+1 {
+		t.Fatalf("registry has %d tables, want %d: %v", reg.Len(), bare.Len()+1, names)
+	}
+
+	rpm, ok := reg.Lookup("rpm_files")
+	if !ok || !slices.Equal(rpm.Exclude, []string{"rpm_extra"}) || len(rpm.Key) != 1 || rpm.Key[0].Name != "id" {
+		t.Fatalf("rpm_files entry = %+v", rpm)
+	}
+
+	if !slices.Equal(names[slices.Index(names, "package_files"):][:3], []string{"package_files", "package_tags", "rpm_files"}) ||
+		slices.Index(names, "rpm_files") > slices.Index(names, "docker_blobs") {
+		t.Fatalf("side table is not between package_tags and the docker tables: %v", names)
+	}
+
+	if files, _ := reg.Lookup("package_files"); files == nil || !slices.Equal(files.Exclude, []string{"download_count"}) ||
+		!slices.Equal(files.BlobRefs, []string{"blob_id"}) {
+		t.Fatalf("package_files entry = %+v", files)
+	}
+}
+
+// TestRegistryRejectsOddIdentifiers: a descriptor names SQL identifiers, and a
+// name that is not a plain one never reaches a statement.
+func TestRegistryRejectsOddIdentifiers(t *testing.T) {
+	for name, st := range map[string]formatstorage.SideTable{
+		"table":          {Name: "x; DROP TABLE blobs"},
+		"excluded field": {Name: "x_files", Exclude: []string{`a"b`}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("NewRegistry accepted a descriptor with a non-identifier name")
+				}
+			}()
+
+			newRegistry(descriptors{"bad": {SideTables: []formatstorage.SideTable{st}}})
+		})
 	}
 }
 

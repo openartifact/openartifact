@@ -224,9 +224,7 @@ func (h *HTTPHandler) commit(
 	}
 
 	if err := persist(r.Context()); err != nil {
-		if relErr := quota.Release(r.Context(), h.DB, s.repoID, file.SizeBytes); relErr != nil {
-			h.Log.Warnw("failed to release quota", "repo", s.repoName, "error", relErr)
-		}
+		h.ReleaseQuota(r.Context(), s.repoID, s.repoName, file.SizeBytes)
 
 		if errors.Is(err, errChecksumMiss) {
 			http.NotFound(w, r)
@@ -240,9 +238,7 @@ func (h *HTTPHandler) commit(
 
 	// The replaced row's usage is gone once the new content is in place.
 	if previous != nil {
-		if relErr := quota.Release(r.Context(), h.DB, s.repoID, previous.SizeBytes); relErr != nil {
-			h.Log.Warnw("failed to release quota", "repo", s.repoName, "error", relErr)
-		}
+		h.ReleaseQuota(r.Context(), s.repoID, s.repoName, previous.SizeBytes)
 	}
 
 	// An overwrite leaves the previous content unreferenced.

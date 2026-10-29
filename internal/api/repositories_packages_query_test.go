@@ -26,6 +26,11 @@ type packageListDB struct {
 	searched []database.ComponentListOptions
 }
 
+// ArtifactSecurity is not exercised by the tests.
+func (*packageListDB) ArtifactSecurity(context.Context, string, []string) (map[string]models.ArtifactSecurity, error) {
+	return map[string]models.ArtifactSecurity{}, nil
+}
+
 func (db *packageListDB) ListComponentsByRepo(_ context.Context, _, _ string, _, _ int) ([]*models.Component, int, error) {
 	db.plain++
 

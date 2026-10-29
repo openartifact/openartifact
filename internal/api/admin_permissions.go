@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"context"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/audit"
@@ -25,13 +27,28 @@ var validActions = map[string]bool{
 	"read": true, "write": true, "delete": true, "manage": true, "annotate": true,
 }
 
+// AdminPermissionsStore is the part of the database AdminPermissionsHandler needs.
+type AdminPermissionsStore interface {
+	CreatePermissionAssignment(ctx context.Context, assignment *models.PermissionAssignment) error
+	CreatePermissionTarget(ctx context.Context, target *models.PermissionTarget) (*models.PermissionTarget, error)
+	DeletePermissionAssignment(ctx context.Context, targetID string, principalType string, principalID string) error
+	DeletePermissionTarget(ctx context.Context, id string) error
+	GetGroupByID(ctx context.Context, id string) (*models.Group, error)
+	GetPermissionTargetByID(ctx context.Context, id string) (*models.PermissionTarget, error)
+	GetPermissionTargetByName(ctx context.Context, name string) (*models.PermissionTarget, error)
+	GetUserByID(ctx context.Context, id string) (*models.User, error)
+	ListPermissionAssignmentsForTarget(ctx context.Context, targetID string) ([]models.PermissionAssignmentView, error)
+	ListPermissionTargets(ctx context.Context) ([]*models.PermissionTarget, error)
+	UpdatePermissionTarget(ctx context.Context, target *models.PermissionTarget) error
+}
+
 type AdminPermissionsHandler struct {
-	db        database.Database
+	db        AdminPermissionsStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 }
 
-func NewAdminPermissionsHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *AdminPermissionsHandler {
+func NewAdminPermissionsHandler(db AdminPermissionsStore, log *logger.Logger, evaluator *auth.Evaluator) *AdminPermissionsHandler {
 	return &AdminPermissionsHandler{db: db, log: log, evaluator: evaluator}
 }
 
@@ -103,43 +120,11 @@ func (h *AdminPermissionsHandler) handleCreate(w http.ResponseWriter, r *http.Re
 }
 
 func (h *AdminPermissionsHandler) handleList(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r, h.evaluator) {
-		return
-	}
-
-	targets, err := h.db.ListPermissionTargets(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-		return
-	}
-
-	data := make([]any, 0, len(targets))
-	for _, t := range targets {
-		data = append(data, permTargetToResponse(t))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	writeAdminList(w, r, h.evaluator, h.db.ListPermissionTargets, permTargetToResponse)
 }
 
 func (h *AdminPermissionsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r, h.evaluator) {
-		return
-	}
-
-	id := urlparams.Vars(r)["id"]
-
-	target, err := h.db.GetPermissionTargetByID(r.Context(), id)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-		return
-	}
-
-	if target == nil {
-		writeError(w, http.StatusNotFound, "not_found", "permission target not found")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, permTargetToResponse(target))
+	writeAdminObject(w, r, h.evaluator, h.db.GetPermissionTargetByID, permTargetToResponse, "permission target")
 }
 
 func (h *AdminPermissionsHandler) handlePatch(w http.ResponseWriter, r *http.Request) {
@@ -228,19 +213,8 @@ func (h *AdminPermissionsHandler) handlePatch(w http.ResponseWriter, r *http.Req
 }
 
 func (h *AdminPermissionsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r, h.evaluator) {
-		return
-	}
-
-	id := urlparams.Vars(r)["id"]
-	if err := h.db.DeletePermissionTarget(r.Context(), id); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-		return
-	}
-
-	auditAdmin(r, audit.ActionPermissionTargetObjDeleted, "permission_target", id, "permission target deleted")
-
-	writeNoContent(w)
+	deleteAdminObject(w, r, h.evaluator, h.db.DeletePermissionTarget,
+		audit.ActionPermissionTargetObjDeleted, "permission_target", "permission target deleted")
 }
 
 func (h *AdminPermissionsHandler) handleAssign(w http.ResponseWriter, r *http.Request) {

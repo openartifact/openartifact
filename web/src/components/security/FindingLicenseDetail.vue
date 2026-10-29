@@ -5,13 +5,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <div>
-    <div v-if="loading" class="flex justify-center py-8 text-muted" role="status">
-      <ArrowPathIcon class="h-5 w-5 animate-spin" aria-hidden="true" />
-      <span class="sr-only">{{ t('security.detail.loading') }}</span>
-    </div>
-    <p v-else-if="error" class="text-sm text-danger" role="alert">{{ error }}</p>
-    <div v-else-if="scan" class="space-y-4" data-testid="license-detail">
+  <FindingDetailShell :loading="loading" :error="error">
+    <div v-if="scan" class="space-y-4" data-testid="license-detail">
       <section>
         <h3 class="mb-2 text-sm font-semibold">{{ t('security.license.licenses') }}</h3>
         <div v-if="scan.licenses?.length" class="flex flex-wrap gap-1">
@@ -35,45 +30,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <p v-else-if="state === 'approved'" class="text-sm text-success" data-testid="license-approved">{{ t('security.license.approvedHint') }}</p>
       <p v-if="scan.scan_error" class="text-sm text-danger" role="alert">{{ scan.scan_error }}</p>
     </div>
-  </div>
+  </FindingDetailShell>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { ArrowPathIcon } from '@heroicons/vue/24/outline'
-import { getLicenseScan, type LicenseScan, type SecurityFinding } from '../../api/security'
+import { ref } from 'vue'
+import FindingDetailShell from './FindingDetailShell.vue'
+import { getLicenseScan, type SecurityFinding } from '../../api/security'
+import { useFindingScan } from '../../composables/useFindingScan'
 import { licenseQuarantineState } from '../../lib/scanStatus'
 import { t } from '../../i18n'
 
 const props = defineProps<{ finding: SecurityFinding }>()
 
-const scan = ref<LicenseScan | null>(null)
-const loading = ref(false)
-const error = ref('')
 const state = ref<ReturnType<typeof licenseQuarantineState>>('none')
-let seq = 0
-
 // A license read from the artifact that names no single SPDX license ("BSD", "BSD License"): kept raw, flagged for review.
 const isUnresolved = (lic: string): boolean => scan.value?.unresolved_licenses?.includes(lic) ?? false
 
-watch(
-  () => props.finding.id,
-  async () => {
-    const mine = ++seq
-    scan.value = null
-    error.value = ''
-    loading.value = true
-    try {
-      const result = await getLicenseScan(props.finding.repository, props.finding.id)
-      if (mine !== seq) return
-      scan.value = result
-      state.value = licenseQuarantineState(result)
-    } catch (err) {
-      if (mine === seq) error.value = err instanceof Error ? err.message : t('security.license.loadFailed')
-    } finally {
-      if (mine === seq) loading.value = false
-    }
+const { scan, loading, error } = useFindingScan(
+  () => props.finding,
+  (f) => getLicenseScan(f.repository, f.id),
+  () => t('security.license.loadFailed'),
+  (result) => {
+    state.value = licenseQuarantineState(result)
   },
-  { immediate: true },
 )
 </script>

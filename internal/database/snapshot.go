@@ -54,6 +54,52 @@ type BlobDeletionStore interface {
 	PurgeExpiredBackupLeases(ctx context.Context) (int64, error)
 }
 
+// SnapshotReads are the table reads of a SnapshotReader. A test double of a
+// snapshot over an in-memory fake implements these through the fake and the
+// blob listing and lease itself.
+type SnapshotReads interface {
+	// ExportPackageRows streams a repository's rows of one generic package table
+	// (see PackageRowSet), as JSON objects.
+	ExportPackageRows(ctx context.Context, set PackageRowSet, repoID string, fn func(row []byte) error) error
+	GetProjectQuota(ctx context.Context, projectID string) (*models.ProjectQuota, error)
+	ListAIAnalyses(
+		ctx context.Context,
+		repoID string,
+		status string,
+		licenseReviewOnly bool,
+		limit, offset int,
+	) ([]*models.AIAnalysis, int, error)
+	ListAllProjects(ctx context.Context) ([]*models.Project, error)
+	ListAllSSOProviders(ctx context.Context) ([]*models.SSOProvider, error)
+	ListAllTokens(ctx context.Context, page, perPage int) ([]*models.Token, int, error)
+	ListBundleItems(ctx context.Context, bundleID string) ([]*models.ReleaseBundleItem, error)
+	ListBundlePromotions(ctx context.Context, bundleID string) ([]*models.BundlePromotion, error)
+	ListCleanupPolicies(ctx context.Context, repoID string) ([]*models.CleanupPolicy, error)
+	ListDockerBlobs(ctx context.Context, repoID string) ([]*models.DockerBlob, error)
+	ListDockerManifestsByRepo(ctx context.Context, repoID string) ([]*models.DockerManifest, error)
+	ListDockerTagsByRepo(ctx context.Context, repoID string, limit int) ([]*models.DockerTag, error)
+	ListGroupMembers(ctx context.Context, groupRepoID string) ([]*models.RepositoryGroupMember, error)
+	ListGroups(ctx context.Context) ([]*models.Group, error)
+	ListLicenseScanResults(ctx context.Context, repoID string) ([]*models.LicenseScanResult, error)
+	ListPermissionAssignments(ctx context.Context) ([]*models.PermissionAssignment, error)
+	ListPermissionTargets(ctx context.Context) ([]*models.PermissionTarget, error)
+	ListProjectCleanupPolicies(ctx context.Context, projectID string) ([]*models.CleanupPolicy, error)
+	ListProjectGroups(ctx context.Context, projectID string) ([]*models.ProjectGroup, error)
+	ListProjectMembers(ctx context.Context, projectID string) ([]*models.ProjectMember, error)
+	ListPromotionPipelines(ctx context.Context) ([]*models.PromotionPipeline, error)
+	ListReleaseBundles(ctx context.Context, nameFilter, stateFilter string, page, limit int) ([]*models.ReleaseBundle, int, error)
+	ListRepositories(ctx context.Context, page, limit int, formatFilter string) ([]*models.Repository, error)
+	ListSBOMReports(ctx context.Context, repoID string) ([]*models.SBOMReport, error)
+	ListVEXStatements(ctx context.Context, repoID, artifactID string) ([]*models.VEXStatement, error)
+	ListSecretScanResults(ctx context.Context, repoID string, flaggedOnly bool) ([]*models.SecretScanResult, error)
+	ListStorageBackends(ctx context.Context) ([]*models.StorageBackend, error)
+	ListStorageQuotas(ctx context.Context) ([]*models.StorageQuota, error)
+	ListUserGroupMemberships(ctx context.Context) ([]*models.UserGroup, error)
+	ListUsers(ctx context.Context, page, perPage int) ([]*models.User, int, error)
+	ListVulnScanResults(ctx context.Context, repoID string, vulnerableOnly bool) ([]*models.VulnScanResult, error)
+	ListWebhooks(ctx context.Context, repoID string) ([]*models.Webhook, error) // repoID="" = global
+}
+
 // SnapshotReader reads the database as of one instant: every call sees the same
 // committed state, however long the backup takes and whatever is written
 // meanwhile. It is read-only by construction (only read methods are listed, and
@@ -64,70 +110,7 @@ type BlobDeletionStore interface {
 // after the snapshot was taken stays readable). Release ends both; a crashed
 // holder's lease expires on its own.
 type SnapshotReader interface {
-	GetComponentsByRepo(ctx context.Context, repoID string) ([]models.Component, error)
-	GetDebianArchitecturesByDist(ctx context.Context, distID string) ([]models.DebianArchitecture, error)
-	GetDebianComponentsByDist(ctx context.Context, distID string) ([]models.DebianComponent, error)
-	GetDebianDistributionsByRepo(ctx context.Context, repoID string) ([]models.DebianDistribution, error)
-	GetDebianPackagesByDistComp(ctx context.Context, repoID string, dist string, comp string, arch string) ([]models.Component, error)
-	GetNPMDistTags(ctx context.Context, packageID string) (map[string]string, error)
-	GetProjectQuota(ctx context.Context, projectID string) (*models.ProjectQuota, error)
-	ListAIAnalyses(
-		ctx context.Context,
-		repoID string,
-		status string,
-		licenseReviewOnly bool,
-		limit, offset int,
-	) ([]*models.AIAnalysis, int, error)
-	ListAllCondaPackages(ctx context.Context, repoID string) ([]*models.CondaPackage, error)
-	ListAllNPMPackages(ctx context.Context, repoID string) ([]*models.NPMPackage, error)
-	ListAllProjects(ctx context.Context) ([]*models.Project, error)
-	ListAllSSOProviders(ctx context.Context) ([]*models.SSOProvider, error)
-	ListAllTokens(ctx context.Context, page, perPage int) ([]*models.Token, int, error)
-	ListBundleItems(ctx context.Context, bundleID string) ([]*models.ReleaseBundleItem, error)
-	ListBundlePromotions(ctx context.Context, bundleID string) ([]*models.BundlePromotion, error)
-	ListCleanupPolicies(ctx context.Context, repoID string) ([]*models.CleanupPolicy, error)
-	ListComposerPackages(ctx context.Context, repoID string) ([]*models.ComposerPackage, error)
-	ListConanPackages(ctx context.Context, repoID string) ([]*models.ConanPackage, error)
-	ListDockerBlobs(ctx context.Context, repoID string) ([]*models.DockerBlob, error)
-	ListDockerManifestsByRepo(ctx context.Context, repoID string) ([]*models.DockerManifest, error)
-	ListDockerTagsByRepo(ctx context.Context, repoID string, limit int) ([]*models.DockerTag, error)
-	ListGoModulesByRepo(ctx context.Context, repoID string) ([]*models.GoModule, error)
-	ListGroupMembers(ctx context.Context, groupRepoID string) ([]*models.RepositoryGroupMember, error)
-	ListGroups(ctx context.Context) ([]*models.Group, error)
-	ListHelmCharts(ctx context.Context, repoID string) ([]*models.HelmChart, error)
-	ListIvyArtifacts(ctx context.Context, repoID string) ([]*models.IvyArtifact, error)
-	ListLicenseScanResults(ctx context.Context, repoID string) ([]*models.LicenseScanResult, error)
-	ListMavenArtifactsByRepo(ctx context.Context, repoID string) ([]*models.MavenArtifact, error)
-	ListNPMVersionsByRepo(ctx context.Context, repoID string) ([]*models.NPMVersion, error)
-	ListNixPaths(ctx context.Context, repoID string) ([]*models.NixPath, error)
-	ListNuGetPackages(ctx context.Context, repoID string) ([]*models.NuGetPackage, error)
-	ListAnsibleCollections(ctx context.Context, repoID string) ([]*models.AnsibleCollection, error)
-	ListPacmanPackages(ctx context.Context, repoID string) ([]*models.PacmanPackage, error)
-	ListPermissionAssignments(ctx context.Context) ([]*models.PermissionAssignment, error)
-	ListPermissionTargets(ctx context.Context) ([]*models.PermissionTarget, error)
-	ListProjectCleanupPolicies(ctx context.Context, projectID string) ([]*models.CleanupPolicy, error)
-	ListProjectGroups(ctx context.Context, projectID string) ([]*models.ProjectGroup, error)
-	ListProjectMembers(ctx context.Context, projectID string) ([]*models.ProjectMember, error)
-	ListPromotionPipelines(ctx context.Context) ([]*models.PromotionPipeline, error)
-	ListPyPIPackages(ctx context.Context, repoID string) ([]*models.PyPIPackage, error)
-	ListRawArtifacts(ctx context.Context, repoID, prefix string) ([]*models.RawArtifact, error)
-	ListReleaseBundles(ctx context.Context, nameFilter, stateFilter string, page, limit int) ([]*models.ReleaseBundle, int, error)
-	ListRepositories(ctx context.Context, page, limit int, formatFilter string) ([]*models.Repository, error)
-	ListRubyGems(ctx context.Context, repoID string) ([]*models.RubyGem, error)
-	ListSBOMReports(ctx context.Context, repoID string) ([]*models.SBOMReport, error)
-	ListVEXStatements(ctx context.Context, repoID, artifactID string) ([]*models.VEXStatement, error)
-	ListSBTArtifacts(ctx context.Context, repoID string) ([]*models.SBTArtifact, error)
-	ListSecretScanResults(ctx context.Context, repoID string, flaggedOnly bool) ([]*models.SecretScanResult, error)
-	ListStorageBackends(ctx context.Context) ([]*models.StorageBackend, error)
-	ListStorageQuotas(ctx context.Context) ([]*models.StorageQuota, error)
-	ListApkPackages(ctx context.Context, repoID string) ([]*models.ApkPackage, error)
-	ListTerraformModules(ctx context.Context, repoID string) ([]*models.TerraformModule, error)
-	ListTerraformProviders(ctx context.Context, repoID string) ([]*models.TerraformProvider, error)
-	ListUserGroupMemberships(ctx context.Context) ([]*models.UserGroup, error)
-	ListUsers(ctx context.Context, page, perPage int) ([]*models.User, int, error)
-	ListVulnScanResults(ctx context.Context, repoID string, vulnerableOnly bool) ([]*models.VulnScanResult, error)
-	ListWebhooks(ctx context.Context, repoID string) ([]*models.Webhook, error) // repoID="" = global
-	SearchCargoCrates(ctx context.Context, repoID, query string, limit int) ([]*models.CargoCrate, error)
+	SnapshotReads
 
 	// ListBlobsAfter returns up to limit stored objects with sha256 > after, in
 	// sha256 order: blobs rows plus the generated metadata and deltas that

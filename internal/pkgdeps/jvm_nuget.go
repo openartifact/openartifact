@@ -52,6 +52,23 @@ type ivyDoc struct {
 	} `xml:"dependencies>dependency"`
 }
 
+// MavenHooks reads the dependencies of maven (a pom).
+var MavenHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Parse: parseJVM,
+}
+
+// IvyHooks reads the dependencies of ivy (an ivy.xml or a pom).
+var IvyHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Parse: parseJVM,
+}
+
+// SBTHooks reads the dependencies of sbt, which stores its modules as maven
+// does: the manifest comes from maven's rule.
+var SBTHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ManifestFormat: "maven",
+	Parse:          parseJVM,
+}
+
 func parseJVM(filename string, parts []manifest.Part) (Result, error) {
 	var body string
 
@@ -223,6 +240,11 @@ type nuspecDoc struct {
 			Version string `xml:"version,attr"`
 		} `xml:"dependency"`
 	} `xml:"metadata>dependencies>group"`
+}
+
+// NuGetHooks reads the dependencies of nuget.
+var NuGetHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Parse: func(_ string, parts []manifest.Part) (Result, error) { return parseNuGet(parts) },
 }
 
 func parseNuGet(parts []manifest.Part) (Result, error) {

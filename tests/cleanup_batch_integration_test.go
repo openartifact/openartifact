@@ -65,7 +65,7 @@ func TestCleanupPolicyDeletesAcrossBatches(t *testing.T) {
 		t.Fatalf("policy run: deleted = %v, error = %q; want %d deleted", got.LastRunDeleted, got.LastRunError, versions-1)
 	}
 
-	if left := e.countRows(`SELECT count(*) FROM helm_charts WHERE repository_id = $1`, repoID); left != 1 {
+	if left := e.countRows(`SELECT count(*) FROM package_files WHERE repository_id = $1`, repoID); left != 1 {
 		t.Fatalf("%d rows left, want only the newest version", left)
 	}
 
@@ -104,12 +104,18 @@ func TestCleanupPolicySkipsBundledBlob(t *testing.T) {
 	}
 
 	if !e.blobExists(pinnedSHA) ||
-		e.countRows(`SELECT count(*) FROM helm_charts WHERE repository_id = $1 AND version = '1.0.0'`, repoID) != 1 {
+		e.countRows(
+			`SELECT count(*) FROM package_files f JOIN package_versions v ON v.id = f.version_id WHERE f.repository_id = $1 AND v.version = '1.0.0'`,
+			repoID,
+		) != 1 {
 		t.Error("the version pinned by a release bundle was removed")
 	}
 
 	if e.blobExists(goneSHA) ||
-		e.countRows(`SELECT count(*) FROM helm_charts WHERE repository_id = $1 AND version = '1.1.0'`, repoID) != 0 {
+		e.countRows(
+			`SELECT count(*) FROM package_files f JOIN package_versions v ON v.id = f.version_id WHERE f.repository_id = $1 AND v.version = '1.1.0'`,
+			repoID,
+		) != 0 {
 		t.Error("the unpinned old version was kept")
 	}
 }
@@ -156,13 +162,13 @@ func TestCleanupPolicyMovesBatchToTrash(t *testing.T) {
 	}
 
 	if n := e.countRows(
-		`SELECT count(*) FROM helm_charts WHERE repository_id = $1 AND deleted_at IS NOT NULL AND deleted_by = 'cleanup-policy'`,
+		`SELECT count(*) FROM package_files WHERE repository_id = $1 AND deleted_at IS NOT NULL AND deleted_by = 'cleanup-policy'`,
 		repoID,
 	); n != 2 {
 		t.Errorf("%d rows in the trash, want 2", n)
 	}
 
-	if n := e.countRows(`SELECT count(*) FROM helm_charts WHERE repository_id = $1 AND deleted_at IS NULL`, repoID); n != 1 {
+	if n := e.countRows(`SELECT count(*) FROM package_files WHERE repository_id = $1 AND deleted_at IS NULL`, repoID); n != 1 {
 		t.Errorf("%d live rows, want 1", n)
 	}
 
@@ -184,8 +190,10 @@ func TestCleanupPolicyKeepsSharedBlob(t *testing.T) {
 	e.pkg(repoID, "helm", "chart", "2.0.0", 100, 10)
 
 	// The newest version shares the oldest one's blob.
-	e.exec(`UPDATE helm_charts SET blob_id = (SELECT blob_id FROM helm_charts WHERE repository_id = $1 AND version = '1.0.0')
-	        WHERE repository_id = $1 AND version = '2.0.0'`, repoID)
+	e.exec(`UPDATE package_files f SET blob_id = (
+	          SELECT f1.blob_id FROM package_files f1 JOIN package_versions v1 ON v1.id = f1.version_id
+	           WHERE f1.repository_id = $1 AND v1.version = '1.0.0')
+	        FROM package_versions v WHERE f.repository_id = $1 AND v.id = f.version_id AND v.version = '2.0.0'`, repoID)
 
 	got := e.runPolicy(repoID, 1)
 	if got.LastRunError != "" || got.LastRunDeleted == nil || *got.LastRunDeleted != 1 {

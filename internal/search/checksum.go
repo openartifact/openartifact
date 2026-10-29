@@ -36,8 +36,7 @@ type ChecksumResult struct {
 	Format     string `json:"format"`
 	Name       string `json:"name"`
 	Version    string `json:"version"`
-	// Filename is the file within the package, "" for the formats that have no
-	// file name of their own (conan, conda, docker, go).
+	// Filename is the file within the package, "" for docker.
 	Filename  string `json:"filename"`
 	Checksum  string `json:"checksum"`
 	Algorithm string `json:"algorithm"`
@@ -71,20 +70,26 @@ func ParseChecksum(value string) (string, string, bool) {
 }
 
 // Branches of the checksum lookup: each yields (repository_id, format, name,
-// version, filename), and is exact on an indexed digest column. The digest is
-// $1; a sha256 lookup also binds the blob row ($2) and the docker manifest
-// digest ($3).
+// version, filename), and is exact on an indexed digest. The digest is $1; a
+// sha256 lookup also binds the blob row ($2) and the docker manifest digest ($3).
 const (
-	// The package tables reach their blob through blob_id (indexed in every
-	// table of the search view), so SHA-256 is a lookup on the blobs table
-	// (unique on sha256) plus one index probe per table.
-	checksumBlobBranch = `SELECT s.repository_id, s.format, s.name, s.version, s.path AS filename
-		FROM ` + "%s" + ` AS s WHERE s.blob_id = $2::uuid`
+	// checksumFileFrom is the generic file/version/package join every
+	// package_files branch reads.
+	checksumFileFrom = `FROM package_files f
+		JOIN package_versions v ON v.id = f.version_id
+		JOIN packages p ON p.id = v.package_id`
 
-	checksumSHA256Extras = `SELECT gm.repository_id, 'go'::text, gm.module_path, gm.version, gm.version || '.mod'
-		FROM gomod_modules gm WHERE gm.mod_blob_id = $2::uuid AND gm.deleted_at IS NULL
-	UNION ALL
-	SELECT dt.repository_id, 'docker'::text, dt.name, ''::text, ''::text
+	// SHA-256 is a lookup on the blobs table (unique on sha256) plus one probe of
+	// idx_package_files_blob: every live file stored under that content, listed
+	// or not (a go.mod, a pom).
+	checksumBlobBranch = `SELECT f.repository_id, p.format::text AS format, p.name::text AS name, v.version::text AS version,
+		f.filename::text AS filename
+		` + checksumFileFrom + `
+		WHERE f.blob_id = $2::uuid AND f.deleted_at IS NULL`
+
+	// The docker manifest digest and the proxy cache stay special cases: docker
+	// has its own tables and proxy_cache_entries is not a package table.
+	checksumSHA256Extras = `SELECT dt.repository_id, 'docker'::text, dt.name, ''::text, ''::text
 		FROM docker_manifests dm
 		JOIN docker_tags dt ON dt.repository_id = dm.repository_id AND dt.image = dm.image
 			AND dt.manifest_digest = dm.digest AND dt.deleted_at IS NULL
@@ -94,28 +99,17 @@ const (
 		FROM proxy_cache_entries pc
 		JOIN repositories pr ON pr.id = pc.repository_id AND pr.deleted_at IS NULL
 		WHERE pc.blob_key = $1 AND pc.status_code = 200`
-
-	checksumSHA1Branches = `SELECT ma.repository_id, 'maven'::text AS format,
-		ma.group_id || ':' || ma.artifact_id_coord AS name, ma.version, ma.repo_path AS filename
-		FROM maven_artifacts ma WHERE ma.sha1 = $1 AND ma.sha1 <> '' AND ma.deleted_at IS NULL
-	UNION ALL
-	SELECT np.repository_id, 'npm'::text, np.full_name, nv.version, nv.tarball_filename
-		FROM npm_versions nv JOIN npm_packages np ON np.id = nv.package_id
-		WHERE nv.shasum = $1 AND nv.shasum <> '' AND nv.deleted_at IS NULL
-	UNION ALL
-	SELECT co.repository_id, 'conan'::text, co.name, co.version, co.filename
-		FROM conan_packages co WHERE co.sha1 = $1 AND co.sha1 <> '' AND co.deleted_at IS NULL`
-
-	checksumMD5Branches = `SELECT ma.repository_id, 'maven'::text AS format,
-		ma.group_id || ':' || ma.artifact_id_coord AS name, ma.version, ma.repo_path AS filename
-		FROM maven_artifacts ma WHERE ma.md5 = $1 AND ma.md5 <> '' AND ma.deleted_at IS NULL
-	UNION ALL
-	SELECT co.repository_id, 'conan'::text, co.name, co.version, co.filename
-		FROM conan_packages co WHERE co.md5 = $1 AND co.md5 <> '' AND co.deleted_at IS NULL
-	UNION ALL
-	SELECT cp.repository_id, 'conda'::text, cp.name, cp.version, ''::text
-		FROM conda_packages cp WHERE cp.md5 = $1 AND cp.md5 <> '' AND cp.deleted_at IS NULL`
 )
+
+// checksumKeyBranch is a lookup of $1 in checksums->>key. The "checksums ? key
+// AND deleted_at IS NULL" predicate is the one of the partial expression index
+// (idx_package_files_sha1/_md5/_shasum), which makes it an index probe.
+func checksumKeyBranch(key string) string {
+	return `SELECT f.repository_id, p.format::text AS format, p.name::text AS name, v.version::text AS version,
+		f.filename::text AS filename
+		` + checksumFileFrom + `
+		WHERE (f.checksums ->> '` + key + `') = $1 AND f.checksums ? '` + key + `' AND f.deleted_at IS NULL`
+}
 
 // SearchChecksum finds the files whose stored checksum is digest (see
 // ParseChecksum), in the readableRepos only (scoped in SQL: an empty set always
@@ -124,8 +118,10 @@ const (
 //
 // A SHA-256 matches through the blob store, so it finds every file stored under
 // that content, whichever format holds it. A SHA-1 or MD5 only matches the
-// formats that record one (conan, maven and npm record SHA-1, conan, conda and
-// maven MD5): the blob store keeps only SHA-256.
+// files that record one in package_files.checksums (the sha1, shasum and md5
+// keys, each backed by a partial expression index): the blob store keeps only
+// SHA-256. Other digests of that column (sha512, integrity) have no index in
+// the baseline and are not searchable.
 func (e *Executor) SearchChecksum(
 	ctx context.Context,
 	digest, algorithm string,
@@ -154,11 +150,12 @@ func (e *Executor) SearchChecksum(
 		}
 
 		b.args = append(b.args, blobID, "sha256:"+digest)
-		union = fmt.Sprintf(checksumBlobBranch, narrowSearchView()) + "\n\tUNION ALL\n\t" + checksumSHA256Extras
+		union = checksumBlobBranch + "\n\tUNION ALL\n\t" + checksumSHA256Extras
 	case AlgorithmSHA1:
-		union = checksumSHA1Branches
+		// maven, conan and the like record "sha1"; npm records its SHA-1 as "shasum".
+		union = checksumKeyBranch("sha1") + "\n\tUNION ALL\n\t" + checksumKeyBranch("shasum")
 	default:
-		union = checksumMD5Branches
+		union = checksumKeyBranch("md5")
 	}
 
 	b.addReadable("x.repository_id", readableRepos)

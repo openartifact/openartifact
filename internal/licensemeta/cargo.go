@@ -8,8 +8,15 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/pelletier/go-toml/v2"
 )
+
+// CargoHooks reads the licenses of cargo.
+var CargoHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Expected: expectAlways,
+	Parse:    func(_ string, parts []manifest.Part) (Result, error) { return parseCargo(parts[0].Body) },
+}
 
 // parseCargo reads package.license of a Cargo.toml. `cargo package` writes the
 // normalised manifest, so a workspace-inherited license is already a string; a

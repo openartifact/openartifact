@@ -47,11 +47,11 @@ VALUES ($1, $2, $3, $4, $5, sqlc.narg('from_tier_id'),
 
 -- name: UpdateStoragePolicy :exec
 UPDATE storage_policies SET
-    name = $1, enabled = $2, position = $3, target_tier_id = $4, from_tier_id = sqlc.narg('from_tier_id'),
+    name = $2, enabled = $3, position = $4, target_tier_id = $5, from_tier_id = sqlc.narg('from_tier_id'),
     min_age_seconds = sqlc.narg('min_age_seconds'), min_idle_seconds = sqlc.narg('min_idle_seconds'),
     min_size_bytes = sqlc.narg('min_size_bytes'), max_size_bytes = sqlc.narg('max_size_bytes'),
-    repo_glob = sqlc.narg('repo_glob'), formats = $5, path_glob = sqlc.narg('path_glob')
-WHERE id = $6;
+    repo_glob = sqlc.narg('repo_glob'), formats = $6, path_glob = sqlc.narg('path_glob')
+WHERE id = $1;
 
 -- name: DeleteStoragePolicy :execrows
 DELETE FROM storage_policies WHERE id = $1;

@@ -15,7 +15,6 @@ import (
 
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -23,9 +22,14 @@ import (
 // token this server accepts (unknown issuer, wrong audience, unknown user…).
 var ErrAccessTokenNotAccepted = errors.New("oidc access token not accepted")
 
+// OIDCIssuersStore is the part of the database OIDCIssuers needs.
+type OIDCIssuersStore interface {
+	ListEnabledSSOProviders(ctx context.Context) ([]*models.SSOProvider, error)
+}
+
 // OIDCIssuers returns the issuer URL of every enabled OIDC provider. It is
 // what the protected-resource metadata advertises as authorization servers.
-func OIDCIssuers(ctx context.Context, db database.Database) ([]string, error) {
+func OIDCIssuers(ctx context.Context, db OIDCIssuersStore) ([]string, error) {
 	rows, err := db.ListEnabledSSOProviders(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list sso providers: %w", err)
@@ -78,6 +82,12 @@ func unverifiedIssuer(raw string) (string, bool) {
 	return claims.Iss, true
 }
 
+// VerifyOIDCAccessTokenStore is the part of the database VerifyOIDCAccessToken needs.
+type VerifyOIDCAccessTokenStore interface {
+	verifyAccessTokenWithStore
+	ListEnabledSSOProviders(ctx context.Context) ([]*models.SSOProvider, error)
+}
+
 // VerifyOIDCAccessToken validates a JWT access token issued by one of the
 // enabled OIDC providers for this server and returns the user it maps to.
 //
@@ -87,7 +97,7 @@ func unverifiedIssuer(raw string) (string, bool) {
 // subject must already be linked to a local user through that provider
 // (ListEnabledSSOProviders/GetUserByExternalID): access tokens never provision
 // users, and disabled users are refused.
-func VerifyOIDCAccessToken(ctx context.Context, db database.Database, baseURL, rawToken, audience string) (*models.User, error) {
+func VerifyOIDCAccessToken(ctx context.Context, db VerifyOIDCAccessTokenStore, baseURL, rawToken, audience string) (*models.User, error) {
 	issuer, ok := unverifiedIssuer(rawToken)
 	if !ok {
 		return nil, ErrAccessTokenNotAccepted
@@ -115,9 +125,14 @@ func VerifyOIDCAccessToken(ctx context.Context, db database.Database, baseURL, r
 	return nil, ErrAccessTokenNotAccepted
 }
 
+// verifyAccessTokenWithStore is the part of the database verifyAccessTokenWith needs.
+type verifyAccessTokenWithStore interface {
+	GetUserByExternalID(ctx context.Context, externalID string, providerSlug string) (*models.User, error)
+}
+
 func verifyAccessTokenWith(
 	ctx context.Context,
-	db database.Database,
+	db verifyAccessTokenWithStore,
 	row *models.SSOProvider,
 	baseURL, rawToken, audience string,
 ) (*models.User, error) {

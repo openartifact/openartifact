@@ -17,6 +17,8 @@ func TestConanSegmentValidators(t *testing.T) {
 		"a/b":    false,
 		"a\\b":   false,
 		"a\x00":  false,
+		"a@b":    false, // '@' and '#' delimit the coordinates of a stored file's path
+		"a#b":    false,
 	}
 	for in, want := range refs {
 		if got := validRef(in); got != want {
@@ -34,6 +36,7 @@ func TestConanSegmentValidators(t *testing.T) {
 	files := map[string]bool{
 		"conanfile.py": true, "metadata/sign/signature.json": true, "a/..b": true,
 		"": false, "/a": false, "a/": false, "a//b": false, "a/./b": false, "a/../b": false, "../a": false, "a\\b": false, "a\x00": false,
+		"p#r/conan_package.tgz": false, "a@b": true,
 	}
 	for in, want := range files {
 		if got := validFilename(in); got != want {

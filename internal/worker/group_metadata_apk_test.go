@@ -17,7 +17,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/proxy"
@@ -221,7 +220,7 @@ func TestGroupAnchor(t *testing.T) {
 
 // apkGroupDB serves the packages of hosted members to a generation.
 type apkGroupDB struct {
-	databasetest.BaseMockDB
+	GroupMetadataStore
 
 	rows map[string][]*models.ApkPackage
 }

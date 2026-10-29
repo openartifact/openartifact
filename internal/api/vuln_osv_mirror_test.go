@@ -13,12 +13,11 @@ import (
 
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/config"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 type osvStatusMockDB struct {
-	databasetest.BaseMockDB
+	VulnStore
 
 	states []models.OSVMirrorState
 }

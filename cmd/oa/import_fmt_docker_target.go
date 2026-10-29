@@ -40,7 +40,21 @@ type ociRepo struct {
 }
 
 func newOCIRepo(t *importTarget, dst, image string) ociRepo {
+	if image == "" {
+		return ociRepo{t: t, prefix: "/v2/" + url.PathEscape(dst), name: dst}
+	}
+
 	return ociRepo{t: t, prefix: "/v2/" + url.PathEscape(dst) + "/" + escapePath(image), name: dst + "/" + image}
+}
+
+// ociListName is how the destination's package listing names the tags of an
+// image: the repository, then the image unless it is the repository's own.
+func ociListName(dst, image string) string {
+	if image == "" {
+		return dst
+	}
+
+	return dst + "/" + image
 }
 
 // hasBlob reports whether the image can already see the blob.

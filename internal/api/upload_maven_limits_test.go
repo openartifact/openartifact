@@ -13,15 +13,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 	pkgmaven "github.com/openartifact/openartifact/pkg/maven"
 )
 
 type mavenLimitsDB struct {
-	databasetest.BaseMockDB
+	putMavenStore
 
 	quota *models.StorageQuota
 }
@@ -34,7 +32,12 @@ func (d *mavenLimitsDB) GetOrCreateStorageQuota(context.Context, string) (*model
 	return d.quota, nil
 }
 
-func putMaven(t *testing.T, db database.Database, path, body string) *httptest.ResponseRecorder {
+// putMavenStore is the part of the database putMaven needs.
+type putMavenStore interface {
+	MavenUploadStore
+}
+
+func putMaven(t *testing.T, db putMavenStore, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 
 	log, err := logger.New("error", "json", "stderr")

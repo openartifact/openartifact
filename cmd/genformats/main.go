@@ -2,12 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Command genformats writes web/src/lib/formats.generated.ts: the package
-// format ids and the policy lists the web UI needs (which formats can be proxy
-// or group repositories, federated, GPG-signed, ...), generated from the
-// registry in internal/repotype so the two can never drift. The file is
-// committed; CI runs `genformats -check` and fails when it is stale. Run it
-// from the repository root (`make generate`, or `go generate ./internal/repotype`).
+// Command genformats writes the TypeScript the web UI derives from Go:
+//   - web/src/lib/formats.generated.ts: the package format ids and the policy
+//     lists (which formats can be proxy or group repositories, federated,
+//     GPG-signed, ...), from the registry in internal/repotype;
+//   - web/src/lib/clientsetup.generated.ts: the client setup snippet and base URL
+//     templates of internal/clientsetup.
+//
+// The files are committed so the two sides can never drift; CI runs
+// `genformats -check` and fails when one is stale. Run it from the repository
+// root (`make generate`, or `go generate ./internal/repotype`).
 package main
 
 import (
@@ -19,18 +23,21 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/openartifact/openartifact/internal/formats"
 	"github.com/openartifact/openartifact/internal/repotype"
 )
 
-var errStale = errors.New("generated web format constants are out of date")
+var errStale = errors.New("generated web files are out of date")
 
-// outFile is the generated file, relative to the repository root.
+// outFile is the generated format constants file, relative to the repository root.
 const outFile = "web/src/lib/formats.generated.ts"
 
 func main() {
 	check := flag.Bool("check", false, "fail when the committed file differs instead of writing it")
 	root := flag.String("root", ".", "repository root")
 	flag.Parse()
+
+	formats.Register()
 
 	if err := run(*root, *check); err != nil {
 		fmt.Fprintln(os.Stderr, "genformats:", err)
@@ -39,23 +46,42 @@ func main() {
 }
 
 func run(root string, check bool) error {
-	path := filepath.Join(root, filepath.FromSlash(outFile))
-	want := render()
+	files := []struct {
+		name string
+		body []byte
+	}{
+		{outFile, render()},
+		{clientSetupFile, renderClientSetup()},
+	}
 
-	if check {
+	var stale []string
+
+	for _, f := range files {
+		path := filepath.Join(root, filepath.FromSlash(f.name))
+
+		if !check {
+			if err := os.WriteFile(path, f.body, 0o644); err != nil { //nolint:gosec // a source file, not a secret
+				return err
+			}
+
+			continue
+		}
+
 		have, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
 
-		if !bytes.Equal(have, want) {
-			return fmt.Errorf("%w: run `make generate` and commit %s", errStale, outFile)
+		if !bytes.Equal(have, f.body) {
+			stale = append(stale, f.name)
 		}
-
-		return nil
 	}
 
-	return os.WriteFile(path, want, 0o644) //nolint:gosec // a source file, not a secret
+	if len(stale) > 0 {
+		return fmt.Errorf("%w: run `make generate` and commit %s", errStale, strings.Join(stale, ", "))
+	}
+
+	return nil
 }
 
 // tsList renders a TypeScript string array literal body.
@@ -93,7 +119,7 @@ func render() []byte {
 			list *[]string
 		}{
 			{s.Proxy, &proxy}, {s.Group, &group}, {s.Federation, &federation},
-			{s.Signing == repotype.SigningGPG, &gpg}, {s.Isolated, &isolated}, {s.OSVEcosystem != "", &osv},
+			{s.Signing == repotype.SigningGPG, &gpg}, {s.Mount == repotype.MountIsolated, &isolated}, {s.OSVEcosystem != "", &osv},
 		} {
 			if sel.on {
 				*sel.list = append(*sel.list, s.Name)

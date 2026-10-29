@@ -309,44 +309,28 @@ func (ssoKind) Create(ctx context.Context, env *Env, o *Object) (string, error) 
 	body := Pick(o.Spec, ssoCreateKeys()...)
 	body["slug"] = o.Name
 
-	var resp struct {
-		ID string `json:"id"`
-	}
-
-	if err := env.Client.Do(ctx, http.MethodPost, ssoPath, body, &resp); err != nil {
-		return "", fmt.Errorf("create SSO provider %q: %w", o.Name, err)
+	id, err := env.Client.create(ctx, ssoPath, body, "SSO provider", o.Name)
+	if err != nil {
+		return "", err
 	}
 
 	if enabled, ok := o.Spec["enabled"].(bool); ok && !enabled {
 		patch := map[string]any{"enabled": false}
 
 		if err := env.Client.Do(ctx, http.MethodPatch, ssoPath+"/"+PathEscape(o.Name), patch, nil); err != nil {
-			return resp.ID, fmt.Errorf("disable new SSO provider %q: %w", o.Name, err)
+			return id, fmt.Errorf("disable new SSO provider %q: %w", o.Name, err)
 		}
 	}
 
-	return resp.ID, nil
+	return id, nil
 }
 
 // Update PATCHes only the changed fields; the server merges the config blocks
 // field by field and replaces the mappings whole.
 func (ssoKind) Update(ctx context.Context, env *Env, live *Live, _ *Object, changes []Change) (string, error) {
-	if len(changes) == 0 {
-		return live.ID, nil
-	}
-
-	err := env.Client.Do(ctx, http.MethodPatch, ssoPath+"/"+PathEscape(live.Key), PatchBody(changes), nil)
-	if err != nil {
-		return live.ID, fmt.Errorf("update SSO provider %q: %w", live.Key, err)
-	}
-
-	return live.ID, nil
+	return env.Client.updateChanges(ctx, http.MethodPatch, ssoPath+"/"+PathEscape(live.Key), live, changes, "SSO provider")
 }
 
 func (ssoKind) Delete(ctx context.Context, env *Env, live *Live) error {
-	if err := env.Client.Do(ctx, http.MethodDelete, ssoPath+"/"+PathEscape(live.Key), nil, nil); err != nil {
-		return fmt.Errorf("delete SSO provider %q: %w", live.Key, err)
-	}
-
-	return nil
+	return env.Client.remove(ctx, ssoPath+"/"+PathEscape(live.Key), "SSO provider", live.Key)
 }

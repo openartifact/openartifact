@@ -24,20 +24,24 @@ type Store struct {
 // NewStore returns a Store over db.
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
-// formatTables are the unit tables of each federated format. Enabling
-// federation locks them against writers for the instant between registering
-// the repository and backfilling its rows, so no concurrent change slips
-// between the two.
-var formatTables = map[string][]string{ //nolint:gochecknoglobals // constant lookup
-	"raw":    {"raw_artifacts"},
-	"maven":  {"maven_artifacts"},
-	"npm":    {"npm_versions", "npm_dist_tags"},
-	"docker": {"docker_manifests", "docker_tags"},
-	"helm":   {"helm_charts"},
-	"pypi":   {"pypi_packages"},
-	"cargo":  {"cargo_crates"},
-	"go":     {"gomod_modules"},
-	"nuget":  {"nuget_packages"},
+// execOwned runs a statement on the row id ($1) of repository repoID ($2) and
+// gives ErrNotFound when id is not a uuid or no row matched. what names the
+// operation in the error.
+func (s *Store) execOwned(ctx context.Context, what, query, repoID, id string) error {
+	if _, err := uuid.Parse(id); err != nil {
+		return ErrNotFound
+	}
+
+	res, err := s.db.ExecContext(ctx, query, id, repoID)
+	if err != nil {
+		return fmt.Errorf("%s: %w", what, err)
+	}
+
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+
+	return nil
 }
 
 // RepoState is the log identity of a federated repository.
@@ -94,7 +98,7 @@ func (s *Store) Enable(ctx context.Context, repoID, format string) error {
 
 	defer func() { _ = tx.Rollback() }()
 
-	for _, table := range formatTables[format] {
+	for _, table := range codec.LockTables() {
 		// SHARE blocks concurrent writers until we commit (and waits for the
 		// ones in flight), so the backfill sees every row a writer that did
 		// not log its change could have committed.

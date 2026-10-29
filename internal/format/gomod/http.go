@@ -34,12 +34,27 @@ import (
 
 const maxGoModUploadBytes = 100 << 20
 
-type HTTPHandler struct {
-	*base.Handler
+// HTTPStore is the part of the database HTTPHandler needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreateGoModule(ctx context.Context, mod *models.GoModule) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	GetGoModule(ctx context.Context, repoID string, modulePath string, version string) (*models.GoModule, error)
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListGoModuleVersions(ctx context.Context, repoID string, modulePath string) ([]*models.GoModule, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
 }
 
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL)}
+type HTTPHandler struct {
+	*base.Handler
+
+	DB HTTPStore
+}
+
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 
 // RegisterRepoRoutes registers the GOPROXY GET endpoint relative to the shared
@@ -183,16 +198,8 @@ func (h *HTTPHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	repoName := vars["name"]
 	modulePath := vars["module"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -242,16 +249,8 @@ func (h *HTTPHandler) handleInfo(w http.ResponseWriter, r *http.Request) {
 	modulePath := vars["module"]
 	version := vars["version"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -322,16 +321,8 @@ func (h *HTTPHandler) handleMod(w http.ResponseWriter, r *http.Request) {
 	modulePath := vars["module"]
 	version := vars["version"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -364,16 +355,8 @@ func (h *HTTPHandler) handleZip(w http.ResponseWriter, r *http.Request) {
 	modulePath := vars["module"]
 	version := vars["version"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -448,16 +431,8 @@ func (h *HTTPHandler) handleLatest(w http.ResponseWriter, r *http.Request) {
 	repoName := vars["name"]
 	modulePath := vars["module"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -502,16 +477,8 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	modulePath := vars["module"]
 	version := vars["version"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -581,14 +548,22 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		ZipHash: zipSHA,
 	}
 
-	// One module is one artifact: the zip and go.mod bytes are reserved
-	// together, matching the reconcile unit. Every failure path below returns
-	// the reservation.
-	usage := mod.ZipSizeBytes + int64(len(goModContent))
+	// One module is one artifact: the zip is reserved as (size, 1) and the
+	// go.mod as (size, 0), the two package_files rows the insert fires its quota
+	// trigger for (only the primary file counts as an artifact). Every failure
+	// path below returns both reservations.
+	modSize := int64(len(goModContent))
 
-	if err := quota.EnforceN(r.Context(), h.DB, repoID, usage, 1); err != nil {
+	if !h.ReserveQuotaOrRespond(r.Context(), w, repoID, repoName, mod.ZipSizeBytes) {
+		return
+	}
+
+	if err := quota.EnforceN(r.Context(), h.DB, repoID, modSize, 0); err != nil {
+		h.ReleaseQuota(r.Context(), repoID, repoName, mod.ZipSizeBytes)
+
 		if errors.Is(err, quota.ErrExceeded) {
 			quota.WriteExceeded(w)
+
 			return
 		}
 
@@ -596,6 +571,14 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
+	}
+
+	releaseQuota := func() {
+		h.ReleaseQuota(r.Context(), repoID, repoName, mod.ZipSizeBytes)
+
+		if err := quota.ReleaseN(r.Context(), h.DB, repoID, modSize, 0); err != nil {
+			h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
+		}
 	}
 
 	// Both blobs are stored first; their existence is re-checked and the
@@ -632,9 +615,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	lockErr := storage.CommitBlobs(r.Context(), h.DB, h.BlobStore, blobs, store)
 	if lockErr != nil {
-		if err := quota.Release(r.Context(), h.DB, repoID, usage); err != nil {
-			h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
-		}
+		releaseQuota()
 
 		if h.failStore(w, r, lockErr, zipSHA, modSHA) {
 			return

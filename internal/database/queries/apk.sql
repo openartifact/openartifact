@@ -1,34 +1,43 @@
--- name: CreateApkPackage :one
-INSERT INTO apk_packages (repository_id, branch, repo, arch, pkg_arch, name, version, checksum, data_sha256, description, url, license, origin,
-                          maintainer, commit, build_time, installed_size, depends, provides, install_if, provider_priority,
-                          blob_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-        COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
-RETURNING id, created_at, updated_at;
+-- Apk packages on the generic tables (see pkg_apk.go for the mapping): the
+-- package identity branch/repo/name is in packages.attrs, the APKINDEX stanza
+-- fields in package_versions.metadata. Reads hide trashed files.
 
+-- The live .apk of a mirror-tree path. uq_package_files_path serves it.
 -- name: GetApkPackageFile :one
-SELECT ap.id, ap.repository_id, ap.branch, ap.repo, ap.arch, ap.pkg_arch, ap.name, ap.version, ap.checksum, ap.data_sha256, ap.description, ap.url,
-       ap.license, ap.origin, ap.maintainer, ap.commit, ap.build_time, ap.installed_size, ap.depends, ap.provides, ap.install_if,
-       ap.provider_priority, b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, ap.download_count, ap.created_at, ap.updated_at
-FROM apk_packages ap
-JOIN blobs b ON b.id = ap.blob_id
-WHERE ap.repository_id = $1 AND ap.branch = $2 AND ap.repo = $3 AND ap.arch = $4 AND ap.name = $5 AND ap.version = $6
-  AND ap.deleted_at IS NULL;
+SELECT f.id, f.repository_id,
+       COALESCE(p.attrs ->> 'branch', '')::text AS branch,
+       COALESCE(p.attrs ->> 'repo', '')::text AS repo,
+       f.arch,
+       COALESCE(p.attrs ->> 'name', '')::text AS name,
+       v.version, v.metadata,
+       COALESCE((f.attrs ->> 'build_time')::bigint, 0)::bigint AS build_time,
+       COALESCE((f.attrs ->> 'installed_size')::bigint, 0)::bigint AS installed_size,
+       b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, f.download_count, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.path = $2 AND f.deleted_at IS NULL;
 
 -- name: ListApkPackages :many
-SELECT ap.id, ap.repository_id, ap.branch, ap.repo, ap.arch, ap.pkg_arch, ap.name, ap.version, ap.checksum, ap.data_sha256, ap.description, ap.url,
-       ap.license, ap.origin, ap.maintainer, ap.commit, ap.build_time, ap.installed_size, ap.depends, ap.provides, ap.install_if,
-       ap.provider_priority, b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, ap.download_count, ap.created_at, ap.updated_at
-FROM apk_packages ap
-JOIN blobs b ON b.id = ap.blob_id
-WHERE ap.repository_id = $1 AND ap.deleted_at IS NULL
-ORDER BY ap.branch, ap.repo, ap.arch, ap.name, ap.version;
-
--- name: DeleteApkPackage :exec
-DELETE FROM apk_packages WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL;
+SELECT f.id, f.repository_id,
+       COALESCE(p.attrs ->> 'branch', '')::text AS branch,
+       COALESCE(p.attrs ->> 'repo', '')::text AS repo,
+       f.arch,
+       COALESCE(p.attrs ->> 'name', '')::text AS name,
+       v.version, v.metadata,
+       COALESCE((f.attrs ->> 'build_time')::bigint, 0)::bigint AS build_time,
+       COALESCE((f.attrs ->> 'installed_size')::bigint, 0)::bigint AS installed_size,
+       b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, f.download_count, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL
+ORDER BY p.attrs ->> 'branch', p.attrs ->> 'repo', f.arch, p.attrs ->> 'name', v.version;
 
 -- name: IncrementApkDownloadCount :exec
-UPDATE apk_packages SET download_count = download_count + 1
+UPDATE package_files SET download_count = download_count + 1
 WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL;
 
 -- name: GetApkSigningKey :one

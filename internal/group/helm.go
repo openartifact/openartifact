@@ -5,12 +5,9 @@
 package group
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -31,57 +28,10 @@ const (
 	helmChartsDir = "charts/"
 )
 
-// helmIndexes is what the members' index.yaml documents yielded.
-type helmIndexes struct {
-	indexes []*pkghelm.Index
-	hosted  []*pkghelm.Index // the hosted members' share of indexes
-	proxies []*pkghelm.Index // and the proxies'
-	failed  bool
-
-	hostedFailed bool // a hosted member's index is missing from the merge
-}
-
-// collectHelmIndexes asks every member for its index.yaml.
-func (h *Handler) collectHelmIndexes(
-	grp *models.Repository,
-	members []*models.Repository,
-	mr *http.Request,
-	sess *mergeSession,
-	be Backend,
-) helmIndexes {
-	var got helmIndexes
-
-	for _, m := range members {
-		cw := sess.capture(maxHelmIndexBytes)
-		be.ServeMember(cw, mr, m, "index.yaml")
-
-		switch {
-		case cw.status == http.StatusNotFound:
-		case cw.status == http.StatusOK && !cw.overflow:
-			ix, err := pkghelm.ParseIndex(cw.body.Bytes())
-			if err != nil {
-				h.log.Warnw("member helm index unreadable", "group", grp.Name, "member", m.Name, "error", err)
-
-				got.failed = true
-				got.hostedFailed = got.hostedFailed || m.RepoType != repotype.Proxy
-
-				continue
-			}
-
-			got.indexes = append(got.indexes, ix)
-
-			if m.RepoType == repotype.Proxy {
-				got.proxies = append(got.proxies, ix)
-			} else {
-				got.hosted = append(got.hosted, ix)
-			}
-		default:
-			got.failed = true
-			got.hostedFailed = got.hostedFailed || m.RepoType != repotype.Proxy
-		}
-	}
-
-	return got
+// HelmHooks is the helm group: merged index.yaml, charts first-hit.
+var HelmHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: (*Handler).serveHelm,
+	PackageRef:  helmRef,
 }
 
 // serveHelm answers index.yaml by merging the members' indexes: a chart
@@ -116,67 +66,50 @@ func (h *Handler) serveHelm(
 		return true
 	}
 
-	// Members are asked for the index itself, always with GET and without the
-	// client's conditional headers.
-	mr := r.Clone(r.Context())
-	mr.Method = http.MethodGet
-	mr.Header.Del("If-None-Match")
-	mr.Header.Del("If-Modified-Since")
+	h.serveMergedDoc(w, r, grp, members, be, mergedDoc{
+		ask:         memberAsk{path: samePath("index.yaml"), limit: maxHelmIndexBytes},
+		what:        "helm indexes",
+		maxAge:      helmIndexMaxAge,
+		contentType: "application/yaml",
+		merge: func(c *collection) ([]byte, error) {
+			var indexes, hosted, proxies []*pkghelm.Index
 
-	// The indexes are held whole until merged: one gate slot per request,
-	// taken when a member starts delivering and freed before the answer is
-	// written.
-	sess := h.newSession(r.Context())
-	defer sess.release()
+			for _, d := range c.docs {
+				ix, err := pkghelm.ParseIndex(d.body)
+				if err != nil {
+					h.log.Warnw("member helm index unreadable", "group", grp.Name, "member", d.member.Name, "error", err)
+					c.fail(d.member)
 
-	got := h.collectHelmIndexes(grp, members, mr, sess, be)
-	indexes, failed := got.indexes, got.failed
+					continue
+				}
 
-	if !grp.MergeProxyVersions {
-		// A hosted index that could not be read may hold names the proxies
-		// also list: serving them unfiltered would let a proxy's version win.
-		if got.hostedFailed && len(got.proxies) > 0 {
-			http.Error(w, "member repository error", http.StatusBadGateway)
-			return true
-		}
+				indexes = append(indexes, ix)
 
-		dropHostedCharts(got.hosted, got.proxies)
-	}
+				if d.member.RepoType == repotype.Proxy {
+					proxies = append(proxies, ix)
+				} else {
+					hosted = append(hosted, ix)
+				}
+			}
 
-	if len(indexes) == 0 {
-		if failed {
-			http.Error(w, "member repository error", http.StatusBadGateway)
-		} else {
-			http.NotFound(w, r)
-		}
+			if !grp.MergeProxyVersions {
+				// A hosted index that could not be read may hold names the
+				// proxies also list: serving them unfiltered would let a
+				// proxy's version win.
+				if c.hostedFailed() && len(proxies) > 0 {
+					return nil, errMemberFailed
+				}
 
-		return true
-	}
+				dropHostedCharts(hosted, proxies)
+			}
 
-	body, err := mergeHelmIndexes(h.baseURL+"/repos/"+grp.Name+"/"+helmChartsDir, indexes)
+			if len(indexes) == 0 {
+				return nil, errNoDocument
+			}
 
-	sess.release()
-
-	if err != nil {
-		h.log.Errorw("failed to merge helm indexes", "group", grp.Name, "error", err)
-		http.Error(w, "member repository error", http.StatusBadGateway)
-
-		return true
-	}
-
-	sum := sha256.Sum256(body)
-
-	if revalidateMerged(w, r, grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, helmIndexMaxAge, failed) {
-		return true
-	}
-
-	w.Header().Set("Content-Type", "application/yaml")
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
-	}
+			return mergeHelmIndexes(indexes)
+		},
+	})
 
 	return true
 }
@@ -212,11 +145,11 @@ func dropHostedCharts(hosted, proxies []*pkghelm.Index) {
 	}
 }
 
-// mergeHelmIndexes merges indexes and points every chart URL at chartBase
-// (BASE_URL/repos/<group>/charts/) plus the chart's file name. Member indexes
+// mergeHelmIndexes merges indexes and points every chart URL at the relative
+// reference charts/<file>, which helm resolves against the group's URL. Member indexes
 // are what this server rendered: their URLs end in the file a charts/<file>
 // request resolves through the member.
-func mergeHelmIndexes(chartBase string, indexes []*pkghelm.Index) ([]byte, error) {
+func mergeHelmIndexes(indexes []*pkghelm.Index) ([]byte, error) {
 	merged := pkghelm.MergeIndexes(indexes)
 
 	merged.RewriteURLs(func(cv pkghelm.ChartVersion) []string {
@@ -228,7 +161,7 @@ func mergeHelmIndexes(chartBase string, indexes []*pkghelm.Index) ([]byte, error
 				continue
 			}
 
-			if u := chartBase + url.PathEscape(file); !slices.Contains(out, u) {
+			if u := helmChartsDir + url.PathEscape(file); !slices.Contains(out, u) {
 				out = append(out, u)
 			}
 		}
@@ -237,4 +170,13 @@ func mergeHelmIndexes(chartBase string, indexes []*pkghelm.Index) ([]byte, error
 	})
 
 	return merged.Marshal() //nolint:wrapcheck // caller logs
+}
+
+func helmRef(relPath string) (PkgRef, bool) {
+	file, ok := strings.CutPrefix(strings.TrimPrefix(relPath, "/"), helmChartsDir)
+	if !ok || !pathseg.Name(file) {
+		return PkgRef{}, false
+	}
+
+	return PkgRef{chartFile: file, file: true, owner: (*Handler).ownsChart}, true
 }

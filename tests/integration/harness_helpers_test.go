@@ -22,7 +22,7 @@ import (
 
 type TestHarness struct {
 	DB        *sql.DB
-	Database  database.Database
+	Database  *database.PostgresDB
 	BlobStore storage.BlobStore
 	Container *postgres.PostgresContainer
 	TempDir   string
@@ -112,7 +112,7 @@ func (h *TestHarness) Reset(t *testing.T) {
 	t.Helper()
 	tables := []string{
 		"repository_metadata",
-		"rpm_packages",
+		"packages",
 		"rpm_repos",
 		"blobs",
 		"repositories",

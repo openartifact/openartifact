@@ -20,7 +20,7 @@ This page lists every configuration key with its type, built-in default and the 
 
 | YAML key | Env | Type | Default | Description |
 |---|---|---|---|---|
-| `baseUrl` | `BASE_URL` | string | `http://localhost:8080` | `baseUrl` is the public URL of the server; it is used for generated links and SSO callbacks, so set it when the server runs behind a reverse proxy. |
+| `baseUrl` | `BASE_URL` | string | `empty` | `baseUrl` is the public URL of the server. SSO callbacks, SAML metadata, webhook sources and anything else sent outside a client's own request always use it. Package-client URLs (npm tarballs, the Cargo config.json, NuGet resources, Composer dists, ...) are derived from the request when it is unset (see internal/publicurl) and use it as an override when set. |
 
 ## server
 
@@ -30,6 +30,7 @@ This page lists every configuration key with its type, built-in default and the 
 |---|---|---|---|---|
 | `server.host` | `SERVER_HOST` | string | `0.0.0.0` | `host` is the listen address. |
 | `server.port` | `SERVER_PORT` | int | `8080` | `port` is the listen port. |
+| `server.role` | `OPENARTIFACT_ROLE` | string | `all` | `role` selects what this process does: "all" (the default) serves HTTP and runs every background worker; "web" only serves HTTP, handing metadata regeneration, scans and the like to a "worker" process through the database; "worker" runs the background workers and serves only /health, /ready and /metrics. See [operations/scaling.md](../operations/scaling.md). |
 | `server.readTimeout` | `SERVER_READ_TIMEOUT` | int | `0` | `readTimeout` bounds an entire request (headers + body), in seconds. 0 (the default) means no limit so large artifact uploads are never truncated; slowloris protection instead comes from readHeaderTimeout. |
 | `server.writeTimeout` | `SERVER_WRITE_TIMEOUT` | int | `0` | `writeTimeout` bounds writing the response, in seconds. 0 (the default) means no limit: large artifact downloads and streams rely on per-handler deadlines instead of one server-wide cutoff. |
 | `server.readHeaderTimeout` | `SERVER_READ_HEADER_TIMEOUT` | int | `20` | `readHeaderTimeout` bounds only the time to read request headers, in seconds. It stays short regardless of readTimeout to still mitigate slowloris-style attacks even when body reads are unbounded. |

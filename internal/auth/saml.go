@@ -26,7 +26,6 @@ import (
 	"github.com/crewjam/saml/samlsp"
 
 	"github.com/openartifact/openartifact/internal/config"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -72,11 +71,18 @@ type SAMLProvider struct {
 	fingerprint string
 }
 
+// LoadSAMLProviderStore is the part of the database LoadSAMLProvider needs.
+type LoadSAMLProviderStore interface {
+	CreateSystemSettingIfAbsent(ctx context.Context, key string, value string) (bool, error)
+	GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error)
+	GetSystemSetting(ctx context.Context, key string) (string, error)
+}
+
 // LoadSAMLProvider loads an enabled SAML provider. Disabled providers are
 // rejected with ErrSSOProviderDisabled.
 func LoadSAMLProvider(
 	ctx context.Context,
-	db database.Database,
+	db LoadSAMLProviderStore,
 	slug, baseURL string,
 	appCfg *config.Config,
 	log *logger.Logger,
@@ -436,6 +442,12 @@ func peekSAMLInResponseTo(b64 string) (string, bool) {
 	}
 }
 
+// SAMLCallbackStore is the part of the database SAMLProviderParseCallback needs.
+type SAMLCallbackStore interface {
+	samlAssertionStore
+	samlIDPInitiatedStore
+}
+
 // ParseCallback validates a SAML response at the ACS and returns its verified
 // assertion. See ResponseMode for the two paths.
 //
@@ -450,7 +462,7 @@ func peekSAMLInResponseTo(b64 string) (string, bool) {
 func (p *SAMLProvider) ParseCallback(
 	w http.ResponseWriter,
 	r *http.Request,
-	db database.Database,
+	db SAMLCallbackStore,
 	trackerKey []byte,
 ) (*saml.Assertion, error) {
 	if len(trackerKey) == 0 {
@@ -489,7 +501,12 @@ func (p *SAMLProvider) ParseCallback(
 	return assertion, nil
 }
 
-func (p *SAMLProvider) parseIDPInitiated(r *http.Request, db database.Database) (*saml.Assertion, error) {
+// samlIDPInitiatedStore is the part of the database SAMLProviderparseIDPInitiated needs.
+type samlIDPInitiatedStore interface {
+	samlAssertionStore
+}
+
+func (p *SAMLProvider) parseIDPInitiated(r *http.Request, db samlIDPInitiatedStore) (*saml.Assertion, error) {
 	assertion, err := p.idpInitiatedSP.ParseResponse(r, nil)
 	if err != nil {
 		return nil, classifySAMLParseError(err)
@@ -554,9 +571,14 @@ func classifySAMLParseError(err error) error {
 	return err
 }
 
+// samlAssertionStore is the part of the database SAMLProviderconsumeAssertion needs.
+type samlAssertionStore interface {
+	ConsumeSAMLAssertion(ctx context.Context, providerSlug string, assertionID string, expiresAt time.Time) (bool, error)
+}
+
 // consumeAssertion records the assertion ID in the shared replay cache for the
 // assertion's remaining validity; a second presentation is rejected.
-func (p *SAMLProvider) consumeAssertion(ctx context.Context, db database.Database, a *saml.Assertion) error {
+func (p *SAMLProvider) consumeAssertion(ctx context.Context, db samlAssertionStore, a *saml.Assertion) error {
 	if a.ID == "" {
 		return fmt.Errorf("%w: assertion has no ID", ErrSAMLReplay)
 	}

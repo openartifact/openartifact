@@ -22,25 +22,28 @@ import (
 type importFormat string
 
 const (
-	formatMaven    importFormat = "maven"
-	formatDeb      importFormat = "deb"
-	formatRPM      importFormat = "rpm"
-	formatRaw      importFormat = "raw"
-	formatNPM      importFormat = "npm"
-	formatPyPI     importFormat = "pypi"
-	formatDocker   importFormat = "docker"
-	formatHelm     importFormat = "helm"
-	formatNuGet    importFormat = "nuget"
-	formatRubyGems importFormat = "rubygems"
-	formatCargo    importFormat = "cargo"
-	formatGo       importFormat = "go"
-	formatConda    importFormat = "conda"
-	formatConan    importFormat = "conan"
-	formatIvy      importFormat = "ivy"
-	formatSBT      importFormat = "sbt"
-	formatPacman   importFormat = "pacman"
-	formatAnsible  importFormat = "ansible"
-	formatComposer importFormat = "composer"
+	formatMaven     importFormat = "maven"
+	formatDeb       importFormat = "deb"
+	formatRPM       importFormat = "rpm"
+	formatRaw       importFormat = "raw"
+	formatNPM       importFormat = "npm"
+	formatPyPI      importFormat = "pypi"
+	formatDocker    importFormat = "docker"
+	formatHelm      importFormat = "helm"
+	formatNuGet     importFormat = "nuget"
+	formatRubyGems  importFormat = "rubygems"
+	formatCargo     importFormat = "cargo"
+	formatGo        importFormat = "go"
+	formatConda     importFormat = "conda"
+	formatConan     importFormat = "conan"
+	formatIvy       importFormat = "ivy"
+	formatSBT       importFormat = "sbt"
+	formatPacman    importFormat = "pacman"
+	formatAnsible   importFormat = "ansible"
+	formatComposer  importFormat = "composer"
+	formatAPK       importFormat = "apk"
+	formatNix       importFormat = "nix"
+	formatTerraform importFormat = "terraform"
 )
 
 const (
@@ -90,6 +93,12 @@ type sourceAsset struct {
 	// (Nexus components, Artifactory package properties); empty fields are
 	// unknown and formats fall back to parsing Path.
 	Component sourceComponent
+	// Extra is context a source hands to a format's upload function that is
+	// neither a property nor part of the identity (the narinfo of a nix store
+	// path, the plugin protocols of a terraform provider). It is never written
+	// to the destination as a property. Keys are owned by the source and the
+	// format that agree on them.
+	Extra map[string]string
 }
 
 // sourceComponent is the package a stored file belongs to, as the source

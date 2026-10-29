@@ -41,7 +41,7 @@ type ProjectTokenSpec struct {
 // lock, the service user, its membership with the token's role and the deploy
 // token. It returns ErrProjectNotFound, ErrProjectTokenLimit or
 // ErrProjectTokenName when the token cannot be minted.
-func (p *PostgresDB) CreateProjectToken(ctx context.Context, spec ProjectTokenSpec) (*models.Token, error) {
+func (p *ProjectStore) CreateProjectToken(ctx context.Context, spec ProjectTokenSpec) (*models.Token, error) {
 	defer p.authCache.invalidate()
 
 	tx, err := p.db.BeginTx(ctx, nil)
@@ -125,7 +125,7 @@ func (p *PostgresDB) CreateProjectToken(ctx context.Context, spec ProjectTokenSp
 
 // ListProjectTokens returns the project's tokens that are not revoked, newest
 // first. createdBy limits them to the tokens minted by that user.
-func (p *PostgresDB) ListProjectTokens(ctx context.Context, projectID string, createdBy *string) ([]*models.Token, error) {
+func (p *ProjectStore) ListProjectTokens(ctx context.Context, projectID string, createdBy *string) ([]*models.Token, error) {
 	rows, err := p.db.QueryContext(ctx,
 		`SELECT `+tokenColumns+` FROM `+tokenFrom+`
 		WHERE t.project_id = $1 AND t.revoked_at IS NULL AND ($2::uuid IS NULL OR t.created_by = $2)
@@ -154,7 +154,7 @@ func (p *PostgresDB) ListProjectTokens(ctx context.Context, projectID string, cr
 // RevokeProjectToken revokes a token of the project and disables its service
 // user in one transaction; the auth cache is dropped so the token stops working
 // at once. It reports false when the project has no such active token.
-func (p *PostgresDB) RevokeProjectToken(ctx context.Context, projectID, tokenID string) (bool, error) {
+func (p *ProjectStore) RevokeProjectToken(ctx context.Context, projectID, tokenID string) (bool, error) {
 	defer p.authCache.invalidate()
 
 	tx, err := p.db.BeginTx(ctx, nil)

@@ -6,6 +6,8 @@ package base
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -32,6 +34,26 @@ func SharedCacheable(r *http.Request, repoPublic bool) bool {
 	p := middleware.PrincipalFromContext(r.Context())
 
 	return p != nil && p.IsAnonymous
+}
+
+// ContentETag is the quoted strong entity-tag of a document that is its own
+// version: the SHA-256 of its bytes. Proxy and group repositories use it for
+// documents they generate or merge, so an unchanged document revalidates to a
+// 304 whatever produced it.
+func ContentETag(body []byte) string {
+	sum := sha256.Sum256(body)
+
+	return `"` + hex.EncodeToString(sum[:]) + `"`
+}
+
+// OriginTag is a short, entity-tag-safe digest of the origin a document's
+// absolute URLs were built from. Fold it into the validator and any in-process
+// cache key of such a document, so a client holding an ETag for one origin never
+// gets a 304 (and no cache serves a rendering) for another.
+func OriginTag(origin string) string {
+	sum := sha256.Sum256([]byte(origin))
+
+	return hex.EncodeToString(sum[:8])
 }
 
 // Revalidate sets the validator and cache headers of a metadata response

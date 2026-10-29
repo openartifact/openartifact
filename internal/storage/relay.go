@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/publicurl"
 	"github.com/openartifact/openartifact/internal/urlparams"
 )
 
@@ -81,10 +82,12 @@ type relay struct {
 	afterSeal func()
 }
 
-// newRelay prepares the staging directory and signing key. It returns nil when
-// publicURL is empty or the directory/key cannot be set up.
-func newRelay(dir, publicURL string) *relay {
-	if publicURL == "" || dir == "" {
+// openRelay prepares the staging directory and signing key. publicURL is the
+// configured origin of the upload URLs; without one (fromRequest) they point at
+// the origin the presigning request came in on (see internal/publicurl). It
+// returns nil when neither exists or the directory/key cannot be set up.
+func openRelay(dir, publicURL string, fromRequest bool) *relay {
+	if (publicURL == "" && !fromRequest) || dir == "" {
 		return nil
 	}
 
@@ -206,16 +209,21 @@ func (r *relay) sign(id string, part int, length, exp int64) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func (r *relay) presign(id string, part int, length int64, ttl time.Duration) PresignedPut {
+func (r *relay) presign(ctx context.Context, id string, part int, length int64, ttl time.Duration) (PresignedPut, error) {
+	origin := publicurl.FromContext(ctx, r.publicURL)
+	if origin == "" {
+		return PresignedPut{}, ErrPresignNotSupported
+	}
+
 	expires := r.now().Add(ttl)
 	exp := expires.Unix()
 
 	return PresignedPut{
-		URL: fmt.Sprintf("%s%s%s/%d?exp=%d&sig=%s", r.publicURL, relayPathPrefix, id, part, exp,
+		URL: fmt.Sprintf("%s%s%s/%d?exp=%d&sig=%s", origin, relayPathPrefix, id, part, exp,
 			r.sign(id, part, length, exp)),
 		Headers: map[string]string{},
 		Expires: expires,
-	}
+	}, nil
 }
 
 func (r *relay) writeMeta(id string, meta relayMeta) error {
@@ -253,7 +261,7 @@ func (r *relay) StagingSupported() bool { return r != nil }
 func (r *relay) MultipartSupported() bool { return r != nil }
 
 // PresignStagingPut implements StagingStore.
-func (r *relay) PresignStagingPut(_ context.Context, id string, size int64, ttl time.Duration) (PresignedPut, error) {
+func (r *relay) PresignStagingPut(ctx context.Context, id string, size int64, ttl time.Duration) (PresignedPut, error) {
 	if r == nil {
 		return PresignedPut{}, ErrPresignNotSupported
 	}
@@ -270,7 +278,7 @@ func (r *relay) PresignStagingPut(_ context.Context, id string, size int64, ttl 
 		return PresignedPut{}, err
 	}
 
-	return r.presign(id, 1, size, ttl), nil
+	return r.presign(ctx, id, 1, size, ttl)
 }
 
 // InitiateMultipart implements MultipartStagingStore. The handle is empty.
@@ -292,7 +300,7 @@ func (r *relay) InitiateMultipart(_ context.Context, id string, size, partSize i
 }
 
 // PresignStagingPart implements MultipartStagingStore.
-func (r *relay) PresignStagingPart(_ context.Context, id, _ string, number int, length int64, ttl time.Duration) (PresignedPut, error) {
+func (r *relay) PresignStagingPart(ctx context.Context, id, _ string, number int, length int64, ttl time.Duration) (PresignedPut, error) {
 	if r == nil {
 		return PresignedPut{}, ErrPresignNotSupported
 	}
@@ -310,7 +318,7 @@ func (r *relay) PresignStagingPart(_ context.Context, id, _ string, number int, 
 		return PresignedPut{}, errRelayBadPlan
 	}
 
-	return r.presign(id, number, length, ttl), nil
+	return r.presign(ctx, id, number, length, ttl)
 }
 
 // CompleteMultipart implements MultipartStagingStore.

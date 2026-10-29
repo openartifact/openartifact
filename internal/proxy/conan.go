@@ -19,6 +19,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/presign"
 	pkgconan "github.com/openartifact/openartifact/pkg/conan"
 )
 
@@ -89,20 +90,9 @@ func (s *Service) serveConanV2(w http.ResponseWriter, r *http.Request, repo *mod
 }
 
 func (s *Service) serveConanCached(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgconan.Path) {
-	key := p.String()
-	resolve := func() (*resolution, error) {
-		return s.resolveWith(r.Context(), repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-			return s.fetchConan(fctx, repo, p, key)
-		})
-	}
-
-	res, err := resolve()
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, resolve)
+	s.serveCachedFetch(w, r, repo, p.String(), func(fctx context.Context) (*models.ProxyCacheEntry, error) {
+		return s.fetchConan(fctx, repo, p)
+	})
 }
 
 // conanFetchOpts is how one cached path is fetched and checked. It is built
@@ -176,23 +166,25 @@ func verifyGzipMagic(spool io.ReadSeeker) error {
 	return nil
 }
 
-// fetchConan downloads one path from the upstream and caches it.
-func (s *Service) fetchConan(ctx context.Context, repo *models.Repository, p pkgconan.Path, key string) (*models.ProxyCacheEntry, error) {
-	target, err := upstreamURL(repo.UpstreamURL, key)
-	if err != nil {
-		s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
-		return nil, errInternal
-	}
-
+// fetchConan downloads one path from the upstream and caches it. The document
+// is built per attempt: the login token is part of its fetch options.
+func (s *Service) fetchConan(ctx context.Context, repo *models.Repository, p pkgconan.Path) (*models.ProxyCacheEntry, error) {
 	var entry *models.ProxyCacheEntry
 
-	err = s.withConanAuth(ctx, repo, func(authz string) error {
-		o := conanFetchOpts(p)
-		o.authorization = authz
+	err := s.withConanAuth(ctx, repo, func(authz string) error {
+		d := metaDoc{
+			key: p.String(),
+			opts: func(context.Context, string) fetchOpts {
+				o := conanFetchOpts(p)
+				o.authorization = authz
+
+				return o
+			},
+		}
 
 		var ferr error
 
-		entry, ferr = s.fetchURL(ctx, repo, key, target, o)
+		entry, ferr = s.fetchDoc(repo, d)(ctx)
 
 		return ferr
 	})
@@ -472,4 +464,20 @@ func headerSafeToken(s string) bool {
 	}
 
 	return true
+}
+
+// conanRevisionFile reports whether key is the file list or a file of a
+// recipe or package revision.
+func conanRevisionFile(key string) bool {
+	return strings.Contains(key, "/revisions/") && (strings.HasSuffix(key, "/files") || strings.Contains(key, "/files/"))
+}
+
+// ConanHooks is the proxy hooks of the conan format.
+var ConanHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve: (*Service).serveConan,
+	// File lists and files below a revision, which a digest of its content
+	// names; revision lists and latest move.
+	Immutable:  conanRevisionFile,
+	IsMetadata: func(key string) bool { return !strings.Contains(key, "/files/") },
+	BlobPath:   presign.ConanBlobPath,
 }

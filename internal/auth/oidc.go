@@ -19,7 +19,6 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/openartifact/openartifact/internal/crypto"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/telemetry"
@@ -92,9 +91,14 @@ func (p *OIDCProvider) IsOAuth2() bool {
 	return p.Cfg.Type == models.OIDCTypeGitHub || p.Cfg.Type == models.OIDCTypeOAuth2
 }
 
+// LoadOIDCProviderStore is the part of the database LoadOIDCProvider needs.
+type LoadOIDCProviderStore interface {
+	GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error)
+}
+
 // LoadOIDCProvider loads an enabled OIDC provider. Disabled providers are
 // rejected with ErrSSOProviderDisabled.
-func LoadOIDCProvider(ctx context.Context, db database.Database, slug, baseURL string) (*OIDCProvider, error) {
+func LoadOIDCProvider(ctx context.Context, db LoadOIDCProviderStore, slug, baseURL string) (*OIDCProvider, error) {
 	row, err := db.GetSSOProviderBySlug(ctx, slug)
 	if err != nil {
 		return nil, fmt.Errorf("get sso provider: %w", err)
@@ -363,13 +367,18 @@ func (p *OIDCProvider) EndSession(idTokenHint, postLogoutRedirectURI string) (st
 	return u.String(), true
 }
 
+// ExchangeWithRetryStore is the part of the database ExchangeWithRetry needs.
+type ExchangeWithRetryStore interface {
+	LoadOIDCProviderStore
+}
+
 // ExchangeWithRetry redeems the authorization code exactly once. If the ID
 // token fails with go-oidc's signature-verification error (possible key
 // rotation), the same raw ID token is re-verified with a freshly loaded
 // provider; the code is never re-exchanged. Reloads are limited to one per
 // provider per oidcReloadMinInterval. Plain OAuth 2.0 providers only get the
 // token exchange; their identity comes from Identity.
-func ExchangeWithRetry(ctx context.Context, db database.Database, slug, baseURL, code, codeVerifier string) (*ExchangeResult, error) {
+func ExchangeWithRetry(ctx context.Context, db ExchangeWithRetryStore, slug, baseURL, code, codeVerifier string) (*ExchangeResult, error) {
 	p, err := LoadOIDCProvider(ctx, db, slug, baseURL)
 	if err != nil {
 		return nil, err

@@ -10,6 +10,9 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/openartifact/openartifact/internal/format/plugin"
+	"github.com/openartifact/openartifact/internal/repotype"
 )
 
 // TestTerraformRoutesAreNotShadowed resolves the registry and publishing
@@ -73,30 +76,73 @@ func routeShapes(t *testing.T, register func(chi.Router)) map[string]bool {
 	return shapes
 }
 
-// TestTerraformRoutesDoNotShadowOtherFormats: terraform registers after most
-// formats on the shared subrouter, so a route of the same shape as one of
-// theirs would replace it for every repository, whatever its format.
-func TestTerraformRoutesDoNotShadowOtherFormats(t *testing.T) {
-	a := routeTestApp(t)
-	f := &a.web.formats
+// sharedShapes returns the route shapes of every format served on the shared
+// /repos/{name} subrouter: the routes of its handler and, for the formats that
+// publish through it, their write routes.
+func sharedShapes(t *testing.T, a *app) map[string]map[string]bool {
+	t.Helper()
 
-	terraform := routeShapes(t, f.terraform.RegisterRepoRoutes)
-	if len(terraform) == 0 {
+	shapes := map[string]map[string]bool{}
+
+	for name, h := range a.web.hosted {
+		if repotype.MountOf(name) != repotype.MountShared {
+			continue
+		}
+
+		shapes[name] = routeShapes(t, func(r chi.Router) {
+			h.RegisterRepoRoutes(r)
+
+			if w, ok := h.(plugin.WriteRouted); ok {
+				w.RegisterWriteRoutes(r)
+			}
+		})
+	}
+
+	return shapes
+}
+
+// TestSharedRouteClashesAreKnown: formats share the /repos/{name} subrouter
+// and chi keeps one handler per node and method, so two formats registering a
+// route of the same shape make the later one win for every repository whatever
+// its format. The two clashes there are have always been resolved by registration
+// order (plugin.All); a new one fails here: give the format a guard or a prefix
+// of its own (Spec.Mount) instead.
+func TestSharedRouteClashesAreKnown(t *testing.T) {
+	shapes := sharedShapes(t, routeTestApp(t))
+
+	if len(shapes["terraform"]) == 0 {
 		t.Fatal("terraform registers no routes")
 	}
 
-	others := map[string]func(chi.Router){
-		"rpm": f.rpm.RegisterRepoRoutes, "deb": f.deb.RegisterRepoRoutes, "helm": f.helm.RegisterRepoRoutes,
-		"pypi": f.pypi.RegisterRepoRoutes, "nuget": f.nuget.RegisterRepoRoutes, "npm": f.npm.RegisterRepoRoutes,
-		"cargo": f.cargo.RegisterRepoRoutes, "rubygems": f.rubygems.RegisterRepoRoutes, "conda": f.conda.RegisterRepoRoutes,
-		"conan": f.conan.RegisterRepoRoutes, "go": f.gomod.RegisterRepoRoutes, "npm upload": a.web.uploads.npm.RegisterRepoRoutes,
+	known := map[string]string{
+		"GET /{}/{}":      "conda over npm",
+		"GET /public.key": "deb over rpm",
 	}
 
-	for name, register := range others {
-		for shape := range routeShapes(t, register) {
-			if terraform[shape] {
-				t.Errorf("%s registers %q, the shape of a terraform route", name, shape)
+	owner := map[string]string{}
+	got := map[string]string{}
+
+	for _, f := range plugin.All() {
+		name := f.Name()
+
+		for shape := range shapes[name] {
+			if first, dup := owner[shape]; dup {
+				got[shape] = name + " over " + first
 			}
+
+			owner[shape] = name
+		}
+	}
+
+	for shape, what := range got {
+		if known[shape] != what {
+			t.Errorf("route %q: %s, known clashes %v", shape, what, known)
+		}
+	}
+
+	for shape, what := range known {
+		if got[shape] != what {
+			t.Errorf("known clash %q (%s) is gone or changed to %q: update the table", shape, what, got[shape])
 		}
 	}
 }

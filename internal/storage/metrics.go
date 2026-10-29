@@ -27,13 +27,22 @@ func (cr *countingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// MetricsBlobStore times and counts the calls of the store it wraps. Staging
+// and multipart staging calls pass straight through (StagingForwarder); only
+// the bytes read through OpenStaging are counted.
 type MetricsBlobStore struct {
+	StagingForwarder
+
 	inner BlobStore
 	reg   *metrics.Registry
 }
 
 func NewMetricsBlobStore(inner BlobStore, reg *metrics.Registry) *MetricsBlobStore {
-	return &MetricsBlobStore{inner: inner, reg: reg}
+	return &MetricsBlobStore{
+		StagingForwarder: NewStagingForwarder(func() BlobStore { return inner }),
+		inner:            inner,
+		reg:              reg,
+	}
 }
 
 // observe times one blob store call: it feeds the operation latency histogram
@@ -171,117 +180,14 @@ func (m *MetricsBlobStore) PresignGet(ctx context.Context, sha256 string, ttl ti
 	return p.PresignGet(ctx, sha256, ttl, opts)
 }
 
-// StagingSupported reports whether the wrapped store has a staging area.
-func (m *MetricsBlobStore) StagingSupported() bool {
-	s, ok := m.inner.(StagingStore)
-	return ok && s.StagingSupported()
-}
-
-// PresignStagingPut forwards to the wrapped store when it has a staging area.
-func (m *MetricsBlobStore) PresignStagingPut(ctx context.Context, id string, size int64, ttl time.Duration) (PresignedPut, error) {
-	s, ok := m.inner.(StagingStore)
-	if !ok {
-		return PresignedPut{}, ErrPresignNotSupported
-	}
-
-	return s.PresignStagingPut(ctx, id, size, ttl)
-}
-
-// StatStaging forwards to the wrapped store.
-func (m *MetricsBlobStore) StatStaging(ctx context.Context, id string) (StagedObject, error) {
-	s, ok := m.inner.(StagingStore)
-	if !ok {
-		return StagedObject{}, ErrPresignNotSupported
-	}
-
-	return s.StatStaging(ctx, id)
-}
-
 // OpenStaging forwards to the wrapped store and counts the bytes read.
 func (m *MetricsBlobStore) OpenStaging(ctx context.Context, id, version string) (io.ReadCloser, error) {
-	s, ok := m.inner.(StagingStore)
-	if !ok {
-		return nil, ErrPresignNotSupported
-	}
-
-	rc, err := s.OpenStaging(ctx, id, version)
+	rc, err := m.StagingForwarder.OpenStaging(ctx, id, version)
 	if err != nil {
 		return nil, err
 	}
 
 	return &countingReadCloser{ReadCloser: rc, reg: m.reg}, nil
-}
-
-// PromoteStaging forwards to the wrapped store.
-func (m *MetricsBlobStore) PromoteStaging(ctx context.Context, id, sha256, version string, metadata map[string]string) error {
-	s, ok := m.inner.(StagingStore)
-	if !ok {
-		return ErrPresignNotSupported
-	}
-
-	return s.PromoteStaging(ctx, id, sha256, version, metadata)
-}
-
-// DeleteStaging forwards to the wrapped store.
-func (m *MetricsBlobStore) DeleteStaging(ctx context.Context, id string) error {
-	s, ok := m.inner.(StagingStore)
-	if !ok {
-		return ErrPresignNotSupported
-	}
-
-	return s.DeleteStaging(ctx, id)
-}
-
-// WalkStaging forwards to the wrapped store.
-func (m *MetricsBlobStore) WalkStaging(ctx context.Context, olderThan time.Time, fn func(ids []string) error) error {
-	s, ok := m.inner.(StagingStore)
-	if !ok {
-		return ErrPresignNotSupported
-	}
-
-	return s.WalkStaging(ctx, olderThan, fn)
-}
-
-// MultipartSupported reports whether the wrapped store can stage multipart uploads.
-func (m *MetricsBlobStore) MultipartSupported() bool {
-	s, ok := m.inner.(MultipartStagingStore)
-	return ok && s.MultipartSupported()
-}
-
-// InitiateMultipart forwards to the wrapped store.
-func (m *MetricsBlobStore) InitiateMultipart(ctx context.Context, id string, size, partSize int64) (string, error) {
-	s, ok := m.inner.(MultipartStagingStore)
-	if !ok {
-		return "", ErrPresignNotSupported
-	}
-
-	return s.InitiateMultipart(ctx, id, size, partSize)
-}
-
-// PresignStagingPart forwards to the wrapped store.
-func (m *MetricsBlobStore) PresignStagingPart(
-	ctx context.Context,
-	id, handle string,
-	number int,
-	length int64,
-	ttl time.Duration,
-) (PresignedPut, error) {
-	s, ok := m.inner.(MultipartStagingStore)
-	if !ok {
-		return PresignedPut{}, ErrPresignNotSupported
-	}
-
-	return s.PresignStagingPart(ctx, id, handle, number, length, ttl)
-}
-
-// CompleteMultipart forwards to the wrapped store.
-func (m *MetricsBlobStore) CompleteMultipart(ctx context.Context, id, handle string, size, partSize int64) error {
-	s, ok := m.inner.(MultipartStagingStore)
-	if !ok {
-		return ErrPresignNotSupported
-	}
-
-	return s.CompleteMultipart(ctx, id, handle, size, partSize)
 }
 
 // HealthCheck probes the store this one wraps.

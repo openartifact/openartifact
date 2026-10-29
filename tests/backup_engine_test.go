@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/backup"
+	"github.com/openartifact/openartifact/internal/backup/backuptest"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -30,6 +30,11 @@ type backupMockDB struct {
 	job *models.BackupJob
 }
 
+// ReconcileAllStorageUsage is not exercised by the tests.
+func (*backupMockDB) ReconcileAllStorageUsage(context.Context) (int64, error) {
+	return 0, errNotImplemented
+}
+
 func (b *backupMockDB) GetBackupJob(ctx context.Context, id string) (*models.BackupJob, error) {
 	if b.job != nil && b.job.ID == id {
 		return b.job, nil
@@ -39,7 +44,7 @@ func (b *backupMockDB) GetBackupJob(ctx context.Context, id string) (*models.Bac
 }
 
 func (b *backupMockDB) BeginBackupSnapshot(context.Context, time.Duration) (database.SnapshotReader, error) {
-	return &databasetest.LiveSnapshot{Database: b}, nil
+	return &backuptest.LiveSnapshot{SnapshotReads: b}, nil
 }
 
 func (b *backupMockDB) UpdateBackupJob(ctx context.Context, job *models.BackupJob) error {
@@ -116,7 +121,7 @@ func createBackupArchive(t *testing.T, dir string) string {
 	t.Helper()
 
 	manifest := map[string]any{
-		"version":    "1.0",
+		"version":    backup.ArchiveVersion,
 		"created_at": time.Now().UTC(),
 		"type":       "metadata-only",
 		"table_counts": map[string]int{

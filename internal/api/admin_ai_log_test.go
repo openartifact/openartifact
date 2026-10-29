@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+//go:build !noai
+
 package api
 
 import (
@@ -17,14 +19,24 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 var errSettingWrite = errors.New("setting write failed")
 
-type failingSettingsDB struct{ databasetest.BaseMockDB }
+// failingSettingsDBStore is what failingSettingsDB is used as.
+type failingSettingsDBStore interface {
+	AdminAIStore
+	auth.EvaluatorStore
+}
+
+type failingSettingsDB struct{ failingSettingsDBStore }
+
+// GetSystemSetting is not exercised by the tests.
+func (*failingSettingsDB) GetSystemSetting(context.Context, string) (string, error) {
+	return "", errNotImplemented
+}
 
 func (failingSettingsDB) SetSystemSetting(context.Context, string, string) error {
 	return errSettingWrite

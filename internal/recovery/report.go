@@ -61,7 +61,11 @@ type Report struct {
 	// SidecarsUnsupported are valid-looking sidecars of a newer format or for a
 	// table this release does not know; they are skipped, not failed.
 	SidecarsUnsupported int `json:"sidecars_unsupported"`
-	SidecarsInvalid     int `json:"sidecars_invalid"`
+	// SidecarsLegacy is the part of SidecarsUnsupported written by a release
+	// before 0.15 (ErrSidecarLegacy): it journaled per-format tables that no
+	// longer exist, so those sidecars cannot be applied.
+	SidecarsLegacy  int `json:"sidecars_legacy"`
+	SidecarsInvalid int `json:"sidecars_invalid"`
 	// Superseded are older sidecars of a row that has a newer one.
 	Superseded int `json:"superseded_sidecars"`
 	Pruned     int `json:"pruned_sidecars"`
@@ -119,6 +123,16 @@ func (r *Report) table(name string) *TableReport {
 	return &r.Tables[len(r.Tables)-1]
 }
 
+// appendListed adds it to list unless the list already holds maxListed items:
+// the report counts every item but lists only the first ones.
+func appendListed(list []Item, it Item) []Item {
+	if len(list) >= maxListed {
+		return list
+	}
+
+	return append(list, it)
+}
+
 func (r *Report) addUnrecoverable(it Item) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -129,9 +143,7 @@ func (r *Report) addUnrecoverable(it Item) {
 		r.table(it.Table).Unrecoverable++
 	}
 
-	if len(r.Unrecoverable) < maxListed {
-		r.Unrecoverable = append(r.Unrecoverable, it)
-	}
+	r.Unrecoverable = appendListed(r.Unrecoverable, it)
 }
 
 func (r *Report) addFailure(it Item) {
@@ -144,9 +156,7 @@ func (r *Report) addFailure(it Item) {
 		r.table(it.Table).Failed++
 	}
 
-	if len(r.Failures) < maxListed {
-		r.Failures = append(r.Failures, it)
-	}
+	r.Failures = appendListed(r.Failures, it)
 }
 
 func (r *Report) addMissingBlob(it Item) {
@@ -154,10 +164,7 @@ func (r *Report) addMissingBlob(it Item) {
 	defer r.mu.Unlock()
 
 	r.MissingBlobCount++
-
-	if len(r.MissingBlobs) < maxListed {
-		r.MissingBlobs = append(r.MissingBlobs, it)
-	}
+	r.MissingBlobs = appendListed(r.MissingBlobs, it)
 }
 
 func (r *Report) addInvalid(it Item) {
@@ -165,10 +172,7 @@ func (r *Report) addInvalid(it Item) {
 	defer r.mu.Unlock()
 
 	r.SidecarsInvalid++
-
-	if len(r.Invalid) < maxListed {
-		r.Invalid = append(r.Invalid, it)
-	}
+	r.Invalid = appendListed(r.Invalid, it)
 }
 
 // ExitCode maps the report to the process exit status.

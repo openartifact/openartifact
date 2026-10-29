@@ -10,6 +10,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/openartifact/openartifact/internal/database/models"
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
@@ -21,26 +22,26 @@ func TestUpdateRpmPackageExtraCorrectsSizes(t *testing.T) {
 	pg := newQuotaTestDB(t, 4)
 	ctx := context.Background()
 
-	repoID := newQuotaRepo(t, pg, "rpm-sizes", 0, 0)
+	repoID := newOSRepo(t, pg, "rpm-sizes", "rpm")
 
 	const sha = "00000000000000000000000000000000000000000000000000000000000000aa"
 
-	var blobID string
-	if err := pg.GetDB().QueryRowContext(ctx,
-		`INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES ($1::text, 1, $1::text) RETURNING id`, sha).Scan(&blobID); err != nil {
-		t.Fatalf("insert blob: %v", err)
+	blobID, err := pg.UpsertBlob(ctx, sha, sha, 1)
+	if err != nil {
+		t.Fatalf("UpsertBlob: %v", err)
 	}
 
-	if _, err := pg.GetDB().ExecContext(ctx,
-		`INSERT INTO rpm_packages (repository_id, blob_id, name, version, release, arch, installed_size, archive_size)
-		 VALUES ($1, $2, 'oa', '1', '1', 'x86_64', 0, 0)`, repoID, blobID); err != nil {
-		t.Fatalf("insert rpm package: %v", err)
+	if err := pg.CreateRpmPackage(ctx, &models.Component{
+		RepositoryID: repoID, ArtifactID: blobID, Name: "oa", Version: "1", Release: "1", Arch: "x86_64",
+		Filename: "oa-1-1.x86_64.rpm",
+	}); err != nil {
+		t.Fatalf("CreateRpmPackage: %v", err)
 	}
 
 	sizes := func() (int64, int64) {
 		var installed, archive int64
 		if err := pg.GetDB().QueryRowContext(ctx,
-			`SELECT COALESCE(installed_size, 0), COALESCE(archive_size, 0) FROM rpm_packages WHERE repository_id = $1`, repoID).
+			`SELECT COALESCE((attrs ->> 'installed_size')::bigint, 0), COALESCE((attrs ->> 'archive_size')::bigint, 0) FROM package_files WHERE repository_id = $1`, repoID).
 			Scan(&installed, &archive); err != nil {
 			t.Fatalf("read sizes: %v", err)
 		}

@@ -120,7 +120,7 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request, repo
 		"sha1":    row.SHA1,
 		"sha256":  row.SHA256,
 		"size":    row.SizeBytes,
-		"url":     h.distURL(repo.Name, row),
+		"url":     distURL(h.PublicBase(w, r), repo.Name, row),
 	})
 	if err != nil {
 		w.WriteHeader(http.StatusCreated)
@@ -199,9 +199,7 @@ func (h *HTTPHandler) store(
 		return true
 	}
 
-	if relErr := quota.Release(r.Context(), h.DB, repo.ID, row.SizeBytes); relErr != nil {
-		h.Log.Warnw("failed to release quota", "repo", repo.Name, "error", relErr)
-	}
+	h.ReleaseQuota(r.Context(), repo.ID, repo.Name, row.SizeBytes)
 
 	if errors.Is(err, database.ErrDuplicate) || database.IsUniqueViolation(err) {
 		writeConflict(w, composer.Path{Name: row.Name, Version: row.Version})

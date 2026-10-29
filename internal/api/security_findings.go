@@ -5,6 +5,7 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"math"
@@ -18,7 +19,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	"github.com/openartifact/openartifact/internal/ai"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
@@ -38,29 +38,45 @@ const (
 	findingPriorityCursorTag = "p"
 )
 
+// SecurityStore is the part of the database SecurityHandler needs.
+type SecurityStore interface {
+	storedArtifactMetadataStore
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	GetRepositoryDependencyTrack(ctx context.Context, repoID string) (*models.RepositoryDependencyTrack, error)
+	GetSystemSetting(ctx context.Context, key string) (string, error)
+	LatestFinishedDependencyTrackPush(ctx context.Context) (*models.DependencyTrackLastPush, error)
+	ListSecurityFindings(ctx context.Context, params models.FindingListParams) (*models.FindingPage, error)
+	RepoSecuritySummary(ctx context.Context, repoID string, packageName string, version string) (*models.RepoSecuritySummary, error)
+	SecurityFindingsSummary(ctx context.Context, filter models.FindingFilter) (*models.FindingsSummary, error)
+	SecurityHealthStats(ctx context.Context) (*models.SecurityHealthStats, error)
+	SetSystemSetting(ctx context.Context, key string, value string) error
+}
+
 // SecurityHandler serves the cross-type security findings (vulnerabilities,
 // licenses, secrets, AI analysis) of every repository, the admin security health
 // and the counts-only security summary of one repository
 // (docs/security/findings.md).
 type SecurityHandler struct {
-	db        database.Database
+	db        SecurityStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	scanners  *vuln.Registry
 	generator *sbom.Generator
 	// exploit supplies the EPSS threshold of the priority rank.
 	exploit *exploit.Enricher
-	// envAI are the AI settings of the process environment, under the stored ones.
-	envAI ai.Settings
+	// aiEnabled reports whether AI analysis is effectively on (stored settings
+	// over the process environment); nil means it is not available.
+	aiEnabled func(context.Context) bool
 }
 
 // NewSecurityHandler builds the handler. scanners reports the scanner readiness
-// and generator builds the VEX export; envAI are the env/YAML AI defaults.
-func NewSecurityHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator,
-	scanners *vuln.Registry, generator *sbom.Generator, envAI ai.Settings,
+// and generator builds the VEX export; aiEnabled answers whether AI analysis is
+// on and is nil when it is not compiled into the binary.
+func NewSecurityHandler(db SecurityStore, log *logger.Logger, evaluator *auth.Evaluator,
+	scanners *vuln.Registry, generator *sbom.Generator, aiEnabled func(context.Context) bool,
 ) *SecurityHandler {
 	return &SecurityHandler{
-		db: db, log: log, evaluator: evaluator, scanners: scanners, generator: generator, envAI: envAI,
+		db: db, log: log, evaluator: evaluator, scanners: scanners, generator: generator, aiEnabled: aiEnabled,
 		exploit: exploit.NewEnricher(nil, exploit.DefaultEPSSThreshold),
 	}
 }

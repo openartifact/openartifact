@@ -283,6 +283,10 @@ func TestApkHostedLifecycle(t *testing.T) {
 	}
 
 	for _, p := range pkgs {
+		if p.Arch != "x86_64" {
+			t.Errorf("index entry %s has arch %q, want the directory's x86_64 (also for a noarch package)", p.Name, p.Arch)
+		}
+
 		if p.Name == "hello" && (p.Checksum != parsed.Checksum || p.Size != int64(len(hello))) {
 			t.Errorf("index entry %+v does not identify the uploaded package (%s)", p, parsed.Checksum)
 		}

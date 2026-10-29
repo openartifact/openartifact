@@ -13,40 +13,57 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
+	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// Regenerator enqueues the refresh of generated metadata for a promotion's
-// destination. api.NewWorkerRegenerator satisfies it.
-type Regenerator interface {
-	NotifyDebStale(repoID string)
-	NotifyRPMStale(repoID string)
-	NotifyApkStale(repoID string)
-	NotifyMavenStale(repoID, groupID, artifactID string)
-	NotifyNPMStale(packageID string)
-	NotifyPacmanStale(repoID string)
+// EngineStore is the part of the database Engine needs.
+type EngineStore interface {
+	BeginTx(ctx context.Context) (database.Transaction, error)
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
 }
 
 // Engine promotes a sealed bundle into a repository.
 type Engine struct {
-	db        database.Database
-	log       *logger.Logger
-	regen     Regenerator
-	promoters map[string]Promoter
+	db    EngineStore
+	log   *logger.Logger
+	regen *lifecycle.Workers
 }
 
-// NewEngine returns an Engine with the promoter of every hosted format. regen
-// may be nil (generated metadata is then only refreshed by the periodic sweep).
-func NewEngine(db database.Database, log *logger.Logger, regen Regenerator) *Engine {
-	e := &Engine{db: db, log: log, regen: regen, promoters: map[string]Promoter{}}
-	for _, p := range Promoters() {
-		e.promoters[p.Format()] = p
+// dockerFormat is the one format with dedicated tables and its own promoter;
+// every other format is promoted by its storage descriptor.
+const dockerFormat = "docker"
+
+// NewEngine returns an Engine. regen may be nil (generated metadata is then
+// only refreshed by the periodic sweep).
+func NewEngine(db EngineStore, log *logger.Logger, regen *lifecycle.Workers) *Engine {
+	return &Engine{db: db, log: log, regen: regen}
+}
+
+// promoteItem copies the content req selects with the promoter of format.
+func promoteItem(ctx context.Context, tx Tx, format string, req Request) (*Result, error) {
+	if format == dockerFormat {
+		return dockerPromoter{}.Promote(ctx, tx, req)
 	}
 
-	return e
+	d, ok := storage.Lookup(format)
+	if !ok {
+		return nil, ErrUnsupportedFormat
+	}
+
+	fp, err := newFilePromoter(format, d)
+	if err != nil {
+		return nil, err
+	}
+
+	return fp.promote(ctx, tx, req)
 }
 
 // Params is one promotion request. The caller has already authorized it and
@@ -221,16 +238,12 @@ func (e *Engine) copyItems(ctx context.Context, tx Tx, p Params, srcs map[string
 	)
 
 	for _, it := range p.Items {
-		promoter, ok := e.promoters[it.Format]
-		if !ok {
-			return nil, total, nil, &ItemError{SHA256: it.SHA256, Path: it.ArtifactPath, Err: ErrUnsupportedFormat}
-		}
-
 		src := srcs[it.SourceRepoID]
 
-		res, err := promoter.Promote(
+		res, err := promoteItem(
 			ctx,
 			tx,
+			it.Format,
 			Request{Src: src, Dst: p.Target, SHA256: it.SHA256, Path: it.ArtifactPath, Force: p.Force, Actor: p.Promoter},
 		)
 		if err != nil {
@@ -365,19 +378,8 @@ func (e *Engine) notify(regen []Regen) {
 	}
 
 	for _, r := range regen {
-		switch r.Kind {
-		case RegenDeb:
-			e.regen.NotifyDebStale(r.RepoID)
-		case RegenRPM:
-			e.regen.NotifyRPMStale(r.RepoID)
-		case RegenApk:
-			e.regen.NotifyApkStale(r.RepoID)
-		case RegenMaven:
-			e.regen.NotifyMavenStale(r.RepoID, r.GroupID, r.ArtifactID)
-		case RegenNPM:
-			e.regen.NotifyNPMStale(r.PackageID)
-		case RegenPacman:
-			e.regen.NotifyPacmanStale(r.RepoID)
-		}
+		lifecycle.Notify(e.regen, r.Format, lifecycle.Change{
+			RepoID: r.RepoID, PackageID: r.PackageID, GroupID: r.GroupID, ArtifactID: r.ArtifactID,
+		})
 	}
 }

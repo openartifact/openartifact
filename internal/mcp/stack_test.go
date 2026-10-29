@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+//go:build !nomcp
+
 package mcp
 
 import (
@@ -11,16 +13,15 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
-	"github.com/openartifact/openartifact/internal/ai"
+	"errors"
+
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
-	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -37,6 +38,16 @@ type stackDB struct {
 	providers []*models.SSOProvider
 	linked    map[string]*models.User // "slug/sub" -> user
 }
+
+// ListProjectGrantsByUser is not exercised by the tests.
+func (*stackDB) ListProjectGrantsByUser(context.Context, string) ([]*models.ProjectGrant, error) {
+	return nil, nil
+}
+
+var errNotImplemented = errors.New("not implemented")
+
+// UpdateTokenLastUsed is not exercised by the tests.
+func (*stackDB) UpdateTokenLastUsed(context.Context, string) error { return errNotImplemented }
 
 func (d *stackDB) GetUserByID(_ context.Context, id string) (*models.User, error) {
 	return d.users[id], nil
@@ -144,14 +155,12 @@ func newStack(t *testing.T, mutate func(*stackOptions)) *stack {
 		opts.server.ResourceMetadataURL = middleware.ProtectedResourceMetadataURL(opts.baseURL, "/mcp")
 	}
 
-	var aiWorker *worker.AIAnalysisWorker
+	var analyzer AIAnalyzer
 	if opts.aiEnabled {
-		aiWorker = worker.NewAIAnalysisWorker(db, ai.NewClient(ai.Config{Provider: "custom", BaseURL: "http://127.0.0.1:1"}), log).
-			WithDebounce(time.Hour)
-		t.Cleanup(aiWorker.Stop)
+		analyzer = newTestAnalyzer(t, db, log)
 	}
 
-	s := NewServer(db, aiWorker, log, opts.server)
+	s := NewServer(db, analyzer, log, opts.server)
 	evaluator := auth.NewEvaluator(db, log, false)
 
 	s.SetAuthorizer(func(ctx context.Context, repoName, action string) bool {

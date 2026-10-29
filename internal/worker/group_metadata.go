@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	sq "github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	"github.com/openartifact/openartifact/internal/group"
@@ -26,6 +26,7 @@ import (
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/workq"
 	pkgapk "github.com/openartifact/openartifact/pkg/apk"
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -58,6 +59,26 @@ type RPMPackageLoader interface {
 	PackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error)
 }
 
+// GroupMetadataStore is the part of the database GroupMetadataWorker needs.
+type GroupMetadataStore interface {
+	metadataBlobsStore
+	BeginTx(ctx context.Context) (database.Transaction, error)
+	GetDebianArchitecturesByDist(ctx context.Context, distID string) ([]models.DebianArchitecture, error)
+	GetDebianComponentsByDist(ctx context.Context, distID string) ([]models.DebianComponent, error)
+	GetDebianDistributionsByRepo(ctx context.Context, repoID string) ([]models.DebianDistribution, error)
+	GetGroupMetadataState(ctx context.Context, groupID string) (*models.GroupMetadataState, error)
+	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+	ListApkPackages(ctx context.Context, repoID string) ([]*models.ApkPackage, error)
+	ListDebPackageEntries(ctx context.Context, repoID string, dist string, comp string, arch string) ([]models.DebPackageEntry, error)
+	ListGroupMemberRepositories(ctx context.Context, groupRepoID string) ([]*models.Repository, error)
+	ListMetadataGroupsOfMember(ctx context.Context, memberRepoID string) ([]string, error)
+	ListPacmanFileLists(ctx context.Context, repoID string) (map[string]string, error)
+	ListPacmanPackages(ctx context.Context, repoID string) ([]*models.PacmanPackage, error)
+	ListStaleMetadataGroups(ctx context.Context) ([]string, error)
+	MarkGroupMetadataStale(ctx context.Context, groupID string) error
+}
+
 // GroupMetadataWorker generates the metadata of apk, deb, pacman and rpm group
 // repositories: the Release/Packages indexes, repodata, APKINDEX or databases a client needs, merged
 // across the group's hosted and proxy members in member order, plus the table
@@ -69,7 +90,7 @@ type RPMPackageLoader interface {
 // changes (NotifyStale, NotifyMemberChanged), and refreshed in the background
 // once a proxy member's cached upstream metadata may have changed.
 type GroupMetadataWorker struct {
-	db        sq.Database
+	db        GroupMetadataStore
 	blobStore storage.BlobStore
 	opener    MemberOpener
 	rpm       RPMPackageLoader
@@ -84,7 +105,7 @@ type GroupMetadataWorker struct {
 // each group's metadata (nil, or a nil result, for an unsigned group); it is
 // asked per generation so a key change takes effect.
 func NewGroupMetadataWorker(
-	db sq.Database,
+	db GroupMetadataStore,
 	blobStore storage.BlobStore,
 	opener MemberOpener,
 	rpm RPMPackageLoader,
@@ -103,9 +124,17 @@ func NewGroupMetadataWorker(
 
 		return err
 	})
+	w.q.setCodec(stringRegenCodec())
 
 	return w
 }
+
+// ForwardTo makes NotifyStale and Refresh write a worker request to s instead of
+// scheduling the regeneration here (server.role=web); see RegenRemote.
+func (w *GroupMetadataWorker) ForwardTo(s *workq.Store) { w.q.forwardTo(s) }
+
+// ServeFrom makes the worker regenerate what the requests claimed by c ask for.
+func (w *GroupMetadataWorker) ServeFrom(c *workq.Consumer) { w.q.serveFrom(c, w.q.Notify) }
 
 // WithApkSigners enables apk groups' signed indexes: signers resolves the key of
 // each group (an apk key, not a GPG one).
@@ -411,6 +440,11 @@ func (w *GroupMetadataWorker) freshSince(ctx context.Context, grp *models.Reposi
 // client asked for: a Debian distribution, an apk directory, a pacman architecture. Rpm groups
 // have no such request.
 func (w *GroupMetadataWorker) checkHint(ctx context.Context, grp *models.Repository, hint string, members []*models.Repository) error {
+	// The group metadata builders (checkHint, groupAnchor, run) are explicit
+	// cases rather than plugin hooks: the closed set of formats whose group
+	// serves generated metadata (repotype.Spec.GeneratedGroupMetadata) is
+	// implemented by this worker's private job state, and
+	// TestGroupMetadataCoversEveryFormat keeps the set and the Spec in step.
 	switch grp.Format {
 	case "apk", "deb":
 		return w.checkDist(ctx, grp, hint, members)
@@ -709,7 +743,7 @@ func (w *GroupMetadataWorker) publish(ctx context.Context, j *groupJob, st *mode
 // listOldGroupMetadata returns path -> blob sha256 of the group's generated
 // rows: all of them for the shared index (so regenerating it drops the
 // variants), those under scope for a variant.
-func listOldGroupMetadata(ctx context.Context, tx sq.Transaction, groupID, scope string) (map[string]string, error) {
+func listOldGroupMetadata(ctx context.Context, tx database.Transaction, groupID, scope string) (map[string]string, error) {
 	return queryMetadataSums(ctx, tx, "group worker", "repository_metadata",
 		`SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND ($2 = '' OR starts_with(path, $2))`,
 		groupID,
@@ -719,7 +753,7 @@ func listOldGroupMetadata(ctx context.Context, tx sq.Transaction, groupID, scope
 
 // replaceOwners swaps the group's owner table for owners; rows under a path
 // prefix of keep stay.
-func replaceOwners(ctx context.Context, tx sq.Transaction, groupID, scope string, owners map[string]groupOwner, keep []string) error {
+func replaceOwners(ctx context.Context, tx database.Transaction, groupID, scope string, owners map[string]groupOwner, keep []string) error {
 	if _, err := tx.ExecContext(
 		ctx,
 		`DELETE FROM group_package_owners WHERE group_repo_id = $1 AND ($2 = '' OR starts_with(path, $2))
@@ -767,7 +801,7 @@ func replaceOwners(ctx context.Context, tx sq.Transaction, groupID, scope string
 // schedules the follow-up run).
 func markGenerated(
 	ctx context.Context,
-	tx sq.Transaction,
+	tx database.Transaction,
 	groupID string,
 	st *models.GroupMetadataState,
 	dists []string,
