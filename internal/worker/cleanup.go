@@ -57,17 +57,13 @@ const (
 )
 
 type CleanupWorker struct {
+	*lifecycle
+
 	db        database.Database
 	blobStore storage.BlobStore
 	log       *logger.Logger
-	startOnce sync.Once
-	stopOnce  sync.Once
-	stopCh    chan struct{}
-	doneCh    chan struct{}
 
-	runCtx context.Context //nolint:containedctx // lifetime of the worker, cancelled by Stop
-	cancel context.CancelFunc
-	wg     sync.WaitGroup // manually triggered policy runs
+	wg sync.WaitGroup // manually triggered policy runs
 
 	rpmNotifier, debNotifier, pacmanNotifier MetadataNotifier
 	apkNotifier                              MetadataNotifier
@@ -81,16 +77,11 @@ type CleanupWorker struct {
 }
 
 func NewCleanupWorker(db database.Database, blobStore storage.BlobStore, log *logger.Logger) *CleanupWorker {
-	runCtx, cancel := context.WithCancel(context.Background())
-
 	return &CleanupWorker{
+		lifecycle: newLifecycle(),
 		db:        db,
 		blobStore: blobStore,
 		log:       log,
-		stopCh:    make(chan struct{}),
-		doneCh:    make(chan struct{}),
-		runCtx:    runCtx,
-		cancel:    cancel,
 	}
 }
 
@@ -100,21 +91,7 @@ func (w *CleanupWorker) Start() {
 }
 
 func (w *CleanupWorker) start() {
-	go func() {
-		defer close(w.doneCh)
-
-		ticker := time.NewTicker(1 * time.Minute)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				w.safeCycle()
-			case <-w.stopCh:
-				return
-			}
-		}
-	}()
+	go w.runEvery(time.Minute, w.safeCycle)
 }
 
 // safeCycle runs one cleanup cycle and contains a panic to that cycle: the
@@ -132,17 +109,10 @@ func (w *CleanupWorker) safeCycle() {
 	w.runCleanupCycle(ctx)
 }
 
-// Stop is idempotent and safe without Start.
+// Stop is idempotent and safe without Start. It also waits for the manually
+// triggered policy runs.
 func (w *CleanupWorker) Stop() {
-	w.stopOnce.Do(func() {
-		close(w.stopCh)
-		w.cancel()
-	})
-
-	// Never started: nothing will close doneCh, and a later Start must not.
-	w.startOnce.Do(func() { close(w.doneCh) })
-
-	<-w.doneCh
+	w.lifecycle.Stop()
 	w.wg.Wait()
 }
 
@@ -349,12 +319,7 @@ func (w *CleanupWorker) TriggerPolicy(ctx context.Context, policyID string) erro
 		return ErrPolicyNotFound
 	}
 
-	runCtx := w.runCtx
-	if runCtx == nil {
-		runCtx = context.Background()
-	}
-
-	release, err := w.acquirePolicyLock(runCtx, policy.ID)
+	release, err := w.acquirePolicyLock(w.runCtx, policy.ID)
 	if err != nil {
 		return err
 	}
@@ -367,7 +332,7 @@ func (w *CleanupWorker) TriggerPolicy(ctx context.Context, policyID string) erro
 			}
 		}()
 
-		rctx, cancel := context.WithTimeout(runCtx, policyRunTimeout)
+		rctx, cancel := context.WithTimeout(w.runCtx, policyRunTimeout)
 		defer cancel()
 
 		w.runAndRecord(rctx, policy)

@@ -56,6 +56,8 @@ type placementDB interface {
 // It also forwards the optional presign and staging capabilities of the primary
 // store (client-direct uploads always land on the primary tier).
 type Store struct {
+	storage.StagingForwarder
+
 	reg     *Registry
 	db      placementDB
 	tracker *AccessTracker
@@ -83,7 +85,15 @@ var (
 
 // NewStore creates the tiered store. tracker and reg may be nil.
 func NewStore(reg *Registry, db placementDB, tracker *AccessTracker, m *metrics.Registry, log *logger.Logger) *Store {
-	return &Store{reg: reg, db: db, tracker: tracker, metrics: m, log: log, cache: map[string]placementEntry{}}
+	return &Store{
+		StagingForwarder: storage.NewStagingForwarder(reg.Primary),
+		reg:              reg,
+		db:               db,
+		tracker:          tracker,
+		metrics:          m,
+		log:              log,
+		cache:            map[string]placementEntry{},
+	}
 }
 
 func (s *Store) cacheGet(sha string) string {
@@ -648,53 +658,11 @@ func (s *Store) List(ctx context.Context, token string, limit int) ([]string, st
 	return nil, "", nil
 }
 
-// primaryStaging returns the primary store's staging capability.
-func (s *Store) primaryStaging() (storage.StagingStore, bool) {
-	st, ok := s.reg.Primary().(storage.StagingStore)
-
-	return st, ok
-}
-
-// StagingSupported implements storage.StagingStore.
-func (s *Store) StagingSupported() bool {
-	st, ok := s.primaryStaging()
-
-	return ok && st.StagingSupported()
-}
-
-// PresignStagingPut implements storage.StagingStore.
-func (s *Store) PresignStagingPut(ctx context.Context, id string, size int64, ttl time.Duration) (storage.PresignedPut, error) {
-	st, ok := s.primaryStaging()
-	if !ok {
-		return storage.PresignedPut{}, storage.ErrPresignNotSupported
-	}
-
-	return st.PresignStagingPut(ctx, id, size, ttl)
-}
-
-// StatStaging implements storage.StagingStore.
-func (s *Store) StatStaging(ctx context.Context, id string) (storage.StagedObject, error) {
-	st, ok := s.primaryStaging()
-	if !ok {
-		return storage.StagedObject{}, storage.ErrPresignNotSupported
-	}
-
-	return st.StatStaging(ctx, id)
-}
-
-// OpenStaging implements storage.StagingStore.
-func (s *Store) OpenStaging(ctx context.Context, id, version string) (io.ReadCloser, error) {
-	st, ok := s.primaryStaging()
-	if !ok {
-		return nil, storage.ErrPresignNotSupported
-	}
-
-	return st.OpenStaging(ctx, id, version)
-}
-
-// PromoteStaging implements storage.StagingStore. The verified object becomes
-// the blob on the tier the blob belongs on, like Put: the primary tier for a new
-// blob, the tier it is placed on otherwise. Staging lives on the primary store,
+// PromoteStaging implements storage.StagingStore; the rest of the staging and
+// multipart staging calls go to the primary store unchanged (see
+// storage.StagingForwarder). The verified object becomes the blob on the tier
+// the blob belongs on, like Put: the primary tier for a new blob, the tier it
+// is placed on otherwise. Staging lives on the primary store,
 // so a blob placed on a cold tier is not copied back onto the primary store: a
 // cold tier that already holds it needs nothing (content addressing makes the
 // bytes identical), one that lost it gets the staged bytes streamed in, still
@@ -702,7 +670,7 @@ func (s *Store) OpenStaging(ctx context.Context, id, version string) (io.ReadClo
 // placement afterwards (settleWrite), so a move that flipped the blob while the
 // object was being promoted cannot leave a primary copy nothing removes.
 func (s *Store) PromoteStaging(ctx context.Context, id, sha, version string, metadata map[string]string) error {
-	st, ok := s.primaryStaging()
+	st, ok := s.reg.Primary().(storage.StagingStore)
 	if !ok {
 		return storage.ErrPresignNotSupported
 	}
@@ -758,76 +726,6 @@ func promoteToTier(ctx context.Context, st storage.StagingStore, target *Tier, i
 	}
 
 	return nil
-}
-
-// DeleteStaging implements storage.StagingStore.
-func (s *Store) DeleteStaging(ctx context.Context, id string) error {
-	st, ok := s.primaryStaging()
-	if !ok {
-		return storage.ErrPresignNotSupported
-	}
-
-	return st.DeleteStaging(ctx, id)
-}
-
-// WalkStaging implements storage.StagingStore.
-func (s *Store) WalkStaging(ctx context.Context, olderThan time.Time, fn func(ids []string) error) error {
-	st, ok := s.primaryStaging()
-	if !ok {
-		return storage.ErrPresignNotSupported
-	}
-
-	return st.WalkStaging(ctx, olderThan, fn)
-}
-
-// primaryMultipart returns the primary store's multipart staging capability.
-func (s *Store) primaryMultipart() (storage.MultipartStagingStore, bool) {
-	st, ok := s.reg.Primary().(storage.MultipartStagingStore)
-
-	return st, ok
-}
-
-// MultipartSupported implements storage.MultipartStagingStore.
-func (s *Store) MultipartSupported() bool {
-	st, ok := s.primaryMultipart()
-
-	return ok && st.MultipartSupported()
-}
-
-// InitiateMultipart implements storage.MultipartStagingStore.
-func (s *Store) InitiateMultipart(ctx context.Context, id string, size, partSize int64) (string, error) {
-	st, ok := s.primaryMultipart()
-	if !ok {
-		return "", storage.ErrPresignNotSupported
-	}
-
-	return st.InitiateMultipart(ctx, id, size, partSize)
-}
-
-// PresignStagingPart implements storage.MultipartStagingStore.
-func (s *Store) PresignStagingPart(
-	ctx context.Context,
-	id, handle string,
-	number int,
-	length int64,
-	ttl time.Duration,
-) (storage.PresignedPut, error) {
-	st, ok := s.primaryMultipart()
-	if !ok {
-		return storage.PresignedPut{}, storage.ErrPresignNotSupported
-	}
-
-	return st.PresignStagingPart(ctx, id, handle, number, length, ttl)
-}
-
-// CompleteMultipart implements storage.MultipartStagingStore.
-func (s *Store) CompleteMultipart(ctx context.Context, id, handle string, size, partSize int64) error {
-	st, ok := s.primaryMultipart()
-	if !ok {
-		return storage.ErrPresignNotSupported
-	}
-
-	return st.CompleteMultipart(ctx, id, handle, size, partSize)
 }
 
 // HealthCheck probes the primary store: it is where new blobs land, and the

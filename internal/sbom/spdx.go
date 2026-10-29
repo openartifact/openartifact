@@ -240,21 +240,12 @@ func (g *Generator) spdxDocument(in *Input) *spdxDoc {
 	}
 }
 
-func (g *Generator) loadSPDX(ctx context.Context, repoID, artifactID, format string, metadata map[string]any) (*Input, error) {
-	in := newInput(format, artifactID, metadata)
-	if err := g.loadSBOM(ctx, repoID, in); err != nil {
-		return nil, err
-	}
-
-	return in, nil
-}
-
 // GenerateSPDXJSON generates the SPDX 2.3 JSON document of an artifact: the
 // artifact and its declared dependencies as packages with sha256 checksums,
 // licenses (SPDX expressions, LicenseRef-* for unrecognized names) and purl
 // external references, linked by DESCRIBES / DEPENDS_ON relationships.
 func (g *Generator) GenerateSPDXJSON(ctx context.Context, repoID, artifactID, format string, metadata map[string]any) (*SBOMResult, error) {
-	in, err := g.loadSPDX(ctx, repoID, artifactID, format, metadata)
+	in, err := g.sbomInput(ctx, repoID, format, artifactID, metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +256,7 @@ func (g *Generator) GenerateSPDXJSON(ctx context.Context, repoID, artifactID, fo
 // GenerateSPDX generates the SPDX 2.3 tag-value document of an artifact (same
 // content as GenerateSPDXJSON).
 func (g *Generator) GenerateSPDX(ctx context.Context, repoID, artifactID, format string, metadata map[string]any) (*SBOMResult, error) {
-	in, err := g.loadSPDX(ctx, repoID, artifactID, format, metadata)
+	in, err := g.sbomInput(ctx, repoID, format, artifactID, metadata)
 	if err != nil {
 		return nil, err
 	}

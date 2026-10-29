@@ -66,20 +66,7 @@ func (h *AdminSSOHandler) RegisterPublic(r chi.Router) {
 }
 
 func (h *AdminSSOHandler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(r.Context(), p, h.evaluator)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
-		return false
-	}
-
-	if !isAdmin {
-		writeError(w, http.StatusForbidden, "admin_required", "admin access required")
-		return false
-	}
-
-	return true
+	return requireAdminCode(w, r, h.evaluator, "admin_required")
 }
 
 const (
@@ -675,59 +662,45 @@ func (h *AdminSSOHandler) handleTest(w http.ResponseWriter, r *http.Request) {
 	switch existing.Kind {
 	case "oidc":
 		_, err := auth.LoadOIDCProviderRow(ctx, existing, h.baseURL)
-		if err != nil {
-			h.log.Warnw("admin sso test: oidc load failed", "slug", existing.Slug, "error", err)
-
-			if errors.Is(err, auth.ErrOIDCDiscoveryFailed) {
-				writeJSON(w, http.StatusOK, map[string]any{
-					"ok":      false,
-					"error":   "oidc_discovery_failed",
-					"message": ssoTestMessage(true),
-				})
-
-				return
-			}
-
-			writeJSON(w, http.StatusOK, map[string]any{
-				"ok":      false,
-				"error":   "load_failed",
-				"message": ssoTestMessage(false),
-			})
-
-			return
-		}
-
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "kind": "oidc"})
+		h.writeTestResult(w, existing, err, auth.ErrOIDCDiscoveryFailed, "oidc_discovery_failed")
 
 	case "saml":
 		_, err := auth.LoadSAMLProviderRow(ctx, h.db, existing, h.baseURL, h.cfg, h.log)
-		if err != nil {
-			h.log.Warnw("admin sso test: saml load failed", "slug", existing.Slug, "error", err)
-
-			if errors.Is(err, auth.ErrIDPMetadataUnavailable) {
-				writeJSON(w, http.StatusOK, map[string]any{
-					"ok":      false,
-					"error":   "idp_metadata_unavailable",
-					"message": ssoTestMessage(true),
-				})
-
-				return
-			}
-
-			writeJSON(w, http.StatusOK, map[string]any{
-				"ok":      false,
-				"error":   "load_failed",
-				"message": ssoTestMessage(false),
-			})
-
-			return
-		}
-
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "kind": "saml"})
+		h.writeTestResult(w, existing, err, auth.ErrIDPMetadataUnavailable, "idp_metadata_unavailable")
 
 	default:
 		writeError(w, http.StatusBadRequest, "unknown_kind", "unknown provider kind")
 	}
+}
+
+// writeTestResult writes the 200 body of a /test call for a loaded provider.
+// A load error matching unreachableErr is reported as unreachableCode, any
+// other as load_failed.
+func (h *AdminSSOHandler) writeTestResult(
+	w http.ResponseWriter, p *models.SSOProvider, loadErr, unreachableErr error, unreachableCode string,
+) {
+	if loadErr == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "kind": p.Kind})
+		return
+	}
+
+	h.log.Warnw("admin sso test: "+p.Kind+" load failed", "slug", p.Slug, "error", loadErr)
+
+	if errors.Is(loadErr, unreachableErr) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":      false,
+			"error":   unreachableCode,
+			"message": ssoTestMessage(true),
+		})
+
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      false,
+		"error":   "load_failed",
+		"message": ssoTestMessage(false),
+	})
 }
 
 func ssoProviderToResponse(p *models.SSOProvider) responses.SSOProviderResponse {

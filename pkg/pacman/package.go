@@ -17,6 +17,8 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
+
+	"github.com/openartifact/openartifact/internal/limitio"
 )
 
 // Package compressions, the extension of the package file after ".pkg.tar.".
@@ -70,7 +72,7 @@ func ReadPackage(r io.Reader) (*Package, error) {
 
 	defer closeDec()
 
-	pkg, err := readTar(&limitedStream{r: dec, left: MaxUncompressedBytes})
+	pkg, err := readTar(limitio.Capped(dec, MaxUncompressedBytes, ErrPackageTooLarge))
 	if err != nil {
 		return nil, err
 	}
@@ -121,27 +123,6 @@ func openCompressed(r io.Reader) (io.Reader, string, func(), error) {
 	}
 
 	return nil, "", nil, ErrNotPackage
-}
-
-// limitedStream fails with ErrPackageTooLarge once more than left bytes are read.
-type limitedStream struct {
-	r    io.Reader
-	left int64
-}
-
-func (l *limitedStream) Read(p []byte) (int, error) {
-	if l.left <= 0 {
-		return 0, ErrPackageTooLarge
-	}
-
-	if int64(len(p)) > l.left {
-		p = p[:l.left]
-	}
-
-	n, err := l.r.Read(p)
-	l.left -= int64(n)
-
-	return n, err //nolint:wrapcheck // plain passthrough
 }
 
 func readTar(r io.Reader) (*Package, error) {

@@ -83,42 +83,28 @@ func (gomodPromoter) Promote(ctx context.Context, tx Tx, req Request) (*Result, 
 	for _, r := range rows {
 		res.QuarantineKeys = append(res.QuarantineKeys, gomodQuarantineKeys(r)...)
 
-		art := Artifact{Name: r.name, Version: r.version, Path: r.version + ".zip", SHA256: r.sha, Size: r.size}
+		art := r.artifact(r.version+".zip", r.sha)
 
 		dest, same, err := gomodSame(ctx, tx, req, r)
 		if err != nil {
 			return nil, err
 		}
 
-		if dest.id != "" && !same {
-			if !req.Force {
-				return nil, req.conflict("go", r.name, r.version)
-			}
-
-			if err := req.displace(ctx, tx, models.TrashKindGoMod, dest.id); err != nil {
-				return nil, err
-			}
-
-			res.Replaced = append(
-				res.Replaced,
-				Artifact{Name: r.name, Version: r.version, Path: r.version + ".zip", SHA256: dest.sha, Size: dest.size},
-			)
-			dest = destRow{}
+		toCopy, err := req.settleDest(ctx, tx, res, models.TrashKindGoMod, "go", art, dest, same)
+		if err != nil {
+			return nil, err
 		}
 
-		switch {
-		case dest.id != "":
-			res.Existing = append(res.Existing, art)
-		default:
-			if _, err := tx.ExecContext(ctx, gomodCopyQuery, req.Dst.ID, r.id); err != nil {
-				return nil, fmt.Errorf("copy go module into the target: %w", err)
-			}
-
-			// One module is one artifact; its go.mod is bytes only, like an upload reserves it.
-			res.Copied = append(res.Copied, art)
-			res.Usage.Bytes += r.usage
-			res.Usage.Artifacts++
+		if !toCopy {
+			continue
 		}
+
+		if _, err := tx.ExecContext(ctx, gomodCopyQuery, req.Dst.ID, r.id); err != nil {
+			return nil, fmt.Errorf("copy go module into the target: %w", err)
+		}
+
+		// One module is one artifact; its go.mod is bytes only, like an upload reserves it.
+		res.addCopied(art, r.usage)
 	}
 
 	return res, nil

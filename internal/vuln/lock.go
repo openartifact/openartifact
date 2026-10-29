@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/openartifact/openartifact/internal/bgtask"
 )
 
 // lockPoll is how often a waiter retries a lock held by another process.
@@ -55,7 +57,7 @@ func (t *cliTool) acquire(ctx context.Context) (func(), error) {
 			return unlock, nil
 		}
 
-		if !sleepCtx(ctx, lockPoll) {
+		if bgtask.Sleep(ctx, lockPoll) != nil {
 			return nil, fmt.Errorf("waiting for the %s cache lock: %w", t.name, ctx.Err())
 		}
 	}

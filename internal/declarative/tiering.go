@@ -28,17 +28,19 @@ type tierItems struct {
 	Items []map[string]any `json:"items"`
 }
 
-func tierList(ctx context.Context, env *Env, path, what string) ([]map[string]any, error) {
+// tierLives lists the tiering objects at path (what names them in errors) and
+// converts each canonical item with toLive.
+func tierLives(ctx context.Context, env *Env, path, what string, toLive func(map[string]any) *Live) ([]*Live, error) {
 	var resp tierItems
 	if err := env.Client.Get(ctx, path, &resp); err != nil {
 		return nil, fmt.Errorf("list %s: %w", what, err)
 	}
 
-	out := make([]map[string]any, len(resp.Items))
+	out := make([]*Live, len(resp.Items))
 
 	for i, it := range resp.Items {
 		m, _ := Canon(it).(map[string]any)
-		out[i] = m
+		out[i] = toLive(m)
 	}
 
 	return out, nil
@@ -95,17 +97,7 @@ func tierLive(m map[string]any) *Live {
 }
 
 func (tierKind) List(ctx context.Context, env *Env) ([]*Live, error) {
-	items, err := tierList(ctx, env, tierPath, "storage tiers")
-	if err != nil {
-		return nil, err
-	}
-
-	out := make([]*Live, len(items))
-	for i, it := range items {
-		out[i] = tierLive(it)
-	}
-
-	return out, nil
+	return tierLives(ctx, env, tierPath, "storage tiers", tierLive)
 }
 
 func (tierKind) Create(ctx context.Context, env *Env, o *Object) (string, error) {
@@ -116,35 +108,15 @@ func (tierKind) Create(ctx context.Context, env *Env, o *Object) (string, error)
 	body := Pick(o.Spec, "backend", "rank", "promote_on_read")
 	body["name"] = o.Name
 
-	var resp struct {
-		ID string `json:"id"`
-	}
-
-	if err := env.Client.Do(ctx, http.MethodPost, tierPath, body, &resp); err != nil {
-		return "", fmt.Errorf("create storage tier %q: %w", o.Name, err)
-	}
-
-	return resp.ID, nil
+	return env.Client.create(ctx, tierPath, body, "storage tier", o.Name)
 }
 
 func (tierKind) Update(ctx context.Context, env *Env, live *Live, _ *Object, changes []Change) (string, error) {
-	if len(changes) == 0 {
-		return live.ID, nil
-	}
-
-	if err := env.Client.Do(ctx, http.MethodPatch, tierPath+"/"+PathEscape(live.Key), PatchBody(changes), nil); err != nil {
-		return live.ID, fmt.Errorf("update storage tier %q: %w", live.Key, err)
-	}
-
-	return live.ID, nil
+	return env.Client.updateChanges(ctx, http.MethodPatch, tierPath+"/"+PathEscape(live.Key), live, changes, "storage tier")
 }
 
 func (tierKind) Delete(ctx context.Context, env *Env, live *Live) error {
-	if err := env.Client.Do(ctx, http.MethodDelete, tierPath+"/"+PathEscape(live.Key), nil, nil); err != nil {
-		return fmt.Errorf("delete storage tier %q: %w", live.Key, err)
-	}
-
-	return nil
+	return env.Client.remove(ctx, tierPath+"/"+PathEscape(live.Key), "storage tier", live.Key)
 }
 
 // ---- TierPolicy ----
@@ -234,32 +206,14 @@ func policyLive(m map[string]any) *Live {
 }
 
 func (policyKind) List(ctx context.Context, env *Env) ([]*Live, error) {
-	items, err := tierList(ctx, env, policyPath, "storage tier policies")
-	if err != nil {
-		return nil, err
-	}
-
-	out := make([]*Live, len(items))
-	for i, it := range items {
-		out[i] = policyLive(it)
-	}
-
-	return out, nil
+	return tierLives(ctx, env, policyPath, "storage tier policies", policyLive)
 }
 
 func (policyKind) Create(ctx context.Context, env *Env, o *Object) (string, error) {
 	body := Pick(o.Spec, policyFields()...)
 	body["name"] = o.Name
 
-	var resp struct {
-		ID string `json:"id"`
-	}
-
-	if err := env.Client.Do(ctx, http.MethodPost, policyPath, body, &resp); err != nil {
-		return "", fmt.Errorf("create tier policy %q: %w", o.Name, err)
-	}
-
-	return resp.ID, nil
+	return env.Client.create(ctx, policyPath, body, "tier policy", o.Name)
 }
 
 // Update merges the changes into the live policy and PUTs the whole input,
@@ -276,17 +230,9 @@ func (policyKind) Update(ctx context.Context, env *Env, live *Live, _ *Object, c
 		body[c.Path] = c.New
 	}
 
-	if err := env.Client.Do(ctx, http.MethodPut, policyPath+"/"+PathEscape(live.ID), body, nil); err != nil {
-		return live.ID, fmt.Errorf("update tier policy %q: %w", live.Key, err)
-	}
-
-	return live.ID, nil
+	return env.Client.update(ctx, http.MethodPut, policyPath+"/"+PathEscape(live.ID), body, live, "tier policy")
 }
 
 func (policyKind) Delete(ctx context.Context, env *Env, live *Live) error {
-	if err := env.Client.Do(ctx, http.MethodDelete, policyPath+"/"+PathEscape(live.ID), nil, nil); err != nil {
-		return fmt.Errorf("delete tier policy %q: %w", live.Key, err)
-	}
-
-	return nil
+	return env.Client.remove(ctx, policyPath+"/"+PathEscape(live.ID), "tier policy", live.Key)
 }

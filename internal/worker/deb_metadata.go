@@ -69,23 +69,6 @@ func (w *DebMetadataWorker) WithRegenLimiter(l *RegenLimiter) *DebMetadataWorker
 	return w
 }
 
-// signerFor returns the signer of the repository's metadata, nil when it is
-// unsigned. A resolution failure aborts the regeneration: replacing signed
-// metadata with unsigned metadata because of a transient error would break
-// every client that verifies it.
-func (w *DebMetadataWorker) signerFor(ctx context.Context, repoID string) (gpg.Signer, error) {
-	if w.signers == nil {
-		return nil, nil //nolint:nilnil // nil signer means unsigned
-	}
-
-	signer, err := w.signers.SignerForRepo(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("deb worker: resolving signing key: %w", err)
-	}
-
-	return signer, nil
-}
-
 // WithStaleHook calls fn with the repository id on every NotifyStale: the group
 // repositories that list it as a member regenerate their merged metadata.
 func (w *DebMetadataWorker) WithStaleHook(fn func(repoID string)) *DebMetadataWorker {
@@ -144,7 +127,7 @@ func (w *DebMetadataWorker) regenerate(ctx context.Context, repoID string) error
 		byDist[e.Distribution] = append(byDist[e.Distribution], e)
 	}
 
-	signer, err := w.signerFor(ctx, repoID)
+	signer, err := metadataSigner(ctx, w.signers, repoID, "deb worker")
 	if err != nil {
 		return err
 	}

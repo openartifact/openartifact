@@ -14,8 +14,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // TokenPrefix starts every peer token, so a leaked one is recognisable and
@@ -104,22 +102,9 @@ func (s *Store) ListTokens(ctx context.Context, repoID string) ([]*Token, error)
 
 // RevokeToken revokes a peer token; its requests are refused from then on.
 func (s *Store) RevokeToken(ctx context.Context, repoID, id string) error {
-	if _, err := uuid.Parse(id); err != nil {
-		return ErrNotFound
-	}
-
-	res, err := s.db.ExecContext(ctx,
+	return s.execOwned(ctx, "revoke peer token",
 		`UPDATE federation_peer_tokens SET revoked_at = now()
-		  WHERE id = $1::uuid AND repo_id = $2::uuid AND revoked_at IS NULL`, id, repoID)
-	if err != nil {
-		return fmt.Errorf("revoke peer token: %w", err)
-	}
-
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-
-	return nil
+		  WHERE id = $1::uuid AND repo_id = $2::uuid AND revoked_at IS NULL`, repoID, id)
 }
 
 // lastUsedGranularity bounds how often a busy peer rewrites its token row.

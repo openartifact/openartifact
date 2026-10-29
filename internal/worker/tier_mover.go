@@ -7,7 +7,6 @@ package worker
 import (
 	"context"
 	"database/sql"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -17,7 +16,7 @@ import (
 
 const (
 	// tierMoverLockKey names the cluster-wide advisory lock (hashed by
-	// tryAdvisoryLock) held by the replica running a mover pass, so passes of
+	// pglock.Try) held by the replica running a mover pass, so passes of
 	// different replicas never overlap.
 	tierMoverLockKey = "openartifact:tier-mover"
 
@@ -36,6 +35,8 @@ type TierPassRunner interface {
 // engine itself is crash-safe and resumable (see docs/operations/storage-tiering.md),
 // so killing the process mid-pass loses nothing.
 type TierMoverWorker struct {
+	*lifecycle
+
 	engine   TierPassRunner
 	log      *logger.Logger
 	interval time.Duration
@@ -48,36 +49,19 @@ type TierMoverWorker struct {
 	trigger chan struct{}
 	running atomic.Bool
 	last    atomic.Pointer[tiering.PassStats]
-
-	startOnce sync.Once
-	stopOnce  sync.Once
-	stopCh    chan struct{}
-	doneCh    chan struct{}
-	// runCtx is cancelled by Stop so an in-flight pass stops promptly.
-	runCtx context.Context //nolint:containedctx // lifecycle context of the worker
-	cancel context.CancelFunc
 }
 
 // NewTierMoverWorker creates the worker. sqlDB is the pool the pinned lock
 // connection comes from (nil means no other replicas to exclude). When enabled
 // is false the worker never moves anything and Trigger reports false.
 func NewTierMoverWorker(engine TierPassRunner, sqlDB *sql.DB, log *logger.Logger, interval time.Duration, enabled bool) *TierMoverWorker {
-	runCtx, cancel := context.WithCancel(context.Background())
-
 	w := &TierMoverWorker{
-		engine: engine, log: log, interval: interval, enabled: enabled,
+		lifecycle: newLifecycle(),
+		engine:    engine, log: log, interval: interval, enabled: enabled,
 		trigger: make(chan struct{}, 1),
-		stopCh:  make(chan struct{}), doneCh: make(chan struct{}),
-		runCtx: runCtx, cancel: cancel,
 	}
 
-	w.lock = func(ctx context.Context) (func(), bool, error) {
-		if sqlDB == nil {
-			return func() {}, true, nil
-		}
-
-		return tryAdvisoryLock(ctx, sqlDB, tierMoverLockKey)
-	}
+	w.lock = func(ctx context.Context) (func(), bool, error) { return tryClusterLock(ctx, sqlDB, tierMoverLockKey) }
 
 	return w
 }
@@ -93,19 +77,6 @@ func (w *TierMoverWorker) Start() {
 
 		go w.loop()
 	})
-}
-
-// Stop cancels an in-flight pass and waits for the loop to exit. It is
-// idempotent and safe without Start.
-func (w *TierMoverWorker) Stop() {
-	w.stopOnce.Do(func() {
-		close(w.stopCh)
-		w.cancel()
-	})
-
-	w.startOnce.Do(func() { close(w.doneCh) })
-
-	<-w.doneCh
 }
 
 // Trigger queues an immediate pass. It reports false when the worker is

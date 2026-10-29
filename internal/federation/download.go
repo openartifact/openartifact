@@ -16,6 +16,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/bgtask"
 	"github.com/openartifact/openartifact/internal/netutil"
 )
 
@@ -132,8 +133,8 @@ func (e *Engine) transfer(ctx context.Context, pc *pullCtx, key string, ref Blob
 
 		pc.logResume(e, ref, after, err)
 
-		if err := sleepCtx(ctx, e.resumePause(failures)); err != nil {
-			return "", err
+		if err := bgtask.Sleep(ctx, e.resumePause(failures)); err != nil {
+			return "", fmt.Errorf("blob transfer: %w", err)
 		}
 	}
 }
@@ -155,18 +156,6 @@ func (e *Engine) resumePause(failures int) time.Duration {
 	}
 
 	return d
-}
-
-func sleepCtx(ctx context.Context, d time.Duration) error {
-	t := time.NewTimer(d)
-	defer t.Stop()
-
-	select {
-	case <-t.C:
-		return nil
-	case <-ctx.Done():
-		return fmt.Errorf("blob transfer: %w", ctx.Err())
-	}
 }
 
 // fetchRange makes one request for the rest of the blob and appends the body

@@ -16,6 +16,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 const (
@@ -483,32 +485,6 @@ func (d *apiDoc) checkSchema(where string, s *apiSchema) error {
 	return nil
 }
 
-// apiSlug turns a tag name into a page file name: lowercase, runs of
-// non-alphanumerics become one dash.
-func apiSlug(s string) string {
-	var b strings.Builder
-
-	dash := false
-
-	for _, r := range strings.ToLower(s) {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			if dash && b.Len() > 0 {
-				b.WriteByte('-')
-			}
-
-			dash = false
-
-			b.WriteRune(r)
-
-			continue
-		}
-
-		dash = true
-	}
-
-	return b.String()
-}
-
 // tagPages groups operations by tag: declared tags first, in declaration
 // order, then the rest alphabetically. Untagged operations go to "Other".
 func (d *apiDoc) tagPages() ([]apiTagPage, error) {
@@ -557,7 +533,7 @@ func apiAssignSlugs(pages []apiTagPage) error {
 	used := map[string]string{"readme": "the index page", "schemas": "the schemas page"}
 
 	for i := range pages {
-		slug := apiSlug(pages[i].name)
+		slug := models.ProjectSlug(pages[i].name) // tag pages follow the project slug rule
 		if slug == "" {
 			return fmt.Errorf("%w: tag %q has no letters or digits to build a page name from", errAPISpec, pages[i].name)
 		}

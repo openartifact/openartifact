@@ -10,6 +10,8 @@ import (
 	"io"
 	"sync"
 	"time"
+
+	"github.com/openartifact/openartifact/internal/bgtask"
 )
 
 // throttleChunk caps one Read so the pacing stays smooth for slow rates.
@@ -29,19 +31,7 @@ type Throttle struct {
 
 // NewThrottle creates a limiter of bytesPerSec; zero or negative means unlimited.
 func NewThrottle(bytesPerSec int64) *Throttle {
-	return &Throttle{rate: float64(bytesPerSec), sleep: sleepCtx, nowFn: time.Now}
-}
-
-func sleepCtx(ctx context.Context, d time.Duration) error {
-	t := time.NewTimer(d)
-	defer t.Stop()
-
-	select {
-	case <-t.C:
-		return nil
-	case <-ctx.Done():
-		return fmt.Errorf("throttle wait: %w", ctx.Err())
-	}
+	return &Throttle{rate: float64(bytesPerSec), sleep: bgtask.Sleep, nowFn: time.Now}
 }
 
 // Wait blocks until n bytes may pass.
@@ -70,7 +60,11 @@ func (t *Throttle) Wait(ctx context.Context, n int) error {
 		return ctx.Err()
 	}
 
-	return t.sleep(ctx, wait)
+	if err := t.sleep(ctx, wait); err != nil {
+		return fmt.Errorf("throttle wait: %w", err)
+	}
+
+	return nil
 }
 
 // Reader wraps r so that reading it consumes the throttle's budget.

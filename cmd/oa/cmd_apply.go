@@ -116,29 +116,22 @@ func signalContext() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt)
 }
 
-// handleDiff implements `oa diff`: exit 0 when the server matches the
-// manifests, 2 when it differs, 1 on error.
-func handleDiff(args []string, client *Client, globalFormat string) int {
+// handleDecl implements `oa apply` (apply true) and `oa diff`: exit 0 when the
+// server matches the manifests, 2 when diff finds a difference, 1 on error.
+func handleDecl(args []string, client *Client, globalFormat string, apply bool) int {
+	name := "diff"
+	if apply {
+		name = "apply"
+	}
+
 	var f declFlags
 
-	fs := newDeclFlagSet("diff", &f, false)
+	fs := newDeclFlagSet(name, &f, apply)
 	if err := fs.Parse(args); err != nil {
 		return exitError
 	}
 
-	return runDecl(&f, client, globalFormat, false, os.Stdin, os.Stdout)
-}
-
-// handleApply implements `oa apply`.
-func handleApply(args []string, client *Client, globalFormat string) int {
-	var f declFlags
-
-	fs := newDeclFlagSet("apply", &f, true)
-	if err := fs.Parse(args); err != nil {
-		return exitError
-	}
-
-	return runDecl(&f, client, globalFormat, true, os.Stdin, os.Stdout)
+	return runDecl(&f, client, globalFormat, apply, os.Stdin, os.Stdout)
 }
 
 func runDecl(f *declFlags, client *Client, globalFormat string, apply bool, stdin io.Reader, out io.Writer) int {

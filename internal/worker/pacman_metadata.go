@@ -92,22 +92,6 @@ func (w *PacmanMetadataWorker) blobs() metadataBlobs {
 	return metadataBlobs{db: w.db, store: w.blobStore, log: w.log, who: "pacman worker"}
 }
 
-// signerFor returns the signer of the repository, nil when it is unsigned. A
-// resolution failure aborts the run: replacing signed metadata with unsigned
-// metadata because of a transient error would break every client that verifies it.
-func (w *PacmanMetadataWorker) signerFor(ctx context.Context, repoID string) (gpg.Signer, error) {
-	if w.signers == nil {
-		return nil, nil //nolint:nilnil // nil signer means unsigned
-	}
-
-	signer, err := w.signers.SignerForRepo(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("pacman worker: resolving signing key: %w", err)
-	}
-
-	return signer, nil
-}
-
 func (w *PacmanMetadataWorker) regenerate(ctx context.Context, repoID string) error {
 	if sqlDB := w.db.GetDB(); sqlDB != nil {
 		release, err := lockForRegeneration(ctx, sqlDB, "pacman:"+repoID)
@@ -118,7 +102,7 @@ func (w *PacmanMetadataWorker) regenerate(ctx context.Context, repoID string) er
 		defer release()
 	}
 
-	signer, err := w.signerFor(ctx, repoID)
+	signer, err := metadataSigner(ctx, w.signers, repoID, "pacman worker")
 	if err != nil {
 		return err
 	}

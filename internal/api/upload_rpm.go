@@ -690,7 +690,7 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := trash.GuardRelease(r, repo, "rpm", rpmVersionRelease(comp.Version, comp.Release)); err != nil {
-		h.writeDeleteError(w, err, packageID)
+		writePackageDeleteError(w, h.log, err, packageID)
 		return
 	}
 
@@ -718,7 +718,7 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		return nil
 	})
 	if err != nil {
-		h.writeDeleteError(w, err, packageID)
+		writePackageDeleteError(w, h.log, err, packageID)
 		return
 	}
 
@@ -755,19 +755,6 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 			"package_id": packageID,
 		},
 	})
-}
-
-// writeDeleteError maps a delete failure to its HTTP answer.
-func (h *RPMUploadHandler) writeDeleteError(w http.ResponseWriter, err error, packageID string) {
-	switch {
-	case errors.Is(err, database.ErrTrashNotFound):
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "package not found")
-	case errors.Is(err, trash.ErrImmutableRelease):
-		writeError(w, http.StatusConflict, "IMMUTABLE_RELEASE", "release versions are immutable in this repository")
-	default:
-		h.log.Errorw("failed to delete component", "package_id", packageID, "error", err)
-		writeError(w, http.StatusInternalServerError, "DATABASE_ERROR", "failed to delete package")
-	}
 }
 
 func (h *RPMUploadHandler) handleCompsUpload(w http.ResponseWriter, r *http.Request) {

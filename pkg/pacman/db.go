@@ -7,10 +7,11 @@ package pacman
 import (
 	"archive/tar"
 	"bytes"
+	"cmp"
 	"compress/gzip"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strconv"
 	"time"
 )
@@ -135,12 +136,8 @@ func WriteDB(w io.Writer, entries []DBEntry, withFiles bool) error {
 		sorted[i] = &entries[i]
 	}
 
-	sort.Slice(sorted, func(i, j int) bool {
-		if sorted[i].Name != sorted[j].Name {
-			return sorted[i].Name < sorted[j].Name
-		}
-
-		return sorted[i].Version < sorted[j].Version
+	slices.SortFunc(sorted, func(a, b *DBEntry) int {
+		return cmp.Or(cmp.Compare(a.Name, b.Name), cmp.Compare(a.Version, b.Version))
 	})
 
 	gz := gzip.NewWriter(w)

@@ -79,23 +79,7 @@ func (a *projectAccess) guard(want presence, newRole, notFound, conflict string)
 }
 
 func (h *ProjectsHandler) handleListMembers(w http.ResponseWriter, r *http.Request) {
-	access, ok := h.loadAccess(w, r, auth.ProjectActionRead)
-	if !ok {
-		return
-	}
-
-	members, err := h.db.ListProjectMembers(r.Context(), access.project.ID)
-	if err != nil {
-		h.dbError(w, "list project members", err)
-		return
-	}
-
-	result := make([]responses.ProjectMemberResponse, 0, len(members))
-	for _, m := range members {
-		result = append(result, memberToResponse(m))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"members": result})
+	writeProjectList(h, w, r, "members", "list project members", h.db.ListProjectMembers, memberToResponse)
 }
 
 func (h *ProjectsHandler) handleAddMember(w http.ResponseWriter, r *http.Request) {

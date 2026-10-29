@@ -318,7 +318,7 @@ func (g *Generator) GenerateSPDX3JSON(
 	repoID, artifactID, format string,
 	metadata map[string]any,
 ) (*SBOMResult, error) {
-	in, err := g.loadSPDX(ctx, repoID, artifactID, format, metadata)
+	in, err := g.sbomInput(ctx, repoID, format, artifactID, metadata)
 	if err != nil {
 		return nil, err
 	}

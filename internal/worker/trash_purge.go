@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -23,7 +22,7 @@ import (
 
 const (
 	// trashPurgeLockKey names the cluster-wide advisory lock (hashed by
-	// tryAdvisoryLock) that the replica running a purge pass holds.
+	// pglock.Try) that the replica running a purge pass holds.
 	trashPurgeLockKey = "openartifact:trash-purge"
 
 	// trashPurgeBatch is how many expired items one listing asks for.
@@ -74,6 +73,8 @@ type PurgeStats struct {
 // Replicas are excluded from each other by a Postgres advisory lock held on a
 // pinned connection for the whole pass.
 type TrashPurgeWorker struct {
+	*lifecycle
+
 	db        database.Database
 	store     database.TrashStore
 	blobStore storage.BlobStore
@@ -85,14 +86,6 @@ type TrashPurgeWorker struct {
 	// lock takes the cluster-wide purge lock. It is a field so tests can
 	// simulate another replica holding it.
 	lock func(ctx context.Context) (release func(), acquired bool, err error)
-
-	startOnce sync.Once
-	stopOnce  sync.Once
-	stopCh    chan struct{}
-	doneCh    chan struct{}
-	// runCtx is cancelled by Stop so an in-flight pass stops promptly.
-	runCtx context.Context //nolint:containedctx // lifecycle context of the worker
-	cancel context.CancelFunc
 }
 
 // NewTrashPurgeWorker creates the worker. interval is the pause between
@@ -100,20 +93,15 @@ type TrashPurgeWorker struct {
 // still works). Without a database that implements database.TrashStore the
 // worker does nothing.
 func NewTrashPurgeWorker(db database.Database, blobStore storage.BlobStore, log *logger.Logger, interval time.Duration) *TrashPurgeWorker {
-	runCtx, cancel := context.WithCancel(context.Background())
-
 	store, _ := db.(database.TrashStore)
 
 	w := &TrashPurgeWorker{
+		lifecycle: newLifecycle(),
 		db:        db,
 		store:     store,
 		blobStore: blobStore,
 		log:       log,
 		interval:  interval,
-		stopCh:    make(chan struct{}),
-		doneCh:    make(chan struct{}),
-		runCtx:    runCtx,
-		cancel:    cancel,
 	}
 	w.lock = w.acquireLock
 
@@ -137,45 +125,7 @@ func (w *TrashPurgeWorker) WithMetrics(reg *metrics.Registry) *TrashPurgeWorker 
 // Start begins the scheduled passes. It does nothing when the interval is not
 // positive or the database has no trash support. Only the first call counts.
 func (w *TrashPurgeWorker) Start() {
-	w.startOnce.Do(func() {
-		if w.interval <= 0 || w.store == nil {
-			close(w.doneCh)
-
-			return
-		}
-
-		go w.loop()
-	})
-}
-
-// Stop cancels an in-flight pass and waits for the schedule goroutine to exit.
-// It is idempotent and safe without Start.
-func (w *TrashPurgeWorker) Stop() {
-	w.stopOnce.Do(func() {
-		close(w.stopCh)
-		w.cancel()
-	})
-
-	// Never started: nothing will close doneCh, and a later Start must not.
-	w.startOnce.Do(func() { close(w.doneCh) })
-
-	<-w.doneCh
-}
-
-func (w *TrashPurgeWorker) loop() {
-	defer close(w.doneCh)
-
-	ticker := time.NewTicker(w.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			w.runScheduled()
-		case <-w.stopCh:
-			return
-		}
-	}
+	w.startEvery(w.store != nil, w.interval, w.runScheduled)
 }
 
 // runScheduled runs one pass of the schedule. A panic ends the pass, not the
@@ -239,12 +189,7 @@ func (w *TrashPurgeWorker) RunOnce(ctx context.Context) (PurgeStats, error) {
 // acquireLock takes the advisory lock on a pinned connection. A database
 // without an SQL pool (test fakes) has no other replicas to exclude.
 func (w *TrashPurgeWorker) acquireLock(ctx context.Context) (func(), bool, error) {
-	sqlDB := w.db.GetDB()
-	if sqlDB == nil {
-		return func() {}, true, nil
-	}
-
-	return tryAdvisoryLock(ctx, sqlDB, trashPurgeLockKey)
+	return tryClusterLock(ctx, w.db.GetDB(), trashPurgeLockKey)
 }
 
 // purgeExpired purges expired items batch by batch until none is left, the

@@ -62,20 +62,7 @@ func (h *AdminAIHandler) Register(r chi.Router) {
 }
 
 func (h *AdminAIHandler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(r.Context(), p, h.evaluator)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
-		return false
-	}
-
-	if !isAdmin {
-		writeError(w, http.StatusForbidden, "admin_required", "admin access required")
-		return false
-	}
-
-	return true
+	return requireAdminCode(w, r, h.evaluator, "admin_required")
 }
 
 // loadConfigFromDB reads AI config from system_settings table.

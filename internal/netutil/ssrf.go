@@ -58,6 +58,27 @@ func blockedIP(ip netip.Addr) bool {
 	return false
 }
 
+// safeDialer dials with a 10s timeout and refuses, at connection time, any
+// address blockedIP rejects, so a DNS answer that changes between a check and
+// the dial cannot get around the policy.
+func safeDialer() *net.Dialer {
+	return &net.Dialer{
+		Timeout: 10 * time.Second,
+		Control: func(_, address string, _ syscall.RawConn) error {
+			ap, err := netip.ParseAddrPort(address)
+			if err != nil {
+				return err
+			}
+
+			if blockedIP(ap.Addr()) {
+				return ErrBlockedAddress
+			}
+
+			return nil
+		},
+	}
+}
+
 // blockedAddr applies the policy to ip itself, without looking inside
 // IPv6 transition addresses.
 func blockedAddr(ip netip.Addr) bool {
@@ -274,19 +295,7 @@ func SafeHTTPClientWithHeaderTimeout(timeout, responseHeaderTimeout time.Duratio
 // that does not answer is closed, so requests on a dead connection fail fast
 // instead of waiting for TCP retransmit exhaustion.
 func SafeHTTPClientWithStallTimeout(timeout, responseHeaderTimeout, stallTimeout time.Duration) *http.Client {
-	d := &net.Dialer{
-		Timeout: 10 * time.Second,
-		Control: func(_, address string, _ syscall.RawConn) error {
-			ap, err := netip.ParseAddrPort(address)
-			if err != nil {
-				return err
-			}
-			if blockedIP(ap.Addr()) {
-				return ErrBlockedAddress
-			}
-			return nil
-		},
-	}
+	d := safeDialer()
 	tr := &http.Transport{
 		Proxy:                 nil,
 		DialContext:           func(ctx context.Context, n, a string) (net.Conn, error) { return d.DialContext(ctx, n, a) },

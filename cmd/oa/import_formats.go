@@ -101,26 +101,39 @@ func lookupSourceFormat(m map[string]importFormat, name string) (importFormat, b
 	return f, ok
 }
 
+// repoFilePath is the native path of an asset in the /repos/<format>/<repo>/<path>
+// layout of the formats whose files keep their source path (maven, raw).
+func repoFilePath(f importFormat, dst, assetPath string) string {
+	return "/repos/" + string(f) + "/" + url.PathEscape(dst) + "/" + escapePath(assetPath)
+}
+
+// uploadRepoFile returns the upload of a format in the /repos/<format>/ layout;
+// jsonReply says whether the server answers the PUT with JSON.
+func uploadRepoFile(f importFormat, jsonReply bool) func(context.Context, *importTarget, uploadRequest) (uploadResult, error) {
+	return func(ctx context.Context, t *importTarget, r uploadRequest) (uploadResult, error) {
+		return t.putFile(ctx, repoFilePath(f, r.Dst, r.Asset.Path), r.Asset, r.Body, r.Meta, jsonReply)
+	}
+}
+
+// removeRepoFile returns the removal of a format in the /repos/<format>/ layout.
+func removeRepoFile(f importFormat) func(context.Context, *importTarget, string, sourceAsset, uploadResult) error {
+	return func(ctx context.Context, t *importTarget, dst string, a sourceAsset, _ uploadResult) error {
+		return t.deletePath(ctx, repoFilePath(f, dst, a.Path))
+	}
+}
+
 func init() { //nolint:gochecknoinits // the built-in formats register themselves with the importer
 	registerFormat(formatDef{
 		format: formatMaven, nexus: []string{"maven2"}, artifactory: []string{"maven", "gradle"},
 		importable: importableMaven, match: matchPath, overwrites: true,
-		upload: func(ctx context.Context, t *importTarget, r uploadRequest) (uploadResult, error) {
-			return t.putFile(ctx, "/repos/maven/"+url.PathEscape(r.Dst)+"/"+escapePath(r.Asset.Path), r.Asset, r.Body, r.Meta, false)
-		},
-		remove: func(ctx context.Context, t *importTarget, dst string, a sourceAsset, _ uploadResult) error {
-			return t.deletePath(ctx, "/repos/maven/"+url.PathEscape(dst)+"/"+escapePath(a.Path))
-		},
+		upload: uploadRepoFile(formatMaven, false),
+		remove: removeRepoFile(formatMaven),
 	})
 	registerFormat(formatDef{
 		format: formatRaw, nexus: []string{"raw"}, artifactory: []string{"generic"},
 		importable: func(string) bool { return true }, match: matchPath, overwrites: true,
-		upload: func(ctx context.Context, t *importTarget, r uploadRequest) (uploadResult, error) {
-			return t.putFile(ctx, "/repos/raw/"+url.PathEscape(r.Dst)+"/"+escapePath(r.Asset.Path), r.Asset, r.Body, r.Meta, true)
-		},
-		remove: func(ctx context.Context, t *importTarget, dst string, a sourceAsset, _ uploadResult) error {
-			return t.deletePath(ctx, "/repos/raw/"+url.PathEscape(dst)+"/"+escapePath(a.Path))
-		},
+		upload: uploadRepoFile(formatRaw, true),
+		remove: removeRepoFile(formatRaw),
 	})
 	registerFormat(formatDef{
 		format: formatDeb, nexus: []string{"apt"}, artifactory: []string{"debian"},

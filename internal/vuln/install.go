@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/bgtask"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/pathseg"
 )
@@ -284,24 +285,11 @@ func (r *Registry) ensureInstalled(ctx context.Context, t *cliTool, allowDownloa
 			return
 		}
 
-		if !sleepCtx(ctx, retry) {
+		if bgtask.Sleep(ctx, retry) != nil {
 			return
 		}
 
 		retry = min(retry*2, r.retryMax)
-	}
-}
-
-// sleepCtx waits d and reports false when ctx ended first.
-func sleepCtx(ctx context.Context, d time.Duration) bool {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
 	}
 }
 

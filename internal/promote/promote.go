@@ -107,6 +107,44 @@ func (r Request) displace(ctx context.Context, tx Tx, kind models.TrashKind, ids
 	return nil
 }
 
+// settleDest settles one source item art against dest, the live destination row
+// at its coordinates (the zero destRow: none); same says dest holds the item's
+// content. It reports whether the item still has to be copied: not when the
+// destination holds it already (recorded in res as existing); yes when it holds
+// nothing or, forced, other content, which is moved to the trash and reported
+// as replaced. Other content without req.Force is a conflict.
+func (r Request) settleDest(
+	ctx context.Context,
+	tx Tx,
+	res *Result,
+	kind models.TrashKind,
+	format string,
+	art Artifact,
+	dest destRow,
+	same bool,
+) (bool, error) {
+	switch {
+	case dest.id == "":
+		return true, nil
+	case same:
+		res.Existing = append(res.Existing, art)
+
+		return false, nil
+	case !r.Force:
+		return false, r.conflict(format, art.Name, art.Version)
+	}
+
+	if err := r.displace(ctx, tx, kind, dest.id); err != nil {
+		return false, err
+	}
+
+	replaced := art
+	replaced.SHA256, replaced.Size = dest.sha, dest.size
+	res.Replaced = append(res.Replaced, replaced)
+
+	return true, nil
+}
+
 // Artifact describes one artifact row a promotion wrote or found.
 type Artifact struct {
 	Name    string `json:"name"`
@@ -166,6 +204,14 @@ type Result struct {
 	QuarantineKeys []string
 	// Regen lists the metadata refreshes the destination needs.
 	Regen []Regen
+}
+
+// addCopied records art as newly written to the destination, adding bytes (the
+// storage of the copy) and one artifact to the quota usage.
+func (r *Result) addCopied(art Artifact, bytes int64) {
+	r.Copied = append(r.Copied, art)
+	r.Usage.Bytes += bytes
+	r.Usage.Artifacts++
 }
 
 // merge appends o to r.

@@ -205,36 +205,22 @@ func promoteConanRevision(ctx context.Context, tx Tx, req Request, rev conanRevi
 		art := Artifact{Name: rev.name, Version: rev.version, Path: f.path(rev), SHA256: f.sha, Size: f.size}
 		res.QuarantineKeys = append(res.QuarantineKeys, f.quarantineKeys(rev)...)
 
-		if f.dst.id != "" && !f.same {
-			if !req.Force {
-				return nil, req.conflict("conan", rev.name, rev.version)
-			}
-
-			if err := req.displace(ctx, tx, models.TrashKindConan, f.dst.id); err != nil {
-				return nil, err
-			}
-
-			res.Replaced = append(
-				res.Replaced,
-				Artifact{Name: rev.name, Version: rev.version, Path: f.path(rev), SHA256: f.dst.sha, Size: f.dst.size},
-			)
-			f.dst = destRow{}
+		toCopy, err := req.settleDest(ctx, tx, res, models.TrashKindConan, "conan", art, f.dst, f.same)
+		if err != nil {
+			return nil, err
 		}
 
-		switch {
-		case f.dst.id != "":
-			res.Existing = append(res.Existing, art)
-		default:
-			if _, err := tx.ExecContext(ctx, conanCopyQuery, req.Dst.ID, f.id); err != nil {
-				return nil, fmt.Errorf("copy conan file into the target: %w", err)
-			}
-
-			// Like a file upload: its blob size and one artifact (none of the
-			// size for a file without blob).
-			res.Copied = append(res.Copied, art)
-			res.Usage.Bytes += f.size
-			res.Usage.Artifacts++
+		if !toCopy {
+			continue
 		}
+
+		if _, err := tx.ExecContext(ctx, conanCopyQuery, req.Dst.ID, f.id); err != nil {
+			return nil, fmt.Errorf("copy conan file into the target: %w", err)
+		}
+
+		// Like a file upload: its blob size and one artifact (none of the
+		// size for a file without blob).
+		res.addCopied(art, f.size)
 	}
 
 	slices.Sort(res.QuarantineKeys)

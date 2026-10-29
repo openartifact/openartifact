@@ -49,6 +49,95 @@ func (c *destCollisions) replace(
 	return req.displace(ctx, tx, kind, ids...)
 }
 
+// packageFile is a live source row of a deb or rpm repository: the candidate
+// and the file name its package is served under.
+type packageFile struct {
+	candidate
+
+	filename string
+}
+
+// file returns f itself; embedded in debRow and rpmRow it lets
+// promoteDebRpmRows read the part of a row both formats share.
+func (f *packageFile) file() *packageFile { return f }
+
+// debRpmRow is a source row of a deb or rpm repository.
+type debRpmRow interface {
+	file() *packageFile
+	quarantineKeys() []string
+}
+
+// debRpmPromoter is what the deb and rpm promoters do differently when they
+// promote a source row of type R: the trash kind and the name of the format,
+// the lookup of what the destination holds, and the copy of the row.
+type debRpmPromoter[R debRpmRow] interface {
+	Format() string
+	trashKind() models.TrashKind
+	destination(ctx context.Context, tx Tx, req Request, row R) (*destCollisions, error)
+	copyRow(ctx context.Context, tx Tx, req Request, row R) error
+}
+
+// promoteDebRpmRows promotes every source row of a deb or rpm repository,
+// copying each one unless the destination already holds it.
+func promoteDebRpmRows[R debRpmRow](ctx context.Context, tx Tx, req Request, p debRpmPromoter[R], rows []R) (*Result, error) {
+	res := &Result{}
+
+	for _, row := range rows {
+		res.QuarantineKeys = append(res.QuarantineKeys, row.quarantineKeys()...)
+
+		dest, err := p.destination(ctx, tx, req, row)
+		if err != nil {
+			return nil, err
+		}
+
+		f := row.file()
+
+		err = dest.promote(ctx, tx, req, res, p.trashKind(), p.Format(), f.artifact(f.filename, req.SHA256), f.licenses,
+			func() error { return p.copyRow(ctx, tx, req, row) })
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return res, nil
+}
+
+// promote completes the promotion of one source package art (declaring
+// licenses) of a deb or rpm repository: the colliding rows with other content
+// are settled by replace, then, unless the destination already holds the same
+// content (an idempotent retry), copyRow copies the row and the copy is
+// accounted in res.
+func (c *destCollisions) promote(
+	ctx context.Context,
+	tx Tx,
+	req Request,
+	res *Result,
+	kind models.TrashKind,
+	format string,
+	art Artifact,
+	licenses []string,
+	copyRow func() error,
+) error {
+	if err := c.replace(ctx, tx, req, kind, format, art.Name, art.Version, res); err != nil {
+		return err
+	}
+
+	if c.same {
+		res.Existing = append(res.Existing, art)
+
+		return nil
+	}
+
+	if err := copyRow(); err != nil {
+		return err
+	}
+
+	res.addCopied(art, art.Size)
+	res.Licenses = append(res.Licenses, licenses...)
+
+	return nil
+}
+
 // narrowRows keeps the rows whose identifiers equal path, with the semantics of
 // narrow: when path names none of them every row stays. cand returns the
 // candidate view of a row; candidate ids must be unique within rows.

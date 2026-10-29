@@ -151,20 +151,20 @@ func (groupKind) Create(ctx context.Context, env *Env, o *Object) (string, error
 		body["description"] = d
 	}
 
-	var created groupResponse
-	if err := env.Client.Do(ctx, http.MethodPost, groupsPath, body, &created); err != nil {
-		return "", fmt.Errorf("create group %q: %w", o.Name, err)
+	id, err := env.Client.create(ctx, groupsPath, body, "group", o.Name)
+	if err != nil {
+		return "", err
 	}
 
 	env.ForgetIdents()
 
 	if members := StrList(o.Spec, "members"); len(members) > 0 {
-		if err := setGroupMembers(ctx, env, created.ID, members); err != nil {
-			return created.ID, fmt.Errorf("set members of group %q: %w", o.Name, err)
+		if err := setGroupMembers(ctx, env, id, members); err != nil {
+			return id, fmt.Errorf("set members of group %q: %w", o.Name, err)
 		}
 	}
 
-	return created.ID, nil
+	return id, nil
 }
 
 func (groupKind) Update(ctx context.Context, env *Env, live *Live, o *Object, changes []Change) (string, error) {
@@ -206,8 +206,8 @@ func setGroupMembers(ctx context.Context, env *Env, groupID string, usernames []
 }
 
 func (groupKind) Delete(ctx context.Context, env *Env, live *Live) error {
-	if err := env.Client.Do(ctx, http.MethodDelete, groupsPath+"/"+PathEscape(live.ID), nil, nil); err != nil {
-		return fmt.Errorf("delete group %q: %w", live.Key, err)
+	if err := env.Client.remove(ctx, groupsPath+"/"+PathEscape(live.ID), "group", live.Key); err != nil {
+		return err
 	}
 
 	env.ForgetIdents()

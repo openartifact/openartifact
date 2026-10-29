@@ -144,6 +144,28 @@ func isHexSHA256(s string) bool {
 	return true
 }
 
+// sbomInput is the Input of an artifact for an SBOM document: its properties
+// plus everything loadSBOM adds.
+func (g *Generator) sbomInput(ctx context.Context, repoID, format, artifactID string, metadata map[string]any) (*Input, error) {
+	return g.loadInput(ctx, repoID, format, artifactID, metadata, g.loadSBOM)
+}
+
+// loadInput builds the Input of an artifact from its properties and completes
+// it with load (load or loadSBOM).
+func (g *Generator) loadInput(
+	ctx context.Context,
+	repoID, format, artifactID string,
+	metadata map[string]any,
+	load func(context.Context, string, *Input) error,
+) (*Input, error) {
+	in := newInput(format, artifactID, metadata)
+	if err := load(ctx, repoID, in); err != nil {
+		return nil, err
+	}
+
+	return in, nil
+}
+
 // load adds the stored hash, license scan, vulnerability scan and VEX
 // decisions of the artifact. With no database only the properties are used.
 func (g *Generator) load(ctx context.Context, repoID string, in *Input) error {

@@ -17,10 +17,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/smithy-go"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -220,20 +218,12 @@ func isNoSuchUpload(err error) bool {
 		return true
 	}
 
-	apiErr, ok := errors.AsType[smithy.APIError](err)
-
-	return ok && apiErr.ErrorCode() == "NoSuchUpload"
+	return hasS3Code(err, "NoSuchUpload")
 }
 
 // isNotImplemented reports a backend that does not implement an S3 operation.
 func isNotImplemented(err error) bool {
-	if apiErr, ok := errors.AsType[smithy.APIError](err); ok && apiErr.ErrorCode() == "NotImplemented" {
-		return true
-	}
-
-	respErr, ok := errors.AsType[*awshttp.ResponseError](err)
-
-	return ok && respErr.HTTPStatusCode() == http.StatusNotImplemented
+	return hasS3Code(err, "NotImplemented") || hasS3Status(err, http.StatusNotImplemented)
 }
 
 // multipartUploadsWhere walks the in-progress multipart uploads under the

@@ -87,6 +87,12 @@ func principalIsAdmin(ctx context.Context, p *auth.Principal, evaluator *auth.Ev
 // performs a coarse check (and lets sessions reach a few self-service
 // routes), so every administrative handler must call this itself.
 func requireAdmin(w http.ResponseWriter, r *http.Request, evaluator *auth.Evaluator) bool {
+	return requireAdminCode(w, r, evaluator, "forbidden")
+}
+
+// requireAdminCode is requireAdmin with a caller-chosen error code for the 403,
+// for the admin surfaces whose clients key off a code other than "forbidden".
+func requireAdminCode(w http.ResponseWriter, r *http.Request, evaluator *auth.Evaluator, forbiddenCode string) bool {
 	isAdmin, err := principalIsAdmin(r.Context(), currentPrincipal(r), evaluator)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
@@ -94,7 +100,7 @@ func requireAdmin(w http.ResponseWriter, r *http.Request, evaluator *auth.Evalua
 	}
 
 	if !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+		writeError(w, http.StatusForbidden, forbiddenCode, "admin access required")
 		return false
 	}
 

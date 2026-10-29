@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"fmt"
 	"io"
 	"strconv"
@@ -62,23 +61,6 @@ func (w *RPMetadataWorker) WithDrainTimeout(d time.Duration) *RPMetadataWorker {
 func (w *RPMetadataWorker) WithRegenLimiter(l *RegenLimiter) *RPMetadataWorker {
 	w.q.setLimiter(l)
 	return w
-}
-
-// signerFor returns the signer of the repository's metadata, nil when it is
-// unsigned. A resolution failure aborts the regeneration: replacing signed
-// metadata with unsigned metadata because of a transient error would break
-// every client that verifies it.
-func (w *RPMetadataWorker) signerFor(ctx context.Context, repoID string) (gpg.Signer, error) {
-	if w.signers == nil {
-		return nil, nil //nolint:nilnil // nil signer means unsigned
-	}
-
-	signer, err := w.signers.SignerForRepo(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("rpm worker: resolving signing key: %w", err)
-	}
-
-	return signer, nil
 }
 
 // WithStaleHook calls fn with the repository id on every NotifyStale: the group
@@ -325,13 +307,15 @@ func (w *RPMetadataWorker) readPackageBlob(ctx context.Context, sha256 string) (
 // runs once at startup so migrations that invalidate metadata take effect
 // without waiting for an upload.
 func (w *RPMetadataWorker) RegenerateStale(ctx context.Context) {
-	rows, err := w.db.GetDB().QueryContext(ctx, `SELECT repository_id FROM rpm_repos WHERE metadata_stale`)
+	const query = `SELECT repository_id FROM rpm_repos WHERE metadata_stale`
+
+	rows, err := w.db.GetDB().QueryContext(ctx, query) //nolint:rowserrcheck // ScanStrings checks Err
 	if err != nil {
 		w.log.Warnw("listing stale rpm repos failed", "error", err)
 		return
 	}
 
-	ids, err := scanStaleRepoIDs(rows)
+	ids, err := sq.ScanStrings(rows)
 	if err != nil {
 		w.log.Warnw("listing stale rpm repos failed", "error", err)
 		return
@@ -342,23 +326,6 @@ func (w *RPMetadataWorker) RegenerateStale(ctx context.Context) {
 			w.log.Warnw("startup rpm metadata regeneration failed", "repo_id", id, "error", err)
 		}
 	}
-}
-
-func scanStaleRepoIDs(rows *sql.Rows) ([]string, error) {
-	defer func() { _ = rows.Close() }()
-
-	var ids []string
-
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("scan repo id: %w", err)
-		}
-
-		ids = append(ids, id)
-	}
-
-	return ids, rows.Err()
 }
 
 // buildMetadata renders every generated metadata file, keyed by repo-relative path.
@@ -423,7 +390,7 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 
 	blobs["repodata/repomd.xml"] = repomdXML
 
-	signer, err := w.signerFor(ctx, repoID)
+	signer, err := metadataSigner(ctx, w.signers, repoID, "rpm worker")
 	if err != nil {
 		return nil, err
 	}

@@ -22,17 +22,19 @@ type rpmPromoter struct{}
 
 func (rpmPromoter) Format() string { return "rpm" }
 
+func (rpmPromoter) trashKind() models.TrashKind { return models.TrashKindRPM }
+
 // rpmDefaultBaseArch is the base architecture the upload path gives the
 // rpm_repos row it creates.
 const rpmDefaultBaseArch = "x86_64"
 
 // rpmRow is a live source rpm_packages row holding the item's content.
 type rpmRow struct {
-	candidate
+	packageFile
 
 	pkgVersion, release string
 	epoch               int
-	arch, filename      string
+	arch                string
 }
 
 // quarantineKeys are the identifiers the package download checks for quarantine.
@@ -103,12 +105,9 @@ func (p rpmPromoter) Promote(ctx context.Context, tx Tx, req Request) (*Result, 
 		return nil, err
 	}
 
-	res := &Result{}
-
-	for _, row := range narrowRows(rows, func(r *rpmRow) candidate { return r.candidate }, req.Path) {
-		if err := p.promoteRow(ctx, tx, req, row, res); err != nil {
-			return nil, err
-		}
+	res, err := promoteDebRpmRows(ctx, tx, req, p, narrowRows(rows, func(r *rpmRow) candidate { return r.candidate }, req.Path))
+	if err != nil {
+		return nil, err
 	}
 
 	if len(res.Copied) > 0 {
@@ -160,37 +159,6 @@ func (rpmPromoter) sources(ctx context.Context, tx Tx, req Request) ([]*rpmRow, 
 	}
 
 	return out, nil
-}
-
-// promoteRow copies one source row unless the destination already holds it.
-func (p rpmPromoter) promoteRow(ctx context.Context, tx Tx, req Request, row *rpmRow, res *Result) error {
-	art := Artifact{Name: row.name, Version: row.version, Path: row.filename, SHA256: req.SHA256, Size: row.size}
-	res.QuarantineKeys = append(res.QuarantineKeys, row.quarantineKeys()...)
-
-	dest, err := p.destination(ctx, tx, req, row)
-	if err != nil {
-		return err
-	}
-
-	if err := dest.replace(ctx, tx, req, models.TrashKindRPM, "rpm", row.name, row.version, res); err != nil {
-		return err
-	}
-
-	switch {
-	case dest.same:
-		res.Existing = append(res.Existing, art)
-	default:
-		if err := p.copyRow(ctx, tx, req, row); err != nil {
-			return err
-		}
-
-		res.Copied = append(res.Copied, art)
-		res.Usage.Bytes += row.size
-		res.Usage.Artifacts++
-		res.Licenses = append(res.Licenses, row.licenses...)
-	}
-
-	return nil
 }
 
 // destination collects what the destination holds for the source row: rows

@@ -479,6 +479,26 @@ func encryptUpstreamPassword(plain string) (string, error) {
 	return enc, nil
 }
 
+// protectUpstreamPassword encrypts plain for storage. On failure it writes the
+// 400 (not a plaintext password) or 500 (logged under op) answer and returns
+// false.
+func (h *RepositoriesHandler) protectUpstreamPassword(w http.ResponseWriter, op, plain string) (string, bool) {
+	enc, err := encryptUpstreamPassword(plain)
+	if err == nil {
+		return enc, true
+	}
+
+	if ve, ok := errors.AsType[validationError](err); ok {
+		writeError(w, http.StatusBadRequest, "validation_failed", ve.Error())
+		return "", false
+	}
+
+	h.log.Errorw(op+": encrypt upstream password", "error", err)
+	writeError(w, http.StatusInternalServerError, "internal_error", "failed to protect upstream credentials")
+
+	return "", false
+}
+
 // createRepositoryBody is the body of POST /api/v1/repositories and of
 // POST /api/v1/projects/{project}/repositories.
 type createRepositoryBody struct {
@@ -691,17 +711,8 @@ func (h *RepositoriesHandler) createRepository(
 			return
 		}
 
-		encPassword, err := encryptUpstreamPassword(body.UpstreamPassword)
-		if err != nil {
-			if ve, ok := errors.AsType[validationError](err); ok {
-				writeError(w, http.StatusBadRequest, "validation_failed", ve.Error())
-
-				return
-			}
-
-			h.log.Errorw("create repository: encrypt upstream password", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to protect upstream credentials")
-
+		encPassword, ok := h.protectUpstreamPassword(w, "create repository", body.UpstreamPassword)
+		if !ok {
 			return
 		}
 
@@ -971,17 +982,8 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	if body.UpstreamPassword != nil {
-		enc, err := encryptUpstreamPassword(*body.UpstreamPassword)
-		if err != nil {
-			if ve, ok := errors.AsType[validationError](err); ok {
-				writeError(w, http.StatusBadRequest, "validation_failed", ve.Error())
-
-				return
-			}
-
-			h.log.Errorw("update repository: encrypt upstream password", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to protect upstream credentials")
-
+		enc, ok := h.protectUpstreamPassword(w, "update repository", *body.UpstreamPassword)
+		if !ok {
 			return
 		}
 

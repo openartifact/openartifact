@@ -16,6 +16,8 @@ import (
 	"strings"
 
 	"github.com/klauspost/compress/zstd"
+
+	"github.com/openartifact/openartifact/internal/limitio"
 )
 
 // slot is one member to pick out of an archive.
@@ -77,7 +79,7 @@ func decompress(r io.Reader, c compression) (io.Reader, func(), error) {
 // ends. Members beyond the first match of a slot are ignored. A damaged or
 // over-limit tail is tolerated when something was found before it.
 func collectTar(ctx context.Context, r io.Reader, slots []slot, l limits) ([]section, error) {
-	tr := tar.NewReader(ctxReader{ctx: ctx, r: &capReader{r: r, n: maxScanBytes}})
+	tr := tar.NewReader(ctxReader{ctx: ctx, r: limitio.Capped(r, maxScanBytes, ErrTooLarge)})
 
 	found := make([]*string, len(slots))
 	remaining := len(slots)

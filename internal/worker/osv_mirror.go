@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/audit"
@@ -28,7 +27,7 @@ import (
 
 const (
 	// osvMirrorLockKey names the cluster-wide advisory lock (hashed by
-	// tryAdvisoryLock) held by the replica running an import pass.
+	// pglock.Try) held by the replica running an import pass.
 	osvMirrorLockKey = "openartifact:osv-mirror"
 
 	// osvRunTimeout bounds one scheduled pass (downloads, imports, re-match).
@@ -88,6 +87,8 @@ type OSVMirrorStats struct {
 // mark moves only after an import is applied, and a re-match a crash cut short
 // is flagged in the database and redone in full by the next pass.
 type OSVMirrorWorker struct {
+	*lifecycle
+
 	db         database.Database
 	store      database.OSVStore
 	importer   *osv.Importer
@@ -101,14 +102,6 @@ type OSVMirrorWorker struct {
 	// lock takes the cluster-wide lock. It is a field so tests can simulate
 	// another replica holding it.
 	lock func(ctx context.Context) (release func(), acquired bool, err error)
-
-	startOnce sync.Once
-	stopOnce  sync.Once
-	stopCh    chan struct{}
-	doneCh    chan struct{}
-	// runCtx is cancelled by Stop so an in-flight pass stops promptly.
-	runCtx context.Context //nolint:containedctx // lifecycle context of the worker
-	cancel context.CancelFunc
 }
 
 // NewOSVMirrorWorker creates the worker for the given OSV ecosystems. A
@@ -117,21 +110,16 @@ type OSVMirrorWorker struct {
 func NewOSVMirrorWorker(
 	db database.Database, importer *osv.Importer, ecosystems []string, log *logger.Logger, interval time.Duration,
 ) *OSVMirrorWorker {
-	runCtx, cancel := context.WithCancel(context.Background())
-
 	store, _ := db.(database.OSVStore)
 
 	w := &OSVMirrorWorker{
+		lifecycle:  newLifecycle(),
 		db:         db,
 		store:      store,
 		importer:   importer,
 		log:        log,
 		interval:   interval,
 		ecosystems: ecosystems,
-		stopCh:     make(chan struct{}),
-		doneCh:     make(chan struct{}),
-		runCtx:     runCtx,
-		cancel:     cancel,
 	}
 
 	if store != nil {
@@ -166,19 +154,6 @@ func (w *OSVMirrorWorker) Start() {
 
 		go w.loop()
 	})
-}
-
-// Stop cancels an in-flight pass and waits for the schedule goroutine to exit.
-// It is idempotent and safe without Start.
-func (w *OSVMirrorWorker) Stop() {
-	w.stopOnce.Do(func() {
-		close(w.stopCh)
-		w.cancel()
-	})
-
-	w.startOnce.Do(func() { close(w.doneCh) })
-
-	<-w.doneCh
 }
 
 func (w *OSVMirrorWorker) loop() {
@@ -223,12 +198,7 @@ func (w *OSVMirrorWorker) runScheduled() {
 // acquireLock takes the advisory lock on a pinned connection. A database
 // without an SQL pool (test fakes) has no other replicas to exclude.
 func (w *OSVMirrorWorker) acquireLock(ctx context.Context) (func(), bool, error) {
-	sqlDB := w.db.GetDB()
-	if sqlDB == nil {
-		return func() {}, true, nil
-	}
-
-	return tryAdvisoryLock(ctx, sqlDB, osvMirrorLockKey)
+	return tryClusterLock(ctx, w.db.GetDB(), osvMirrorLockKey)
 }
 
 // RunOnce runs one pass: it imports every configured ecosystem, then

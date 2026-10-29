@@ -108,7 +108,7 @@ func New(cfg Config) (*Service, error) {
 	repairs := newRepairer(c)
 
 	return &Service{
-		store:      &Store{core: c, repairs: repairs},
+		store:      newStore(c, repairs),
 		replicator: newReplicator(c, kickCh),
 		verifier:   &Verifier{core: c, sqlDB: cfg.SQLDB, budget: verifyBudget, window: verifyWindow},
 		repairs:    repairs,

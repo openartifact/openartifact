@@ -445,18 +445,27 @@ func (h *FederationHandler) handleUpdatePeer(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *FederationHandler) handleDeletePeer(w http.ResponseWriter, r *http.Request) {
+	h.deleteChild(w, r, h.store.DeletePeer, "peer", "delete peer")
+}
+
+// deleteChild deletes the {id} child (a peer or a token, named by noun) of the
+// federated repository with del and answers 204; a missing child is a 404 and
+// any other failure a 500 logged as op.
+func (h *FederationHandler) deleteChild(
+	w http.ResponseWriter, r *http.Request, del func(ctx context.Context, repoID, id string) error, noun, op string,
+) {
 	repo, ok := h.enabledRepo(w, r)
 	if !ok {
 		return
 	}
 
-	err := h.store.DeletePeer(r.Context(), repo.ID, urlparams.Vars(r)["id"])
+	err := del(r.Context(), repo.ID, urlparams.Vars(r)["id"])
 
 	switch {
 	case errors.Is(err, federation.ErrNotFound):
-		writeError(w, http.StatusNotFound, "not_found", "peer not found")
+		writeError(w, http.StatusNotFound, "not_found", noun+" not found")
 	case err != nil:
-		h.internalError(w, "delete peer", err)
+		h.internalError(w, op, err)
 	default:
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -574,19 +583,5 @@ func (h *FederationHandler) handleCreateToken(w http.ResponseWriter, r *http.Req
 }
 
 func (h *FederationHandler) handleRevokeToken(w http.ResponseWriter, r *http.Request) {
-	repo, ok := h.enabledRepo(w, r)
-	if !ok {
-		return
-	}
-
-	err := h.store.RevokeToken(r.Context(), repo.ID, urlparams.Vars(r)["id"])
-
-	switch {
-	case errors.Is(err, federation.ErrNotFound):
-		writeError(w, http.StatusNotFound, "not_found", "token not found")
-	case err != nil:
-		h.internalError(w, "revoke token", err)
-	default:
-		w.WriteHeader(http.StatusNoContent)
-	}
+	h.deleteChild(w, r, h.store.RevokeToken, "token", "revoke token")
 }

@@ -119,12 +119,7 @@ func (g *Generator) VEXInputs(ctx context.Context, repoID, format string) ([]*In
 // VEXInput returns the input of one artifact for a VEX document: its
 // properties, latest scans and decisions.
 func (g *Generator) VEXInput(ctx context.Context, repoID, format, artifactID string, metadata map[string]any) (*Input, error) {
-	in := newInput(format, artifactID, metadata)
-	if err := g.load(ctx, repoID, in); err != nil {
-		return nil, err
-	}
-
-	return in, nil
+	return g.loadInput(ctx, repoID, format, artifactID, metadata, g.load)
 }
 
 // ---- OpenVEX 0.2.0 --------------------------------------------------------

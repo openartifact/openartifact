@@ -584,27 +584,24 @@ func (repositoryKind) Create(ctx context.Context, env *Env, o *Object) (string, 
 	body := Omit(o.Spec, repoFieldQuota, repoFieldCleanup)
 	body["name"] = o.Name
 
-	var resp struct {
-		ID string `json:"id"`
-	}
-
-	if err := env.Client.Do(ctx, http.MethodPost, "/api/v1/repositories", body, &resp); err != nil {
-		return "", fmt.Errorf("create repository %q: %w", o.Name, err)
+	id, err := env.Client.create(ctx, "/api/v1/repositories", body, "repository", o.Name)
+	if err != nil {
+		return "", err
 	}
 
 	if q, ok := o.Spec[repoFieldQuota].(map[string]any); ok && len(q) > 0 {
 		if err := repoPutQuota(ctx, env.Client, o.Name, q); err != nil {
-			return resp.ID, err
+			return id, err
 		}
 	}
 
 	if want, ok := o.Spec[repoFieldCleanup].([]any); ok {
 		if err := repoReconcilePolicies(ctx, env.Client, o.Name, want); err != nil {
-			return resp.ID, err
+			return id, err
 		}
 	}
 
-	return resp.ID, nil
+	return id, nil
 }
 
 // Update PATCHes the changed scalar fields (member_repos and project included)
@@ -802,9 +799,5 @@ func repoPolicyPatch(want, current map[string]any) map[string]any {
 func (repositoryKind) Delete(ctx context.Context, env *Env, live *Live) error {
 	path := "/api/v1/repository/" + PathEscape(live.Key) + "?confirm=" + url.QueryEscape(live.Key)
 
-	if err := env.Client.Do(ctx, http.MethodDelete, path, nil, nil); err != nil {
-		return fmt.Errorf("delete repository %q: %w", live.Key, err)
-	}
-
-	return nil
+	return env.Client.remove(ctx, path, "repository", live.Key)
 }

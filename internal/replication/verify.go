@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/pglock"
 )
 
 const (
@@ -127,7 +128,7 @@ func decodeResult(raw json.RawMessage) (VerifyResult, bool) {
 // replica is verifying) it does nothing.
 func (v *Verifier) Tick(ctx context.Context) error {
 	if v.sqlDB != nil {
-		release, acquired, err := tryAdvisoryLock(ctx, v.sqlDB, verifyLockKey)
+		release, acquired, err := pglock.Try(ctx, v.sqlDB, verifyLockKey)
 		if err != nil {
 			return err
 		}

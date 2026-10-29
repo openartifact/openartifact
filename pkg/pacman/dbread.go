@@ -13,6 +13,8 @@ import (
 	"path"
 	"strconv"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/limitio"
 )
 
 // Limits on what reading one repository database may cost. A database is
@@ -129,7 +131,7 @@ func scanDB(r io.Reader, fn func(dir, member string, body []byte) error, withDes
 
 	defer closeDec()
 
-	tr := tar.NewReader(bufio.NewReader(&limitedDB{r: dec, left: MaxDBBytes}))
+	tr := tar.NewReader(bufio.NewReader(limitio.Capped(dec, MaxDBBytes, ErrDBTooLarge)))
 
 	var (
 		entries   int
@@ -244,27 +246,6 @@ func splitMember(hdr *tar.Header) (string, string, bool) {
 	}
 
 	return "", "", false
-}
-
-// limitedDB fails with ErrDBTooLarge once more than left bytes are read.
-type limitedDB struct {
-	r    io.Reader
-	left int64
-}
-
-func (l *limitedDB) Read(p []byte) (int, error) {
-	if l.left <= 0 {
-		return 0, ErrDBTooLarge
-	}
-
-	if int64(len(p)) > l.left {
-		p = p[:l.left]
-	}
-
-	n, err := l.r.Read(p)
-	l.left -= int64(n)
-
-	return n, err //nolint:wrapcheck // plain passthrough
 }
 
 // parseFileList splits the body of a "files" member: the lines after "%FILES%"

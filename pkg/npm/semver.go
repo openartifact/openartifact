@@ -5,9 +5,12 @@
 package npm
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
+	"strings"
 )
 
 var ErrInvalidSemver = errors.New("invalid semver")
@@ -28,4 +31,23 @@ func ValidateSemver(v string) error {
 	}
 
 	return nil
+}
+
+// ComparePrerelease orders two semver prerelease identifiers (semver 2.0.0,
+// section 11): numeric identifiers numerically and below alphanumeric ones,
+// alphanumeric ones lexically in ASCII order.
+func ComparePrerelease(a, b string) int {
+	an, aErr := strconv.ParseUint(a, 10, 64)
+	bn, bErr := strconv.ParseUint(b, 10, 64)
+
+	switch {
+	case aErr == nil && bErr == nil:
+		return cmp.Compare(an, bn)
+	case aErr == nil:
+		return -1
+	case bErr == nil:
+		return 1
+	}
+
+	return strings.Compare(a, b)
 }

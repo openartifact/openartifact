@@ -44,24 +44,6 @@ func TestAPIText(t *testing.T) {
 	}
 }
 
-func TestAPISlug(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]string{
-		"Repositories":     "repositories",
-		"Dependency-Track": "dependency-track",
-		"  SBOM / VEX  ":   "sbom-vex",
-		"A__b":             "a-b",
-		"???":              "",
-	}
-
-	for in, want := range tests {
-		if got := apiSlug(in); got != want {
-			t.Errorf("apiSlug(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func TestAPIStatusOrder(t *testing.T) {
 	t.Parallel()
 

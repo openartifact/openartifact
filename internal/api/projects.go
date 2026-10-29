@@ -5,6 +5,7 @@
 package api
 
 import (
+	"context"
 	"math"
 	"net/http"
 	"regexp"
@@ -318,6 +319,33 @@ func (h *ProjectsHandler) loadAccess(w http.ResponseWriter, r *http.Request, act
 	}
 
 	return nil, false
+}
+
+// writeProjectList is the shared body of the project sub-resource list
+// endpoints: it requires read access to the project named in the URL, loads the
+// rows with fetch and answers 200 {key: [toResp(row)...]}. logOp names the
+// operation in the database-error log line.
+func writeProjectList[T, R any](
+	h *ProjectsHandler, w http.ResponseWriter, r *http.Request, key, logOp string,
+	fetch func(ctx context.Context, projectID string) ([]*T, error), toResp func(*T) R,
+) {
+	access, ok := h.loadAccess(w, r, auth.ProjectActionRead)
+	if !ok {
+		return
+	}
+
+	rows, err := fetch(r.Context(), access.project.ID)
+	if err != nil {
+		h.dbError(w, logOp, err)
+		return
+	}
+
+	result := make([]R, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, toResp(row))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{key: result})
 }
 
 // canCreate reports whether the principal may create a project: a global

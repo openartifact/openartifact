@@ -24,6 +24,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/openartifact/openartifact/pkg/npm"
 )
 
 const (
@@ -198,25 +200,7 @@ func (a npmSemver) compare(b npmSemver) int {
 		return -1
 	}
 
-	return slices.CompareFunc(a.pre, b.pre, npmComparePrerelease)
-}
-
-// npmComparePrerelease orders prerelease identifiers: numbers numerically and
-// below words, words lexically.
-func npmComparePrerelease(a, b string) int {
-	an, aErr := strconv.ParseUint(a, 10, 64)
-	bn, bErr := strconv.ParseUint(b, 10, 64)
-
-	switch {
-	case aErr == nil && bErr == nil:
-		return cmp.Compare(an, bn)
-	case aErr == nil:
-		return -1
-	case bErr == nil:
-		return 1
-	}
-
-	return strings.Compare(a, b)
+	return slices.CompareFunc(a.pre, b.pre, npm.ComparePrerelease)
 }
 
 // npmCompareVersions orders versions by semver precedence (a prerelease before
