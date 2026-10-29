@@ -6,6 +6,7 @@ package group
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
@@ -20,6 +21,12 @@ const (
 	// cargoConfigMaxAge is the same for the generated config.json.
 	cargoConfigMaxAge = 300
 )
+
+// CargoHooks is the cargo group: merged sparse index entries, crate downloads first-hit.
+var CargoHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: (*Handler).serveCargo,
+	PackageRef:  cargoRef,
+}
 
 // serveCargo answers config.json and index files of a cargo group and
 // reports whether it handled the request; crate downloads fall through to the
@@ -87,4 +94,21 @@ func (h *Handler) serveCargoIndex(
 			return pkgcargo.MergeIndex(docs) //nolint:wrapcheck // logged by serveMergedDoc
 		},
 	})
+}
+
+func cargoRef(relPath string) (PkgRef, bool) {
+	p, err := pkgcargo.ParsePath(relPath)
+	if err != nil {
+		return PkgRef{}, false
+	}
+
+	switch p.Kind {
+	case pkgcargo.KindIndex:
+		return PkgRef{probe: "index/" + p.IndexPath}, true
+	case pkgcargo.KindDownload:
+		return PkgRef{probe: "index/" + pkgcargo.IndexPathFor(strings.ToLower(p.Crate)), file: true}, true
+	case pkgcargo.KindConfig:
+	}
+
+	return PkgRef{}, false
 }

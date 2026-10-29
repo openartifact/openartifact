@@ -25,6 +25,12 @@ const nugetMetaMaxAge = 60
 
 const nugetContentType = "application/json"
 
+// NuGetHooks is the nuget group: merged registrations and version lists, packages first-hit.
+var NuGetHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: (*Handler).serveNuGet,
+	PackageRef:  nugetRef,
+}
+
 // serveNuGet answers the NuGet v3 metadata routes of a group and reports
 // whether the path was one of them; package files (.nupkg, .nuspec) are left
 // to the first-hit resolution of the caller.
@@ -350,4 +356,17 @@ func (h *Handler) nugetMemberItems(
 	}
 
 	return items, true
+}
+
+func nugetRef(relPath string) (PkgRef, bool) {
+	segs := strings.Split(strings.Trim(relPath, "/"), "/")
+	if len(segs) < 3 || segs[0] != "v3" || (segs[1] != "registration" && segs[1] != "package") || !nugetSegment(segs[2]) {
+		return PkgRef{}, false
+	}
+
+	return PkgRef{
+		probe:  "v3/package/" + strings.ToLower(segs[2]) + "/index.json",
+		accept: "application/json",
+		file:   strings.HasSuffix(relPath, ".nupkg") || strings.HasSuffix(relPath, ".nuspec"),
+	}, true
 }

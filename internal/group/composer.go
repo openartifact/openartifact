@@ -26,6 +26,12 @@ const (
 	composerMaxDoc = 64 << 20
 )
 
+// ComposerHooks is the composer group: merged p2 documents, dists first-hit.
+var ComposerHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: (*Handler).serveComposer,
+	PackageRef:  composerRef,
+}
+
 // serveComposer answers the Composer metadata requests of a composer group and
 // reports whether it handled the request; dist downloads fall through to the
 // generic first-hit resolution.
@@ -193,4 +199,20 @@ func (h *Handler) serveComposerMetadata(
 			) //nolint:wrapcheck // logged by serveMergedDoc
 		},
 	})
+}
+
+// composerRef: a hosted member holds a package when its stable or its "~dev"
+// p2 document exists; its dists are files of the package.
+func composerRef(relPath string) (PkgRef, bool) {
+	p, ok := pkgcomposer.ParsePath(relPath)
+	if !ok || (p.Kind != pkgcomposer.KindMetadata && p.Kind != pkgcomposer.KindDist) {
+		return PkgRef{}, false
+	}
+
+	return PkgRef{
+		probe:     "p2/" + p.Name + ".json",
+		altProbes: []string{"p2/" + p.Name + "~dev.json"},
+		accept:    "application/json",
+		file:      p.Kind == pkgcomposer.KindDist,
+	}, true
 }

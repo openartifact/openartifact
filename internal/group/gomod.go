@@ -22,6 +22,12 @@ const maxGoListBytes = 16 << 20
 // list before revalidating.
 const goListMaxAge = 60
 
+// GoHooks is the go group: merged version lists, everything else first-hit.
+var GoHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: (*Handler).serveGo,
+	PackageRef:  goRef,
+}
+
 // serveGo answers "<module>/@v/list" with the union of the members' lists and
 // reports false for every other GOPROXY path (.info, .mod, .zip, @latest),
 // which the caller resolves by first hit: the first member that has the
@@ -92,4 +98,19 @@ func mergeGoVersions(vs [][]byte) []byte {
 	})
 
 	return []byte(strings.Join(list, "\n"))
+}
+
+func goRef(relPath string) (PkgRef, bool) {
+	rel := strings.TrimPrefix(relPath, "/")
+
+	mod, _, ok := strings.Cut(rel, "/@v/")
+	if !ok {
+		mod, ok = strings.CutSuffix(rel, "/@latest")
+	}
+
+	if !ok || mod == "" {
+		return PkgRef{}, false
+	}
+
+	return PkgRef{probe: mod + "/@v/list", nonEmpty: true, file: rel != mod+"/@v/list"}, true
 }

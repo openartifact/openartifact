@@ -23,6 +23,25 @@ func (h *Handler) WithNixKeys(keys formatnix.KeyProvider) *Handler {
 	return h
 }
 
+// NixHooks is the nix group: answers the cache documents and narinfo itself,
+// the first member that has a package answers. No hosted-wins: hosted members
+// are asked before proxy ones and there are no package names to hide.
+var NixHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: func(
+		h *Handler,
+		w http.ResponseWriter,
+		r *http.Request,
+		grp *models.Repository,
+		relPath string,
+		readable []*models.Repository,
+		be Backend,
+	) bool {
+		h.serveNix(w, r, grp, readable, relPath, be)
+
+		return true
+	},
+}
+
 // serveNix answers a request of a nix group, a binary cache over its members:
 // nix-cache-info and public.key are the group's own, a narinfo comes from the
 // first member that has it and everything else (NARs, listings) from the

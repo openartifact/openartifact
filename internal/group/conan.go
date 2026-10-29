@@ -31,6 +31,12 @@ const (
 	maxConanProbeBytes = 8 << 20
 )
 
+// ConanHooks is the conan group: merged search and version lists, files first-hit.
+var ConanHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: (*Handler).serveConan,
+	PackageRef:  conanRef,
+}
+
 // serveConan answers the requests of a conan group that merge over its members
 // and reports whether it handled the request; file lists and files fall through
 // to the generic first-hit resolution.
@@ -388,13 +394,13 @@ func (h *Handler) conanHiddenNames(
 // conanRef is the package a conan request names, for hosted wins: a hosted
 // member holds it when its recipe search for the name (any version, user and
 // channel) finds a recipe.
-func conanRef(relPath string) (pkgRef, bool) {
+func conanRef(relPath string) (PkgRef, bool) {
 	name := pkgconan.NameOf(relPath)
 	if name == "" {
-		return pkgRef{}, false
+		return PkgRef{}, false
 	}
 
-	return pkgRef{
+	return PkgRef{
 		probe:  pkgconan.SearchPath,
 		query:  url.Values{"q": {name + "/*"}}.Encode(),
 		accept: "application/json",
@@ -406,7 +412,8 @@ func conanRef(relPath string) (pkgRef, bool) {
 
 			return slices.ContainsFunc(found, func(ref string) bool { return strings.EqualFold(pkgconan.RefName(ref), name) }), nil
 		},
-		file: conanFileRequest(relPath),
+		owner: (*Handler).ownsByDoc,
+		file:  conanFileRequest(relPath),
 	}, true
 }
 
