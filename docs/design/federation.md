@@ -65,7 +65,7 @@ Before anyone adds an edge/bundle distribution mode (signed bundles, edge nodes,
 
 ### Content units
 
-Replication works on **units**: the smallest piece of repository state that is created, replaced or deleted as a whole. A unit has a format-specific *unit key*, and a Codec per format that knows how to read it from and write it to the format's tables (see [Formats](#formats)).
+Replication works on **units**: the smallest piece of repository state that is created, replaced or deleted as a whole. A unit has a format-specific *unit key*, and a Codec that knows how to read it from and write it to the tables (see [Formats](#formats)). Every format but docker shares **one generic codec** over the generic package tables, parameterised by the format's `storage.Federation` descriptor; docker has its own codec over its dedicated tables.
 
 | Kind | What it is | Examples of unit key |
 |---|---|---|
@@ -131,7 +131,7 @@ federation_peer_tokens (id, repo_id, name, token_hash, created_at, last_used_at,
 
 ### Capture: written in the same transaction as the change
 
-Events are captured by **row triggers** (`AFTER INSERT OR UPDATE OR DELETE`) on the per-format unit tables (`raw_artifacts`, `maven_artifacts`, `npm_versions`, `npm_dist_tags`, `pypi_packages`, `helm_charts`, `cargo_crates`, `gomod_modules`, `nuget_packages`, `docker_manifests`, `docker_tags`). A trigger fires inside the transaction of the statement that changed the row, so a change and its log entry commit or roll back together, for **every** code path: the upload handlers, the API, trash delete and restore, cleanup policies, the declarative apply, the docker garbage collector. No handler has to remember to emit an event, and a crash cannot leave a change without its event. (A Go-level emitter after the DB call, or the webhook publisher, is not transactional and would need a repair job.)
+Events are captured by **row triggers** (`AFTER INSERT OR UPDATE OR DELETE`) on `package_files`, `package_tags` and (updates only, to see a version going to or from the trash) `package_versions`, and on the docker tables `docker_manifests` and `docker_tags`. The trigger functions are generic: they read the unit key from the row's `unit_key` column (written by the format's store at publish time), so a new format needs no new trigger. A trigger fires inside the transaction of the statement that changed the row, so a change and its log entry commit or roll back together, for **every** code path: the upload handlers, the API, trash delete and restore, cleanup policies, the declarative apply, the docker garbage collector. No handler has to remember to emit an event, and a crash cannot leave a change without its event. (A Go-level emitter after the DB call, or the webhook publisher, is not transactional and would need a repair job.)
 
 Each trigger first checks whether the row's repository has a `federation_repos` row (one primary-key lookup, done for every row change of every repository; the cost on non-federated repositories is that lookup). When it does, and the change is replicated state:
 
@@ -146,7 +146,7 @@ The trigger upserts the unit row, assigning:
 - `seq`: `UPDATE federation_repos SET head_seq = head_seq + 1 … RETURNING head_seq`. The row lock is held until the transaction ends, so sequence numbers are allocated in **commit order**: a reader that sees seq *n* has seen every seq below *n*. The price is that concurrent writers to the same federated repository serialise on that row for the duration of their transaction (uploads are short, autocommit transactions; heavy parallel ingestion into a federated repo gets less parallelism than into a plain one). A multi-statement transaction touching units of one repo in different orders can deadlock like any row-lock cycle; Postgres aborts one of them and the client retries.
 - the **stamp** (hybrid logical clock value, see [Conflicts](#conflicts)).
 
-Enabling federation on an existing repository runs a backfill in one transaction: it creates the `federation_repos` row and one unit per live row, stamped with the row's `updated_at`. Disabling federation deletes the `federation_repos` row (units and peers cascade); triggers become no-ops again. The other members are not affected.
+Enabling federation on an existing repository runs a backfill in one transaction (it takes `SHARE` locks on `package_files`, `package_versions` and, for npm, `package_tags` for its duration, so package writers of **all** repositories and formats wait for it): it creates the `federation_repos` row and one unit per live row, stamped with the row's `updated_at`. Disabling federation deletes the `federation_repos` row (units and peers cascade); triggers become no-ops again. The other members are not affected.
 
 ## Replication
 
@@ -163,18 +163,20 @@ The price is latency of up to one poll interval (default 30 s). An `If-None-Matc
 
 ### Protocol
 
+**Protocol 2 (0.15).** The generic package tables changed the `data` payload of every unit (see below) and the unit-key columns, so 0.15 speaks protocol 2 and has no protocol-1 compatibility: `/info` reports `protocol: 2`, the puller refuses any other value, and a mixed 0.14/0.15 federation is not possible. Upgrade every member (stop, import, switch; see [upgrading](../getting-started/upgrading.md#0150)) and re-enable federation; units are rebuilt from the imported content. Unit keys are unchanged. The path of the `artifact.uploaded`/`artifact.deleted` webhook for an applied unit is the keyed file's repository path.
+
 All endpoints live under `/federation/v1/` and authenticate with a **peer token** that is bound to one repository (see [Security](#security)); the repository is therefore implied by the token and never appears in the URL.
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /federation/v1/info` | Handshake: `{protocol, instance_id, log_id, head_seq, repo: {name, format}}` |
+| `GET /federation/v1/info` | Handshake: `{protocol, instance_id, log_id, head_seq, repo: {name, format}}`. `protocol` is **2**; a peer that reports another value is refused (a protocol-1 peer: "upgrade the peer to 0.15 or later") |
 | `GET /federation/v1/log?after=<seq>&limit=<n>` | Feed: units with `seq > after` in seq order: `{log_id, head_seq, entries: [{seq, unit_key, kind, event, tombstone, stamp, content_ref, changed_at}], has_more}` |
 | `GET /federation/v1/unit?key=<unit_key>` | The unit's *current* state: `{unit_key, stamp, tombstone, data, blobs: [{sha256, size}], deps: [unit_key]}` |
 | `GET /federation/v1/blob?unit=<unit_key>&sha256=<hex>` | Stream one blob of that unit. Only blobs listed in the unit's `blobs` are served |
 
 `/blob` honours a single `Range: bytes=N-` (or `bytes=N-M`) request: `206` with `Content-Range`, `416` with `Content-Range: bytes */size` for anything else (start at or past the end, suffix or multiple ranges, a unit other than `bytes`), and `Accept-Ranges: bytes` on every answer. The blob is streamed from the BlobStore at the offset, so a resume does not re-read the prefix. The membership check below runs before any range is looked at.
 
-`data` is the Codec's JSON for the unit: the row's replicated columns with local ids and blob ids replaced by sha256 values. The server never serves a blob that is not part of a live unit of the token's repository, so the token cannot be used to read other repositories or arbitrary storage keys.
+`data` is the Codec's JSON for the unit: the row's replicated columns with local ids and blob ids replaced by sha256 values. For the generic codec it is `{package, version, files[], tag}`: the package identity (`name`, `name_key`, `attrs`), the version (`version`, `version_key`, `metadata`, `created_at`), each live file of the unit (path, filename, blob as sha256, size, role, listed, arch, part, `attrs`, `checksums`, `keyed`, `created_at` and the rows of the format's side tables with every column but `id`) and, for a ref unit, the tag. Never replicated: ids, repository id, trash state, local timestamps, `download_count`, and the descriptor's `LocalPackageAttrs` (npm `latest_version` and `packument_stale`, recomputed locally after apply). The server never serves a blob that is not part of a live unit of the token's repository, so the token cannot be used to read other repositories or arbitrary storage keys.
 
 ### Pull loop (per peer)
 
@@ -196,7 +198,7 @@ Apply is **one local database transaction per unit**, run by the same Codec code
 3. In one transaction with `SET LOCAL oa.federation_apply = 'on'` (which makes the capture triggers return immediately): ensure `blobs` rows, write or soft-delete the unit rows, and write the unit's log row with the **remote stamp** and a fresh local `seq` (so this member's own feed now contains the unit and other peers can pull it from here), observing the remote stamp into the local clock.
 4. After commit: reserve/release quota (`internal/quota`; an exceeded quota fails the unit), release replaced blobs with `storage.SafeDeleteBlob`, notify `RegenQueue` consumers (Maven metadata, npm packuments) and publish `artifact.uploaded` / `artifact.deleted` webhooks so scans, SBOM and AI analysis see the new content exactly as for a local upload.
 
-Because apply reuses the unit tables, the existing read paths, listings, search and trash handle replicated content with no special cases. A unit applied from a peer is indistinguishable from a local upload except for its `deleted_by` (`federation:<peer name>`) if it is later trashed by a replicated delete.
+Quota is reserved per file. Because apply reuses the generic tables, the existing read paths, listings, search and trash handle replicated content with no special cases. A unit applied from a peer is indistinguishable from a local upload except for its `deleted_by` (`federation:<peer name>`) if it is later trashed by a replicated delete.
 
 ### At-least-once and idempotency
 
@@ -294,7 +296,7 @@ Peer URLs are user-supplied outbound targets. They are validated on write with `
 
 ## Formats
 
-v1 supports the formats whose state is *immutable blobs plus simple, row-shaped mutable references* and whose served metadata is either derived on read or regenerated by `RegenQueue`:
+The supported formats are those whose state is *immutable blobs plus simple, row-shaped mutable references* and whose served metadata is either derived on read or regenerated by `RegenQueue`:
 
 | Format | Units | Derived metadata after apply |
 |---|---|---|
