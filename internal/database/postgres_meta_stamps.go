@@ -16,7 +16,7 @@ import (
 // (no blob join, no row decoding), so a revalidation can be answered, and a
 // cached rendering looked up, without loading the rows themselves.
 
-func (p *PostgresDB) CondaRepodataStamp(ctx context.Context, repoID, platform string) (string, error) {
+func (p *CondaStore) CondaRepodataStamp(ctx context.Context, repoID, platform string) (string, error) {
 	stamp, err := p.q.CondaRepodataStamp(ctx, dbsqlc.CondaRepodataStampParams{RepositoryID: repoID, Platform: platform})
 	if err != nil {
 		return "", fmt.Errorf("failed to stamp conda repodata: %w", err)
@@ -27,7 +27,7 @@ func (p *PostgresDB) CondaRepodataStamp(ctx context.Context, repoID, platform st
 
 // ListCondaPackageNames returns the distinct lowercase live package names of a
 // conda repository in every platform.
-func (p *PostgresDB) ListCondaPackageNames(ctx context.Context, repoID string) ([]string, error) {
+func (p *CondaStore) ListCondaPackageNames(ctx context.Context, repoID string) ([]string, error) {
 	names, err := p.q.ListCondaPackageNames(ctx, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list conda package names: %w", err)
@@ -38,7 +38,7 @@ func (p *PostgresDB) ListCondaPackageNames(ctx context.Context, repoID string) (
 
 // HasCondaPackageName reports whether a live conda package of this name exists
 // in the repository, in any platform.
-func (p *PostgresDB) HasCondaPackageName(ctx context.Context, repoID, name string) (bool, error) {
+func (p *CondaStore) HasCondaPackageName(ctx context.Context, repoID, name string) (bool, error) {
 	present, err := p.q.HasCondaPackageName(ctx, dbsqlc.HasCondaPackageNameParams{RepositoryID: repoID, Name: name})
 	if err != nil {
 		return false, fmt.Errorf("failed to check conda package name: %w", err)
