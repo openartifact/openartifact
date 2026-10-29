@@ -113,7 +113,7 @@ func (fp *filePromoter) promote(ctx context.Context, tx Tx, req Request) (*Resul
 		res.QuarantineKeys = append(res.QuarantineKeys, nonEmpty(f.id, f.path, f.filename)...)
 
 		for _, stmt := range fp.p.Prepare {
-			if _, err := tx.ExecContext(ctx, stmt, req.Dst.ID, f.id); err != nil {
+			if _, err := tx.ExecContext(ctx, stmt, stmtArgs(stmt, req.Dst.ID, f.id)...); err != nil {
 				return nil, fmt.Errorf("prepare the target for %s: %w", f.path, err)
 			}
 		}
@@ -553,7 +553,7 @@ func (fp *filePromoter) finishVersions(ctx context.Context, tx Tx, req Request, 
 		}
 
 		for _, stmt := range fp.p.AfterCopy {
-			if _, err := tx.ExecContext(ctx, stmt, req.Dst.ID, v.packageID, v.versionID); err != nil {
+			if _, err := tx.ExecContext(ctx, stmt, stmtArgs(stmt, req.Dst.ID, v.packageID, v.versionID)...); err != nil {
 				return fmt.Errorf("finish the %s copy: %w", fp.format, err)
 			}
 		}
@@ -564,7 +564,7 @@ func (fp *filePromoter) finishVersions(ctx context.Context, tx Tx, req Request, 
 	}
 
 	if fp.p.Regen != storage.RegenNPM {
-		res.Regen = append(res.Regen, Regen{Kind: fp.p.Regen, RepoID: req.Dst.ID})
+		res.Regen = append(res.Regen, Regen{Format: fp.format, RepoID: req.Dst.ID})
 
 		return nil
 	}
@@ -575,11 +575,33 @@ func (fp *filePromoter) finishVersions(ctx context.Context, tx Tx, req Request, 
 		if !seen[v.packageID] {
 			seen[v.packageID] = true
 
-			res.Regen = append(res.Regen, Regen{Kind: fp.p.Regen, PackageID: v.packageID})
+			res.Regen = append(res.Regen, Regen{Format: fp.format, PackageID: v.packageID})
 		}
 	}
 
 	return nil
+}
+
+// stmtArgs keeps the leading args a descriptor statement binds: the driver
+// rejects a statement given more arguments than it has placeholders, and a
+// fragment may need only $1.
+func stmtArgs(stmt string, args ...any) []any {
+	highest := 0
+
+	for i := range len(stmt) {
+		if stmt[i] != '$' {
+			continue
+		}
+
+		n, j := 0, i+1
+		for ; j < len(stmt) && stmt[j] >= '0' && stmt[j] <= '9'; j++ {
+			n = n*10 + int(stmt[j]-'0')
+		}
+
+		highest = max(highest, n)
+	}
+
+	return args[:min(highest, len(args))]
 }
 
 // nonEmpty returns the values that are not the empty string, in order.

@@ -62,33 +62,9 @@ func (w mavenStaleWorker) NotifyStale(repoID, group, artifact string) {
 	w.f.add("maven:" + repoID + ":" + group + ":" + artifact)
 }
 
-var registerRecordingHooks sync.Once
-
-// workers binds recording workers for the formats with generated metadata and,
-// once per process, registers the Changed hooks the plugin layer registers for
-// them (the promote package cannot import it).
+// workers binds recording workers for the formats with generated metadata; the
+// Changed hooks that call them are the real ones, registered by TestMain.
 func (f *fakeRegen) workers() *lifecycle.Workers {
-	registerRecordingHooks.Do(func() {
-		for _, name := range []string{"deb", "rpm", "pacman", "apk"} {
-			lifecycle.Register(name, lifecycle.Hooks{Changed: func(env *lifecycle.Env, c lifecycle.Change) {
-				if n, ok := lifecycle.Worker[interface{ NotifyStale(string) }](env.Workers, name); ok {
-					n.NotifyStale(c.RepoID)
-				}
-			}})
-		}
-
-		lifecycle.Register("npm", lifecycle.Hooks{Changed: func(env *lifecycle.Env, c lifecycle.Change) {
-			if n, ok := lifecycle.Worker[interface{ NotifyStale(string) }](env.Workers, "npm"); ok {
-				n.NotifyStale(c.PackageID)
-			}
-		}})
-		lifecycle.Register("maven", lifecycle.Hooks{Changed: func(env *lifecycle.Env, c lifecycle.Change) {
-			if n, ok := lifecycle.Worker[interface{ NotifyStale(string, string, string) }](env.Workers, "maven"); ok {
-				n.NotifyStale(c.RepoID, c.GroupID, c.ArtifactID)
-			}
-		}})
-	})
-
 	w := lifecycle.NewWorkers()
 	for _, name := range []string{"deb", "rpm", "pacman", "apk", "npm"} {
 		w.Bind(name, staleWorker{f, name})
@@ -107,7 +83,9 @@ func newBundleEnv(t *testing.T, n int) *bundleEnv {
 	h := newHarness(t)
 	ctx := context.Background()
 	regen := &fakeRegen{}
-	env := &bundleEnv{h: h, engine: NewEngine(h.pg, h.log, regen.workers()), src: h.repo("maven", false), dst: h.repo("maven", true), regen: regen}
+	env := &bundleEnv{
+		h: h, engine: NewEngine(h.pg, h.log, regen.workers()), src: h.repo("maven", false), dst: h.repo("maven", true), regen: regen,
+	}
 
 	pipeline := &models.PromotionPipeline{
 		Name:   "pipe",

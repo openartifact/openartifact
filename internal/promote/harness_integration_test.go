@@ -25,6 +25,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/formats"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -77,8 +78,6 @@ func newHarness(t *testing.T) *harness {
 
 	log, pg := openDB(t, dsn, dbName)
 
-	registerFixtureDescriptors()
-
 	return &harness{t: t, pg: pg, log: log}
 }
 
@@ -123,6 +122,8 @@ func migratedTemplate(t *testing.T, admin *sql.DB, dsn string) string {
 
 // TestMain drops the shared template database once every test has run.
 func TestMain(m *testing.M) {
+	formats.Register()
+
 	code := m.Run()
 
 	if sharedTemplate.name != "" {

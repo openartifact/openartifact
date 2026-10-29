@@ -32,6 +32,9 @@ const (
 //	s, sv, sp   the source file, its version and its package
 //	d, dv, dp   a destination file, its version and its package
 //	$1          the destination repository id (uuid)
+//
+// A Prepare or AfterCopy statement binds only the parameters it names: leaving
+// out the trailing ones is fine.
 type Promotion struct {
 	// WholeVersion copies every live file of the matched file's version, not only
 	// the matched file: a Go module is a zip and its go.mod, a conan recipe
