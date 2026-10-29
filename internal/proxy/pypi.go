@@ -8,15 +8,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/pypisimple"
 )
 
@@ -31,8 +28,6 @@ const (
 
 	pypiIndexKey = "simple/"
 )
-
-var errBadPage = errors.New("unparsable upstream simple page")
 
 // servePyPI answers a GET/HEAD for a pypi proxy repository.
 func (s *Service) servePyPI(w http.ResponseWriter, r *http.Request, repo *models.Repository, relPath string) {
@@ -58,13 +53,21 @@ func pageETag(repo *models.Repository, key, blobKey string, offer pypisimple.Off
 	return `"` + hex.EncodeToString(sum[:16]) + `"`
 }
 
-// pageRender is one simple page being answered: the negotiated serialization,
-// and how to turn the parsed upstream body into the response.
-type pageRender struct {
-	offer  pypisimple.Offer
-	key    string
-	target string
-	render func(body []byte, contentType string) ([]byte, error)
+func pypiProjectKey(project string) string { return "simple/" + project + "/" }
+
+func pypiFileKey(project, filename string) string { return "files/" + project + "/" + filename }
+
+// pypiPageDoc is the upstream simple page at path below the upstream URL ("" is
+// the index), cached under key. An unparsable page is dropped from the cache.
+func pypiPageDoc(key, path string) metaDoc {
+	return metaDoc{
+		key:   key,
+		url:   func(upstream string) (string, error) { return upstreamURL(upstream, path) },
+		opts:  staticOpts(fetchOpts{accept: pypisimple.UpstreamAccept}),
+		limit: maxPyPIPageBytes,
+		what:  "simple page",
+		bad:   badDocDrop,
+	}
 }
 
 func (s *Service) servePyPIIndex(w http.ResponseWriter, r *http.Request, repo *models.Repository) {
@@ -74,28 +77,15 @@ func (s *Service) servePyPIIndex(w http.ResponseWriter, r *http.Request, repo *m
 		return
 	}
 
-	target, err := upstreamURL(repo.UpstreamURL, "")
-	if err != nil {
-		s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+	s.servePyPIPage(w, r, repo, offer, pypiPageDoc(pypiIndexKey, ""), func(body []byte, contentType string) ([]byte, error) {
+		names, perr := pypisimple.ParseIndex(body, contentType)
+		if perr != nil {
+			return nil, fmt.Errorf("%w: %w", errUnusableDoc, perr)
+		}
 
-		return
-	}
-
-	s.servePyPIPage(w, r, repo, pageRender{
-		offer:  offer,
-		key:    pypiIndexKey,
-		target: target,
-		render: func(body []byte, contentType string) ([]byte, error) {
-			names, perr := pypisimple.ParseIndex(body, contentType)
-			if perr != nil {
-				return nil, fmt.Errorf("%w: %w", errBadPage, perr)
-			}
-
-			return pypisimple.RenderIndex(offer.Format, names, func(name string) string {
-				return pypisimple.ProjectURL(repo.Name, name)
-			})
-		},
+		return pypisimple.RenderIndex(offer.Format, names, func(name string) string {
+			return pypisimple.ProjectURL(repo.Name, name)
+		})
 	})
 }
 
@@ -106,194 +96,75 @@ func (s *Service) servePyPIProject(w http.ResponseWriter, r *http.Request, repo 
 		return
 	}
 
-	target, err := upstreamURL(repo.UpstreamURL, project+"/")
-	if err != nil {
-		s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	s.servePyPIPage(w, r, repo, pageRender{
-		offer:  offer,
-		key:    pypiProjectKey(project),
-		target: target,
-		render: func(body []byte, contentType string) ([]byte, error) {
+	s.servePyPIPage(
+		w,
+		r,
+		repo,
+		offer,
+		pypiPageDoc(pypiProjectKey(project), project+"/"),
+		func(body []byte, contentType string) ([]byte, error) {
 			files, perr := pypisimple.ParseProject(body, contentType)
 			if perr != nil {
-				return nil, fmt.Errorf("%w: %w", errBadPage, perr)
+				return nil, fmt.Errorf("%w: %w", errUnusableDoc, perr)
 			}
 
 			return pypisimple.RenderProject(offer.Format, project, pypisimple.ServableFiles(files), func(f *pypisimple.File) string {
 				return pypisimple.FileURL(repo.Name, project, f.Filename)
 			})
 		},
-	})
-}
-
-func pypiProjectKey(project string) string { return "simple/" + project + "/" }
-
-func pypiFileKey(project, filename string) string { return "files/" + project + "/" + filename }
-
-// fetchPage resolves a simple page through the cache (TTL, stale-on-error).
-func (s *Service) fetchPage(ctx context.Context, repo *models.Repository, key, target string) (*resolution, error) {
-	return s.resolveWith(ctx, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		return s.fetchURL(fctx, repo, key, target, fetchOpts{accept: pypisimple.UpstreamAccept})
-	})
-}
-
-// readPage loads a cached page body, holding one of the bounded in-memory
-// document slots; the caller must call release once it is done parsing and
-// rendering the body (release is nil when err != nil). When the cache row
-// outlived its blob the row is dropped and the page refetched once, with the
-// slot given up for the duration of the network fetch.
-func (s *Service) readPage(
-	ctx context.Context,
-	repo *models.Repository,
-	key, target string,
-	res *resolution,
-) (*resolution, []byte, func(), error) {
-	return s.loadCachedBody(ctx, repo, key, res, maxPyPIPageBytes, "simple page", func() (*resolution, error) {
-		return s.fetchPage(ctx, repo, key, target)
-	})
+	)
 }
 
 // servePyPIPage answers one rewritten simple page from the cached upstream
-// page, answering 304 before the page is even read when the validator matches.
-func (s *Service) servePyPIPage(w http.ResponseWriter, r *http.Request, repo *models.Repository, pr pageRender) {
-	res, err := s.fetchPage(r.Context(), repo, pr.key, pr.target)
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
-	h := w.Header()
-	h.Add("Vary", "Accept")
-
-	if res.stale {
-		h.Set("Warning", staleWarning)
-	}
-
-	if base.Revalidate(w, r, repo.Public, pageETag(repo, pr.key, res.entry.BlobKey, pr.offer), pypiPageMaxAge) {
-		return
-	}
-
-	res, body, release, err := s.readPage(r.Context(), repo, pr.key, pr.target, res)
-	if err != nil {
-		if r.Context().Err() == nil {
-			s.failWithoutValidators(w, r, err)
-		}
-
-		return
-	}
-
-	out, err := pr.render(body, res.entry.ContentType)
-	release()
-	if err != nil {
-		if errors.Is(err, errBadPage) {
-			// Do not keep serving a body that does not parse until its TTL ends.
-			s.log.Warnw("upstream simple page unparsable", "repo", repo.Name, "path", pr.key, "error", err)
-
-			if derr := s.db.DeleteProxyCacheEntry(r.Context(), repo.ID, pr.key); derr != nil {
-				s.log.Errorw("failed to drop unparsable proxy cache entry", "repo", repo.Name, "path", pr.key, "error", derr)
-			}
-
-			err = errUpstream
-		} else {
-			s.log.Errorw("failed to render simple page", "repo", repo.Name, "path", pr.key, "error", err)
-		}
-
-		s.failWithoutValidators(w, r, err)
-
-		return
-	}
-
-	h.Set("Content-Type", pr.offer.ContentType)
-	h.Set("Content-Length", strconv.Itoa(len(out)))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(out)
-	}
-}
-
-// pypiProjectPage is a parsed upstream project page.
-type pypiProjectPage struct {
-	files []pypisimple.File
-	// pageURL is the URL the page was fetched from; relative file links
-	// resolve against it.
-	pageURL *url.URL
-}
-
-// loadPyPIProject returns the parsed (cached) upstream page of project.
-func (s *Service) loadPyPIProject(ctx context.Context, repo *models.Repository, project string) (*pypiProjectPage, error) {
-	target, err := upstreamURL(repo.UpstreamURL, project+"/")
-	if err != nil {
-		s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
-		return nil, errInternal
-	}
-
-	pageURL, err := url.Parse(target)
-	if err != nil {
-		return nil, errInternal
-	}
-
-	key := pypiProjectKey(project)
-
-	res, err := s.fetchPage(ctx, repo, key, target)
-	if err != nil {
-		return nil, err
-	}
-
-	res, body, release, err := s.readPage(ctx, repo, key, target, res)
-	if err != nil {
-		return nil, err
-	}
-
-	files, err := pypisimple.ParseProject(body, res.entry.ContentType)
-	release()
-	if err != nil {
-		s.log.Warnw("upstream simple page unparsable", "repo", repo.Name, "path", key, "error", err)
-
-		if derr := s.db.DeleteProxyCacheEntry(ctx, repo.ID, key); derr != nil {
-			s.log.Errorw("failed to drop unparsable proxy cache entry", "repo", repo.Name, "path", key, "error", derr)
-		}
-
-		return nil, errUpstream
-	}
-
-	return &pypiProjectPage{files: files, pageURL: pageURL}, nil
-}
-
-func (s *Service) servePyPIFile(w http.ResponseWriter, r *http.Request, repo *models.Repository, project, filename string) {
-	key := pypiFileKey(project, filename)
-
-	fetch := func(ctx context.Context) (*models.ProxyCacheEntry, error) {
-		return s.fetchPyPIFile(ctx, repo, project, filename, key)
-	}
-
-	res, err := s.resolveWith(r.Context(), repo, key, fetch)
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, func() (*resolution, error) {
-		return s.resolveWith(r.Context(), repo, key, fetch)
+// page in the negotiated serialization.
+func (s *Service) servePyPIPage(
+	w http.ResponseWriter,
+	r *http.Request,
+	repo *models.Repository,
+	offer pypisimple.Offer,
+	doc metaDoc,
+	render func(body []byte, contentType string) ([]byte, error),
+) {
+	s.serveRendered(w, r, repo, renderedDoc{
+		metaDoc: doc,
+		maxAge:  pypiPageMaxAge,
+		vary:    "Accept",
+		etag:    func(blobKey string) string { return pageETag(repo, doc.key, blobKey, offer) },
+		render: func(body []byte, res *resolution) ([]byte, string, error) {
+			out, err := render(body, res.entry.ContentType)
+			return out, offer.ContentType, err
+		},
 	})
 }
 
-// fetchPyPIFile downloads a distribution file (or its PEP 658 .metadata) from
-// where the cached project page says it lives, verifies it against the
-// published sha256 and caches it. A file the page does not list is not found.
-func (s *Service) fetchPyPIFile(
-	ctx context.Context,
-	repo *models.Repository,
-	project, filename, key string,
-) (*models.ProxyCacheEntry, error) {
-	page, err := s.loadPyPIProject(ctx, repo, project)
+func (s *Service) servePyPIFile(w http.ResponseWriter, r *http.Request, repo *models.Repository, project, filename string) {
+	s.serveDownload(w, r, repo, pypiFileKey(project, filename), func(ctx context.Context) (download, error) {
+		return s.locatePyPIFile(ctx, repo, project, filename)
+	})
+}
+
+// locatePyPIFile finds a distribution file (or its PEP 658 .metadata) where
+// the cached project page says it lives, with the published sha256 it must
+// have. A file the page does not list is not found.
+func (s *Service) locatePyPIFile(ctx context.Context, repo *models.Repository, project, filename string) (download, error) {
+	target, err := upstreamURL(repo.UpstreamURL, project+"/")
 	if err != nil {
-		return nil, err
+		s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
+		return download{}, errInternal
+	}
+
+	// Relative file links resolve against the URL the page was fetched from.
+	pageURL, err := url.Parse(target)
+	if err != nil {
+		return download{}, errInternal
+	}
+
+	files, _, err := parseDoc(ctx, s, repo, pypiPageDoc(pypiProjectKey(project), project+"/"),
+		func(body []byte, res *resolution) ([]pypisimple.File, error) {
+			return pypisimple.ParseProject(body, res.entry.ContentType) //nolint:wrapcheck // logged by parseDoc
+		})
+	if err != nil {
+		return download{}, err
 	}
 
 	wantMeta := false
@@ -305,48 +176,39 @@ func (s *Service) fetchPyPIFile(
 
 	var file *pypisimple.File
 
-	for i := range page.files {
-		if page.files[i].Filename == name {
-			file = &page.files[i]
+	for i := range files {
+		if files[i].Filename == name {
+			file = &files[i]
 			break
 		}
 	}
 
 	if file == nil || (wantMeta && !file.CoreMetadata) {
-		return nil, errNotFound
+		return download{}, errNotFound
 	}
+
+	key := pypiFileKey(project, filename)
 
 	ref, err := url.Parse(file.URL)
 	if err != nil {
 		s.log.Warnw("upstream simple page has an invalid file link", "repo", repo.Name, "path", key, "error", err)
-		return nil, errUpstream
+		return download{}, errUpstream
 	}
 
-	target := page.pageURL.ResolveReference(ref)
-	if target.Scheme != "http" && target.Scheme != "https" {
-		s.log.Warnw("upstream simple page links a non-http file", "repo", repo.Name, "path", key, "scheme", target.Scheme)
-		return nil, errUpstream
+	dl := pageURL.ResolveReference(ref)
+	if dl.Scheme != "http" && dl.Scheme != "https" {
+		s.log.Warnw("upstream simple page links a non-http file", "repo", repo.Name, "path", key, "scheme", dl.Scheme)
+		return download{}, errUpstream
 	}
 
-	target.Fragment = ""
+	dl.Fragment = ""
 	want := file.SHA256()
 
 	if wantMeta {
-		target.Path += pypisimple.MetadataSuffix
-		target.RawPath = ""
+		dl.Path += pypisimple.MetadataSuffix
+		dl.RawPath = ""
 		want = file.MetadataSHA256()
 	}
 
-	return s.fetchURL(ctx, repo, key, target.String(), fetchOpts{
-		noAuth:     !sameOrigin(target, page.pageURL),
-		wantSHA256: want,
-		unverified: want == "",
-	})
-}
-
-// sameOrigin reports whether two URLs share scheme and host (with port).
-// Upstream credentials are only ever sent to the upstream's own origin: an
-// index may link files on a CDN.
-func sameOrigin(a, b *url.URL) bool {
-	return strings.EqualFold(a.Scheme, b.Scheme) && strings.EqualFold(a.Host, b.Host)
+	return download{url: dl.String(), opts: fetchOpts{wantSHA256: want, unverified: want == ""}}, nil
 }

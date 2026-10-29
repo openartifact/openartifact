@@ -7,8 +7,6 @@ package group
 import (
 	"bytes"
 	"cmp"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -17,6 +15,7 @@ import (
 	"strconv"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/repotype"
 	pkgansible "github.com/openartifact/openartifact/pkg/ansible"
 )
@@ -105,19 +104,6 @@ type ansiblePage[T any] struct {
 	next  string
 }
 
-// memberGetRequest is the request members are asked with: a plain GET without
-// the client's conditional or range headers.
-func memberGetRequest(r *http.Request) *http.Request {
-	mr := r.Clone(r.Context())
-	mr.Method = http.MethodGet
-
-	for _, hdr := range []string{"If-None-Match", "If-Modified-Since", "If-Match", "If-Unmodified-Since", "If-Range", "Range"} {
-		mr.Header.Del(hdr)
-	}
-
-	return mr
-}
-
 // ansibleMemberRequest is memberGetRequest for the page of a list at offset,
 // with the largest page size.
 func ansibleMemberRequest(r *http.Request, offset int) *http.Request {
@@ -134,6 +120,7 @@ func ansibleMemberRequest(r *http.Request, offset int) *http.Request {
 // last one. A list that cannot be read completely is failed: a partial list
 // would silently drop entries.
 func collectAnsibleList[T any](
+	h *Handler,
 	sess *mergeSession,
 	r *http.Request,
 	m *models.Repository,
@@ -144,21 +131,18 @@ func collectAnsibleList[T any](
 	var items []T
 
 	for range ansibleMaxPages {
-		cw := sess.capture(pkgansible.MaxDocBytes)
-		be.ServeMember(cw, ansibleMemberRequest(r, len(items)), m, path)
-
-		if cw.status == 0 {
-			cw.status = http.StatusOK
-		}
+		a := h.askMember(sess, ansibleMemberRequest(r, len(items)), m, path, pkgansible.MaxDocBytes, be)
 
 		switch {
-		case cw.status == http.StatusNotFound && len(items) == 0:
+		case a.failed:
+			return nil, ansibleListFailed
+		case !a.found && len(items) == 0:
 			return nil, ansibleListMissing
-		case cw.status != http.StatusOK || cw.overflow:
+		case !a.found:
 			return nil, ansibleListFailed
 		}
 
-		pg, err := parse(bytes.NewReader(cw.body.Bytes()))
+		pg, err := parse(bytes.NewReader(a.body))
 		if err != nil {
 			return nil, ansibleListFailed
 		}
@@ -227,7 +211,7 @@ func (h *Handler) ansibleVersions(
 	path := "api/v3/collections/" + p.Namespace + "/" + p.Name + "/versions/"
 
 	for _, m := range members {
-		refs, outcome := collectAnsibleList(sess, r, m, path, be, parseAnsibleVersionPage)
+		refs, outcome := collectAnsibleList(h, sess, r, m, path, be, parseAnsibleVersionPage)
 
 		switch outcome {
 		case ansibleListFailed:
@@ -270,7 +254,7 @@ func (h *Handler) serveAnsibleVersions(
 
 	refs, failed := h.ansibleVersions(r, l, p, members, be)
 	if len(refs) == 0 {
-		h.ansibleMissing(w, r, failed)
+		writeNoDocument(w, r, failed)
 		return
 	}
 
@@ -304,19 +288,14 @@ func (h *Handler) serveAnsibleVersion(
 	failed := false
 
 	for _, m := range members {
-		cw := sess.capture(pkgansible.MaxDocBytes)
-		be.ServeMember(cw, mr, m, relPath)
-
-		if cw.status == 0 {
-			cw.status = http.StatusOK
-		}
-
-		if cw.status == http.StatusNotFound {
+		a := h.askMember(sess, mr, m, relPath, pkgansible.MaxDocBytes, be)
+		if !a.found {
+			failed = failed || a.failed
 			continue
 		}
 
-		doc, err := pkgansible.ParseVersionDoc(bytes.NewReader(cw.body.Bytes()), p.Namespace, p.Name, p.Version)
-		if cw.status != http.StatusOK || cw.overflow || err != nil {
+		doc, err := pkgansible.ParseVersionDoc(bytes.NewReader(a.body), p.Namespace, p.Name, p.Version)
+		if err != nil {
 			failed = true
 			continue
 		}
@@ -328,7 +307,7 @@ func (h *Handler) serveAnsibleVersion(
 		return
 	}
 
-	h.ansibleMissing(w, r, failed)
+	writeNoDocument(w, r, failed)
 }
 
 // serveAnsibleIndex answers the collection index: the union of the hosted
@@ -362,7 +341,7 @@ func (h *Handler) serveAnsibleIndex(
 			continue
 		}
 
-		items, outcome := collectAnsibleList(sess, r, m, "api/v3/collections/", be, parseAnsibleIndexPage)
+		items, outcome := collectAnsibleList(h, sess, r, m, "api/v3/collections/", be, parseAnsibleIndexPage)
 
 		switch outcome {
 		case ansibleListFailed:
@@ -382,7 +361,7 @@ func (h *Handler) serveAnsibleIndex(
 	sess.release()
 
 	if len(docs) == 0 && failed {
-		http.Error(w, "member repository error", http.StatusBadGateway)
+		writeNoDocument(w, r, true)
 		return
 	}
 
@@ -410,18 +389,6 @@ func relinkAnsibleCollection(l pkgansible.Links, d pkgansible.CollectionDoc) pkg
 	return d
 }
 
-// ansibleMissing answers a request no member could answer: 404, or 502 when a
-// member failed (so a client does not cache "does not exist" for something a
-// broken member might hold).
-func (h *Handler) ansibleMissing(w http.ResponseWriter, r *http.Request, failed bool) {
-	if failed {
-		http.Error(w, "member repository error", http.StatusBadGateway)
-		return
-	}
-
-	http.NotFound(w, r)
-}
-
 // writeAnsible answers a generated document with a content ETag, honoring
 // If-None-Match; partial (a member failed while it was assembled) sends it
 // uncacheable and without validator.
@@ -434,24 +401,5 @@ func (h *Handler) writeAnsible(w http.ResponseWriter, r *http.Request, grp *mode
 		return
 	}
 
-	writeMergedJSON(w, r, grp, body, ansibleMetaMaxAge, partial)
-}
-
-// writeMergedJSON answers an encoded JSON document a group generated, with a
-// content ETag and a shared-cache lifetime of maxAge seconds for a public group;
-// partial documents are not cached (revalidateMerged).
-func writeMergedJSON(w http.ResponseWriter, r *http.Request, grp *models.Repository, body []byte, maxAge int, partial bool) {
-	sum := sha256.Sum256(body)
-
-	if revalidateMerged(w, r, grp.Public, `"`+hex.EncodeToString(sum[:16])+`"`, maxAge, partial) {
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
-	}
+	writeMerged(w, r, grp.Public, body, "application/json", base.ContentETag(body), ansibleMetaMaxAge, partial)
 }
