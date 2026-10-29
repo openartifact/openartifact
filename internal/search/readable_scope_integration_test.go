@@ -109,24 +109,40 @@ func seedScopeData(t *testing.T, db *sql.DB) []uuid.UUID {
 		        '00000000-0000-0000-0000-000000000001',
 		        CASE WHEN i %% 17 = 0 THEN now() END
 		 FROM generate_series(1, %d) AS i`, scopeTestRepos),
-		`INSERT INTO npm_packages (repository_id, name, full_name)
-		 SELECT r.id, n.name, n.name
+		`INSERT INTO packages (repository_id, format, name, name_key, attrs)
+		 SELECT r.id, 'npm', n.name, n.name, '{"scope": ""}'
 		 FROM repositories r
 		 CROSS JOIN LATERAL (VALUES ('lib-' || (substr(r.name, 6)::int % 5)), ('pkg-' || substr(r.name, 6))) AS n(name)
 		 WHERE r.format = 'npm'`,
-		`INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, tarball_filename, blob_id, created_at)
-		 SELECT np.id, v.version, '{}', 'x', 'x', np.name || '-' || v.version || '.tgz',
-		        '00000000-0000-0000-0000-0000000000b1',
+		`INSERT INTO package_versions (package_id, repository_id, version, version_key, created_at)
+		 SELECT p.id, p.repository_id, v.version, v.version,
 		        now() - make_interval(secs => substr(r.name, 6)::int * 10 + v.delta)
-		 FROM npm_packages np
-		 JOIN repositories r ON r.id = np.repository_id
-		 CROSS JOIN (VALUES ('1.0.0', 1), ('1.1.0', 2)) AS v(version, delta)`,
-		`INSERT INTO raw_artifacts (repository_id, path, blob_id, created_at)
-		 SELECT r.id, f.path, '00000000-0000-0000-0000-0000000000b1',
-		        now() - make_interval(secs => substr(r.name, 6)::int * 10 + f.delta)
+		 FROM packages p
+		 JOIN repositories r ON r.id = p.repository_id
+		 CROSS JOIN (VALUES ('1.0.0', 1), ('1.1.0', 2)) AS v(version, delta)
+		 WHERE p.format = 'npm'`,
+		`INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, created_at)
+		 SELECT v.id, v.repository_id, p.name || '/-/' || p.name || '-' || v.version || '.tgz',
+		        p.name || '-' || v.version || '.tgz', '00000000-0000-0000-0000-0000000000b1', v.created_at
+		 FROM package_versions v
+		 JOIN packages p ON p.id = v.package_id
+		 WHERE p.format = 'npm'`,
+		`INSERT INTO packages (repository_id, format, name, name_key)
+		 SELECT r.id, 'raw', f.path, f.path
 		 FROM repositories r
 		 CROSS JOIN LATERAL (VALUES ('dir/lib-' || (substr(r.name, 6)::int % 5) || '.bin', 3), ('misc/' || substr(r.name, 6), 4)) AS f(path, delta)
 		 WHERE r.format = 'raw'`,
+		`INSERT INTO package_versions (package_id, repository_id, version, version_key, created_at)
+		 SELECT p.id, p.repository_id, '', '',
+		        now() - make_interval(secs => substr(r.name, 6)::int * 10 + CASE WHEN p.name LIKE 'dir/%' THEN 3 ELSE 4 END)
+		 FROM packages p
+		 JOIN repositories r ON r.id = p.repository_id
+		 WHERE p.format = 'raw'`,
+		`INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, created_at)
+		 SELECT v.id, v.repository_id, p.name, p.name, '00000000-0000-0000-0000-0000000000b1', v.created_at
+		 FROM package_versions v
+		 JOIN packages p ON p.id = v.package_id
+		 WHERE p.format = 'raw'`,
 	}
 
 	for _, s := range stmts {
@@ -333,9 +349,8 @@ func TestReadableScopeSelectsExactlyTheSet(t *testing.T) {
 		var want int64
 
 		err := db.QueryRowContext(ctx, `
-			SELECT (SELECT count(*) FROM npm_versions nv JOIN npm_packages np ON np.id = nv.package_id
-			        WHERE nv.deleted_at IS NULL AND np.repository_id = ANY($1::uuid[]))
-			     + (SELECT count(*) FROM raw_artifacts ra WHERE ra.deleted_at IS NULL AND ra.repository_id = ANY($1::uuid[]))`,
+			SELECT count(*) FROM package_files f
+			WHERE f.deleted_at IS NULL AND f.listed AND f.repository_id = ANY($1::uuid[])`,
 			"{"+strings.Join(ids, ",")+"}").Scan(&want)
 		if err != nil {
 			t.Fatalf("expected count: %v", err)
