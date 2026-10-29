@@ -18,6 +18,24 @@ import (
 // manifest by digest cascades to the tags that pointed at it (same deleted_at),
 // and restoring or purging the manifest takes those tags along.
 
+// TrashRowsInTx soft-deletes docker rows (manifests or tags) of repoID inside
+// the caller's transaction, whatever the repository's retention: a purge removes
+// them for good once the retention window has passed. A caller that replaces
+// live content (a forced bundle promotion) uses it so the replaced rows stay
+// restorable. Package formats use TrashFilesInTx. ErrTrashNotFound means none of
+// the rows is live in repoID; any other kind is ErrTrashUnknownKind.
+func TrashRowsInTx(ctx context.Context, tx interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}, repoID string, kind models.TrashKind, ids []string, deletedBy string,
+) error {
+	spec, ok := dockerSpecByKind(kind)
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrTrashUnknownKind, kind)
+	}
+
+	return trashDockerRows(ctx, tx, spec, repoID, ids, deletedBy)
+}
+
 // trashDockerRows stamps the docker rows and runs the manifest cascade on e.
 func trashDockerRows(ctx context.Context, e interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
