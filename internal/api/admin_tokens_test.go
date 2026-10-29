@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -36,6 +37,52 @@ func (db *tokenLookupMockDB) GetTokenByID(_ context.Context, id string) (*models
 	}
 
 	return nil, nil
+}
+
+// scopeLookupMockDB resolves permission targets like the uuid-keyed table: an
+// id that is not a UUID is a database error, which the handler maps to a 500.
+type scopeLookupMockDB struct {
+	tokenLookupMockDBStore
+}
+
+func (db *scopeLookupMockDB) GetUserByID(_ context.Context, id string) (*models.User, error) {
+	return &models.User{ID: id, Username: "owner"}, nil
+}
+
+func (db *scopeLookupMockDB) GetPermissionTargetByID(_ context.Context, id string) (*models.PermissionTarget, error) {
+	if !isUUIDString(id) {
+		return nil, errors.New("invalid input syntax for type uuid: " + id)
+	}
+
+	return nil, nil
+}
+
+// A scope that is not a permission target id is a 400 for an admin (who names
+// any target) as well as for a regular user, not a database error.
+func TestTokenCreateNonUUIDScopeIsBadRequest(t *testing.T) {
+	log, err := logger.New("error", "json", "stderr")
+	if err != nil {
+		t.Fatalf("new logger: %v", err)
+	}
+
+	db := &scopeLookupMockDB{}
+	r := chi.NewRouter()
+	NewAdminTokensHandler(db, log, auth.NewEvaluator(db, log, false)).Register(r)
+
+	const owner = "6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11"
+
+	for _, scope := range []string{"read", "not-a-uuid", "0", "6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11/x"} {
+		body := `{"name":"ci","kind":"access","scopes":["` + scope + `"]}`
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/users/"+owner+"/tokens", strings.NewReader(body))
+		req = req.WithContext(middleware.WithPrincipal(req.Context(), &auth.Principal{Username: "admin", IsLegacy: true}))
+
+		rw := httptest.NewRecorder()
+		r.ServeHTTP(rw, req)
+
+		if rw.Code != http.StatusBadRequest {
+			t.Errorf("POST token with scope %q = %d, want 400: %s", scope, rw.Code, rw.Body.String())
+		}
+	}
 }
 
 // A token id that is not a UUID is a 404 on the admin revoke route, not a

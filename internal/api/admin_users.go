@@ -252,7 +252,12 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
+		// An empty string clears the address: stored as "" it would collide
+		// with every other cleared user on the unique email index (a 409).
 		user.Email = body.Email
+		if *body.Email == "" {
+			user.Email = nil
+		}
 
 		changed = append(changed, "email")
 	}

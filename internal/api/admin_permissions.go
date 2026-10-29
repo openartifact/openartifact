@@ -213,8 +213,8 @@ func (h *AdminPermissionsHandler) handlePatch(w http.ResponseWriter, r *http.Req
 }
 
 func (h *AdminPermissionsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	deleteAdminObject(w, r, h.evaluator, h.db.DeletePermissionTarget,
-		audit.ActionPermissionTargetObjDeleted, "permission_target", "permission target deleted")
+	deleteAdminObject(w, r, h.evaluator, h.db.GetPermissionTargetByID, h.db.DeletePermissionTarget,
+		audit.ActionPermissionTargetObjDeleted, "permission_target", "permission target", "permission target deleted")
 }
 
 func (h *AdminPermissionsHandler) handleAssign(w http.ResponseWriter, r *http.Request) {

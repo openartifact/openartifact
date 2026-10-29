@@ -38,17 +38,31 @@ func writeAdminList[T, R any](
 }
 
 // deleteAdminObject is the shared body of an admin delete-by-{id} endpoint: it
-// requires the global manage permission, deletes the row with del, records the
-// audit event (resourceType, details) and answers 204.
-func deleteAdminObject(
+// requires the global manage permission, answers 404 "<noun> not found" when
+// get finds no row (nothing is deleted or audited), deletes the row with del,
+// records the audit event (resourceType, details) and answers 204.
+func deleteAdminObject[T any](
 	w http.ResponseWriter, r *http.Request, evaluator *auth.Evaluator,
-	del func(ctx context.Context, id string) error, auditAction, resourceType, details string,
+	get func(ctx context.Context, id string) (*T, error), del func(ctx context.Context, id string) error,
+	auditAction, resourceType, noun, details string,
 ) {
 	if !requireAdmin(w, r, evaluator) {
 		return
 	}
 
 	id := urlparams.Vars(r)["id"]
+
+	row, err := get(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		return
+	}
+
+	if row == nil {
+		writeError(w, http.StatusNotFound, "not_found", noun+" not found")
+		return
+	}
+
 	if err := del(r.Context(), id); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 		return
