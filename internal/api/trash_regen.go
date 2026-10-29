@@ -132,7 +132,7 @@ func (h *TrashHandler) markPackumentStale(ctx context.Context, item *models.Tras
 }
 
 func (h *TrashHandler) regenKeys(ctx context.Context, item *models.TrashItem) (string, string, bool) {
-	store, _ := h.db.(database.TrashStore)
+	store, _ := h.db.(database.TrashOps)
 	if store == nil {
 		return "", "", false
 	}

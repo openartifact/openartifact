@@ -134,7 +134,7 @@ type Request struct {
 func Delete(ctx context.Context, db any, req Request, hard func() error) error {
 	soft := false
 
-	if store, ok := db.(database.TrashStore); ok {
+	if store, ok := db.(database.TrashOps); ok {
 		var err error
 
 		soft, err = store.TrashRows(ctx, req.RepoID, req.Kind, req.IDs, Actor(ctx))

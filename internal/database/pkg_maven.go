@@ -208,6 +208,8 @@ func (p *MavenStore) GetLatestSnapshot(ctx context.Context, repoID, groupID, art
 	return getMavenArtifact(ctx, p, row, err, "latest snapshot")
 }
 
+// GetLatestSnapshotFile returns the newest snapshot build of the file with
+// the given classifier and extension.
 func (p *MavenStore) GetLatestSnapshotFile(
 	ctx context.Context,
 	repoID, groupID, artifactID, version, classifier, extension string,

@@ -355,8 +355,8 @@ func (g groupRefresher) NotifyStale(repoID string) {
 	g.hosted.NotifyStale(repoID)
 }
 
-// workerSetbuildOSVMirrorStore is the part of the database workerSetbuildOSVMirror needs.
-type workerSetbuildOSVMirrorStore interface {
+// osvMirrorBuilderStore is the part of the database workerSetbuildOSVMirror needs.
+type osvMirrorBuilderStore interface {
 	GetDB() *sql.DB
 	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
 }
@@ -364,12 +364,12 @@ type workerSetbuildOSVMirrorStore interface {
 // buildOSVMirror builds the OSV mirror worker; it does something only when
 // osvMirror is enabled. A disabled worker is still built (and does nothing), so
 // shutdown stops it like the others.
-func (w *workerSet) buildOSVMirror(db workerSetbuildOSVMirrorStore, cfg *config.Config, log *logger.Logger, reg *metrics.Registry) {
+func (w *workerSet) buildOSVMirror(db osvMirrorBuilderStore, cfg *config.Config, log *logger.Logger, reg *metrics.Registry) {
 	var importer *osv.Importer
 
 	interval := time.Duration(0)
 
-	if store, ok := db.(database.OSVStore); ok && cfg.OSVMirror.Enabled {
+	if store, ok := db.(database.OSVMirror); ok && cfg.OSVMirror.Enabled {
 		var err error
 
 		importer, err = osv.NewImporter(store, osv.Options{

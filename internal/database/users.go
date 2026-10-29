@@ -109,6 +109,8 @@ func (p *UserStore) UpdateUser(ctx context.Context, user *models.User) error {
 	return nil
 }
 
+// UpdateUserLastLogin sets only last_login_at, so a login finishing from a
+// stale snapshot cannot undo a concurrent disable or password reset.
 func (p *UserStore) UpdateUserLastLogin(ctx context.Context, id string, at time.Time) error {
 	if _, err := p.db.ExecContext(ctx, `UPDATE auth_users SET last_login_at=$2 WHERE id=$1`, id, at); err != nil {
 		return fmt.Errorf("failed to update user last login: %w", err)
@@ -117,6 +119,9 @@ func (p *UserStore) UpdateUserLastLogin(ctx context.Context, id string, at time.
 	return nil
 }
 
+// UpdateUserSSOProfile sets only email (when non-nil), full_name (when
+// non-nil) and last_login_at, so an SSO login finishing from a stale
+// snapshot cannot undo a concurrent disable or password reset.
 func (p *UserStore) UpdateUserSSOProfile(ctx context.Context, id string, email, fullName *string, lastLogin time.Time) error {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
@@ -131,6 +136,7 @@ func (p *UserStore) UpdateUserSSOProfile(ctx context.Context, id string, email, 
 	return nil
 }
 
+// UpdateUserPassword sets only password_hash and must_change_password.
 func (p *UserStore) UpdateUserPassword(ctx context.Context, id, passwordHash string, mustChange bool) error {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()

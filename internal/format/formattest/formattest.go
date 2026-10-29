@@ -189,8 +189,8 @@ func (q *Quarantine) IsArtifactQuarantined(_ context.Context, _ string, keys []s
 	return false, nil
 }
 
-// dBStore is what DB is used as.
-type dBStore interface {
+// formatStore is what DB is used as.
+type formatStore interface {
 	ArtifactExists(ctx context.Context, sha256 string, repositoryID string) (bool, error)
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CargoIndexStamp(ctx context.Context, repoID string, name string) (string, error)
@@ -384,7 +384,7 @@ type dBStore interface {
 // lookups and a zero blob reference count (so SafeDeleteBlob removes blobs).
 // Embed it in a per-format mock that adds the format's package methods.
 type DB struct {
-	dBStore
+	formatStore
 	Quarantine
 
 	Repo *models.Repository

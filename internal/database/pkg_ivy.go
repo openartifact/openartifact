@@ -114,6 +114,7 @@ func (p *IvyStore) ListIvyArtifacts(ctx context.Context, repoID string) ([]*mode
 	return artifacts, nil
 }
 
+// IvyModuleExists reports whether the repository holds a live file of the module.
 func (p *IvyStore) IvyModuleExists(ctx context.Context, repoID, organisation, module string) (bool, error) {
 	exists, err := p.q.IvyModuleExists(ctx, dbsqlc.IvyModuleExistsParams{RepositoryID: repoID, Organisation: organisation, Module: module})
 	if err != nil {

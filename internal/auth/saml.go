@@ -442,10 +442,10 @@ func peekSAMLInResponseTo(b64 string) (string, bool) {
 	}
 }
 
-// SAMLProviderParseCallbackStore is the part of the database SAMLProviderParseCallback needs.
-type SAMLProviderParseCallbackStore interface {
-	sAMLProviderconsumeAssertionStore
-	sAMLProviderparseIDPInitiatedStore
+// SAMLCallbackStore is the part of the database SAMLProviderParseCallback needs.
+type SAMLCallbackStore interface {
+	samlAssertionStore
+	samlIDPInitiatedStore
 }
 
 // ParseCallback validates a SAML response at the ACS and returns its verified
@@ -462,7 +462,7 @@ type SAMLProviderParseCallbackStore interface {
 func (p *SAMLProvider) ParseCallback(
 	w http.ResponseWriter,
 	r *http.Request,
-	db SAMLProviderParseCallbackStore,
+	db SAMLCallbackStore,
 	trackerKey []byte,
 ) (*saml.Assertion, error) {
 	if len(trackerKey) == 0 {
@@ -501,12 +501,12 @@ func (p *SAMLProvider) ParseCallback(
 	return assertion, nil
 }
 
-// sAMLProviderparseIDPInitiatedStore is the part of the database SAMLProviderparseIDPInitiated needs.
-type sAMLProviderparseIDPInitiatedStore interface {
-	sAMLProviderconsumeAssertionStore
+// samlIDPInitiatedStore is the part of the database SAMLProviderparseIDPInitiated needs.
+type samlIDPInitiatedStore interface {
+	samlAssertionStore
 }
 
-func (p *SAMLProvider) parseIDPInitiated(r *http.Request, db sAMLProviderparseIDPInitiatedStore) (*saml.Assertion, error) {
+func (p *SAMLProvider) parseIDPInitiated(r *http.Request, db samlIDPInitiatedStore) (*saml.Assertion, error) {
 	assertion, err := p.idpInitiatedSP.ParseResponse(r, nil)
 	if err != nil {
 		return nil, classifySAMLParseError(err)
@@ -571,14 +571,14 @@ func classifySAMLParseError(err error) error {
 	return err
 }
 
-// sAMLProviderconsumeAssertionStore is the part of the database SAMLProviderconsumeAssertion needs.
-type sAMLProviderconsumeAssertionStore interface {
+// samlAssertionStore is the part of the database SAMLProviderconsumeAssertion needs.
+type samlAssertionStore interface {
 	ConsumeSAMLAssertion(ctx context.Context, providerSlug string, assertionID string, expiresAt time.Time) (bool, error)
 }
 
 // consumeAssertion records the assertion ID in the shared replay cache for the
 // assertion's remaining validity; a second presentation is rejected.
-func (p *SAMLProvider) consumeAssertion(ctx context.Context, db sAMLProviderconsumeAssertionStore, a *saml.Assertion) error {
+func (p *SAMLProvider) consumeAssertion(ctx context.Context, db samlAssertionStore, a *saml.Assertion) error {
 	if a.ID == "" {
 		return fmt.Errorf("%w: assertion has no ID", ErrSAMLReplay)
 	}

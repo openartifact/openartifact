@@ -76,6 +76,9 @@ func pypiPackageFromRow[R pypiPackageRow](in R) *models.PyPIPackage {
 	}
 }
 
+// GetPyPIPackageByFilename returns the live file with this filename, nil
+// when there is none and ErrAmbiguousPyPIFilename when several packages of
+// the repository hold a file of that name.
 func (p *PyPIStore) GetPyPIPackageByFilename(ctx context.Context, repoID, filename string) (*models.PyPIPackage, error) {
 	rows, err := p.q.GetPyPIPackagesByFilename(ctx, dbsqlc.GetPyPIPackagesByFilenameParams{RepositoryID: repoID, Filename: filename})
 	if err != nil {
@@ -115,6 +118,8 @@ func (p *PyPIStore) ListPyPIPackages(ctx context.Context, repoID string) ([]*mod
 	return mapRowsOrNil(rows, err, "list pypi packages", pypiPackageFromRow)
 }
 
+// ListPyPIPackageNames returns the distinct stored project names of a
+// repository, sorted, without loading any file row.
 func (p *PyPIStore) ListPyPIPackageNames(ctx context.Context, repoID string) ([]string, error) {
 	names, err := p.q.ListPyPIPackageNames(ctx, repoID)
 	if err != nil {

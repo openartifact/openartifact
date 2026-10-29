@@ -1111,7 +1111,7 @@ func TestIsUniqueViolation(t *testing.T) {
 // no longer live.
 type npmTrashDB struct {
 	*npmMemDB
-	database.TrashStore
+	database.TrashOps
 
 	notLive bool
 	trashed []string

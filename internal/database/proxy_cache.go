@@ -107,7 +107,7 @@ func (p *ProxyCacheStore) DeleteExpiredProxyCacheEntries(ctx context.Context) (i
 	return n, nil
 }
 
-// ListProxyCacheKeys implements OSVStore.
+// ListProxyCacheKeys implements OSVMirror.
 func (p *ProxyCacheStore) ListProxyCacheKeys(ctx context.Context, format, afterID string, limit int) ([]models.ProxyCacheKey, error) {
 	var after *string
 	if afterID != "" {

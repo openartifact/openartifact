@@ -120,6 +120,8 @@ func (p *HelmStore) ListHelmCharts(ctx context.Context, repoID string) ([]*model
 	return mapRowsOrNil(rows, err, "list helm charts", helmChartFromRow)
 }
 
+// HelmIndexStamp is a cheap validator of a repository's index.yaml: it
+// changes exactly when a live chart is added or removed.
 func (p *HelmStore) HelmIndexStamp(ctx context.Context, repoID string) (string, error) {
 	stamp, err := p.q.HelmIndexStamp(ctx, repoID)
 	if err != nil {

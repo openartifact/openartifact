@@ -144,6 +144,9 @@ func (p *CargoStore) SearchCargoCrates(ctx context.Context, repoID, query string
 	return crates, nil
 }
 
+// SearchCargoCrateSummaries matches crates by name or description and
+// returns one summary per crate (at most limit, by name) together with the
+// total number of matching crates.
 func (p *CargoStore) SearchCargoCrateSummaries(
 	ctx context.Context,
 	repoID, query string,
@@ -205,6 +208,8 @@ func (p *CargoStore) IncrementCargoDownloadCount(ctx context.Context, repoID, na
 	return nil
 }
 
+// CargoIndexStamp is a cheap validator of one crate's sparse index entry:
+// it changes when a live version is added, removed or (un)yanked.
 func (p *CargoStore) CargoIndexStamp(ctx context.Context, repoID, name string) (string, error) {
 	stamp, err := p.q.CargoIndexStamp(ctx, dbsqlc.CargoIndexStampParams{RepositoryID: repoID, Name: name})
 	if err != nil {
@@ -214,6 +219,9 @@ func (p *CargoStore) CargoIndexStamp(ctx context.Context, repoID, name string) (
 	return stamp, nil
 }
 
+// ListCargoIndexVersions returns the live versions of a crate with only the
+// columns the sparse index needs (Name, Version, MetadataJSON, Checksum,
+// Yanked), oldest first.
 func (p *CargoStore) ListCargoIndexVersions(ctx context.Context, repoID, name string) ([]*models.CargoCrate, error) {
 	rows, err := p.q.ListCargoIndexVersions(ctx, dbsqlc.ListCargoIndexVersionsParams{RepositoryID: repoID, Name: name})
 	if err != nil {

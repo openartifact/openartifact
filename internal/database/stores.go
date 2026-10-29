@@ -38,15 +38,15 @@ type PostgresDB struct {
 	*SBOMStore
 	*VEXStore
 	*VulnStore
-	*ExploitDB
-	*OSVDB
+	*ExploitStore
+	*OSVStore
 	*DependencyTrackStore
 	*AIAnalysisStore
 	*QuotaStore
 	*StorageBackendStore
 	*TieringStore
 	*ReplicationStore
-	*TrashDB
+	*TrashStore
 	*RepoMetadataStore
 	*RepoGroupStore
 	*ComponentStore
@@ -107,15 +107,15 @@ func newPostgresDB(c *core) *PostgresDB {
 		SBOMStore:            &SBOMStore{core: c},
 		VEXStore:             &VEXStore{core: c},
 		VulnStore:            &VulnStore{core: c},
-		ExploitDB:            &ExploitDB{core: c},
-		OSVDB:                &OSVDB{core: c},
+		ExploitStore:         &ExploitStore{core: c},
+		OSVStore:             &OSVStore{core: c},
 		DependencyTrackStore: &DependencyTrackStore{core: c},
 		AIAnalysisStore:      &AIAnalysisStore{core: c},
 		QuotaStore:           &QuotaStore{core: c},
 		StorageBackendStore:  &StorageBackendStore{core: c},
 		TieringStore:         &TieringStore{core: c},
 		ReplicationStore:     &ReplicationStore{core: c},
-		TrashDB:              &TrashDB{core: c},
+		TrashStore:           &TrashStore{core: c},
 		RepoMetadataStore:    &RepoMetadataStore{core: c},
 		RepoGroupStore:       &RepoGroupStore{core: c},
 		ComponentStore:       &ComponentStore{core: c},

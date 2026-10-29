@@ -16,6 +16,8 @@ import (
 // (no blob join, no row decoding), so a revalidation can be answered, and a
 // cached rendering looked up, without loading the rows themselves.
 
+// CondaRepodataStamp is a cheap validator of one platform's repodata.json:
+// it changes exactly when a live package is added or removed.
 func (p *CondaStore) CondaRepodataStamp(ctx context.Context, repoID, platform string) (string, error) {
 	stamp, err := p.q.CondaRepodataStamp(ctx, dbsqlc.CondaRepodataStampParams{RepositoryID: repoID, Platform: platform})
 	if err != nil {

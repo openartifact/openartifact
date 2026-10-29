@@ -98,7 +98,7 @@ type OSVMirrorWorker struct {
 	*lifecycle
 
 	db         OSVMirrorStore
-	store      database.OSVStore
+	store      database.OSVMirror
 	importer   *osv.Importer
 	mirror     *vuln.Mirror
 	log        *logger.Logger
@@ -114,11 +114,11 @@ type OSVMirrorWorker struct {
 
 // NewOSVMirrorWorker creates the worker for the given OSV ecosystems. A
 // non-positive interval disables the schedule (RunOnce still works). Without a
-// database that implements database.OSVStore the worker does nothing.
+// database that implements database.OSVMirror the worker does nothing.
 func NewOSVMirrorWorker(
 	db OSVMirrorStore, importer *osv.Importer, ecosystems []string, log *logger.Logger, interval time.Duration,
 ) *OSVMirrorWorker {
-	store, _ := db.(database.OSVStore)
+	store, _ := db.(database.OSVMirror)
 
 	w := &OSVMirrorWorker{
 		lifecycle:  newLifecycle(),

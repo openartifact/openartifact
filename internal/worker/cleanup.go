@@ -653,7 +653,7 @@ func (w *CleanupWorker) moveToTrash(
 	cs []cleanupCandidate,
 	actor string,
 ) (trashOutcome, error) {
-	store, ok := w.db.(database.TrashStore)
+	store, ok := w.db.(database.TrashOps)
 	if !ok {
 		return trashHard, nil
 	}

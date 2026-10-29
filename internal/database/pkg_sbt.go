@@ -15,6 +15,7 @@ import (
 // SBTStore owns the sbt artifacts.
 type SBTStore struct{ *core }
 
+// SBTModuleExists reports whether the repository holds a live file of the artifact.
 func (p *SBTStore) SBTModuleExists(ctx context.Context, repoID, groupID, artifactID string) (bool, error) {
 	exists, err := p.q.SBTModuleExists(ctx, dbsqlc.SBTModuleExistsParams{RepositoryID: repoID, GroupID: groupID, ArtifactID: artifactID})
 	if err != nil {

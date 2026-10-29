@@ -34,11 +34,11 @@ const (
 // fakeTrashDBStore is what fakeTrashDB is used as.
 type fakeTrashDBStore interface {
 	RepositoriesStore
-	TrashStore
+	TrashOps
 	auth.EvaluatorStore
 }
 
-// fakeTrashDB is a double of the repositories store and database.TrashStore. It records
+// fakeTrashDB is a double of the repositories store and database.TrashOps. It records
 // what the handlers asked of it.
 type fakeTrashDB struct {
 	fakeTrashDBStore
@@ -46,7 +46,7 @@ type fakeTrashDB struct {
 	targets []*models.PermissionTarget
 	repos   map[string]*models.Repository
 
-	// TrashStore behaviour.
+	// TrashOps behaviour.
 	trashRepoSoft  bool
 	trashRepoCalls int
 	trashRepoBy    string
@@ -190,7 +190,7 @@ func (db *fakeTrashDB) ListExpiredTrash(context.Context, int) ([]models.TrashRef
 	return nil, nil
 }
 
-var _ database.TrashStore = (*fakeTrashDB)(nil)
+var _ database.TrashOps = (*fakeTrashDB)(nil)
 
 type regenCall struct{ kind, repoID, a, b string }
 

@@ -20,7 +20,7 @@ import (
 // fakeOSVStore serves a fixed mirror: the embedded interface is nil, so a
 // method the code under test should not call panics.
 type fakeOSVStore struct {
-	database.OSVStore
+	database.OSVMirror
 
 	state      *models.OSVMirrorState
 	advisories map[string][]models.OSVAdvisoryMatch

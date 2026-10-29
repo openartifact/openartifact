@@ -36,7 +36,7 @@ type purgeQuotaCall struct {
 	count  int
 }
 
-// trashPurgeDB is a database.TrashStore over an in-memory list of expired
+// trashPurgeDB is a database.TrashOps over an in-memory list of expired
 // items. Blob references, orphans and quota calls are recorded or scripted so
 // tests can observe what the worker does through storage.SafeDeleteBlob.
 type trashPurgeDB struct {
@@ -167,7 +167,7 @@ func (d *trashPurgeDB) purgedRefs() []models.TrashRef {
 	return append([]models.TrashRef(nil), d.purged...)
 }
 
-// The rest of the TrashStore is not exercised by the worker.
+// The rest of the TrashOps is not exercised by the worker.
 var errTrashPurgeFake = errors.New("trash purge fake: not implemented")
 
 func (d *trashPurgeDB) TrashRows(context.Context, string, models.TrashKind, []string, string) (bool, error) {

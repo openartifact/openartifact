@@ -361,6 +361,7 @@ func (p *DockerStore) TouchDockerBlob(ctx context.Context, repoID, digest string
 	return true, nil
 }
 
+// DockerImageExists reports whether the image holds a live manifest.
 func (p *DockerStore) DockerImageExists(ctx context.Context, repoID, image string) (bool, error) {
 	exists, err := p.q.DockerImageExists(ctx, dbsqlc.DockerImageExistsParams{RepositoryID: repoID, Image: image})
 	if err != nil {
@@ -543,6 +544,7 @@ func (p *DockerStore) DeleteDockerTag(ctx context.Context, repoID, image, name s
 	return nil
 }
 
+// DeleteDockerTagsByDigest removes every tag of the image that points at digest.
 func (p *DockerStore) DeleteDockerTagsByDigest(ctx context.Context, repoID, image, digest string) error {
 	if err := p.q.DeleteDockerTagsByDigest(ctx, dbsqlc.DeleteDockerTagsByDigestParams{
 		RepositoryID:   repoID,

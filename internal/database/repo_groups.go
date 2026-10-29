@@ -137,6 +137,8 @@ func (p *RepoGroupStore) ListGroupMembers(ctx context.Context, groupRepoID strin
 	return members, nil
 }
 
+// ListGroupMemberRepositories returns the live member repositories of a
+// group in priority order (the order of ListGroupMembers) in one query.
 func (p *RepoGroupStore) ListGroupMemberRepositories(ctx context.Context, groupRepoID string) ([]*models.Repository, error) {
 	rows, err := p.db.QueryContext(ctx, `
 		WITH links AS (
@@ -154,6 +156,8 @@ func (p *RepoGroupStore) ListGroupMemberRepositories(ctx context.Context, groupR
 	return collectRows(rows, "failed to scan group member repository", "failed to list group member repositories", scanRepository)
 }
 
+// ListGroupsOfMember returns the live group repositories the repository is
+// a member of, oldest link first.
 func (p *RepoGroupStore) ListGroupsOfMember(ctx context.Context, memberRepoID string) ([]*models.Repository, error) {
 	rows, err := p.db.QueryContext(ctx, `
 		WITH links AS (

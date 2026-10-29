@@ -1262,7 +1262,7 @@ func (h *RepositoriesHandler) metadataGroupsOf(ctx context.Context, repo *models
 // allows it. false means the caller must hard-delete: retention 0, or a
 // database without trash support.
 func (h *RepositoriesHandler) softDeleteRepository(ctx context.Context, repo *models.Repository) (bool, error) {
-	store, ok := h.db.(database.TrashStore)
+	store, ok := h.db.(database.TrashOps)
 	if !ok {
 		return false, nil
 	}

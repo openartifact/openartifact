@@ -85,7 +85,7 @@ type TrashPurgeWorker struct {
 	*lifecycle
 
 	db        TrashPurgeStore
-	store     database.TrashStore
+	store     database.TrashOps
 	blobStore storage.BlobStore
 	log       *logger.Logger
 	interval  time.Duration
@@ -99,10 +99,10 @@ type TrashPurgeWorker struct {
 
 // NewTrashPurgeWorker creates the worker. interval is the pause between
 // scheduled passes; a non-positive interval disables the schedule (RunOnce
-// still works). Without a database that implements database.TrashStore the
+// still works). Without a database that implements database.TrashOps the
 // worker does nothing.
 func NewTrashPurgeWorker(db TrashPurgeStore, blobStore storage.BlobStore, log *logger.Logger, interval time.Duration) *TrashPurgeWorker {
-	store, _ := db.(database.TrashStore)
+	store, _ := db.(database.TrashOps)
 
 	w := &TrashPurgeWorker{
 		lifecycle: newLifecycle(),

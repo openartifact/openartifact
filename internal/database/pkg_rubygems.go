@@ -139,6 +139,8 @@ func (p *RubyGemsStore) YankRubyGem(ctx context.Context, repoID, name, version, 
 	return nil
 }
 
+// RubyGemsSpecsStamp is a cheap validator of every specs index of a
+// repository: it changes when a listed gem is added, removed or yanked.
 func (p *RubyGemsStore) RubyGemsSpecsStamp(ctx context.Context, repoID string) (string, error) {
 	stamp, err := p.q.RubyGemsSpecsStamp(ctx, repoID)
 	if err != nil {
@@ -148,6 +150,8 @@ func (p *RubyGemsStore) RubyGemsSpecsStamp(ctx context.Context, repoID string) (
 	return stamp, nil
 }
 
+// ListRubyGemSpecs returns the listed (not yanked) gems with only Name,
+// Version and Platform set, by name then version descending.
 func (p *RubyGemsStore) ListRubyGemSpecs(ctx context.Context, repoID string) ([]*models.RubyGem, error) {
 	rows, err := p.q.ListRubyGemSpecs(ctx, repoID)
 	if err != nil {

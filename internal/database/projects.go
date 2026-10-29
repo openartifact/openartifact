@@ -143,6 +143,8 @@ func projectsFromRows(rows []dbsqlc.Project) []*models.Project {
 	return projects
 }
 
+// ListProjects returns the projects the user belongs to (recorded owner,
+// member, or through a group).
 func (p *ProjectStore) ListProjects(ctx context.Context, userID string) ([]*models.Project, error) {
 	rows, err := p.q.ListProjectsByUser(ctx, &userID)
 	if err != nil {

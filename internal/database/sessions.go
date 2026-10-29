@@ -60,6 +60,8 @@ func (p *SessionStore) GetSessionByTokenHash(ctx context.Context, hash string) (
 	return s, nil
 }
 
+// SetSessionSSO records the SSO provider (and its encrypted ID token) a
+// session was created by, for RP-initiated logout.
 func (p *SessionStore) SetSessionSSO(ctx context.Context, sessionID, providerSlug, encryptedIDToken string) error {
 	_, err := p.db.ExecContext(ctx,
 		`INSERT INTO auth_session_sso (session_id, provider_slug, id_token) VALUES ($1, $2, $3)
@@ -73,6 +75,8 @@ func (p *SessionStore) SetSessionSSO(ctx context.Context, sessionID, providerSlu
 	return nil
 }
 
+// GetSessionSSO returns the SSO record of the session with tokenHash, or
+// nil when the session was not created by SSO (or does not exist).
 func (p *SessionStore) GetSessionSSO(ctx context.Context, tokenHash string) (*models.SessionSSO, error) {
 	rec := &models.SessionSSO{}
 

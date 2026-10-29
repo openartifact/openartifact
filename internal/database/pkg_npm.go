@@ -161,6 +161,8 @@ func (p *NPMStore) GetNPMVersionsByPackage(ctx context.Context, packageID string
 	return versions, nil
 }
 
+// GetNPMVersionStates returns number and deprecation of every live version
+// of the package, without the manifests.
 func (p *NPMStore) GetNPMVersionStates(ctx context.Context, packageID string) ([]models.NPMVersionState, error) {
 	rows, err := p.q.GetNPMVersionStates(ctx, packageID)
 	if err != nil {
@@ -186,6 +188,8 @@ func (p *NPMStore) UpdateNPMPackageLatestVersion(ctx context.Context, packageID,
 	return nil
 }
 
+// UpdateNPMVersionManifest replaces the stored manifest of a live version
+// (used for `npm deprecate`).
 func (p *NPMStore) UpdateNPMVersionManifest(ctx context.Context, packageID, version string, manifest []byte) error {
 	if err := p.q.UpdateNPMVersionManifest(ctx, dbsqlc.UpdateNPMVersionManifestParams{
 		PackageID: packageID,
