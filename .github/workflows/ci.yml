@@ -625,6 +625,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: openartifact/openartifact.github.io
+          # Pinned: the build runs this repository's code. Bump it deliberately
+          # (the site's own CI vets what it merges), never track the branch.
+          ref: eb852e026a0dadbd944532a2230b31551b6cf8df
           path: site
           persist-credentials: false
 

@@ -41,10 +41,11 @@ Compose also substitutes these variables from `docker/.env` (they are not listed
 
 | Variable | Default | Effect |
 |---|---|---|
-| `AUTH_HMAC_KEY` | empty (random key generated once, persisted in the database) | Signs OIDC/SAML login state; optional, a configured value wins over the stored one |
+| `AUTH_HMAC_KEY` | none, required | Signs OIDC/SAML login state; compose refuses to start without it (`openssl rand -hex 32`). `docker/.env.example` lists it, together with the equally required `OPENARTIFACT_SECRET_KEY` |
+| `OPENARTIFACT_ROLE` | `all` | Process role of the `openartifact` service: `all`, `web` or `worker` ([scaling](../operations/scaling.md)) |
 | `OPENARTIFACT_BIND` | `127.0.0.1` | Host address the port mapping binds to |
 | `OPENARTIFACT_PORT` | `8080` | Host port mapped to the container's 8080. Containers carry no fixed names, so several projects can run side by side: `OPENARTIFACT_PORT=18080 docker compose -p oa-test -f docker/docker-compose.yml --env-file docker/.env up -d --build` (add `-v` to `down` to drop that project's volumes) |
-| `OPENARTIFACT_VERSION` | `dev` | Build argument; the version reported by `/health`, the log, `-version` and the System page. `make docker-up` sets it from the `VERSION` file |
+| `OPENARTIFACT_VERSION` | `dev` | Build argument and image tag (`openartifact:<version>`); the version reported by `/health`, the log, `-version` and the System page. `make docker-up` sets it from the `VERSION` file |
 | `OPENARTIFACT_COMMIT` | `unknown` | Build argument; commit reported by the System page. `make docker-up` sets the 7-character short SHA |
 | `OPENARTIFACT_BUILD_TIME` | `unknown` | Build argument; build time, RFC 3339 in UTC. `make docker-up` sets it |
 | `OPENARTIFACT_RUNTIME` | `dhi` | Build argument `RUNTIME`: runtime base image. `dhi` is Docker Hardened Images (`dhi.io/static`) and needs `docker login dhi.io` with a Docker ID; set `OPENARTIFACT_RUNTIME=distroless` to use the anonymous `gcr.io/distroless/static-debian13` instead (same layout, also shell-less) |
