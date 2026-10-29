@@ -11,9 +11,13 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
+
+// GPGKeyStore owns GPG signing keys and their assignment to repositories.
+type GPGKeyStore struct{ *core }
 
 var (
 	// ErrGPGKeyNotFound is returned when a GPG key does not exist.
@@ -74,7 +78,7 @@ func lockGPGKeys(ctx context.Context, tx *sql.Tx) error {
 
 // CreateGPGKey stores k (inactive) and fills ID and CreatedAt back.
 // ErrGPGKeyExists when the name or fingerprint is taken.
-func (p *PostgresDB) CreateGPGKey(ctx context.Context, k *models.GPGKey) error {
+func (p *GPGKeyStore) CreateGPGKey(ctx context.Context, k *models.GPGKey) error {
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin GPG key tx: %w", err)
@@ -96,7 +100,7 @@ func (p *PostgresDB) CreateGPGKey(ctx context.Context, k *models.GPGKey) error {
 // CreateGPGKeyIfNone stores k as the global active key only when no key exists
 // yet, under a cluster-wide advisory lock so replicas starting together create
 // exactly one. It reports whether k was stored.
-func (p *PostgresDB) CreateGPGKeyIfNone(ctx context.Context, k *models.GPGKey) (bool, error) {
+func (p *GPGKeyStore) CreateGPGKeyIfNone(ctx context.Context, k *models.GPGKey) (bool, error) {
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("begin GPG auto-generate tx: %w", err)
@@ -135,7 +139,7 @@ func (p *PostgresDB) CreateGPGKeyIfNone(ctx context.Context, k *models.GPGKey) (
 }
 
 // ListGPGKeys lists every key without its private part.
-func (p *PostgresDB) ListGPGKeys(ctx context.Context) ([]*models.GPGKey, error) {
+func (p *GPGKeyStore) ListGPGKeys(ctx context.Context) ([]*models.GPGKey, error) {
 	rows, err := p.q.ListGPGKeys(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list GPG keys: %w", err)
@@ -150,7 +154,7 @@ func (p *PostgresDB) ListGPGKeys(ctx context.Context) ([]*models.GPGKey, error) 
 }
 
 // GetGPGKey loads one key including its sealed private part; ErrGPGKeyNotFound when absent.
-func (p *PostgresDB) GetGPGKey(ctx context.Context, id string) (*models.GPGKey, error) {
+func (p *GPGKeyStore) GetGPGKey(ctx context.Context, id string) (*models.GPGKey, error) {
 	row, err := p.q.GetGPGKey(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -164,7 +168,7 @@ func (p *PostgresDB) GetGPGKey(ctx context.Context, id string) (*models.GPGKey, 
 }
 
 // GetGPGKeyByFingerprint loads a key by its (upper-case hex) fingerprint; ErrGPGKeyNotFound when absent.
-func (p *PostgresDB) GetGPGKeyByFingerprint(ctx context.Context, fingerprint string) (*models.GPGKey, error) {
+func (p *GPGKeyStore) GetGPGKeyByFingerprint(ctx context.Context, fingerprint string) (*models.GPGKey, error) {
 	row, err := p.q.GetGPGKeyByFingerprint(ctx, fingerprint)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -178,7 +182,7 @@ func (p *PostgresDB) GetGPGKeyByFingerprint(ctx context.Context, fingerprint str
 }
 
 // DeleteGPGKey removes a key and its repository assignments; ErrGPGKeyNotFound when absent.
-func (p *PostgresDB) DeleteGPGKey(ctx context.Context, id string) error {
+func (p *GPGKeyStore) DeleteGPGKey(ctx context.Context, id string) error {
 	n, err := p.q.DeleteGPGKey(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete GPG key: %w", err)
@@ -192,7 +196,7 @@ func (p *PostgresDB) DeleteGPGKey(ctx context.Context, id string) error {
 }
 
 // SetGlobalGPGKey makes id the one globally active key; ErrGPGKeyNotFound when absent.
-func (p *PostgresDB) SetGlobalGPGKey(ctx context.Context, id string) error {
+func (p *GPGKeyStore) SetGlobalGPGKey(ctx context.Context, id string) error {
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin GPG activate tx: %w", err)
@@ -225,7 +229,7 @@ func (p *PostgresDB) SetGlobalGPGKey(ctx context.Context, id string) error {
 }
 
 // ClearGlobalGPGKey leaves no key globally active.
-func (p *PostgresDB) ClearGlobalGPGKey(ctx context.Context) error {
+func (p *GPGKeyStore) ClearGlobalGPGKey(ctx context.Context) error {
 	if err := p.q.ClearGlobalGPGKey(ctx); err != nil {
 		return fmt.Errorf("failed to clear global GPG key: %w", err)
 	}
@@ -234,7 +238,7 @@ func (p *PostgresDB) ClearGlobalGPGKey(ctx context.Context) error {
 }
 
 // SetRepositoryGPGKey makes keyID the signing key of one repository.
-func (p *PostgresDB) SetRepositoryGPGKey(ctx context.Context, repoID, keyID, assignedBy string) error {
+func (p *GPGKeyStore) SetRepositoryGPGKey(ctx context.Context, repoID, keyID, assignedBy string) error {
 	err := p.q.SetRepositoryGPGKey(ctx, dbsqlc.SetRepositoryGPGKeyParams{RepositoryID: repoID, GpgKeyID: keyID, AssignedBy: assignedBy})
 	if err != nil {
 		return fmt.Errorf("failed to assign GPG key: %w", err)
@@ -245,7 +249,7 @@ func (p *PostgresDB) SetRepositoryGPGKey(ctx context.Context, repoID, keyID, ass
 
 // ClearRepositoryGPGKey removes a repository's own key (it then follows the
 // global one) and reports whether there was one.
-func (p *PostgresDB) ClearRepositoryGPGKey(ctx context.Context, repoID string) (bool, error) {
+func (p *GPGKeyStore) ClearRepositoryGPGKey(ctx context.Context, repoID string) (bool, error) {
 	n, err := p.q.ClearRepositoryGPGKey(ctx, repoID)
 	if err != nil {
 		return false, fmt.Errorf("failed to clear repository GPG key: %w", err)
@@ -255,7 +259,7 @@ func (p *PostgresDB) ClearRepositoryGPGKey(ctx context.Context, repoID string) (
 }
 
 // ListGPGKeyAssignments lists every repository-to-key binding.
-func (p *PostgresDB) ListGPGKeyAssignments(ctx context.Context) ([]models.GPGKeyAssignment, error) {
+func (p *GPGKeyStore) ListGPGKeyAssignments(ctx context.Context) ([]models.GPGKeyAssignment, error) {
 	rows, err := p.q.ListGPGKeyAssignments(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list GPG key assignments: %w", err)
@@ -272,7 +276,7 @@ func (p *PostgresDB) ListGPGKeyAssignments(ctx context.Context) ([]models.GPGKey
 }
 
 // ListRepositoriesForGPGKey returns the repositories bound to keyID.
-func (p *PostgresDB) ListRepositoriesForGPGKey(ctx context.Context, keyID string) ([]models.GPGSigningRepo, error) {
+func (p *GPGKeyStore) ListRepositoriesForGPGKey(ctx context.Context, keyID string) ([]models.GPGSigningRepo, error) {
 	rows, err := p.q.ListRepositoriesForGPGKey(ctx, keyID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list repositories for GPG key: %w", err)
@@ -288,7 +292,7 @@ func (p *PostgresDB) ListRepositoriesForGPGKey(ctx context.Context, keyID string
 
 // ListSigningRepositoriesWithoutKey returns the hosted deb, pacman and rpm repositories
 // that have no key of their own, i.e. follow the global key.
-func (p *PostgresDB) ListSigningRepositoriesWithoutKey(ctx context.Context) ([]models.GPGSigningRepo, error) {
+func (p *GPGKeyStore) ListSigningRepositoriesWithoutKey(ctx context.Context) ([]models.GPGSigningRepo, error) {
 	rows, err := p.q.ListSigningRepositoriesWithoutKey(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list repositories following the global GPG key: %w", err)
@@ -305,7 +309,7 @@ func (p *PostgresDB) ListSigningRepositoriesWithoutKey(ctx context.Context) ([]m
 // ResolveGPGKeyForRepository returns the key that signs a repository's
 // metadata (its own, else the global active one) with its sealed private part,
 // or nil when nothing signs it.
-func (p *PostgresDB) ResolveGPGKeyForRepository(ctx context.Context, repoID string) (*models.GPGKey, error) {
+func (p *GPGKeyStore) ResolveGPGKeyForRepository(ctx context.Context, repoID string) (*models.GPGKey, error) {
 	row, err := p.q.ResolveGPGKeyForRepository(ctx, repoID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

@@ -20,6 +20,7 @@ type PostgresDB struct {
 	*PropertyStore
 	*DeltaStore
 	*DeclarativeStore
+	*GPGKeyStore
 	// STORES-STRUCT
 }
 
@@ -37,6 +38,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		PropertyStore:        &PropertyStore{core: c},
 		DeltaStore:           &DeltaStore{core: c},
 		DeclarativeStore:     &DeclarativeStore{core: c},
+		GPGKeyStore:          &GPGKeyStore{core: c},
 		// STORES-INIT
 	}
 }
