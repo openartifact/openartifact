@@ -71,6 +71,7 @@ type PostgresDB struct {
 	*CondaStore
 	*ConanStore
 	*IvyStore
+	*SBTStore
 	// STORES-STRUCT
 }
 
@@ -139,6 +140,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		CondaStore:           &CondaStore{core: c},
 		ConanStore:           &ConanStore{core: c},
 		IvyStore:             &IvyStore{core: c},
+		SBTStore:             &SBTStore{core: c},
 		// STORES-INIT
 	}
 }
