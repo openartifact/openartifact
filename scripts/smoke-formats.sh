@@ -24,6 +24,18 @@
 #   <FORMAT>_IMAGE  client image of one format, e.g. NPM_IMAGE=node:22-alpine
 #                (the default of each format is in its script)
 #   KEEP         1 keeps the repositories after the run
+#   SMOKE_MODE   both (default), publish (create the repositories and keep them)
+#                or install (install what a publish run with the same SMOKE_ID
+#                published, in a fresh client state; creates and deletes nothing)
+#   SMOKE_ID     fixes the names (repository smoke-<format>-<id>, package
+#                smoke<id>, version 1.0.0) so the two phases find each other;
+#                default: time and a random number
+#   SMOKE_REPO_NAME  explicit repository name (one format at a time)
+#
+# Two-phase proof, e.g. across an upgrade (publish on the old server, move the
+# data, install on the new one):
+#   FORMATS="npm pypi" SMOKE_MODE=publish SMOKE_ID=42 scripts/smoke-formats.sh OLD_URL
+#   FORMATS="npm pypi" SMOKE_MODE=install SMOKE_ID=42 scripts/smoke-formats.sh NEW_URL
 #
 # Containers use the host network, so URL may be 127.0.0.1:PORT. The token
 # reaches containers through the environment, never through a command line.
