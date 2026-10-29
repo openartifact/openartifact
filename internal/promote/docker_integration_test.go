@@ -436,3 +436,45 @@ func TestDockerSkipsMissingIndexChild(t *testing.T) {
 		t.Errorf("copied %d, want only the index", len(res.Copied))
 	}
 }
+
+// TestDockerPromotionRefusesBlobOfQuarantinedImage: a layer of the promoted
+// image that a quarantined image of the source (quarantined under its tag row
+// id) also references is refused like a blob GET would, and nothing is copied;
+// an image sharing nothing with it still promotes.
+func TestDockerPromotionRefusesBlobOfQuarantinedImage(t *testing.T) {
+	h := newHarness(t)
+	p := promoterFor(t, "docker")
+	src, dst := h.repo("docker", false), h.repo("docker", false)
+
+	bad, _ := h.blob("manifest bad")
+	clean, _ := h.blob("manifest clean")
+	victim, _ := h.blob("manifest victim")
+
+	seedDockerManifest(h, src.ID, bad, dockerSpec{image: "bad", blobs: []string{"cfg bad", "layer shared"}, tags: []string{"v1"}})
+	cleanImg := seedDockerManifest(
+		h,
+		src.ID,
+		clean,
+		dockerSpec{image: "clean", blobs: []string{"cfg clean", "layer clean"}, tags: []string{"v1"}},
+	)
+	victimImg := seedDockerManifest(
+		h,
+		src.ID,
+		victim,
+		dockerSpec{image: "victim", blobs: []string{"cfg victim", "layer shared"}, tags: []string{"v1"}},
+	)
+
+	tagID := h.str(`SELECT id FROM docker_tags WHERE repository_id = $1 AND image = 'bad' AND name = 'v1'`, src.ID)
+	jobID := h.str(`WITH r AS (INSERT INTO artifact_refs (repository_id, artifact_path, format) VALUES ($1, $2, 'docker') RETURNING id)
+		INSERT INTO scan_jobs (artifact_ref_id, scan_type) SELECT id, 'secret' FROM r RETURNING id`, src.ID, tagID)
+	h.exec(`INSERT INTO secret_results (scan_job_id, quarantined) VALUES ($1, true)`, jobID)
+
+	_, err := h.promoteOnce(p, Request{Src: src, Dst: dst, SHA256: victimImg.sha, Path: "victim:v1"})
+	if !errors.Is(err, ErrQuarantined) {
+		t.Fatalf("promoting an image that shares a layer of a quarantined image: err = %v, want ErrQuarantined", err)
+	}
+
+	if _, err := h.promoteOnce(p, Request{Src: src, Dst: dst, SHA256: cleanImg.sha, Path: "clean:v1"}); err != nil {
+		t.Fatalf("promoting an unrelated image: %v", err)
+	}
+}

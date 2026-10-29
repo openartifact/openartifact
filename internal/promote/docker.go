@@ -469,6 +469,15 @@ func (r *dockerRun) insertManifest(ctx context.Context, m dockerManifest) (bool,
 // destination, charges the bytes of the rows it created (no artifact, as in the
 // registry) and links them to the manifest's image.
 func (r *dockerRun) copyBlobs(ctx context.Context, m dockerManifest) error {
+	var quarantined bool
+	if err := r.tx.QueryRowContext(ctx, dockerBlobsQuarantinedSQL, m.id, r.req.Src.ID).Scan(&quarantined); err != nil {
+		return fmt.Errorf("check quarantine of the blobs of %s: %w", m.digest, err)
+	}
+
+	if quarantined {
+		return ErrQuarantined
+	}
+
 	blobs, err := r.blobs(ctx, m)
 	if err != nil {
 		return err

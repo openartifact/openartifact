@@ -1148,9 +1148,36 @@ func (s *Service) serveTFProviderFile(w http.ResponseWriter, r *http.Request, re
 		return
 	}
 
+	// The checksum file and its signature are minted next to the platform's
+	// zip, which is what the mint checked: they follow its quarantine, which
+	// the serve of the zip itself checks by cache key and entry id.
+	if s.tfZipQuarantined(w, r, repo, tfZipKey(d.A, d.B, d.C, doc.Filename)) {
+		return
+	}
+
 	key := tfProviderFileKey(d.A, d.B, d.File)
 
 	s.serveTFCached(w, r, repo, key, s.fetchDoc(repo, tfFileDoc(repo, key, target, "terraform provider file", o)))
+}
+
+// tfZipQuarantined refuses the request (and returns true) when the cached zip
+// stored under zipKey is quarantined by its key or by its cache entry's row id.
+func (s *Service) tfZipQuarantined(w http.ResponseWriter, r *http.Request, repo *models.Repository, zipKey string) bool {
+	keys := quarantine.PathKeys(zipKey)
+
+	entry, err := s.db.GetProxyCacheEntry(r.Context(), repo.ID, zipKey)
+	if err != nil {
+		s.log.Errorw("failed to read proxy cache entry", "repo", repo.Name, "path", zipKey, "error", err)
+		writeTFErrors(w, http.StatusInternalServerError, "internal error")
+
+		return true
+	}
+
+	if entry != nil {
+		keys = quarantine.PathKeys(zipKey, entry.ID)
+	}
+
+	return quarantine.Enforce(w, r, s.db, repo.ID, keys...)
 }
 
 // TerraformHooks is the proxy hooks of the terraform format.

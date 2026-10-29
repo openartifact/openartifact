@@ -440,3 +440,27 @@ WHERE n.full_name > sqlc.arg(after)::text COLLATE "C"
 GROUP BY n.full_name, n.repository_id, n.repository_name, n.repository_project_id, n.image
 ORDER BY n.full_name
 LIMIT sqlc.arg(page_limit)::int;
+
+-- name: DockerBlobQuarantined :one
+-- Whether a live manifest of the repository that references the blob (config or
+-- layer) is quarantined, by its own id, its digest or the id of a live tag of
+-- its image that points at it (a scan of an image is anchored on its tag row).
+-- One statement bounded by the blob's references (idx_docker_manifest_refs_lookup)
+-- and the unique (repository_id, artifact_path) lookup per candidate key.
+SELECT EXISTS (
+    SELECT 1
+    FROM docker_manifest_refs r
+    JOIN docker_manifests m ON m.id = r.manifest_id AND m.deleted_at IS NULL
+    LEFT JOIN docker_tags t ON t.repository_id = m.repository_id AND t.image = m.image
+        AND t.manifest_digest = m.digest AND t.deleted_at IS NULL
+    JOIN artifact_refs ar ON ar.repository_id = r.repository_id
+        AND ar.artifact_path IN (m.id::text, m.digest, t.id::text)
+    JOIN scan_jobs sj ON sj.artifact_ref_id = ar.id
+    WHERE r.repository_id = sqlc.arg(repository_id)::uuid AND r.kind = 'blob'
+      AND r.digest = sqlc.arg(digest)::text
+      AND (
+          EXISTS (SELECT 1 FROM vuln_results vr WHERE vr.scan_job_id = sj.id AND vr.quarantined)
+          OR EXISTS (SELECT 1 FROM secret_results sr WHERE sr.scan_job_id = sj.id AND sr.quarantined)
+          OR EXISTS (SELECT 1 FROM license_results lr WHERE lr.scan_job_id = sj.id AND lr.quarantined)
+      )
+)::boolean AS quarantined;

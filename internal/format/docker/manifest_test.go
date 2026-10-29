@@ -28,6 +28,7 @@ import (
 type manifestFakeDB struct {
 	testHandlerStore
 	formattest.Quarantine
+	fakeBlobHolds
 
 	repo *models.Repository
 

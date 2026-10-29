@@ -40,6 +40,7 @@ type regFakeDBStore interface {
 type regFakeDB struct {
 	regFakeDBStore
 	formattest.Quarantine
+	fakeBlobHolds
 
 	repos     map[string]*models.Repository
 	blobs     map[string]*models.DockerBlob // repoID|digest
