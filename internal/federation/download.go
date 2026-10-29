@@ -41,19 +41,15 @@ const (
 // continued the same way. A peer that ignores the range sends the whole blob
 // and the partial is restarted. The sha256 of the whole blob is verified after
 // receipt; on a mismatch the partial is discarded and the unit deferred. The
-// returned path is empty when another pull stored the blob in the meantime.
+// blob is fetched even when another repository of this instance already holds
+// it: the peer has to prove that it has the bytes before this repository links
+// them (see stageBlobs).
 func (e *Engine) download(ctx context.Context, pc *pullCtx, key string, ref BlobRef) (string, error) {
 	release, err := e.spool.acquire(ctx, ref.SHA256)
 	if err != nil {
 		return "", err
 	}
 	defer release()
-
-	// A concurrent pull of another repository may have stored it while this
-	// one waited for the partial.
-	if have, err := e.Blobs.Exists(ctx, ref.SHA256); err == nil && have {
-		return "", nil
-	}
 
 	f, err := e.spool.openPartial(ref.SHA256)
 	if err != nil {
@@ -168,7 +164,7 @@ func (e *Engine) fetchRange(ctx context.Context, pc *pullCtx, key string, ref Bl
 	}
 
 	// A partial longer than the blob cannot be a prefix of it.
-	if ref.Size > 0 && have > ref.Size {
+	if have > ref.Size {
 		have = 0
 
 		if err = restart(f); err != nil {
@@ -179,7 +175,7 @@ func (e *Engine) fetchRange(ctx context.Context, pc *pullCtx, key string, ref Bl
 	h := sha256.New()
 
 	// Everything was downloaded earlier and only verification is left.
-	if ref.Size > 0 && have == ref.Size {
+	if have == ref.Size {
 		if err := hashPrefix(h, f, have); err != nil {
 			return "", err
 		}
@@ -234,18 +230,14 @@ func (e *Engine) fetchRange(ctx context.Context, pc *pullCtx, key string, ref Bl
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// appendBody copies the rest of the blob into f and h. A body that fails
-// midway is an interruption (see streamError); one that ends cleanly short of
-// the declared size, or runs past it, is a bad blob.
+// appendBody copies the rest of the blob into f and h, never reading more than
+// one byte past the declared size (checkBlob guarantees it is not negative, and
+// positive unless the blob is the empty one). A body that fails midway is an
+// interruption (see streamError); one that ends cleanly short of the declared
+// size, or runs past it, is a bad blob.
 func appendBody(f io.Writer, h hash.Hash, body io.Reader, ref BlobRef, have int64) error {
-	var src io.Reader = &streamReader{r: body}
-
-	remaining := int64(-1)
-
-	if ref.Size > 0 {
-		remaining = ref.Size - have
-		src = io.LimitReader(src, remaining+1)
-	}
+	remaining := ref.Size - have
+	src := io.LimitReader(&streamReader{r: body}, remaining+1)
 
 	n, err := io.Copy(io.MultiWriter(f, h), src)
 	if err != nil {
@@ -253,9 +245,9 @@ func appendBody(f io.Writer, h hash.Hash, body io.Reader, ref BlobRef, have int6
 	}
 
 	switch {
-	case remaining >= 0 && n > remaining:
+	case n > remaining:
 		return deferred("digest_mismatch", fmt.Errorf("%w: %s", errBlobTooLong, ref.SHA256))
-	case remaining >= 0 && n < remaining:
+	case n < remaining:
 		// A connection that drops fails the read above; ending cleanly short
 		// is the peer serving fewer bytes than it declared.
 		return deferred("digest_mismatch", fmt.Errorf("%w: %s: %d of %d bytes", errBlobTooShort, ref.SHA256, have+n, ref.Size))

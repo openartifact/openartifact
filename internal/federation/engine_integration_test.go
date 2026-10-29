@@ -1138,7 +1138,7 @@ func TestEngineCorruptBlobIsRejectedAndParked(t *testing.T) {
 
 			d := b.deferred(t, peer)
 			if len(d) != 1 || d[0].UnitKey != "bad" || d[0].Reason != "digest_mismatch" || d[0].Attempts != 1 ||
-				!strings.Contains(d[0].LastError, engSHA("payload")) {
+				d[0].LastError != "blob_rejected" {
 				t.Fatalf("deferred = %+v, want bad parked with digest_mismatch", d)
 			}
 
@@ -1175,7 +1175,7 @@ func TestEngineBlobServerErrorIsAPeerErrorAndResumes(t *testing.T) {
 	engEqual(t, "cursor", got.CursorSeq, a.entry(t, "u1").Seq)
 	engEqual(t, "error count", got.ErrorCount, 1)
 
-	if !strings.Contains(got.LastError, "500") || got.NextAttemptAt == nil || !got.NextAttemptAt.After(time.Now()) ||
+	if got.LastError != "upstream_error (HTTP 500)" || got.NextAttemptAt == nil || !got.NextAttemptAt.After(time.Now()) ||
 		got.State() != PeerError {
 		t.Errorf("peer = state %s, error %q, next attempt %v; want an error with a backoff", got.State(), got.LastError, got.NextAttemptAt)
 	}
@@ -1636,7 +1636,7 @@ func TestEnginePeerWithRevokedTokenFailsUntilItIsReplaced(t *testing.T) {
 	}
 
 	got := b.peer(t, peer)
-	if got.ErrorCount != 1 || !strings.Contains(got.LastError, "401") || got.State() != PeerError {
+	if got.ErrorCount != 1 || got.LastError != "unauthorized (HTTP 401)" || got.State() != PeerError {
 		t.Errorf("peer = state %s, errors %d, last error %q", got.State(), got.ErrorCount, got.LastError)
 	}
 
@@ -1894,7 +1894,7 @@ func TestEngineQuotaExceededDefersUnitAndLeavesUsageAlone(t *testing.T) {
 			engEqual(t, "error count", got.ErrorCount, 0)
 
 			d := b.deferred(t, peer)
-			if len(d) != 1 || d[0].UnitKey != "u2" || d[0].Reason != "quota_exceeded" || !strings.Contains(d[0].LastError, "quota") {
+			if len(d) != 1 || d[0].UnitKey != "u2" || d[0].Reason != "quota_exceeded" || d[0].LastError != "quota_exceeded" {
 				t.Fatalf("deferred = %+v, want u2 parked as quota_exceeded", d)
 			}
 
@@ -1949,7 +1949,7 @@ func TestEngineFailedApplyReleasesQuotaAndIsParkedAfterThreePulls(t *testing.T) 
 	b.mustPull(t, peer)
 
 	d := b.deferred(t, peer)
-	if len(d) != 1 || d[0].UnitKey != "boom" || d[0].Reason != "apply_failed" || !strings.Contains(d[0].LastError, "poison unit") {
+	if len(d) != 1 || d[0].UnitKey != "boom" || d[0].Reason != "apply_failed" || d[0].LastError != "internal_error" {
 		t.Fatalf("deferred = %+v, want boom parked as apply_failed", d)
 	}
 
@@ -2038,7 +2038,7 @@ func TestEngineRefusesAPeerThatIsThisInstance(t *testing.T) {
 			}
 
 			got := puller.peer(t, peer)
-			if got.ErrorCount != 1 || !strings.Contains(got.LastError, "this instance") || got.State() != PeerError ||
+			if got.ErrorCount != 1 || got.LastError != "protocol_mismatch" || got.State() != PeerError ||
 				got.AppliedTotal != 0 {
 				t.Errorf(
 					"peer = state %s, errors %d, last error %q, applied %d",
@@ -2094,7 +2094,7 @@ func TestEngineRefusesFormatAndProtocolMismatch(t *testing.T) {
 			}
 
 			got := b.peer(t, peer)
-			if got.ErrorCount != 1 || !strings.Contains(got.LastError, tc.want) || got.AppliedTotal != 0 {
+			if got.ErrorCount != 1 || got.LastError != "protocol_mismatch" || got.AppliedTotal != 0 {
 				t.Errorf("peer = errors %d, last error %q, applied %d", got.ErrorCount, got.LastError, got.AppliedTotal)
 			}
 
@@ -2281,10 +2281,10 @@ func TestEnginePanicInAPullIsRecordedAsPeerErrorAndTheEngineRecovers(t *testing.
 	got := b.peer(t, peer)
 	engEqual(t, "error count", got.ErrorCount, 1)
 
-	if !strings.Contains(got.LastError, "panicked") || !strings.Contains(got.LastError, "injected codec panic") ||
+	if got.LastError != "internal_error" ||
 		got.NextAttemptAt == nil || got.State() != PeerError {
 		t.Errorf(
-			"peer = state %s, error %q, next attempt %v; want an error naming the panic, with a backoff",
+			"peer = state %s, error %q, next attempt %v; want an internal error, with a backoff",
 			got.State(),
 			got.LastError,
 			got.NextAttemptAt,
@@ -2322,7 +2322,7 @@ func TestEngineWorkerSurvivesAPanickingPullAndKeepsPulling(t *testing.T) {
 	engEventually(t, "the panic to be recorded on the peer", func() bool {
 		p := b.peer(t, peer)
 
-		return p.State() == PeerError && strings.Contains(p.LastError, "injected codec panic")
+		return p.State() == PeerError && p.LastError == "internal_error"
 	})
 
 	pc.armed.Store(false)

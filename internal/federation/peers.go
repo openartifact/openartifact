@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -202,6 +203,10 @@ type PeerPatch struct {
 
 // UpdatePeer applies a partial update. Changing the URL or a credential clears
 // the peer's error state so the next pull starts at once.
+//
+// The token is sent to the peer's URL, so a patch that moves the peer to
+// another URL must carry the token for it (ErrInvalid otherwise); the stored
+// token is never sent to a URL it was not entered for.
 func (s *Store) UpdatePeer(ctx context.Context, repoID, id string, patch PeerPatch) (*Peer, error) {
 	cur, err := s.GetPeer(ctx, repoID, id)
 	if err != nil {
@@ -216,6 +221,14 @@ func (s *Store) UpdatePeer(ctx context.Context, repoID, id string, patch PeerPat
 	if err != nil {
 		// A secret that cannot be opened (the key changed) may be replaced.
 		secrets = PeerSecrets{}
+	}
+
+	if patch.BaseURL != nil && strings.TrimRight(*patch.BaseURL, "/") != strings.TrimRight(cur.BaseURL, "/") {
+		if patch.Token == nil {
+			return nil, fmt.Errorf("%w: the token must be sent again when base_url changes", ErrInvalid)
+		}
+
+		secrets.Token = ""
 	}
 
 	apply(&cur.BaseURL, patch.BaseURL)
@@ -398,8 +411,9 @@ func (s *Store) ListDeferred(ctx context.Context, peerID string, dueOnly bool, l
 const maxDeferBackoff = time.Hour
 
 // Defer parks a unit that could not be applied; it is retried later on its own
-// backoff (30s doubling to an hour) without holding up the stream.
-func (s *Store) Defer(ctx context.Context, peerID, key string, seq int64, reason, errMsg string) error {
+// backoff (30s doubling to an hour) without holding up the stream. Only the
+// classified reason of cause is stored (see Describe).
+func (s *Store) Defer(ctx context.Context, peerID, key string, seq int64, reason string, cause error) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO federation_deferred (peer_id, unit_key, seq, attempts, reason, last_error, next_attempt_at)
 		 VALUES ($1::uuid, $2, $3, 1, $4, $5, now() + interval '30 seconds')
@@ -407,7 +421,7 @@ func (s *Store) Defer(ctx context.Context, peerID, key string, seq int64, reason
 		    SET seq = EXCLUDED.seq, attempts = federation_deferred.attempts + 1, reason = EXCLUDED.reason,
 		        last_error = EXCLUDED.last_error,
 		        next_attempt_at = now() + make_interval(secs => LEAST($6::float8, 30 * power(2, LEAST(federation_deferred.attempts, 12))))`,
-		peerID, key, seq, reason, truncate(errMsg, 500), maxDeferBackoff.Seconds())
+		peerID, key, seq, reason, Describe(cause), maxDeferBackoff.Seconds())
 	if err != nil {
 		return fmt.Errorf("defer unit: %w", err)
 	}
@@ -423,12 +437,4 @@ func (s *Store) ClearDeferred(ctx context.Context, peerID, key string) error {
 	}
 
 	return nil
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-
-	return s[:n]
 }
