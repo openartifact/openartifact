@@ -23,10 +23,10 @@ import (
 )
 
 // Notifier queues the metadata regeneration of replicated changes (the
-// RegenQueue of the format's worker). Either method may be a no-op.
+// RegenQueue of the format's worker). It ignores the formats whose metadata is
+// generated on read.
 type Notifier interface {
-	NotifyMaven(repoID, groupID, artifactID string)
-	NotifyNPM(packageID string)
+	Notify(r Regen)
 }
 
 // OptionsStore is the part of the database Options needs.
@@ -78,6 +78,9 @@ type Engine struct {
 	// resumeBackoff is the pause before the first retry of an interrupted
 	// blob transfer (0: defaultResumeBackoff).
 	resumeBackoff time.Duration
+	// codecFor resolves a repository format to its codec (nil: CodecFor);
+	// tests wrap codecs through it.
+	codecFor func(format string) (Codec, error)
 
 	mu sync.Mutex
 	// failures counts, per peer and unit, the pulls that failed on the unit
@@ -449,32 +452,25 @@ func (e *Engine) applyLive(ctx context.Context, pc *pullCtx, ur *UnitResponse, d
 
 	defer cleanupStaged(staged)
 
-	size, count, err := pc.codec.Usage(ctx, e.SQL, pc.repo.ID, entry.UnitKey, content)
+	usage, err := pc.codec.Usage(ctx, e.SQL, pc.repo.ID, entry.UnitKey, content)
 	if err != nil {
 		return 0, err
 	}
 
-	reserved := false
-
-	if size > 0 || count > 0 {
-		if err := quota.EnforceN(ctx, e.DB, pc.repo.ID, size, count); err != nil {
-			if errors.Is(err, quota.ErrExceeded) {
-				return outcomeDeferred, deferred("quota_exceeded", err)
-			}
-
-			return 0, err
+	reserved, err := e.reserve(ctx, pc.repo.ID, usage)
+	if err != nil {
+		if errors.Is(err, quota.ErrExceeded) {
+			return outcomeDeferred, deferred("quota_exceeded", err)
 		}
 
-		reserved = true
+		return 0, err
 	}
 
 	var change *Change
 
 	err = e.commitLive(ctx, pc, entry, content, staged, &change)
 	if err != nil {
-		if reserved {
-			_ = quota.ReleaseN(ctx, e.DB, pc.repo.ID, size, count)
-		}
+		e.release(ctx, pc.repo.ID, reserved)
 
 		if errors.Is(err, ErrStale) {
 			return outcomeSkipped, nil
@@ -486,6 +482,31 @@ func (e *Engine) applyLive(ctx context.Context, pc *pullCtx, ur *UnitResponse, d
 	e.afterLive(ctx, pc, entry, change)
 
 	return outcomeApplied, nil
+}
+
+// reserve takes the quota reservations of a unit one by one (the
+// quota_pending triggers consume them per file row); when one fails it gives
+// back the ones already taken and returns the error.
+func (e *Engine) reserve(ctx context.Context, repoID string, usage []Reservation) ([]Reservation, error) {
+	var taken []Reservation
+
+	for _, r := range usage {
+		if err := quota.EnforceN(ctx, e.DB, repoID, r.Size, r.Count); err != nil {
+			e.release(ctx, repoID, taken)
+
+			return nil, err //nolint:wrapcheck // quota.ErrExceeded is matched by the caller
+		}
+
+		taken = append(taken, r)
+	}
+
+	return taken, nil
+}
+
+func (e *Engine) release(ctx context.Context, repoID string, taken []Reservation) {
+	for _, r := range taken {
+		_ = quota.ReleaseN(ctx, e.DB, repoID, r.Size, r.Count)
+	}
 }
 
 // commitLive stores the staged blobs and applies the unit's rows. The bytes
@@ -647,12 +668,7 @@ func (e *Engine) notify(regen []Regen) {
 	}
 
 	for _, r := range regen {
-		switch r.Kind {
-		case kindMaven:
-			e.Notify.NotifyMaven(r.RepoID, r.GroupID, r.ArtifactID)
-		case kindNPM:
-			e.Notify.NotifyNPM(r.PackageID)
-		}
+		e.Notify.Notify(r)
 	}
 }
 

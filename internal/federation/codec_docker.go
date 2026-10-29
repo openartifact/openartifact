@@ -36,10 +36,6 @@ const (
 	dockerRefIndexed  = "indexed"
 )
 
-func init() { //nolint:gochecknoinits // codec registry
-	register(dockerCodec{})
-}
-
 // dockerRef is one docker_manifest_refs row of a manifest.
 type dockerRef struct {
 	Kind   string `json:"kind"`
@@ -80,8 +76,6 @@ type dockerTagData struct {
 }
 
 type dockerCodec struct{}
-
-func (dockerCodec) Format() string { return "docker" }
 
 // parseDockerManifestKey splits `m:<image>@<digest>` at its last '@'; the image
 // may be empty or contain '/'.
@@ -127,18 +121,18 @@ func (dockerCodec) Export(ctx context.Context, q Querier, repoID, key string) (*
 	return nil, errDockerKey(key)
 }
 
-func (dockerCodec) Usage(ctx context.Context, q Querier, repoID, key string, c *Content) (int64, int, error) {
+func (dockerCodec) Usage(ctx context.Context, q Querier, repoID, key string, c *Content) ([]Reservation, error) {
 	if _, _, ok := parseDockerManifestKey(key); !ok {
 		if _, _, ok := parseDockerTagKey(key); ok {
-			return 0, 0, nil
+			return nil, nil
 		}
 
-		return 0, 0, errDockerKey(key)
+		return nil, errDockerKey(key)
 	}
 
 	d, err := decodeDockerManifest(c)
 	if err != nil {
-		return 0, 0, err
+		return nil, err
 	}
 
 	size := d.Size
@@ -153,7 +147,7 @@ func (dockerCodec) Usage(ctx context.Context, q Querier, repoID, key string, c *
 	// quota triggers count docker_blobs rows with count 0 (migration 061).
 	held, err := dockerHeldDigests(ctx, q, repoID, d.Blobs)
 	if err != nil {
-		return 0, 0, err
+		return nil, err
 	}
 
 	for _, b := range d.Blobs {
@@ -162,8 +156,10 @@ func (dockerCodec) Usage(ctx context.Context, q Querier, repoID, key string, c *
 		}
 	}
 
-	return size, 1, nil
+	return []Reservation{{Size: size, Count: 1}}, nil
 }
+
+func (dockerCodec) LockTables() []string { return []string{"docker_manifests", "docker_tags"} }
 
 func (dockerCodec) Import(ctx context.Context, tx *sql.Tx, repoID, key string, c *Content, blobIDs map[string]string) (*Change, error) {
 	if image, digest, ok := parseDockerManifestKey(key); ok {

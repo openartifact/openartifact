@@ -50,11 +50,14 @@ type regenNotifier struct {
 	npm   *worker.NPMMetadataWorker
 }
 
-func (n regenNotifier) NotifyMaven(repoID, groupID, artifactID string) {
-	n.maven.NotifyStale(repoID, groupID, artifactID)
+func (n regenNotifier) Notify(r federation.Regen) {
+	switch r.Format {
+	case "maven":
+		n.maven.NotifyStale(r.RepoID, r.Attr("group_id"), r.Attr("artifact_id"))
+	case "npm":
+		n.npm.NotifyStale(r.PackageID)
+	}
 }
-
-func (n regenNotifier) NotifyNPM(packageID string) { n.npm.NotifyStale(packageID) }
 
 // setupFederation builds the federation runtime. With federation.enabled off
 // only the store exists (repositories created federated earlier keep their log,

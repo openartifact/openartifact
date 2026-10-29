@@ -38,6 +38,11 @@ type Federation struct {
 	// the same transaction: the format uses it as a validator (the npm packument
 	// ETag).
 	TouchPackage bool
+	// StaleAttr is the key of packages.attrs the format's metadata worker reads
+	// as "regenerate me" (npm's packument_stale). When set, every applied or
+	// deleted unit sets it to true on its package in the same transaction, so
+	// the regeneration survives a crash between the commit and the notification.
+	StaleAttr string
 	// LocalPackageAttrs are the keys of packages.attrs that hold state local to
 	// each instance (worker output such as npm's latest_version and
 	// packument_stale). They are never replicated: a package created by a
