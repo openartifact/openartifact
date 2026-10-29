@@ -81,12 +81,16 @@ func samePath(p string) func(*models.Repository) string {
 }
 
 // memberGetRequest is the request members are asked with: a plain GET without
-// the client's conditional or range headers.
+// the client's conditional or range headers, and without Accept-Encoding: a
+// hosted member compresses what it serves for a client that accepts gzip, and
+// the merge needs the document itself.
 func memberGetRequest(r *http.Request) *http.Request {
 	mr := r.Clone(r.Context())
 	mr.Method = http.MethodGet
 
-	for _, hdr := range []string{"If-None-Match", "If-Modified-Since", "If-Match", "If-Unmodified-Since", "If-Range", "Range"} {
+	for _, hdr := range []string{
+		"If-None-Match", "If-Modified-Since", "If-Match", "If-Unmodified-Since", "If-Range", "Range", "Accept-Encoding",
+	} {
 		mr.Header.Del(hdr)
 	}
 
