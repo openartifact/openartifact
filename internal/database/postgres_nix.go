@@ -15,6 +15,9 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// NixStore owns the Nix store paths, pending NARs and signing key.
+type NixStore struct{ *core }
+
 // nixMediaType is the media type of a stored NAR file.
 const nixMediaType = "application/x-nix-nar"
 
@@ -50,7 +53,7 @@ func nixPathFromRow[R nixPathRow](in R) *models.NixPath {
 
 // PutNixPendingNar stores a NAR file that awaits its narinfo. It is idempotent
 // per (repository, sha256).
-func (p *PostgresDB) PutNixPendingNar(ctx context.Context, n *models.NixPendingNar) error {
+func (p *NixStore) PutNixPendingNar(ctx context.Context, n *models.NixPendingNar) error {
 	blobID, err := p.upsertBlobWithMediaType(ctx, n.SHA256, n.BlobKey, nixMediaType, n.SizeBytes)
 	if err != nil {
 		return fmt.Errorf("failed to upsert blob for nix nar: %w", err)
@@ -67,7 +70,7 @@ func (p *PostgresDB) PutNixPendingNar(ctx context.Context, n *models.NixPendingN
 }
 
 // GetNixPendingNar returns the staged NAR file, or (nil, nil).
-func (p *PostgresDB) GetNixPendingNar(ctx context.Context, repoID, sha256 string) (*models.NixPendingNar, error) {
+func (p *NixStore) GetNixPendingNar(ctx context.Context, repoID, sha256 string) (*models.NixPendingNar, error) {
 	row, err := p.q.GetNixPendingNar(ctx, dbsqlc.GetNixPendingNarParams{RepositoryID: repoID, Sha256: sha256})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
@@ -84,14 +87,14 @@ func (p *PostgresDB) GetNixPendingNar(ctx context.Context, repoID, sha256 string
 }
 
 // GetNixPathByNarFile returns a live path whose NAR file is narFile, or (nil, nil).
-func (p *PostgresDB) GetNixPathByNarFile(ctx context.Context, repoID, narFile string) (*models.NixPath, error) {
+func (p *NixStore) GetNixPathByNarFile(ctx context.Context, repoID, narFile string) (*models.NixPath, error) {
 	row, err := p.q.GetNixPathByNarFile(ctx, dbsqlc.GetNixPathByNarFileParams{RepositoryID: repoID, NarFile: narFile})
 
 	return mapRow(row, err, "get nix path by nar file", nixPathFromRow)
 }
 
 // GetNixPathByHash returns the live path of the store hash, or (nil, nil).
-func (p *PostgresDB) GetNixPathByHash(ctx context.Context, repoID, storeHash string) (*models.NixPath, error) {
+func (p *NixStore) GetNixPathByHash(ctx context.Context, repoID, storeHash string) (*models.NixPath, error) {
 	row, err := p.q.GetNixPathByHash(ctx, dbsqlc.GetNixPathByHashParams{RepositoryID: repoID, StoreHash: storeHash})
 
 	return mapRow(row, err, "get nix path", nixPathFromRow)
@@ -100,7 +103,7 @@ func (p *PostgresDB) GetNixPathByHash(ctx context.Context, repoID, storeHash str
 // CreateNixPath stores the path and drops the staging row of its NAR file in
 // one transaction. A live row with the same store hash is a unique violation
 // (IsUniqueViolation).
-func (p *PostgresDB) CreateNixPath(ctx context.Context, np *models.NixPath) error {
+func (p *NixStore) CreateNixPath(ctx context.Context, np *models.NixPath) error {
 	blobID, err := p.upsertBlobWithMediaType(ctx, np.SHA256, np.BlobKey, nixMediaType, np.SizeBytes)
 	if err != nil {
 		return fmt.Errorf("failed to upsert blob for nix path: %w", err)
@@ -150,14 +153,14 @@ func (p *PostgresDB) CreateNixPath(ctx context.Context, np *models.NixPath) erro
 }
 
 // ListNixPaths returns every live path of the repository ordered by store hash.
-func (p *PostgresDB) ListNixPaths(ctx context.Context, repoID string) ([]*models.NixPath, error) {
+func (p *NixStore) ListNixPaths(ctx context.Context, repoID string) ([]*models.NixPath, error) {
 	rows, err := p.q.ListNixPaths(ctx, repoID)
 
 	return mapRows(rows, err, "list nix paths", nixPathFromRow)
 }
 
 // DeleteNixPath removes one path row.
-func (p *PostgresDB) DeleteNixPath(ctx context.Context, repoID, id string) error {
+func (p *NixStore) DeleteNixPath(ctx context.Context, repoID, id string) error {
 	if err := p.q.DeleteNixPath(ctx, dbsqlc.DeleteNixPathParams{ID: id, RepositoryID: repoID}); err != nil {
 		return fmt.Errorf("failed to delete nix path: %w", err)
 	}
@@ -166,7 +169,7 @@ func (p *PostgresDB) DeleteNixPath(ctx context.Context, repoID, id string) error
 }
 
 // IncrementNixDownloadCount counts one download of a path's NAR file.
-func (p *PostgresDB) IncrementNixDownloadCount(ctx context.Context, id, repoID string) error {
+func (p *NixStore) IncrementNixDownloadCount(ctx context.Context, id, repoID string) error {
 	if err := p.q.IncrementNixDownloadCount(ctx, dbsqlc.IncrementNixDownloadCountParams{ID: id, RepositoryID: repoID}); err != nil {
 		return fmt.Errorf("failed to count nix download: %w", err)
 	}
@@ -176,7 +179,7 @@ func (p *PostgresDB) IncrementNixDownloadCount(ctx context.Context, id, repoID s
 
 // DeleteStaleNixPendingNars deletes up to limit staging rows older than before
 // and returns the sha256 of their NAR files so the caller can delete the blobs.
-func (p *PostgresDB) DeleteStaleNixPendingNars(ctx context.Context, before time.Time, limit int) ([]string, error) {
+func (p *NixStore) DeleteStaleNixPendingNars(ctx context.Context, before time.Time, limit int) ([]string, error) {
 	shas, err := p.q.DeleteStaleNixPendingNars(ctx, dbsqlc.DeleteStaleNixPendingNarsParams{
 		Before: before, BatchLimit: int32(limit), //nolint:gosec // a small batch size
 	})
@@ -188,7 +191,7 @@ func (p *PostgresDB) DeleteStaleNixPendingNars(ctx context.Context, before time.
 }
 
 // GetNixSigningKey returns the repository's signing key, or (nil, nil).
-func (p *PostgresDB) GetNixSigningKey(ctx context.Context, repoID string) (*models.NixSigningKey, error) {
+func (p *NixStore) GetNixSigningKey(ctx context.Context, repoID string) (*models.NixSigningKey, error) {
 	row, err := p.q.GetNixSigningKey(ctx, repoID)
 
 	switch {
@@ -211,7 +214,7 @@ func (p *PostgresDB) GetNixSigningKey(ctx context.Context, repoID string) (*mode
 
 // CreateNixSigningKeyIfAbsent stores the key unless the repository has one;
 // created reports whether it did.
-func (p *PostgresDB) CreateNixSigningKeyIfAbsent(ctx context.Context, k *models.NixSigningKey) (bool, error) {
+func (p *NixStore) CreateNixSigningKeyIfAbsent(ctx context.Context, k *models.NixSigningKey) (bool, error) {
 	n, err := p.q.CreateNixSigningKeyIfAbsent(ctx, dbsqlc.CreateNixSigningKeyIfAbsentParams{
 		RepositoryID: k.RepositoryID, KeyName: k.KeyName, PublicKey: k.PublicKey, PrivateKey: k.PrivateKeyEnc, CreatedBy: k.CreatedBy,
 	})
@@ -223,7 +226,7 @@ func (p *PostgresDB) CreateNixSigningKeyIfAbsent(ctx context.Context, k *models.
 }
 
 // ReplaceNixSigningKey stores the key, replacing the repository's current one.
-func (p *PostgresDB) ReplaceNixSigningKey(ctx context.Context, k *models.NixSigningKey) error {
+func (p *NixStore) ReplaceNixSigningKey(ctx context.Context, k *models.NixSigningKey) error {
 	err := p.q.ReplaceNixSigningKey(ctx, dbsqlc.ReplaceNixSigningKeyParams{
 		RepositoryID: k.RepositoryID, KeyName: k.KeyName, PublicKey: k.PublicKey, PrivateKey: k.PrivateKeyEnc, CreatedBy: k.CreatedBy,
 	})
