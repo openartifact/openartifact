@@ -89,7 +89,7 @@ func (h *SAMLHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := auth.LoadSAMLProvider(ctx, h.db, slug, h.baseURL, h.cfg, h.log)
 	if err != nil {
-		writeSSOLoadError(w, h.log, "saml login", slug, err, samlMetadataFailure())
+		writeSSOLoadError(w, r, h.log, "saml login", slug, err, samlMetadataFailure())
 		return
 	}
 
@@ -101,7 +101,7 @@ func (h *SAMLHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	loginURL, err := provider.StartLogin(w, relayState, h.hmacKey)
 	if err != nil {
 		h.log.Errorw("saml login: build login url", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to build login URL")
+		redirectSSOError(w, r, "internal_error")
 
 		return
 	}
@@ -110,75 +110,42 @@ func (h *SAMLHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, loginURL, http.StatusFound)
 }
 
-// samlACSErrors maps the auth package's SAML failures onto the ACS response.
-// Order matters: the first match wins. Every entry answers with a generic
-// message; the detail (the wrapped error) is only logged.
+// samlACSErrors maps the auth package's SAML failures onto the sso_error code
+// the ACS redirects to. Order matters: the first match wins. The client only
+// sees the code; the detail (the wrapped error) is only logged.
 //
 //nolint:gochecknoglobals // immutable lookup table
 var samlACSErrors = []struct {
 	target error
-	status int
 	code   string
-	msg    string
-	// quiet failures are expected noise (replays, stray posts): logged at warn.
 	logMsg string
 }{
-	{
-		auth.ErrSAMLSignatureInvalid,
-		http.StatusBadRequest,
-		"saml_signature_invalid",
-		"SAML signature invalid",
-		"saml acs: signature rejected",
-	},
-	{
-		auth.ErrSAMLAudienceMismatch,
-		http.StatusBadRequest,
-		"saml_audience_mismatch",
-		"SAML audience mismatch",
-		"saml acs: audience rejected",
-	},
-	{
-		auth.ErrSAMLAssertionExpired,
-		http.StatusUnauthorized,
-		"saml_assertion_expired",
-		"SAML assertion expired",
-		"saml acs: assertion expired",
-	},
-	{auth.ErrSAMLReplay, http.StatusUnauthorized, "saml_invalid", "SAML response invalid", "saml acs: assertion replay rejected"},
-	{
-		auth.ErrSAMLRequestUntracked,
-		http.StatusBadRequest,
-		"saml_invalid",
-		"SAML response invalid",
-		"saml acs: response does not match a pending login request",
-	},
-	{auth.ErrSAMLRequestMismatch, http.StatusBadRequest, "saml_invalid", "SAML response invalid", "saml acs: InResponseTo rejected"},
-	{auth.ErrSAMLAssertionNotYetValid, http.StatusBadRequest, "saml_invalid", "SAML response invalid", "saml acs: assertion not yet valid"},
-	{
-		auth.ErrSAMLDestinationMismatch,
-		http.StatusBadRequest,
-		"saml_invalid",
-		"SAML response invalid",
-		"saml acs: destination or recipient rejected",
-	},
-	{auth.ErrSAMLIssuerMismatch, http.StatusBadRequest, "saml_invalid", "SAML response invalid", "saml acs: issuer rejected"},
-	{auth.ErrSAMLBadStatus, http.StatusBadRequest, "saml_invalid", "SAML response invalid", "saml acs: IdP reported a failure status"},
+	{auth.ErrSAMLSignatureInvalid, "saml_signature_invalid", "saml acs: signature rejected"},
+	{auth.ErrSAMLAudienceMismatch, "saml_audience_mismatch", "saml acs: audience rejected"},
+	{auth.ErrSAMLAssertionExpired, "saml_assertion_expired", "saml acs: assertion expired"},
+	{auth.ErrSAMLReplay, "saml_invalid", "saml acs: assertion replay rejected"},
+	{auth.ErrSAMLRequestUntracked, "saml_invalid", "saml acs: response does not match a pending login request"},
+	{auth.ErrSAMLRequestMismatch, "saml_invalid", "saml acs: InResponseTo rejected"},
+	{auth.ErrSAMLAssertionNotYetValid, "saml_invalid", "saml acs: assertion not yet valid"},
+	{auth.ErrSAMLDestinationMismatch, "saml_invalid", "saml acs: destination or recipient rejected"},
+	{auth.ErrSAMLIssuerMismatch, "saml_invalid", "saml acs: issuer rejected"},
+	{auth.ErrSAMLBadStatus, "saml_invalid", "saml acs: IdP reported a failure status"},
 }
 
-// writeACSParseError answers a rejected response. Unrecognized failures are a
-// generic 400 saml_invalid, never the error text.
-func (h *SAMLHandler) writeACSParseError(w http.ResponseWriter, slug string, err error) {
+// writeACSParseError redirects a rejected response to the login page.
+// Unrecognized failures are a generic saml_invalid, never the error text.
+func (h *SAMLHandler) writeACSParseError(w http.ResponseWriter, r *http.Request, slug string, err error) {
 	for _, m := range samlACSErrors {
 		if errors.Is(err, m.target) {
 			h.log.Warnw(m.logMsg, "slug", slug, "reason", err.Error())
-			writeError(w, m.status, m.code, m.msg)
+			redirectSSOError(w, r, m.code)
 
 			return
 		}
 	}
 
 	h.log.Errorw("saml acs: parse callback", "slug", slug, "error", err)
-	writeError(w, http.StatusBadRequest, "saml_invalid", "SAML response invalid")
+	redirectSSOError(w, r, "saml_invalid")
 }
 
 // acsRedirect decides where a successful login lands. SP-initiated RelayState
@@ -202,7 +169,7 @@ func (h *SAMLHandler) acsRedirect(w http.ResponseWriter, r *http.Request, mode a
 
 	decoded, err := auth.VerifyRelayState(rs, string(h.hmacKey))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_relay_state", "invalid relay state")
+		redirectSSOError(w, r, "invalid_relay_state")
 		return "", false
 	}
 
@@ -218,13 +185,13 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if err := r.ParseForm(); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "failed to parse form")
+		redirectSSOError(w, r, "saml_invalid")
 		return
 	}
 
 	provider, err := auth.LoadSAMLProvider(ctx, h.db, slug, h.baseURL, h.cfg, h.log)
 	if err != nil {
-		writeSSOLoadError(w, h.log, "saml acs", slug, err, samlMetadataFailure())
+		writeSSOLoadError(w, r, h.log, "saml acs", slug, err, samlMetadataFailure())
 		return
 	}
 
@@ -239,7 +206,7 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 
 	assertion, err := provider.ParseCallback(w, r, h.db, h.hmacKey)
 	if err != nil {
-		h.writeACSParseError(w, slug, err)
+		h.writeACSParseError(w, r, slug, err)
 		return
 	}
 
@@ -249,7 +216,7 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if externalID == "" {
-		writeError(w, http.StatusBadRequest, "missing_subject", "SAML assertion missing subject NameID")
+		redirectSSOError(w, r, "missing_subject")
 		return
 	}
 
@@ -275,13 +242,13 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 
 	providerRow, err := h.db.GetSSOProviderBySlug(ctx, slug)
 	if err != nil || providerRow == nil || !providerRow.Enabled {
-		writeError(w, http.StatusNotFound, "provider_not_found", "SSO provider not found")
+		redirectSSOError(w, r, "provider_not_found")
 		return
 	}
 
 	user, err := auth.NewProvisioner(h.db, h.log).Provision(ctx, providerRow, ssoClaims)
 	if err != nil {
-		writeSSOProvisionError(w, h.log, "saml acs", slug, err)
+		writeSSOProvisionError(w, r, h.log, "saml acs", slug, err)
 		return
 	}
 
@@ -355,7 +322,8 @@ func (h *SAMLHandler) handleMetadata(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := auth.LoadSAMLProvider(ctx, h.db, slug, h.baseURL, h.cfg, h.log)
 	if err != nil {
-		if ssoProviderUnavailable(w, err) {
+		if ssoProviderUnavailable(err) {
+			writeError(w, http.StatusNotFound, "provider_not_found", "SSO provider not found")
 			return
 		}
 

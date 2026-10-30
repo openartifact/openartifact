@@ -24,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/pathseg"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -47,6 +48,7 @@ const (
 
 // HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreateConanPackage(ctx context.Context, pkg *models.ConanPackage) error
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error

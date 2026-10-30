@@ -10,10 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"context"
-
 	"github.com/openartifact/openartifact/internal/ai"
-	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -24,13 +21,6 @@ type workerAnalyzer struct{ w *worker.AIAnalysisWorker }
 func (a workerAnalyzer) Enabled() bool { return a.w.Enabled() }
 
 func (a workerAnalyzer) Queue(req AIAnalysisRequest) { a.w.Notify(worker.AIAnalysisRequest(req)) }
-
-// testAnalyzerStore is the part of the database newTestAnalyzer needs.
-type testAnalyzerStore interface {
-	GetConanPackage(ctx context.Context, repoID string, key models.ConanFileKey) (*models.ConanPackage, error)
-	GetRepoComponentBlob(ctx context.Context, repoID string, id string) (*models.ComponentBlob, error)
-	UpsertAIAnalysis(ctx context.Context, analysis *models.AIAnalysis) error
-}
 
 // newTestAnalyzer returns an enabled AI worker whose debounce keeps queued
 // requests from running during the test.

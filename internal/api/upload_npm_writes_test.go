@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -66,11 +67,12 @@ func (d *npmMemDB) failure(method string) error {
 func newNPMMemDB() *npmMemDB {
 	d := &npmMemDB{
 		DB:       formattest.NewDB(),
-		other:    &models.Repository{ID: npmOtherRepoID, Name: "otherrepo"},
+		other:    &models.Repository{ID: npmOtherRepoID, Name: "otherrepo", Format: "npm"},
 		versions: map[string][]*models.NPMVersion{},
 		tags:     map[string]map[string]string{},
 	}
 	d.Repo.ID = npmTestRepoID
+	d.Repo.Format = "npm"
 
 	return d
 }
@@ -1047,12 +1049,19 @@ func TestNPMPublishUniqueViolation(t *testing.T) {
 	}{
 		{
 			"version already exists",
-			errors.New(`ERROR: duplicate key value violates unique constraint (SQLSTATE 23505)`),
+			fmt.Errorf("insert version: %w", &pgconn.PgError{Code: "23505"}),
 			nil,
 			http.StatusConflict,
 			1,
 		},
-		{"package already exists", nil, errors.New("package already exists"), http.StatusConflict, 0},
+		{"package already exists", nil, fmt.Errorf("insert package: %w", database.ErrDuplicate), http.StatusConflict, 0},
+		{
+			"error text alone is not a violation",
+			errors.New("package already exists (23505, unique)"),
+			nil,
+			http.StatusInternalServerError,
+			1,
+		},
 		{"other database failure", errors.New("connection reset"), nil, http.StatusInternalServerError, 1},
 		{"other package failure", nil, errors.New("connection reset"), http.StatusInternalServerError, 0},
 	}
@@ -1094,9 +1103,14 @@ func TestIsUniqueViolation(t *testing.T) {
 	}{
 		{nil, false},
 		{errors.New("connection reset"), false},
-		{errors.New("version already exists"), true},
-		{errors.New(`duplicate key value violates unique constraint "npm_versions_pkey"`), true},
-		{errors.New("ERROR: duplicate (SQLSTATE 23505)"), true},
+		{database.ErrDuplicate, true},
+		{fmt.Errorf("insert: %w", database.ErrDuplicate), true},
+		{fmt.Errorf("insert: %w", &pgconn.PgError{Code: "23505"}), true},
+		{&pgconn.PgError{Code: "23503"}, false},
+		// The decision is on the error's type, never its text.
+		{errors.New("version already exists"), false},
+		{errors.New(`duplicate key value violates unique constraint "npm_versions_pkey"`), false},
+		{errors.New("ERROR: duplicate (SQLSTATE 23505)"), false},
 	}
 
 	for _, tt := range tests {

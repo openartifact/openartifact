@@ -20,6 +20,7 @@
   "auth.logoutFailed": "サインアウトできませんでした",
   "session.probeFailed": "セッションを確認できませんでした",
   "session.probeFailedHint": "サーバーが応答しませんでした。再度移動すると確認をやり直します。",
+  "session.expired": "セッションの有効期限が切れました。もう一度サインインしてください。",
   "nav.repositories": "リポジトリ",
   "nav.settings": "設定",
   "nav.security": "セキュリティ",

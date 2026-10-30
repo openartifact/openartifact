@@ -90,7 +90,9 @@ describe('StorageBackendsPage', () => {
     expect(body.textContent).toContain('Edit · archive')
     const name = body.querySelector<HTMLInputElement>('input[disabled]')
     expect(name?.value).toBe('archive')
-    const secret = body.querySelector<HTMLInputElement>('input[aria-label="Secret access key"]')
+    // The field is named by a real <label for>, not an aria-label.
+    const secretLabel = [...body.querySelectorAll('label')].find((l) => l.textContent?.includes('Secret access key'))
+    const secret = body.querySelector<HTMLInputElement>(`input[id="${secretLabel?.getAttribute('for')}"]`)
     expect(secret?.type).toBe('password')
     expect(secret?.placeholder).toBe('Stored — leave blank to keep')
 

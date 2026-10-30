@@ -39,9 +39,10 @@ func NewAdminAIHandler(db AdminAIStore, log *logger.Logger, evaluator *auth.Eval
 	return &AdminAIHandler{db: db, log: log, evaluator: evaluator}
 }
 
-// WithRuntime makes configuration changes take effect immediately: after every
-// saved change the worker's client and auto-analysis switch are rebuilt from
-// the stored settings layered over env (the env/YAML defaults).
+// WithRuntime makes configuration changes take effect immediately in this
+// process: after every saved change the worker's client and auto-analysis
+// switch are rebuilt from the stored settings layered over env (the env/YAML
+// defaults). The other processes follow by polling (worker.SyncSettings).
 func (h *AdminAIHandler) WithRuntime(w *worker.AIAnalysisWorker, env ai.Settings) *AdminAIHandler {
 	h.aiWorker = w
 	h.envAI = env
@@ -145,16 +146,21 @@ func (h *AdminAIHandler) handleGetConfig(w http.ResponseWriter, r *http.Request)
 }
 
 const (
-	aiAPIKeyMask       = "••••••••" //nolint:gosec // G101: display placeholder, not a credential
-	aiMaxTokensLimit   = 200000
-	aiMaxTimeoutSecs   = 600
-	aiMaxSystemPrompt  = 16 * 1024
-	aiMaxFieldLen      = 2048
-	aiProviderOpenAI   = "openai"
-	aiProviderAzure    = "azure"
-	aiProviderOllama   = "ollama"
-	aiProviderCustom   = "custom"
-	aiTestFailedReason = "could not list models from the AI provider; check the endpoint, credentials and server logs"
+	aiAPIKeyMask      = "••••••••" //nolint:gosec // G101: display placeholder, not a credential
+	aiMaxTokensLimit  = 200000
+	aiMaxTimeoutSecs  = 600
+	aiMaxSystemPrompt = 16 * 1024
+	aiMaxFieldLen     = 2048
+	aiProviderOpenAI  = "openai"
+	aiProviderAzure   = "azure"
+	aiProviderOllama  = "ollama"
+	aiProviderCustom  = "custom"
+	// aiAPIKeyRequiredCode is the error code of a request that changes the
+	// endpoint (provider or base URL) without supplying the API key: the
+	// stored key only ever goes to the endpoint it was stored for.
+	aiAPIKeyRequiredCode = "api_key_required"
+	aiEndpointChangedMsg = "api_key is required when the provider or base_url changes: the stored key is only used with the stored endpoint"
+	aiTestFailedReason   = "could not list models from the AI provider; check the endpoint, credentials and server logs"
 )
 
 // aiConfigPatch is a partial AI configuration. Every field is a pointer so an
@@ -270,13 +276,82 @@ func (h *AdminAIHandler) patchedTestConfig(ctx context.Context, body *aiConfigPa
 		}
 	}
 
-	// A masked key means "use the stored one".
+	// A masked (or empty) key means "use the stored one", but only for the
+	// stored endpoint: testing another one with the stored key would hand that
+	// key to whatever the endpoint is.
 	if cfg.APIKey == aiAPIKeyMask || cfg.APIKey == "" {
 		stored, _ := h.db.GetSystemSetting(ctx, ai.SettingAPIKey)
-		cfg.APIKey = stored
+
+		switch {
+		case h.sameEndpointAsStored(ctx, &cfg):
+			cfg.APIKey = stored
+		case stored != "" && (body.APIKey == nil || *body.APIKey == aiAPIKeyMask):
+			return ai.Config{}, aiEndpointChangedMsg
+		default:
+			// An explicitly empty key tests a keyless endpoint.
+			cfg.APIKey = ""
+		}
 	}
 
 	return cfg, ""
+}
+
+// aiPatchErrorCode is the error code for a message of patchedTestConfig.
+func aiPatchErrorCode(msg string) string {
+	if msg == aiEndpointChangedMsg {
+		return aiAPIKeyRequiredCode
+	}
+
+	return "validation_failed"
+}
+
+// keyWouldFollowEndpoint reports whether saving p would send a key already in
+// force (stored, or from env) to a different endpoint without the request
+// supplying a key of its own. A new key, or an explicit empty one that clears
+// it, is fine.
+func (h *AdminAIHandler) keyWouldFollowEndpoint(ctx context.Context, p *aiConfigPatch) bool {
+	cur := ai.LoadSettings(ctx, h.db, h.envAI).Config
+	if cur.APIKey == "" || (p.APIKey != nil && *p.APIKey != aiAPIKeyMask) {
+		return false
+	}
+
+	provider, baseURL := cur.Provider, cur.BaseURL
+	if p.Provider != nil {
+		provider = *p.Provider
+	}
+
+	if p.BaseURL != nil {
+		baseURL = *p.BaseURL
+	}
+
+	return ai.EffectiveBaseURL(provider, baseURL) != ai.EffectiveBaseURL(cur.Provider, cur.BaseURL)
+}
+
+// sameEndpointAsStored reports whether cfg reaches the endpoint of the stored
+// provider and base URL.
+func (h *AdminAIHandler) sameEndpointAsStored(ctx context.Context, cfg *ai.Config) bool {
+	provider, _ := h.db.GetSystemSetting(ctx, ai.SettingProvider)
+	baseURL, _ := h.db.GetSystemSetting(ctx, ai.SettingBaseURL)
+
+	return ai.EffectiveBaseURL(cfg.Provider, cfg.BaseURL) == ai.EffectiveBaseURL(provider, baseURL)
+}
+
+// putConfigProblem returns the error code and message of a PUT body that must
+// be refused, or an empty message when it is acceptable.
+func (h *AdminAIHandler) putConfigProblem(ctx context.Context, body *aiConfigPatch) (string, string) {
+	if msg := body.validate(); msg != "" {
+		return "validation_failed", msg
+	}
+
+	if msg := h.customNeedsBaseURL(ctx, body); msg != "" {
+		return "validation_failed", msg
+	}
+
+	if h.keyWouldFollowEndpoint(ctx, body) {
+		return aiAPIKeyRequiredCode, aiEndpointChangedMsg
+	}
+
+	return "", ""
 }
 
 func (h *AdminAIHandler) handlePutConfig(w http.ResponseWriter, r *http.Request) {
@@ -287,17 +362,12 @@ func (h *AdminAIHandler) handlePutConfig(w http.ResponseWriter, r *http.Request)
 	var body aiConfigPatch
 
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
-	if msg := body.validate(); msg != "" {
-		writeError(w, http.StatusBadRequest, "validation_failed", msg)
-		return
-	}
-
-	if msg := h.customNeedsBaseURL(r.Context(), &body); msg != "" {
-		writeError(w, http.StatusBadRequest, "validation_failed", msg)
+	if code, msg := h.putConfigProblem(r.Context(), &body); msg != "" {
+		writeError(w, http.StatusBadRequest, code, msg)
 		return
 	}
 
@@ -425,7 +495,7 @@ func (h *AdminAIHandler) handleTest(w http.ResponseWriter, r *http.Request) {
 
 		cfg, msg = h.patchedTestConfig(r.Context(), body)
 		if msg != "" {
-			writeError(w, http.StatusBadRequest, "validation_failed", msg)
+			writeError(w, http.StatusBadRequest, aiPatchErrorCode(msg), msg)
 			return
 		}
 	} else {

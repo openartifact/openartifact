@@ -30,6 +30,7 @@ const azureAPIVersion = "2020-10-02"
 // Sentinel errors for Azure Blob Store.
 var (
 	ErrAzureAccountNameRequired        = errors.New("azure: AzureAccountName is required")
+	ErrAzureAccountNameInvalid         = errors.New("azure: AzureAccountName must be 3-24 lowercase letters and digits")
 	ErrAzureAccountKeyRequired         = errors.New("azure: AzureAccountKey is required")
 	ErrAzureAccountKeyInvalid          = errors.New("azure: AzureAccountKey is not valid base64")
 	ErrAzureContainerNameRequired      = errors.New("azure: AzureContainerName is required")
@@ -42,6 +43,8 @@ var (
 
 // AzureBlobStore implements BlobStore for Azure Blob Storage using the REST API.
 type AzureBlobStore struct {
+	// spoolDir holds Put spool files (os.TempDir when empty).
+	spoolDir      string
 	accountName   string
 	accountKey    []byte // decoded
 	containerName string
@@ -60,6 +63,10 @@ type AzureBlobStore struct {
 func NewAzureBlobStore(cfg StorageConfig) (*AzureBlobStore, error) {
 	if cfg.AzureAccountName == "" {
 		return nil, ErrAzureAccountNameRequired
+	}
+
+	if !ValidAzureAccountName(cfg.AzureAccountName) {
+		return nil, ErrAzureAccountNameInvalid
 	}
 
 	if cfg.AzureAccountKey == "" {
@@ -90,13 +97,19 @@ func NewAzureBlobStore(cfg StorageConfig) (*AzureBlobStore, error) {
 		ttl = 5 * time.Minute
 	}
 
+	spool, err := prepareSpoolDir(cfg.SpoolPath)
+	if err != nil {
+		return nil, err
+	}
+
 	return &AzureBlobStore{
+		spoolDir:         spool,
 		accountName:      cfg.AzureAccountName,
 		accountKey:       key,
 		containerName:    cfg.AzureContainerName,
 		baseURL:          endpoint + "/" + cfg.AzureContainerName,
 		presignTTL:       ttl,
-		client:           newStreamingHTTPClient(nil),
+		client:           newStreamingHTTPClient(cfg.dialGuardedTransport()),
 		now:              time.Now,
 		copyPollInterval: azureCopyPollInterval,
 	}, nil
@@ -364,7 +377,7 @@ func (a *AzureBlobStore) Put(ctx context.Context, data io.Reader, metadata map[s
 	// Spool to a private temp file: it yields the content length without
 	// buffering in memory and proves the bytes hash to the claimed digest
 	// before anything becomes visible.
-	spool, size, err := spoolVerified(data, sha, "", "azure-put-*.tmp")
+	spool, size, err := spoolVerified(data, sha, a.spoolDir, "azure-put-*.tmp")
 	if err != nil {
 		return "", fmt.Errorf("azure: %w", err)
 	}

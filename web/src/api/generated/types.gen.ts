@@ -93,6 +93,28 @@ export type PromotionPipeline = {
     updated_at: string;
 };
 
+/**
+ * 400 of the search endpoint. query_too_broad also carries the cap and the filters the query could add.
+ */
+export type SearchError = {
+    /**
+     * Message
+     */
+    error: string;
+    /**
+     * missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum or query_too_broad
+     */
+    code?: string;
+    /**
+     * query_too_broad only: the largest number of matches a search answers
+     */
+    max_results?: number;
+    /**
+     * query_too_broad only: the filters the query does not use yet (name:<package>, format:<format>, repo:<repository> in q, flagged=true); empty when it already uses all of them
+     */
+    narrow_by?: Array<string>;
+};
+
 export type Error = {
     /**
      * Error code
@@ -156,6 +178,10 @@ export type PublicSystemInfo = {
      * Whether the interactive API reference is served at /api/reference.
      */
     api_reference_enabled?: boolean;
+    /**
+     * Whether this binary contains AI analysis. False in a build made with -tags noai, where the AI routes answer 501 feature_unavailable; independent of whether an administrator enabled AI.
+     */
+    ai_available?: boolean;
 };
 
 export type SystemInfo = {
@@ -1224,6 +1250,28 @@ export type GpgKey = {
     created_by?: string;
     created_at?: string | null;
     expires_at?: string | null;
+};
+
+/**
+ * A stored GPG key the caller may seal bundles with. Never carries private key material, assignments or the creator.
+ */
+export type BundleSigningKey = {
+    /**
+     * UUID: the value to send as `gpg_key_id`
+     */
+    id: string;
+    name: string;
+    fingerprint: string;
+    /**
+     * Long key id (last 16 hex digits of the fingerprint)
+     */
+    key_id: string;
+    algorithm: string;
+    user_id: string;
+    /**
+     * The key that signs package metadata globally; the seal dialog preselects it
+     */
+    active_global: boolean;
 };
 
 export type EndSessionResponse = {
@@ -3919,6 +3967,10 @@ export type GetApiV1RepositoriesByNamePackagesData = {
          */
         group?: 'package';
         /**
+         * Keyset paging of the newest-first per-file listing: the next_cursor of the previous response. page is then ignored and the response carries no total. Rejected when malformed, and with group=package or sort=name.
+         */
+        cursor?: string;
+        /**
          * With group=package, true keeps the packages whose latest version has a critical or high vulnerability, a secret finding or a quarantined scan result. Rejected without group=package.
          */
         flagged?: boolean;
@@ -3928,7 +3980,7 @@ export type GetApiV1RepositoriesByNamePackagesData = {
 
 export type GetApiV1RepositoriesByNamePackagesErrors = {
     /**
-     * Invalid sort, group, flagged or q
+     * Invalid sort, group, flagged, q or cursor
      */
     400: unknown;
     /**
@@ -3948,9 +4000,20 @@ export type GetApiV1RepositoriesByNamePackagesResponses = {
      * List of packages: one entry per file (PackageFile), or one per package (PackageGroup) with group=package
      */
     200: {
+        /**
+         * Number of matching rows. Absent on a per-file request that carries a cursor, which does not count.
+         */
         total?: number;
         page?: number;
         limit?: number;
+        /**
+         * Per-file listing only (not group=package): the listing continues after this page.
+         */
+        has_more?: boolean;
+        /**
+         * Per-file listing, newest first only: set whenever has_more is true; pass it as cursor to fetch the next page.
+         */
+        next_cursor?: string;
         packages?: Array<PackageFile | PackageGroup>;
     };
 };
@@ -4444,6 +4507,10 @@ export type GetApiV1RepositoriesByNameSbomByIdDownloadErrors = {
      */
     404: unknown;
     /**
+     * OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)
+     */
+    409: Error;
+    /**
      * Attestations are not enabled
      */
     501: unknown;
@@ -4498,6 +4565,10 @@ export type GetApiV1RepositoriesByNameVexErrors = {
      * Repository not found
      */
     404: unknown;
+    /**
+     * OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)
+     */
+    409: Error;
     /**
      * Attestations are not enabled
      */
@@ -6371,10 +6442,12 @@ export type GetApiV1SearchData = {
 
 export type GetApiV1SearchErrors = {
     /**
-     * Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum, or query_too_broad (more than 10000 matching packages, or a checksum shared by more than 500 files; add filters)
+     * Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum, or query_too_broad (more than 10000 matching packages, or a checksum shared by more than 500 files; add filters). A query_too_broad on q lists the filters the query could add in narrow_by
      */
-    400: unknown;
+    400: SearchError;
 };
+
+export type GetApiV1SearchError = GetApiV1SearchErrors[keyof GetApiV1SearchErrors];
 
 export type GetApiV1SearchResponses = {
     /**
@@ -11176,6 +11249,33 @@ export type PostApiV1BundlesResponses = {
 
 export type PostApiV1BundlesResponse = PostApiV1BundlesResponses[keyof PostApiV1BundlesResponses];
 
+export type GetApiV1BundlesSigningKeysData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/bundles/signing-keys';
+};
+
+export type GetApiV1BundlesSigningKeysErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1BundlesSigningKeysError = GetApiV1BundlesSigningKeysErrors[keyof GetApiV1BundlesSigningKeysErrors];
+
+export type GetApiV1BundlesSigningKeysResponses = {
+    /**
+     * Success
+     */
+    200: {
+        keys: Array<BundleSigningKey>;
+    };
+};
+
+export type GetApiV1BundlesSigningKeysResponse = GetApiV1BundlesSigningKeysResponses[keyof GetApiV1BundlesSigningKeysResponses];
+
 export type DeleteApiV1BundlesByNameByVersionData = {
     body?: never;
     path: {
@@ -12010,21 +12110,12 @@ export type GetApiV1AuthSsoOidcBySlugLoginData = {
 
 export type GetApiV1AuthSsoOidcBySlugLoginErrors = {
     /**
-     * Error
+     * Bad request: the URL contains a NUL byte (code bad_request)
      */
-    default: Error;
+    400: Error;
 };
 
 export type GetApiV1AuthSsoOidcBySlugLoginError = GetApiV1AuthSsoOidcBySlugLoginErrors[keyof GetApiV1AuthSsoOidcBySlugLoginErrors];
-
-export type GetApiV1AuthSsoOidcBySlugLoginResponses = {
-    /**
-     * Error
-     */
-    default: Error;
-};
-
-export type GetApiV1AuthSsoOidcBySlugLoginResponse = GetApiV1AuthSsoOidcBySlugLoginResponses[keyof GetApiV1AuthSsoOidcBySlugLoginResponses];
 
 export type GetApiV1AuthSsoOidcBySlugCallbackData = {
     body?: never;
@@ -12040,21 +12131,12 @@ export type GetApiV1AuthSsoOidcBySlugCallbackData = {
 
 export type GetApiV1AuthSsoOidcBySlugCallbackErrors = {
     /**
-     * Error
+     * Bad request: the URL contains a NUL byte (code bad_request)
      */
-    default: Error;
+    400: Error;
 };
 
 export type GetApiV1AuthSsoOidcBySlugCallbackError = GetApiV1AuthSsoOidcBySlugCallbackErrors[keyof GetApiV1AuthSsoOidcBySlugCallbackErrors];
-
-export type GetApiV1AuthSsoOidcBySlugCallbackResponses = {
-    /**
-     * Error
-     */
-    default: Error;
-};
-
-export type GetApiV1AuthSsoOidcBySlugCallbackResponse = GetApiV1AuthSsoOidcBySlugCallbackResponses[keyof GetApiV1AuthSsoOidcBySlugCallbackResponses];
 
 export type PostApiV1AuthSsoOidcBySlugLogoutData = {
     body?: never;
@@ -12098,21 +12180,12 @@ export type GetApiV1AuthSsoSamlBySlugLoginData = {
 
 export type GetApiV1AuthSsoSamlBySlugLoginErrors = {
     /**
-     * Error
+     * Bad request: the URL contains a NUL byte (code bad_request)
      */
-    default: Error;
+    400: Error;
 };
 
 export type GetApiV1AuthSsoSamlBySlugLoginError = GetApiV1AuthSsoSamlBySlugLoginErrors[keyof GetApiV1AuthSsoSamlBySlugLoginErrors];
-
-export type GetApiV1AuthSsoSamlBySlugLoginResponses = {
-    /**
-     * Error
-     */
-    default: Error;
-};
-
-export type GetApiV1AuthSsoSamlBySlugLoginResponse = GetApiV1AuthSsoSamlBySlugLoginResponses[keyof GetApiV1AuthSsoSamlBySlugLoginResponses];
 
 export type GetApiV1AuthSsoSamlBySlugMetadataData = {
     body?: never;
@@ -12150,21 +12223,12 @@ export type PostApiV1AuthSsoSamlBySlugAcsData = {
 
 export type PostApiV1AuthSsoSamlBySlugAcsErrors = {
     /**
-     * Error
+     * Bad request: the URL contains a NUL byte (code bad_request)
      */
-    default: Error;
+    400: Error;
 };
 
 export type PostApiV1AuthSsoSamlBySlugAcsError = PostApiV1AuthSsoSamlBySlugAcsErrors[keyof PostApiV1AuthSsoSamlBySlugAcsErrors];
-
-export type PostApiV1AuthSsoSamlBySlugAcsResponses = {
-    /**
-     * Error
-     */
-    default: Error;
-};
-
-export type PostApiV1AuthSsoSamlBySlugAcsResponse = PostApiV1AuthSsoSamlBySlugAcsResponses[keyof PostApiV1AuthSsoSamlBySlugAcsResponses];
 
 export type PostApiV1RepositoriesByNameUploadsData = {
     body: PresignedUploadRequest;
@@ -13536,9 +13600,13 @@ export type GetApiV1RepositoriesByNamePackagesByIdDeltaErrors = {
      */
     404: Error;
     /**
-     * Package too large for delta generation
+     * Package too large for delta generation (over 64 MiB, or over 8 MiB for a caller that is not signed in)
      */
     413: Error;
+    /**
+     * Delta generation is busy: the queue of generations waiting for a slot, or the callers waiting for this one, is full. Retry after the Retry-After delay
+     */
+    503: Error;
 };
 
 export type GetApiV1RepositoriesByNamePackagesByIdDeltaError = GetApiV1RepositoriesByNamePackagesByIdDeltaErrors[keyof GetApiV1RepositoriesByNamePackagesByIdDeltaErrors];
@@ -14005,6 +14073,10 @@ export type PostApiV1RepositoriesByNameSbomByIdAttachErrors = {
      */
     404: unknown;
     /**
+     * OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)
+     */
+    409: Error;
+    /**
      * Repository storage quota exceeded
      */
     507: unknown;
@@ -14055,6 +14127,10 @@ export type PostApiV1RepositoriesByNameVexAttachErrors = {
      */
     404: unknown;
     /**
+     * OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)
+     */
+    409: Error;
+    /**
      * Repository storage quota exceeded
      */
     507: unknown;
@@ -14088,6 +14164,10 @@ export type GetApiV1AdminAttestationData = {
 
 export type GetApiV1AdminAttestationErrors = {
     /**
+     * OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)
+     */
+    409: Error;
+    /**
      * Attestations are not enabled
      */
     501: unknown;
@@ -14117,10 +14197,16 @@ export type GetWellKnownOpenartifactAttestationKeyPemData = {
 
 export type GetWellKnownOpenartifactAttestationKeyPemErrors = {
     /**
+     * OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)
+     */
+    409: Error;
+    /**
      * Attestations are not enabled
      */
     501: unknown;
 };
+
+export type GetWellKnownOpenartifactAttestationKeyPemError = GetWellKnownOpenartifactAttestationKeyPemErrors[keyof GetWellKnownOpenartifactAttestationKeyPemErrors];
 
 export type GetWellKnownOpenartifactAttestationKeyPemResponses = {
     /**

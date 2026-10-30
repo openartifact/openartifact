@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/artifactpath"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/format/filerepo"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/webhook"
@@ -36,7 +36,7 @@ type store struct {
 }
 
 func newSpec(format string, kind models.TrashKind, groupKey string, s *store) filerepo.Spec[fileRow, quotaDB] {
-	key := func(c base.ArtifactPath) string {
+	key := func(c artifactpath.Path) string {
 		return strings.Join([]string{c.Group, c.Module, c.Version, c.Filename}, "|")
 	}
 
@@ -44,16 +44,16 @@ func newSpec(format string, kind models.TrashKind, groupKey string, s *store) fi
 		Format:    format,
 		TrashKind: kind,
 		GroupKey:  groupKey,
-		Get: func(_ context.Context, _ quotaDB, _ string, c base.ArtifactPath) (*fileRow, error) {
+		Get: func(_ context.Context, _ quotaDB, _ string, c artifactpath.Path) (*fileRow, error) {
 			if row := s.rows[key(c)]; row != nil {
 				cp := *row
 
 				return &cp, nil
 			}
 
-			return nil, nil // not found is (nil, nil) in the Database contract
+			return nil, nil // not found is (nil, nil) in the store contract
 		},
-		New: func(_ string, c base.ArtifactPath, size int64, sha256Hex string) *fileRow {
+		New: func(_ string, c artifactpath.Path, size int64, sha256Hex string) *fileRow {
 			return &fileRow{Path: key(c), Size: size, SHA256: sha256Hex}
 		},
 		Create: func(_ context.Context, _ quotaDB, a *fileRow) error {

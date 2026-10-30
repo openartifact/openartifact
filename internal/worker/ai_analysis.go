@@ -35,6 +35,9 @@ type AIAnalysisRequest struct {
 type aiRuntime struct {
 	client      *ai.Client
 	autoAnalyze bool
+	// settings is what the client and the switch were built from; SyncSettings
+	// compares the stored settings with it.
+	settings ai.Settings
 }
 
 // AIAnalysisStore is the part of the database AIAnalysisWorker needs.
@@ -105,7 +108,7 @@ func (w *AIAnalysisWorker) WithDebounce(d time.Duration) *AIAnalysisWorker {
 // Analyses already running finish on the client they started with; every
 // analysis that starts afterwards uses the new one.
 func (w *AIAnalysisWorker) Configure(s ai.Settings) {
-	w.rt.Store(&aiRuntime{client: s.NewClient(), autoAnalyze: s.Enabled && s.AutoAnalyze})
+	w.rt.Store(&aiRuntime{client: s.NewClient(), autoAnalyze: s.Enabled && s.AutoAnalyze, settings: s})
 }
 
 // Enabled reports whether a model client is configured.

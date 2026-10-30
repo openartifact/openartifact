@@ -69,6 +69,7 @@ func validFormatList() string {
 
 // RepositoriesStore is the part of the database RepositoriesHandler needs.
 type RepositoriesStore interface {
+	quarantine.Checker
 	collectOrphansAsyncStore
 	reclaimMetadataBlobsStore
 	ArtifactSecurity(ctx context.Context, repoID string, artifactIDs []string) (map[string]models.ArtifactSecurity, error)
@@ -575,7 +576,7 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 
 	var body createRepositoryBody
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -903,7 +904,7 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		SignPackages       *bool `json:"sign_packages"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -1399,17 +1400,17 @@ func collectOrphansAsync(tasks *bgtask.Runner, db collectOrphansAsyncStore, stor
 	})
 }
 
-var errListFilterUnsupported = errors.New("package_name, q and sort are not supported by this store")
+var errListFilterUnsupported = errors.New("package_name, q, sort and cursor are not supported by this store")
 
 // listComponents lists a repository's packages with the filters and ordering
 // of opts. The plain newest-first listing needs only the base store; any
-// filter or other order needs a database.ComponentSearcher.
+// filter, other order or cursor needs a database.ComponentSearcher.
 func (h *RepositoriesHandler) listComponents(
 	ctx context.Context,
 	repoID string,
 	opts database.ComponentListOptions,
 ) ([]*models.Component, int, error) {
-	if opts.Name == "" && opts.Query == "" && !opts.SortByName {
+	if opts.Name == "" && opts.Query == "" && !opts.SortByName && opts.After == nil {
 		return h.db.ListComponentsByRepo(ctx, repoID, opts.Format, opts.Page, opts.Limit)
 	}
 
@@ -1643,7 +1644,7 @@ func (h *RepositoriesHandler) handleUpdateMembers(w http.ResponseWriter, r *http
 		MemberRepos []string `json:"member_repos"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

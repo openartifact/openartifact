@@ -281,10 +281,20 @@ func oaAssetPath(repo sourceRepo, row oaPackage) string {
 	return strings.TrimPrefix(row.Filename, "/")
 }
 
-// ivyArtifactName undoes the ivy listing's file name, which is the stored name
-// followed by its extension again ("lib-1.0.jar.jar").
+// ivyArtifactName is the file name of an ivy listing row. A server before the
+// generic package tables listed the stored name followed by its extension again
+// ("lib-1.0.jar.jar"); that repeat is dropped, any other name is the stored one.
 func ivyArtifactName(listed string) string {
-	return strings.TrimSuffix(listed, "."+strings.TrimPrefix(path.Ext(listed), "."))
+	ext := path.Ext(listed)
+	if ext == "" {
+		return listed
+	}
+
+	if name, ok := strings.CutSuffix(listed, ext); ok && path.Ext(name) == ext {
+		return name
+	}
+
+	return listed
 }
 
 // dockerSourcePath is the source path of a tag: the registry address of its

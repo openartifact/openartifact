@@ -140,9 +140,11 @@ Each delivery is an HTTP `POST` of the formatted body:
 |---|---|
 | `Content-Type` | `application/json`, or `application/cloudevents+json` for the `cloudevents` format |
 | `User-Agent` | `OpenArtifact-Webhook/1.0` |
+| `X-OA-Delivery` | the delivery ID, identical on every retry of that delivery |
+| `X-OA-Event` | the event name, e.g. `artifact.uploaded` |
 | `X-Hub-Signature-256` | `sha256=<hex>`, only when the webhook has a secret |
 
-The signature is the HMAC-SHA256 of the raw request body keyed with the secret (the header name and format GitHub webhooks use). Verify it before parsing, with a constant-time compare:
+Delivery is at least once: use `X-OA-Delivery` to drop a delivery you already handled (the `cloudevents` format carries the same value as the body's `id`). The signature is the HMAC-SHA256 of the raw request body keyed with the secret (the header name and format GitHub webhooks use); it covers the body only, so `X-OA-Delivery` and `X-OA-Event` are not signed and an intermediary could alter them. Verify the signature before parsing, with a constant-time compare:
 
 ```python
 import hashlib, hmac
@@ -162,7 +164,8 @@ A response with a `2xx` status is a success. Everything else (other status, conn
 - A delivery ends as `success`, or `failed` once attempts are used up.
 - Deliveries are written to the database before they are sent, handled by 8 workers from a queue of 1000, and leased for 2 minutes. If the queue is full or the server stops, the row stays `pending` and the poller sends it. With several replicas each pending delivery is claimed by exactly one of them.
 - `timeout_seconds` is the per-attempt limit: default 30, clamped to 1 to 30.
-- Delivery is at least once: a delivery claimed by an instance that crashes is sent again when its 2-minute lease expires, so receivers should be idempotent.
+- A worker starts an attempt only while the delivery's lease still outlasts the attempt (`timeout_seconds` plus a 5 s margin). A delivery that waited in the queue past that point, for example behind slow endpoints, is not sent by that instance: it stays `pending` and the poller claims it again once the lease expires, so a slow queue does not make two instances send the same delivery.
+- Delivery is still at least once: a delivery claimed by an instance that crashes is sent again when its 2-minute lease expires, and clock skew between a server and the database can shorten a lease. Receivers should be idempotent on `X-OA-Delivery`.
 
 ## Address validation (SSRF)
 

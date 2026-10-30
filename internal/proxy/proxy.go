@@ -117,6 +117,7 @@ const staleWarning = `110 - "Response is Stale"`
 
 // ServiceStore is the part of the database Service needs.
 type ServiceStore interface {
+	quarantine.Checker
 	DeleteProxyCacheEntry(ctx context.Context, repoID string, cacheKey string) error
 	EnsureBlob(ctx context.Context, sha256 string, mediaType string, size int64) (string, error)
 	GetProxyCacheEntry(ctx context.Context, repoID string, cacheKey string) (*models.ProxyCacheEntry, error)

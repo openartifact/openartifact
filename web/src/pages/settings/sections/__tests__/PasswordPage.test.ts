@@ -34,6 +34,19 @@ const calls = (spy: ReturnType<typeof spyOn>) =>
   spy.mock.calls.filter((c) => String(c[0]).includes('/auth/change-password'))
 
 describe('PasswordPage', () => {
+  it('names every field with a label and ties an error to its field', async () => {
+    const { w } = mountPage()
+    for (const id of ['current_password', 'new_password', 'confirm_password']) {
+      expect(w.find(`label[for="${id}"]`).exists()).toBe(true)
+      expect(w.get(`#${id}`).attributes('aria-invalid')).toBe('false')
+    }
+    await fill(w, OLD, 'a'.repeat(11), 'a'.repeat(11))
+    const bad = w.get('[aria-invalid="true"]')
+    const err = w.get(`#${bad.attributes('aria-describedby')?.split(' ').find((i) => i.endsWith('_error'))}`)
+    expect(err.classes()).toContain('text-danger')
+    w.unmount()
+  })
+
   const cases: [string, string, string, string][] = [
     ['too short', OLD, 'a'.repeat(11), 'a'.repeat(11)],
     ['mismatched confirmation', OLD, LONG, LONG + '!'],

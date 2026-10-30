@@ -59,6 +59,11 @@ let state: Record<string, unknown>
 let items: unknown[]
 let getStatus = 200
 let promoteStatus = 200
+const KEY = { id: 'k-1', fingerprint: 'ABCDEF0123456789', key_id: 'ABCDEF0123456789', name: 'Release key', user_id: 'rel', algorithm: 'ed25519', active_global: true }
+// What the server answers for the keys the user may seal with, and whether the seal itself is refused.
+let signingKeys: unknown[] = [KEY]
+let signingKeysStatus = 200
+let sealRefused = false
 let fetchSpy: Mock<typeof fetch>
 const sent = () => fetchSpy.mock.calls.map((c) => `${(c[1] as RequestInit | undefined)?.method ?? 'GET'} ${String(c[0])}`)
 // The JSON body of the last request to `match` that sent one.
@@ -77,7 +82,8 @@ function route(url: string, method: string, body?: string): Response {
   if (url.startsWith('/api/v1/repositories?')) return json({ total: 2, repositories: REPOS })
   if (url.startsWith('/api/v1/vuln/scans/summary')) return json({ total: 3, severity_at_least: { critical: 1, high: 2 } })
   if (url.startsWith('/api/v1/search?')) return json({ packages: [HIT, { ...HIT, path: 'dup.jar' }, { ...ITEM, repository: 'maven-dev', name: 'shop', version: '1', path: ITEM.artifact_path, sha256: SHA, size: 2048 }, { ...HIT, name: 'nosum', sha256: '' }] })
-  if (url === '/api/v1/admin/gpg/keys') return json({ keys: [{ id: 'k-1', fingerprint: 'ABCDEF0123456789', key_id: 'ABCDEF0123456789', name: 'Release key', active_global: true }], can_store_keys: true })
+  if (url === '/api/v1/bundles/signing-keys') return signingKeysStatus === 200 ? json({ keys: signingKeys }) : json({ error: 'boom' }, signingKeysStatus)
+  if (url.endsWith('/seal') && sealRefused) return json({ error: 'you may not sign bundles with this key', code: 'signer_forbidden' }, 403)
   if (url.endsWith('/seal')) {
     state = bundle({ ...SEALED, gpg_key_id: body ? 'k-1' : null })
     return json(state)
@@ -132,6 +138,9 @@ describe('BundleDetailPage', () => {
     document.body.innerHTML = ''
     getStatus = 200
     promoteStatus = 200
+    signingKeys = [KEY]
+    signingKeysStatus = 200
+    sealRefused = false
     state = bundle()
     items = [ITEM]
   })
@@ -176,6 +185,65 @@ describe('BundleDetailPage', () => {
     expect(primaries()).toEqual(['primary-promote'])
     expect(testid('primary-promote')!.textContent).toContain('Promote to qa')
     expect(wrapper.find('[data-testid="action-remove"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('offers exactly the keys the server lists for the user, never the admin key list or `config`', async () => {
+    signingKeys = [KEY, { ...KEY, id: 'k-2', name: 'Nightly key', active_global: false }]
+    const { wrapper } = await mountPage()
+    testid('primary-seal')!.click()
+    await flushPromises()
+
+    const options = [...(body().querySelector('#seal-key') as HTMLSelectElement).options].map((o) => o.value)
+    expect(options).toEqual(['k-1', 'k-2', ''])
+    expect(sent()).toContain('GET /api/v1/bundles/signing-keys')
+    expect(sent().some((c) => c.includes('/admin/gpg'))).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('hides the signing selector when the user may sign with no key, and seals unsigned', async () => {
+    signingKeys = []
+    const { wrapper } = await mountPage()
+    testid('primary-seal')!.click()
+    await flushPromises()
+
+    expect(body().querySelector('#seal-key')).toBeNull()
+    expect(testid('seal-no-keys')!.textContent).toContain('No signing key is available to you')
+    // Only the page's own action says "Seal and sign"; the drawer's confirm button says it seals unsigned.
+    expect([...body().querySelectorAll('button')].filter((b) => b.textContent?.trim() === 'Seal and sign')).toHaveLength(1)
+    buttonByText('Seal without signing')!.click()
+    await flushPromises()
+
+    const seal = fetchSpy.mock.calls.find((c) => String(c[0]).endsWith('/seal'))!
+    expect((seal[1] as RequestInit).body).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('says the keys could not be loaded and offers no signing', async () => {
+    signingKeysStatus = 500
+    const { wrapper } = await mountPage()
+    testid('primary-seal')!.click()
+    await flushPromises()
+
+    expect(body().querySelector('#seal-key')).toBeNull()
+    expect(body().textContent).toContain('Could not load the signing keys.')
+    expect(testid('seal-no-keys')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('explains a 403 signer_forbidden on seal in the locale and refreshes the keys', async () => {
+    sealRefused = true
+    const { wrapper } = await mountPage()
+    testid('primary-seal')!.click()
+    await flushPromises()
+    signingKeys = []
+    buttonByText('Seal and sign')!.click()
+    await flushPromises()
+
+    const alert = body().querySelector('[role=alert]') as HTMLElement
+    expect(alert.textContent).toBe('You may not sign bundles with this key any more. The list of keys was refreshed; choose another one or seal without signing.')
+    expect(sent().filter((c) => c === 'GET /api/v1/bundles/signing-keys')).toHaveLength(2)
+    expect(body().querySelector('#seal-key')).toBeNull()
     wrapper.unmount()
   })
 

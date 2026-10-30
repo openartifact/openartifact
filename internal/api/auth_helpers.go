@@ -28,13 +28,23 @@ func writeNoContent(w http.ResponseWriter) {
 // character, which PostgreSQL text columns cannot store.
 var errNULInBody = errors.New("request body contains a NUL character")
 
+// errBodyTooLarge is returned by decodeJSON for a body over maxRequestBodyBytes.
+var errBodyTooLarge = errors.New("JSON body exceeds the size cap")
+
 // decodeJSON decodes the first JSON value of the request body into dst. A
 // body with a U+0000 escape is rejected so that handlers answer 400 for it
-// instead of failing in the database.
+// instead of failing in the database, and a body over maxRequestBodyBytes is
+// rejected with errBodyTooLarge instead of being cut off and decoded as far as
+// it goes. Handlers report a failure with writeBadJSON.
 func decodeJSON(r *http.Request, dst any) error {
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBodyBytes))
+	// One byte past the cap tells a body that fits from one that was cut.
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBodyBytes+1))
 	if err != nil {
 		return err //nolint:wrapcheck // callers only test for nil
+	}
+
+	if int64(len(body)) > maxRequestBodyBytes {
+		return errBodyTooLarge
 	}
 
 	if hasEscapedNUL(body) {
@@ -42,6 +52,24 @@ func decodeJSON(r *http.Request, dst any) error {
 	}
 
 	return json.NewDecoder(bytes.NewReader(body)).Decode(dst)
+}
+
+// writeBadJSON answers a body decodeJSON rejected: 413 for an oversized one,
+// 400 for anything else. The message never carries err.
+func writeBadJSON(w http.ResponseWriter, err error) {
+	writeBadBody(w, err, "bad_request", "invalid JSON body")
+}
+
+// writeBadBody is writeBadJSON for a handler whose 400 carries its own code and
+// message.
+func writeBadBody(w http.ResponseWriter, err error, code, message string) {
+	// A handler may also have capped the body itself with http.MaxBytesReader.
+	if _, capped := errors.AsType[*http.MaxBytesError](err); capped || errors.Is(err, errBodyTooLarge) {
+		writeError(w, http.StatusRequestEntityTooLarge, "request_entity_too_large", "request body too large")
+		return
+	}
+
+	writeError(w, http.StatusBadRequest, code, message)
 }
 
 // hasEscapedNUL reports whether b holds a \u0000 JSON escape that is not itself

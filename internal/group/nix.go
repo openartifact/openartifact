@@ -137,10 +137,10 @@ func (h *Handler) serveNixNarInfo(
 		be.ServeMember(cw, mr, m, relPath)
 
 		switch {
-		case cw.status == http.StatusNotFound:
-		case cw.overflow || cw.status == 0 || cw.status >= http.StatusInternalServerError:
+		case cw.code() == http.StatusNotFound:
+		case cw.overflow || cw.code() >= http.StatusInternalServerError:
 			failed = true
-		case cw.status == http.StatusOK:
+		case cw.code() == http.StatusOK:
 			sess.release()
 			h.writeSignedNarInfo(w, r, grp, cw.body.Bytes())
 
@@ -212,7 +212,7 @@ func replayCapture(w http.ResponseWriter, r *http.Request, cw *captureWriter) {
 	}
 
 	dst.Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(cw.status)
+	w.WriteHeader(cw.code())
 
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(cw.body.Bytes())

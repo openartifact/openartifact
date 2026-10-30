@@ -6,7 +6,12 @@ package api
 
 import (
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
+	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -158,5 +163,114 @@ func TestOpenAPISpecMatchesRoutes(t *testing.T) {
 	}
 	if len(stale) > 0 {
 		t.Errorf("openapi.json operations without a route:\n  %s", strings.Join(stale, "\n  "))
+	}
+}
+
+// handlersOutsideRouteList names the handler constructors cmd/server calls
+// that TestOpenAPISpecMatchesRoutes does not call itself, each with where its
+// routes are checked instead.
+func handlersOutsideRouteList() map[string]string {
+	return map[string]string{
+		"NewAIHandler":      "registered by registerAIRoutes, which exists in both the ai and noai builds",
+		"NewAdminAIHandler": "registered by registerAIRoutes, which exists in both the ai and noai builds",
+		// The npm and maven upload handlers serve the native client protocols
+		// under /repos, not documented /api/v1 routes.
+		"NewMavenUploadHandler": "native client protocol routes, not part of the /api/v1 spec",
+		"NewNPMUploadHandler":   "native client protocol routes, not part of the /api/v1 spec",
+	}
+}
+
+// calledConstructors returns the New*Handler constructors the Go files call. A
+// non-empty pkg keeps only pkg.NewXHandler selector calls; an empty one keeps
+// only unqualified NewXHandler calls.
+func calledConstructors(t *testing.T, pkg string, files []string) map[string]bool {
+	t.Helper()
+
+	found := map[string]bool{}
+	fset := token.NewFileSet()
+
+	for _, name := range files {
+		f, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+
+			var fn string
+
+			switch fun := call.Fun.(type) {
+			case *ast.Ident:
+				if pkg == "" {
+					fn = fun.Name
+				}
+			case *ast.SelectorExpr:
+				if x, ok := fun.X.(*ast.Ident); ok && pkg != "" && x.Name == pkg {
+					fn = fun.Sel.Name
+				}
+			}
+
+			if strings.HasPrefix(fn, "New") && strings.HasSuffix(fn, "Handler") {
+				found[fn] = true
+			}
+
+			return true
+		})
+	}
+
+	return found
+}
+
+// TestOpenAPIRouteListCoversServerWiring keeps TestOpenAPISpecMatchesRoutes
+// honest. It registers handlers by hand, so a handler that cmd/server mounts
+// but the list lacks would be invisible to the drift check. cmd/server is a
+// main package and cannot be imported, so its sources are parsed instead: every
+// api.NewXHandler it calls must be called in openapi_routes_test.go too (or be
+// listed in handlersOutsideRouteList), and an exception for a handler that is
+// no longer mounted is stale.
+func TestOpenAPIRouteListCoversServerWiring(t *testing.T) {
+	serverFiles, err := filepath.Glob("../../cmd/server/*.go")
+	if err != nil || len(serverFiles) == 0 {
+		t.Fatalf("cmd/server sources not found (%v)", err)
+	}
+
+	serverFiles = slices.DeleteFunc(serverFiles, func(name string) bool { return strings.HasSuffix(name, "_test.go") })
+
+	mounted := calledConstructors(t, "api", serverFiles)
+	listed := calledConstructors(t, "", []string{"openapi_routes_test.go"})
+	exceptions := handlersOutsideRouteList()
+
+	var problems []string
+
+	for name := range mounted {
+		if !listed[name] && exceptions[name] == "" {
+			problems = append(problems, name+" is mounted by cmd/server but missing from TestOpenAPISpecMatchesRoutes")
+		}
+	}
+
+	for name := range listed {
+		if !mounted[name] && exceptions[name] == "" {
+			problems = append(problems, name+" is registered by TestOpenAPISpecMatchesRoutes but cmd/server never mounts it")
+		}
+	}
+
+	for name := range exceptions {
+		if !mounted[name] {
+			problems = append(problems, name+" is in handlersOutsideRouteList but cmd/server no longer mounts it")
+		}
+
+		if listed[name] {
+			problems = append(problems, name+" is in handlersOutsideRouteList but TestOpenAPISpecMatchesRoutes registers it")
+		}
+	}
+
+	sort.Strings(problems)
+
+	if len(problems) > 0 {
+		t.Errorf("route list and cmd/server wiring disagree:\n  %s", strings.Join(problems, "\n  "))
 	}
 }

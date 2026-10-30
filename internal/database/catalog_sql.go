@@ -47,95 +47,6 @@ func flaggedArtifactIDs(repoParam string) string {
 		flaggedScanFrom, repoParam, flaggedScanWhere)
 }
 
-// rollupQuery is the first stage of the per-package rollup of a repository: the
-// page of packages (format, name) with their latest version, version count and
-// timestamps, and the total number of packages. Sizes and security come from
-// the second stage (rollupSizesQuery) for the page's packages only.
-//
-// Argument $1 is the repository; the others follow in args.
-func rollupQuery(opts rollupFilter) (string, []any) {
-	args := []any{opts.repoID}
-
-	var conds []string
-
-	bind := func(v any) string {
-		args = append(args, v)
-
-		return fmt.Sprintf("$%d", len(args))
-	}
-
-	if opts.format != "" {
-		conds = append(conds, "u.format = "+bind(opts.format))
-	}
-
-	if opts.name != "" {
-		conds = append(conds, "u.name = "+bind(opts.name))
-	}
-
-	if opts.query != "" {
-		term := bind(opts.query)
-		conds = append(conds, fmt.Sprintf("(strpos(lower(u.name), lower(%[1]s)) > 0 OR strpos(lower(u.version), lower(%[1]s)) > 0)", term))
-	}
-
-	where := ""
-	if len(conds) > 0 {
-		where = "WHERE " + strings.Join(conds, " AND ")
-	}
-
-	branches := branchesForFormat(opts.repoFormat)
-	rows := unionOf(branches, func(b catalogBranch) string { return b.narrow(b.repo + " = $1") })
-
-	flaggedCTE, flaggedSel, flaggedHaving := "", "", ""
-	if opts.flagged {
-		flaggedCTE = ", flagged_ids AS MATERIALIZED (" + flaggedArtifactIDs("$1") + ")"
-		flaggedSel = ", bool_or(r.version = l.latest_version AND r.id::text IN (SELECT artifact_path FROM flagged_ids)) AS flagged"
-		flaggedHaving = "WHERE flagged"
-	}
-
-	order := "created_at DESC, format, name"
-	if opts.sortByName {
-		order = "name, format"
-	}
-
-	limitN := bind(opts.limit)
-	offsetN := bind(opts.offset)
-
-	return fmt.Sprintf(`WITH u AS (
-		SELECT * FROM (
-		%s
-		) u %s
-	), latest AS (
-		SELECT DISTINCT ON (format, name) format, name, version AS latest_version
-		FROM u
-		ORDER BY format, name, created_at DESC, id
-	)%s, grouped AS (
-		SELECT r.format, r.name, l.latest_version,
-		       count(DISTINCT r.version) AS version_count,
-		       max(r.created_at) AS created_at, max(r.updated_at) AS updated_at%s
-		FROM u r JOIN latest l ON l.format = r.format AND l.name = r.name
-		GROUP BY r.format, r.name, l.latest_version
-	)
-	SELECT format, name, latest_version, version_count, created_at, updated_at, count(*) OVER () AS total
-	FROM grouped
-	%s
-	ORDER BY %s
-	LIMIT %s OFFSET %s`,
-		rows, where, flaggedCTE, flaggedSel, flaggedHaving, order, limitN, offsetN), args
-}
-
-// rollupFilter is PackageRollupOptions resolved to what the query binds.
-type rollupFilter struct {
-	repoID     string
-	repoFormat string
-	format     string
-	name       string
-	query      string
-	flagged    bool
-	sortByName bool
-	limit      int
-	offset     int
-}
-
 // rollupSizesQuery is the second stage of the rollup: every row (file) of the
 // packages named in $2, with its version and its size by the rules of the
 // listing. Row version and size let the caller pick the latest version's files.
@@ -175,16 +86,28 @@ func lastPublishedQuery() string {
 	FROM repositories cr WHERE cr.id = ANY($1::uuid[])`
 }
 
-// packageCountQuery is the number of distinct package names of every repository in $1.
+// packageCountQuery is the number of distinct package names of every repository
+// in $1: one scalar subquery per branch and repository, so a repository costs
+// what its own packages cost (the hosted branch counts packages rows, not the
+// files of the repository) and a repository without rows costs an index probe.
 func packageCountQuery() string {
-	rows := unionOf(catalogBranches(), func(b catalogBranch) string {
-		return fmt.Sprintf("SELECT %s AS repository_id, %s AS name FROM %s WHERE %s AND %s = ANY($1::uuid[])",
-			b.repo, b.name, b.from, b.live, b.repo)
-	})
+	parts := make([]string, 0, len(catalogBranches()))
 
-	return `SELECT repository_id::text, count(DISTINCT name) FROM (
-		` + rows + `
-	) u GROUP BY repository_id`
+	for _, b := range catalogBranches() {
+		count := b.packageCount
+		if count == "" {
+			count = fmt.Sprintf("(SELECT count(DISTINCT %s) FROM %s WHERE %s AND %s = cr.id)", b.name, b.from, b.live, b.repo)
+		}
+
+		if scope := b.repoScope(); scope != "" {
+			count = fmt.Sprintf("(CASE WHEN %s THEN %s ELSE 0 END)", scope, count)
+		}
+
+		parts = append(parts, count)
+	}
+
+	return `SELECT cr.id::text, (` + strings.Join(parts, "\n\t\t+ ") + `)::bigint
+	FROM repositories cr WHERE cr.id = ANY($1::uuid[])`
 }
 
 // recentPackagesQuery is the newest package versions of the repositories in $1:

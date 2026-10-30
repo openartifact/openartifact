@@ -14,6 +14,10 @@ import (
 	"github.com/openartifact/openartifact/internal/api"
 )
 
+// aiBuilt is false in a binary built with -tags noai; the public system info
+// advertises it as ai_available so the UI hides the AI entries.
+const aiBuilt = false
+
 // aiFeature is what AI analysis adds to the features struct: nothing in a
 // binary built with -tags noai.
 type aiFeature struct{}

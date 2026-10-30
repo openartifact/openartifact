@@ -71,15 +71,11 @@ func clearSessionCookie(w http.ResponseWriter, secure bool) {
 	)
 }
 
-func setCSRFCookie(w http.ResponseWriter, secure bool, token string) {
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // CSRF double-submit cookie must be readable by JS, so HttpOnly is deliberately unset
-		Name:     middleware.CSRFTokenCookieName,
-		Value:    token,
-		Path:     "/",
-		Secure:   secure,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(auth.SessionAbsoluteLifetime().Seconds()),
-	})
+// setCSRFCookie issues the CSRF cookie of the session whose cookie value is
+// sessionCookieValue: the token is derived from that session, so it is useless
+// with any other one.
+func setCSRFCookie(w http.ResponseWriter, secure bool, sessionCookieValue string) {
+	http.SetCookie(w, middleware.SessionCSRFCookie(sessionCookieValue, secure))
 }
 
 func clearCSRFCookie(w http.ResponseWriter, secure bool) {

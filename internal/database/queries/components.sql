@@ -14,6 +14,15 @@
 -- listed name; q is a case-insensitive substring match on the listed name or
 -- version (on the name only for proxy cache entries).
 --
+-- ListRepoComponents also pages by keyset: after_at/after_id are the
+-- (created_at, id) of the last row of the previous page; with no cursor they
+-- are a far-future timestamp and the zero uuid, which every row is before. after_at
+-- is a typed timestamptz parameter, so the per-row filter compares timestamps
+-- instead of parsing a text. Every branch keeps only the rows strictly after the
+-- cursor in the listing order.
+-- The condition is sargable on idx_package_files_listing and its siblings, so a
+-- deep page starts at the cursor instead of walking page_offset rows.
+--
 -- ListRepoComponentsByName is ListRepoComponents in (name, version, id) order
 -- instead of newest first: its stage 1 sorts the repository's files by that
 -- order, so it backs the browser's "sort by name" but not the default listing.
@@ -33,7 +42,22 @@
 -- (package_size = COALESCE(pref_size, blob size, fb_size, 0)); blob_id or
 -- blob_key (proxy cache, resolved by sha256) locate the blob. The by-name
 -- variant needs the name to sort, so its stage 1 always joins and carries it.
+--
+-- q_pattern is q as an ILIKE pattern ('%' || q with \, % and _ escaped || '%';
+-- containsPattern in catalog_rollup_sql.go), so that the trigram indexes on
+-- packages.name and package_versions.version can serve it. The qm CTE says
+-- whether q matches at most 2000 versions of the repository (a bounded probe of
+-- those indexes): then the files come from the matching versions, which is a
+-- handful of index lookups for a rare term; otherwise the planner's estimate for
+-- a pattern cannot be trusted (a term that is in every name matches everything),
+-- and the listing index is walked with q as a filter, which stops at the first
+-- page. A q under 3 characters has no trigram: the probe would read a whole
+-- index, so qm is false for it without probing. A format_filter the repository
+-- has no package of skips the walk.
 -- name: ListRepoComponents :many
+WITH qm AS MATERIALIZED (
+    SELECT CASE WHEN char_length(sqlc.arg(q)::text) >= 3 THEN (SELECT count(*) <= 2000 FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = sqlc.arg(repo_id)::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE sqlc.arg(q_pattern)::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = sqlc.arg(repo_id)::uuid AND pk3.name ILIKE sqlc.arg(q_pattern)::text) m LIMIT 2001) c) ELSE false END AS narrow
+)
 SELECT p.id::uuid AS id, p.repository_id::uuid AS repository_id, COALESCE(p.name, pk.name)::text AS name, COALESCE(p.version, v.version)::text AS version,
        COALESCE(p.format, pk.format)::text AS format, p.arch::text AS arch,
        COALESCE(COALESCE(bi.sha256, bs.sha256), '')::text AS sha256,
@@ -53,15 +77,22 @@ FROM (
            f.filename AS filename, f.blob_id AS blob_id, NULL::text AS blob_key, f.created_at AS created_at, f.updated_at AS updated_at
     FROM (
         (SELECT f.id, f.repository_id, f.version_id, f.filename, f.arch, f.attrs, f.size_bytes, f.blob_id, f.created_at, f.updated_at, NULL::text AS pname, NULL::text AS pversion, NULL::text AS pformat FROM package_files f
-         WHERE f.repository_id = sqlc.arg(repo_id)::uuid AND f.deleted_at IS NULL AND f.listed AND sqlc.arg(format_filter)::text = '' AND sqlc.arg(name_filter)::text = '' AND sqlc.arg(q)::text = ''
+         WHERE f.repository_id = sqlc.arg(repo_id)::uuid AND f.deleted_at IS NULL AND f.listed AND f.created_at <= sqlc.arg(after_at)::timestamptz AND (f.created_at < sqlc.arg(after_at)::timestamptz OR f.id > sqlc.arg(after_id)::uuid) AND sqlc.arg(format_filter)::text = '' AND sqlc.arg(name_filter)::text = '' AND sqlc.arg(q)::text = ''
          ORDER BY f.created_at DESC, f.id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int))
         UNION ALL
         (SELECT f.id, f.repository_id, f.version_id, f.filename, f.arch, f.attrs, f.size_bytes, f.blob_id, f.created_at, f.updated_at, NULL::text, NULL::text, NULL::text FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id
-         WHERE f.repository_id = sqlc.arg(repo_id)::uuid AND f.deleted_at IS NULL AND f.listed AND sqlc.arg(name_filter)::text <> '' AND (sqlc.arg(format_filter)::text = '' OR pk.format = sqlc.arg(format_filter)::text) AND pk.name = sqlc.arg(name_filter)::text AND (sqlc.arg(q)::text = '' OR strpos(lower(pk.name), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(v.version), lower(sqlc.arg(q)::text)) > 0)
+         WHERE f.repository_id = sqlc.arg(repo_id)::uuid AND f.deleted_at IS NULL AND f.listed AND f.created_at <= sqlc.arg(after_at)::timestamptz AND (f.created_at < sqlc.arg(after_at)::timestamptz OR f.id > sqlc.arg(after_id)::uuid) AND sqlc.arg(name_filter)::text <> '' AND (sqlc.arg(format_filter)::text = '' OR pk.format = sqlc.arg(format_filter)::text) AND pk.name = sqlc.arg(name_filter)::text AND (sqlc.arg(q)::text = '' OR pk.name ILIKE sqlc.arg(q_pattern)::text OR v.version ILIKE sqlc.arg(q_pattern)::text)
          ORDER BY f.created_at DESC, f.id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int))
         UNION ALL
+        -- a narrow q (at most 2000 matching versions, see qm): start from the trigram indexes of the version and the package name
         (SELECT f.id, f.repository_id, f.version_id, f.filename, f.arch, f.attrs, f.size_bytes, f.blob_id, f.created_at, f.updated_at, NULL::text, NULL::text, NULL::text FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id
-         WHERE f.repository_id = sqlc.arg(repo_id)::uuid AND f.deleted_at IS NULL AND f.listed AND sqlc.arg(name_filter)::text = '' AND (sqlc.arg(format_filter)::text <> '' OR sqlc.arg(q)::text <> '') AND (sqlc.arg(format_filter)::text = '' OR pk.format = sqlc.arg(format_filter)::text) AND (sqlc.arg(name_filter)::text = '' OR pk.name = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(pk.name), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(v.version), lower(sqlc.arg(q)::text)) > 0)
+         WHERE f.repository_id = sqlc.arg(repo_id)::uuid AND f.deleted_at IS NULL AND f.listed AND f.created_at <= sqlc.arg(after_at)::timestamptz AND (f.created_at < sqlc.arg(after_at)::timestamptz OR f.id > sqlc.arg(after_id)::uuid) AND sqlc.arg(name_filter)::text = '' AND sqlc.arg(q)::text <> '' AND (SELECT narrow FROM qm) AND (sqlc.arg(format_filter)::text = '' OR pk.format = sqlc.arg(format_filter)::text)
+           AND f.version_id IN (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = sqlc.arg(repo_id)::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE sqlc.arg(q_pattern)::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = sqlc.arg(repo_id)::uuid AND pk3.name ILIKE sqlc.arg(q_pattern)::text)
+         ORDER BY f.created_at DESC, f.id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int))
+        UNION ALL
+        -- a format filter, or a broad q: walk the listing index and filter (a format the repository has no package of is skipped by the EXISTS)
+        (SELECT f.id, f.repository_id, f.version_id, f.filename, f.arch, f.attrs, f.size_bytes, f.blob_id, f.created_at, f.updated_at, NULL::text, NULL::text, NULL::text FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id
+         WHERE f.repository_id = sqlc.arg(repo_id)::uuid AND f.deleted_at IS NULL AND f.listed AND f.created_at <= sqlc.arg(after_at)::timestamptz AND (f.created_at < sqlc.arg(after_at)::timestamptz OR f.id > sqlc.arg(after_id)::uuid) AND sqlc.arg(name_filter)::text = '' AND (sqlc.arg(format_filter)::text <> '' OR sqlc.arg(q)::text <> '') AND (sqlc.arg(q)::text = '' OR NOT (SELECT narrow FROM qm)) AND (sqlc.arg(format_filter)::text = '' OR EXISTS (SELECT 1 FROM packages pg WHERE pg.repository_id = sqlc.arg(repo_id)::uuid AND pg.format = sqlc.arg(format_filter)::text)) AND (sqlc.arg(format_filter)::text = '' OR pk.format = sqlc.arg(format_filter)::text) AND (sqlc.arg(q)::text = '' OR pk.name ILIKE sqlc.arg(q_pattern)::text OR v.version ILIKE sqlc.arg(q_pattern)::text)
          ORDER BY f.created_at DESC, f.id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int))
     ) f
     UNION ALL
@@ -69,13 +100,13 @@ FROM (
     SELECT t.id::uuid, t.repository_id::uuid, NULL::uuid, t.cache_key::text, ''::text, t.repo_format::text,
            ''::text, NULL::jsonb, NULL::bigint, t.size_bytes::bigint,
            t.cache_key::text, NULL::uuid, t.blob_key::text, t.created_at::timestamptz, t.updated_at::timestamptz
-    FROM (SELECT t.*, r.format AS repo_format FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id WHERE r.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = r.format) AND (sqlc.arg(name_filter)::text = '' OR t.cache_key = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(t.cache_key), lower(sqlc.arg(q)::text)) > 0) ORDER BY t.created_at DESC, t.id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
+    FROM (SELECT t.*, r.format AS repo_format FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id WHERE r.deleted_at IS NULL AND t.created_at <= sqlc.arg(after_at)::timestamptz AND (t.created_at < sqlc.arg(after_at)::timestamptz OR t.id > sqlc.arg(after_id)::uuid) AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = r.format) AND (sqlc.arg(name_filter)::text = '' OR t.cache_key = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(t.cache_key), lower(sqlc.arg(q)::text)) > 0) ORDER BY t.created_at DESC, t.id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
     UNION ALL
     -- docker: one row per tag (the registry image name is the repository name, plus the image path inside it); size = manifest size, blob = manifest blob, filename = manifest digest.
     SELECT t.id::uuid, t.repository_id::uuid, NULL::uuid, (CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)::text, t.name::text, 'docker'::text,
            ''::text, NULL::jsonb, COALESCE(dm.size, 0)::bigint, NULL::bigint,
            t.manifest_digest::text, dm.blob_id::uuid, NULL::text, t.created_at::timestamptz, t.updated_at::timestamptz
-    FROM (SELECT t.* FROM docker_tags t WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'docker') AND (sqlc.arg(name_filter)::text = '' OR (CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower((CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(t.name), lower(sqlc.arg(q)::text)) > 0) ORDER BY t.created_at DESC, t.id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
+    FROM (SELECT t.* FROM docker_tags t WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.created_at <= sqlc.arg(after_at)::timestamptz AND (t.created_at < sqlc.arg(after_at)::timestamptz OR t.id > sqlc.arg(after_id)::uuid) AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'docker') AND (sqlc.arg(name_filter)::text = '' OR (CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower((CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(t.name), lower(sqlc.arg(q)::text)) > 0) ORDER BY t.created_at DESC, t.id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
     JOIN repositories r ON r.id = t.repository_id AND r.deleted_at IS NULL
     LEFT JOIN docker_manifests dm ON dm.repository_id = t.repository_id AND dm.image = t.image AND dm.digest = t.manifest_digest AND dm.deleted_at IS NULL
     ) AS u
@@ -89,6 +120,9 @@ LEFT JOIN LATERAL (SELECT sha256, size_bytes FROM blobs WHERE sha256 = p.blob_ke
 ORDER BY p.created_at DESC, p.id;
 
 -- name: ListRepoComponentsByName :many
+WITH qm AS MATERIALIZED (
+    SELECT CASE WHEN char_length(sqlc.arg(q)::text) >= 3 THEN (SELECT count(*) <= 2000 FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = sqlc.arg(repo_id)::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE sqlc.arg(q_pattern)::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = sqlc.arg(repo_id)::uuid AND pk3.name ILIKE sqlc.arg(q_pattern)::text) m LIMIT 2001) c) ELSE false END AS narrow
+)
 SELECT p.id::uuid AS id, p.repository_id::uuid AS repository_id, COALESCE(p.name, pk.name)::text AS name, COALESCE(p.version, v.version)::text AS version,
        COALESCE(p.format, pk.format)::text AS format, p.arch::text AS arch,
        COALESCE(COALESCE(bi.sha256, bs.sha256), '')::text AS sha256,
@@ -107,9 +141,16 @@ FROM (
            f.arch AS arch, f.attrs AS attrs, f.size_bytes AS pref_size, NULL::bigint AS fb_size,
            f.filename AS filename, f.blob_id AS blob_id, NULL::text AS blob_key, f.created_at AS created_at, f.updated_at AS updated_at
     FROM (
+        -- a narrow q (at most 2000 matching versions, see qm): start from the trigram indexes of the version and the package name
         (SELECT f.id, f.repository_id, f.version_id, f.filename, f.arch, f.attrs, f.size_bytes, f.blob_id, f.created_at, f.updated_at, pk.name AS pname, v.version AS pversion, pk.format AS pformat FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id
-         WHERE f.repository_id = sqlc.arg(repo_id)::uuid AND f.deleted_at IS NULL AND f.listed AND (sqlc.arg(format_filter)::text = '' OR pk.format = sqlc.arg(format_filter)::text) AND (sqlc.arg(name_filter)::text = '' OR pk.name = sqlc.arg(name_filter)::text)
-           AND (sqlc.arg(q)::text = '' OR strpos(lower(pk.name), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(v.version), lower(sqlc.arg(q)::text)) > 0)
+         WHERE f.repository_id = sqlc.arg(repo_id)::uuid AND f.deleted_at IS NULL AND f.listed AND sqlc.arg(q)::text <> '' AND (SELECT narrow FROM qm) AND (sqlc.arg(format_filter)::text = '' OR pk.format = sqlc.arg(format_filter)::text) AND (sqlc.arg(name_filter)::text = '' OR pk.name = sqlc.arg(name_filter)::text)
+           AND f.version_id IN (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = sqlc.arg(repo_id)::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE sqlc.arg(q_pattern)::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = sqlc.arg(repo_id)::uuid AND pk3.name ILIKE sqlc.arg(q_pattern)::text)
+         ORDER BY pk.name, v.version, f.id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int))
+        UNION ALL
+        -- no q, or a broad one: filter the repository's files
+        (SELECT f.id, f.repository_id, f.version_id, f.filename, f.arch, f.attrs, f.size_bytes, f.blob_id, f.created_at, f.updated_at, pk.name AS pname, v.version AS pversion, pk.format AS pformat FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id
+         WHERE f.repository_id = sqlc.arg(repo_id)::uuid AND f.deleted_at IS NULL AND f.listed AND (sqlc.arg(q)::text = '' OR NOT (SELECT narrow FROM qm)) AND (sqlc.arg(format_filter)::text = '' OR EXISTS (SELECT 1 FROM packages pg WHERE pg.repository_id = sqlc.arg(repo_id)::uuid AND pg.format = sqlc.arg(format_filter)::text)) AND (sqlc.arg(format_filter)::text = '' OR pk.format = sqlc.arg(format_filter)::text) AND (sqlc.arg(name_filter)::text = '' OR pk.name = sqlc.arg(name_filter)::text)
+           AND (sqlc.arg(q)::text = '' OR pk.name ILIKE sqlc.arg(q_pattern)::text OR v.version ILIKE sqlc.arg(q_pattern)::text)
          ORDER BY pk.name, v.version, f.id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int))
     ) f
     UNION ALL
@@ -137,11 +178,17 @@ LEFT JOIN LATERAL (SELECT sha256, size_bytes FROM blobs WHERE sha256 = p.blob_ke
 ORDER BY p.name, p.version, p.id;
 
 -- name: CountRepoComponents :one
+WITH qm AS MATERIALIZED (
+    SELECT CASE WHEN char_length(sqlc.arg(q)::text) >= 3 THEN (SELECT count(*) <= 2000 FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = sqlc.arg(repo_id)::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE sqlc.arg(q_pattern)::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = sqlc.arg(repo_id)::uuid AND pk3.name ILIKE sqlc.arg(q_pattern)::text) m LIMIT 2001) c) ELSE false END AS narrow
+)
 SELECT (
     -- generic files without name/q filter: package_files alone (index-only scan of idx_package_files_listing)
     (SELECT COUNT(*) FROM package_files f WHERE f.repository_id = sqlc.arg(repo_id)::uuid AND f.deleted_at IS NULL AND f.listed AND sqlc.arg(format_filter)::text = '' AND sqlc.arg(name_filter)::text = '' AND sqlc.arg(q)::text = '')
-    + (SELECT COUNT(*) FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id WHERE f.repository_id = sqlc.arg(repo_id)::uuid AND f.deleted_at IS NULL AND f.listed AND sqlc.arg(name_filter)::text <> '' AND (sqlc.arg(format_filter)::text = '' OR pk.format = sqlc.arg(format_filter)::text) AND pk.name = sqlc.arg(name_filter)::text AND (sqlc.arg(q)::text = '' OR strpos(lower(pk.name), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(v.version), lower(sqlc.arg(q)::text)) > 0))
-    + (SELECT COUNT(*) FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id WHERE f.repository_id = sqlc.arg(repo_id)::uuid AND f.deleted_at IS NULL AND f.listed AND sqlc.arg(name_filter)::text = '' AND (sqlc.arg(format_filter)::text <> '' OR sqlc.arg(q)::text <> '') AND (sqlc.arg(format_filter)::text = '' OR pk.format = sqlc.arg(format_filter)::text) AND (sqlc.arg(name_filter)::text = '' OR pk.name = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(pk.name), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(v.version), lower(sqlc.arg(q)::text)) > 0))
+    + (SELECT COUNT(*) FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id WHERE f.repository_id = sqlc.arg(repo_id)::uuid AND f.deleted_at IS NULL AND f.listed AND sqlc.arg(name_filter)::text <> '' AND (sqlc.arg(format_filter)::text = '' OR pk.format = sqlc.arg(format_filter)::text) AND pk.name = sqlc.arg(name_filter)::text AND (sqlc.arg(q)::text = '' OR pk.name ILIKE sqlc.arg(q_pattern)::text OR v.version ILIKE sqlc.arg(q_pattern)::text))
+    -- a narrow q (see qm): from the trigram indexes of the version and the package name
+    + (SELECT COUNT(*) FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id WHERE f.repository_id = sqlc.arg(repo_id)::uuid AND f.deleted_at IS NULL AND f.listed AND sqlc.arg(name_filter)::text = '' AND sqlc.arg(q)::text <> '' AND (SELECT narrow FROM qm) AND (sqlc.arg(format_filter)::text = '' OR pk.format = sqlc.arg(format_filter)::text) AND f.version_id IN (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = sqlc.arg(repo_id)::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE sqlc.arg(q_pattern)::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = sqlc.arg(repo_id)::uuid AND pk3.name ILIKE sqlc.arg(q_pattern)::text))
+    -- a format filter, or a broad q (a format the repository has no package of is skipped by the EXISTS)
+    + (SELECT COUNT(*) FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id WHERE f.repository_id = sqlc.arg(repo_id)::uuid AND f.deleted_at IS NULL AND f.listed AND sqlc.arg(name_filter)::text = '' AND (sqlc.arg(format_filter)::text <> '' OR sqlc.arg(q)::text <> '') AND (sqlc.arg(q)::text = '' OR NOT (SELECT narrow FROM qm)) AND (sqlc.arg(format_filter)::text = '' OR EXISTS (SELECT 1 FROM packages pg WHERE pg.repository_id = sqlc.arg(repo_id)::uuid AND pg.format = sqlc.arg(format_filter)::text)) AND (sqlc.arg(format_filter)::text = '' OR pk.format = sqlc.arg(format_filter)::text) AND (sqlc.arg(q)::text = '' OR pk.name ILIKE sqlc.arg(q_pattern)::text OR v.version ILIKE sqlc.arg(q_pattern)::text))
     -- proxy cache
     + (SELECT COUNT(*) FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id WHERE r.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = r.format) AND (sqlc.arg(name_filter)::text = '' OR t.cache_key = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(t.cache_key), lower(sqlc.arg(q)::text)) > 0))
     -- docker tags

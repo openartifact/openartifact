@@ -282,6 +282,20 @@ Partial update: an absent field is left alone, a string sets the runtime overrid
 | `target_repo_id` | string | yes | - |
 | `to_stage` | string | yes | - |
 
+### BundleSigningKey
+
+A stored GPG key the caller may seal bundles with. Never carries private key material, assignments or the creator.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `active_global` | boolean | yes | The key that signs package metadata globally; the seal dialog preselects it |
+| `algorithm` | string | yes | - |
+| `fingerprint` | string | yes | - |
+| `id` | string | yes | UUID: the value to send as `gpg_key_id` |
+| `key_id` | string | yes | Long key id (last 16 hex digits of the fingerprint) |
+| `name` | string | yes | - |
+| `user_id` | string | yes | - |
+
 ### ChecksumHit
 
 | Field | Type | Required | Description |
@@ -1326,6 +1340,7 @@ Partial update: omitted fields stay unchanged.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| `ai_available` | boolean | no | Whether this binary contains AI analysis. False in a build made with -tags noai, where the AI routes answer 501 feature_unavailable; independent of whether an administrator enabled AI. |
 | `api_reference_enabled` | boolean | no | Whether the interactive API reference is served at /api/reference. |
 | `docs_url` | string | no | Absolute URL, ending in a slash, of the published documentation matching this server version. Omitted when documentation links are disabled. |
 | `status` | string | no | - |
@@ -1640,6 +1655,17 @@ Catalog figures of a repository. Only present in the repository list (GET /api/v
 | `created_at` | string (date-time) | no | - |
 | `id` | string (uuid) | no | - |
 | `status` | string | no | Scan status. Vulnerability scans use pending\|scanning\|completed\|partial\|failed (see VulnScanResult.scan_status). |
+
+### SearchError
+
+400 of the search endpoint. query_too_broad also carries the cap and the filters the query could add.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `code` | string | no | missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum or query_too_broad |
+| `error` | string | yes | Message |
+| `max_results` | integer | no | query_too_broad only: the largest number of matches a search answers |
+| `narrow_by` | array of string | no | query_too_broad only: the filters the query does not use yet (name:`<package>`, format:`<format>`, repo:`<repository>` in q, flagged=true); empty when it already uses all of them |
 
 ### SearchPackageHit
 

@@ -16,11 +16,13 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/promote"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -28,9 +30,11 @@ import (
 
 // BundlesStore is the part of the database BundlesHandler needs.
 type BundlesStore interface {
+	quarantine.Checker
 	repoAccessStore
 	AddBundleItems(ctx context.Context, bundleID string, items []*models.ReleaseBundleItem) error
 	BeginTx(ctx context.Context) (database.Transaction, error)
+	BundleItemStored(ctx context.Context, repoID, repoName, format, sha256, path string) (bool, error)
 	CreatePromotionPipeline(ctx context.Context, p *models.PromotionPipeline) error
 	CreateReleaseBundle(ctx context.Context, b *models.ReleaseBundle) error
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
@@ -64,6 +68,7 @@ type BundlesHandler struct {
 	repoAccess
 
 	keys      BundleKeyResolver
+	signers   []bundleSignerGrant
 	promoter  *promote.Engine
 	publisher webhook.Publisher
 	db        BundlesStore
@@ -183,6 +188,7 @@ func (h *BundlesHandler) RegisterAuthed(r chi.Router) {
 	r.Delete("/api/v1/pipelines/{name}", h.handleDeletePipeline)
 
 	// Bundles
+	r.Get("/api/v1/bundles/signing-keys", h.handleListSigningKeys)
 	r.Get("/api/v1/bundles", h.handleListBundles)
 	r.Post("/api/v1/bundles", h.handleCreateBundle)
 	r.Get("/api/v1/bundles/{name}/{version}", h.handleGetBundle)
@@ -264,7 +270,7 @@ func (h *BundlesHandler) handleCreatePipeline(w http.ResponseWriter, r *http.Req
 		Stages      []models.PipelineStage `json:"stages"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -348,7 +354,7 @@ func (h *BundlesHandler) handleUpdatePipeline(w http.ResponseWriter, r *http.Req
 		Stages      *[]models.PipelineStage `json:"stages"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -460,7 +466,7 @@ func (h *BundlesHandler) handleCreateBundle(w http.ResponseWriter, r *http.Reque
 		Pipeline string `json:"pipeline"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -543,6 +549,8 @@ func (h *BundlesHandler) handleCreateBundle(w http.ResponseWriter, r *http.Reque
 
 		return
 	}
+
+	auditAdmin(r, audit.ActionBundleCreated, "bundle", bundle.ID, "bundle "+bundle.Name+" "+bundle.Version+" created")
 
 	writeJSON(w, http.StatusCreated, bundleToMap(bundle))
 }
@@ -659,6 +667,34 @@ func validateBundleItemFields(itemData *bundleItemInput, seenSHA map[string]stru
 	return sha, nil
 }
 
+// verifyItemStored refuses an item the source repository does not back: its
+// format must be the repository's and the repository must hold a live artifact
+// stored as that digest and located by that path. The bundle manifest is
+// signed with the server's key, so what it states about a repository has to be
+// true.
+func (h *BundlesHandler) verifyItemStored(
+	ctx context.Context,
+	repo *models.Repository,
+	format, sha, path, prefix string,
+) *apiFailure {
+	if format != repo.Format {
+		return validationFailure(prefix + "format does not match the source repository")
+	}
+
+	stored, err := h.db.BundleItemStored(ctx, repo.ID, repo.Name, repo.Format, sha, path)
+	if err != nil {
+		h.log.Errorw("add items: verify item", "error", err)
+
+		return &apiFailure{http.StatusInternalServerError, "internal_error", "database error"}
+	}
+
+	if !stored {
+		return validationFailure(prefix + "sha256 and artifact_path do not match an artifact stored in the source repository")
+	}
+
+	return nil
+}
+
 // buildBundleItems validates every item before touching the database so the
 // request is all-or-nothing, and verifies each source repository once. canRead,
 // when set, limits the source repositories to the ones the caller may read: any
@@ -720,6 +756,10 @@ func (h *BundlesHandler) buildBundleItems(
 			return nil, validationFailure(prefix + "format is too long")
 		}
 
+		if fail := h.verifyItemStored(ctx, srcRepo, format, sha, itemData.ArtifactPath, prefix); fail != nil {
+			return nil, fail
+		}
+
 		items = append(items, &models.ReleaseBundleItem{
 			BundleID:     bundleID,
 			SourceRepoID: itemData.SourceRepoID,
@@ -770,7 +810,7 @@ func (h *BundlesHandler) handleAddItems(w http.ResponseWriter, r *http.Request) 
 		Items []bundleItemInput `json:"items"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -892,7 +932,7 @@ func (h *BundlesHandler) handleSeal(w http.ResponseWriter, r *http.Request) {
 	// The body is optional, but a present, malformed body is a client error
 	// rather than something to silently ignore.
 	if err := decodeJSON(r, &body); err != nil && !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -905,7 +945,7 @@ func (h *BundlesHandler) handleSeal(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var fail *apiFailure
-		if signature, fail = h.signBundle(ctx, *body.GPGKeyID, bundle, items); fail != nil {
+		if signature, fail = h.signBundle(ctx, *body.GPGKeyID, p, access, bundle, items); fail != nil {
 			writeError(w, fail.status, fail.code, fail.msg)
 			return
 		}
@@ -932,11 +972,15 @@ func (h *BundlesHandler) handleSeal(w http.ResponseWriter, r *http.Request) {
 	bundle.SealedBy = &p.Username
 	bundle.UpdatedAt = now
 
+	details := "bundle " + bundle.Name + " " + bundle.Version + " sealed"
+
 	if signature != nil {
 		bundle.GPGKeyID = &signature.KeyFingerprint
 		bundle.GPGSignature = &signature.Signature
+		details += ", signed with key " + signature.KeyFingerprint
 	}
 
+	auditAdmin(r, audit.ActionBundleSealed, "bundle", bundle.ID, details)
 	writeJSON(w, http.StatusOK, bundleToMap(bundle))
 }
 
@@ -1075,7 +1119,7 @@ func (h *BundlesHandler) handlePromote(w http.ResponseWriter, r *http.Request) {
 		Notes      string `json:"notes"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -1128,6 +1172,8 @@ func (h *BundlesHandler) handleArchive(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	auditAdmin(r, audit.ActionBundleArchived, "bundle", bundle.ID, "bundle "+bundle.Name+" "+bundle.Version+" archived")
 
 	writeJSON(w, http.StatusOK, bundleToMap(bundle))
 }

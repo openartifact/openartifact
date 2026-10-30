@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/branding"
@@ -26,10 +27,11 @@ import (
 const placeholderPassword = "CHANGE_ME"
 
 var (
-	errInvalidPort       = errors.New("invalid server port")
-	errMalformedKeyValue = errors.New("expected key=value")
-	errMCPTransport      = errors.New(`mcp.transport must be "http" (stdio is not supported)`)
-	errMCPLimits         = errors.New(
+	errInvalidServerLimit = errors.New("invalid server limit")
+	errInvalidPort        = errors.New("invalid server port")
+	errInvalidEnv         = errors.New("invalid environment override")
+	errMCPTransport       = errors.New(`mcp.transport must be "http" (stdio is not supported)`)
+	errMCPLimits          = errors.New(
 		"mcp.maxBodyBytes must be positive; mcp.rateLimitPerMinute and mcp.aiTriggerPerMinute must not be negative",
 	)
 	errMCPOrigin          = errors.New("mcp.allowedOrigins entries must be origins like https://host[:port]")
@@ -43,11 +45,12 @@ var (
 	errNegativeDigestTTL        = errors.New("workers.proxyDockerDigestTtl must not be negative")
 	errNegativeWebhookRetention = errors.New("workers.webhookDeliveryRetentionDays must not be negative")
 	errNegativeTrashRetention   = errors.New("trash.retentionDays must not be negative")
+	errNegativeArgon2Concurrent = errors.New("auth.argon2MaxConcurrent must not be negative")
 	errAuditRetention           = errors.New(
 		"audit.retentionDays must not be negative; audit.purgeInterval and audit.purgeBatchSize must be positive",
 	)
 	errFederationSettings = errors.New(
-		"federation.pollInterval, batchSize, maxBackoff, requestTimeout, maxPartialBytes and maxPartialAge must be positive, " +
+		"federation.pollInterval, batchSize, maxBackoff, requestTimeout, maxPartialBytes, maxPartialAge and maxClockSkew must be positive, " +
 			"tombstoneRetention must not be negative",
 	)
 	errBlobDeletionBatch    = errors.New("blobDeletion.sweepBatch must be at least 1")
@@ -70,6 +73,8 @@ var (
 		"database.maxOpenConns must be 0 (driver default) or at least 2: " +
 			"a blob-lock transaction pins one connection and its callback needs another",
 	)
+
+	errBundleSigner = errors.New(`gpg.bundleSigners entries must be "<key id or fingerprint>=<username>"`)
 
 	errPresignEndpoint   = errors.New("storage.presignEndpoint must be an absolute http(s) URL without query or fragment")
 	errPresignMinSize    = errors.New("storage.presignMinSize must not be negative")
@@ -317,6 +322,11 @@ type FederationConfig struct {
 	// MaxPartialAge removes an interrupted download that was not written to for
 	// this long.
 	MaxPartialAge time.Duration `yaml:"maxPartialAge"`
+	// MaxClockSkew is how far ahead of this instance's clock the stamp of a
+	// peer's change may be. The change of a peer whose clock runs further ahead
+	// is set aside and applied once the local clock catches up, instead of moving
+	// the repository's logical clock to that time for good.
+	MaxClockSkew time.Duration `yaml:"maxClockSkew"`
 }
 
 // TieringConfig tunes the storage tier mover (see docs/operations/storage-tiering.md).
@@ -394,6 +404,10 @@ type AuthConfig struct {
 	// together with the certificate: a self-signed pair is generated (see
 	// samlSpCert). Stored unencrypted while OPENARTIFACT_SECRET_KEY is unset.
 	SAMLSPKeyPEM string `yaml:"samlSpKey"`
+	// Argon2MaxConcurrent caps the password hashes and verifications running at
+	// once, each of which holds 64 MiB until it ends; further logins wait. 0
+	// (default): the CPU count clamped to 2..4 (256 MiB at most).
+	Argon2MaxConcurrent int `yaml:"argon2MaxConcurrent"`
 }
 
 // ServerConfig contains HTTP server configuration.
@@ -420,6 +434,12 @@ type ServerConfig struct {
 	// seconds. It stays short regardless of readTimeout to still mitigate
 	// slowloris-style attacks even when body reads are unbounded.
 	ReadHeaderTimeout int `yaml:"readHeaderTimeout"`
+	// IdleTimeout is how many seconds an idle keep-alive connection is kept
+	// open before the server closes it. 0 disables the limit.
+	IdleTimeout int `yaml:"idleTimeout"`
+	// MaxHeaderBytes caps the size of request headers in bytes. 0 uses the Go
+	// default (1 MiB).
+	MaxHeaderBytes int `yaml:"maxHeaderBytes"`
 	// MaxBodyBytes caps the body of every request (http.MaxBytesReader), a
 	// last line of defence behind the per-handler limits so no endpoint can be
 	// made to spool or buffer an unbounded body. 0 disables the cap.
@@ -485,12 +505,18 @@ type GPGConfig struct {
 	// AutoGenerate generates an RSA-4096 global signing key at startup when
 	// no key exists yet. It needs OPENARTIFACT_SECRET_KEY and is replica-safe.
 	AutoGenerate bool `yaml:"autoGenerate"`
+	// BundleSigners lets users other than administrators seal release bundles
+	// with a stored key: each entry is "<key id or fingerprint>=<username>".
+	// Administrators (global manage) may use any stored key; the key at
+	// keyPath never signs bundles (see docs/security/signing.md).
+	BundleSigners []string `yaml:"bundleSigners"`
 }
 
 // AttestationConfig configures the signing key of SBOM and VEX attestations.
 type AttestationConfig struct {
 	// KeyPath is an unencrypted PKCS#8 or SEC1 PEM private key (ECDSA or Ed25519).
-	// Empty: a P-256 key is generated on first use and stored encrypted in the database.
+	// Empty: a P-256 key is generated on first use and stored encrypted in the
+	// database; that needs OPENARTIFACT_SECRET_KEY (without it no key is generated).
 	KeyPath string `yaml:"keyPath"`
 }
 
@@ -587,7 +613,9 @@ func Load(filePath string) (*Config, error) {
 	}
 
 	// 3. Apply environment variable overrides
-	applyEnvOverrides(cfg)
+	if err := applyEnvChecked(cfg); err != nil {
+		return nil, err
+	}
 
 	// 4. Finalize config (handle special cases)
 	finalizeConfig(cfg)
@@ -609,6 +637,8 @@ func defaultConfig() *Config {
 			ReadTimeout:       0,
 			WriteTimeout:      0,
 			ReadHeaderTimeout: 20,
+			IdleTimeout:       120,
+			MaxHeaderBytes:    1 << 20,
 			MaxBodyBytes:      16 << 30,
 			ShutdownTimeout:   30,
 			ShutdownDelay:     0,
@@ -679,6 +709,7 @@ func defaultConfig() *Config {
 			HMACKey:              "",
 			SAMLSPCertPEM:        "",
 			SAMLSPKeyPEM:         "",
+			Argon2MaxConcurrent:  0,
 		},
 		Backup: BackupConfig{
 			BackupDir: "/var/lib/openartifact/backups",
@@ -740,6 +771,7 @@ func defaultConfig() *Config {
 			TombstoneRetention: 720 * time.Hour,
 			MaxPartialBytes:    10 << 30,
 			MaxPartialAge:      24 * time.Hour,
+			MaxClockSkew:       5 * time.Minute,
 		},
 		Tiering: TieringConfig{
 			Enabled:             true,
@@ -792,6 +824,8 @@ func applyEnvOverrides(cfg *Config) {
 	overrideInt(&cfg.Server.ReadTimeout, "SERVER_READ_TIMEOUT")
 	overrideInt(&cfg.Server.WriteTimeout, "SERVER_WRITE_TIMEOUT")
 	overrideInt(&cfg.Server.ReadHeaderTimeout, "SERVER_READ_HEADER_TIMEOUT")
+	overrideInt(&cfg.Server.IdleTimeout, "SERVER_IDLE_TIMEOUT")
+	overrideInt(&cfg.Server.MaxHeaderBytes, "SERVER_MAX_HEADER_BYTES")
 	overrideInt64(&cfg.Server.MaxBodyBytes, "SERVER_MAX_BODY_BYTES")
 	overrideInt(&cfg.Server.ShutdownTimeout, "SERVER_SHUTDOWN_TIMEOUT")
 	overrideInt(&cfg.Server.ShutdownDelay, "SERVER_SHUTDOWN_DELAY")
@@ -851,6 +885,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Storage.AzureContainerName, "OPENARTIFACT_AZURE_CONTAINER_NAME")
 	overrideString(&cfg.Storage.AzureEndpoint, "OPENARTIFACT_AZURE_ENDPOINT")
 	overrideString(&cfg.Storage.StagingPath, "STORAGE_STAGING_PATH")
+	overrideString(&cfg.Storage.SpoolPath, "STORAGE_SPOOL_PATH")
 	overrideString(&cfg.Storage.OCIUsername, "STORAGE_OCI_USERNAME")
 	overrideString(&cfg.Storage.OCIPassword, "STORAGE_OCI_PASSWORD")
 	overrideBool(&cfg.Storage.OCIInsecure, "STORAGE_OCI_INSECURE")
@@ -868,6 +903,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.GPG.KeyPath, "GPG_KEY_PATH")
 	overrideString(&cfg.GPG.Passphrase, "GPG_PASSPHRASE")
 	overrideBool(&cfg.GPG.AutoGenerate, "GPG_AUTO_GENERATE")
+	overrideSlice(&cfg.GPG.BundleSigners, "GPG_BUNDLE_SIGNERS")
 
 	// Attestation signing key
 	overrideString(&cfg.Attest.KeyPath, "ATTESTATION_KEY_PATH")
@@ -876,6 +912,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideBool(&cfg.Auth.AllowAnonymousRead, "ALLOW_ANONYMOUS_READ")
 	overrideBool(&cfg.Auth.LegacyAPIKeyEnabled, "LEGACY_API_KEY_ENABLED")
 	overrideInt(&cfg.Auth.SessionDurationHours, "SESSION_DURATION_HOURS")
+	overrideInt(&cfg.Auth.Argon2MaxConcurrent, "OPENARTIFACT_ARGON2_MAX_CONCURRENT")
 	overrideString(&cfg.Auth.HMACKey, "AUTH_HMAC_KEY")
 	overrideString(&cfg.Auth.SAMLSPCertPEM, "OPENARTIFACT_SAML_SP_CERT")
 	overrideString(&cfg.Auth.SAMLSPKeyPEM, "OPENARTIFACT_SAML_SP_KEY")
@@ -957,6 +994,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Federation.SpoolDir, "OPENARTIFACT_FEDERATION_SPOOL_DIR")
 	overrideInt64(&cfg.Federation.MaxPartialBytes, "OPENARTIFACT_FEDERATION_MAX_PARTIAL_BYTES")
 	overrideDuration(&cfg.Federation.MaxPartialAge, "OPENARTIFACT_FEDERATION_MAX_PARTIAL_AGE")
+	overrideDuration(&cfg.Federation.MaxClockSkew, "OPENARTIFACT_FEDERATION_MAX_CLOCK_SKEW")
 
 	// Storage replica
 	applyReplicaEnvOverrides(cfg)
@@ -1132,11 +1170,31 @@ func (c *Config) validateFeatures() error {
 		return err
 	}
 
+	if c.Auth.Argon2MaxConcurrent < 0 {
+		return errNegativeArgon2Concurrent
+	}
+
 	if err := c.validateReplica(); err != nil {
 		return err
 	}
 
+	if err := c.GPG.validate(); err != nil {
+		return err
+	}
+
 	return c.validatePresign()
+}
+
+// validate rejects bundle signer entries that are not "<key>=<username>".
+func (g GPGConfig) validate() error {
+	for _, e := range g.BundleSigners {
+		key, user, ok := strings.Cut(e, "=")
+		if !ok || strings.TrimSpace(key) == "" || strings.TrimSpace(user) == "" {
+			return fmt.Errorf("%w: %q", errBundleSigner, e)
+		}
+	}
+
+	return nil
 }
 
 // minTieringOpenConns is the smallest explicit database pool a tier mover can
@@ -1169,7 +1227,7 @@ func (c *Config) validateTiering() error {
 func (c *Config) validateFederation() error {
 	f := c.Federation
 	if f.PollInterval <= 0 || f.BatchSize < 1 || f.MaxBackoff <= 0 || f.RequestTimeout <= 0 || f.TombstoneRetention < 0 ||
-		f.MaxPartialBytes <= 0 || f.MaxPartialAge <= 0 {
+		f.MaxPartialBytes <= 0 || f.MaxPartialAge <= 0 || f.MaxClockSkew <= 0 {
 		return errFederationSettings
 	}
 
@@ -1260,10 +1318,32 @@ func (c *Config) validatePresign() error {
 
 // Override helper functions — only override if env var is set.
 
-// warnBadEnv reports an unparseable env override without echoing the value
-// (it may be a secret) and keeps the previous setting.
-func warnBadEnv(key, _ string, err error) {
-	fmt.Fprintf(os.Stderr, "WARN: ignoring invalid value for %s: %v\n", key, err)
+// envProblems collects the invalid environment overrides of one Load. Only the
+// variable name is recorded, never the value, which may be a secret.
+var (
+	envMu       sync.Mutex //nolint:gochecknoglobals // collector for applyEnvOverrides, whose signature docgen parses
+	envProblems []string   //nolint:gochecknoglobals // guarded by envMu
+)
+
+// badEnv records an unparseable env override; Load turns it into an error.
+func badEnv(key, want string) {
+	envProblems = append(envProblems, fmt.Sprintf("%s (expected %s)", key, want))
+}
+
+// applyEnvChecked runs applyEnvOverrides and returns one error naming every
+// variable whose value could not be parsed.
+func applyEnvChecked(cfg *Config) error {
+	envMu.Lock()
+	defer envMu.Unlock()
+
+	envProblems = nil
+	applyEnvOverrides(cfg)
+
+	if len(envProblems) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("%w: %s", errInvalidEnv, strings.Join(envProblems, ", "))
 }
 
 func overrideString(cfg *string, key string) {
@@ -1273,13 +1353,20 @@ func overrideString(cfg *string, key string) {
 }
 
 // overrideParsed sets cfg from the environment variable key when it is set,
-// parsing the raw value with parse; a value that does not parse is reported and
-// leaves cfg alone.
+// parsing the raw value with parse. A blank value counts as unset; any other
+// value that does not parse is recorded and makes Load fail, naming key only.
 func overrideParsed[T any](cfg *T, key string, parse func(string) (T, error)) {
 	if v, ok := os.LookupEnv(key); ok {
+		if strings.TrimSpace(v) == "" {
+			return
+		}
+
 		n, err := parse(v)
 		if err != nil {
-			warnBadEnv(key, v, err)
+			var zero T
+
+			badEnv(key, fmt.Sprintf("%T", zero))
+
 			return
 		}
 		*cfg = n
@@ -1310,15 +1397,18 @@ func overrideSlice(cfg *[]string, key string) {
 			}
 		}
 
-		if len(result) > 0 {
-			*cfg = result
+		// An explicitly empty value clears the list set by YAML or defaults.
+		if len(result) == 0 {
+			result = nil
 		}
+
+		*cfg = result
 	}
 }
 
 // overrideKeyValues merges comma-separated key=value pairs from the
 // environment into dst, replacing values of keys already set (for example by
-// YAML). Entries without a key are ignored with a warning.
+// YAML). An entry without a key makes Load fail, naming key only.
 func overrideKeyValues(dst *map[string]string, key string) {
 	v, ok := os.LookupEnv(key)
 	if !ok {
@@ -1336,7 +1426,7 @@ func overrideKeyValues(dst *map[string]string, key string) {
 
 		k, val, found := strings.Cut(pair, "=")
 		if k = strings.TrimSpace(k); !found || k == "" {
-			warnBadEnv(key, pair, errMalformedKeyValue)
+			badEnv(key, "comma-separated key=value pairs")
 
 			continue
 		}

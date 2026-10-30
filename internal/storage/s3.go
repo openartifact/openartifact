@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 
+	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/telemetry"
 )
 
@@ -37,6 +38,8 @@ const s3PartSize = 16 * 1024 * 1024
 
 // S3BlobStore implements BlobStore backed by Amazon S3 or any S3-compatible service.
 type S3BlobStore struct {
+	// spoolDir holds Put spool files (os.TempDir when empty).
+	spoolDir   string
 	client     *s3.Client
 	uploader   *transfermanager.Client
 	presigner  *s3.PresignClient
@@ -62,6 +65,10 @@ func NewS3BlobStore(cfg StorageConfig) (*S3BlobStore, error) {
 		opts = append(opts, config.WithCredentialsProvider(
 			credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
 		))
+	}
+
+	if cfg.SafeDial {
+		opts = append(opts, config.WithHTTPClient(awshttp.NewBuildableClient().WithTransportOptions(netutil.GuardTransport)))
 	}
 
 	awsCfg, err := config.LoadDefaultConfig(context.Background(), opts...)
@@ -101,7 +108,13 @@ func NewS3BlobStore(cfg StorageConfig) (*S3BlobStore, error) {
 		ttl = 5 * time.Minute
 	}
 
+	spool, err := prepareSpoolDir(cfg.SpoolPath)
+	if err != nil {
+		return nil, err
+	}
+
 	return &S3BlobStore{
+		spoolDir:   spool,
 		client:     client,
 		uploader:   uploader,
 		presigner:  presigner,
@@ -172,7 +185,7 @@ func (s *S3BlobStore) Put(ctx context.Context, data io.Reader, metadata map[stri
 	// the claimed digest matches the bytes, and the bytes uploaded are the
 	// bytes that were hashed.
 	_, endSpool := telemetry.StartSpan(ctx, "storage.s3.spool")
-	spool, size, err := spoolVerified(data, sha, "", "s3-put-*.tmp")
+	spool, size, err := spoolVerified(data, sha, s.spoolDir, "s3-put-*.tmp")
 	endSpool(err)
 
 	if err != nil {

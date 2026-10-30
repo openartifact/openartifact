@@ -408,6 +408,64 @@ func TestOSVMirrorImportRematchLifecycle(t *testing.T) {
 	}
 }
 
+// An advisory the export stops listing was deleted at the source: it leaves the
+// mirror and the findings it raised close on the next pass, the one that is
+// still listed is untouched.
+func TestOSVMirrorDeletedAdvisoryClosesItsFindings(t *testing.T) {
+	s := newOSVSeed(t)
+	ctx := context.Background()
+
+	s.addNPMVersion("4.17.20")
+
+	fixture := newOSVFixtureServer(t)
+
+	importer, err := osv.NewImporter(s.pg, osv.Options{BaseURL: fixture.srv.URL, Ecosystems: []string{"npm"}, Client: fixture.srv.Client()},
+		testLogger(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := NewOSVMirrorWorker(s.pg, importer, []string{"npm"}, testLogger(t), 0)
+
+	const everything = `[{"introduced": "0"}]`
+
+	fixture.publish("v1",
+		lodashAdvisory("GHSA-0001", "2024-01-01T00:00:00Z", everything, ""),
+		lodashAdvisory("GHSA-0002", "2024-02-01T00:00:00Z", everything, ""))
+
+	if _, err := w.RunOnce(ctx); err != nil {
+		t.Fatalf("baseline: RunOnce: %v", err)
+	}
+
+	s.expectFindings(t, "baseline", map[string][]string{"osv-hosted-npm 4.17.20": {"GHSA-0001", "GHSA-0002"}})
+
+	fixture.publish("v2", lodashAdvisory("GHSA-0001", "2024-01-01T00:00:00Z", everything, ""))
+
+	stats, err := w.RunOnce(ctx)
+	if err != nil {
+		t.Fatalf("deletion: RunOnce: %v", err)
+	}
+
+	if rs := stats.Rematch["npm"]; rs.Resolved != 1 {
+		t.Fatalf("deletion re-match = %+v; want the finding of the deleted advisory resolved", rs)
+	}
+
+	s.expectFindings(t, "deletion", map[string][]string{"osv-hosted-npm 4.17.20": {"GHSA-0001"}})
+
+	if n := s.count(`SELECT count(*) FROM osv_advisories WHERE id = 'GHSA-0002'`); n != 0 {
+		t.Fatalf("the deleted advisory is still in the mirror")
+	}
+
+	if n := s.count(`SELECT count(*) FROM osv_advisory_aliases WHERE advisory_id = 'GHSA-0002'`); n != 0 {
+		t.Fatalf("the aliases of the deleted advisory are still in the mirror")
+	}
+
+	st, err := s.pg.GetOSVMirrorState(ctx, "npm")
+	if err != nil || st == nil || st.Advisories != 1 || st.RematchPending {
+		t.Fatalf("mirror state = %+v, %v; want 1 advisory and nothing pending", st, err)
+	}
+}
+
 // A failing source is recorded in the state, leaves the high-water mark alone
 // and keeps the scanner on the online fallback.
 func TestOSVMirrorImportFailureIsRecorded(t *testing.T) {

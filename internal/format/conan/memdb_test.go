@@ -79,7 +79,7 @@ func (d *conanDB) GetConanPackage(_ context.Context, repoID string, key models.C
 		}
 	}
 
-	return nil, nil // not found is (nil, nil) in the Database contract
+	return nil, nil // not found is (nil, nil) in the store contract
 }
 
 func (d *conanDB) ListConanRecipeFiles(_ context.Context, repoID, name, version, userChannel string) ([]*models.ConanPackage, error) {
@@ -135,7 +135,7 @@ func (d *conanDB) FindConanPackageBySHA1(_ context.Context, repoID, sha1 string)
 		}
 	}
 
-	return nil, nil // not found is (nil, nil) in the Database contract
+	return nil, nil // not found is (nil, nil) in the store contract
 }
 
 // SetConanPackageDigests records digests without moving the row's time, like

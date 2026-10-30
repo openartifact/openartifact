@@ -9,11 +9,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Page Header -->
     <SectionActions>
         <div class="flex items-center gap-2 shrink-0">
-          <AppButton variant="secondary" size="sm" :loading="testing" :disabled="loading || !!loadError" @click="testConnection">
+          <AppButton variant="secondary" size="sm" :loading="testing" :disabled="loading || !!loadError || unavailable" @click="testConnection">
             <ArrowPathIcon v-if="!testing" class="w-4 h-4" aria-hidden="true" />
             {{ t('adm.ai.testConnection') }}
           </AppButton>
-          <AppButton size="sm" :loading="saving" :disabled="loading || !!loadError" @click="save">
+          <AppButton size="sm" :loading="saving" :disabled="loading || !!loadError || unavailable" @click="save">
             <CheckIcon v-if="!saving" class="w-4 h-4" aria-hidden="true" />
             {{ saving ? t('common.saving') : t('adm.ai.saveChanges') }}
           </AppButton>
@@ -24,6 +24,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div v-if="loading" class="bg-surface rounded-xl border border-border p-12 flex flex-col items-center gap-3 text-muted" role="status">
       <ArrowPathIcon class="w-6 h-6 animate-spin" aria-hidden="true" />
       <span class="text-sm">{{ t('adm.ai.loading') }}</span>
+    </div>
+
+    <div v-else-if="unavailable" class="bg-surface rounded-xl border border-border" data-testid="ai-unavailable">
+      <EmptyState :title="t('adm.ai.unavailable.title')" :description="t('adm.ai.unavailable.body')" />
     </div>
 
     <div v-else-if="loadError" class="bg-surface rounded-xl border border-border p-8 text-center text-danger" role="alert">
@@ -139,7 +143,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <button
                   type="button"
                   :aria-label="apiKeyRevealed ? t('adm.ai.hideKey') : t('adm.ai.showKey')"
-                  class="absolute right-2.5 top-1/2 -translate-y-1/2 text-caption font-medium text-muted hover:text-foreground transition-colors"
+                  class="absolute right-1 top-1/2 -translate-y-1/2 min-h-6 min-w-6 rounded px-1.5 text-caption font-medium text-muted hover:text-foreground transition-colors"
                   @click="apiKeyRevealed = !apiKeyRevealed"
                 >
                   {{ apiKeyRevealed ? t('adm.ai.hide') : t('adm.ai.show') }}
@@ -314,6 +318,8 @@ import { getAIConfig, saveAIConfig, testAIConfig } from '../../../api/adminAi'
 import type { AIConfig, TestResult } from '../../../api/adminAi'
 import AppButton from '../../../components/AppButton.vue'
 import AppToggle from '../../../components/AppToggle.vue'
+import EmptyState from '../../../components/EmptyState.vue'
+import { ApiError, isFeatureUnavailable } from '../../../api/client'
 import { aiProviderColor, tint } from '../../../lib/brandColors'
 import { MONO_INPUT_CLASS } from '../../../lib/formClasses'
 import { aiBrandIcon } from '../../../lib/brandIcons'
@@ -365,6 +371,8 @@ const toasts = useToastStore()
 
 const loading = ref(true)
 const loadError = ref('')
+// The server build has no AI analysis (-tags noai): the config route answers 501 feature_unavailable.
+const unavailable = ref(false)
 const saving = ref(false)
 const testing = ref(false)
 const loadingModels = ref(false)
@@ -400,9 +408,17 @@ function selectProvider(key: string): void {
   }
 }
 
-// The API key is write-only. GET returns a mask, and the backend treats the
-// mask (or an empty key on test/models) as "use the stored key" while PUT with
-// the mask leaves the stored key unchanged, so the mask is sent back as-is.
+// The text of a failed save or test. The stored key is only used with the
+// stored provider and endpoint: changing either while the key still is the mask
+// is answered 400 api_key_required, worded here so the user knows what to do.
+function failureText(err: unknown, fallback: string): string {
+  if (err instanceof ApiError && err.code === 'api_key_required') return t('adm.ai.apiKeyRequired')
+  return err instanceof Error ? err.message : fallback
+}
+
+// The API key is write-only. GET returns a mask that PUT, test and models read
+// as "keep the stored key" (for the stored provider and endpoint only), so the
+// mask is sent back as-is; an empty key clears it, or tests without one.
 async function loadModels(): Promise<void> {
   loadingModels.value = true
   try {
@@ -416,7 +432,7 @@ async function loadModels(): Promise<void> {
       toasts.info(t('adm.ai.noModels'))
     }
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : t('adm.ai.loadModelsFailed'))
+    toasts.error(failureText(err, t('adm.ai.loadModelsFailed')))
   } finally {
     loadingModels.value = false
   }
@@ -434,7 +450,7 @@ async function testConnection(): Promise<void> {
   } catch (err) {
     testResult.value = {
       ok: false,
-      error: err instanceof Error ? err.message : t('adm.ai.testFailed'),
+      error: failureText(err, t('adm.ai.testFailed')),
     }
   } finally {
     testing.value = false
@@ -448,7 +464,7 @@ async function save(): Promise<void> {
     await saveAIConfig({ ...form })
     toasts.success(t('adm.ai.saved'))
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : t('adm.ai.saveFailed'))
+    toasts.error(failureText(err, t('adm.ai.saveFailed')))
   } finally {
     saving.value = false
   }
@@ -467,8 +483,12 @@ onMounted(async () => {
     form.timeout_secs = cfg.timeout_secs || 30
     form.system_prompt = cfg.system_prompt || ''
   } catch (err) {
-    loadError.value = err instanceof Error ? err.message : t('adm.ai.loadFailed')
-    toasts.error(loadError.value)
+    if (isFeatureUnavailable(err)) {
+      unavailable.value = true
+    } else {
+      loadError.value = err instanceof Error ? err.message : t('adm.ai.loadFailed')
+      toasts.error(loadError.value)
+    }
   } finally {
     loading.value = false
   }

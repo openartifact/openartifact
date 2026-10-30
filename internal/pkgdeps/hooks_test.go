@@ -5,16 +5,18 @@
 package pkgdeps
 
 import (
-	"os"
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 )
 
-// TestMain registers the manifest rules and the dependency hooks of every
+// init registers the manifest rules and the dependency hooks of every
 // format once, the way internal/format/plugin does at startup, so the tests can
 // dispatch by format.
-func TestMain(m *testing.M) {
+// It is an init, not a TestMain, so the fuzz targets registered by ClusterFuzzLite
+// (which compiles the _test.go files into the fuzzer but never runs TestMain)
+// see the same registry.
+func init() { //nolint:gochecknoinits // test-only format registry, see above
 	for format, rule := range map[string]manifest.Rule{
 		"npm":      manifest.NPMRule,
 		"pypi":     manifest.PyPIRule,
@@ -56,8 +58,6 @@ func TestMain(m *testing.M) {
 	} {
 		Register(format, h)
 	}
-
-	os.Exit(m.Run())
 }
 
 // TestSBTReadsLikeMaven guards the per-format decision that sbt takes maven's

@@ -188,3 +188,32 @@ func TestKickPullLogsALostKick(t *testing.T) {
 		t.Errorf("the failure is not logged: %s", logged)
 	}
 }
+
+type fakeJournalSwitch struct{ calls []bool }
+
+func (f *fakeJournalSwitch) SetEnabled(_ context.Context, enabled bool) error {
+	f.calls = append(f.calls, enabled)
+	return nil
+}
+
+// The recovery journal flag is global: only a process that runs workers may
+// write it, or a web pod with another config flips it on every restart.
+func TestJournalSwitchIsOwnedByTheWorkers(t *testing.T) {
+	for _, tt := range []struct {
+		role string
+		want bool
+	}{{config.RoleAll, true}, {config.RoleWorker, true}, {config.RoleWeb, false}} {
+		t.Run(tt.role, func(t *testing.T) {
+			cfg := config.Defaults()
+			cfg.Server.Role = tt.role
+			cfg.Recovery.Journal.Enabled = false
+
+			j := &fakeJournalSwitch{}
+
+			applied, err := applyJournalSwitch(context.Background(), cfg, j)
+			if err != nil || applied != tt.want || (len(j.calls) == 1) != tt.want {
+				t.Fatalf("applied = %v (calls %v), err %v; want applied %v", applied, j.calls, err, tt.want)
+			}
+		})
+	}
+}

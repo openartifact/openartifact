@@ -45,7 +45,7 @@ func Middleware(explicit, fallback string, trusted func(*http.Request) bool) fun
 		}
 
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			origin := derive(r, trusted)
+			origin := Origin(r, trusted)
 			if origin == "" {
 				origin = fallback
 			}
@@ -74,7 +74,7 @@ func Resolve(w http.ResponseWriter, r *http.Request, explicit string) string {
 
 	// No middleware ran (a handler used on its own): the request's own Host,
 	// trusting no forwarded header.
-	return derive(r, nil)
+	return Origin(r, nil)
 }
 
 // FromContext is Resolve for code that has only a context (storage presigning,
@@ -110,21 +110,28 @@ func PathPrefix(origin string) string {
 	return "/" + path
 }
 
-// derive builds scheme://host from r, or returns "" when no valid host exists.
-func derive(r *http.Request, trusted func(*http.Request) bool) string {
-	fromProxy := trusted != nil && trusted(r)
-
-	scheme := "http"
+// Scheme returns the scheme ("http" or "https") the client used to reach the
+// server: https when the connection is TLS, else X-Forwarded-Proto when the TCP
+// peer is a trusted proxy, else http.
+func Scheme(r *http.Request, trusted func(*http.Request) bool) string {
 	if r.TLS != nil {
-		scheme = "https"
-	} else if fromProxy {
+		return "https"
+	}
+
+	if trusted != nil && trusted(r) {
 		if p := firstToken(r.Header.Get("X-Forwarded-Proto")); p == "https" || p == "http" {
-			scheme = p
+			return p
 		}
 	}
 
+	return "http"
+}
+
+// Origin builds scheme://host from r (X-Forwarded-Host only from a trusted
+// peer), or returns "" when no valid host exists.
+func Origin(r *http.Request, trusted func(*http.Request) bool) string {
 	host := r.Host
-	if fromProxy {
+	if trusted != nil && trusted(r) {
 		if h := firstToken(r.Header.Get("X-Forwarded-Host")); h != "" {
 			host = h
 		}
@@ -134,7 +141,7 @@ func derive(r *http.Request, trusted func(*http.Request) bool) string {
 		return ""
 	}
 
-	return scheme + "://" + strings.ToLower(host)
+	return Scheme(r, trusted) + "://" + strings.ToLower(host)
 }
 
 // firstToken returns the first comma-separated element of a forwarded header,

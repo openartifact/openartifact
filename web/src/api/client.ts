@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { t } from '../i18n'
+
 export class ApiError extends Error {
   status: number
   code?: string
@@ -42,6 +44,14 @@ export function isSessionExpired(err: unknown): boolean {
   return err instanceof ApiError && err.code === SESSION_EXPIRED
 }
 
+/**
+ * True for the 501 a server answers for a feature compiled out of its build (an AI route of a
+ * `-tags noai` binary). It is a permanent state, not a failure to retry or report.
+ */
+export function isFeatureUnavailable(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 501 && err.code === 'feature_unavailable'
+}
+
 let expiring: Promise<void> | null = null
 
 /**
@@ -54,10 +64,11 @@ export function expireSession(): Promise<void> {
     const { useSessionStore } = await import('../stores/session')
     useSessionStore().clearSession()
 
-    const currentPath = window.location.pathname + window.location.search
-    if (currentPath !== '/login') {
+    // Only the path decides whether this already is the login page: a late 401
+    // on /login?next=/repos/foo must keep that ?next=, not wrap it in another.
+    if (window.location.pathname !== '/login') {
       const { default: router } = await import('../router')
-      await router.push({ name: 'login', query: { next: currentPath } })
+      await router.push({ name: 'login', query: { next: window.location.pathname + window.location.search } })
     }
   })().finally(() => {
     expiring = null
@@ -116,7 +127,7 @@ async function send(path: string, init: RequestInit): Promise<Response> {
 
   if (res.status === 401 && !isAuthProbe) {
     await expireSession()
-    throw new ApiError('Session expired', 401, SESSION_EXPIRED)
+    throw new ApiError(t('session.expired'), 401, SESSION_EXPIRED)
   }
 
   return res

@@ -98,6 +98,43 @@ func (f *raceFixture) slowRewrite(t *testing.T) (*io.PipeWriter, <-chan int) {
 	return pw, finished
 }
 
+// slowRewriteBehindCheck is slowRewrite for the lock-wait tests: complete has
+// already passed its marker check when the writer is in flight, so the marker
+// the writer dropped is put back (the window between check and seal).
+func (f *raceFixture) slowRewriteBehindCheck(t *testing.T) (*io.PipeWriter, <-chan int) {
+	t.Helper()
+
+	pw, done := f.slowRewrite(t)
+
+	if err := os.WriteFile(f.relay.markerPath(relayTestID, 1), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	return pw, done
+}
+
+// A part being overwritten is not complete: its marker is gone until the new
+// bytes are synced, so complete refuses instead of publishing a torn part.
+func TestRelayCompleteRefusesPartBeingOverwritten(t *testing.T) {
+	t.Parallel()
+
+	f := newRaceFixture(t)
+	pw, done := f.slowRewrite(t)
+
+	err := f.env.multi.CompleteMultipart(context.Background(), relayTestID, "", f.size, f.partSize)
+	if !errors.Is(err, ErrMultipartIncomplete) {
+		t.Fatalf("complete err = %v, want ErrMultipartIncomplete", err)
+	}
+
+	if status := f.finishRewrite(t, pw, done); status != http.StatusOK {
+		t.Fatalf("in-flight PUT status = %d", status)
+	}
+
+	if err := f.env.multi.CompleteMultipart(context.Background(), relayTestID, "", f.size, f.partSize); err != nil {
+		t.Fatalf("complete after rewrite: %v", err)
+	}
+}
+
 // finishRewrite sends the rest of part 1's bytes and waits for the PUT.
 func (f *raceFixture) finishRewrite(t *testing.T, pw *io.PipeWriter, done <-chan int) int {
 	t.Helper()
@@ -122,7 +159,7 @@ func TestRelayCompleteWaitsForInFlightPutAndRefusesNewOnes(t *testing.T) {
 	sealed := make(chan struct{})
 	f.relay.afterSeal = func() { close(sealed) }
 
-	pw, done := f.slowRewrite(t)
+	pw, done := f.slowRewriteBehindCheck(t)
 
 	completed := make(chan error, 1)
 
@@ -200,7 +237,7 @@ func TestRelayCompleteGivingUpReopensTheUpload(t *testing.T) {
 	t.Parallel()
 
 	f := newRaceFixture(t)
-	pw, done := f.slowRewrite(t)
+	pw, done := f.slowRewriteBehindCheck(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

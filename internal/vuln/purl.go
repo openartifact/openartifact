@@ -60,10 +60,10 @@ func buildPURL(p Package) (string, error) {
 			return "", errNoPURL
 		}
 
-		b.WriteString(purlEscape(ns) + "/")
+		b.WriteString(repotype.PURLEscape(ns) + "/")
 	}
 
-	b.WriteString(purlEscape(parts.Name) + "@" + purlEscape(parts.Version) + parts.Qualifiers)
+	b.WriteString(repotype.PURLEscape(parts.Name) + "@" + repotype.PURLEscape(parts.Version) + parts.Qualifiers)
 
 	return b.String(), nil
 }
@@ -100,30 +100,6 @@ func rpmEVR(p Package) (int, string) {
 	return epoch, version
 }
 
-// purlEscape percent-encodes everything but the unreserved characters
-// (letters, digits, "." "-" "_" "~"): the strictest encoding, which every
-// Package URL parser decodes.
-func purlEscape(s string) string {
-	const hex = "0123456789ABCDEF"
-
-	var b strings.Builder
-
-	for i := range len(s) {
-		c := s[i]
-
-		switch {
-		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '.', c == '-', c == '_', c == '~':
-			b.WriteByte(c)
-		default:
-			b.WriteByte('%')
-			b.WriteByte(hex[c>>4])
-			b.WriteByte(hex[c&15])
-		}
-	}
-
-	return b.String()
-}
-
 // PackageURL returns the Package URL of a scanned package for reports. An
 // ecosystem with no registered Package URL type (helm), a deb or rpm (a stored
 // scan does not record its distribution) or a name that cannot be expressed
@@ -134,13 +110,13 @@ func PackageURL(ecosystem, name, version string) string {
 		return p
 	}
 
-	p := "pkg:generic/" + purlEscape(name)
+	p := "pkg:generic/" + repotype.PURLEscape(name)
 	if version != "" {
-		p += "@" + purlEscape(version)
+		p += "@" + repotype.PURLEscape(version)
 	}
 
 	if ecosystem != "" {
-		p += "?ecosystem=" + purlEscape(strings.ToLower(ecosystem))
+		p += "?ecosystem=" + repotype.PURLEscape(strings.ToLower(ecosystem))
 	}
 
 	return p

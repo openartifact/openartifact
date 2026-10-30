@@ -127,10 +127,15 @@ func (h *HTTPHandler) reusableSource(r *http.Request, repoID, sum string) (*mode
 	}
 
 	if source == nil {
-		return nil, nil //nolint:nilnil // not found is (nil, nil), as in the Database contract
+		return nil, nil //nolint:nilnil // not found is (nil, nil), as in the store contract
 	}
 
-	blocked, err := quarantine.IsQuarantined(r.Context(), h.DB, repoID, quarantineKeys(source)...)
+	keys, err := h.quarantineKeys(r.Context(), source)
+	if err != nil {
+		return nil, err
+	}
+
+	blocked, err := quarantine.IsQuarantined(r.Context(), h.DB, repoID, keys...)
 	if err != nil {
 		return nil, fmt.Errorf("check quarantine: %w", err)
 	}
@@ -142,15 +147,47 @@ func (h *HTTPHandler) reusableSource(r *http.Request, repoID, sum string) (*mode
 	return source, nil
 }
 
-// quarantineKeys are the identifiers a stored file may be quarantined under.
-func quarantineKeys(f *models.ConanPackage) []string {
+// quarantineKeys are the identifiers a stored file may be quarantined under:
+// its own row id, the id of its recipe revision's listed row (the one the
+// listing and the scans use: quarantining a recipe revision blocks every file
+// of it and of its binary packages) and the paths it is served under.
+func (h *HTTPHandler) quarantineKeys(ctx context.Context, f *models.ConanPackage) ([]string, error) {
+	unitID, err := h.unitID(ctx, f)
+	if err != nil {
+		return nil, err
+	}
+
 	resource := conanPath(f.Name, f.Version, f.UserChannel, "") + "/" + f.RecipeRevision
 	if f.PackageID != "" {
 		resource += "/" + f.PackageID + "/" + f.PackageRevision
 	}
 
 	return quarantine.PathKeys(
-		f.Filename, conanPath(f.Name, f.Version, f.UserChannel, f.Filename), resource+"/"+f.Filename)
+		f.ID, unitID, f.Filename, conanPath(f.Name, f.Version, f.UserChannel, f.Filename), resource+"/"+f.Filename), nil
+}
+
+// unitID is the id of the listed row of the recipe revision of f: its
+// conanmanifest.txt (a row stored before 0.5.0 has no file name), or "" when
+// the revision has none.
+func (h *HTTPHandler) unitID(ctx context.Context, f *models.ConanPackage) (string, error) {
+	key := models.ConanFileKey{
+		Name: f.Name, Version: f.Version, UserChannel: f.UserChannel, RecipeRevision: f.RecipeRevision,
+	}
+
+	for _, name := range []string{manifestFile, ""} {
+		key.Filename = name
+
+		listed, err := h.DB.GetConanPackage(ctx, f.RepositoryID, key)
+		if err != nil {
+			return "", fmt.Errorf("find listed row of recipe revision: %w", err)
+		}
+
+		if listed != nil {
+			return listed.ID, nil
+		}
+	}
+
+	return "", nil
 }
 
 // keepDigests fills in the digests of a stored file that was re-uploaded with

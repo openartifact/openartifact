@@ -51,14 +51,17 @@ type ReleaseBundle struct {
 	PipelineID   *string     `db:"pipeline_id"`
 	CurrentStage *string     `db:"current_stage"`
 	CreatedBy    string      `db:"created_by"`
-	SealedAt     *time.Time  `db:"sealed_at"`
-	SealedBy     *string     `db:"sealed_by"`
-	ArchivedAt   *time.Time  `db:"archived_at"`
-	ArchivedBy   *string     `db:"archived_by"`
-	GPGKeyID     *string     `db:"gpg_key_id"`
-	GPGSignature *string     `db:"gpg_signature"`
-	CreatedAt    time.Time   `db:"created_at"`
-	UpdatedAt    time.Time   `db:"updated_at"`
+	// CreatorID is the id of the user who created the bundle; empty when that
+	// user was deleted. Ownership is decided on it, never on the username.
+	CreatorID    string     `db:"creator_id"`
+	SealedAt     *time.Time `db:"sealed_at"`
+	SealedBy     *string    `db:"sealed_by"`
+	ArchivedAt   *time.Time `db:"archived_at"`
+	ArchivedBy   *string    `db:"archived_by"`
+	GPGKeyID     *string    `db:"gpg_key_id"`
+	GPGSignature *string    `db:"gpg_signature"`
+	CreatedAt    time.Time  `db:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at"`
 }
 
 // IsMutable returns true only for draft bundles.

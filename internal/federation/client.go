@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/telemetry"
 )
 
 // maxJSONResponse bounds the JSON bodies read from a peer (log pages, units).
@@ -59,7 +60,7 @@ func ValidatePeerURL(ctx context.Context, raw string) error {
 	}
 
 	if err := netutil.ValidateOutboundURLContext(ctx, raw); err != nil {
-		return fmt.Errorf("%w: peer URL refused: %v", ErrInvalid, err) //nolint:errorlint // client-safe text, the cause is a policy message
+		return fmt.Errorf("%w: peer URL refused: %w", ErrInvalid, err)
 	}
 
 	return nil
@@ -77,12 +78,12 @@ type Client struct {
 // presented for mutual TLS.
 func NewClient(ctx context.Context, p *Peer, secrets PeerSecrets, timeout time.Duration) (*Client, error) {
 	if err := ValidatePeerURL(ctx, p.BaseURL); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", errPeerConfig, err)
 	}
 
 	base, err := url.Parse(strings.TrimRight(p.BaseURL, "/"))
 	if err != nil {
-		return nil, errPeerURL
+		return nil, fmt.Errorf("%w: %w", errPeerConfig, errPeerURL)
 	}
 
 	hc := netutil.SafeHTTPClient(timeout)
@@ -94,14 +95,16 @@ func NewClient(ctx context.Context, p *Peer, secrets PeerSecrets, timeout time.D
 
 	tlsCfg, err := peerTLS(p.CAPEM, secrets.ClientCert, secrets.ClientKey)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", errPeerConfig, err)
 	}
 
 	tr.TLSClientConfig = tlsCfg
 	// A peer never redirects: following one would carry the token elsewhere.
 	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
-	return &Client{base: base, token: secrets.Token, http: hc}, nil
+	// Traced like the other outbound clients: method, host and status only,
+	// never the path, and no baggage.
+	return &Client{base: base, token: secrets.Token, http: telemetry.WrapClient(hc)}, nil
 }
 
 // ValidatePeerTLS checks the optional TLS settings of a peer: a CA bundle, and
@@ -192,7 +195,7 @@ func (c *Client) getJSON(ctx context.Context, path string, query url.Values, out
 	defer resp.Body.Close()
 
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONResponse)).Decode(out); err != nil {
-		return fmt.Errorf("decode peer response %s: %w", path, err)
+		return fmt.Errorf("%w: decode %s: %w", errPeerResponse, path, err)
 	}
 
 	return nil

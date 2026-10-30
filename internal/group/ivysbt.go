@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/openartifact/openartifact/internal/artifactpath"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/base"
 )
 
 // Ivy and sbt groups merge nothing: a file is served by the first member in
@@ -25,7 +25,7 @@ import (
 type fileModule struct{ group, module string }
 
 // fileRepoRef names the module an ivy or sbt request is about. A file path is
-// read exactly as the hosted handlers read it when storing (base.SplitArtifactPath,
+// read exactly as the hosted handlers read it when storing (artifactpath.Split,
 // both its current and its legacy reading); a maven-metadata document, which
 // the hosted handlers store like any file but which names the module one or two
 // directories up, is read both ways. ok is false for paths that name no module.
@@ -41,7 +41,7 @@ func fileRepoRef(relPath string) (PkgRef, bool) {
 		}
 	}
 
-	if cur, legacy, ok := base.SplitArtifactPath(rel); ok {
+	if cur, legacy, ok := artifactpath.Split(rel); ok {
 		add(cur.Group, cur.Module)
 		add(legacy.Group, legacy.Module)
 	}

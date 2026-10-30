@@ -27,6 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      contents: read # check out the default branch (scripts/coverage/render.sh)
       actions: read # download the coverage artifact of the CI run
       pull-requests: write # create or update the comment
     steps:

@@ -17,6 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/metrics"
+	"github.com/openartifact/openartifact/internal/passwd"
 	"github.com/openartifact/openartifact/internal/telemetry"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"github.com/prometheus/client_golang/prometheus"
@@ -37,6 +38,9 @@ func newApp(opts options) (*app, error) {
 	if err := crypto.InitFromEnv(); err != nil {
 		return nil, fmt.Errorf("invalid %s: %w", crypto.EnvKey, err)
 	}
+
+	// Before anything can log in: sizes the Argon2id semaphore once.
+	passwd.SetMaxConcurrent(cfg.Auth.Argon2MaxConcurrent)
 
 	log, err := logger.New(cfg.Logger.Level, cfg.Logger.Format, cfg.Logger.OutputPath)
 	if err != nil {
@@ -93,7 +97,8 @@ func (a *app) setupTelemetry() error {
 	// From here on application logs also go to the OTLP log provider, next
 	// to the configured output. The exporter error handler Setup installed
 	// keeps the logger without the bridge, so an export failure is never fed
-	// back into the export queue.
+	// back into the export queue. The bridge core scrubs URLs, paths and error
+	// text of every record before it is exported (telemetry.LogCore).
 	if otlp.Enabled && otlp.Logs {
 		log, err := a.log.Tee(telemetry.LogCore())
 		if err != nil {

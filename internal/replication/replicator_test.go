@@ -250,8 +250,8 @@ func TestFailureBackoffAndRecovery(t *testing.T) {
 			t.Fatalf("attempt %d: next attempt in %v, want %v", i, got, wantDelay)
 		}
 
-		if !strings.Contains(op.LastError, "replica down") {
-			t.Fatalf("attempt %d: last error %q", i, op.LastError)
+		if op.LastError != errUnclassified.Error() {
+			t.Fatalf("attempt %d: last error %q, want the fixed reason", i, op.LastError)
 		}
 
 		// Not due before its time.
@@ -313,22 +313,55 @@ func TestBackoffTable(t *testing.T) {
 	}
 }
 
-func TestTruncatedErrorsAreStored(t *testing.T) {
+// TestStoredErrorsAreFixedReasons: the reason stored with a failed operation
+// (and shown in the status) never carries the driver's error text.
+func TestStoredErrorsAreFixedReasons(t *testing.T) {
 	t.Parallel()
 
 	r := newRig(t, nil)
-	id := r.put("long error")
+	id := r.put("secret error")
 
-	long := errors.New(strings.Repeat("x", 5000))
-	r.replica.getErr.Store(&long)
+	secret := errors.New("PUT https://replica.internal:9000/bucket-secret/key: " + strings.Repeat("x", 5000))
+	r.replica.getErr.Store(&secret)
 	r.replica.failPut.Store(true)
 
 	if _, err := r.svc.replicator.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
-	if op := r.queue.op(id); op == nil || len(op.LastError) > maxErrorLen+3 {
-		t.Fatalf("stored error length: %+v", op)
+	op := r.queue.op(id)
+	if op == nil || op.LastError != errUnclassified.Error() {
+		t.Fatalf("stored error: %+v", op)
+	}
+
+	if st := r.queue.state.LastError; st != errUnclassified.Error() {
+		t.Fatalf("status last error = %q, want the fixed reason", st)
+	}
+}
+
+func TestFailureReason(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"missing primary", fmt.Errorf("copy abc: %w", ErrMissingPrimary), ErrMissingPrimary.Error()},
+		{"corrupt", fmt.Errorf("%w: bucket/key", ErrCorrupt), ErrCorrupt.Error()},
+		{"timeout", fmt.Errorf("put https://replica/x: %w", context.DeadlineExceeded), "the operation timed out"},
+		{"panic", fmt.Errorf("%w: boom", errPanic), errPanic.Error()},
+		{"other", errors.New("dial tcp 10.0.0.7:9000: refused"), errUnclassified.Error()},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := failureReason(tc.err); got != tc.want {
+				t.Errorf("failureReason = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

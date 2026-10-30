@@ -94,6 +94,33 @@ func LoadSettings(ctx context.Context, r SettingReader, env Settings) Settings {
 	return out
 }
 
+// LoadSettingsChecked is LoadSettings for a caller that must not act on a
+// partial read: LoadSettings reads a key it cannot fetch as unset, so during a
+// database outage it answers with the env values. LoadSettingsChecked returns
+// the first read error as well, and the settings it returns are then not the
+// saved ones.
+func LoadSettingsChecked(ctx context.Context, r SettingReader, env Settings) (Settings, error) {
+	rec := &readRecorder{r: r}
+	s := LoadSettings(ctx, rec, env)
+
+	return s, rec.err
+}
+
+// readRecorder remembers the first error of the reads made through it.
+type readRecorder struct {
+	r   SettingReader
+	err error
+}
+
+func (c *readRecorder) GetSystemSetting(ctx context.Context, key string) (string, error) {
+	v, err := c.r.GetSystemSetting(ctx, key)
+	if err != nil && c.err == nil {
+		c.err = err
+	}
+
+	return v, err
+}
+
 // NewClient returns a client for the settings, or nil when AI is disabled.
 func (s Settings) NewClient() *Client {
 	if !s.Enabled {

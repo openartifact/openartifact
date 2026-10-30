@@ -167,6 +167,53 @@ func (p *UserGroupStore) RemoveUserFromGroup(ctx context.Context, userID, groupI
 	return nil
 }
 
+// SetGroupMembers replaces the members of a group with userIDs in one
+// transaction: a user id that does not exist fails the insert with a foreign key
+// violation (database.IsForeignKeyViolation) and nothing changes.
+func (p *UserGroupStore) SetGroupMembers(ctx context.Context, groupID string, userIDs []string) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
+	if userIDs == nil {
+		// A nil slice reaches Postgres as NULL, and "= ANY(NULL)" removes no one.
+		userIDs = []string{}
+	}
+
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin set group members: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM auth_user_groups WHERE group_id=$1 AND NOT (user_id = ANY($2::uuid[]))`,
+		groupID, userIDs,
+	); err != nil {
+		return fmt.Errorf("failed to remove group members: %w", err)
+	}
+
+	for _, userID := range userIDs {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO auth_user_groups (user_id, group_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+			userID, groupID,
+		); err != nil {
+			return fmt.Errorf("failed to add group member: %w", err)
+		}
+	}
+
+	// Project roles granted through the group go with the membership.
+	if err := revokeExcessProjectTokens(ctx, tx, ""); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit set group members: %w", err)
+	}
+
+	return nil
+}
+
 func (p *UserGroupStore) ListGroupsByUserUncached(ctx context.Context, userID string) ([]*models.Group, error) {
 	rows, err := p.db.QueryContext(ctx,
 		`SELECT `+groupColumns+`

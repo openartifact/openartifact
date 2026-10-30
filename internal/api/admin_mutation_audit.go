@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/audit"
+	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 // auditAdmin records an explicit admin-plane audit event that names the target
@@ -16,6 +17,16 @@ import (
 // audit middleware only carries the route template, which cannot reconstruct
 // who was changed. details must never contain secrets.
 func auditAdmin(r *http.Request, action, resourceType, resourceID, details string) {
+	auditAdminIn(r, "", action, resourceType, resourceID, details)
+}
+
+// auditRepository is auditAdmin for a change made inside a repository: the
+// event also carries the repository, so it shows in the repository's audit view.
+func auditRepository(r *http.Request, repo *models.Repository, action, resourceType, resourceID, details string) {
+	auditAdminIn(r, repo.ID, action, resourceType, resourceID, details)
+}
+
+func auditAdminIn(r *http.Request, repositoryID, action, resourceType, resourceID, details string) {
 	l := audit.Default()
 	if l == nil {
 		return
@@ -30,6 +41,10 @@ func auditAdmin(r *http.Request, action, resourceType, resourceID, details strin
 
 	if resourceID != "" {
 		ev.ResourceID = &resourceID
+	}
+
+	if repositoryID != "" {
+		ev.RepositoryID = &repositoryID
 	}
 
 	if p := currentPrincipal(r); p != nil && !p.IsAnonymous {

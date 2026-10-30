@@ -181,7 +181,7 @@ func FuzzChartIdentity(f *testing.F) {
 
 		// The URL a client is given reads back as the same file.
 		// It is relative to the repository URL, as helm resolves it.
-		ref := buildHelmIndex([]*models.HelmChart{{Name: name, Version: version}}).Entries[name][0].URLs[0]
+		ref := newHelmChartEntry(&models.HelmChart{Name: name, Version: version}).URLs[0]
 
 		refURL, err := url.Parse(ref)
 		if err != nil {

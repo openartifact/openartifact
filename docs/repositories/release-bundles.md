@@ -63,12 +63,12 @@ Each item:
 |---|---|---|
 | `source_repo_id` | yes | UUID of an existing repository (the `id` of `GET /api/v1/repository/{repo}`). |
 | `sha256` | yes | 64 hex characters (case-insensitive, stored lowercase); unique within the bundle. |
-| `artifact_path` | yes | Path of the artifact (at most 1024 bytes). |
-| `format` | no | Defaults to the source repository's format. |
+| `artifact_path` | yes | Path of the artifact (at most 1024 bytes): its path or file name in the source repository (what the package listing and the search show), its repository URL path (`com/example/lib/1.0/lib-1.0.jar` for Ivy and sbt, whose group is stored with dots), either behind a leading `/` or a `repos/<repository>/` prefix, its file id, or for docker its digest, image, tag or distribution name. A path that starts with another repository's `repos/<name>/` never matches. |
+| `format` | no | Defaults to the source repository's format; any other value is `400`. |
 | `size_bytes` | no | Non-negative. |
 | `component_id` | no | Optional id stored with the item. |
 
-The server checks that the source repository exists but does not verify that the digest is stored there.
+The server checks that the source repository exists and that it holds a live artifact stored as `sha256` and located by `artifact_path` (promotion locates the item with the same rule, so an accepted item always selects the artifact it was accepted for); otherwise the request is `400 validation_failed` and nothing is added. The signed manifest therefore only states what the repository backs.
 
 ```sh
 curl -X POST HOST/api/v1/bundles -H "Authorization: Bearer <TOKEN>" \
@@ -85,7 +85,7 @@ curl -X POST HOST/api/v1/bundles/shop/2.4.0/seal -H "Authorization: Bearer <TOKE
 
 ### Signing a bundle
 
-`POST .../seal` with `{"gpg_key_id": "<key id | fingerprint | config>"}` (a key from [`GET /api/v1/admin/gpg/keys`](../security/signing.md#managing-keys); `config` is the `gpg.keyPath` key) signs the bundle manifest before sealing. The manifest is deterministic JSON (`schema: openartifact.release-bundle/v1`, name, version, description, items ordered by SHA-256), so it can be re-fetched and verified at any time:
+`POST .../seal` with `{"gpg_key_id": "<key id | fingerprint | config>"}` (a stored key from [`GET /api/v1/admin/gpg/keys`](../security/signing.md#managing-keys)) signs the bundle manifest before sealing. Choosing a key needs the global `manage` permission or a `gpg.bundleSigners` grant for that user and key ([signing](../security/signing.md#signing-release-bundles)); anyone else gets `403`. The `gpg.keyPath` key (`config`) signs package metadata and is never used for bundles (`403`). The manifest is deterministic JSON (`schema: openartifact.release-bundle/v1`, name, version, description, items ordered by SHA-256), so it can be re-fetched and verified at any time:
 
 ```sh
 curl -X POST HOST/api/v1/bundles/shop/2.4.0/seal -H "Authorization: Bearer <TOKEN>" \
@@ -95,7 +95,7 @@ curl -H "Authorization: Bearer <TOKEN>" -o manifest.json.asc HOST/api/v1/bundles
 gpg --verify manifest.json.asc manifest.json
 ```
 
-The bundle's `gpg_key_id` is the signer's fingerprint (it stays meaningful after the key is deleted) and `gpg_signature` the armored signature. An unknown key answers `400 validation_failed` and leaves the bundle a draft. The seal fails with `409` if an item changed while the manifest was being signed.
+The bundle's `gpg_key_id` is the signer's fingerprint (it stays meaningful after the key is deleted) and `gpg_signature` the armored signature. `GET /api/v1/bundles/signing-keys` lists the keys the caller may use (the web seal dialog offers exactly these): every stored key for an administrator, only the keys granted through `gpg.bundleSigners` for anyone else, never the `gpg.keyPath` key. A key the caller may not use, the `gpg.keyPath` key and (for non-administrators) an unknown key all answer `403` with the error code `signer_forbidden`; an administrator naming an unknown key gets `400 validation_failed`. Either way the bundle stays a draft. The seal fails with `409` if an item changed while the manifest was being signed.
 
 ## Permissions
 
@@ -110,7 +110,7 @@ Bundles involve several repositories (the sources of the items and the target of
 | Promote | `read` on every source repository and `write` on the target repository. No ownership is needed, so a release engineer can promote a bundle a build job created. `?force=true` stays administrator-only. |
 | List all bundles (`GET /api/v1/bundles`), every `/api/v1/pipelines` route | Administrator. |
 
-Pipelines are the operator's gate: a bundle can only be promoted when it has a pipeline and a stage defined by an administrator. A CI token attaches a pipeline by name (`pipeline` on create) without being allowed to list or edit pipelines. Signing at seal time (`gpg_key_id`) is allowed to whoever can seal; hand out the key id to the jobs that should sign, since listing keys is administrator-only.
+Pipelines are the operator's gate: a bundle can only be promoted when it has a pipeline and a stage defined by an administrator. A CI token attaches a pipeline by name (`pipeline` on create) without being allowed to list or edit pipelines. Signing at seal time (`gpg_key_id`) is limited to administrators and to users named for that key in `gpg.bundleSigners`; a CI job that should sign needs such a grant. Ownership is decided on the user id, not the username. Creating, sealing (with the signing fingerprint) and archiving a bundle are audit events (`bundle.created`, `bundle.sealed`, `bundle.archived`).
 
 A deploy token with `read` and `write` on the build and release repositories is therefore enough for a CI job to upload, assemble, seal and promote; see [CI integration](../integrations/ci.md#least-privilege-ci-token).
 
@@ -167,7 +167,7 @@ A docker image whose layer references are not indexed yet (registry GC records t
 
 `200` with `{"promotion": {...}, "copied": N, "existing": N, "replaced": N, "items": [...]}`. `copied` and `existing` count artifacts (one item can be several, for instance an npm version or a docker image); each entry of `items` has `sha256`, `artifact_path`, `format` and the `copied`, `existing` and `replaced` artifact lists (`name`, `version`, `path`, `sha256`, `size`). The same record is listed by `GET .../promotions` (`status: success`, `completed_at`, `item_count`, `notes`).
 
-A successful promotion is written to the [audit log](../operations/monitoring.md) as `bundle.promoted` (repository: the target) and emits the [`bundle.promoted` webhook event](../operations/webhooks.md) to the target repository's and the global webhooks.
+Creating, sealing and archiving a bundle are written to the [audit log](../operations/monitoring.md#audit-log) as `bundle.created`, `bundle.sealed` (the details say `unsigned`, or name the fingerprint of the GPG key that signed the manifest) and `bundle.archived`. A successful promotion is written to the [audit log](../operations/monitoring.md) as `bundle.promoted` (repository: the target) and emits the [`bundle.promoted` webhook event](../operations/webhooks.md) to the target repository's and the global webhooks.
 
 ```sh
 curl -X POST HOST/api/v1/bundles/shop/2.4.0/promote -H "Authorization: Bearer <TOKEN>" \

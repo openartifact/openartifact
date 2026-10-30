@@ -20,6 +20,8 @@ make bench    # go test -bench=. -benchmem -run=^$ ./...
 
 Runs every `Benchmark*` function with allocation reporting: package parsers (`pkg/deb`, `pkg/maven`, `pkg/npm`, `pkg/rpm`), metadata builders (`internal/format/{deb,helm,maven,npm,pypi,rpm}`), auth, RBAC middleware, JSON encoding, search and workers. Narrow it with a package path, for example `go test -bench=. -benchmem -run='^$' ./internal/auth/`.
 
+The benchmark binaries are linked under `GOTMPDIR` (Go's default is `/tmp`). `make bench` sets it to `$XDG_CACHE_HOME/openartifact-bench` (else `~/.cache/openartifact-bench`) unless you already exported it; when you run `go test -bench` yourself on a machine with a small or quota-limited `/tmp`, export `GOTMPDIR` first, or the link fails with `link: cannot write /tmp/go-link-...: disk quota exceeded`.
+
 ### HTTP load scenarios
 
 ```sh
@@ -169,7 +171,7 @@ Quota reservation is a single conditional upsert on the repository's `storage_qu
 
 ### HTTP caching
 
-The embedded SPA is gzip-precompressed at startup; hashed `assets/*` get `Cache-Control: public, max-age=31536000, immutable`, `index.html` gets `no-cache` with an ETag. Package metadata endpoints (maven-metadata.xml and checksums, deb Release/Packages, rpm repodata, helm `index.yaml`, PyPI simple, npm packument) send an ETag and answer `If-None-Match` with 304 after authorisation. Only anonymous reads of public repositories are `public`; authenticated responses are `private, no-cache` with `Vary: Authorization`.
+The embedded SPA is gzip-precompressed at build time (or, for a build without `scripts/precompress.js`, on the first request of each asset), never at startup, and is streamed from the binary rather than held in memory; hashed `assets/*` get `Cache-Control: public, max-age=31536000, immutable`, `index.html` gets `no-cache` with an ETag. Package metadata endpoints (maven-metadata.xml and checksums, deb Release/Packages, rpm repodata, helm `index.yaml`, PyPI simple, npm packument) send an ETag and answer `If-None-Match` with 304 after authorisation. Only anonymous reads of public repositories are `public`; authenticated responses are `private, no-cache` with `Vary: Authorization`.
 
 ### Rendered metadata cache and compression
 

@@ -123,9 +123,14 @@ type StorageConfig struct {
 	// empty uses https://<account>.blob.core.windows.net.
 	AzureEndpoint string `yaml:"azureEndpoint"`
 	// StagingPath is the spool directory for server-relayed presigned uploads
-	// on oci storage (filesystem uses <path>/staging); empty means
-	// <tmp>/openartifact-staging.
+	// on oci storage (filesystem uses <path>/staging). Required for oci when
+	// uploads are relayed (it also holds the relay signing key); use a
+	// persistent directory.
 	StagingPath string `yaml:"stagingPath"`
+	// SpoolPath is the directory where s3, azure and oci spool a blob to disk
+	// while verifying it before the upload; leftovers of a crash are swept from
+	// it at startup. Empty means the system temp dir (not swept).
+	SpoolPath string `yaml:"spoolPath"`
 	// PublicURL is the public base URL of this server (BASE_URL) when the
 	// operator set one, filled in by the config loader; server-relayed upload
 	// URLs point at it.
@@ -134,6 +139,14 @@ type StorageConfig struct {
 	// configured, lets server-relayed upload URLs point at the origin of the
 	// request that asks for them (internal/publicurl) instead of PublicURL.
 	PublicURLFromRequest bool `yaml:"-"`
+	// SafeDial makes every outbound connection of the backend go through
+	// netutil.GuardTransport: loopback, private, link-local and cloud-metadata
+	// addresses are refused when the connection is made (so DNS rebinding
+	// cannot beat the check at save time), the private ones unless
+	// OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true. It is set for backends
+	// defined through the admin API and the database; the storage section of
+	// the operator's own config file is trusted and dials unrestricted.
+	SafeDial bool `yaml:"-"`
 	// OCIInsecure allows plain HTTP to the OCI registry (dev and testing only).
 	OCIInsecure bool `yaml:"ociInsecure"`
 	// OCIUsername is the OCI registry user.

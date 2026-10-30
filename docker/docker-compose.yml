@@ -37,12 +37,14 @@ x-openartifact-env: &openartifact-env
   DB_SSLMODE: disable
   STORAGE_BACKEND: filesystem
   STORAGE_PATH: /var/lib/artifacts
-  # Required for OIDC/SAML login state to survive restarts. Set in docker/.env.
-  AUTH_HMAC_KEY: ${AUTH_HMAC_KEY:-}
-  # Encrypts upstream passwords, webhook secrets and other stored credentials
-  # at rest. Empty means they are stored in plaintext. Keep it stable: a
-  # changed key cannot decrypt what the old one sealed. Set in docker/.env.
-  OPENARTIFACT_SECRET_KEY: ${OPENARTIFACT_SECRET_KEY:-}
+  # Signs OIDC/SAML login state; required so it survives restarts and is the
+  # same on every replica. Generate with `openssl rand -hex 32` in docker/.env.
+  AUTH_HMAC_KEY: ${AUTH_HMAC_KEY:?set AUTH_HMAC_KEY in docker/.env (openssl rand -hex 32)}
+  # Encrypts upstream passwords, webhook secrets, signing keys and other stored
+  # credentials at rest; required, so nothing is ever stored in plaintext. Keep
+  # it stable: a changed key cannot decrypt what the old one sealed.
+  # Generate with `openssl rand -hex 32` in docker/.env.
+  OPENARTIFACT_SECRET_KEY: ${OPENARTIFACT_SECRET_KEY:?set OPENARTIFACT_SECRET_KEY in docker/.env (openssl rand -hex 32)}
   # First admin password; empty generates one and prints it once (24h validity).
   # Prefer a file mount plus OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE for real deployments.
   OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD: ${OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD:-}
@@ -83,7 +85,7 @@ x-openartifact-env: &openartifact-env
 
 services:
   postgres:
-    image: docker.io/postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    image: docker.io/postgres:18-alpine@sha256:898c60cb390d1085bc97bdd6a1ae968757421df394b071848b52b1c09c89d6a5
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

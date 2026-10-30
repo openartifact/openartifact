@@ -93,8 +93,9 @@ func (a *app) stopWorkRequests() {
 	}
 }
 
-// flushWorkRequests gives back the requests whose work did not finish, so
-// another worker takes them over at once instead of after the lease lapses.
+// flushWorkRequests settles what the drained workers finished and gives back
+// the claims of the requests whose work did not, so another worker takes them
+// over at once instead of after the lease lapses.
 func (a *app) flushWorkRequests() {
 	c := a.workers.requests
 	if c == nil {
@@ -104,7 +105,7 @@ func (a *app) flushWorkRequests() {
 	ctx, cancel := context.WithTimeout(context.Background(), backgroundDrainTimeout)
 	defer cancel()
 
-	c.Flush(ctx)
+	c.Release(ctx)
 }
 
 // startWorkRequests starts taking the requests of the web processes, after

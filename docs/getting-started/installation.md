@@ -41,10 +41,11 @@ Compose also substitutes these variables from `docker/.env` (they are not listed
 
 | Variable | Default | Effect |
 |---|---|---|
-| `AUTH_HMAC_KEY` | empty (random key generated once, persisted in the database) | Signs OIDC/SAML login state; optional, a configured value wins over the stored one |
+| `AUTH_HMAC_KEY` | none, required | Signs OIDC/SAML login state; compose refuses to start without it (`openssl rand -hex 32`). `docker/.env.example` lists it, together with the equally required `OPENARTIFACT_SECRET_KEY` |
+| `OPENARTIFACT_ROLE` | `all` | Process role of the `openartifact` service: `all`, `web` or `worker` ([scaling](../operations/scaling.md)) |
 | `OPENARTIFACT_BIND` | `127.0.0.1` | Host address the port mapping binds to |
 | `OPENARTIFACT_PORT` | `8080` | Host port mapped to the container's 8080. Containers carry no fixed names, so several projects can run side by side: `OPENARTIFACT_PORT=18080 docker compose -p oa-test -f docker/docker-compose.yml --env-file docker/.env up -d --build` (add `-v` to `down` to drop that project's volumes) |
-| `OPENARTIFACT_VERSION` | `dev` | Build argument; the version reported by `/health`, the log, `-version` and the System page. `make docker-up` sets it from the `VERSION` file |
+| `OPENARTIFACT_VERSION` | `dev` | Build argument and image tag (`openartifact:<version>`); the version reported by `/health`, the log, `-version` and the System page. `make docker-up` sets it from the `VERSION` file |
 | `OPENARTIFACT_COMMIT` | `unknown` | Build argument; commit reported by the System page. `make docker-up` sets the 7-character short SHA |
 | `OPENARTIFACT_BUILD_TIME` | `unknown` | Build argument; build time, RFC 3339 in UTC. `make docker-up` sets it |
 | `OPENARTIFACT_RUNTIME` | `dhi` | Build argument `RUNTIME`: runtime base image. `dhi` is Docker Hardened Images (`dhi.io/static`) and needs `docker login dhi.io` with a Docker ID; set `OPENARTIFACT_RUNTIME=distroless` to use the anonymous `gcr.io/distroless/static-debian13` instead (same layout, also shell-less) |
@@ -193,7 +194,7 @@ The version comes from the `VERSION` file and is injected with `-ldflags "-X mai
 
 - Set `BASE_URL` to the public URL when you use SSO or webhooks (see [the public URL](#the-public-url-and-base_url)); package clients work without it.
 - `OPENARTIFACT_TRUSTED_PROXIES` (comma-separated CIDRs): only requests whose TCP peer is in this list may set `X-Forwarded-For`/`X-Real-IP` and, for the URLs in package metadata, `X-Forwarded-Host`/`X-Forwarded-Proto`. Without it the peer address is always the client IP, so IP allowlist, rate limiting and login throttling see the proxy's address.
-- Session and CSRF cookies get `Secure` when the request arrived over TLS or carries `X-Forwarded-Proto: https`, so have the proxy set that header.
+- Session and login-issued CSRF cookies get `Secure` when the request arrived over TLS or carries `X-Forwarded-Proto: https`, so have the proxy set that header. The CSRF cookie the server seeds on API reads, and the origin check that guards Basic-token requests from browsers, believe `X-Forwarded-Proto` and `X-Forwarded-Host` only from `OPENARTIFACT_TRUSTED_PROXIES` (or follow an `https://` `BASE_URL`), so list the proxy there.
 - To terminate TLS in OpenArtifact: `SERVER_TLS_ENABLED=true` with `SERVER_TLS_CERT` and `SERVER_TLS_KEY` (PEM files; both required, minimum TLS 1.2). Only in this mode does the server send `Strict-Transport-Security`; behind a TLS-terminating proxy, set HSTS on the proxy.
 - Uploads can be large, and read/write timeouts default to `0` (unlimited). Raise or disable any body-size and timeout limit on the proxy as well.
 - `GET /health` (always 200, JSON with version and component status) and `GET /ready` (503 when the database is down) are the probe endpoints; the compose healthcheck uses `/health`.

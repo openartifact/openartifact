@@ -8,7 +8,7 @@
 // item a role cannot use is locked the same way everywhere.
 
 import { t, type TranslationKey } from '../i18n'
-import { SETTINGS_SECTIONS, type SettingsGroupId } from './settingsSections'
+import { listedSections, type SettingsGroupId } from './settingsSections'
 
 export type NavIcon = 'home' | 'repos' | 'packages' | 'projects' | 'bundles' | 'security' | 'settings'
 
@@ -88,7 +88,7 @@ export interface SettingsSection {
 
 /** Settings sections with their titles, for palette search; read from the settings registry. */
 export function settingsSections(): SettingsSection[] {
-  return SETTINGS_SECTIONS.map((s) => ({
+  return listedSections().map((s) => ({
     id: s.id,
     group: s.group,
     keywords: s.keywords.join(' '),

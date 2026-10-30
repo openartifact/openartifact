@@ -354,6 +354,34 @@
           }
         }
       },
+      "SearchError": {
+        "type": "object",
+        "description": "400 of the search endpoint. query_too_broad also carries the cap and the filters the query could add.",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Message"
+          },
+          "code": {
+            "type": "string",
+            "description": "missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum or query_too_broad"
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "query_too_broad only: the largest number of matches a search answers"
+          },
+          "narrow_by": {
+            "type": "array",
+            "description": "query_too_broad only: the filters the query does not use yet (name:<package>, format:<format>, repo:<repository> in q, flagged=true); empty when it already uses all of them",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
       "Error": {
         "type": "object",
         "properties": {
@@ -463,6 +491,10 @@
           "api_reference_enabled": {
             "type": "boolean",
             "description": "Whether the interactive API reference is served at /api/reference."
+          },
+          "ai_available": {
+            "type": "boolean",
+            "description": "Whether this binary contains AI analysis. False in a build made with -tags noai, where the AI routes answer 501 feature_unavailable; independent of whether an administrator enabled AI."
           }
         }
       },
@@ -2836,6 +2868,45 @@
           "expires_at": {
             "type": ["string", "null"],
             "format": "date-time"
+          }
+        }
+      },
+      "BundleSigningKey": {
+        "type": "object",
+        "description": "A stored GPG key the caller may seal bundles with. Never carries private key material, assignments or the creator.",
+        "required": [
+          "id",
+          "name",
+          "fingerprint",
+          "key_id",
+          "algorithm",
+          "user_id",
+          "active_global"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "UUID: the value to send as `gpg_key_id`"
+          },
+          "name": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "key_id": {
+            "type": "string",
+            "description": "Long key id (last 16 hex digits of the fingerprint)"
+          },
+          "algorithm": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "active_global": {
+            "type": "boolean",
+            "description": "The key that signs package metadata globally; the seal dialog preselects it"
           }
         }
       },
@@ -8247,6 +8318,14 @@
             }
           },
           {
+            "name": "cursor",
+            "in": "query",
+            "description": "Keyset paging of the newest-first per-file listing: the next_cursor of the previous response. page is then ignored and the response carries no total. Rejected when malformed, and with group=package or sort=name.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "flagged",
             "in": "query",
             "description": "With group=package, true keeps the packages whose latest version has a critical or high vulnerability, a secret finding or a quarantined scan result. Rejected without group=package.",
@@ -8264,13 +8343,22 @@
                   "type": "object",
                   "properties": {
                     "total": {
-                      "type": "integer"
+                      "type": "integer",
+                      "description": "Number of matching rows. Absent on a per-file request that carries a cursor, which does not count."
                     },
                     "page": {
                       "type": "integer"
                     },
                     "limit": {
                       "type": "integer"
+                    },
+                    "has_more": {
+                      "type": "boolean",
+                      "description": "Per-file listing only (not group=package): the listing continues after this page."
+                    },
+                    "next_cursor": {
+                      "type": "string",
+                      "description": "Per-file listing, newest first only: set whenever has_more is true; pass it as cursor to fetch the next page."
                     },
                     "packages": {
                       "type": "array",
@@ -8291,7 +8379,7 @@
             }
           },
           "400": {
-            "description": "Invalid sort, group, flagged or q"
+            "description": "Invalid sort, group, flagged, q or cursor"
           },
           "403": {
             "description": "Forbidden",
@@ -9180,6 +9268,16 @@
           "404": {
             "description": "SBOM report not found"
           },
+          "409": {
+            "description": "OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "501": {
             "description": "Attestations are not enabled"
           }
@@ -9267,6 +9365,16 @@
           },
           "403": {
             "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)",
             "content": {
               "application/json": {
                 "schema": {
@@ -12623,7 +12731,14 @@
             }
           },
           "400": {
-            "description": "Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum, or query_too_broad (more than 10000 matching packages, or a checksum shared by more than 500 files; add filters)"
+            "description": "Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum, or query_too_broad (more than 10000 matching packages, or a checksum shared by more than 500 files; add filters). A query_too_broad on q lists the filters the query could add in narrow_by",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchError"
+                }
+              }
+            }
           }
         }
       }
@@ -20216,6 +20331,48 @@
         }
       }
     },
+    "/api/v1/bundles/signing-keys": {
+      "get": {
+        "summary": "List the keys the caller may seal bundles with",
+        "description": "Exactly the stored GPG keys the caller may send as `gpg_key_id` when sealing: every stored key for an administrator, otherwise the keys a `gpg.bundleSigners` grant names for the caller. The package-signing key of the server configuration (`config`) is never listed, since it cannot sign bundles. A key the caller may not use is indistinguishable from one that does not exist; an empty list means the seal dialog offers no signing.",
+        "tags": [
+          "Bundles"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "keys"
+                  ],
+                  "properties": {
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BundleSigningKey"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/bundles/{name}/{version}": {
       "get": {
         "summary": "Get bundle",
@@ -20483,7 +20640,7 @@
     "/api/v1/bundles/{name}/{version}/seal": {
       "post": {
         "summary": "Seal bundle",
-        "description": "Seals a draft bundle. With `gpg_key_id` (a key id from the admin GPG list, a fingerprint, or `config`) the bundle manifest is signed and the armored detached signature stored with the bundle (`gpg_key_id` = signer fingerprint, `gpg_signature`). An unknown key answers 400 validation_failed.",
+        "description": "Seals a draft bundle. With `gpg_key_id` (a stored key id or fingerprint; see `GET /api/v1/bundles/signing-keys` for the keys the caller may use) the bundle manifest is signed and the armored detached signature stored with the bundle (`gpg_key_id` = signer fingerprint, `gpg_signature`). Signing needs the global `manage` permission or a `gpg.bundleSigners` grant for the key; the package-signing key of the server configuration (`config`) never signs bundles. Every refusal of the key answers 403 `signer_forbidden`; an administrator naming an unknown key gets 400 validation_failed.",
         "tags": [
           "Bundles"
         ],
@@ -21708,10 +21865,13 @@
         ],
         "responses": {
           "302": {
-            "description": "302"
+            "description": "Redirect to the identity provider"
           },
-          "default": {
-            "description": "Error",
+          "303": {
+            "description": "Sign-in failed: redirect to /login?sso_error=<code> (a closed set of codes, see the SSO guide). The browser reaches this endpoint by navigation, so a failure is never a JSON body."
+          },
+          "400": {
+            "description": "Bad request: the URL contains a NUL byte (code bad_request)",
             "content": {
               "application/json": {
                 "schema": {
@@ -21755,10 +21915,13 @@
         ],
         "responses": {
           "302": {
-            "description": "302"
+            "description": "Signed in: redirect to the page given as redirect on login (or /)"
           },
-          "default": {
-            "description": "Error",
+          "303": {
+            "description": "Sign-in failed: redirect to /login?sso_error=<code> (a closed set of codes, see the SSO guide). The browser reaches this endpoint by navigation, so a failure is never a JSON body."
+          },
+          "400": {
+            "description": "Bad request: the URL contains a NUL byte (code bad_request)",
             "content": {
               "application/json": {
                 "schema": {
@@ -21833,10 +21996,13 @@
         ],
         "responses": {
           "302": {
-            "description": "302"
+            "description": "Redirect to the identity provider"
           },
-          "default": {
-            "description": "Error",
+          "303": {
+            "description": "Sign-in failed: redirect to /login?sso_error=<code> (a closed set of codes, see the SSO guide). The browser reaches this endpoint by navigation, so a failure is never a JSON body."
+          },
+          "400": {
+            "description": "Bad request: the URL contains a NUL byte (code bad_request)",
             "content": {
               "application/json": {
                 "schema": {
@@ -21899,10 +22065,13 @@
         ],
         "responses": {
           "302": {
-            "description": "302"
+            "description": "Signed in: redirect to the RelayState target (or /)"
           },
-          "default": {
-            "description": "Error",
+          "303": {
+            "description": "Sign-in failed: redirect to /login?sso_error=<code> (a closed set of codes, see the SSO guide). The browser reaches this endpoint by navigation, so a failure is never a JSON body."
+          },
+          "400": {
+            "description": "Bad request: the URL contains a NUL byte (code bad_request)",
             "content": {
               "application/json": {
                 "schema": {
@@ -24291,7 +24460,7 @@
     "/api/v1/repositories/{name}/packages/{id}/delta": {
       "get": {
         "summary": "Download a binary delta",
-        "description": "Returns a binary diff that turns the package whose sha256 is given in `from` into the target package. The delta is generated on demand and cached. Applies to deb and rpm packages. Requires read access.",
+        "description": "Returns a binary diff that turns the package whose sha256 is given in `from` into the target package. The delta is generated on demand and cached, so the first request can take a while; concurrent requests for the same delta share one run. Generation is bounded: a package larger than 64 MiB (8 MiB when the caller is not signed in, for example on a public repository) is refused with 413, and a busy server answers 503 with `Retry-After`. An already stored delta is served whatever its size. Applies to deb and rpm packages. Requires read access.",
         "tags": [
           "Repositories"
         ],
@@ -24386,7 +24555,24 @@
             }
           },
           "413": {
-            "description": "Package too large for delta generation",
+            "description": "Package too large for delta generation (over 64 MiB, or over 8 MiB for a caller that is not signed in)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Delta generation is busy: the queue of generations waiting for a slot, or the callers waiting for this one, is full. Retry after the Retry-After delay",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -25094,6 +25280,16 @@
           "404": {
             "description": "Repository, report or image not found"
           },
+          "409": {
+            "description": "OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "507": {
             "description": "Repository storage quota exceeded"
           },
@@ -25182,6 +25378,16 @@
           "404": {
             "description": "Repository, report or image not found"
           },
+          "409": {
+            "description": "OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "507": {
             "description": "Repository storage quota exceeded"
           },
@@ -25217,6 +25423,16 @@
               }
             }
           },
+          "409": {
+            "description": "OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "501": {
             "description": "Attestations are not enabled"
           },
@@ -25248,6 +25464,16 @@
               "application/x-pem-file": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

@@ -38,6 +38,12 @@ describe('repositories api', () => {
     expect(seen.urls[1]).toBe('/api/v1/repositories/r/packages')
   })
 
+  it('listPackages sends the keyset cursor', async () => {
+    const seen = stubFetch([{ packages: [], has_more: false }])
+    await listPackages('r', { limit: 100, cursor: 'abc_-9' })
+    expect(seen.urls[0]).toBe('/api/v1/repositories/r/packages?limit=100&cursor=abc_-9')
+  })
+
   it('downloadPackage preflights without reading the body, then lets the browser stream the file', async () => {
     const seen: { url: string; signal?: AbortSignal }[] = []
     spyOn(globalThis, 'fetch').mockImplementation((async (url: string, init?: RequestInit) => {
@@ -131,5 +137,30 @@ describe('listPackageVersions', () => {
     expect(rows).toHaveLength(1)
     expect(seen.urls).toHaveLength(1)
     expect(seen.urls[0]).toContain('package_name=%40a%2Fb')
+  })
+
+  it('walks the rows by next_cursor until has_more is false, without page or total', async () => {
+    const row = (id: string) => ({ id, name: '@a/b', version: id, format: 'npm' })
+    const seen = stubFetch([
+      { total: 3, page: 1, limit: 100, has_more: true, next_cursor: 'c1', packages: [row('1'), row('2')] },
+      { page: 1, limit: 100, has_more: true, next_cursor: 'c2', packages: [row('3')] },
+      { page: 1, limit: 100, has_more: false, packages: [row('4')] },
+    ])
+    const rows = await listPackageVersions('r', '@a/b', 'npm')
+    expect(rows.map((r) => r.id)).toEqual(['1', '2', '3', '4'])
+    expect(seen.urls).toHaveLength(3)
+    expect(seen.urls[0]).not.toContain('cursor=')
+    expect(seen.urls[1]).toContain('cursor=c1')
+    expect(seen.urls[2]).toContain('cursor=c2')
+    for (const u of seen.urls) {
+      expect(u).not.toContain('page=')
+      expect(u).toContain('package_name=%40a%2Fb')
+    }
+  })
+
+  it('stops on an empty page or a missing cursor even if has_more is set', async () => {
+    const seen = stubFetch([{ has_more: true, packages: [{ id: '1', name: 'x', version: '1', format: 'npm' }] }])
+    expect(await listPackageVersions('r', 'x')).toHaveLength(1)
+    expect(seen.urls).toHaveLength(1)
   })
 })

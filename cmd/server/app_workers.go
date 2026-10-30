@@ -283,8 +283,13 @@ func (a *app) startJournal() {
 		ReconcileInterval: cfg.Recovery.Journal.ReconcileInterval,
 	})
 
-	if err := w.journal.SetEnabled(context.Background(), cfg.Recovery.Journal.Enabled); err != nil {
+	switched, err := applyJournalSwitch(context.Background(), cfg, w.journal)
+	if err != nil {
 		a.log.Errorw("recovery journal unavailable (is the schema migrated?)", "error", err)
+		return
+	}
+
+	if !switched {
 		return
 	}
 
@@ -292,6 +297,27 @@ func (a *app) startJournal() {
 		w.journalWorker = recovery.NewWorker(w.journal, a.log, cfg.Recovery.Journal.Interval)
 		a.start(w.journalWorker.Start)
 	}
+}
+
+// journalSwitch is the part of the journal that owns the global database flag.
+type journalSwitch interface {
+	SetEnabled(ctx context.Context, enabled bool) error
+}
+
+// applyJournalSwitch stores the journal switch of cfg and reports whether it
+// did. The switch is one global database flag, and every false-to-true flip
+// queues a full resync: only the processes that run workers own it, so web pods
+// with a different config cannot flip it on each restart.
+func applyJournalSwitch(ctx context.Context, cfg *config.Config, j journalSwitch) (bool, error) {
+	if !cfg.Server.RunsWorkers() {
+		return false, nil
+	}
+
+	if err := j.SetEnabled(ctx, cfg.Recovery.Journal.Enabled); err != nil {
+		return false, err //nolint:wrapcheck // SetEnabled wraps with its own context
+	}
+
+	return true, nil
 }
 
 // dockerUploadDir is where docker blob uploads are staged.

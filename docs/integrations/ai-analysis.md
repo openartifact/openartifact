@@ -29,7 +29,7 @@ Full reference: [`.env.example`](../../.env.example), [`openartifact.example.yam
 
 ### Provider behavior
 
-All providers use the OpenAI chat-completions protocol: `POST <base>/chat/completions` for analysis and `GET <base>/models` for the model list, with `Authorization: Bearer <key>` when a key is set. The provider only changes the default base URL:
+All providers use the OpenAI chat-completions protocol: `POST <base>/chat/completions` for analysis and `GET <base>/models` for the model list, with `Authorization: Bearer <key>` when a key is set. A stored key that cannot be decrypted (`OPENARTIFACT_SECRET_KEY` changed or removed) is never sent: analysis and model listing fail until the key is entered again. The provider only changes the default base URL:
 
 | Provider | Default base URL | Examples |
 |---|---|---|
@@ -42,10 +42,10 @@ No other provider is implemented (`vertex` is not supported and the admin API re
 
 ### Runtime settings (UI / admin API)
 
-Admins can also configure AI in **Settings > AI analysis** (`/settings/ai`) or with `PUT /api/v1/admin/ai/config`. Those values are stored in the database (the API key encrypted with `OPENARTIFACT_SECRET_KEY`, and never returned: reads show a mask and `has_api_key`).
+Admins can also configure AI in **Settings > AI analysis** (`/settings/ai`) or with `PUT /api/v1/admin/ai/config`. Those values are stored in the database (the API key encrypted with `OPENARTIFACT_SECRET_KEY`, and never returned: reads show a mask and `has_api_key`). The stored key only ever goes to the endpoint it was saved for: a `PUT` that changes the provider or base URL (compared as the effective endpoint, so a provider default counts) must also carry a new `api_key` (or `""` to clear it), otherwise it answers `400 api_key_required` and nothing is saved.
 
 - Once `ai.enabled` has been saved there, the database decides `enabled`; every other field uses the stored value when non-empty and falls back to the env/YAML value otherwise. Without a saved setting, env/YAML apply.
-- Saving in the UI/API applies **immediately** in the running server: the model client and the auto-analysis switch are rebuilt, analyses already running finish on the old settings and every later one uses the new. Environment/YAML changes still need a restart. With several server replicas only the replica that handled the save changes; restart the others (or send the same `PUT` to each).
+- Saving in the UI/API applies **immediately** in the running server: the model client and the auto-analysis switch are rebuilt, analyses already running finish on the old settings and every later one uses the new. Environment/YAML changes still need a restart. Every other process (replicas of the API, processes with the `worker` [role](../operations/scaling.md)) reads the stored settings every 30 seconds and applies them when they changed, so a switch-off, a model change or a key rotation reaches them within that time, without a restart. A read that fails (database outage) leaves the settings in use as they are.
 - `GET /api/v1/admin/ai/config` returns the effective settings, resolved by the rules above, so AI enabled through env/YAML shows as enabled.
 - `auto_analyze` is stored as `ai.auto_analyze` and takes precedence over `AI_AUTO_ANALYZE` whenever it is saved, independently of `ai.enabled`.
 - Validation: `provider` in `openai|azure|ollama|custom`; `base_url` an absolute http(s) URL; `max_tokens` 0 to 200000; `timeout_secs` 0 to 600; `system_prompt` at most 16 KiB; `model`, `base_url`, `api_key` at most 2048 characters. Omitted fields are left unchanged; an empty string clears one.
@@ -60,7 +60,7 @@ All of these need the global `manage` permission (administrator) when called ove
 | `GET /api/v1/repositories/{name}/ai-analysis/{artifactID}` | one analysis, `404 not_found` if none |
 | `POST /api/v1/repositories/{name}/ai-analysis/{artifactID}/trigger` | queue an analysis, returns `202 {"status":"queued"}` |
 | `GET /api/v1/admin/ai/config`, `PUT /api/v1/admin/ai/config` | read / update runtime settings |
-| `POST /api/v1/admin/ai/test` | list models from the provider; optional body with the same fields as `PUT` tests unsaved settings (a masked or empty key means the stored one). Returns `{"ok":true,"models":[...]}` or `{"ok":false,"error":"..."}` |
+| `POST /api/v1/admin/ai/test` | list models from the provider; optional body with the same fields as `PUT` tests unsaved settings (a masked or empty key means the stored one, but only while the provider and base URL resolve to the stored endpoint; testing another endpoint needs its key in the request, or an explicit `"api_key": ""` for a keyless one, else `400 api_key_required`). Returns `{"ok":true,"models":[...]}` or `{"ok":false,"error":"..."}` |
 | `GET /api/v1/admin/ai/models` | model list from the stored settings; `502 upstream_error` on failure |
 
 ```sh

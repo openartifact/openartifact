@@ -8,6 +8,7 @@ import { createPinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import AISettingsPage from '../AISettingsPage.vue'
 import { useToastStore } from '../../../../stores/toast'
+import { t } from '../../../../i18n'
 
 // The server never returns the stored key: GET answers this placeholder when one is stored.
 const MASK = '••••••••'
@@ -22,9 +23,9 @@ interface Call {
 interface Server {
   calls: Call[]
   config: Record<string, unknown>
-  putError?: { status: number; error: string }
+  putError?: { status: number; error: string; code?: string }
   testResponse: { status: number; body: unknown }
-  getError?: { status: number; error: string }
+  getError?: { status: number; error: string; code?: string }
 }
 
 const STORED = {
@@ -48,10 +49,10 @@ function startServer(config: Record<string, unknown> = STORED): Server {
     const url = String(input)
     const method = init?.method ?? 'GET'
     if (method === 'GET' && url === '/api/v1/admin/ai/config') {
-      return server.getError ? json({ error: server.getError.error }, server.getError.status) : json(server.config)
+      return server.getError ? json({ error: server.getError.error, code: server.getError.code }, server.getError.status) : json(server.config)
     }
     server.calls.push({ method, url, body: JSON.parse(String(init?.body ?? '{}')) })
-    if (method === 'PUT') return server.putError ? json({ error: server.putError.error }, server.putError.status) : json(server.config)
+    if (method === 'PUT') return server.putError ? json({ error: server.putError.error, code: server.putError.code }, server.putError.status) : json(server.config)
     if (method === 'POST' && url === '/api/v1/admin/ai/test') return json(server.testResponse.body, server.testResponse.status)
     return json({ error: `unexpected ${method} ${url}` }, 500)
   }) as never)
@@ -139,6 +140,20 @@ describe('AISettingsPage load', () => {
     expect(server.calls).toEqual([])
     wrapper.unmount()
   })
+
+  it('says the build has no AI analysis (501 feature_unavailable): no form, no error toast, nothing to save', async () => {
+    const server = startServer()
+    server.getError = { status: 501, error: 'AI analysis is not compiled into this build (built with -tags noai)', code: 'feature_unavailable' }
+    const wrapper = await mountPage()
+
+    expect(wrapper.get('[data-testid="ai-unavailable"]').text()).toContain('not part of this build')
+    expect(wrapper.find('[role=alert]').exists()).toBe(false)
+    expect(document.getElementById('ai-base-url')).toBeNull()
+    expect(wrapper.toasts.visible.some((x) => x.level === 'error')).toBe(false)
+    expect(actionButton('Save').disabled).toBe(true)
+    expect(actionButton('Test').disabled).toBe(true)
+    wrapper.unmount()
+  })
 })
 
 describe('AISettingsPage save', () => {
@@ -221,6 +236,18 @@ describe('AISettingsPage save', () => {
     expect(wrapper.toasts.visible.some((x) => x.level === 'success')).toBe(false)
     // The edited value stays so the admin can fix it.
     expect(input('ai-base-url').value).toBe('http://169.254.169.254/')
+    wrapper.unmount()
+  })
+
+  it('tells the admin to enter the key again when the endpoint changed under the stored key (400 api_key_required)', async () => {
+    const server = startServer()
+    server.putError = { status: 400, error: 'api_key is required when the provider or base_url changes', code: 'api_key_required' }
+    const wrapper = await mountPage()
+
+    await typeInto(input('ai-base-url'), 'http://other.example/v1')
+    await click(actionButton('Save'))
+
+    expect(wrapper.toasts.visible.find((x) => x.level === 'error')?.title).toBe(t('adm.ai.apiKeyRequired'))
     wrapper.unmount()
   })
 })

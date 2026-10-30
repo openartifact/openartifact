@@ -5,6 +5,7 @@
 import { describe, it, expect, spyOn, afterEach } from 'bun:test'
 import {
   addBundleItems,
+  listBundleSigningKeys,
   listBundles,
   manifestUrl,
   promoteBundle,
@@ -48,6 +49,16 @@ describe('bundles api', () => {
 
     await sealBundle('shop', '1', 'ABCD')
     expect(JSON.parse(call(1).init.body as string)).toEqual({ gpg_key_id: 'ABCD' })
+  })
+
+  it('lists the keys the user may seal with, empty when the answer has none', async () => {
+    const key = { id: 'k-1', name: 'r', fingerprint: 'AB', key_id: 'AB', algorithm: 'ed25519', user_id: 'u', active_global: true }
+    spy = spyOn(globalThis, 'fetch').mockResolvedValue(json({ keys: [key] }))
+    expect(await listBundleSigningKeys()).toEqual([key])
+    expect(call().url).toBe('/api/v1/bundles/signing-keys')
+
+    spy.mockResolvedValue(json({}))
+    expect(await listBundleSigningKeys()).toEqual([])
   })
 
   it('wraps items and sends the promote contract', async () => {

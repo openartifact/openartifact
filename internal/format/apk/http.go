@@ -57,6 +57,7 @@ type Regenerator interface{ NotifyStale(repoID string) }
 
 // HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreateApkPackage(ctx context.Context, p *models.ApkPackage) error
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
@@ -240,7 +241,7 @@ func (h *HTTPHandler) servePackage(w http.ResponseWriter, r *http.Request, repo 
 		return
 	}
 
-	if h.DenyIfQuarantined(w, r, repo.ID, quarantine.PathKeys(t.file, t.dir.path()+"/"+t.file, r.URL.Path)...) {
+	if h.DenyIfQuarantined(w, r, repo.ID, quarantine.PathKeys(pkg.ID, t.file, t.dir.path()+"/"+t.file, r.URL.Path)...) {
 		return
 	}
 

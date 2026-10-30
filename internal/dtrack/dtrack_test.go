@@ -535,6 +535,63 @@ func TestClientMapsNotFound(t *testing.T) {
 	checkErrorIs(t, err, ErrNotFound)
 }
 
+// TestClientNeverFollowsRedirectToAnotherOrigin: the API key and the BOM must
+// not reach whatever a 307/308 points at; a same-origin redirect still works.
+func TestClientNeverFollowsRedirectToAnotherOrigin(t *testing.T) {
+	allowLoopback(t)
+
+	var hits atomic.Int32
+
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(other.Close)
+
+	for _, code := range []int{http.StatusFound, http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, other.URL+"/api/v1/bom", code)
+		}))
+
+		c, err := NewClient(srv.URL, "secret-key")
+		mustNoErr(t, err)
+
+		_, err = c.UploadBOM(context.Background(), "p", "1", []byte(`{"bomFormat":"CycloneDX"}`))
+		checkErrorIs(t, err, ErrCrossOriginRedirect, http.StatusText(code))
+		srv.Close()
+	}
+
+	if n := hits.Load(); n != 0 {
+		t.Fatalf("the other origin was contacted %d times", n)
+	}
+
+	var same atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/moved" {
+			same.Add(1)
+			if r.Header.Get("X-Api-Key") != "secret-key" {
+				t.Errorf("same-origin redirect lost the API key")
+			}
+
+			_, _ = w.Write([]byte(`{"version":"4.12.0"}`))
+
+			return
+		}
+
+		http.Redirect(w, r, "/moved", http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := NewClient(srv.URL, "secret-key")
+	mustNoErr(t, err)
+
+	var out struct{ Version string }
+
+	mustNoErr(t, c.getJSON(context.Background(), "version", "/api/version", nil, &out))
+	checkEqual(t, int32(1), same.Load())
+}
+
 func TestSafeClientBlocksLoopbackTargets(t *testing.T) {
 	dt := newFakeDT(t)
 

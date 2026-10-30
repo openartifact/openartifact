@@ -36,6 +36,7 @@ const maxGoModUploadBytes = 100 << 20
 
 // HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreateGoModule(ctx context.Context, mod *models.GoModule) error
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
@@ -76,8 +77,22 @@ func IsUploadPath(tail string) bool {
 }
 
 // HandlePut serves a GOPROXY upload. Callers route here only when
-// IsUploadPath matched the request tail.
+// IsUploadPath matched the request tail. The shared PUT route reaches every
+// hosted repository, so a repository of another format answers 404.
 func (h *HTTPHandler) HandlePut(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.ResolveRepo(r.Context(), urlparams.Vars(r)["name"])
+	if err != nil {
+		h.Log.Errorw("failed to resolve repo", "name", urlparams.Vars(r)["name"], "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	if repo == nil || repo.Format != "go" {
+		http.NotFound(w, r)
+		return
+	}
+
 	h.dispatchPut(w, r)
 }
 
@@ -267,7 +282,7 @@ func (h *HTTPHandler) handleInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.DenyIfQuarantined(w, r, repoID, versionQuarantineKeys(modulePath, version)...) {
+	if h.DenyIfQuarantined(w, r, repoID, versionQuarantineKeys(mod.ID, modulePath, version)...) {
 		return
 	}
 
@@ -285,11 +300,12 @@ func (h *HTTPHandler) handleInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 // versionQuarantineKeys are the spellings under which a go module version may
-// be quarantined: any of its files, or the module@version coordinate.
-func versionQuarantineKeys(modulePath, version string) []string {
+// be quarantined: the id of its zip file (the listing and scan id of the
+// version), any of its files, or the module@version coordinate.
+func versionQuarantineKeys(id, modulePath, version string) []string {
 	base := modulePath + "/@v/" + version
 
-	return quarantine.PathKeys(base+".zip", base+".mod", base+".info", modulePath+"@"+version)
+	return quarantine.PathKeys(id, base+".zip", base+".mod", base+".info", modulePath+"@"+version)
 }
 
 // dropQuarantined removes quarantined versions so list, @latest and .info do
@@ -302,7 +318,7 @@ func (h *HTTPHandler) dropQuarantined(
 	kept := make([]*models.GoModule, 0, len(versions))
 
 	for _, v := range versions {
-		blocked, err := quarantine.IsQuarantined(ctx, h.DB, repoID, versionQuarantineKeys(modulePath, v.Version)...)
+		blocked, err := quarantine.IsQuarantined(ctx, h.DB, repoID, versionQuarantineKeys(v.ID, modulePath, v.Version)...)
 		if err != nil {
 			return nil, fmt.Errorf("check quarantine: %w", err)
 		}
@@ -340,7 +356,7 @@ func (h *HTTPHandler) handleMod(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(
-		modulePath+"/@v/"+version+".mod", modulePath+"@"+version, r.URL.Path)...) {
+		mod.ID, modulePath+"/@v/"+version+".mod", modulePath+"@"+version, r.URL.Path)...) {
 		return
 	}
 
@@ -374,7 +390,7 @@ func (h *HTTPHandler) handleZip(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(
-		modulePath+"/@v/"+version+".zip", modulePath+"@"+version, r.URL.Path)...) {
+		mod.ID, modulePath+"/@v/"+version+".zip", modulePath+"@"+version, r.URL.Path)...) {
 		return
 	}
 

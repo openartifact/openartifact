@@ -88,7 +88,7 @@ jobs:
     needs: batch
     if: ${{ !cancelled() }} # a crash found by the batch run must not skip pruning
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     permissions:
       contents: read
       actions: read
@@ -111,6 +111,19 @@ jobs:
             fail "cannot push to openartifact-fuzz-storage: it needs Contents: read and write"
           rm -f repo.json
 
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fuzz budget
+        id: budget
+        run: |
+          targets=$(grep -rh --include='*_test.go' '^func Fuzz' . | wc -l)
+          seconds=$((targets * 30))
+          [ "$seconds" -ge 3600 ] || seconds=3600
+          echo "$targets fuzz targets, budget $seconds s"
+          echo "seconds=$seconds" >> "$GITHUB_OUTPUT"
+
       - name: Build fuzzers
         uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
         with:
@@ -124,10 +137,11 @@ jobs:
           language: go
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # Not a run time: it is split among the targets (minus the time each
-          # one took) and caps the merge of one target's corpus. 1200 s left
-          # ~11 s per target by the 90th of 141 and the merge of
+          # one took) and caps the merge of one target's corpus. The budget is
+          # 30 s per target, counted by the "Fuzz budget" step (202 targets:
+          # 6060 s); a flat 1200 s once left ~11 s per target and the merge of
           # internal_format_conan_FuzzGlobRegexp timed out and failed the job.
-          fuzz-seconds: 3600
+          fuzz-seconds: ${{ steps.budget.outputs.seconds }}
           mode: prune
           sanitizer: address
           storage-repo: https://x-access-token:${{ secrets.FUZZ_STORAGE_TOKEN }}@github.com/openartifact/openartifact-fuzz-storage.git

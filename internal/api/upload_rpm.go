@@ -113,14 +113,34 @@ func (h *RPMUploadHandler) Register(router chi.Router) {
 	h.log.Infow("RPM upload handler registered")
 }
 
+// lookupRepo loads the repository named in the URL. It answers 500 on a
+// database error and 404 when there is no such repository, and returns nil in
+// both cases (a database outage must not look like a missing repository, or CI
+// retries are misled).
+func (h *RPMUploadHandler) lookupRepo(w http.ResponseWriter, r *http.Request, repoName string) *models.Repository {
+	repo, err := h.db.GetRepositoryByName(r.Context(), repoName)
+	if err != nil {
+		h.log.Errorw("failed to look up repository", "repository", repoName, "error", err)
+		writeError(w, http.StatusInternalServerError, "DATABASE_ERROR", "failed to look up repository")
+
+		return nil
+	}
+
+	if repo == nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "repository not found: "+repoName)
+		return nil
+	}
+
+	return repo
+}
+
 func (h *RPMUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 
 	// Dispatch to the correct format handler based on the repository's format.
-	repo, err := h.db.GetRepositoryByName(r.Context(), repoName)
-	if err != nil || repo == nil {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "repository not found: "+repoName)
+	repo := h.lookupRepo(w, r, repoName)
+	if repo == nil {
 		return
 	}
 
@@ -162,7 +182,8 @@ func (h *RPMUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 
 		uploadResult = "error"
 
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", fmt.Sprintf("failed to parse form: %v", err))
+		h.log.Debugw("RPM upload: multipart form unreadable", "repository", repoName, "error", err)
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid multipart upload form")
 
 		return
 	}
@@ -470,21 +491,24 @@ func (h *RPMUploadHandler) writeUploadError(w http.ResponseWriter, err error, re
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid rpm package: "+err.Error())
 	case errors.Is(err, quota.ErrExceeded):
 		quota.WriteExceeded(w)
-	case writeSigningError(w, err):
+	case h.writeSigningError(w, err, repoName, filename):
 	default:
 		h.log.Errorw("RPM upload failed", "repository", repoName, "filename", filename, "error", err)
 		writeError(w, http.StatusInternalServerError, "UPLOAD_ERROR", "upload processing failed")
 	}
 }
 
-// writeSigningError answers the sign_packages failures and reports whether err was one.
-func writeSigningError(w http.ResponseWriter, err error) bool {
+// writeSigningError answers the sign_packages failures and reports whether err
+// was one. The cause of a signing failure (parser and signer detail) is logged,
+// not sent.
+func (h *RPMUploadHandler) writeSigningError(w http.ResponseWriter, err error, repoName, filename string) bool {
 	switch {
 	case errors.Is(err, errNoSigningKey):
 		writeError(w, http.StatusConflict, "SIGNING_KEY_REQUIRED",
 			"the repository signs packages (sign_packages) but no GPG key is active for it; activate a key or turn the setting off")
 	case errors.Is(err, errSigningFailed):
-		writeError(w, http.StatusUnprocessableEntity, "SIGNING_FAILED", "cannot sign the package: "+err.Error())
+		h.log.Errorw("RPM package signing failed", "repository", repoName, "filename", filename, "error", err)
+		writeError(w, http.StatusUnprocessableEntity, "SIGNING_FAILED", "cannot sign the package")
 	default:
 		return false
 	}
@@ -661,9 +685,8 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 	packageID := vars["id"]
 
 	// Dispatch to deb handler for deb repositories
-	repo, err := h.db.GetRepositoryByName(r.Context(), repoName)
-	if err != nil || repo == nil {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "repository not found: "+repoName)
+	repo := h.lookupRepo(w, r, repoName)
+	if repo == nil {
 		return
 	}
 
@@ -679,6 +702,13 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 	// Every other format deletes through the generic package deleter.
 	if repo.Format != "rpm" {
 		h.deleteOtherFormat(w, r, repo)
+		return
+	}
+
+	// Package ids are uuids: any other text cannot name a package, and would
+	// reach the uuid column and come back as a 500.
+	if !isUUIDString(packageID) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "package not found")
 		return
 	}
 
@@ -779,9 +809,8 @@ func (h *RPMUploadHandler) handleCompsUpload(w http.ResponseWriter, r *http.Requ
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 
-	repo, err := h.db.GetRepositoryByName(r.Context(), repoName)
-	if err != nil || repo == nil {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "repository not found: "+repoName)
+	repo := h.lookupRepo(w, r, repoName)
+	if repo == nil {
 		return
 	}
 

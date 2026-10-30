@@ -4,14 +4,12 @@
 
 package manifest
 
-import (
-	"os"
-	"testing"
-)
-
-// TestMain registers the rule of every format once, the way
+// init registers the rule of every format once, the way
 // internal/format/plugin does at startup, so the tests can dispatch by format.
-func TestMain(m *testing.M) {
+// It is an init, not a TestMain, so the fuzz targets registered by ClusterFuzzLite
+// (which compiles the _test.go files into the fuzzer but never runs TestMain)
+// see the same registry.
+func init() { //nolint:gochecknoinits // test-only format registry, see above
 	for format, rule := range map[string]Rule{
 		"npm":      NPMRule,
 		"pypi":     PyPIRule,
@@ -32,6 +30,4 @@ func TestMain(m *testing.M) {
 	} {
 		Register(format, rule)
 	}
-
-	os.Exit(m.Run())
 }

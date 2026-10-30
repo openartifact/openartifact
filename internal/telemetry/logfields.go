@@ -39,4 +39,9 @@ func LogFields(ctx context.Context) []any {
 // The provider maps the zap level to the record severity and adds the service.*
 // resource attributes; a context field (see LogFields) sets the trace and span
 // ids.
-func LogCore() zapcore.Core { return otelzap.NewCore(scope) }
+//
+// Records leave the process, so the core scrubs them first (see scrubCore):
+// URLs lose userinfo and query string, request paths lose download tickets,
+// query fields are replaced and error text is cleaned. The log output the core
+// is teed with is not affected.
+func LogCore() zapcore.Core { return scrubCore{otelzap.NewCore(scope)} }

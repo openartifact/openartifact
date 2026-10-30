@@ -37,6 +37,11 @@ var ErrUnsupportedKey = errors.New("attestation key must be ECDSA or Ed25519")
 // ErrNoKeyBlock is returned when a key file holds no PEM private key.
 var ErrNoKeyBlock = errors.New("no PEM private key found")
 
+// ErrSecretKeyRequired is returned when a signing key would have to be
+// generated and stored but OPENARTIFACT_SECRET_KEY is not set: without it the
+// private key would be written to the database as plaintext PEM.
+var ErrSecretKeyRequired = errors.New("OPENARTIFACT_SECRET_KEY must be set to store the attestation signing key")
+
 // SettingsStore is the part of the database the generated key needs.
 type SettingsStore interface {
 	GetSystemSetting(ctx context.Context, key string) (string, error)
@@ -195,6 +200,10 @@ func (s *Service) loadOrGenerate(ctx context.Context) (*Signer, error) {
 	}
 
 	if stored == "" {
+		if !secretcrypto.Enabled() {
+			return nil, ErrSecretKeyRequired
+		}
+
 		pemKey, err := GenerateKeyPEM()
 		if err != nil {
 			return nil, err

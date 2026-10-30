@@ -310,7 +310,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 		e.log.Errorw("failed to create backup directory", "path", e.backupDir, "error", err)
 
 		job.Status = "failed"
-		job.ErrorMessage = fmt.Sprintf("failed to create backup directory: %v", err)
+		job.ErrorMessage = "failed to create backup directory"
 		_ = e.persistJob(ctx, job)
 
 		return err
@@ -324,7 +324,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 		e.log.Errorw("failed to create backup file", "path", tempFile, "error", err)
 
 		job.Status = "failed"
-		job.ErrorMessage = fmt.Sprintf("failed to create backup file: %v", err)
+		job.ErrorMessage = "failed to create backup file"
 		_ = e.persistJob(ctx, job)
 
 		return err
@@ -357,7 +357,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 		e.log.Errorw("failed to export backup", "job_id", jobID, "error", err)
 
 		job.Status = "failed"
-		job.ErrorMessage = err.Error()
+		job.ErrorMessage = exportFailureReason(err)
 		_ = e.persistJob(ctx, job)
 		_ = os.Remove(tempFile)
 
@@ -370,7 +370,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 		e.log.Errorw("failed to marshal manifest", "job_id", jobID, "error", err)
 
 		job.Status = "failed"
-		job.ErrorMessage = fmt.Sprintf("failed to marshal manifest: %v", err)
+		job.ErrorMessage = "failed to marshal manifest"
 		_ = e.persistJob(ctx, job)
 		_ = os.Remove(tempFile)
 
@@ -386,7 +386,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 		e.log.Errorw("failed to write manifest header", "job_id", jobID, "error", err)
 
 		job.Status = "failed"
-		job.ErrorMessage = fmt.Sprintf("failed to write manifest: %v", err)
+		job.ErrorMessage = "failed to write manifest"
 		_ = e.persistJob(ctx, job)
 		_ = os.Remove(tempFile)
 
@@ -397,7 +397,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 		e.log.Errorw("failed to write manifest content", "job_id", jobID, "error", err)
 
 		job.Status = "failed"
-		job.ErrorMessage = fmt.Sprintf("failed to write manifest: %v", err)
+		job.ErrorMessage = "failed to write manifest"
 		_ = e.persistJob(ctx, job)
 		_ = os.Remove(tempFile)
 
@@ -412,7 +412,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 		e.log.Errorw("failed to finalize backup archive", "job_id", jobID, "error", err)
 
 		job.Status = "failed"
-		job.ErrorMessage = fmt.Sprintf("failed to finalize backup archive: %v", err)
+		job.ErrorMessage = "failed to finalize backup archive"
 		_ = e.persistJob(ctx, job)
 		_ = os.Remove(tempFile)
 
@@ -425,7 +425,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 		e.log.Errorw("failed to stat backup file", "path", tempFile, "error", err)
 
 		job.Status = "failed"
-		job.ErrorMessage = fmt.Sprintf("failed to stat backup file: %v", err)
+		job.ErrorMessage = "failed to stat backup file"
 		_ = e.persistJob(ctx, job)
 		_ = os.Remove(tempFile)
 
@@ -438,7 +438,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 		e.log.Errorw("failed to rename backup file", "from", tempFile, "to", finalPath, "error", err)
 
 		job.Status = "failed"
-		job.ErrorMessage = fmt.Sprintf("failed to rename backup file: %v", err)
+		job.ErrorMessage = "failed to rename backup file"
 		_ = e.persistJob(ctx, job)
 		_ = os.Remove(tempFile)
 
@@ -506,7 +506,7 @@ type packageExport struct {
 // list-by-repo (or composable) method round-trips.
 //
 // Soft-deleted data (the trash: repositories and package rows with deleted_at
-// set) is not part of a backup. The export goes through the Database list
+// set) is not part of a backup. The export goes through the store list
 // methods, which treat trashed rows as nonexistent, so a trashed repository
 // is skipped with its contents and a restore brings back live data only.
 // Repository settings trash_retention_days and immutable_releases round-trip
@@ -1824,4 +1824,23 @@ func (e *Engine) restoreProjectGroups(ctx context.Context, r io.Reader, st *rest
 	}
 
 	return nil
+}
+
+// exportFailureReason is the reason stored with (and shown for) a failed
+// export: the fixed text of the failure's class, never the error itself, which
+// carries table names, SQL, blob ids and filesystem paths. The log has the cause.
+func exportFailureReason(err error) string {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return "backup was interrupted"
+	}
+
+	for _, class := range []error{
+		ErrBlobMissing, ErrBlobCorrupt, ErrBlobCountMismatch, errSnapshotStage, errMetadataStage, errBlobsStage,
+	} {
+		if errors.Is(err, class) {
+			return class.Error()
+		}
+	}
+
+	return "failed to export the backup data"
 }

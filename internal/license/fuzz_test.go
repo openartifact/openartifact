@@ -66,13 +66,14 @@ func operator(tok string) bool {
 // idTokens splits a license string into the words that name a license: it is
 // the reference tokenization the policy must be at least as fine as.
 func idTokens(expr string) ([]string, bool) {
-	var (
-		ids    []string
-		hasAnd bool
-	)
+	var ids []string
+
+	// "/", ";" and "|" join licenses without saying which applies: for an allow
+	// list they count as AND.
+	hasAnd := strings.ContainsAny(expr, "/;|")
 
 	for _, tok := range strings.FieldsFunc(expr, func(r rune) bool {
-		return strings.ContainsRune(" \t\r\n\v\f(),", r)
+		return strings.ContainsRune(" \t\r\n\v\f(),/;|", r)
 	}) {
 		switch {
 		case strings.EqualFold(tok, "AND"):

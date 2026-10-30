@@ -34,6 +34,7 @@ import (
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/publicurl"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/composer"
@@ -53,6 +54,7 @@ const distMaxAge = 3600
 
 // HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreateComposerPackage(ctx context.Context, p *models.ComposerPackage) error
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error

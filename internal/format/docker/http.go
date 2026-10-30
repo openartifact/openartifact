@@ -49,6 +49,7 @@ var errMountSourceGone = errors.New("mount source blob no longer exists")
 
 // HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	ChargeStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	CreateDockerBlob(ctx context.Context, blob *models.DockerBlob) error
@@ -60,6 +61,7 @@ type HTTPStore interface {
 	DeleteDockerTag(ctx context.Context, repoID string, image string, name string) error
 	DeleteDockerTagsByDigest(ctx context.Context, repoID string, image string, digest string) error
 	DeleteDockerUpload(ctx context.Context, repositoryID string, uploadUUID string) error
+	DockerBlobQuarantined(ctx context.Context, repoID string, digest string) (bool, error)
 	DockerImageExists(ctx context.Context, repoID string, image string) (bool, error)
 	EnsureBlob(ctx context.Context, sha256 string, mediaType string, size int64) (string, error)
 	GetDockerBlob(ctx context.Context, repoID string, digest string) (*models.DockerBlob, error)
@@ -69,6 +71,7 @@ type HTTPStore interface {
 	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
 	ListDockerManifestsBySubject(ctx context.Context, repoID string, image string, subjectDigest string) ([]*models.DockerManifest, error)
+	ListDockerTagIDsByDigest(ctx context.Context, repoID string, image string, digest string) ([]string, error)
 	ListDockerTags(ctx context.Context, repoID string, image string, last string, n int) ([]*models.DockerTag, error)
 	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
@@ -332,6 +335,27 @@ func (h *HTTPHandler) handleVersionCheck(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusOK)
 }
 
+// manifestQuarantined refuses the request (and returns true) when the manifest
+// is quarantined. A scan of an image is anchored on its tag row, the id the
+// package listing shows, so the ids of every live tag of the image that points at
+// the manifest count next to the manifest's own id, its digest and its paths.
+func (h *HTTPHandler) manifestQuarantined(
+	w http.ResponseWriter, r *http.Request, repoID, image, name, reference string, manifest *models.DockerManifest,
+) bool {
+	tagIDs, err := h.db.ListDockerTagIDsByDigest(r.Context(), repoID, image, manifest.Digest)
+	if err != nil {
+		h.log.Errorw("failed to list tags of manifest", "digest", manifest.Digest, "error", err)
+		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+		return true
+	}
+
+	keys := append(tagIDs, manifest.ID, manifest.Digest, reference,
+		name+"/manifests/"+reference, name+"/manifests/"+manifest.Digest, r.URL.Path)
+
+	return quarantine.Enforce(w, r, h.db, repoID, quarantine.PathKeys(keys...)...)
+}
+
 // handleGetManifest retrieves a manifest by tag or digest.
 func (h *HTTPHandler) handleGetManifest(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
@@ -391,8 +415,7 @@ func (h *HTTPHandler) handleGetManifest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if quarantine.Enforce(w, r, h.db, repo.ID, quarantine.PathKeys(
-		manifest.ID, manifest.Digest, reference, name+"/manifests/"+reference, name+"/manifests/"+manifest.Digest, r.URL.Path)...) {
+	if h.manifestQuarantined(w, r, repo.ID, image, name, reference, manifest) {
 		return
 	}
 
@@ -929,10 +952,43 @@ func (h *HTTPHandler) handleHeadManifest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if h.manifestQuarantined(w, r, repo.ID, image, name, reference, manifest) {
+		return
+	}
+
 	w.Header().Set("Content-Type", ocipath.ServedMediaType(manifest.MediaType))
 	w.Header().Set("Docker-Content-Digest", manifest.Digest)
 	w.Header().Set("Content-Length", strconv.FormatInt(manifest.Size, 10))
 	w.WriteHeader(http.StatusOK)
+}
+
+// blobQuarantined refuses the request (and returns true) when the blob itself
+// is quarantined or belongs to a quarantined image: a live manifest of the
+// repository that references it as config or layer is quarantined by its id,
+// digest or the id of a tag that points at it. Both checks fail closed.
+func (h *HTTPHandler) blobQuarantined(w http.ResponseWriter, r *http.Request, repoID, name string, blob *models.DockerBlob) bool {
+	if quarantine.Enforce(w, r, h.db, repoID, quarantine.PathKeys(
+		blob.ID, blob.Digest, name+"/blobs/"+blob.Digest, r.URL.Path)...) {
+		return true
+	}
+
+	held, err := h.db.DockerBlobQuarantined(r.Context(), repoID, blob.Digest)
+	if err != nil {
+		h.log.Errorw("failed to check quarantine of the image holding a blob", "digest", blob.Digest, "error", err)
+		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+		return true
+	}
+
+	if !held {
+		return false
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	_, _ = w.Write([]byte(`{"error":"artifact is quarantined","code":"ARTIFACT_QUARANTINED"}` + "\n"))
+
+	return true
 }
 
 // handleGetBlob downloads a blob.
@@ -951,16 +1007,15 @@ func (h *HTTPHandler) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.blobQuarantined(w, r, repo.ID, name, blob) {
+		return
+	}
+
 	size, err := h.blobSize(r.Context(), blob)
 	if err != nil {
 		h.log.Errorw("failed to size blob", "digest", digest, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 
-		return
-	}
-
-	if quarantine.Enforce(w, r, h.db, repo.ID, quarantine.PathKeys(
-		blob.ID, digest, name+"/blobs/"+digest, r.URL.Path)...) {
 		return
 	}
 
@@ -1004,6 +1059,10 @@ func (h *HTTPHandler) handleHeadBlob(w http.ResponseWriter, r *http.Request) {
 
 	blob, ok := h.servableBlob(w, r, repo.ID, image, digest)
 	if !ok {
+		return
+	}
+
+	if h.blobQuarantined(w, r, repo.ID, name, blob) {
 		return
 	}
 
@@ -1281,6 +1340,10 @@ func (h *HTTPHandler) mountSource(r *http.Request, target *models.Repository, im
 
 	quarantined, err := quarantine.IsQuarantined(ctx, h.db, srcRepo.ID, quarantine.PathKeys(blob.ID, digest, from+"/blobs/"+digest)...)
 	if err != nil || quarantined {
+		return nil
+	}
+
+	if held, herr := h.db.DockerBlobQuarantined(ctx, srcRepo.ID, digest); herr != nil || held {
 		return nil
 	}
 

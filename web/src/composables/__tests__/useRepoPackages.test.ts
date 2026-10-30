@@ -78,4 +78,21 @@ describe('useRepoPackages', () => {
     await flushPromises()
     expect(state.packages.value.map((p) => p.id)).toEqual(['beta-pkg'])
   })
+
+  it('loads every package of the repository by cursor', async () => {
+    const urls: string[] = []
+    spyOn(globalThis, 'fetch').mockImplementation((async (input: string) => {
+      const url = new URL(String(input), 'http://localhost')
+      urls.push(url.search)
+      if (url.pathname === '/api/v1/repositories') return json({ total: 1, repositories: [{ name: 'alpha' }] })
+      const cursor = url.searchParams.get('cursor')
+      if (!cursor) return json({ total: 2, has_more: true, next_cursor: 'c1', packages: [{ id: 'p1', name: 'a', version: '1', format: 'npm' }] })
+      return json({ has_more: false, packages: [{ id: 'p2', name: 'b', version: '1', format: 'npm' }] })
+    }) as never)
+    const state = await setup()
+    state.selectedRepo.value = 'alpha'
+    await flushPromises()
+    expect(state.packages.value.map((p) => p.id)).toEqual(['p1', 'p2'])
+    expect(urls.filter((u) => u.includes('cursor='))).toEqual(['?limit=100&cursor=c1'])
+  })
 })

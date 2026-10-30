@@ -214,7 +214,8 @@ func TestBundleSealWithFingerprintAndConfigKey(t *testing.T) {
 		t.Errorf("by fingerprint: %d %s", rw.Code, rw.Body.String())
 	}
 
-	// The read-only config key can sign bundles too.
+	// The configuration key signs package metadata and never signs bundles,
+	// not by "config" and not by its fingerprint, not even for an administrator.
 	cfgEntity, err := gpg.GenerateEntity("Config", "", "", gpg.AlgorithmED25519)
 	if err != nil {
 		t.Fatal(err)
@@ -228,9 +229,13 @@ func TestBundleSealWithFingerprintAndConfigKey(t *testing.T) {
 	db.bundle.State = models.BundleStateDraft
 	h.WithGPGKeys(gpgkeys.New(gpgkeystest.New(), svcLog(t, db), cfgSigner))
 
-	rw = serveAs(h.RegisterAuthed, http.MethodPost, "/api/v1/bundles/rel/1.0/seal", `{"gpg_key_id":"config"}`)
-	if rw.Code != http.StatusOK || db.gotSig.KeyFingerprint != cfgSigner.KeyFingerprint() {
-		t.Errorf("config key: %d %s", rw.Code, rw.Body.String())
+	for _, ref := range []string{"config", cfgSigner.KeyFingerprint()} {
+		db.sealCalled = false
+
+		rw = serveAs(h.RegisterAuthed, http.MethodPost, "/api/v1/bundles/rel/1.0/seal", `{"gpg_key_id":"`+ref+`"}`)
+		if rw.Code != http.StatusForbidden || db.sealCalled {
+			t.Errorf("config key by %q: %d %s (sealed=%v)", ref, rw.Code, rw.Body.String(), db.sealCalled)
+		}
 	}
 }
 

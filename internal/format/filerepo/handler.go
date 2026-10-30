@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/artifactpath"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
@@ -59,9 +60,9 @@ type Spec[A, S any] struct {
 	GroupKey string
 
 	// Get returns the live row at the coordinates, or nil.
-	Get func(ctx context.Context, db S, repoID string, c base.ArtifactPath) (*A, error)
+	Get func(ctx context.Context, db S, repoID string, c artifactpath.Path) (*A, error)
 	// New builds the row an upload of the file at c stores.
-	New func(repoID string, c base.ArtifactPath, size int64, sha256Hex string) *A
+	New func(repoID string, c artifactpath.Path, size int64, sha256Hex string) *A
 	// Create stores the row (upserting an existing coordinate).
 	Create func(ctx context.Context, db S, a *A) error
 	// Delete removes the row.
@@ -74,6 +75,7 @@ type Spec[A, S any] struct {
 
 // HandlerStore is the part of the database every Handler needs.
 type HandlerStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
@@ -138,13 +140,13 @@ func (h *Handler[A, S]) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 func repoNameOf(r *http.Request) string { return urlparams.Vars(r)["name"] }
 
-func (h *Handler[A, S]) get(ctx context.Context, repoID string, c base.ArtifactPath) (*A, error) {
+func (h *Handler[A, S]) get(ctx context.Context, repoID string, c artifactpath.Path) (*A, error) {
 	return h.spec.Get(ctx, h.DB, repoID, c)
 }
 
 // lookup finds the artifact at cur, else the one an older release stored under
 // the legacy reading of the same path.
-func (h *Handler[A, S]) lookup(ctx context.Context, repoID string, cur, legacy base.ArtifactPath) (*A, error) {
+func (h *Handler[A, S]) lookup(ctx context.Context, repoID string, cur, legacy artifactpath.Path) (*A, error) {
 	artifact, err := h.get(ctx, repoID, cur)
 	if err != nil || artifact != nil || cur == legacy {
 		return artifact, err
@@ -155,7 +157,7 @@ func (h *Handler[A, S]) lookup(ctx context.Context, repoID string, cur, legacy b
 
 // handleDownload serves a file (GET) or just its headers (HEAD).
 func (h *Handler[A, S]) handleDownload(w http.ResponseWriter, r *http.Request, repoID, filePath string) {
-	cur, legacy, ok := base.SplitArtifactPath(filePath)
+	cur, legacy, ok := artifactpath.Split(filePath)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -176,7 +178,7 @@ func (h *Handler[A, S]) handleDownload(w http.ResponseWriter, r *http.Request, r
 
 	row := h.spec.View(artifact)
 
-	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(filePath, cur.Filename, r.URL.Path)...) {
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(row.ID, filePath, cur.Filename, r.URL.Path)...) {
 		return
 	}
 
@@ -219,7 +221,7 @@ func (h *Handler[A, S]) handleDownload(w http.ResponseWriter, r *http.Request, r
 // coordinates only) and the row it collides with (existing: previous, else one
 // stored under the legacy reading of the path), so the immutability guard
 // cannot be sidestepped by shadowing a legacy row.
-func (h *Handler[A, S]) lookupForUpload(ctx context.Context, repoID string, cur, legacy base.ArtifactPath) (*A, *A, error) {
+func (h *Handler[A, S]) lookupForUpload(ctx context.Context, repoID string, cur, legacy artifactpath.Path) (*A, *A, error) {
 	previous, err := h.get(ctx, repoID, cur)
 	if err != nil || previous != nil || cur == legacy {
 		return previous, previous, err
@@ -234,7 +236,7 @@ func (h *Handler[A, S]) lookupForUpload(ctx context.Context, repoID string, cur,
 // different bytes replace the file unless the repository has immutable releases
 // and the version is a release.
 func (h *Handler[A, S]) handleUpload(w http.ResponseWriter, r *http.Request, repoID, filePath string) {
-	cur, legacy, ok := base.SplitArtifactPath(filePath)
+	cur, legacy, ok := artifactpath.Split(filePath)
 	if !ok {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
@@ -385,7 +387,7 @@ func (h *Handler[A, S]) rejectImmutable(w http.ResponseWriter, filePath string, 
 }
 
 func (h *Handler[A, S]) handleDelete(w http.ResponseWriter, r *http.Request, repoID, filePath string) {
-	cur, legacy, ok := base.SplitArtifactPath(filePath)
+	cur, legacy, ok := artifactpath.Split(filePath)
 	if !ok {
 		http.NotFound(w, r)
 		return

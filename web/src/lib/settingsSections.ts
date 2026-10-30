@@ -4,6 +4,7 @@
 
 import type { Component } from 'vue'
 import { t, type TranslationKey } from '../i18n'
+import { isAiAvailable } from '../composables/useAppVersion'
 
 export type SettingsGroupId =
   | 'account'
@@ -55,6 +56,8 @@ export interface SettingsSection {
   load: Loader
   /** Page for administrators when it differs from `load` (the personal view is the default). */
   loadAdmin?: Loader
+  /** The section configures a feature that a slim server build (-tags noai) leaves out; it is not listed there. */
+  needsAI?: true
 }
 
 export const SETTINGS_GROUPS: readonly { id: SettingsGroupId; titleKey: TranslationKey; descKey: TranslationKey }[] = [
@@ -116,11 +119,19 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   section('dependency-track', 'security', true, () => import('../pages/settings/sections/DependencyTrackPage.vue'), ['dt', 'sbom push', 'api key', 'url', 'project']),
   section('webhooks', 'integrations', true, () => import('../pages/settings/sections/WebhooksPage.vue'), ['events', 'secret', 'delivery', 'url', 'payload']),
   section('federation', 'integrations', true, () => import('../pages/settings/sections/FederationSection.vue'), ['peers', 'replicate', 'sync', 'inbound token']),
-  section('ai', 'integrations', true, () => import('../pages/settings/sections/AISettingsPage.vue'), ['llm', 'analyse', 'provider', 'model', 'api key', 'openai', 'anthropic', 'endpoint']),
+  {
+    ...section('ai', 'integrations', true, () => import('../pages/settings/sections/AISettingsPage.vue'), ['llm', 'analyse', 'provider', 'model', 'api key', 'openai', 'anthropic', 'endpoint']),
+    needsAI: true,
+  },
   section('branding', 'appearance', true, () => import('../pages/settings/sections/BrandingPage.vue'), ['logo', 'colour', 'color', 'accent', 'product name', 'login message', 'favicon', 'white label', 'support url']),
   section('audit', 'system', true, () => import('../pages/settings/sections/AuditLogPage.vue'), ['events', 'export', 'retention', 'actor', 'csv', 'http requests']),
   section('health', 'system', true, () => import('../pages/settings/sections/SystemPage.vue'), ['version', 'database', 'uptime', 'status', 'build', 'commit']),
 ]
+
+/** The sections this server build offers: every one, minus those of features it was built without. */
+export function listedSections(): readonly SettingsSection[] {
+  return isAiAvailable() ? SETTINGS_SECTIONS : SETTINGS_SECTIONS.filter((s) => !s.needsAI)
+}
 
 const BY_ID = new Map<string, SettingsSection>(SETTINGS_SECTIONS.map((s) => [s.id, s]))
 

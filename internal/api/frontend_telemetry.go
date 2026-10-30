@@ -36,6 +36,12 @@ const (
 	// to frontendTelemetryMaxBody in memory for up to frontendTelemetryTimeout,
 	// so a hung collector cannot pile them up; the rate limit is per client.
 	frontendTelemetryMaxInflight = 32
+	// frontendTelemetryRate and frontendTelemetryBurst are the per-user token
+	// bucket of the relay: requests per second, and how many may come at once.
+	// The UI exports a batch of at most 64 records every few seconds per
+	// signal, so a page that makes hundreds of API calls stays well inside.
+	frontendTelemetryRate  = 2
+	frontendTelemetryBurst = 20
 
 	otlpProtobuf = "application/x-protobuf"
 )
@@ -51,15 +57,18 @@ const (
 
 // FrontendTelemetryHandler serves the experimental browser telemetry: the
 // config endpoint the web UI reads before loading the SDK, and the same-origin
-// relay that forwards its OTLP/HTTP export requests unchanged to the
-// collector. Both answer 404 while the feature is off. Redaction is the
-// collector's job: the relay neither parses nor rewrites the payload.
+// relay that validates its OTLP/HTTP export requests (protobuf that parses, ids
+// of the right size, bounded record, attribute and string sizes, a fixed
+// resource, a rate limit per user) and forwards the bounded re-encoding to the
+// collector. Both answer 404 while the feature is off. Redaction of what the
+// browser puts in the values stays the collector's job.
 type FrontendTelemetryHandler struct {
 	cfg      telemetry.Config
 	client   *http.Client
 	reg      *metrics.Registry
 	log      *logger.Logger
 	inflight chan struct{}
+	limit    *userLimiter
 }
 
 // count increments the relay counter (a no-op without a metrics registry).
@@ -84,6 +93,7 @@ func NewFrontendTelemetryHandler(cfg telemetry.Config, reg *metrics.Registry, lo
 		reg:      reg,
 		log:      log,
 		inflight: make(chan struct{}, frontendTelemetryMaxInflight),
+		limit:    newUserLimiter(frontendTelemetryRate, frontendTelemetryBurst),
 	}
 }
 
@@ -142,6 +152,13 @@ func (h *FrontendTelemetryHandler) handleRelay(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	if !h.limit.allow(*p.UserID) {
+		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusTooManyRequests, "rate_limited", "telemetry rate limit exceeded")
+
+		return
+	}
+
 	select {
 	case h.inflight <- struct{}{}:
 		defer func() { <-h.inflight }()
@@ -164,10 +181,21 @@ func (h *FrontendTelemetryHandler) handleRelay(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	body, err = sanitizeOTLP(signal, body)
+	if err != nil {
+		if h.log != nil {
+			h.log.Debugw("frontend telemetry payload refused", "signal", signal, "error", err)
+		}
+
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid OTLP payload")
+
+		return
+	}
+
 	h.forward(w, r, signal, body)
 }
 
-// forward sends body to the collector and answers with its verdict: 200 and
+// forward sends body (already sanitized) to the collector and answers with its verdict: 200 and
 // the export response when accepted, 400 when the collector refused the
 // payload, 502 for everything else (unreachable, overloaded, misconfigured).
 func (h *FrontendTelemetryHandler) forward(w http.ResponseWriter, r *http.Request, signal string, body []byte) {
@@ -222,8 +250,8 @@ func (h *FrontendTelemetryHandler) badGateway(w http.ResponseWriter, signal stri
 }
 
 // countResult counts every relay answer for a known signal by its status:
-// 2xx relayed, 502 failed, any other refusal (401, 403, 413, 415, 400, 503)
-// rejected. 404s (feature off, unknown signal) are not counted, so the signal
+// 2xx relayed, 502 failed, any other refusal (401, 403, 413, 415, 400, 429,
+// 503) rejected. 404s (feature off, unknown signal) are not counted, so the signal
 // label stays bounded. It sits outside MaxBodyMiddleware to see its 413s too.
 func (h *FrontendTelemetryHandler) countResult(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

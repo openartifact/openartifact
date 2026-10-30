@@ -13,16 +13,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="space-y-4">
       <p class="text-sm text-foreground">{{ tp('bundles.seal.summary', { count: String(itemCount) }) }}</p>
 
-      <FormField :label="t('bundles.seal.key')" id="seal-key" :hint="keyHint">
+      <FormField v-if="keys.length > 0" :label="t('bundles.seal.key')" id="seal-key" :hint="keyHint">
         <select id="seal-key" v-model="keyId" :disabled="loadingKeys" :class="INPUT_CLASS">
-          <option v-for="k in keys" :key="keyValue(k)" :value="keyValue(k)">{{ keyLabel(k) }}</option>
+          <option v-for="k in keys" :key="k.id" :value="k.id">{{ keyLabel(k) }}</option>
           <option value="">{{ t('bundles.seal.noKey') }}</option>
         </select>
       </FormField>
       <p v-if="keysFailed" class="text-xs text-warning" role="status">{{ t('bundles.seal.keysFailed') }}</p>
-      <router-link v-else-if="!loadingKeys && keys.length === 0" to="/settings/signing" class="inline-flex min-h-8 items-center text-sm text-primary hover:underline max-md:min-h-11">
-        {{ t('bundles.seal.manageKeys') }}
-      </router-link>
+      <p v-else-if="!loadingKeys && keys.length === 0" class="text-sm text-muted" data-testid="seal-no-keys">{{ t('bundles.seal.noKeys') }}</p>
 
       <p class="text-sm text-muted">{{ t('bundles.seal.irreversible') }}</p>
       <p v-if="error" class="text-sm text-danger" role="alert">{{ error }}</p>
@@ -42,8 +40,8 @@ import { computed, ref, watch } from 'vue'
 import AppButton from '../AppButton.vue'
 import FormField from '../FormField.vue'
 import Drawer from '../ui/Drawer.vue'
-import { sealBundle, type Bundle } from '../../api/bundles'
-import { listGpgKeys, type GpgKey } from '../../api/gpg'
+import { ApiError } from '../../api/client'
+import { listBundleSigningKeys, sealBundle, type Bundle, type BundleSigningKey } from '../../api/bundles'
 import { INPUT_CLASS } from '../../lib/formClasses'
 import { useToastStore } from '../../stores/toast'
 import { t, tp } from '../../i18n'
@@ -52,48 +50,57 @@ const props = defineProps<{ open: boolean; name: string; version: string; itemCo
 const emit = defineEmits<{ close: []; sealed: [bundle: Bundle] }>()
 
 const toasts = useToastStore()
-const keys = ref<GpgKey[]>([])
+const keys = ref<BundleSigningKey[]>([])
 const keyId = ref('')
 const loadingKeys = ref(false)
 const keysFailed = ref(false)
 const busy = ref(false)
 const error = ref('')
 
-/** The value the seal API accepts: the key id from the admin list (`config` for the configured key). */
-function keyValue(k: GpgKey): string {
-  return k.id ?? k.fingerprint ?? ''
-}
-
-function keyLabel(k: GpgKey): string {
-  const id = k.key_id ?? (k.fingerprint ?? '').slice(-16)
-  const label = k.name || k.user_id || ''
+function keyLabel(k: BundleSigningKey): string {
+  const id = k.key_id || k.fingerprint.slice(-16)
+  const label = k.name || k.user_id
   return label ? `${label} (${id})` : id
 }
 
 const keyHint = computed(() => (keyId.value ? t('bundles.seal.keyHint') : t('bundles.seal.unsignedHint')))
 
-// Every opening reloads the keys and signs with the globally active one when there is one.
+// The server lists only the keys this user may sign bundles with; with none the bundle can only be
+// sealed unsigned. Every opening reloads them and signs with the globally active one when permitted.
+async function loadKeys(): Promise<void> {
+  keysFailed.value = false
+  loadingKeys.value = true
+  try {
+    keys.value = await listBundleSigningKeys()
+    const preferred = keys.value.find((k) => k.active_global) ?? keys.value[0]
+    keyId.value = preferred?.id ?? ''
+  } catch {
+    keys.value = []
+    keyId.value = ''
+    keysFailed.value = true
+  } finally {
+    loadingKeys.value = false
+  }
+}
+
 watch(
   () => props.open,
   async (open) => {
     if (!open) return
     error.value = ''
-    keysFailed.value = false
-    loadingKeys.value = true
-    try {
-      keys.value = (await listGpgKeys()).keys
-      const preferred = keys.value.find((k) => k.active_global) ?? keys.value[0]
-      keyId.value = preferred ? keyValue(preferred) : ''
-    } catch {
-      keys.value = []
-      keyId.value = ''
-      keysFailed.value = true
-    } finally {
-      loadingKeys.value = false
-    }
+    await loadKeys()
   },
   { immediate: true },
 )
+
+/** A 403 `signer_forbidden` means the grant changed since the keys were listed: say so and refresh them. */
+async function sealFailure(err: unknown): Promise<string> {
+  if (err instanceof ApiError && err.status === 403 && err.code === 'signer_forbidden') {
+    await loadKeys()
+    return t('bundles.seal.signerForbidden')
+  }
+  return err instanceof Error ? err.message : t('bundles.seal.failed')
+}
 
 async function seal(): Promise<void> {
   if (busy.value) return
@@ -104,7 +111,7 @@ async function seal(): Promise<void> {
     toasts.success(keyId.value ? t('bundles.seal.doneSigned') : t('bundles.seal.done'), tp('bundles.seal.doneHint', { bundle: `${props.name} ${props.version}` }))
     emit('sealed', bundle)
   } catch (err) {
-    error.value = err instanceof Error ? err.message : t('bundles.seal.failed')
+    error.value = await sealFailure(err)
   } finally {
     busy.value = false
   }

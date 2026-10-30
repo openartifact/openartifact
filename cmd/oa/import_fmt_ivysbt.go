@@ -32,11 +32,11 @@ import (
 //
 //nolint:gochecknoinits // formats register themselves with the importer (see registerFormat)
 func init() {
-	registerFormat(ivySBTDef(formatIvy, ivyListedFilename))
-	registerFormat(ivySBTDef(formatSBT, sbtListedFilename))
+	registerFormat(ivySBTDef(formatIvy, ivyListedFilenames))
+	registerFormat(ivySBTDef(formatSBT, sbtListedFilenames))
 }
 
-func ivySBTDef(f importFormat, listed func(filename string) string) formatDef {
+func ivySBTDef(f importFormat, listed func(filename string) []string) formatDef {
 	prefix := "/repos/" + string(f) + "/"
 
 	return formatDef{
@@ -85,7 +85,7 @@ type ivySBTCoords struct {
 }
 
 // splitIvySBTPath reads a source path the way the server does (see
-// SplitArtifactPath in internal/format/base, which a test keeps this in step
+// Split in internal/artifactpath, which a test keeps this in step
 // with): Maven layout when the file name starts with <module>-<version>,
 // otherwise the first three segments are group, module and version and the
 // rest is the file name. It fails below four segments or on a segment
@@ -105,22 +105,21 @@ func splitIvySBTPath(p string) (ivySBTCoords, bool) {
 
 // The package listing does not carry the repository path of an ivy or sbt file
 // but its coordinates: name "<group>:<module>", the version and a file name.
-// The sbt row lists the stored file name. The ivy row lists the stored file name
-// followed by its extension again ("lib-1.0.jar.jar", see the ivy branch of
-// internal/database/queries/components.sql): that is the name an ivy asset is
-// looked up under.
+// The listing names the stored file name. An ivy server before the generic
+// package tables listed it followed by its extension again ("lib-1.0.jar.jar"),
+// so a destination of that age is matched under both names.
 
-func sbtListedFilename(filename string) string { return filename }
+func sbtListedFilenames(filename string) []string { return []string{filename} }
 
-func ivyListedFilename(filename string) string {
-	return filename + "." + strings.TrimPrefix(path.Ext(filename), ".")
+func ivyListedFilenames(filename string) []string {
+	return []string{filename, filename + "." + strings.TrimPrefix(path.Ext(filename), ".")}
 }
 
 // ivySBTPresence recognises an asset the destination already holds: a listed
 // file with the same coordinates and file name as the asset's path, and the
 // same SHA-256. A different digest at the same address is not present: the
 // upload replaces it, as OpenArtifact's PUT does.
-func ivySBTPresence(listed func(filename string) string) func(*targetIndex, sourceAsset) (indexEntry, bool) {
+func ivySBTPresence(listed func(filename string) []string) func(*targetIndex, sourceAsset) (indexEntry, bool) {
 	var memo ivySBTListingMemo
 
 	return func(ix *targetIndex, a sourceAsset) (indexEntry, bool) {
@@ -129,12 +128,15 @@ func ivySBTPresence(listed func(filename string) string) func(*targetIndex, sour
 			return indexEntry{}, false
 		}
 
-		e, ok := memo.table(ix)[ivySBTKey(c.group, c.module, c.version, listed(c.filename))]
-		if !ok || e.SHA256 != a.SHA256 {
-			return indexEntry{}, false
+		table := memo.table(ix)
+
+		for _, name := range listed(c.filename) {
+			if e, ok := table[ivySBTKey(c.group, c.module, c.version, name)]; ok && e.SHA256 == a.SHA256 {
+				return e, true
+			}
 		}
 
-		return e, true
+		return indexEntry{}, false
 	}
 }
 

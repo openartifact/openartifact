@@ -11,9 +11,9 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/itempath"
 )
 
 // dockerPromoter promotes docker/OCI images.
@@ -175,53 +175,37 @@ func dockerRoots(ctx context.Context, tx Tx, req Request) ([]dockerManifest, err
 	return narrowDockerRoots(roots, req), nil
 }
 
-// narrowDockerRoots keeps the manifests whose identifiers equal req.Path; with
-// no such manifest, or no path, every manifest stays.
+// narrowDockerRoots keeps the manifests the item path names (see itempath);
+// with no such manifest, or no path, every manifest stays.
 func narrowDockerRoots(roots []dockerManifest, req Request) []dockerManifest {
-	if len(roots) < 2 || strings.TrimPrefix(req.Path, "/") == "" {
+	if len(roots) < 2 {
 		return roots
 	}
 
-	cands := make([]candidate, 0, len(roots))
-	for _, m := range roots {
-		cands = append(cands, candidate{id: m.id, idents: m.idents(req.Src.Name)})
-	}
-
+	loc := itempath.New("docker", req.Src.Name, req.Path)
 	kept := make([]dockerManifest, 0, len(roots))
 
-	for _, c := range narrow(cands, req.Path) {
-		for _, m := range roots {
-			if m.id == c.id {
-				kept = append(kept, m)
-
-				break
-			}
+	for _, m := range roots {
+		if loc.Docker(m.identity()) {
+			kept = append(kept, m)
 		}
+	}
+
+	if len(kept) == 0 {
+		return roots
 	}
 
 	return kept
 }
 
-// idents are the spellings of the manifest an item path may use: row id,
-// digest (with and without algorithm), image, distribution name, and each of
-// those combined with the tags.
-func (m dockerManifest) idents(repoName string) []string {
-	name := dockerName(repoName, m.image)
-	ids := []string{m.id, m.digest, m.sha, name, name + "@" + m.digest, name + "/manifests/" + m.digest}
-
-	if m.image != "" {
-		ids = append(ids, m.image)
+// identity is the manifest as itempath reads it.
+func (m dockerManifest) identity() itempath.Manifest {
+	tags := make([]string, len(m.tags))
+	for i, t := range m.tags {
+		tags[i] = t.Name
 	}
 
-	for _, t := range m.tags {
-		ids = append(ids, t.Name, name+":"+t.Name, name+"/manifests/"+t.Name)
-
-		if m.image != "" {
-			ids = append(ids, m.image+":"+t.Name)
-		}
-	}
-
-	return ids
+	return itempath.Manifest{ID: m.id, Image: m.image, Digest: m.digest, SHA256: m.sha, Tags: tags}
 }
 
 // quarantineKeys are the identifiers the registry's manifest pull checks for
@@ -469,6 +453,15 @@ func (r *dockerRun) insertManifest(ctx context.Context, m dockerManifest) (bool,
 // destination, charges the bytes of the rows it created (no artifact, as in the
 // registry) and links them to the manifest's image.
 func (r *dockerRun) copyBlobs(ctx context.Context, m dockerManifest) error {
+	var quarantined bool
+	if err := r.tx.QueryRowContext(ctx, dockerBlobsQuarantinedSQL, m.id, r.req.Src.ID).Scan(&quarantined); err != nil {
+		return fmt.Errorf("check quarantine of the blobs of %s: %w", m.digest, err)
+	}
+
+	if quarantined {
+		return ErrQuarantined
+	}
+
 	blobs, err := r.blobs(ctx, m)
 	if err != nil {
 		return err

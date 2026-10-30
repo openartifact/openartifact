@@ -206,7 +206,7 @@ The cursor advances only after the unit is applied and committed. A crash betwee
 
 ### Failures, retries, backoff
 
-- A failed pull (network, `5xx`, token rejected) records `last_error`, `last_error_at`, increments `consecutive_failures` and sets `next_attempt_at = now + min(maxBackoff, 5 s · 2^n) ± 20 % jitter`. The worker skips the peer until then. The first success resets the counters. Backoff never gives up: a peer that is down for a week is retried every `maxBackoff` (default 15 min) and catches up when it returns.
+- A failed pull (network, `5xx`, token rejected) records `last_error` (a classified reason such as `unreachable` or `unauthorized (HTTP 401)`, never text of the peer; the cause is logged), `last_error_at`, increments `consecutive_failures` and sets `next_attempt_at = now + min(maxBackoff, 5 s · 2^n) ± 20 % jitter`. The worker skips the peer until then. The first success resets the counters. Backoff never gives up: a peer that is down for a week is retried every `maxBackoff` (default 15 min) and catches up when it returns.
 - A **unit** that cannot be applied (quarantined at the origin, quota exceeded, blob missing on the origin, validation error) must not block the rest of the feed. After 3 immediate attempts the entry is parked in `federation_deferred` with the reason, the cursor moves on, and the unit is retried with its own exponential backoff (cap 1 h) on every cycle. Deferred units are listed in the health view with reason and attempt count. A manual resync retries them at once.
 - Blob transfers use a per-transfer idle timeout, not a total one, so very large blobs on slow links still complete.
 
@@ -242,7 +242,7 @@ Why not the alternatives:
 
 Properties and limits, stated plainly:
 
-- Clock skew between instances can make a physically earlier write win. The HLC bounds the damage (a member that learns of a far-future stamp does not keep issuing lower ones) but not eliminates it. Keep instance clocks in sync (NTP).
+- Clock skew between instances can make a physically earlier write win. The HLC bounds the damage (a member that learns of a far-future stamp does not keep issuing lower ones) but not eliminates it. Keep instance clocks in sync (NTP). Because the clock of a repository only moves forward, a stamp is validated before it is applied: a wall time more than `federation.maxClockSkew` (default 5 minutes) ahead of the local clock, a negative wall time, or a counter outside `0..2^24` defers the unit (`clock_skew`) instead of moving the clock; the retry applies it once the local clock has caught up. The check is in the engine (`validateStamp`), not in `federation_apply_unit`, so it needs no migration.
 - One of two concurrent writes is discarded. The losing write is **not** lost silently: when applying a remote stamp replaces a *local* live unit with a different `content_ref`, or when a local unit is skipped because a newer remote one exists with a different `content_ref`, the peer's `conflicts_total` is incremented, a warning is logged and `openartifact_federation_conflicts_total` is bumped. The superseded blob is released by normal refcounting (it remains in the member's trash if the supersede was a soft replace).
 - "Immutable release" repositories: a concurrent publish of the same version on two members with different content is exactly a conflict. Federation converges it by the same rule rather than leaving the members permanently divergent; `immutable_releases` continues to protect against local overwrite attempts, but a replicated overwrite decided by the rule is applied and recorded as a conflict.
 
@@ -345,6 +345,7 @@ Prometheus metrics (labels `repo`, `peer`): `openartifact_federation_lag_seconds
 | `federation.spoolDir` | `OPENARTIFACT_FEDERATION_SPOOL_DIR` | empty: a directory under the OS temp dir (use a persistent volume to resume across restarts; one directory per instance) |
 | `federation.maxPartialBytes` | `OPENARTIFACT_FEDERATION_MAX_PARTIAL_BYTES` | `10737418240` (10 GiB) |
 | `federation.maxPartialAge` | `OPENARTIFACT_FEDERATION_MAX_PARTIAL_AGE` | `24h` |
+| `federation.maxClockSkew` | `OPENARTIFACT_FEDERATION_MAX_CLOCK_SKEW` | `5m` |
 
 ## Test plan
 

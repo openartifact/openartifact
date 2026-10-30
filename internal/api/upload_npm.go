@@ -36,9 +36,9 @@ import (
 
 const MaxNPMUploadBytes int64 = 200 << 20
 
-// maxConcurrentNPMPublishes bounds the publishes buffering a body at once: a
-// publish holds roughly three copies of its body (raw bytes, the decoded
-// base64 string and the tarball), up to ~600 MiB for a 200 MiB upload.
+// maxConcurrentNPMPublishes bounds the publishes that work on a spooled body
+// at once (hash, scan, store the tarball). The slot is taken after the body is
+// read, so a slow sender never holds one.
 const maxConcurrentNPMPublishes = 4
 
 // maxNPMDistTagBody caps the dist-tag PUT body, a JSON string holding a version.
@@ -122,10 +122,17 @@ func (h *NPMUploadHandler) HandlePublish(w http.ResponseWriter, r *http.Request)
 	h.handlePublish(w, r)
 }
 
+// resolveRepo loads the npm repository called name. The shared PUT and DELETE
+// routes reach every hosted repository, so a repository of another format
+// resolves to nil like a missing one: no npm handler may act on it.
 func (h *NPMUploadHandler) resolveRepo(ctx context.Context, name string) (*models.Repository, error) {
 	repo, err := h.db.GetRepositoryByName(ctx, name)
 	if err != nil {
 		return nil, err
+	}
+
+	if repo != nil && repo.Format != "npm" {
+		return nil, nil //nolint:nilnil // not an npm repository is "not found"
 	}
 
 	return repo, nil
@@ -316,19 +323,6 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 		defer func() { h.reg.CountUpload(metrics.FormatNPM, uploadResult) }()
 	}
 
-	if h.publishSlots != nil {
-		select {
-		case h.publishSlots <- struct{}{}:
-			defer func() { <-h.publishSlots }()
-		case <-r.Context().Done():
-			uploadResult = "error"
-
-			http.Error(w, "request cancelled", http.StatusServiceUnavailable)
-
-			return
-		}
-	}
-
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 	rawPkg := vars["*"]
@@ -366,6 +360,21 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 	}
 
 	defer cleanup()
+
+	// The slot is taken only once the body is in: a client that is still
+	// sending must not hold one, or a few slow clients block every publish.
+	if h.publishSlots != nil {
+		select {
+		case h.publishSlots <- struct{}{}:
+			defer func() { <-h.publishSlots }()
+		case <-r.Context().Done():
+			uploadResult = "error"
+
+			http.Error(w, "request cancelled", http.StatusServiceUnavailable)
+
+			return
+		}
+	}
 
 	pub := *parsed
 
@@ -1322,14 +1331,8 @@ func npmDecodePackageName(raw string) string {
 	return s
 }
 
+// isUniqueViolation reports whether err is the store's duplicate sentinel or a
+// PostgreSQL unique_violation. It decides on the error's type, never its text.
 func isUniqueViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	msg := err.Error()
-
-	return strings.Contains(msg, "already exists") ||
-		strings.Contains(msg, "unique") ||
-		strings.Contains(msg, "23505")
+	return errors.Is(err, database.ErrDuplicate) || database.IsUniqueViolation(err)
 }

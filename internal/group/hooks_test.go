@@ -4,15 +4,13 @@
 
 package group
 
-import (
-	"os"
-	"testing"
-)
-
-// TestMain registers the group hooks of every format this package has, the way
+// init registers the group hooks of every format this package has, the way
 // internal/format/plugin does at startup: the handler serves only the formats
 // registered. docker and raw have no hooks (plain first-hit groups).
-func TestMain(m *testing.M) {
+// It is an init, not a TestMain, so the fuzz targets registered by ClusterFuzzLite
+// (which compiles the _test.go files into the fuzzer but never runs TestMain)
+// see the same registry.
+func init() { //nolint:gochecknoinits // test-only format registry, see above
 	for format, h := range map[string]Hooks{
 		"ansible":   AnsibleHooks,
 		"apk":       ApkHooks,
@@ -37,8 +35,6 @@ func TestMain(m *testing.M) {
 	} {
 		Register(format, h)
 	}
-
-	os.Exit(m.Run())
 }
 
 // classifyDebRPM classifies a request path of a deb, pacman or rpm group.

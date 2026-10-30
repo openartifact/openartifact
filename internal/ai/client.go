@@ -31,6 +31,11 @@ var (
 	errBadLLMOutput = errors.New("llm returned unparseable output")
 )
 
+// ErrAPIKeyUndecryptable is returned by every request of a client whose stored
+// API key could not be decrypted (the secret key changed or is not set). The
+// request is not sent: the stored ciphertext is never a usable bearer token.
+var ErrAPIKeyUndecryptable = errors.New("ai api key cannot be decrypted")
+
 // maxManifestBytes bounds the untrusted manifest text sent to the LLM.
 const maxManifestBytes = 64 * 1024
 
@@ -93,22 +98,25 @@ type Config struct {
 
 // Client is an OpenAI-compatible LLM client.
 type Client struct {
+	// keyErr is set when cfg.APIKey could not be decrypted; do refuses to
+	// send anything then.
+	keyErr       error
 	cfg          Config
 	httpClient   *http.Client
 	baseURL      string
 	systemPrompt string
 }
 
-// NewClient creates a new AI client from config.
-func NewClient(cfg Config) *Client {
-	baseURL := cfg.BaseURL
+// EffectiveBaseURL is the endpoint a client for provider and baseURL talks to,
+// without a trailing slash: baseURL itself, or the provider's default when it
+// is empty (none for azure and custom, which need an explicit one).
+func EffectiveBaseURL(provider, baseURL string) string {
 	if baseURL == "" {
-		switch cfg.Provider {
+		switch provider {
 		case "azure", "custom":
 			// Azure and custom endpoints require BaseURL to be set explicitly;
 			// leaving it empty fails at request time instead of silently
 			// sending the key to api.openai.com.
-			baseURL = cfg.BaseURL
 		case "ollama":
 			baseURL = "http://localhost:11434/v1"
 		default: // openai
@@ -116,7 +124,12 @@ func NewClient(cfg Config) *Client {
 		}
 	}
 
-	baseURL = strings.TrimRight(baseURL, "/")
+	return strings.TrimRight(baseURL, "/")
+}
+
+// NewClient creates a new AI client from config.
+func NewClient(cfg Config) *Client {
+	baseURL := EffectiveBaseURL(cfg.Provider, cfg.BaseURL)
 
 	systemPrompt := cfg.SystemPrompt
 	if systemPrompt == "" {
@@ -128,11 +141,18 @@ func NewClient(cfg Config) *Client {
 		timeout = 30 * time.Second
 	}
 
-	if key, err := crypto.Decrypt(cfg.APIKey); err == nil {
+	var keyErr error
+
+	key, err := crypto.Decrypt(cfg.APIKey)
+	if err != nil {
+		// Fail closed: never fall back to the ciphertext as the bearer token.
+		cfg.APIKey, keyErr = "", fmt.Errorf("%w: %w", ErrAPIKeyUndecryptable, err)
+	} else {
 		cfg.APIKey = key
 	}
 
 	return &Client{
+		keyErr:       keyErr,
 		cfg:          cfg,
 		httpClient:   telemetry.WrapClient(netutil.SafeHTTPClient(timeout)),
 		baseURL:      baseURL,
@@ -281,6 +301,10 @@ func (c *Client) Analyze(ctx context.Context, manifestText string) (*AnalysisRes
 // destination at dial time. Private/loopback endpoints (e.g. a local Ollama)
 // require OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true.
 func (c *Client) do(req *http.Request) (*http.Response, error) {
+	if c.keyErr != nil {
+		return nil, c.keyErr
+	}
+
 	if err := netutil.ValidateOutboundURLContext(req.Context(), req.URL.String()); err != nil {
 		return nil, fmt.Errorf("ai endpoint rejected: %w", err)
 	}

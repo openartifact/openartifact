@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -226,16 +225,7 @@ func TestProvisioning_DisabledUser_Blocked(t *testing.T) {
 	router := setupOIDCCallbackRouter(t, db, oidcSrv)
 	rw := doOIDCCallback(t, router, provSlug, "disabled-code-1", "disabled-state-1", nonce)
 
-	if rw.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 for disabled user, got %d (body: %s)", rw.Code, rw.Body.String())
-	}
-
-	var resp map[string]any
-
-	_ = json.NewDecoder(rw.Body).Decode(&resp)
-	if resp["code"] != "account_disabled" {
-		t.Errorf("expected code=account_disabled, got %v", resp["code"])
-	}
+	assertSSOError(t, rw, "account_disabled")
 }
 
 func TestProvisioning_OIDC_LinkByEmail_UnverifiedEmailNotLinked(t *testing.T) {
@@ -278,9 +268,7 @@ func TestProvisioning_OIDC_LinkByEmail_UnverifiedEmailNotLinked(t *testing.T) {
 
 	// The denial is deliberately generic: it must not reveal that the address
 	// belongs to a local account.
-	if rw.Code != http.StatusForbidden || !strings.Contains(rw.Body.String(), `"sso_login_denied"`) {
-		t.Errorf("expected 403 sso_login_denied, got %d (body: %s)", rw.Code, rw.Body.String())
-	}
+	assertSSOError(t, rw, "sso_login_denied")
 
 	if got := db.authUsers[existingUser.ID]; got == nil || got.ExternalID != nil {
 		t.Errorf("existing account must not be linked, got %+v", got)
@@ -304,9 +292,7 @@ func TestOIDC_DisabledProvider_Rejected(t *testing.T) {
 	rw := httptest.NewRecorder()
 	router.ServeHTTP(rw, req)
 
-	if rw.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for disabled provider login, got %d", rw.Code)
-	}
+	assertSSOError(t, rw, "provider_not_found")
 
 	nonce := "off-nonce"
 	idToken := oidcSrv.signIDToken(t, map[string]any{
@@ -315,9 +301,7 @@ func TestOIDC_DisabledProvider_Rejected(t *testing.T) {
 	oidcSrv.addCode(t, "off-code", idToken)
 
 	rw = doOIDCCallback(t, router, "offprov", "off-code", "off-state", nonce)
-	if rw.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for disabled provider callback, got %d (body: %s)", rw.Code, rw.Body.String())
-	}
+	assertSSOError(t, rw, "provider_not_found")
 
 	if db.authUsersByName["off"] != nil {
 		t.Error("disabled provider must not provision users")

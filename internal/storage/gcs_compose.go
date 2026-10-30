@@ -19,6 +19,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	"github.com/openartifact/openartifact/internal/telemetry"
 )
 
 const (
@@ -51,7 +52,7 @@ func newGCSComposer(bucket string, creds aws.CredentialsProvider) *gcsComposer {
 		bucket: bucket,
 		creds:  creds,
 		signer: v4.NewSigner(),
-		hc:     &http.Client{Timeout: gcsComposeTimeout},
+		hc:     telemetry.WrapClient(&http.Client{Timeout: gcsComposeTimeout}),
 		now:    time.Now,
 	}
 }

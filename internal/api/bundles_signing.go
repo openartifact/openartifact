@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/gpgkeys"
 	"github.com/openartifact/openartifact/pkg/gpg"
@@ -26,6 +27,8 @@ const bundleManifestSchema = "openartifact.release-bundle/v1"
 // key id, a fingerprint, or "config").
 type BundleKeyResolver interface {
 	SignerByRef(ctx context.Context, ref string) (gpg.Signer, *models.GPGKey, error)
+	// List returns the stored keys and the read-only configuration key.
+	List(ctx context.Context) ([]gpgkeys.Entry, error)
 }
 
 // WithGPGKeys enables sealing with gpg_key_id: the sealed bundle's manifest is
@@ -88,12 +91,188 @@ func buildBundleManifest(b *models.ReleaseBundle, items []*models.ReleaseBundleI
 	return buf.Bytes(), nil
 }
 
+// bundleSignerGrant lets one user seal bundles with one stored GPG key.
+type bundleSignerGrant struct {
+	// key is a stored key id (lower case) or a fingerprint (upper case hex).
+	key  string
+	user string
+}
+
+// WithBundleSigners sets the per-key signer allowlist: each entry is
+// "<key id or fingerprint>=<username>" (gpg.bundleSigners). Without a grant
+// only administrators (global `manage`) may choose the signing key of a
+// bundle. Malformed entries are dropped; config validation rejects them at
+// startup.
+func (h *BundlesHandler) WithBundleSigners(entries []string) *BundlesHandler {
+	h.signers = h.signers[:0]
+
+	for _, e := range entries {
+		ref, user, ok := strings.Cut(e, "=")
+		if !ok || strings.TrimSpace(ref) == "" || strings.TrimSpace(user) == "" {
+			continue
+		}
+
+		h.signers = append(h.signers, bundleSignerGrant{key: normalizeSignerRef(ref), user: strings.TrimSpace(user)})
+	}
+
+	return h
+}
+
+// normalizeSignerRef canonicalizes a key reference for comparison: fingerprints
+// lose spaces and 0x and are upper case, ids are lower case.
+func normalizeSignerRef(ref string) string {
+	ref = strings.TrimSpace(ref)
+	if isUUIDString(ref) {
+		return strings.ToLower(ref)
+	}
+
+	return strings.ToUpper(strings.NewReplacer(" ", "", "0x", "", "0X", "").Replace(ref))
+}
+
+// mayUseSigner reports whether grants let user sign with the stored key.
+func (h *BundlesHandler) mayUseSigner(user, keyID, fingerprint string) bool {
+	for _, g := range h.signers {
+		if g.user == user && (g.key == normalizeSignerRef(keyID) || g.key == normalizeSignerRef(fingerprint)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (h *BundlesHandler) hasSignerGrant(user string) bool {
+	for _, g := range h.signers {
+		if g.user == user {
+			return true
+		}
+	}
+
+	return false
+}
+
+// bundleSignerForbiddenCode is the error code of every 403 that refuses a
+// seal's gpg_key_id, so a client can tell it from the other 403s of the seal
+// route (not the owner, no read access to the sources).
+const bundleSignerForbiddenCode = "signer_forbidden"
+
+// signerForbidden is the one answer for every reason the caller may not seal
+// with the requested key, so it cannot be used to probe which keys exist.
+func signerForbidden() *apiFailure {
+	return &apiFailure{http.StatusForbidden, bundleSignerForbiddenCode, "you may not sign bundles with this key"}
+}
+
+// resolveSigner finds the key of a seal request and decides whether the caller
+// may sign with it. The key of the file/environment configuration signs
+// package metadata and is never a bundle signer. A stored key needs the global
+// `manage` permission or a gpg.bundleSigners grant for the caller.
+func (h *BundlesHandler) resolveSigner(
+	ctx context.Context,
+	ref string,
+	p *auth.Principal,
+	access bundleAccess,
+) (gpg.Signer, *apiFailure) {
+	if !access.admin && (p == nil || !h.hasSignerGrant(p.Username)) {
+		return nil, signerForbidden()
+	}
+
+	signer, key, err := h.keys.SignerByRef(ctx, ref)
+	if err != nil {
+		if errors.Is(err, gpgkeys.ErrNotFound) {
+			if access.admin {
+				return nil, validationFailure("gpg_key_id does not reference a known GPG key")
+			}
+
+			return nil, signerForbidden()
+		}
+
+		h.log.Errorw("seal bundle: loading GPG key failed", "error", err)
+
+		return nil, &apiFailure{http.StatusInternalServerError, "internal_error", "failed to load the GPG key"}
+	}
+
+	switch {
+	case key == nil:
+		return nil, &apiFailure{
+			http.StatusForbidden,
+			bundleSignerForbiddenCode,
+			"the package-signing key of the server configuration cannot sign bundles",
+		}
+	case !access.admin && !h.mayUseSigner(p.Username, key.ID, key.Fingerprint):
+		return nil, signerForbidden()
+	}
+
+	return signer, nil
+}
+
+// bundleSigningKey is one key the caller may seal bundles with. It carries
+// only what a seal dialog shows; ID is the value gpg_key_id takes.
+type bundleSigningKey struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Fingerprint  string `json:"fingerprint"`
+	KeyID        string `json:"key_id"`
+	Algorithm    string `json:"algorithm"`
+	UserID       string `json:"user_id"`
+	ActiveGlobal bool   `json:"active_global"`
+}
+
+// handleListSigningKeys lists exactly the keys the caller may pass as gpg_key_id
+// when sealing: for an administrator every stored key, for anyone else the
+// stored keys a gpg.bundleSigners grant names for them. The configuration key
+// is never listed and a key the caller may not use is not distinguishable from
+// one that does not exist, so the list reveals nothing a seal would not accept.
+func (h *BundlesHandler) handleListSigningKeys(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	p := currentPrincipal(r)
+
+	if p == nil || p.IsAnonymous {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+
+	admin, err := principalIsAdmin(ctx, p, h.evaluator)
+	if err != nil {
+		h.log.Errorw("bundle signing keys: auth evaluation failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
+
+		return
+	}
+
+	keys := []bundleSigningKey{}
+
+	if h.keys != nil && (admin || h.hasSignerGrant(p.Username)) {
+		entries, err := h.keys.List(ctx)
+		if err != nil {
+			h.log.Errorw("bundle signing keys: listing GPG keys failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to list GPG keys")
+
+			return
+		}
+
+		for _, e := range entries {
+			if e.Source == gpgkeys.SourceConfig || (!admin && !h.mayUseSigner(p.Username, e.ID, e.Fingerprint)) {
+				continue
+			}
+
+			keys = append(keys, bundleSigningKey{
+				ID: e.ID, Name: e.Name, Fingerprint: e.Fingerprint, KeyID: e.KeyID, Algorithm: e.Algorithm,
+				UserID: e.UserID, ActiveGlobal: e.ActiveGlobal,
+			})
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"keys": keys})
+}
+
 // signBundle signs the manifest of the bundle's current items with the key
-// referenced by ref. The returned models.BundleSignature also pins the item
-// set, so the seal fails if an item changed while signing.
+// referenced by ref, if the caller may use it (see resolveSigner). The
+// returned models.BundleSignature also pins the item set, so the seal fails
+// if an item changed while signing.
 func (h *BundlesHandler) signBundle(
 	ctx context.Context,
 	ref string,
+	p *auth.Principal,
+	access bundleAccess,
 	b *models.ReleaseBundle,
 	items []*models.ReleaseBundleItem,
 ) (*models.BundleSignature, *apiFailure) {
@@ -101,15 +280,9 @@ func (h *BundlesHandler) signBundle(
 		return nil, &apiFailure{http.StatusInternalServerError, "internal_error", "GPG signing is not configured on this server"}
 	}
 
-	signer, _, err := h.keys.SignerByRef(ctx, ref)
-	if err != nil {
-		if errors.Is(err, gpgkeys.ErrNotFound) {
-			return nil, validationFailure("gpg_key_id does not reference a known GPG key")
-		}
-
-		h.log.Errorw("seal bundle: loading GPG key failed", "error", err)
-
-		return nil, &apiFailure{http.StatusInternalServerError, "internal_error", "failed to load the GPG key"}
+	signer, fail := h.resolveSigner(ctx, ref, p, access)
+	if fail != nil {
+		return nil, fail
 	}
 
 	manifest, err := buildBundleManifest(b, items)

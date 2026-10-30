@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -253,27 +254,7 @@ func validateStorageConfig(ctx context.Context, kind string, cfg map[string]any)
 			return validationError("config.path must not contain '..'")
 		}
 	case "s3", "garage", "seaweedfs":
-		if cfgString(cfg, "bucket") == "" {
-			return validationError("config.bucket is required")
-		}
-
-		endpoint := cfgString(cfg, "endpoint")
-		if endpoint == "" && kind != "s3" {
-			return validationError("config.endpoint is required for " + kind + " backends")
-		}
-
-		if endpoint != "" {
-			if err := netutil.ValidateOutboundURLContext(ctx, endpoint); err != nil {
-				return fmt.Errorf("config.endpoint is not allowed: %w", err)
-			}
-		}
-
-		hasAccess := cfgString(cfg, "access_key", "accessKey") != ""
-		hasSecret := cfgString(cfg, "secret_key", "secretKey") != ""
-
-		if hasAccess != hasSecret {
-			return validationError("config.access_key and config.secret_key must be set together")
-		}
+		return validateS3Config(ctx, kind, cfg)
 	case "oci":
 		endpoint := ociEndpoint(cfg)
 		if endpoint == "" {
@@ -288,8 +269,54 @@ func validateStorageConfig(ctx context.Context, kind string, cfg map[string]any)
 			return validationError("config.bucket is required for gcs backends")
 		}
 	case "azure":
-		if cfgString(cfg, "account", "account_name") == "" || cfgString(cfg, "container") == "" {
-			return validationError("config.account and config.container are required for azure backends")
+		return validateAzureConfig(ctx, cfg)
+	}
+
+	return nil
+}
+
+// validateS3Config checks the S3-compatible kinds (s3, garage, seaweedfs).
+func validateS3Config(ctx context.Context, kind string, cfg map[string]any) error {
+	if cfgString(cfg, "bucket") == "" {
+		return validationError("config.bucket is required")
+	}
+
+	endpoint := cfgString(cfg, "endpoint")
+	if endpoint == "" && kind != "s3" {
+		return validationError("config.endpoint is required for " + kind + " backends")
+	}
+
+	if endpoint != "" {
+		if err := netutil.ValidateOutboundURLContext(ctx, endpoint); err != nil {
+			return fmt.Errorf("config.endpoint is not allowed: %w", err)
+		}
+	}
+
+	hasAccess := cfgString(cfg, "access_key", "accessKey") != ""
+	hasSecret := cfgString(cfg, "secret_key", "secretKey") != ""
+
+	if hasAccess != hasSecret {
+		return validationError("config.access_key and config.secret_key must be set together")
+	}
+
+	return nil
+}
+
+// validateAzureConfig checks an azure backend: the account becomes a host
+// label, so it must be a well-formed account name.
+func validateAzureConfig(ctx context.Context, cfg map[string]any) error {
+	account := cfgString(cfg, "account", "account_name", "accountName")
+	if account == "" || cfgString(cfg, "container") == "" {
+		return validationError("config.account and config.container are required for azure backends")
+	}
+
+	if !storage.ValidAzureAccountName(account) {
+		return validationError("config.account must be 3-24 lowercase letters and digits")
+	}
+
+	if endpoint := cfgString(cfg, "endpoint"); endpoint != "" {
+		if err := netutil.ValidateOutboundURLContext(ctx, endpoint); err != nil {
+			return fmt.Errorf("config.endpoint is not allowed: %w", err)
 		}
 	}
 
@@ -347,7 +374,7 @@ func (h *AdminStorageHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -471,7 +498,7 @@ func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := decodeJSON(r, &patch); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -493,12 +520,15 @@ func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Always re-validate the effective config: the kind may have changed even
-	// when no config was sent. Omitted secrets are preserved.
+	// when no config was sent. Omitted secrets are preserved: the stored
+	// config's own secrets are ciphertext, which prepareStorageConfig would
+	// refuse as submitted plaintext, so they are left out of the input and
+	// carried over from the stored config instead.
 	var raw []byte
 	if patch.Config != nil {
 		raw = *patch.Config
 	} else {
-		raw = backend.Config
+		raw = withoutStorageSecrets(backend.Config)
 	}
 
 	config, err := prepareStorageConfig(r.Context(), backend.Kind, raw, backend.Config)
@@ -534,6 +564,26 @@ func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, storageBackendToResponse(backend))
+}
+
+// withoutStorageSecrets returns config without its credential fields
+// (storageSecretFields). A config that is not a JSON object is returned as is.
+func withoutStorageSecrets(config []byte) []byte {
+	cfg := map[string]any{}
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return config
+	}
+
+	for _, f := range storageSecretFields {
+		delete(cfg, f)
+	}
+
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		return config
+	}
+
+	return out
 }
 
 // storageLocationEqual compares two backend configs by where the blobs live
@@ -759,6 +809,7 @@ func (h *AdminStorageHandler) testS3Backend(ctx context.Context, name string, cf
 	}
 
 	store, err := storage.NewS3BlobStore(storage.StorageConfig{
+		SafeDial:       true,
 		Endpoint:       endpoint,
 		Bucket:         bucket,
 		Region:         cfgString(cfg, "region"),
@@ -798,9 +849,12 @@ func (h *AdminStorageHandler) testGCSBackend(ctx context.Context, name string, c
 		return storageTestResult{false, "invalid_config", "stored credentials could not be decrypted"}
 	}
 
-	store, err := storage.NewGCSBlobStore(storage.StorageConfig{GCSBucket: bucket, GCSHMACKey: hmacKey, GCSHMACSecret: hmacSecret})
+	store, err := storage.NewGCSBlobStore(storage.StorageConfig{
+		SafeDial: true, GCSBucket: bucket, GCSHMACKey: hmacKey, GCSHMACSecret: hmacSecret,
+	})
 	if err != nil {
-		return storageTestResult{false, "invalid_config", err.Error()}
+		h.log.Warnw("storage test: gcs client init failed", "backend", name, "error", err)
+		return storageTestResult{false, "invalid_config", storageInitMessage(err, gcsInitMessages, "could not initialise the GCS client")}
 	}
 
 	return h.healthCheckStore(ctx, name, "gcs", store)
@@ -814,17 +868,67 @@ func (h *AdminStorageHandler) testAzureBackend(ctx context.Context, name string,
 		return storageTestResult{false, "invalid_config", "stored credentials could not be decrypted"}
 	}
 
+	endpoint := cfgString(cfg, "endpoint")
+	if endpoint != "" {
+		if err := netutil.ValidateOutboundURLContext(ctx, endpoint); err != nil {
+			return storageTestResult{false, "invalid_config", "endpoint is not allowed"}
+		}
+	}
+
 	store, err := storage.NewAzureBlobStore(storage.StorageConfig{
+		SafeDial:           true,
 		AzureAccountName:   cfgString(cfg, "account", "account_name", "accountName"),
 		AzureContainerName: cfgString(cfg, "container"),
 		AzureAccountKey:    accountKey,
+		AzureEndpoint:      endpoint,
 	})
 	if err != nil {
-		return storageTestResult{false, "invalid_config", err.Error()}
+		h.log.Warnw("storage test: azure client init failed", "backend", name, "error", err)
+		return storageTestResult{
+			false,
+			"invalid_config",
+			storageInitMessage(err, azureInitMessages, "could not initialise the Azure client"),
+		}
 	}
 
 	return h.healthCheckStore(ctx, name, "azure", store)
 }
+
+// storageInitText maps a constructor's sentinel error to the fixed text shown
+// to the admin; the error itself only goes to the log.
+type storageInitText struct {
+	err error
+	msg string
+}
+
+// storageInitMessage returns the fixed text for err, or fallback when err is
+// not one of the table's sentinels.
+func storageInitMessage(err error, table []storageInitText, fallback string) string {
+	for _, e := range table {
+		if errors.Is(err, e.err) {
+			return e.msg
+		}
+	}
+
+	return fallback
+}
+
+//nolint:gochecknoglobals // read-only tables
+var (
+	gcsInitMessages = []storageInitText{
+		{storage.ErrGCSBucketRequired, "bucket is required in config"},
+		{storage.ErrGCSHMACKeyRequired, "the HMAC key is required"},
+		{storage.ErrGCSHMACSecretRequired, "the HMAC secret is required"},
+	}
+	azureInitMessages = []storageInitText{
+		{storage.ErrAzureAccountNameRequired, "account is required in config"},
+		{storage.ErrAzureAccountNameInvalid, "account must be 3-24 lowercase letters and digits"},
+		{storage.ErrAzureAccountKeyRequired, "the account key is required"},
+		{storage.ErrAzureAccountKeyInvalid, "the account key is not valid base64"},
+		{storage.ErrAzureContainerNameRequired, "container is required in config"},
+		{storage.ErrAzureEndpointInvalid, "endpoint is not a valid http(s) URL"},
+	}
+)
 
 // healthCheckStore runs the backend's own connectivity check.
 func (h *AdminStorageHandler) healthCheckStore(

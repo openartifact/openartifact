@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { ApiError } from '../api/client'
+import { ApiError, isFeatureUnavailable } from '../api/client'
 
 /**
  * The state of one independent dashboard source. A block that the caller may not
@@ -16,12 +16,12 @@ export type Block<T> =
 
 export const loadingBlock = <T>(): Block<T> => ({ state: 'loading' })
 
-/** Runs a loader and folds its outcome into a block: 401/403/404/501 are "not for this caller". */
+/** Runs a loader and folds its outcome into a block: 401/403/404 and a feature this server build lacks are "not for this caller". */
 export async function toBlock<T>(load: () => Promise<T>): Promise<Block<T>> {
   try {
     return { state: 'ready', data: await load() }
   } catch (err) {
-    if (err instanceof ApiError && [401, 403, 404, 501].includes(err.status)) return { state: 'forbidden' }
+    if (isFeatureUnavailable(err) || (err instanceof ApiError && [401, 403, 404].includes(err.status))) return { state: 'forbidden' }
     return { state: 'error', message: err instanceof Error ? err.message : String(err) }
   }
 }

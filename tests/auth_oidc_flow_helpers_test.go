@@ -359,14 +359,12 @@ func responseCode(t *testing.T, rw *httptest.ResponseRecorder) string {
 	return code
 }
 
-// requireDenied asserts the generic SSO denial: 403 sso_login_denied, no
+// requireDenied asserts the generic SSO denial: the sso_login_denied redirect, no
 // session cookie, and no user provisioned for subject.
 func requireDenied(t *testing.T, db *oidcFlowDB, rw *httptest.ResponseRecorder) {
 	t.Helper()
 
-	if rw.Code != http.StatusForbidden || responseCode(t, rw) != "sso_login_denied" {
-		t.Fatalf("expected 403 sso_login_denied, got %d %s", rw.Code, rw.Body.String())
-	}
+	assertSSOError(t, rw, "sso_login_denied")
 
 	if c := cookieNamed(rw, auth.SessionCookieName); c != nil && c.Value != "" {
 		t.Error("a denied login must not set a session cookie")

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"fmt"
 	"io"
 	"io/fs"
 	"mime"
@@ -15,8 +16,11 @@ import (
 	"net/http/httptest"
 	"path"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
+
+	kgzip "github.com/klauspost/compress/gzip"
 )
 
 func testSPA() (http.Handler, fstest.MapFS) {
@@ -491,5 +495,114 @@ func TestSPA_CorruptPrecompressedFileIsSkipped(t *testing.T) {
 
 	if rw := do(h, http.MethodGet, "/assets/app-AbCd1234.js", nil); rw.Code != http.StatusNotFound {
 		t.Errorf("GET = %d, want 404", rw.Code)
+	}
+}
+
+// gzipBytes compresses like the server does, so a build's gzip and the
+// runtime's agree byte for byte.
+func gzipBytes(body []byte) []byte {
+	var buf bytes.Buffer
+
+	zw, _ := kgzip.NewWriterLevel(&buf, kgzip.BestCompression)
+	_, _ = zw.Write(body)
+	_ = zw.Close()
+
+	return buf.Bytes()
+}
+
+// Startup hashes the files and compresses nothing: the first request that looks
+// at a compressible asset compresses it, once, and no plain bytes are kept.
+func TestSPA_CompressionIsLazyAndBoundedAtStartup(t *testing.T) {
+	fsys := benchDist(false)
+
+	assets := loadAssets(fsys)
+	if len(assets) != 91 {
+		t.Fatalf("loaded %d assets, want 91", len(assets))
+	}
+
+	for name, a := range assets {
+		if a.gzip != nil {
+			t.Fatalf("%s was compressed at startup", name)
+		}
+	}
+
+	// A compression writer allocates over a megabyte of tables; startup that
+	// compressed the 91 files would allocate far more than the files hold.
+	allocs := testing.AllocsPerRun(1, func() { loadAssets(fsys) })
+	if allocs > 20*float64(len(assets)) {
+		t.Errorf("loadAssets made %.0f allocations for %d files", allocs, len(assets))
+	}
+
+	a := assets["assets/chunk1-AbCdEfGh1.js"]
+	if gz := a.gzipVariant(); gz == nil || gz.size >= a.plain.size || gz.etag != etagOf(a.sum, "-gzip") {
+		t.Fatalf("first use did not compress: %+v", gz)
+	}
+
+	if first, second := a.gzipVariant(), a.gzipVariant(); first != second {
+		t.Error("the compression ran twice")
+	}
+
+	if got := gunzip(t, readAll(t, a.gzip)); !bytes.Equal(got, readAll(t, &a.plain)) {
+		t.Error("the compressed variant does not expand to the plain bytes")
+	}
+}
+
+func readAll(t *testing.T, v *variant) []byte {
+	t.Helper()
+
+	rc, err := v.open()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = rc.Close() }()
+
+	b, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return b
+}
+
+// Concurrent first requests share one compression and all see the same bytes.
+func TestSPA_ConcurrentFirstRequests(t *testing.T) {
+	h := newSPAHandler(benchDist(false), nil)
+
+	const clients = 16
+
+	bodies := make([][]byte, clients)
+
+	var wg sync.WaitGroup
+
+	for i := range clients {
+		wg.Go(func() {
+			rw := do(h, http.MethodGet, "/assets/chunk7-AbCdEfGh7.js", map[string]string{"Accept-Encoding": "gzip"})
+			bodies[i] = rw.Body.Bytes()
+		})
+	}
+
+	wg.Wait()
+
+	for i, b := range bodies {
+		if len(b) == 0 || !bytes.Equal(b, bodies[0]) {
+			t.Errorf("client %d got %d bytes, differs from client 0", i, len(b))
+		}
+	}
+}
+
+func BenchmarkServeAsset(b *testing.B) {
+	for _, enc := range []string{"", "gzip"} {
+		for _, pre := range []bool{false, true} {
+			h := newSPAHandler(benchDist(pre), nil)
+
+			b.Run(fmt.Sprintf("enc=%q/precompressed=%v", enc, pre), func(b *testing.B) {
+				b.ReportAllocs()
+
+				for range b.N {
+					do(h, http.MethodGet, "/assets/chunk7-AbCdEfGh7.js", map[string]string{"Accept-Encoding": enc})
+				}
+			})
+		}
 	}
 }

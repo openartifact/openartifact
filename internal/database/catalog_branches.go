@@ -42,6 +42,11 @@ type catalogBranch struct {
 	// sizeFrom joins what blob and prefSize read beyond from. It is only
 	// needed where the blob is resolved, so the narrow rows skip it.
 	sizeFrom string
+	// packageCount is the SQL expression (a scalar subquery of the repository
+	// row cr) of the number of distinct package names of a repository, when a
+	// cheaper source than counting the rows of from exists; "" counts the
+	// distinct names over from.
+	packageCount string
 }
 
 // branchScope is the set of repositories a branch can hold rows of.
@@ -70,10 +75,15 @@ func hostedBranch() catalogBranch {
 		scope:     scopeHosted,
 		formatSQL: "pk.format::text",
 		from: "package_files t JOIN package_versions v ON v.id = t.version_id " +
-			"JOIN packages pk ON pk.id = v.package_id",
+			"JOIN packages pk ON pk.id = v.package_id " +
+			"JOIN repositories hr ON hr.id = t.repository_id AND hr.deleted_at IS NULL",
 		repo: "t.repository_id", live: "t.deleted_at IS NULL AND t.listed",
 		name: "pk.name", version: "v.version", blob: "t.blob_id", blobKey: "NULL::text",
 		prefSize: "t.size_bytes::bigint", fbSize: nullBigint,
+		// The packages table has one row per package; a package with no live
+		// version is not listed (every file of it is trashed).
+		packageCount: `(SELECT count(*) FROM packages pk WHERE pk.repository_id = cr.id AND cr.deleted_at IS NULL
+			AND EXISTS (SELECT 1 FROM package_versions v WHERE v.package_id = pk.id AND v.deleted_at IS NULL))`,
 	}
 }
 

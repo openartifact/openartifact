@@ -671,6 +671,16 @@ func TestOpenArtifactAssetPaths(t *testing.T) {
 			"org.acme/lib/1.0/lib-1.0.jar",
 		},
 		{
+			sourceRepo{Name: "r", Format: formatIvy},
+			oaPackage{Name: "org.acme:lib", Version: "1.0", Filename: "lib-1.0.jar"},
+			"org.acme/lib/1.0/lib-1.0.jar",
+		},
+		{
+			sourceRepo{Name: "r", Format: formatIvy},
+			oaPackage{Name: "org.acme:lib", Version: "1.0", Filename: "lib-1.0.pom"},
+			"org.acme/lib/1.0/lib-1.0.pom",
+		},
+		{
 			sourceRepo{Name: "r", Format: formatSBT},
 			oaPackage{Name: "org.acme:lib_2.13", Version: "1.0", Filename: "lib_2.13-1.0.jar"},
 			"org.acme/lib_2.13/1.0/lib_2.13-1.0.jar",

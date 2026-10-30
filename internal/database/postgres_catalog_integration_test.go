@@ -193,3 +193,24 @@ func TestCatalogComponentDetail(t *testing.T) {
 		t.Fatalf("malformed id: %+v %v", d, err)
 	}
 }
+
+// The hosted branch lists no file of a trashed repository, whichever
+// repository ids the caller passes.
+func TestCatalogHostedBranchSkipsTrashedRepository(t *testing.T) {
+	f, _ := seedCatalog(t)
+	ctx := context.Background()
+
+	if _, err := f.db.ExecContext(ctx, `UPDATE repositories SET deleted_at = now() WHERE id = $1::uuid`, f.repo); err != nil {
+		t.Fatal(err)
+	}
+
+	recent, err := f.pg.ListRecentPackages(ctx, []string{f.repo}, 10)
+	if err != nil || len(recent) != 0 {
+		t.Fatalf("recent of a trashed repository = %v, err %v; want none", recent, err)
+	}
+
+	counts, err := f.pg.CountRepoPackageNames(ctx, []string{f.repo})
+	if err != nil || counts[f.repo] != 0 {
+		t.Fatalf("counts %v err %v; want none", counts, err)
+	}
+}

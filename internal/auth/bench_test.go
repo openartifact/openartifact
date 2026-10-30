@@ -54,6 +54,10 @@ func (d *benchAuthDB) GetTokenByHash(_ context.Context, hash string) (*models.To
 	return d.tokens[hash], nil
 }
 
+func (*benchAuthDB) ListProjectGrantsByUser(context.Context, string) ([]*models.ProjectGrant, error) {
+	return nil, nil
+}
+
 func (d *benchAuthDB) GetUserByID(_ context.Context, id string) (*models.User, error) {
 	return d.users[id], nil
 }

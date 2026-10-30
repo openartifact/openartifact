@@ -18,7 +18,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/artifactpath"
 )
 
 // ─── destination ──────────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ func serveIvySBTListing(inner http.Handler, w http.ResponseWriter, r *http.Reque
 // ivySBTServerRow is name, version and file name of the listing row of the file
 // stored at repoPath, read with the server's own path parser.
 func ivySBTServerRow(format, repoPath string) (string, string, string) {
-	cur, _, _ := base.SplitArtifactPath(repoPath)
+	cur, _, _ := artifactpath.Split(repoPath)
 	filename := cur.Filename
 
 	if format == "ivy" {
@@ -529,7 +529,7 @@ func TestSplitIvySBTPathAgreesWithServer(t *testing.T) {
 	}
 
 	for _, p := range corpus {
-		want, _, wantOK := base.SplitArtifactPath(p)
+		want, _, wantOK := artifactpath.Split(p)
 		got, ok := splitIvySBTPath(p)
 
 		if ok != wantOK || got.group != want.Group || got.module != want.Module || got.version != want.Version ||
@@ -572,12 +572,12 @@ func TestImportIvySBTPresentUsesListedCoordinates(t *testing.T) {
 		{"ivy: maven layout", formatIvy, ivyRows, "com/acme/lib/1.0/lib-1.0.jar", shaA, "r4"},
 		{"ivy: other file of the module", formatIvy, ivyRows, "org.acme/lib/1.0/ivys/ivy-1.0.xml", shaA, ""},
 		{
-			"ivy: the listing never shows the bare file name",
+			"ivy: the listing shows the stored file name (current servers)",
 			formatIvy,
 			[]listedPackage{{ID: "x", SHA256: shaA, Name: "org.acme:lib", Version: "1.0", Filename: "jars/lib-1.0.jar"}},
 			"org.acme/lib/1.0/jars/lib-1.0.jar",
 			shaA,
-			"",
+			"x",
 		},
 		{"ivy: source without digest", formatIvy, ivyRows, "org.acme/lib/1.0/jars/lib-1.0.jar", "", ""},
 		{"ivy: invalid path", formatIvy, ivyRows, "lib-1.0.jar", shaA, ""},

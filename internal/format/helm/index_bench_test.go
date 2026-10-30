@@ -6,6 +6,8 @@ package helm
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,8 +18,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
-	"go.yaml.in/yaml/v3"
 )
+
+// chartDigest is a sha256-looking digest for chart i.
+func chartDigest(i int) string {
+	sum := sha256.Sum256([]byte(strconv.Itoa(i)))
+
+	return hex.EncodeToString(sum[:])
+}
 
 // benchCharts builds n charts spread over n/10 chart names (10 versions each),
 // like a repository that keeps release history.
@@ -41,7 +49,7 @@ func benchCharts(n int) []*models.HelmChart {
 			Icon:        "https://example.org/icon.png",
 			APIVersion:  "v2",
 			Type:        "application",
-			Digest:      fmt.Sprintf("%064x", i),
+			Digest:      chartDigest(i),
 			SizeBytes:   12345,
 			CreatedAt:   created,
 		}
@@ -50,23 +58,22 @@ func benchCharts(n int) []*models.HelmChart {
 	return charts
 }
 
-func BenchmarkBuildHelmIndex(b *testing.B) {
-	for _, n := range []int{100, 1000, 10000} {
-		charts := benchCharts(n)
-
-		b.Run(fmt.Sprintf("charts=%d", n), func(b *testing.B) {
-			b.ReportAllocs()
-
-			for b.Loop() {
-				_ = buildHelmIndex(charts)
-			}
-		})
-	}
+// BenchmarkHelmIndexYAML measures renderHelmIndex, the full cost of rendering
+// index.yaml once the charts are loaded. BenchmarkHelmIndexYAMLWholeDocument is
+// its baseline: the same index marshalled as one yaml document.
+func BenchmarkHelmIndexYAML(b *testing.B) {
+	benchHelmIndexRender(b, renderHelmIndex)
 }
 
-// BenchmarkHelmIndexYAML measures build + yaml.Marshal, the full cost of
-// rendering index.yaml once the charts are loaded.
-func BenchmarkHelmIndexYAML(b *testing.B) {
+func BenchmarkHelmIndexYAMLWholeDocument(b *testing.B) {
+	benchHelmIndexRender(b, wholeDocumentHelmIndex)
+}
+
+func benchHelmIndexRender(b *testing.B, render func([]*models.HelmChart, time.Time) ([]byte, error)) {
+	b.Helper()
+
+	generated := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+
 	for _, n := range []int{100, 1000, 10000} {
 		charts := benchCharts(n)
 
@@ -76,7 +83,7 @@ func BenchmarkHelmIndexYAML(b *testing.B) {
 			var size int
 
 			for b.Loop() {
-				out, err := yaml.Marshal(buildHelmIndex(charts))
+				out, err := render(charts, generated)
 				if err != nil {
 					b.Fatal(err)
 				}

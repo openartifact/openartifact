@@ -976,7 +976,8 @@ func propertiesMethod(method string) string {
 }
 
 // isBundleRoute reports whether segs (of an /api/v1/ path) is a per-bundle
-// route: everything under bundles/{name}/{version}. The bundle list
+// route: everything under bundles/{name}/{version}, plus GET
+// bundles/signing-keys (the seal dialog's key list). The bundle list
 // (GET bundles), pipelines and any other shape stay administrative; POST
 // bundles (create) is part of the delegated set.
 func isBundleRoute(method string, segs []string) bool {
@@ -987,6 +988,9 @@ func isBundleRoute(method string, segs []string) bool {
 	switch len(segs) {
 	case 1:
 		return method == http.MethodPost
+	case 2:
+		// The keys the caller may seal with: the handler filters them.
+		return segs[1] == "signing-keys" && method == http.MethodGet
 	case 3:
 		return method == http.MethodGet || method == http.MethodDelete
 	case 4:

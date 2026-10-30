@@ -59,7 +59,7 @@ type Trash struct {
 // TrashKindOf returns the trash kind the format registers, and whether the
 // format has a storage descriptor at all.
 func TrashKindOf(format string) (string, bool) {
-	s, ok := Lookup(format)
+	s, ok := formats.LookupRef(format)
 	if !ok {
 		return "", false
 	}
@@ -68,17 +68,15 @@ func TrashKindOf(format string) (string, bool) {
 }
 
 // TrashFormatsOfKind returns the registered formats whose trash items carry
-// kind, in registry order.
+// kind, in registry order; none for an empty or unknown kind. The slice is
+// shared and must not be modified, and it costs a map lookup, so it is safe on a
+// hot path.
 func TrashFormatsOfKind(kind string) []string {
-	var out []string
-
-	for _, name := range Names() {
-		if s, ok := Lookup(name); ok && s.Trash.Kind == kind {
-			out = append(out, name)
-		}
+	if p := formatsByKind.Load(); p != nil {
+		return (*p)[kind]
 	}
 
-	return out
+	return nil
 }
 
 // NameSQL is NameExpr with the generic default applied.

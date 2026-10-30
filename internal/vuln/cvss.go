@@ -103,3 +103,52 @@ func cvss3BaseScore(vector string) (float64, bool) {
 
 	return cvssRoundUp(math.Min(impact+exploit, 10)), true
 }
+
+// cvss2Weights are the CVSS v2 metric weights (spec, section 3.2.1).
+//
+//nolint:gochecknoglobals // constant lookup table
+var cvss2Weights = map[string]map[string]float64{
+	"AV": {"L": 0.395, "A": 0.646, "N": 1.0},
+	"AC": {"H": 0.35, "M": 0.61, "L": 0.71},
+	"Au": {"M": 0.45, "S": 0.56, "N": 0.704},
+	"C":  {"N": 0, "P": 0.275, "C": 0.660},
+	"I":  {"N": 0, "P": 0.275, "C": 0.660},
+	"A":  {"N": 0, "P": 0.275, "C": 0.660},
+}
+
+// cvss2BaseScore computes the base score of a CVSS v2 vector such as
+// "AV:N/AC:L/Au:N/C:P/I:P/A:P" (optionally in parentheses). It returns false
+// when the vector is not a complete, valid v2 vector.
+func cvss2BaseScore(vector string) (float64, bool) {
+	vector = strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(vector), "("), ")")
+
+	parts := strings.Split(vector, "/")
+	if len(parts) != len(cvss2Weights) {
+		return 0, false
+	}
+
+	w := make(map[string]float64, len(cvss2Weights))
+
+	for _, p := range parts {
+		metric, value, ok := strings.Cut(p, ":")
+		if !ok {
+			return 0, false
+		}
+
+		weight, valid := cvss2Weights[metric][value]
+		if _, dup := w[metric]; !valid || dup {
+			return 0, false
+		}
+
+		w[metric] = weight
+	}
+
+	impact := 10.41 * (1 - (1-w["C"])*(1-w["I"])*(1-w["A"]))
+	if impact == 0 {
+		return 0, true
+	}
+
+	exploit := 20 * w["AV"] * w["AC"] * w["Au"]
+
+	return math.Round(((0.6*impact)+(0.4*exploit)-1.5)*1.176*10) / 10, true
+}

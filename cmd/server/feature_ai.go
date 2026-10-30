@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -16,15 +17,24 @@ import (
 	"github.com/openartifact/openartifact/internal/worker"
 )
 
+// aiBuilt reports that this binary contains AI analysis; the public system
+// info advertises it as ai_available.
+const aiBuilt = true
+
 // aiFeature is what AI analysis adds to the features struct.
 type aiFeature struct {
 	envAI    ai.Settings
 	aiWorker *worker.AIAnalysisWorker
 }
 
+// aiSettingsPollInterval is how often a process looks for AI settings that an
+// admin saved through another process.
+const aiSettingsPollInterval = 30 * time.Second
+
 // setupAI builds the AI analysis worker. The effective settings (env/YAML
-// layered under the admin-saved ones) are applied at startup and again by the
-// admin API after every change, so no restart is needed.
+// layered under the admin-saved ones) are applied at startup, by the admin API
+// right after every change it handles, and by a poll for the changes handled by
+// another process, so no restart is needed.
 func (a *app) setupAI() {
 	cfg := a.cfg.AI
 
@@ -65,6 +75,13 @@ func (a *app) setupAI() {
 	a.feat.uploadPublisher = worker.NewAIAutoAnalyzePublisher(a.workers.webhook, aiWorker)
 
 	a.start(aiWorker.Start)
+
+	// Every role follows the settings saved through another process: a web
+	// process answers "AI is not enabled" from them too, even though only a
+	// process that runs workers consumes the analysis queue.
+	a.tasks.Go(func(ctx context.Context) {
+		aiWorker.SyncSettings(ctx, a.db, a.feat.envAI, aiSettingsPollInterval)
+	})
 
 	a.extraStops = append(a.extraStops, aiWorker.Stop)
 	a.feat.aiWorker = aiWorker

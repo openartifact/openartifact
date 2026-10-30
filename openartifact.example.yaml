@@ -28,6 +28,8 @@ server:
   # rateLimitRps: 100
   # pprofEnabled: false     # Go profiler at /api/v1/admin/pprof/ (admin only); env OPENARTIFACT_PPROF_ENABLED
   # readHeaderTimeout: 10   # seconds
+  # idleTimeout: 120        # seconds an idle keep-alive connection stays open; 0 = no limit
+  # maxHeaderBytes: 1048576 # request header size cap in bytes (1024..16777216); 0 = Go default
   # maxBodyBytes: 17179869184  # max request body for every endpoint (16 GiB); 0 = unlimited
   # trustedProxies:         # CIDRs whose X-Forwarded-For is trusted
   #   - "10.0.0.0/8"
@@ -99,7 +101,8 @@ storage:
   # ociUsername: user
   # ociPassword: CHANGE_ME
   # ociInsecure: false
-  # stagingPath: /var/lib/artifacts-staging   # spool dir for server-relayed presigned uploads (oci only)
+  # stagingPath: /var/lib/artifacts-staging   # spool dir for server-relayed presigned uploads (oci only; required, persistent)
+  # spoolPath: /var/lib/artifacts-spool       # where s3/azure/oci spool blobs while verifying them (default: system temp dir)
   # Blob replication: an async second copy on another backend with read
   # fallback and verify/repair (docs/operations/replication.md). Active when
   # type is set. It takes the same backend keys as above; env: OPENARTIFACT_STORAGE_REPLICA_*.
@@ -123,6 +126,7 @@ storage:
   #   # ociUsername: user
   #   # ociPassword: CHANGE_ME
   #   # ociInsecure: false
+  #   # spoolPath: /var/lib/artifacts-replica-spool   # s3/azure/oci spool dir (default: system temp dir)
   #   readFallback: notfound    # notfound | error | off: when reads fall back to the replica
   #   interval: 5s              # pause between queue passes
   #   batch: 100                # operations claimed per pass
@@ -167,6 +171,7 @@ auth:
   allowAnonymousRead: false
   legacyApiKeyEnabled: false  # default false; true accepts server.apiKey (deprecated, full admin)
   sessionDurationHours: 24
+  argon2MaxConcurrent: 0  # concurrent password hashes (64 MiB each; more logins wait); 0 = CPU count clamped to 2..4; env OPENARTIFACT_ARGON2_MAX_CONCURRENT
   # hmacKey: "CHANGE_ME"  # optional; unset = random key generated once, persisted in system_settings
   # samlSpCert: ""         # PEM SAML SP certificate; unset = self-signed pair generated once, persisted encrypted
   # samlSpKey: ""          # PEM SAML SP key; regenerating means re-registering the cert at the IdP
@@ -185,11 +190,12 @@ gpg:
   # keyPath: /etc/openartifact/gpg/private.key
   # passphrase: ""
   # autoGenerate: false  # generate a global RSA-4096 signing key at startup when none exists; needs OPENARTIFACT_SECRET_KEY (keys can also be managed via the admin API / `oa gpg`)
+  # bundleSigners: []  # non-admins allowed to seal release bundles with a stored key: "<key id or fingerprint>=<username>"; administrators may use any stored key, the keyPath key never signs bundles
 
 # Signing key of SBOM / VEX attestations (GET .../download?attest=true, see
 # docs/security/sbom.md). Unset: an ECDSA P-256 key is generated on first use
-# and stored encrypted in the database (needs OPENARTIFACT_SECRET_KEY to be
-# encrypted at rest). A key file is an unencrypted PKCS#8 / SEC1 PEM, ECDSA or
+# and stored encrypted in the database; that needs OPENARTIFACT_SECRET_KEY,
+# without it no key is generated and attestations answer 409. A key file is an unencrypted PKCS#8 / SEC1 PEM, ECDSA or
 # Ed25519; env: ATTESTATION_KEY_PATH.
 attestation:
   # keyPath: /etc/openartifact/attestation/key.pem
@@ -329,6 +335,7 @@ api:
 #  spoolDir: ""                # downloads of peer blobs, resumed after an interruption (empty: under the OS temp dir)
 #  maxPartialBytes: 10737418240 # cap on the interrupted downloads kept for resuming
 #  maxPartialAge: 24h          # drop an interrupted download not written to for this long
+#  maxClockSkew: 5m            # how far ahead of the local clock a peer's change stamp may be (later: set aside until the clock catches up)
 
 # Storage tiers and lifecycle policies. Tiers (named storage backends) and the
 # policies that move blobs between them are managed in the admin UI/API; this

@@ -49,6 +49,7 @@ type backend interface {
 	claim(ctx context.Context, kinds []string, limit int, lease time.Duration) ([]Request, error)
 	renew(ctx context.Context, held []ref, lease time.Duration) error
 	finish(ctx context.Context, r ref, upTo time.Time) error
+	release(ctx context.Context, r ref) error
 }
 
 // settlement is a Settle call waiting for the poll loop.
@@ -82,6 +83,10 @@ type Consumer struct {
 	// RequestedAt claimed: what a finished work covers.
 	held    map[ref]time.Time
 	settled []settlement
+	// gaveUp are the claims of work that settled not done: no longer renewed,
+	// so the request is retried once the lease lapses (the retry backoff), or
+	// at once after Release.
+	gaveUp []ref
 
 	wake   chan struct{}
 	cancel context.CancelFunc
@@ -159,8 +164,8 @@ func (c *Consumer) Settle(kind, key string, done bool) {
 	}
 }
 
-// Flush applies the Settle calls made so far. Stop first; call it again after
-// the workers drained to settle what they finished during shutdown.
+// Flush applies the Settle calls made so far: finished work deletes its request,
+// work that gave up keeps it, claimed until the lease lapses (a retry backoff).
 func (c *Consumer) Flush(ctx context.Context) {
 	c.mu.Lock()
 	pending := c.settled
@@ -182,12 +187,42 @@ func (c *Consumer) Flush(ctx context.Context) {
 
 	for _, f := range out {
 		if !f.done {
+			c.mu.Lock()
+			c.gaveUp = append(c.gaveUp, f.ref)
+			c.mu.Unlock()
+
 			continue
 		}
 
 		if err := c.store.finish(ctx, f.ref, f.upTo); err != nil {
 			c.log.Warnw("worker request: could not delete the finished request; it will be handled again",
 				"kind", f.ref.kind, "key", f.ref.key, "error", err)
+		}
+	}
+}
+
+// Release applies the Settle calls made so far, then gives back every claim
+// that is still held or was given up, so another worker takes those requests
+// over at once instead of after the lease lapses. Stop first; call it when the
+// process shuts down.
+func (c *Consumer) Release(ctx context.Context) {
+	c.Flush(ctx)
+
+	c.mu.Lock()
+	out := c.gaveUp
+	c.gaveUp = nil
+
+	for r := range c.held {
+		out = append(out, r)
+	}
+
+	c.held = map[ref]time.Time{}
+	c.mu.Unlock()
+
+	for _, r := range out {
+		if err := c.store.release(ctx, r); err != nil {
+			c.log.Warnw("worker request: could not release the claim; it is retried when the lease lapses",
+				"kind", r.kind, "key", r.key, "error", err)
 		}
 	}
 }

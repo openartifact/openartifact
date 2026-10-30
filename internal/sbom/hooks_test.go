@@ -5,19 +5,19 @@
 package sbom
 
 import (
-	"os"
-	"testing"
-
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/pkgdeps"
 )
 
-// TestMain registers the SBOM hooks of every format that has any, as the format
+// init registers the SBOM hooks of every format that has any, as the format
 // plugin does at startup: generatePURLNS and rootType dispatch on them. The
 // package-file components also read the manifest rules, dependency hooks and
 // license hooks of the formats the tests build packages for.
-func TestMain(m *testing.M) {
+// It is an init, not a TestMain, so the fuzz targets registered by ClusterFuzzLite
+// (which compiles the _test.go files into the fuzzer but never runs TestMain)
+// see the same registry.
+func init() { //nolint:gochecknoinits // test-only format registry, see above
 	for format, h := range map[string]Hooks{
 		"maven": MavenHooks, "ivy": MavenHooks, "sbt": MavenHooks, "pypi": PyPIHooks,
 		"pacman": PacmanHooks, "deb": DebHooks, "rpm": RPMHooks,
@@ -46,6 +46,4 @@ func TestMain(m *testing.M) {
 	} {
 		licensemeta.Register(format, h)
 	}
-
-	os.Exit(m.Run())
 }

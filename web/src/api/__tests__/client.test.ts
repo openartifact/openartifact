@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test'
 import { createPinia, setActivePinia, type StoreGeneric } from 'pinia'
 import { request, preflight, downloadBlob, isSessionExpired, setClientSpanFactory, ApiError, SESSION_EXPIRED } from '../client'
 import router from '../../router'
+import { t } from '../../i18n'
 import { useSessionStore, type User } from '../../stores/session'
 
 // The 401 handler lazily imports the session store and the router. Both are
@@ -222,6 +223,35 @@ describe('API client', () => {
     expect(isSessionExpired(err)).toBe(true)
     expect(isSessionExpired(new ApiError('nope', 401, 'invalid_credentials'))).toBe(false)
     expect(isSessionExpired(new Error('x'))).toBe(false)
+  })
+
+  it('words the expired-session error in the catalog, not in hard-coded English', async () => {
+    spyOn(router, 'push').mockResolvedValue(undefined)
+    spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 401 }))
+
+    const err = (await request('/api/v1/protected').catch((e: unknown) => e)) as ApiError
+
+    expect(err.message).toBe(t('session.expired'))
+  })
+
+  it('keeps ?next= when a late 401 arrives on the login page', async () => {
+    window.history.pushState({}, '', '/login?next=%2Frepos%2Ffoo')
+    const pushSpy = spyOn(router, 'push').mockResolvedValue(undefined)
+    spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 401 }))
+
+    await request('/api/v1/protected').catch(() => undefined)
+
+    expect(pushSpy).not.toHaveBeenCalled()
+  })
+
+  it('sends the current path and query as ?next= from any other page', async () => {
+    window.history.pushState({}, '', '/repos/foo?tab=files')
+    const pushSpy = spyOn(router, 'push').mockResolvedValue(undefined)
+    spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 401 }))
+
+    await request('/api/v1/protected').catch(() => undefined)
+
+    expect(pushSpy).toHaveBeenCalledWith({ name: 'login', query: { next: '/repos/foo?tab=files' } })
   })
 
   it('redirects to login once when several requests expire together', async () => {

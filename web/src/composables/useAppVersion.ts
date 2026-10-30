@@ -11,6 +11,9 @@ import { getSystemInfo } from '../api/admin'
 const version = ref<string | null>(null)
 const docsUrl = ref<string | null>(null)
 const apiReferenceEnabled = ref(false)
+// True until the server says otherwise: servers that predate the field, and the
+// moment before the answer arrives, show the AI entries.
+const aiAvailable = ref(true)
 let inflight: Promise<void> | null = null
 
 function load(): Promise<void> {
@@ -19,6 +22,7 @@ function load(): Promise<void> {
       version.value = info?.version || null
       // The value is rendered as an href: anything but http(s) is dropped.
       apiReferenceEnabled.value = info?.api_reference_enabled === true
+      aiAvailable.value = info?.ai_available !== false
       docsUrl.value = info?.docs_url && /^https?:\/\//i.test(info.docs_url) ? info.docs_url : null
     })
     .catch(() => {
@@ -49,12 +53,24 @@ export function useApiReferenceEnabled(): Ref<boolean> {
   return apiReferenceEnabled
 }
 
+/** Current value of `useAiAvailable()` without triggering the fetch, for code that reads it inside a computed. */
+export function isAiAvailable(): boolean {
+  return aiAvailable.value
+}
+
+/** Whether this server build contains AI analysis (false for a build made with -tags noai). */
+export function useAiAvailable(): Ref<boolean> {
+  void load()
+  return aiAvailable
+}
+
 /** Forgets the shared info so the next consumer fetches it again. Tests only. */
 export function resetAppInfo(): void {
   inflight = null
   version.value = null
   docsUrl.value = null
   apiReferenceEnabled.value = false
+  aiAvailable.value = true
 }
 
 /** Display form of a server version: `v1.2.3`, or `dev` for development builds. */

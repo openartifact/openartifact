@@ -111,8 +111,10 @@ func (p *CatalogStore) loadLastPublished(ctx context.Context, repoIDs []string, 
 
 // CountRepoPackageNames returns the number of distinct package names (as the
 // package listing names them) of each repository in repoIDs; a repository with
-// no packages maps to 0. It reads every package row of the repositories, so ask
-// for one page of repositories at a time.
+// no packages maps to 0. A hosted repository is counted from its packages rows
+// (those with a live version), so the cost follows the number of packages, not of
+// files; docker and proxy repositories count their tag and cache rows. Ask for
+// one page of repositories at a time.
 func (p *CatalogStore) CountRepoPackageNames(ctx context.Context, repoIDs []string) (map[string]int64, error) {
 	counts := make(map[string]int64, len(repoIDs))
 	if len(repoIDs) == 0 {
@@ -153,8 +155,9 @@ func (p *CatalogStore) CountRepoPackageNames(ctx context.Context, repoIDs []stri
 // row each: the latest version, the version count and the latest version's size.
 // It returns the requested page and the total number of matching packages.
 //
-// The first stage groups the narrow rows of every table, the second reads the
-// sizes of the page's packages only (see rollupQuery).
+// The first stage groups the live versions (docker tags and proxy cache rows
+// for those branches), the second reads the sizes of the page's packages only
+// (see rollupQuery).
 func (p *CatalogStore) ListRepoPackageRollup(ctx context.Context, opts models.PackageRollupOptions) ([]models.PackageRollup, int, error) {
 	offset := (opts.Page - 1) * opts.Limit
 
@@ -359,9 +362,12 @@ func (p *CatalogStore) SearchComponents(ctx context.Context, repoID string, opts
 		return nil, 0, fmt.Errorf("failed to list packages: %w", err)
 	}
 
-	total, err := p.componentTotal(ctx, repoID, opts, len(rows))
-	if err != nil {
-		return nil, 0, err
+	total := 0
+	if !opts.NoTotal {
+		total, err = p.componentTotal(ctx, repoID, opts, len(rows))
+		if err != nil {
+			return nil, 0, err
+		}
 	}
 
 	components := make([]*models.Component, 0, len(rows))
@@ -404,6 +410,7 @@ func (p *CatalogStore) componentTotal(ctx context.Context, repoID string, opts C
 		FormatFilter: opts.Format,
 		NameFilter:   opts.Name,
 		Q:            opts.Query,
+		QPattern:     containsPattern(opts.Query),
 	})
 	if err != nil {
 		return 0, fmt.Errorf("failed to count packages: %w", err)
@@ -416,6 +423,17 @@ func (p *CatalogStore) componentTotal(ctx context.Context, repoID string, opts C
 // ListRepoComponentsByName.
 type componentRow = dbsqlc.ListRepoComponentsRow
 
+// componentAfterParams renders the keyset position for ListRepoComponents. With
+// no cursor it is a timestamp every row is before and the zero uuid, so the
+// keyset condition keeps every row.
+func componentAfterParams(c *ComponentCursor) (time.Time, string) {
+	if c == nil {
+		return time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC), "00000000-0000-0000-0000-000000000000"
+	}
+
+	return c.CreatedAt, c.ID
+}
+
 // listComponentRows runs the newest-first or the by-name variant of the
 // package listing query.
 func (p *CatalogStore) listComponentRows(ctx context.Context, repoID string, opts ComponentListOptions) ([]componentRow, error) {
@@ -423,14 +441,19 @@ func (p *CatalogStore) listComponentRows(ctx context.Context, repoID string, opt
 	offset := toInt32((opts.Page - 1) * opts.Limit)
 
 	if !opts.SortByName {
+		afterAt, afterID := componentAfterParams(opts.After)
+		if opts.After != nil {
+			offset = 0
+		}
+
 		return p.q.ListRepoComponents(ctx, dbsqlc.ListRepoComponentsParams{
-			RepoID: repoID, FormatFilter: opts.Format, NameFilter: opts.Name, Q: opts.Query,
-			PageLimit: limit, PageOffset: offset,
+			RepoID: repoID, FormatFilter: opts.Format, NameFilter: opts.Name, Q: opts.Query, QPattern: containsPattern(opts.Query),
+			AfterAt: afterAt, AfterID: afterID, PageLimit: limit, PageOffset: offset,
 		})
 	}
 
 	rows, err := p.q.ListRepoComponentsByName(ctx, dbsqlc.ListRepoComponentsByNameParams{
-		RepoID: repoID, FormatFilter: opts.Format, NameFilter: opts.Name, Q: opts.Query,
+		RepoID: repoID, FormatFilter: opts.Format, NameFilter: opts.Name, Q: opts.Query, QPattern: containsPattern(opts.Query),
 		PageLimit: limit, PageOffset: offset,
 	})
 	if err != nil {

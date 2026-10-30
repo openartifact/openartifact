@@ -16,7 +16,7 @@ describe('AppHeader palette trigger', () => {
   it('is a real button that opens the palette and advertises the hotkey', async () => {
     const ui = useUIStore()
     const wrapper = mountHeader()
-    const trigger = wrapper.get('button[aria-label="Open command palette"]')
+    const trigger = wrapper.get('[data-testid="search-pill"]')
     expect(trigger.attributes('type')).toBe('button')
     expect(trigger.attributes('aria-haspopup')).toBe('dialog')
     expect(trigger.attributes('aria-keyshortcuts')).toMatch(/^(Meta|Control)\+K$/)

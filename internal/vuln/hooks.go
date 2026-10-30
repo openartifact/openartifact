@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/registry"
+	"github.com/openartifact/openartifact/internal/repotype"
 )
 
 // PURLParts are the components of a Package URL that vary by ecosystem: the
@@ -136,7 +137,7 @@ func distroPURL(p Package) (PURLParts, error) {
 		Namespace:  []string{distroVendor(p.Distro)},
 		Name:       p.Name,
 		Version:    p.Version,
-		Qualifiers: "?distro=" + purlEscape(p.Distro),
+		Qualifiers: "?distro=" + repotype.PURLEscape(p.Distro),
 	}, nil
 }
 

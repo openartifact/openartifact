@@ -55,7 +55,8 @@ func (a *app) registerPublicRoutes() error {
 
 	w.public.sysInfo = api.NewSystemInfoHandler(version, commit, buildTime, db, a.store.blobs, cfg.Storage.Type).
 		WithDocsBaseURL(cfg.Docs.BaseURL).
-		WithAPIReference(cfg.API.Docs.Enabled)
+		WithAPIReference(cfg.API.Docs.Enabled).
+		WithAIAvailable(aiBuilt)
 	w.public.sysInfo.RegisterPublic(router)
 
 	// Public branding (no auth required: the login page and the app shell need
@@ -86,7 +87,7 @@ func (a *app) newAuthedRouter() {
 	authedAPI.Use(middleware.TrackBlobAccess)
 	// Admin-only origin timestamps for migrations (X-OA-Import-Created-At).
 	authedAPI.Use(importmeta.Middleware(w.evaluator))
-	authedAPI.Use(middleware.CSRFMiddleware(a.cfg.BaseURL))
+	authedAPI.Use(middleware.CSRFMiddleware(a.cfg.BaseURL, w.trustedProxies))
 	authedAPI.Use(middleware.AuditMiddleware(a.auditLogger, w.trustedProxies))
 
 	w.authed = authedAPI
@@ -230,7 +231,7 @@ func (a *app) restUploadHandlers() map[string]any {
 	npm := api.NewNPMUploadHandler(log, db, blobStore, reg)
 	npm.SetNPMWorker(wk.npm)
 
-	maven := api.NewMavenUploadHandler(log, db, blobStore, reg)
+	maven := api.NewMavenUploadHandler(log, db, blobStore, reg).WithTasks(a.tasks)
 	maven.SetMavenWorker(wk.maven)
 
 	return map[string]any{"rpm": rpm, "deb": deb, "raw": raw, "npm": npm, "maven": maven}
@@ -312,6 +313,7 @@ func (a *app) registerRepositoryRoutes() {
 
 	api.NewBundlesHandler(db, log, evaluator).
 		WithGPGKeys(w.gpgKeys).
+		WithBundleSigners(a.cfg.GPG.BundleSigners).
 		WithPublisher(w.webhook).
 		WithWorkers(w.metadata).
 		RegisterAuthed(authedAPI)

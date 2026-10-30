@@ -28,7 +28,7 @@ const FINDING = {
 
 const EXPLOITED = { ...FINDING, id: 'f2', title: 'CVE-2026-0002', kev_count: 2, max_epss: 0.976, priority: 'kev' }
 
-interface Api { summary?: unknown; findings?: unknown; findingsStatus?: number; health?: unknown; feeds?: unknown }
+interface Api { summary?: unknown; findings?: unknown; findingsStatus?: number; health?: unknown; feeds?: unknown; systemInfo?: unknown }
 
 function mockApi(api: Api = {}) {
   return spyOn(globalThis, 'fetch').mockImplementation((async (input: unknown) => {
@@ -38,6 +38,7 @@ function mockApi(api: Api = {}) {
       if (api.findingsStatus) return json({ error: 'forbidden', code: 'forbidden' }, api.findingsStatus)
       return json(api.findings ?? { findings: [FINDING], has_more: false })
     }
+    if (url.pathname === '/api/v1/system/info') return json(api.systemInfo ?? { version: '1' })
     if (url.pathname === '/api/v1/security/exploit-feeds') return api.feeds ? json(api.feeds) : json({ error: 'nope', code: 'forbidden' }, 403)
     if (url.pathname === '/api/v1/security/health') return json(api.health ?? { scanners: [], ai: { enabled: true }, scans_pending: 0, scans_failed_24h: 0, unscanned_repositories: 0, dependency_track: { enabled: false } })
     if (url.pathname === '/api/v1/vuln/osv-mirror') return json({ enabled: false, source_url: '', interval_seconds: 0, ecosystems: [], attribution: { source: 'OSV', license: 'CC-BY-4.0', url: 'https://osv.dev' } })
@@ -154,6 +155,20 @@ describe('SecurityPage', () => {
     const { w } = await mountPage('/security?type=ai')
     const off = w.get('[data-testid="ai-off"]')
     expect(off.find('a').attributes('href')).toBe('/settings/ai')
+    w.unmount()
+  })
+
+  it('says AI analysis is not part of the build, with no link to settings, when the server lacks it', async () => {
+    mockApi({
+      findings: { findings: [], has_more: false },
+      summary: summary({}, 3),
+      health: { scanners: [], ai: { enabled: false }, scans_pending: 0, scans_failed_24h: 0, unscanned_repositories: 0, dependency_track: { enabled: false } },
+      systemInfo: { version: '1', ai_available: false },
+    })
+    const { w } = await mountPage('/security?type=ai')
+    const off = w.get('[data-testid="ai-off"]')
+    expect(off.text()).toContain('not part of this server build')
+    expect(off.find('a').exists()).toBe(false)
     w.unmount()
   })
 

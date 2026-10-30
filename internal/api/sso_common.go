@@ -5,10 +5,11 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
-
-	"context"
+	"net/url"
+	"slices"
 
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -16,29 +17,81 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// ssoLoginDeniedMessage is what a client sees when an identity-level conflict
-// (email owned by another account, identity bound elsewhere) stops an SSO
-// login. It is deliberately the same for every such case so the response does
-// not reveal whether a local account exists; the cause is in the server log.
-const ssoLoginDeniedMessage = "SSO sign-in could not be completed; contact your administrator"
+// ssoErrorCodes are the failure codes the SSO login, callback and ACS
+// endpoints hand to the login page as /login?sso_error=<code>. The browser
+// follows these endpoints by navigation, so a failure is a redirect the SPA
+// shows in the user's language, not a JSON body. The set is closed: the value
+// in the URL is never attacker-controlled text. web/src/lib/ssoErrors.ts holds
+// the message of each code (TestSSOErrorCodesMatchWeb keeps both in step).
+//
+//nolint:gochecknoglobals // immutable lookup table
+var ssoErrorCodes = []string{
+	// An identity-level conflict (email owned by another account, identity
+	// bound elsewhere) or a policy rejection. Deliberately the same for every
+	// such case so the page does not reveal whether a local account exists;
+	// the cause is in the server log.
+	"sso_login_denied",
+	"user_not_provisioned",
+	"account_disabled",
+	"provider_not_found",
+	"oidc_discovery_failed",
+	"idp_metadata_unavailable",
+	"id_token_missing",
+	"id_token_expired",
+	"exchange_failed",
+	"missing_session_cookies",
+	"state_mismatch",
+	"nonce_mismatch",
+	"saml_signature_invalid",
+	"saml_audience_mismatch",
+	"saml_assertion_expired",
+	"saml_invalid",
+	"missing_subject",
+	"invalid_relay_state",
+	// The IdP answered the authorization request with an error: access_denied
+	// when the user or the IdP refused, oidc_error for every other value.
+	"access_denied",
+	"oidc_error",
+	"internal_error",
+}
 
-// writeSSOProvisionError maps a provisioning failure onto the HTTP response
-// shared by every SSO flow.
-func writeSSOProvisionError(w http.ResponseWriter, log *logger.Logger, flow, slug string, err error) {
+// redirectSSOError sends the browser to the login page with the failure code
+// (see ssoErrorCodes). 303 so a POST (SAML ACS) is not replayed. A code outside
+// the set is reported as internal_error.
+func redirectSSOError(w http.ResponseWriter, r *http.Request, code string) {
+	if !slices.Contains(ssoErrorCodes, code) {
+		code = "internal_error"
+	}
+
+	http.Redirect(w, r, "/login?"+url.Values{"sso_error": {code}}.Encode(), http.StatusSeeOther)
+}
+
+// oidcProviderErrorCode maps the `error` the IdP put on the callback onto a
+// code of ssoErrorCodes. The value is attacker-controlled (anyone can send the
+// browser to the callback URL), so it is never echoed: only access_denied
+// (RFC 6749 section 4.1.2.1) is kept and everything else is oidc_error.
+func oidcProviderErrorCode(idpError string) string {
+	if idpError == "access_denied" {
+		return "access_denied"
+	}
+
+	return "oidc_error"
+}
+
+// writeSSOProvisionError maps a provisioning failure onto the login-page
+// redirect shared by every SSO flow.
+func writeSSOProvisionError(w http.ResponseWriter, r *http.Request, log *logger.Logger, flow, slug string, err error) {
 	switch {
 	case errors.Is(err, auth.ErrUserNotProvisioned):
-		writeError(w, http.StatusForbidden, "user_not_provisioned", "auto-provisioning is disabled for this provider")
+		redirectSSOError(w, r, "user_not_provisioned")
 	case errors.Is(err, auth.ErrAccountDisabled):
-		writeError(w, http.StatusForbidden, "account_disabled", "user account is disabled")
+		redirectSSOError(w, r, "account_disabled")
 	case errors.Is(err, auth.ErrEmailAlreadyInUse), errors.Is(err, auth.ErrIdentityConflict):
 		log.Warnw(flow+": sso login denied", "slug", slug, "reason", err.Error())
-		writeError(w, http.StatusForbidden, "sso_login_denied", ssoLoginDeniedMessage)
-	case errors.Is(err, auth.ErrEmailLinkAmbiguous):
-		log.Errorw(flow+": sso login denied", "slug", slug, "reason", err.Error())
-		writeError(w, http.StatusForbidden, "sso_login_denied", ssoLoginDeniedMessage)
+		redirectSSOError(w, r, "sso_login_denied")
 	default:
 		log.Errorw(flow+": provision", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "user provisioning failed")
+		redirectSSOError(w, r, "internal_error")
 	}
 }
 
@@ -62,20 +115,12 @@ type establishSSOSessionStore interface {
 // already carries is revoked before a fresh one (new random token, new CSRF
 // token) is created, so an identifier planted or captured before login never
 // becomes an authenticated session. It writes the session and CSRF cookies and
-// reports whether it succeeded; on failure it has written the error response.
+// reports whether it succeeded; on failure it has redirected to the login page.
 func establishSSOSession(
 	w http.ResponseWriter, r *http.Request, db establishSSOSessionStore, log *logger.Logger,
 	baseURL string, trusted *middleware.TrustedProxies, p ssoSessionParams,
 ) bool {
 	ctx := r.Context()
-
-	csrfToken, err := middleware.NewCSRFToken()
-	if err != nil {
-		log.Errorw("sso login: generate CSRF token", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "session creation failed")
-
-		return false
-	}
 
 	if old := sessionCookieValue(r); old != "" {
 		if err := auth.DeleteSession(ctx, db, old); err != nil {
@@ -86,7 +131,7 @@ func establishSSOSession(
 	cookieValue, session, err := auth.CreateSession(ctx, db, p.UserID, middleware.ClientIP(r, trusted), r.UserAgent())
 	if err != nil {
 		log.Errorw("sso login: create session", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "session creation failed")
+		redirectSSOError(w, r, "internal_error")
 
 		return false
 	}
@@ -100,7 +145,7 @@ func establishSSOSession(
 
 	secure := isSecureContext(r, baseURL)
 	setSessionCookie(w, secure, cookieValue)
-	setCSRFCookie(w, secure, csrfToken)
+	setCSRFCookie(w, secure, cookieValue)
 
 	return true
 }

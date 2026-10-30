@@ -56,7 +56,8 @@ CREATE TABLE package_versions (
 );
 CREATE UNIQUE INDEX uq_package_versions_live ON package_versions (package_id, version_key) WHERE deleted_at IS NULL;
 CREATE INDEX idx_package_versions_pkg ON package_versions (package_id, created_at DESC) WHERE deleted_at IS NULL;
-CREATE INDEX idx_package_versions_repo ON package_versions (repository_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_package_versions_repository ON package_versions (repository_id);  -- also serves the repository's FK cascade
+CREATE INDEX idx_package_versions_version_trgm ON package_versions USING gin (version gin_trgm_ops) WHERE deleted_at IS NULL;
 CREATE INDEX idx_package_versions_deleted ON package_versions (package_id) WHERE deleted_at IS NOT NULL;
 
 -- One row per stored file. The unit of listing, trash, quota, blob references and scan ids.
@@ -84,6 +85,7 @@ CREATE TABLE package_files (
 CREATE UNIQUE INDEX uq_package_files_path       ON package_files (repository_id, path) WHERE deleted_at IS NULL;
 CREATE INDEX idx_package_files_listing          ON package_files (repository_id, created_at DESC, id) WHERE deleted_at IS NULL AND listed;
 CREATE INDEX idx_package_files_version          ON package_files (version_id);
+CREATE INDEX idx_package_files_repository       ON package_files (repository_id);   -- the repository's FK cascade; the partial indexes cannot serve it
 CREATE INDEX idx_package_files_filename         ON package_files (repository_id, filename) WHERE deleted_at IS NULL;
 CREATE INDEX idx_package_files_blob             ON package_files (blob_id) WHERE blob_id IS NOT NULL;   -- full: a trashed row still pins its blob
 CREATE INDEX idx_package_files_trash            ON package_files (repository_id, deleted_at) WHERE deleted_at IS NOT NULL;

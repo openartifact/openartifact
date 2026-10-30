@@ -777,6 +777,7 @@ List all packages in a specific repository
 | `format` | query | string | no | Only list packages of this format |
 | `package_name` | query | string | no | Only list rows whose listed package name equals this value exactly (all versions of one package) |
 | `group` | query | string | no | package returns one entry per package (format and name) instead of one per file: its latest version, version count, latest size and the scan state of the latest version. total then counts packages. The q, format and package_name filters apply to the rows before they are grouped. One of: `package`. |
+| `cursor` | query | string | no | Keyset paging of the newest-first per-file listing: the next_cursor of the previous response. page is then ignored and the response carries no total. Rejected when malformed, and with group=package or sort=name. |
 | `flagged` | query | boolean | no | With group=package, true keeps the packages whose latest version has a critical or high vulnerability, a secret finding or a quarantined scan result. Rejected without group=package. |
 
 **Responses**
@@ -784,7 +785,7 @@ List all packages in a specific repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of packages: one entry per file (PackageFile), or one per package (PackageGroup) with group=package | `application/json`: object |
-| `400` | Invalid sort, group, flagged or q | - |
+| `400` | Invalid sort, group, flagged, q or cursor | - |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
@@ -792,10 +793,12 @@ Fields of the `200` response (`application/json`):
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| `has_more` | boolean | no | Per-file listing only (not group=package): the listing continues after this page. |
 | `limit` | integer | no | - |
+| `next_cursor` | string | no | Per-file listing, newest first only: set whenever has_more is true; pass it as cursor to fetch the next page. |
 | `packages` | array of any | no | - |
 | `page` | integer | no | - |
-| `total` | integer | no | - |
+| `total` | integer | no | Number of matching rows. Absent on a per-file request that carries a cursor, which does not count. |
 
 ### `POST /api/v1/repositories/{name}/packages`
 
@@ -880,7 +883,7 @@ Delete a package row (an id of the package listing) from a hosted repository of 
 
 Download a binary delta
 
-Returns a binary diff that turns the package whose sha256 is given in `from` into the target package. The delta is generated on demand and cached. Applies to deb and rpm packages. Requires read access.
+Returns a binary diff that turns the package whose sha256 is given in `from` into the target package. The delta is generated on demand and cached, so the first request can take a while; concurrent requests for the same delta share one run. Generation is bounded: a package larger than 64 MiB (8 MiB when the caller is not signed in, for example on a public repository) is refused with 413, and a busy server answers 503 with `Retry-After`. An already stored delta is served whatever its size. Applies to deb and rpm packages. Requires read access.
 
 **Parameters**
 
@@ -898,7 +901,8 @@ Returns a binary diff that turns the package whose sha256 is given in `from` int
 | `400` | Missing or invalid from | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository, target or source package not found | `application/json`: [Error](schemas.md#error) |
-| `413` | Package too large for delta generation | `application/json`: [Error](schemas.md#error) |
+| `413` | Package too large for delta generation (over 64 MiB, or over 8 MiB for a caller that is not signed in) | `application/json`: [Error](schemas.md#error) |
+| `503` | Delta generation is busy: the queue of generations waiting for a slot, or the callers waiting for this one, is full. Retry after the Retry-After delay Headers: `Retry-After`. | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/packages/{id}/deltas`
 
@@ -1161,6 +1165,7 @@ Download an SBOM report file
 | `400` | Invalid attest value, or the SBOM is not a JSON document (SPDX tag-value cannot be attested) | - |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SBOM report not found | - |
+| `409` | OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required) | `application/json`: [Error](schemas.md#error) |
 | `501` | Attestations are not enabled | - |
 
 ### `POST /api/v1/repositories/{name}/secrets/scan`
@@ -1435,6 +1440,7 @@ Build an OpenVEX 0.2.0 (default) or CycloneDX VEX document from the latest vulne
 | `400` | Invalid format, spec_version or artifact_id | - |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
+| `409` | OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required) | `application/json`: [Error](schemas.md#error) |
 | `501` | Attestations are not enabled | - |
 
 ### `GET /api/v1/repositories/{name}/vex/statements`

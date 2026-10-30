@@ -5,7 +5,7 @@
 import { describe, it, expect, spyOn, type Mock } from 'bun:test'
 import { ref } from 'vue'
 import { flushPromises } from '@vue/test-utils'
-import { formatVersion, useApiReferenceEnabled, useAppVersion, useDocsUrl } from '../useAppVersion'
+import { formatVersion, isAiAvailable, useAiAvailable, useApiReferenceEnabled, useAppVersion, useDocsUrl } from '../useAppVersion'
 import { useDocsLink } from '../useDocsLink'
 
 const json = (body: unknown, status = 200): Response =>
@@ -50,6 +50,22 @@ describe('system info composables', () => {
     const on = useApiReferenceEnabled()
     await flushPromises()
     expect(on.value).toBe(false)
+  })
+
+  it('reports AI analysis as built out when the server says ai_available: false', async () => {
+    serve({ version: '0.9.0', ai_available: false })
+    const ai = useAiAvailable()
+    expect(isAiAvailable()).toBe(true) // until the answer arrives
+    await flushPromises()
+    expect(ai.value).toBe(false)
+    expect(isAiAvailable()).toBe(false)
+  })
+
+  it('treats a missing ai_available as available (older servers)', async () => {
+    serve({ version: '0.9.0' })
+    const ai = useAiAvailable()
+    await flushPromises()
+    expect(ai.value).toBe(true)
   })
 
   it('drops a docs url that is not http(s)', async () => {

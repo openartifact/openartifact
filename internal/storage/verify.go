@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
+	"time"
 )
 
 // spoolBufSize is the copy buffer of spoolVerified. Large enough to keep the
@@ -80,4 +82,48 @@ func spoolVerified(data io.Reader, want, dir, pattern string) (*os.File, int64, 
 	}
 
 	return spool, size, nil
+}
+
+// staleSpoolAge is how old a leftover spool file must be before the startup
+// sweep removes it: anything younger may belong to a live Put.
+const staleSpoolAge = time.Hour
+
+// spoolPatterns match the spool files of the S3, Azure and OCI backends.
+func spoolPatterns() []string {
+	return []string{"s3-put-*.tmp", "azure-put-*.tmp", "oci-put-*.tmp"}
+}
+
+// prepareSpoolDir creates the configured spool directory and removes the
+// spool files a crashed Put left in it. An empty dir means os.TempDir and is
+// neither created nor swept (it is shared with other programs).
+func prepareSpoolDir(dir string) (string, error) {
+	if dir == "" {
+		return "", nil
+	}
+
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create spool dir: %w", err)
+	}
+
+	sweepSpool(dir, staleSpoolAge)
+
+	return dir, nil
+}
+
+// sweepSpool removes spool files older than minAge from dir. Best effort.
+func sweepSpool(dir string, minAge time.Duration) {
+	cutoff := time.Now().Add(-minAge)
+
+	for _, pat := range spoolPatterns() {
+		matches, err := filepath.Glob(filepath.Join(dir, pat))
+		if err != nil {
+			continue
+		}
+
+		for _, m := range matches {
+			if info, err := os.Stat(m); err == nil && info.Mode().IsRegular() && info.ModTime().Before(cutoff) {
+				_ = os.Remove(m)
+			}
+		}
+	}
 }
