@@ -89,6 +89,13 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 > **Breaking: 0.15 cannot be upgraded in place.** The package tables were replaced by a generic schema and the 99 migrations of 0.x were squashed into one baseline (`migrations/001_baseline.sql`). A 0.15 server started on a 0.14 database refuses to start (`database predates the 0.15 schema baseline`). Move the data with `oa import openartifact` into an empty 0.15 database, as below. Design: [format plugins](../design/format-plugins.md).
 
+> **Also breaking: compose, secrets, config and CSRF (#334).** Before starting 0.15:
+> - `docker compose` refuses to start unless `OPENARTIFACT_SECRET_KEY` and `AUTH_HMAC_KEY` are set in `docker/.env` (`openssl rand -hex 32` each; keep them stable).
+> - The attestation signing key is no longer generated without `OPENARTIFACT_SECRET_KEY`: the attestation endpoints answer `409 secret_key_required` until it is set.
+> - An unparsable environment value or configuration file now fails startup instead of being ignored.
+> - Browser sessions must send `X-CSRF-Token` on every state-changing request (including `/repos/**` and `/v2/**`); scripts that drive a session must read the new `oa_csrf` cookie after login.
+> - New settings and migrations `002`/`003` apply; details in the list below.
+
 **Procedure.** Follow the [runbook: 0.14 to 0.15](../migration/openartifact.md#runbook-014-to-015): deploy 0.15 beside 0.14 with its own empty database (the same object-storage bucket may be shared), copy the configuration with `oa import config openartifact` and `oa apply`, copy the content with `oa import openartifact` (dry run first; resumable with `--state-file`), verify, switch clients and DNS, decommission 0.14.
 
 - **No rolling upgrade is possible.** 0.14 and 0.15 cannot share a database or a federation. Stop publishing to 0.14 (or run the import twice, the second run copies the delta), run the final import, switch, then stop 0.14.
@@ -113,7 +120,7 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 - *Plugin layer.* apk now gets a publisher (webhook events); the rpm stale hook notifies even when the stale mark fails; the gpg key refresh notifies every GPG-signed format with a stale hook; the docker GC busy case returns no error; the audit package kinds now include nix.
 - *Webhook paths.* The path of a federation-applied event is the keyed file's repository path.
 
-### Unreleased
+**Other changes in 0.15.0.**
 
 - **Keyset paging of the repository package listing (additive).** `GET /api/v1/repositories/{name}/packages` (per-file, newest first) now returns `has_more` and, while it is true, `next_cursor`; passing it as `cursor` fetches the next page without counting, so the response has no `total` and `page` is ignored. Offset paging (`page`) is unchanged, but its `total` is now optional in the schema (still present on every request without a cursor). `cursor` is rejected with `400` together with `group=package` or `sort=name`. The web UI walks by cursor. On a repository of 1.2M files page 5000 (limit 100) took about 175 ms by offset (135 ms of it the page query, the rest the count) against about 3 ms by cursor, on a local Postgres 18.
 - **Invalid environment values now fail startup.** An unparsable integer, boolean, duration or `key=value` list in an environment variable (for example `SERVER_PORT=80x`) used to be ignored with a warning; `Load` now fails with an error naming the variable (never its value). A blank integer/boolean/duration value still counts as unset. An explicitly empty list variable (`CORS_ORIGINS=`, `OPENARTIFACT_TRUSTED_PROXIES=`, ...) now clears the list set in YAML instead of keeping it.
