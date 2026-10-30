@@ -44,7 +44,7 @@ Supported by `oa upload`: hosted `deb`, `ivy`, `maven`, `raw`, `rpm` and `sbt` r
 `oa` 0.10.0 or newer is needed; `oa --format json version` prints `{"version","go","os","arch"}`. Download the archive for the runner from the [GitHub releases](https://github.com/openartifact/openartifact/releases) and verify it against `SHA256SUMS`:
 
 ```sh
-V=0.14.0 OS=linux ARCH=amd64
+V=0.15.0 OS=linux ARCH=amd64
 base=https://github.com/openartifact/openartifact/releases/download/v$V
 curl -fsSLO "$base/oa_${V}_${OS}_${ARCH}.tar.gz"
 curl -fsSL  "$base/SHA256SUMS" | grep "oa_${V}_${OS}_${ARCH}.tar.gz" | sha256sum -c -
