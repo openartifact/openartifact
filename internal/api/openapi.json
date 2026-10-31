@@ -24378,6 +24378,16 @@
               }
             }
           },
+          "405": {
+            "description": "Proxy and group repositories are read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "409": {
             "description": "Release versions are immutable in this repository",
             "content": {
@@ -24457,6 +24467,16 @@
           },
           "404": {
             "description": "Repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Proxy and group repositories are read-only",
             "content": {
               "application/json": {
                 "schema": {

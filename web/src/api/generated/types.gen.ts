@@ -13472,6 +13472,10 @@ export type DeleteApiV1RepositoriesByNamePackagesByIdErrors = {
      */
     404: Error;
     /**
+     * Proxy and group repositories are read-only
+     */
+    405: Error;
+    /**
      * Release versions are immutable in this repository
      */
     409: Error;
@@ -13555,6 +13559,10 @@ export type PutApiV1RepositoriesByNameCompsErrors = {
      * Repository not found
      */
     404: Error;
+    /**
+     * Proxy and group repositories are read-only
+     */
+    405: Error;
     /**
      * Body too large
      */
