@@ -77,13 +77,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import CardSection from './ui/CardSection.vue'
 import { computed, reactive, ref } from 'vue'
-import { PencilSquareIcon, PlusIcon, TrashIcon } from '@heroicons/vue/20/solid'
+import { PlusIcon } from '@heroicons/vue/20/solid'
 import AppButton from './AppButton.vue'
 import AppToggle from './AppToggle.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import FormatBadge from './FormatBadge.vue'
 import TierPolicyDialog from './TierPolicyDialog.vue'
-import RowActions, { type RowAction } from './ui/RowActions.vue'
+import { editDeleteActions } from '../lib/rowActions'
+import RowActions from './ui/RowActions.vue'
 import TableScroller from './ui/TableScroller.vue'
 import { ACTIONS_CELL, ACTIONS_HEAD, GROW_CELL } from './ui/tableStyles'
 import { deletePolicy, updatePolicy, type StoragePolicy, type StorageTier } from '../api/tiering'
@@ -102,10 +103,7 @@ const deleteTarget = ref<StoragePolicy | null>(null)
 const deleting = ref(false)
 const busy = reactive(new Set<string>())
 
-const policyActions = computed<RowAction[]>(() => [
-  { key: 'edit', label: t('common.edit'), icon: PencilSquareIcon },
-  { key: 'delete', label: t('common.delete'), icon: TrashIcon, tone: 'danger' },
-])
+const policyActions = computed(() => editDeleteActions(t('common.edit'), t('common.delete')))
 
 function onAction(key: string, policy: StoragePolicy): void {
   if (key === 'edit') openEditor(policy)

@@ -112,12 +112,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
-import { PencilSquareIcon, PlusIcon, TrashIcon } from '@heroicons/vue/20/solid'
+import { PlusIcon } from '@heroicons/vue/20/solid'
 import AppButton from '../AppButton.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import StatusBadge from '../StatusBadge.vue'
 import ListTable, { type ListColumn } from '../ui/ListTable.vue'
-import RowActions, { type RowAction } from '../ui/RowActions.vue'
+import { editDeleteActions } from '../../lib/rowActions'
+import RowActions from '../ui/RowActions.vue'
 import RepoCurationRuleDrawer from './RepoCurationRuleDrawer.vue'
 import type { CurationRepository, CurationRule } from '../../api/curation'
 import { useCurationRules } from '../../composables/useCurationRules'
@@ -167,15 +168,12 @@ const columns = computed<ListColumn[]>(() => [
   { key: 'actions', label: t('ui.table.actions'), actions: true },
 ])
 
-const rowActions = computed<RowAction[]>(() => [
-  { key: 'edit', label: t('common.edit'), icon: PencilSquareIcon },
-  { key: 'delete', label: t('common.delete'), icon: TrashIcon, tone: 'danger' },
-])
-
 function onAction(key: string, rule: CurationRule): void {
-  if (key === 'edit') openEdit(rule)
-  else if (key === 'delete') deleteTarget.value = rule
+  if (key === 'delete') deleteTarget.value = rule
+  else if (key === 'edit') openEdit(rule)
 }
+
+const rowActions = computed(() => editDeleteActions(t('common.edit'), t('common.delete')))
 
 onMounted(load)
 </script>
