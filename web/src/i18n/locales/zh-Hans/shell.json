@@ -61,5 +61,12 @@
   "shell.action.createToken": "创建访问令牌",
   "shell.action.createUser": "创建用户",
   "shell.action.createBundle": "创建发布捆绑包",
+  "shell.action.themeDark": "切换到深色主题",
+  "shell.action.themeLight": "切换到浅色主题",
+  "shell.action.language": "将语言切换为 {language}",
+  "shell.action.languageAuto": "切换为浏览器默认语言",
+  "shell.action.repoSettings": "打开 {name} 的设置",
+  "shell.action.repoCopyInstall": "复制 {name} 的安装命令",
+  "shell.action.repoCopied": "已复制 {name} 的安装命令",
   "shell.action.signOut": "退出登录"
 }

@@ -377,6 +377,7 @@
   "adm.ai.unavailable.body": "このサーバーバイナリーは AI 分析なしでビルドされているため、ここで設定できる項目はありません。有効にするには標準ビルドを使用してください。",
   "adm.audit.details": "詳細",
   "adm.gpg.eyebrow": "GPG キー",
+  "adm.gpg.table": "署名鍵",
   "adm.gpg.empty.title": "署名キーがありません",
   "adm.gpg.empty.hint": "秘密鍵をインポートまたは生成し、グローバル、または deb や rpm のリポジトリ向けに有効化すると、メタデータに署名されます。",
   "adm.gpg.noSecretKey": "キーの保存が無効です。署名キーをインポートまたは生成するには、サーバーで OPENARTIFACT_SECRET_KEY を設定してください。",

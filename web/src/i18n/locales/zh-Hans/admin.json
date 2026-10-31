@@ -377,6 +377,7 @@
   "adm.ai.unavailable.body": "此服务器二进制文件在构建时未包含 AI 分析，因此这里没有可配置的内容。请使用标准构建来启用它。",
   "adm.audit.details": "详情",
   "adm.gpg.eyebrow": "GPG 密钥",
+  "adm.gpg.table": "签名密钥",
   "adm.gpg.empty.title": "没有签名密钥",
   "adm.gpg.empty.hint": "导入或生成私钥，然后全局激活，或为 deb 或 rpm 仓库激活，以签名其元数据。",
   "adm.gpg.noSecretKey": "密钥存储已禁用：请在服务器上设置 OPENARTIFACT_SECRET_KEY 以导入或生成签名密钥。",

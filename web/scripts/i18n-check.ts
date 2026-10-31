@@ -2,12 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// `bun run i18n:check [--locale <tag>] [--missing]`: validates web/src/i18n/locales.
+// `bun run i18n:check [--locale <tag>]`: validates web/src/i18n/locales.
 // Exit 1 on errors: keys a locale has but English does not, placeholder sets
 // that differ, plural forms the language does not use, English keys no code
-// refers to, files that are not catalogs. Missing translations are reported
-// (per-locale counts and absent catalog files, or every key with --missing) but never fail the check: the UI falls
-// back to English.
+// refers to, files that are not catalogs, and every key a locale lacks (list
+// them with `bun run i18n:missing`, fill them with `bun run i18n:apply`).
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
@@ -21,7 +20,6 @@ const localesDir = join(root, 'i18n', 'locales')
 
 const args = process.argv.slice(2)
 const only = args.includes('--locale') ? args[args.indexOf('--locale') + 1] : undefined
-const showMissing = args.includes('--missing')
 
 const errors: string[] = []
 
@@ -97,8 +95,7 @@ for (const s of stats) {
 const real = issues.filter((i) => i.level === 'error')
 const warnings = issues.filter((i) => i.level === 'warn')
 const fmt = (i: Issue) => `  ${relative(root, join(localesDir, i.locale, `${i.area}.json`))}: ${i.key}: ${i.message}`
-if (showMissing) for (const w of warnings) console.log(fmt(w).replace(/^ {2}/, '  warn '))
-else if (warnings.length > 0) console.log(`${warnings.length} warning(s) (missing translations fall back to English; --missing lists them)`)
+for (const w of warnings) console.log(fmt(w).replace(/^ {2}/, '  warn '))
 
 for (const e of errors) console.error(`error: ${e}`)
 for (const e of real) console.error(`error:${fmt(e)}`)

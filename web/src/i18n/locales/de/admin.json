@@ -377,6 +377,7 @@
   "adm.ai.unavailable.body": "Diese Server-Binärdatei wurde ohne KI-Analyse gebaut, daher gibt es hier nichts zu konfigurieren. Verwenden Sie einen Standard-Build, um sie zu aktivieren.",
   "adm.audit.details": "Details",
   "adm.gpg.eyebrow": "GPG-Schlüssel",
+  "adm.gpg.table": "Signaturschlüssel",
   "adm.gpg.empty.title": "Keine Signaturschlüssel",
   "adm.gpg.empty.hint": "Importieren Sie einen privaten Schlüssel oder generieren Sie einen und aktivieren Sie ihn dann global oder für ein deb- oder rpm-Repository, um dessen Metadaten zu signieren.",
   "adm.gpg.noSecretKey": "Das Speichern von Schlüsseln ist deaktiviert: Setzen Sie OPENARTIFACT_SECRET_KEY auf dem Server, um Signaturschlüssel zu importieren oder zu generieren.",
