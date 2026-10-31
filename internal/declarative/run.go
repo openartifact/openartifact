@@ -160,7 +160,9 @@ func fetchLive(ctx context.Context, env *Env, opts Options, objs []*Object, filt
 
 		k, _ := opts.Registry.Get(o.Kind)
 		for _, r := range k.Refs(o) {
-			need[r.Kind] = true
+			for _, kind := range r.kinds() {
+				need[kind] = true
+			}
 		}
 	}
 

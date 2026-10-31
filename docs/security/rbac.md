@@ -79,6 +79,10 @@ curl -sS -X POST HOST/api/v1/permission-targets/<TARGET_ID>/assignments -H 'Auth
   -H 'Content-Type: application/json' -d '{"principal_type":"group","principal_id":"<GROUP_ID>"}'
 ```
 
+## Service accounts
+
+A **service account** is a non-human principal for automation: it has a name and a description, no password and no email, it cannot sign in to the web UI, and it is not listed with the users. It otherwise behaves like a user: permission targets are assigned to it (`principal_type: "user"` with its id), it can be a member of groups and have [project roles](projects.md), and it owns API tokens (`/api/v1/users/{id}/tokens`, deploy tokens are the useful kind). Administrators manage them under `/api/v1/service-accounts` or **Admin > Service accounts**. Disabling one makes its tokens fail at once; deleting one removes its tokens, assignments, memberships and [trust policies](../integrations/ci.md#tokenless-ci-oidc-token-exchange). Creating, changing and deleting are audited as `service_account.created`, `service_account.updated` and `service_account.deleted`. The usual home of a service account is a [CI OIDC trust policy](../integrations/ci.md#tokenless-ci-oidc-token-exchange), which lets a CI job obtain a short-lived token without any stored secret.
+
 ## Management API
 
 All of these need admin, except the self-service rows.

@@ -226,8 +226,8 @@ func TestGroupKindMetadata(t *testing.T) {
 
 	refs := k.Refs(&Object{Spec: map[string]any{"members": []any{"alice", "bob"}}})
 	wantRefs := []Ref{
-		{Kind: KindUser, Key: "alice", Field: "members[0]"},
-		{Kind: KindUser, Key: "bob", Field: "members[1]"},
+		userRef("alice", "members[0]"),
+		userRef("bob", "members[1]"),
 	}
 
 	if !reflect.DeepEqual(refs, wantRefs) {

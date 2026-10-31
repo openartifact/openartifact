@@ -89,6 +89,8 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 The web UI is now fully translated again in all seven languages (cleanup preview, proxy settings, curation, activity filter and command-palette actions were showing English). `bun run i18n:check` now fails on any missing translation; see [Translating the web UI](../development/translations.md).
 
+Migrations `007_service_accounts_oidc` and `007_service_accounts_oidc_validate` add the `service_account` user kind, the `oidc_trust_policies` table and the `service_account.*`, `oidc_policy.*` and `auth.oidc_exchange*` audit actions (no behavior change for existing installations). **Service accounts** are non-human principals administrators manage under `/api/v1/service-accounts` (**Admin > Service accounts**, or `ServiceAccount` in `oa apply`); they hold roles and own tokens like users but cannot sign in. **CI OIDC token exchange** lets a GitHub Actions or GitLab CI job trade its ID token for a deploy token of at most one hour through the unauthenticated, rate-limited `POST /api/v1/auth/oidc/exchange`, governed by trust policies (`/api/v1/oidc-trust-policies`: issuer, audience, claim conditions with glob matching, service account, TTL). Nothing changes until an administrator creates a policy. See [Tokenless CI](../integrations/ci.md#tokenless-ci-oidc-token-exchange).
+
 The command palette runs actions (create a token, repository or project, open the settings of a repository, copy its install command, switch theme or language, sign out) and lists the ones you ran under Recent; actions you may not run are no longer shown locked. See [Command palette](web-ui.md#command-palette).
 
 Migration `004_repository_min_age` adds `repositories.min_age_hours` (default `0`, no behavior change). Proxy repositories can set it to hide versions the upstream published less than that many hours ago; see [Minimum age](../repositories/hosted-proxy-group.md#minimum-age).
@@ -462,7 +464,6 @@ Migration `054` (GPG key management; additive) creates `gpg_keys` and `gpg_key_r
   - JSON-RPC batch arrays are refused with 400 when `MCP-Protocol-Version` is `2025-06-18` or later. Tools reject unknown arguments (input schema with `additionalProperties: false`), and argument errors are now tool errors (`isError: true`) instead of JSON-RPC errors.
   - Results gained `content_trust` and `notice` fields (and a trailing `NOTE:` text block) wherever they carry third-party text, and every tool has an `outputSchema` and annotations. `trigger_ai_analysis` now always checks that the artifact exists in the given repository.
   - New public endpoints `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource<MCP_HTTP_PATH>` (RFC 9728), and OIDC access tokens whose `aud` is `<BASE_URL><MCP_HTTP_PATH>` are accepted for users already linked through an enabled OIDC provider (needs `BASE_URL`).
-
 
 #### SSO (OIDC and SAML) changes
 

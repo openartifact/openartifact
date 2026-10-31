@@ -19,10 +19,12 @@ const APIVersion = "openartifact.io/v1"
 // Manifest kinds.
 const (
 	KindUser             = "User"
+	KindServiceAccount   = "ServiceAccount"
 	KindProject          = "Project"
 	KindGroup            = "Group"
 	KindRepository       = "Repository"
 	KindPermissionTarget = "PermissionTarget"
+	KindOIDCTrustPolicy  = "OIDCTrustPolicy"
 	KindSSOProvider      = "SSOProvider"
 	KindWebhook          = "Webhook"
 	KindStorageTier      = "StorageTier"
@@ -114,15 +116,22 @@ type Change struct {
 // manifests or on the server) for the object to be applied.
 type Ref struct {
 	Kind string
+	// Also lists the further kinds that satisfy the reference when Kind has no
+	// object with this key (a user reference accepts a ServiceAccount: account
+	// names are unique across both).
+	Also []string
 	Key  string
 	// Field is the spec path holding the reference, for error messages.
 	Field string
 }
 
+// kinds returns every kind the reference may be satisfied by, Kind first.
+func (r Ref) kinds() []string { return append([]string{r.Kind}, r.Also...) }
+
 // Env is the per-run context handed to kinds.
 type Env struct {
 	Client *Client
-	// Cache is scratch space for kinds (e.g. username to id lookups). Kinds
+	// Cache is scratch space for kinds (e.g. account name to id lookups). Kinds
 	// must delete entries they invalidate by creating objects.
 	Cache map[string]any
 }

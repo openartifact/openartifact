@@ -20,8 +20,10 @@ type User struct {
 	ExternalID         *string
 	ProviderSlug       *string
 	SSOManagedGroups   bool
-	// Kind is UserKindHuman or UserKindService. A service user is the account
-	// behind one project token: no password, no login, one project.
+	// Kind is UserKindHuman, UserKindService or UserKindServiceAccount. A
+	// service user is the account behind one project token: no password, no
+	// login, one project. A service account is an administrator-managed
+	// non-human principal: no password, no login, no project.
 	Kind string
 	// ProjectID is the service user's project (nil for humans).
 	ProjectID *string
@@ -29,8 +31,9 @@ type User struct {
 
 // User kinds.
 const (
-	UserKindHuman   = "human"
-	UserKindService = "service"
+	UserKindHuman          = "human"
+	UserKindService        = "service"
+	UserKindServiceAccount = "service_account"
 )
 
 type Group struct {
@@ -106,5 +109,42 @@ type PermissionAssignment struct {
 	CreatedAt          time.Time
 }
 
-// IsService reports whether the user is a project-token service account.
+// IsService reports whether the user is the account behind a project token.
 func (u *User) IsService() bool { return u.Kind == UserKindService }
+
+// IsServiceAccount reports whether the user is an administrator-managed
+// service account.
+func (u *User) IsServiceAccount() bool { return u.Kind == UserKindServiceAccount }
+
+// IsHuman reports whether the user is a person (the kind of every row that is
+// neither a project-token account nor a service account): the only kind that
+// has a password, a session and a place in the users API.
+func (u *User) IsHuman() bool { return !u.IsService() && !u.IsServiceAccount() }
+
+// OIDCCondition is one claim condition of an OIDCTrustPolicy: the token's claim
+// must match at least one of Patterns (a glob where "*" matches any run of
+// characters, "/" included, and "?" one character).
+type OIDCCondition struct {
+	Claim    string   `json:"claim"`
+	Patterns []string `json:"patterns"`
+}
+
+// OIDCTrustPolicy is an administrator's rule for exchanging an ID token of an
+// external issuer (a CI system) for a short-lived token of a service account.
+type OIDCTrustPolicy struct {
+	ID               string
+	Name             string
+	Issuer           string
+	Audience         string
+	Conditions       []OIDCCondition
+	ServiceAccountID string
+	TokenTTLSeconds  int
+	Enabled          bool
+	CreatedBy        string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+
+	// ServiceAccountName and ServiceAccountDisabled are read-only: filled by reads.
+	ServiceAccountName     string
+	ServiceAccountDisabled bool
+}

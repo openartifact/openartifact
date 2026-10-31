@@ -873,6 +873,13 @@ Result of POST .../license/scan: the recorded license scan plus the policy viola
 | `public_key` | string | yes | Public key in Nix format, name:base64, to add to trusted-public-keys |
 | `updated_at` | string (date-time) | yes | - |
 
+### OIDCCondition
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `claim` | string | yes | Token claim name, for example `repository`, `ref` or `environment`. |
+| `patterns` | array of string | yes | Globs (`*` any run of characters including `/`, `?` one character); the claim must match one of them. Case-sensitive. |
+
 ### OIDCConfig
 
 OIDC/OAuth 2.0 provider settings. client_secret is write-only: responses carry has_secret instead.
@@ -900,6 +907,32 @@ OIDC/OAuth 2.0 provider settings. client_secret is write-only: responses carry h
 | `type` | string | no | Empty: standards-compliant OIDC (issuer discovery). github: GitHub / GitHub Enterprise Server (OAuth 2.0). oauth2: generic OAuth 2.0 with a userinfo endpoint. One of: ``, `github`, `oauth2`. |
 | `userinfo_url` | string | no | type oauth2: userinfo endpoint (subject is sub, else id). |
 | `username_claim` | string | no | - |
+
+### OIDCExchangeResponse
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `access_token` | string | no | A deploy token (`oa_dep_...`) of the service account. |
+| `expires_at` | string (date-time) | no | - |
+| `expires_in` | integer | no | Seconds until the token expires. |
+| `token_type` | string | no | One of: `Bearer`. |
+
+### OIDCTrustPolicy
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `audience` | string | no | The `aud` value the CI job requests; matched exactly. |
+| `conditions` | array of [OIDCCondition](#oidccondition) | no | All conditions must hold. Policies of a shared issuer (GitHub Actions, gitlab.com) need one on an identity claim such as `repository`, `sub` or `project_path`, whose patterns do not start with a wildcard. |
+| `created_at` | string (date-time) | no | - |
+| `created_by` | string | no | - |
+| `enabled` | boolean | no | Default: `true`. |
+| `id` | string (uuid) | no | - |
+| `issuer` | string (uri) | no | Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com` or `https://gitlab.com`. Must be https and pass the outbound-request (SSRF) check. |
+| `name` | string | no | Unique name: 1-64 letters, digits, dot, dash or underscore. |
+| `service_account` | string | no | Name of the service account. |
+| `service_account_id` | string (uuid) | no | - |
+| `token_ttl_seconds` | integer | no | Lifetime of exchanged tokens. Default: `900`. Minimum: 60. Maximum: 3600. |
+| `updated_at` | string (date-time) | no | - |
 
 ### OSVMirrorEcosystem
 
@@ -1844,6 +1877,17 @@ One stored scan result (a package version of one type) that reports something.
 | `last_scan_at` | string (date-time) | yes | When the latest scan of the scope finished; null when none did. Nullable. |
 | `scanned_repositories` | integer | yes | Repositories that hold artifacts (group repositories excluded) with a completed scan of any type. |
 | `total_repositories` | integer | yes | Repositories of the scope that hold artifacts. |
+
+### ServiceAccount
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `created_at` | string (date-time) | no | - |
+| `description` | string | no | - |
+| `disabled` | boolean | no | - |
+| `id` | string (uuid) | no | - |
+| `name` | string | no | - |
+| `updated_at` | string (date-time) | no | - |
 
 ### StorageBackend
 

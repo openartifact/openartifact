@@ -16,7 +16,7 @@ import (
 	"strings"
 )
 
-// ErrPrincipalNotFound is wrapped when a manifest names a user or group that does not exist.
+// ErrPrincipalNotFound is wrapped when a manifest names a user, service account or group that does not exist.
 var ErrPrincipalNotFound = errors.New("not found on the server")
 
 // invalidf wraps sentinel with a formatted validation message.
@@ -214,22 +214,28 @@ func SortedStrings(s []string) []string {
 	return out
 }
 
-// Idents is the user and group lookup shared by kinds that reference both.
+// Idents is the account and group lookup shared by kinds that reference them.
 type Idents struct {
-	// Users maps username to user id; Groups maps group name to group id.
+	// Users maps the name of every account a user reference may name (human
+	// users and service accounts) to its id; Groups maps group name to group id.
 	Users  map[string]string
 	Groups map[string]string
+	// ServiceAccounts maps service account name to id: the subset of Users that
+	// can be the target of a trust policy.
+	ServiceAccounts map[string]string
 }
 
 const identsCacheKey = "declarative.idents"
 
-// ForgetIdents drops the cached user/group lookups; kinds that create users or
-// groups call it so later lookups see the new objects.
+// ForgetIdents drops the cached account/group lookups; kinds that create or
+// delete users, service accounts or groups call it so later lookups see them.
 func (e *Env) ForgetIdents() { delete(e.Cache, identsCacheKey) }
 
 func usersOf(ids *Idents) map[string]string { return ids.Users }
 
 func groupsOf(ids *Idents) map[string]string { return ids.Groups }
+
+func serviceAccountsOf(ids *Idents) map[string]string { return ids.ServiceAccounts }
 
 // principalID resolves name in the principals that pick selects (kind names
 // them in the error) to its id.
@@ -264,9 +270,14 @@ func (e *Env) principalNames(ctx context.Context, pick func(*Idents) map[string]
 	return out, nil
 }
 
-// UserID resolves a username to its id.
+// UserID resolves the name of a user or service account to its id.
 func (e *Env) UserID(ctx context.Context, username string) (string, error) {
 	return e.principalID(ctx, usersOf, "user", username)
+}
+
+// ServiceAccountID resolves a service account name to its id.
+func (e *Env) ServiceAccountID(ctx context.Context, name string) (string, error) {
+	return e.principalID(ctx, serviceAccountsOf, "service account", name)
 }
 
 // GroupID resolves a group name to its id.
@@ -274,7 +285,7 @@ func (e *Env) GroupID(ctx context.Context, name string) (string, error) {
 	return e.principalID(ctx, groupsOf, "group", name)
 }
 
-// UserNames returns id to username for every user.
+// UserNames returns id to name for every user and service account.
 func (e *Env) UserNames(ctx context.Context) (map[string]string, error) {
 	return e.principalNames(ctx, usersOf)
 }
@@ -289,31 +300,25 @@ func (e *Env) idents(ctx context.Context) (*Idents, error) {
 		return v, nil
 	}
 
-	ids := &Idents{Users: map[string]string{}, Groups: map[string]string{}}
+	ids := &Idents{Users: map[string]string{}, Groups: map[string]string{}, ServiceAccounts: map[string]string{}}
 
-	const perPage = 200
+	users, err := listPaged[userResponse](ctx, e.Client, usersPath)
+	if err != nil {
+		return nil, fmt.Errorf("list users: %w", err)
+	}
 
-	for page := 1; ; page++ {
-		var resp struct {
-			Data []struct {
-				ID       string `json:"id"`
-				Username string `json:"username"`
-			} `json:"data"`
-			Total int `json:"total"`
-		}
+	for _, u := range users {
+		ids.Users[u.Username] = u.ID
+	}
 
-		q := url.Values{"page": {strconv.Itoa(page)}, "per_page": {strconv.Itoa(perPage)}}
-		if err := e.Client.Get(ctx, "/api/v1/users?"+q.Encode(), &resp); err != nil {
-			return nil, fmt.Errorf("list users: %w", err)
-		}
+	accounts, err := listServiceAccounts(ctx, e.Client)
+	if err != nil {
+		return nil, err
+	}
 
-		for _, u := range resp.Data {
-			ids.Users[u.Username] = u.ID
-		}
-
-		if len(resp.Data) < perPage || page*perPage >= resp.Total {
-			break
-		}
+	for _, a := range accounts {
+		ids.Users[a.Name] = a.ID
+		ids.ServiceAccounts[a.Name] = a.ID
 	}
 
 	var groups struct {
@@ -323,7 +328,7 @@ func (e *Env) idents(ctx context.Context) (*Idents, error) {
 		} `json:"data"`
 	}
 
-	if err := e.Client.Get(ctx, "/api/v1/groups", &groups); err != nil {
+	if err := e.Client.Get(ctx, groupsPath, &groups); err != nil {
 		return nil, fmt.Errorf("list groups: %w", err)
 	}
 
@@ -334,4 +339,32 @@ func (e *Env) idents(ctx context.Context) (*Idents, error) {
 	e.Cache[identsCacheKey] = ids
 
 	return ids, nil
+}
+
+// listPageSize is the largest page the paginated list endpoints serve.
+const listPageSize = 200
+
+// listPaged reads every page of a paginated list endpoint answering
+// {"data": [...], "total": n}. The error is the client's: callers name what
+// they were listing.
+func listPaged[T any](ctx context.Context, c *Client, path string) ([]T, error) {
+	var out []T
+
+	for page := 1; ; page++ {
+		var resp struct {
+			Data  []T `json:"data"`
+			Total int `json:"total"`
+		}
+
+		q := url.Values{"page": {strconv.Itoa(page)}, "per_page": {strconv.Itoa(listPageSize)}}
+		if err := c.Get(ctx, path+"?"+q.Encode(), &resp); err != nil {
+			return nil, err //nolint:wrapcheck // callers name what they were listing
+		}
+
+		out = append(out, resp.Data...)
+
+		if len(resp.Data) < listPageSize || page*listPageSize >= resp.Total {
+			return out, nil
+		}
+	}
 }

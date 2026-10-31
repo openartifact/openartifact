@@ -57,7 +57,7 @@ func (groupKind) Refs(o *Object) []Ref {
 	refs := make([]Ref, 0, len(members))
 
 	for i, m := range members {
-		refs = append(refs, Ref{Kind: KindUser, Key: m, Field: fmt.Sprintf("members[%d]", i)})
+		refs = append(refs, userRef(m, fmt.Sprintf("members[%d]", i)))
 	}
 
 	return refs

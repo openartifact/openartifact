@@ -59,7 +59,8 @@ func newDeclFlagSet(name string, f *declFlags, withApply bool) *flag.FlagSet {
 		&f.pruneAll,
 		"prune-all",
 		false,
-		"Delete every object absent from the manifests, managed or not (never seeded objects; Users only with --kind User)",
+		"Delete every object absent from the manifests, managed or not "+
+			"(never seeded objects; Users and ServiceAccounts only with --kind User or --kind ServiceAccount)",
 	)
 	fs.BoolVar(&f.forceSecrets, "force-secrets", false, "Send every secret even if the server reports it as set")
 	fs.StringVar(&f.output, "o", "", "Output format: json (default: human readable)")

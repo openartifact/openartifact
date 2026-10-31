@@ -39,7 +39,7 @@ Upsert markers by (kind, name) in one transaction; at most 1000 items (admin onl
 |---|---|---|---|
 | `items` | array of object | yes | - |
 | `items[].applied_hash` | string | no | Maximum length: 128. |
-| `items[].kind` | string | yes | One of: `User`, `Project`, `Group`, `Repository`, `PermissionTarget`, `SSOProvider`, `Webhook`, `StorageTier`, `TierPolicy`. |
+| `items[].kind` | string | yes | One of: `User`, `Project`, `Group`, `Repository`, `PermissionTarget`, `SSOProvider`, `Webhook`, `StorageTier`, `TierPolicy`, `ServiceAccount`, `OIDCTrustPolicy`. |
 | `items[].name` | string | yes | Minimum length: 1. Maximum length: 512. |
 | `items[].object_id` | string | yes | Minimum length: 1. Maximum length: 256. |
 

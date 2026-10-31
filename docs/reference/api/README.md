@@ -10,7 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 REST API of the OpenArtifact artifact repository manager.
 
-This reference is generated from the embedded OpenAPI document `internal/api/openapi.json` and lists 302 endpoints in 29 tags. Authentication, token kinds, CSRF handling and worked examples are in the [REST API guide](../../integrations/api.md).
+This reference is generated from the embedded OpenAPI document `internal/api/openapi.json` and lists 313 endpoints in 31 tags. Authentication, token kinds, CSRF handling and worked examples are in the [REST API guide](../../integrations/api.md).
 
 ## Security
 
@@ -36,6 +36,7 @@ Unless an endpoint says otherwise, a request must satisfy one of: `bearerAuth` o
 | [Backup](backup.md) | 5 | - |
 | [Branding](branding.md) | 7 | - |
 | [Bundles](bundles.md) | 19 | - |
+| [CI OIDC](ci-oidc.md) | 6 | - |
 | [Cleanup](cleanup.md) | 9 | - |
 | [Curation](curation.md) | 6 | - |
 | [Declarative](declarative.md) | 3 | - |
@@ -51,6 +52,7 @@ Unless an endpoint says otherwise, a request must satisfy one of: `bearerAuth` o
 | [SBOM](sbom.md) | 15 | - |
 | [Scanning](scanning.md) | 35 | - |
 | [Search](search.md) | 1 | - |
+| [Service accounts](service-accounts.md) | 5 | - |
 | [SSO](sso.md) | 13 | - |
 | [Storage](storage.md) | 25 | - |
 | [System](system.md) | 7 | - |
@@ -61,4 +63,4 @@ Unless an endpoint says otherwise, a request must satisfy one of: `bearerAuth` o
 
 ## Schemas
 
-All 168 named request and response objects are on the [schemas page](schemas.md).
+All 172 named request and response objects are on the [schemas page](schemas.md).

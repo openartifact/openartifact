@@ -100,5 +100,7 @@
   "ui.settings.health.desc": "Database, storage, scanners and build information.",
   "ui.settings.unknown": "Unknown setting",
   "ui.settings.unknownHint": "There is no settings section with this name.",
-  "ui.settings.hub": "Settings"
+  "ui.settings.hub": "Settings",
+  "ui.settings.service-accounts.title": "Service accounts",
+  "ui.settings.service-accounts.desc": "Identities for automation, their tokens and CI trust policies."
 }

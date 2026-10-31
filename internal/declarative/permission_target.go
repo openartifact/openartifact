@@ -113,7 +113,7 @@ func (permTargetKind) Refs(o *Object) []Ref {
 
 	users, _ := permTargetAssigned(o.Spec, "users")
 	for i, u := range users {
-		refs = append(refs, Ref{Kind: KindUser, Key: u, Field: fmt.Sprintf("assignments.users[%d]", i)})
+		refs = append(refs, userRef(u, fmt.Sprintf("assignments.users[%d]", i)))
 	}
 
 	groups, _ := permTargetAssigned(o.Spec, "groups")

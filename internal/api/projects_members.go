@@ -123,7 +123,9 @@ func (h *ProjectsHandler) handleAddMember(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Service accounts are not people: they cannot be added by hand.
+	// The users behind project tokens belong to their token's project and
+	// cannot be added by hand; humans and administrator-managed service
+	// accounts can.
 	if user == nil || user.IsService() {
 		writeError(w, http.StatusNotFound, "not_found", "user not found")
 		return

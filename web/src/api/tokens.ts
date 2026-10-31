@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { request, JSON_HEADERS } from './client'
-import type { TokenCreateResponse, UnifiedToken } from './generated/types.gen'
+import type { Token, TokenCreateResponse, UnifiedToken } from './generated/types.gen'
 
 export type CreatedToken = TokenCreateResponse
 
@@ -98,3 +98,27 @@ export async function revokeToken(
   if (!url) throw new Error(`token ${token.id} cannot be revoked by ${who.username}`)
   await request<void>(url, { method: 'DELETE' })
 }
+
+/** A token owned by a user or service account, as `/users/{id}/tokens` lists it. */
+export type OwnedToken = Token & { id: string; name: string }
+
+/** Active (not revoked) tokens of an account; the owner or an admin may list them. */
+export async function listUserTokens(userId: string): Promise<OwnedToken[]> {
+  const res = await request<{ data?: OwnedToken[] }>(`/api/v1/users/${enc(userId)}/tokens`)
+  return res?.data ?? []
+}
+
+/** Admin: mints a token for another account (a service account), the clear text is in the response once. */
+export function createUserToken(
+  userId: string,
+  body: { name: string; kind: 'access' | 'deploy'; scopes?: string[]; expires_at?: string },
+): Promise<CreatedToken> {
+  return request<CreatedToken>(`/api/v1/users/${enc(userId)}/tokens`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  })
+}
+
+export const revokeUserToken = (userId: string, tokenId: string) =>
+  request<void>(`/api/v1/users/${enc(userId)}/tokens/${enc(tokenId)}`, { method: 'DELETE' })

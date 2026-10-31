@@ -472,7 +472,7 @@ func (h *ProjectsHandler) resolveOwner(
 		return nil, false
 	}
 
-	if user == nil || user.IsService() {
+	if user == nil || !user.IsHuman() {
 		writeError(w, http.StatusNotFound, "not_found", "owner user not found")
 		return nil, false
 	}

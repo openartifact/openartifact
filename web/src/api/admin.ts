@@ -4,7 +4,7 @@
 
 import { request, ApiError, JSON_HEADERS } from './client'
 import { pagedResponse, type PagedResult } from './transform'
-import type { User, Group, PermissionTarget, PublicSystemInfo, SystemInfo } from './generated/types.gen'
+import type { User, Group, PermissionAssignment, PermissionTarget, PublicSystemInfo, SystemInfo } from './generated/types.gen'
 
 export type UserItem = User
 export type GroupItem = Group
@@ -95,6 +95,9 @@ export const createGroup = (body: { name: string; description?: string }) =>
   })
 export const deleteGroup = (id: string | number) =>
   request<void>(`/api/v1/groups/${encodeURIComponent(String(id))}`, { method: 'DELETE' })
+/** Groups a user (or service account) belongs to. */
+export const listUserGroups = async (userId: string | number) =>
+  (await paged<GroupItem>(new URLSearchParams(), `/api/v1/users/${encodeURIComponent(String(userId))}/groups`)).items
 export const listGroupMembers = (id: string | number) =>
   paged<UserItem>(new URLSearchParams(), `/api/v1/groups/${encodeURIComponent(String(id))}/members`)
 /** Adds a single member without touching the rest of the membership. */
@@ -131,6 +134,22 @@ export const assignPermissionTarget = (
     headers: JSON_HEADERS,
     body: JSON.stringify(principal),
   })
+/** Users and groups a permission target is assigned to (admin only). */
+export async function listPermissionAssignments(id: string | number): Promise<PermissionAssignment[]> {
+  const res = await request<{ data?: PermissionAssignment[] }>(
+    `/api/v1/permission-targets/${encodeURIComponent(String(id))}/assignments`,
+  )
+  return res?.data ?? []
+}
+export const unassignPermissionTarget = (
+  id: string | number,
+  principal: { principal_type: 'user' | 'group'; principal_id: string },
+) => {
+  const qs = new URLSearchParams(principal)
+  return request<void>(`/api/v1/permission-targets/${encodeURIComponent(String(id))}/assignments?${qs}`, {
+    method: 'DELETE',
+  })
+}
 export const revokePermission = (id: string | number) =>
   request<void>(`/api/v1/permission-targets/${encodeURIComponent(String(id))}`, { method: 'DELETE' })
 

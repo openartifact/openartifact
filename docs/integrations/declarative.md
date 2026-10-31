@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Declarative configuration (`oa apply`)
 
-`oa apply` reads YAML manifests and makes an OpenArtifact server match them: users, groups, projects, repositories, permission targets, SSO providers, webhooks, storage tiers and tier policies. It is idempotent, so you can run it from a laptop, from CI, or from a Kubernetes Job on every deploy. `oa diff` shows what would change, and `oa export` writes the current server state back out as manifests.
+`oa apply` reads YAML manifests and makes an OpenArtifact server match them: users, service accounts, groups, projects, repositories, permission targets, CI trust policies, SSO providers, webhooks, storage tiers and tier policies. It is idempotent, so you can run it from a laptop, from CI, or from a Kubernetes Job on every deploy. `oa diff` shows what would change, and `oa export` writes the current server state back out as manifests.
 
 All three commands call the admin API, so they need an administrator token (`OA_TOKEN`, or `oa auth login`). See [CLI](cli.md) for the server and token settings.
 
@@ -45,10 +45,12 @@ spec:
 | Kind | `metadata` | Identity | Spec fields |
 |---|---|---|---|
 | `User` | `name` | username | `email`, `full_name`, `disabled`, `must_change_password` |
-| `Group` | `name` | group name | `description`, `members` (usernames) |
-| `Project` | `name` | project name | `display_name`, `description`, `allowed_formats`, `allowed_repo_types`, `repo_name_prefix`, `allow_public_repos`, `max_repositories`, `token_max_ttl_days`, `members` (`username`, `role`), `groups` (`group`, `role`) |
+| `ServiceAccount` | `name` | account name (usernames and service account names share one namespace) | `description`, `disabled` |
+| `Group` | `name` | group name | `description`, `members` (usernames or service account names) |
+| `Project` | `name` | project name | `display_name`, `description`, `allowed_formats`, `allowed_repo_types`, `repo_name_prefix`, `allow_public_repos`, `max_repositories`, `token_max_ttl_days`, `members` (`username` or service account name, `role`), `groups` (`group`, `role`) |
 | `Repository` | `name`, `project` (optional) | repository name | `format` and `repo_type` (immutable), `description`, `public`, `presign_downloads`, `trash_retention_days`, `immutable_releases`, `quota`, `cleanup_policies`; proxy: `upstream_url`, `upstream_username`, `upstream_password`, `cache_ttl_seconds`, `negative_cache_ttl_seconds`, `max_stale_seconds`, `min_age_hours`, `curation_mode`, `curation_rules` (`action`, `package_pattern`, `version_pattern`, `reason`); group: `member_repos`, `merge_proxy_versions`; hosted rpm: `sign_packages` |
-| `PermissionTarget` | `name` | target name (globally unique) | `repository_filter`, `path_pattern` (both regular expressions), `actions`, `assignments` (`users`, `groups`) |
+| `PermissionTarget` | `name` | target name (globally unique) | `repository_filter`, `path_pattern` (both regular expressions), `actions`, `assignments` (`users` and service account names, `groups`) |
+| `OIDCTrustPolicy` | `name` | policy name (globally unique) | `issuer`, `audience`, `service_account` (name), `conditions` (`claim`, `patterns`), `token_ttl_seconds`, `enabled` |
 | `SSOProvider` | `name` (the slug) | slug | `kind` (immutable), `display_name`, `enabled`, `auto_provision_users`, `link_by_email`, `claim_mapping`, `group_mapping`, `permission_mapping`, `oidc_config`, `saml_config` |
 | `Webhook` | `name`, `repository` (empty for a global webhook) | `name`, or `repository/name` | `url`, `events`, `secret`, `content_type`, `payload_format`, `ssl_verify`, `max_retries`, `timeout_seconds`, `enabled` |
 | `StorageTier` | `name` | tier name | `backend` (immutable, must be an existing [storage backend](../operations/storage-tiering.md)), `rank`, `promote_on_read` |
@@ -58,12 +60,54 @@ Field names and values are those of the REST API (see [REST API](api.md) and `in
 
 - **Repository**: `metadata.project` places the repository in a [project](../security/projects.md); the project's policy (name prefix, formats) applies. Proxy-only, group-only and rpm-only fields are rejected on other repository types. `cleanup_policies` are compared per policy `name`. `curation_rules` (see [package curation](../repositories/hosted-proxy-group.md#package-curation)) are compared per `action`, `package_pattern` and `version_pattern`: a rule missing from the manifest is deleted, a changed `reason` is updated, and the order of the list does not matter. A group repository is applied after its members.
 - **Project**: `members` and `groups` are compared per username and group, so adding or removing one entry changes only that entry. `allowed_formats` cannot be an empty list; leave it out to allow every format. The project's original owner cannot be removed through `members`.
-- **Group**: `members` is compared as a set of usernames. `oa export` leaves it out unless you pass `--with-members`, because membership is often managed by SSO group mapping.
+- **Group**: `members` is compared as a set of usernames and service account names. `oa export` leaves it out unless you pass `--with-members`, because membership is often managed by SSO group mapping.
 - **User**: a manifest cannot set a password. Created users have none until an administrator sets one or they sign in through SSO; use `must_change_password` to force a change after the first login. Deleting a `User` manifest with `--prune` disables the account (the server never hard-deletes users) and `oa` does not prune disabled users again.
+- **ServiceAccount**: a non-human account for automation. It cannot sign in and has no password or email; a manifest creates the account only, and its tokens are minted through the API or by a [CI trust policy](ci.md). The name is 3 to 64 letters, digits, `-` or `_` and cannot be changed; no user can share it. Name a service account wherever a username is accepted: `Group` `members`, `Project` `members` and `PermissionTarget` `assignments.users`. Unlike a user, a service account is deleted for good: `--prune` removes it with its tokens, group memberships, project roles, permission assignments and trust policies, and `oa` prunes it even when it is disabled.
 - **PermissionTarget**: `assignments.users` and `assignments.groups` are sets; the target is reconciled to exactly the listed principals.
+- **OIDCTrustPolicy**: lets the CI jobs of one pipeline exchange their OIDC ID token for a short-lived token of `service_account`, which must be a `ServiceAccount` in the manifests or on the server. `conditions` are compared per `claim` (a claim appears once): all conditions must pass, and a condition passes when any of its `patterns` matches; the order of both lists does not matter. `token_ttl_seconds` is 60 to 3600 and defaults to 900, `enabled` defaults to true. `oa` checks the field limits offline; the server rejects a policy for a CI issuer shared by every customer (GitHub Actions, gitlab.com) unless a condition pins an identity claim such as `repository` with a pattern that starts with a literal character, and `oa` prints that error as is. The policy's `issuer`, `audience` and conditions are described in [CI trust policies](ci.md).
 - **SSOProvider**: the OIDC `client_secret` is required in `oidc_config` (as a `secretRef`). Creating a provider with `enabled: false` creates it enabled first and then disables it, as the API has no other path.
 - **Webhook**: the webhook name is unique per repository; `oa` reports a repository webhook as `repository/name`.
 - **StorageTier** and **TierPolicy**: see [storage tiering](../operations/storage-tiering.md). The `backend` of a tier must exist before `oa apply` runs; create it with `oa storage create`. The primary tier is created by the server and is never changed by `--prune`.
+
+### Example: a service account for CI
+
+A service account, the permission it needs and the trust policy that lets the GitHub Actions jobs of one repository exchange their ID token for a short-lived token of that account ([`ci-oidc.yaml`](../../examples/declarative/ci-oidc.yaml)):
+
+```yaml
+apiVersion: openartifact.io/v1
+kind: ServiceAccount
+metadata:
+  name: ci-publisher
+spec:
+  description: Publishes release builds from GitHub Actions
+---
+apiVersion: openartifact.io/v1
+kind: PermissionTarget
+metadata:
+  name: ci-publisher-npm
+spec:
+  repository_filter: "npm-hosted"
+  path_pattern: ".*"
+  actions: [read, write]
+  assignments:
+    users: [ci-publisher]
+---
+apiVersion: openartifact.io/v1
+kind: OIDCTrustPolicy
+metadata:
+  name: github-release
+spec:
+  issuer: https://token.actions.githubusercontent.com
+  audience: https://oa.example.com
+  service_account: ci-publisher
+  conditions:
+    - claim: repository
+      patterns: [acme/shop]
+    - claim: ref
+      patterns: ["refs/tags/v*"]
+  token_ttl_seconds: 900
+  enabled: true
+```
 
 ## Secrets
 
@@ -112,13 +156,13 @@ Plan: 1 to create, 1 to update, 1 to delete, 12 unchanged.
 These abort before anything is changed, so a plan is never half-applied because of them:
 
 - An **immutable** field differs (`Repository` `format` and `repo_type`, `SSOProvider` `kind`, `StorageTier` `backend`). The error says which field. Revert the manifest, or delete the object and apply again to recreate it.
-- A reference points at an object that is in neither the manifests nor on the server (a project member that is not a user, a tier policy whose tier does not exist).
+- A reference points at an object that is in neither the manifests nor on the server (a project member that is neither a user nor a service account, a trust policy whose service account does not exist, a tier policy whose tier does not exist).
 - Two live objects share the name your manifest uses.
 - A secret cannot be resolved.
 
 A failure while applying stops the run, and later objects are reported `skipped`. With `--continue-on-error`, every remaining change is still attempted (an object that depends on the failed one fails on its own); the exit status stays 1.
 
-Order: users, groups, projects, repositories, permission targets, SSO providers, webhooks, storage tiers, tier policies. Deletes run in reverse.
+Order: users, service accounts, groups, projects, repositories, permission targets, trust policies, SSO providers, webhooks, storage tiers, tier policies. Deletes run in reverse.
 
 `--kind K` (repeatable) limits the run to one or more kinds, e.g. `oa apply -f . --kind Repository --kind Webhook`.
 
@@ -128,7 +172,7 @@ Order: users, groups, projects, repositories, permission targets, SSO providers,
 
 - **Adoption.** Applying a manifest for an object that already exists, because it was created in the UI or by the API, makes `oa` take it over: the marker is written, the fields in the manifest are reconciled. If nothing differs, `oa diff` still reports no changes.
 - **`--prune`** deletes objects that have a marker but are no longer in the manifests you pass. Objects nobody applied with `oa` are never deleted by it.
-- **`--prune-all`** deletes every object (of the kinds in scope) that is not in the manifests, marker or not. It skips the `User` kind unless you name it with `--kind User`.
+- **`--prune-all`** deletes every object (of the kinds in scope) that is not in the manifests, marker or not. It skips the `User` and `ServiceAccount` kinds unless you name them with `--kind User` or `--kind ServiceAccount`.
 - Prune is relative to the manifests you pass. `oa apply -f team-a/ --prune` deletes managed objects that are not in `team-a/`, including those applied from `team-b/`. Use one manifest tree per server, or scope runs with `--kind`.
 - **Never pruned**, with either flag: the seeded permission targets `admin-all` and `anonymous-read`, the system project, the bootstrap `admin` user and the primary storage tier. Objects whose name matches more than one live object are not pruned either.
 - Markers are not part of [backups](../operations/backup.md). After a restore, `--prune` deletes nothing until one `oa apply` records ownership again; `--prune-all` is not affected.
@@ -143,11 +187,12 @@ oa export --kind Repository --kind Webhook
 oa export --with-members               # include Group members
 ```
 
-Export writes the same manifest format as `apply` reads, so `oa export -o exported/ && oa diff -f exported/ -R` exits 0 (files are written into one subdirectory per kind, hence `-R`). Secrets are replaced with placeholders that name an environment variable, for example `secretRef: {env: OA_WEBHOOK_AUDIT_SINK_SECRET}`. Set the variable before applying the export to a different server. The server does not say whether a proxy repository has an `upstream_password`, so export omits it; add a `secretRef` for it yourself. Repositories are exported with `metadata.project` set to the project they live in (`system` for the default one). Applying an export to a server on which some of these objects already exist adopts them. `User` objects are exported only when you name `--kind User`.
+Export writes the same manifest format as `apply` reads, so `oa export -o exported/ && oa diff -f exported/ -R` exits 0 (files are written into one subdirectory per kind, hence `-R`). Secrets are replaced with placeholders that name an environment variable, for example `secretRef: {env: OA_WEBHOOK_AUDIT_SINK_SECRET}`. Set the variable before applying the export to a different server. The server does not say whether a proxy repository has an `upstream_password`, so export omits it; add a `secretRef` for it yourself. Repositories are exported with `metadata.project` set to the project they live in (`system` for the default one). Applying an export to a server on which some of these objects already exist adopts them. `User` objects are exported only when you name `--kind User`; service accounts and trust policies are exported by default, so an export that names a service account in a group, project or permission target also holds the account. Tokens are not exported.
 
 ## Known limits
 
 - A `User` manifest has no password field, and a user cannot be hard-deleted: `--prune` disables the account.
+- A `ServiceAccount` manifest has no tokens: create them with the API, or let a trust policy mint them. The first `owner` in the `members` of a project that does not exist yet becomes its owner, which must be a human user, not a service account.
 - Webhook delivery URLs are resolved by the server when the webhook is created or changed. Hosts that do not resolve, or that point at private addresses, are rejected by the server with an error `oa` prints as is.
 - Artifacts, tokens, scans and audit data are not configuration and are not managed here.
 - Directories are scanned for `*.yaml` and `*.yml` only. A JSON manifest works through `-f -` (JSON is valid YAML).
