@@ -7239,10 +7239,16 @@ export type GetApiV1ServiceAccountsData = {
 
 export type GetApiV1ServiceAccountsErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
 };
+
+export type GetApiV1ServiceAccountsError = GetApiV1ServiceAccountsErrors[keyof GetApiV1ServiceAccountsErrors];
 
 export type GetApiV1ServiceAccountsResponses = {
     /**
@@ -7403,10 +7409,16 @@ export type GetApiV1OidcTrustPoliciesData = {
 
 export type GetApiV1OidcTrustPoliciesErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
 };
+
+export type GetApiV1OidcTrustPoliciesError = GetApiV1OidcTrustPoliciesErrors[keyof GetApiV1OidcTrustPoliciesErrors];
 
 export type GetApiV1OidcTrustPoliciesResponses = {
     /**

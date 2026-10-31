@@ -30,6 +30,7 @@ List service accounts, by name (admin only).
 | Status | Description | Body |
 |---|---|---|
 | `200` | Service accounts | `application/json`: object |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 Fields of the `200` response (`application/json`):
