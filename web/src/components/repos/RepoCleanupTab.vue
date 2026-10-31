@@ -134,6 +134,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :open="drawerOpen"
       :editing-name="editingPolicy?.name ?? null"
       :saving="savingDrawer"
+      :preview-repo="repoName"
       @close="closeDrawer"
       @save="saveDrawer"
     />

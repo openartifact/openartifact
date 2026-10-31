@@ -34,10 +34,21 @@ type CleanupPreview struct {
 	// trash). A version made of several files (jar and pom, sdist and wheel)
 	// counts one row per file.
 	Rows int
+	// Bytes is the size of the blobs the rows reference (a blob shared by two
+	// rows counts twice; docker tags count 0, their images are shared layers).
+	Bytes int64
 	// Items lists the rows, at most CleanupPreviewLimit.
 	Items []CleanupPreviewItem
 	// Truncated reports that Items is shorter than Rows.
 	Truncated bool
+}
+
+// PreviewDraftPolicy is PreviewPolicy for a policy that is not stored (the one
+// being edited): policy.RepositoryID names the repository and the policy is
+// and the caller has validated it. It returns ErrRepositoryNotFound for an
+// unknown repository.
+func (w *CleanupWorker) PreviewDraftPolicy(ctx context.Context, policy *models.CleanupPolicy) (*CleanupPreview, error) {
+	return w.previewRepository(ctx, policy)
 }
 
 // PreviewPolicy reports what a run of the repository policy would remove,
@@ -136,6 +147,9 @@ func (w *CleanupWorker) previewRepository(ctx context.Context, policy *models.Cl
 	}
 
 	prev := &CleanupPreview{Repository: repo.Name, Format: repo.Format, Rows: len(eligible)}
+	for _, c := range eligible {
+		prev.Bytes += c.bytes
+	}
 
 	for _, c := range eligible[:min(len(eligible), CleanupPreviewLimit)] {
 		prev.Items = append(prev.Items, CleanupPreviewItem{ID: c.id, Name: c.name, Version: c.version})

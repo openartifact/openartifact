@@ -59,9 +59,13 @@ export function cleanupFormFrom(p: CleanupPolicyView): CleanupPolicyForm {
   return { name: p.name, type: p.type, keep_count: p.keep_count, keep_days: p.keep_days, enabled: p.enabled }
 }
 
-export function cleanupFormValid(f: CleanupPolicyForm): boolean {
-  if (!f.name.trim()) return false
+/** True when the rule of the selected type has a usable value (the part the server evaluates). */
+export function cleanupRuleValid(f: CleanupPolicyForm): boolean {
   return f.type === 'keep-last-n' ? (f.keep_count ?? 0) > 0 : (f.keep_days ?? 0) > 0
+}
+
+export function cleanupFormValid(f: CleanupPolicyForm): boolean {
+  return f.name.trim() !== '' && cleanupRuleValid(f)
 }
 
 /** Request body for create and update: only the rule of the selected type is sent. */

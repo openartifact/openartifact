@@ -339,6 +339,7 @@ A stored GPG key the caller may seal bundles with. Never carries private key mat
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| `bytes` | integer (int64) | yes | Size of the blobs the listed rows reference; a blob shared by two rows counts twice, docker tags count 0 |
 | `dry_run` | boolean | yes | - |
 | `format` | string | yes | - |
 | `items` | array of [CleanupPreviewItem](#cleanuppreviewitem) | yes | - |
