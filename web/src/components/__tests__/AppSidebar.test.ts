@@ -103,18 +103,29 @@ describe('AppSidebar', () => {
       expect(JSON.parse(localStorage.getItem('oa.sidebar.collapsed') ?? 'null')).toBe(true)
     })
 
-    it('narrows the rail and keeps accessible names and tooltips when collapsed', () => {
+    it('narrows the rail and keeps accessible names and tooltips when collapsed', async () => {
       session.user = makeUser({ is_admin: false })
       ui.sidebarCollapsed = true
       const { wrapper } = mountSidebar()
+      const tooltip = () => document.body.querySelector('[role="tooltip"]')
       expect(wrapper.get('#app-sidebar').classes()).toContain('md:w-16')
+      // The tooltip lives outside the scrolling nav (it would widen and clip it) and only while pointed at.
+      expect(tooltip()).toBeNull()
       const repos = wrapper.get('[data-testid="nav-repos"]')
       expect(repos.get('.sr-only').text()).toBe('Repositories')
-      expect(repos.get('[role="tooltip"]').text()).toBe('Repositories')
-      // A locked item carries its reason in the name and the tooltip.
+      await repos.trigger('mouseenter')
+      expect(tooltip()?.textContent?.trim()).toBe('Repositories')
+      expect(wrapper.get('nav').find('[role="tooltip"]').exists()).toBe(false)
+      await repos.trigger('mouseleave')
+      expect(tooltip()).toBeNull()
+      // A locked item carries its reason in the name and the tooltip, also on keyboard focus.
       const bundles = wrapper.get('[data-testid="nav-bundles"]')
       expect(bundles.get('.sr-only').text()).toContain('Requires administrator')
-      expect(bundles.get('[role="tooltip"]').text()).toContain('Requires administrator')
+      await bundles.trigger('focusin')
+      expect(tooltip()?.textContent).toContain('Requires administrator')
+      await bundles.trigger('keydown', { key: 'Escape' })
+      expect(tooltip()).toBeNull()
+      wrapper.unmount()
     })
 
     it('uses the full width when expanded', () => {
