@@ -19,6 +19,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { onBeforeUnmount, ref } from 'vue'
 import { CheckIcon, ClipboardDocumentIcon } from '@heroicons/vue/24/outline'
+import { copyText } from '../../lib/clipboard'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n'
 
@@ -35,35 +36,10 @@ const done = ref(false)
 let timer: ReturnType<typeof setTimeout> | undefined
 onBeforeUnmount(() => clearTimeout(timer))
 
-async function write(value: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value)
-      return true
-    }
-  } catch {
-    // fall through to the selection fallback
-  }
-  const ta = document.createElement('textarea')
-  ta.value = value
-  ta.setAttribute('readonly', '')
-  ta.style.cssText = 'position:fixed;opacity:0'
-  document.body.appendChild(ta)
-  ta.select()
-  let ok = false
-  try {
-    ok = document.execCommand('copy')
-  } catch {
-    ok = false
-  }
-  ta.remove()
-  return ok
-}
-
 // The one feedback path: a toast (the toast host is the page's polite live
 // region, so screen readers hear it) plus a brief check mark on the button.
 async function copy(): Promise<void> {
-  if (await write(props.text)) {
+  if (await copyText(props.text)) {
     toasts.success(props.message ?? t('ui.copy.done'))
     done.value = true
     clearTimeout(timer)

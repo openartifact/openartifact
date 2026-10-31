@@ -61,6 +61,5 @@
   "shell.action.createToken": "アクセストークンを作成",
   "shell.action.createUser": "ユーザーを作成",
   "shell.action.createBundle": "リリースバンドルを作成",
-  "shell.action.toggleTheme": "テーマを切り替え",
   "shell.action.signOut": "サインアウト"
 }

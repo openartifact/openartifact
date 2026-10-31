@@ -5,11 +5,13 @@
 import type { Component } from 'vue'
 import {
   ArrowRightOnRectangleIcon,
+  ClipboardDocumentIcon,
   Cog6ToothIcon,
   CubeIcon,
   DocumentIcon,
   FolderIcon,
   HomeIcon,
+  LanguageIcon,
   MagnifyingGlassIcon,
   PlusIcon,
   ShieldExclamationIcon,
@@ -43,6 +45,8 @@ const PALETTE_ICONS: Record<Exclude<PaletteIcon, NavIcon>, Component> = {
   tag: TagIcon,
   theme: SunIcon,
   'sign-out': ArrowRightOnRectangleIcon,
+  clipboard: ClipboardDocumentIcon,
+  language: LanguageIcon,
   document: DocumentIcon,
   user: UserIcon,
   search: MagnifyingGlassIcon,
