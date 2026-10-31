@@ -100,5 +100,7 @@
   "ui.settings.health.desc": "データベース、ストレージ、スキャナー、ビルド情報。",
   "ui.settings.unknown": "不明な設定",
   "ui.settings.unknownHint": "この名前の設定セクションはありません。",
-  "ui.settings.hub": "設定"
+  "ui.settings.hub": "設定",
+  "ui.settings.service-accounts.title": "サービスアカウント",
+  "ui.settings.service-accounts.desc": "自動化のための ID、そのトークン、CI の信頼ポリシー。"
 }

@@ -217,6 +217,72 @@ export type UserExtended = User & {
     projects?: Array<ProjectRole>;
 };
 
+export type ServiceAccount = {
+    id?: string;
+    name?: string;
+    description?: string;
+    disabled?: boolean;
+    created_at?: string;
+    updated_at?: string;
+};
+
+export type OidcCondition = {
+    /**
+     * Token claim name, for example `repository`, `ref` or `environment`.
+     */
+    claim: string;
+    /**
+     * Globs (`*` any run of characters including `/`, `?` one character); the claim must match one of them. Case-sensitive.
+     */
+    patterns: Array<string>;
+};
+
+export type OidcTrustPolicy = {
+    /**
+     * Unique name: 1-64 letters, digits, dot, dash or underscore.
+     */
+    name?: string;
+    /**
+     * Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com` or `https://gitlab.com`. Must be https and pass the outbound-request (SSRF) check.
+     */
+    issuer?: string;
+    /**
+     * The `aud` value the CI job requests; matched exactly.
+     */
+    audience?: string;
+    /**
+     * All conditions must hold. Policies of a shared issuer (GitHub Actions, gitlab.com) need one on an identity claim such as `repository`, `sub` or `project_path`, whose patterns do not start with a wildcard.
+     */
+    conditions?: Array<OidcCondition>;
+    /**
+     * Lifetime of exchanged tokens.
+     */
+    token_ttl_seconds?: number;
+    enabled?: boolean;
+    id?: string;
+    service_account_id?: string;
+    /**
+     * Name of the service account.
+     */
+    service_account?: string;
+    created_by?: string;
+    created_at?: string;
+    updated_at?: string;
+};
+
+export type OidcExchangeResponse = {
+    /**
+     * A deploy token (`oa_dep_...`) of the service account.
+     */
+    access_token?: string;
+    token_type?: 'Bearer';
+    /**
+     * Seconds until the token expires.
+     */
+    expires_in?: number;
+    expires_at?: string;
+};
+
 export type Group = {
     id?: string;
     name?: string;
@@ -7161,6 +7227,428 @@ export type DeleteApiV1UsersByIdTokensByTokenIdResponses = {
 
 export type DeleteApiV1UsersByIdTokensByTokenIdResponse = DeleteApiV1UsersByIdTokensByTokenIdResponses[keyof DeleteApiV1UsersByIdTokensByTokenIdResponses];
 
+export type GetApiV1ServiceAccountsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        page?: number;
+        per_page?: number;
+    };
+    url: '/api/v1/service-accounts';
+};
+
+export type GetApiV1ServiceAccountsErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1ServiceAccountsError = GetApiV1ServiceAccountsErrors[keyof GetApiV1ServiceAccountsErrors];
+
+export type GetApiV1ServiceAccountsResponses = {
+    /**
+     * Service accounts
+     */
+    200: {
+        data?: Array<ServiceAccount>;
+        page?: number;
+        per_page?: number;
+        total?: number;
+    };
+};
+
+export type GetApiV1ServiceAccountsResponse = GetApiV1ServiceAccountsResponses[keyof GetApiV1ServiceAccountsResponses];
+
+export type PostApiV1ServiceAccountsData = {
+    body: {
+        /**
+         * 3-64 letters, digits, dash or underscore; unique among users and service accounts; cannot be changed.
+         */
+        name: string;
+        description?: string;
+        disabled?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/service-accounts';
+};
+
+export type PostApiV1ServiceAccountsErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * A user or service account with this name exists
+     */
+    409: Error;
+};
+
+export type PostApiV1ServiceAccountsError = PostApiV1ServiceAccountsErrors[keyof PostApiV1ServiceAccountsErrors];
+
+export type PostApiV1ServiceAccountsResponses = {
+    /**
+     * Service account created
+     */
+    201: ServiceAccount;
+};
+
+export type PostApiV1ServiceAccountsResponse = PostApiV1ServiceAccountsResponses[keyof PostApiV1ServiceAccountsResponses];
+
+export type DeleteApiV1ServiceAccountsByIdData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/service-accounts/{id}';
+};
+
+export type DeleteApiV1ServiceAccountsByIdErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Service account not found
+     */
+    404: unknown;
+};
+
+export type DeleteApiV1ServiceAccountsByIdResponses = {
+    /**
+     * Service account deleted
+     */
+    204: void;
+};
+
+export type DeleteApiV1ServiceAccountsByIdResponse = DeleteApiV1ServiceAccountsByIdResponses[keyof DeleteApiV1ServiceAccountsByIdResponses];
+
+export type GetApiV1ServiceAccountsByIdData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/service-accounts/{id}';
+};
+
+export type GetApiV1ServiceAccountsByIdErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Service account not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1ServiceAccountsByIdResponses = {
+    /**
+     * Service account
+     */
+    200: ServiceAccount;
+};
+
+export type GetApiV1ServiceAccountsByIdResponse = GetApiV1ServiceAccountsByIdResponses[keyof GetApiV1ServiceAccountsByIdResponses];
+
+export type PatchApiV1ServiceAccountsByIdData = {
+    body: {
+        description?: string;
+        disabled?: boolean;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/service-accounts/{id}';
+};
+
+export type PatchApiV1ServiceAccountsByIdErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Service account not found
+     */
+    404: unknown;
+};
+
+export type PatchApiV1ServiceAccountsByIdError = PatchApiV1ServiceAccountsByIdErrors[keyof PatchApiV1ServiceAccountsByIdErrors];
+
+export type PatchApiV1ServiceAccountsByIdResponses = {
+    /**
+     * Service account updated
+     */
+    200: ServiceAccount;
+};
+
+export type PatchApiV1ServiceAccountsByIdResponse = PatchApiV1ServiceAccountsByIdResponses[keyof PatchApiV1ServiceAccountsByIdResponses];
+
+export type GetApiV1OidcTrustPoliciesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/oidc-trust-policies';
+};
+
+export type GetApiV1OidcTrustPoliciesErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1OidcTrustPoliciesError = GetApiV1OidcTrustPoliciesErrors[keyof GetApiV1OidcTrustPoliciesErrors];
+
+export type GetApiV1OidcTrustPoliciesResponses = {
+    /**
+     * Trust policies
+     */
+    200: {
+        data?: Array<OidcTrustPolicy>;
+    };
+};
+
+export type GetApiV1OidcTrustPoliciesResponse = GetApiV1OidcTrustPoliciesResponses[keyof GetApiV1OidcTrustPoliciesResponses];
+
+export type PostApiV1OidcTrustPoliciesData = {
+    body: {
+        /**
+         * Unique name: 1-64 letters, digits, dot, dash or underscore.
+         */
+        name: string;
+        /**
+         * Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com` or `https://gitlab.com`. Must be https and pass the outbound-request (SSRF) check.
+         */
+        issuer: string;
+        /**
+         * The `aud` value the CI job requests; matched exactly.
+         */
+        audience: string;
+        /**
+         * All conditions must hold. Policies of a shared issuer (GitHub Actions, gitlab.com) need one on an identity claim such as `repository`, `sub` or `project_path`, whose patterns do not start with a wildcard.
+         */
+        conditions: Array<OidcCondition>;
+        service_account_id: string;
+        /**
+         * Lifetime of exchanged tokens.
+         */
+        token_ttl_seconds?: number;
+        enabled?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/oidc-trust-policies';
+};
+
+export type PostApiV1OidcTrustPoliciesErrors = {
+    /**
+     * Invalid request, including an issuer that fails the outbound-request check or a missing identity condition for a shared issuer
+     */
+    400: Error;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * A trust policy with this name exists
+     */
+    409: Error;
+};
+
+export type PostApiV1OidcTrustPoliciesError = PostApiV1OidcTrustPoliciesErrors[keyof PostApiV1OidcTrustPoliciesErrors];
+
+export type PostApiV1OidcTrustPoliciesResponses = {
+    /**
+     * Trust policy created
+     */
+    201: OidcTrustPolicy;
+};
+
+export type PostApiV1OidcTrustPoliciesResponse = PostApiV1OidcTrustPoliciesResponses[keyof PostApiV1OidcTrustPoliciesResponses];
+
+export type DeleteApiV1OidcTrustPoliciesByIdData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/oidc-trust-policies/{id}';
+};
+
+export type DeleteApiV1OidcTrustPoliciesByIdErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Trust policy not found
+     */
+    404: unknown;
+};
+
+export type DeleteApiV1OidcTrustPoliciesByIdResponses = {
+    /**
+     * Trust policy deleted
+     */
+    204: void;
+};
+
+export type DeleteApiV1OidcTrustPoliciesByIdResponse = DeleteApiV1OidcTrustPoliciesByIdResponses[keyof DeleteApiV1OidcTrustPoliciesByIdResponses];
+
+export type GetApiV1OidcTrustPoliciesByIdData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/oidc-trust-policies/{id}';
+};
+
+export type GetApiV1OidcTrustPoliciesByIdErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Trust policy not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1OidcTrustPoliciesByIdResponses = {
+    /**
+     * Trust policy
+     */
+    200: OidcTrustPolicy;
+};
+
+export type GetApiV1OidcTrustPoliciesByIdResponse = GetApiV1OidcTrustPoliciesByIdResponses[keyof GetApiV1OidcTrustPoliciesByIdResponses];
+
+export type PatchApiV1OidcTrustPoliciesByIdData = {
+    body: {
+        /**
+         * Unique name: 1-64 letters, digits, dot, dash or underscore.
+         */
+        name?: string;
+        /**
+         * Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com` or `https://gitlab.com`. Must be https and pass the outbound-request (SSRF) check.
+         */
+        issuer?: string;
+        /**
+         * The `aud` value the CI job requests; matched exactly.
+         */
+        audience?: string;
+        /**
+         * All conditions must hold. Policies of a shared issuer (GitHub Actions, gitlab.com) need one on an identity claim such as `repository`, `sub` or `project_path`, whose patterns do not start with a wildcard.
+         */
+        conditions?: Array<OidcCondition>;
+        service_account_id?: string;
+        /**
+         * Lifetime of exchanged tokens.
+         */
+        token_ttl_seconds?: number;
+        enabled?: boolean;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/oidc-trust-policies/{id}';
+};
+
+export type PatchApiV1OidcTrustPoliciesByIdErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Trust policy not found
+     */
+    404: unknown;
+    /**
+     * A trust policy with this name exists
+     */
+    409: Error;
+};
+
+export type PatchApiV1OidcTrustPoliciesByIdError = PatchApiV1OidcTrustPoliciesByIdErrors[keyof PatchApiV1OidcTrustPoliciesByIdErrors];
+
+export type PatchApiV1OidcTrustPoliciesByIdResponses = {
+    /**
+     * Trust policy updated
+     */
+    200: OidcTrustPolicy;
+};
+
+export type PatchApiV1OidcTrustPoliciesByIdResponse = PatchApiV1OidcTrustPoliciesByIdResponses[keyof PatchApiV1OidcTrustPoliciesByIdResponses];
+
+export type PostApiV1AuthOidcExchangeData = {
+    body: {
+        /**
+         * The CI job's ID token (a JWT).
+         */
+        token: string;
+        /**
+         * Name of the trust policy to use; by default the oldest policy that accepts the token.
+         */
+        policy?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/oidc/exchange';
+};
+
+export type PostApiV1AuthOidcExchangeErrors = {
+    /**
+     * Malformed request
+     */
+    400: Error;
+    /**
+     * Token not accepted
+     */
+    401: Error;
+    /**
+     * Too many requests
+     */
+    429: Error;
+};
+
+export type PostApiV1AuthOidcExchangeError = PostApiV1AuthOidcExchangeErrors[keyof PostApiV1AuthOidcExchangeErrors];
+
+export type PostApiV1AuthOidcExchangeResponses = {
+    /**
+     * Token issued
+     */
+    200: OidcExchangeResponse;
+};
+
+export type PostApiV1AuthOidcExchangeResponse = PostApiV1AuthOidcExchangeResponses[keyof PostApiV1AuthOidcExchangeResponses];
+
 export type GetApiV1GroupsData = {
     body?: never;
     path?: never;
@@ -7535,7 +8023,7 @@ export type GetApiV1AdminDeclarativeResponse = GetApiV1AdminDeclarativeResponses
 export type PutApiV1AdminDeclarativeData = {
     body: {
         items: Array<{
-            kind: 'User' | 'Project' | 'Group' | 'Repository' | 'PermissionTarget' | 'SSOProvider' | 'Webhook' | 'StorageTier' | 'TierPolicy';
+            kind: 'User' | 'Project' | 'Group' | 'Repository' | 'PermissionTarget' | 'SSOProvider' | 'Webhook' | 'StorageTier' | 'TierPolicy' | 'ServiceAccount' | 'OIDCTrustPolicy';
             name: string;
             object_id: string;
             applied_hash?: string;

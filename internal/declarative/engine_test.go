@@ -707,22 +707,26 @@ func TestPlanPruneOnlyDeletesManagedObjects(t *testing.T) {
 	}
 }
 
-func TestPlanPruneAllSpareUsersUnlessNamed(t *testing.T) {
-	var calls []string
+func TestPlanPruneAllSpareAccountsUnlessNamed(t *testing.T) {
+	for _, kind := range []string{KindUser, KindServiceAccount} {
+		t.Run(kind, func(t *testing.T) {
+			var calls []string
 
-	u := newFake(KindUser, 10, &calls)
-	u.seed("alice", nil, false)
+			acct := newFake(kind, 10, &calls)
+			acct.seed("alice", nil, false)
 
-	reg := NewRegistry(u)
+			reg := NewRegistry(acct)
 
-	in := PlanInput{Live: liveOf(u), Prune: true, PruneAll: true}
-	if plan := planFor(reg, in); len(plan.Items) != 0 {
-		t.Errorf("--prune-all deleted users without --kind User: %+v", plan.Items)
-	}
+			in := PlanInput{Live: liveOf(acct), Prune: true, PruneAll: true}
+			if plan := planFor(reg, in); len(plan.Items) != 0 {
+				t.Errorf("--prune-all deleted %s objects without --kind %s: %+v", kind, kind, plan.Items)
+			}
 
-	in.Kinds = map[string]bool{KindUser: true}
-	if plan := planFor(reg, in); len(plan.Items) != 1 || plan.Items[0].Action != ActionDelete {
-		t.Errorf("--prune-all --kind User should delete: %+v", plan.Items)
+			in.Kinds = map[string]bool{kind: true}
+			if plan := planFor(reg, in); len(plan.Items) != 1 || plan.Items[0].Action != ActionDelete {
+				t.Errorf("--prune-all --kind %s should delete: %+v", kind, plan.Items)
+			}
+		})
 	}
 }
 
@@ -761,6 +765,48 @@ func TestPlanMissingReference(t *testing.T) {
 	errs := plan.Errors()
 	if len(errs) != 1 || !strings.Contains(errs[0].Error(), `Alpha "missing"`) {
 		t.Fatalf("errors = %v, want exactly the missing reference", errs)
+	}
+}
+
+func TestPlanReferenceAcceptsAlternateKind(t *testing.T) {
+	var calls []string
+
+	a := newFake("Alpha", 10, &calls)
+	alt := newFake("Alt", 11, &calls)
+	b := newFake("Beta", 20, &calls)
+	b.refs = func(o *Object) []Ref {
+		return []Ref{{Kind: "Alpha", Also: []string{"Alt"}, Key: o.Name, Field: "alpha"}}
+	}
+
+	a.seed("primary", nil, false)
+	alt.seed("alternate", nil, false)
+	alt.seed("pruned", nil, false)
+
+	live := liveOf(a)
+	live["Alt"] = liveOf(alt)["Alt"]
+
+	markers := Markers{Ident("Alt", "pruned"): {Kind: "Alt", Name: "pruned", ObjectID: "id-pruned"}}
+
+	plan := planFor(NewRegistry(a, alt, b), PlanInput{Live: live, Markers: markers, Prune: true, Desired: []*Object{
+		desired("Beta", "primary", nil),
+		desired("Beta", "alternate", nil),
+		desired("Alt", "inline", nil), desired("Beta", "inline", nil),
+		desired("Beta", "pruned", nil),
+		desired("Beta", "missing", nil),
+	}})
+
+	errs := plan.Errors()
+	if len(errs) != 2 {
+		t.Fatalf("errors = %v, want the pruned and the missing reference only", errs)
+	}
+
+	joined := errors.Join(errs...).Error()
+
+	for _, key := range []string{"pruned", "missing"} {
+		want := fmt.Sprintf(`Beta/%s: %s: alpha references Alpha or Alt %q`, key, errMissingRef, key)
+		if !strings.Contains(joined, want) {
+			t.Errorf("errors = %q, want one containing %q", joined, want)
+		}
 	}
 }
 

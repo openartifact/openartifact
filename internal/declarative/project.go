@@ -107,19 +107,19 @@ func (projectKind) Validate(o *Object) []error {
 func (projectKind) Refs(o *Object) []Ref {
 	var refs []Ref
 
-	for i, m := range projectEntries(o.Spec, "members") {
-		refs = append(refs, Ref{Kind: KindUser, Key: Str(m, "username"), Field: fmt.Sprintf("members[%d].username", i)})
+	for i, m := range specEntries(o.Spec, "members") {
+		refs = append(refs, userRef(Str(m, "username"), fmt.Sprintf("members[%d].username", i)))
 	}
 
-	for i, g := range projectEntries(o.Spec, "groups") {
+	for i, g := range specEntries(o.Spec, "groups") {
 		refs = append(refs, Ref{Kind: KindGroup, Key: Str(g, "group"), Field: fmt.Sprintf("groups[%d].group", i)})
 	}
 
 	return refs
 }
 
-// projectEntries returns the object elements of spec[key] in manifest order.
-func projectEntries(spec map[string]any, key string) []map[string]any {
+// specEntries returns the object elements of spec[key] in manifest order.
+func specEntries(spec map[string]any, key string) []map[string]any {
 	list, _ := spec[key].([]any)
 	out := make([]map[string]any, 0, len(list))
 
@@ -134,7 +134,7 @@ func projectEntries(spec map[string]any, key string) []map[string]any {
 
 // projectRoles maps the identity field of spec[key]'s elements to their role.
 func projectRoles(spec map[string]any, key, identity string) map[string]string {
-	entries := projectEntries(spec, key)
+	entries := specEntries(spec, key)
 	out := make(map[string]string, len(entries))
 
 	for _, e := range entries {
@@ -146,7 +146,7 @@ func projectRoles(spec map[string]any, key, identity string) map[string]string {
 
 // projectFirstOwner returns the first member with the owner role, "" if none.
 func projectFirstOwner(spec map[string]any) string {
-	for _, m := range projectEntries(spec, "members") {
+	for _, m := range specEntries(spec, "members") {
 		if Str(m, "role") == projectRoleOwner {
 			return Str(m, "username")
 		}

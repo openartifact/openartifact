@@ -185,7 +185,7 @@ func TestUserKindList(t *testing.T) {
 func TestUserKindListPagesThroughEveryUser(t *testing.T) {
 	t.Parallel()
 
-	const total = usersPerPage + 1
+	const total = listPageSize + 1
 
 	var pages []string
 
@@ -201,7 +201,7 @@ func TestUserKindListPagesThroughEveryUser(t *testing.T) {
 
 			var data []map[string]any
 
-			for i := (page - 1) * usersPerPage; i < min(page*usersPerPage, total); i++ {
+			for i := (page - 1) * listPageSize; i < min(page*listPageSize, total); i++ {
 				data = append(data, map[string]any{"id": "id-" + strconv.Itoa(i), "username": "user" + strconv.Itoa(i)})
 			}
 

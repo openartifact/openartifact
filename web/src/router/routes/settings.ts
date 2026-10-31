@@ -15,6 +15,21 @@ export const settingsRoutes: RouteRecordRaw[] = [
     component: () => import('../../pages/settings/SettingsHubPage.vue'),
     meta: { crumbs: [{ key: 'nav.settings', to: '/settings' }], requiresAuth: true },
   },
+  // One service account; declared before the generic section route so `service-accounts/:id` is not a section.
+  {
+    path: '/settings/service-accounts/:id',
+    name: 'service-account-detail',
+    component: () => import('../../pages/settings/ServiceAccountDetailPage.vue'),
+    meta: {
+      crumbs: [
+        { key: 'nav.settings', to: '/settings' },
+        { dynamic: () => settingsSectionTitle('service-accounts'), to: '/settings/service-accounts' },
+        { key: 'sa.detail.crumb' },
+      ],
+      requiresAuth: true,
+      requiresAdmin: true,
+    },
+  },
   {
     path: '/settings/:section',
     name: 'settings-section',

@@ -595,7 +595,7 @@ export [--kind K] [--with-members] [-o DIR]
 | `-kind` | `value` | Only consider this kind (repeatable), e.g. Repository |
 | `-o` | `string` | Output format: json (default: human readable) |
 | `-prune` | none | Delete objects previously applied by oa that are no longer in the manifests |
-| `-prune-all` | none | Delete every object absent from the manifests, managed or not (never seeded objects; Users only with --kind User) |
+| `-prune-all` | none | Delete every object absent from the manifests, managed or not (never seeded objects; Users and ServiceAccounts only with --kind User or --kind ServiceAccount) |
 | `-validate-only` | none | Validate the manifests offline and exit |
 
 ### `oa diff`
@@ -608,7 +608,7 @@ export [--kind K] [--with-members] [-o DIR]
 | `-kind` | `value` | Only consider this kind (repeatable), e.g. Repository |
 | `-o` | `string` | Output format: json (default: human readable) |
 | `-prune` | none | Delete objects previously applied by oa that are no longer in the manifests |
-| `-prune-all` | none | Delete every object absent from the manifests, managed or not (never seeded objects; Users only with --kind User) |
+| `-prune-all` | none | Delete every object absent from the manifests, managed or not (never seeded objects; Users and ServiceAccounts only with --kind User or --kind ServiceAccount) |
 
 ### `oa export`
 

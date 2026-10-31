@@ -52,6 +52,7 @@ func (a *app) registerPublicRoutes() error {
 
 	api.NewOIDCHandler(db, log, evaluator, hmacKey, cfg.BaseURL).WithTrustedProxies(w.trustedProxies).RegisterPublic(router)
 	api.NewSAMLHandler(db, log, evaluator, hmacKey, cfg.BaseURL, cfg).WithTrustedProxies(w.trustedProxies).RegisterPublic(router)
+	api.NewOIDCExchangeHandler(db, log, w.trustedProxies).RegisterPublic(router)
 
 	w.public.sysInfo = api.NewSystemInfoHandler(version, commit, buildTime, db, a.store.blobs, cfg.Storage.Type).
 		WithDocsBaseURL(cfg.Docs.BaseURL).
@@ -105,6 +106,8 @@ func (a *app) registerAdminRoutes() {
 	api.NewAdminSSOHandler(db, log, evaluator, cfg.BaseURL, cfg).RegisterAuthed(authedAPI)
 
 	api.NewAdminUsersHandler(db, log, evaluator).Register(authedAPI)
+	api.NewAdminServiceAccountsHandler(db, log, evaluator).Register(authedAPI)
+	api.NewAdminOIDCPoliciesHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminGroupsHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminPermissionsHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminDeclarativeHandler(db, log, evaluator).Register(authedAPI)

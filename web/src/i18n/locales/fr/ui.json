@@ -100,5 +100,7 @@
   "ui.settings.health.desc": "Base de données, stockage, scanners et informations de build.",
   "ui.settings.unknown": "Paramètre inconnu",
   "ui.settings.unknownHint": "Aucune section de paramètres ne porte ce nom.",
-  "ui.settings.hub": "Paramètres"
+  "ui.settings.hub": "Paramètres",
+  "ui.settings.service-accounts.title": "Comptes de service",
+  "ui.settings.service-accounts.desc": "Identités pour l'automatisation, leurs jetons et leurs politiques de confiance CI."
 }

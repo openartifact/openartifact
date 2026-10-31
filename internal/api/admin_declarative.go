@@ -32,6 +32,7 @@ const (
 var declarativeKinds = map[string]bool{
 	"User": true, "Project": true, "Group": true, "Repository": true, "PermissionTarget": true,
 	"SSOProvider": true, "Webhook": true, "StorageTier": true, "TierPolicy": true,
+	"ServiceAccount": true, "OIDCTrustPolicy": true,
 }
 
 // AdminDeclarativeStore is the part of the database AdminDeclarativeHandler needs.
@@ -97,7 +98,8 @@ func hasNUL(s string) bool { return strings.IndexByte(s, 0) >= 0 }
 func validateDeclarativeItem(it models.DeclarativeObject) string {
 	switch {
 	case !declarativeKinds[it.Kind] || utf8.RuneCountInString(it.Kind) > declarativeMaxKind:
-		return "kind must be one of User, Project, Group, Repository, PermissionTarget, SSOProvider, Webhook, StorageTier, TierPolicy"
+		return "kind must be one of User, Project, Group, Repository, PermissionTarget, SSOProvider, Webhook, StorageTier, TierPolicy, " +
+			"ServiceAccount, OIDCTrustPolicy"
 	case it.Name == "" || utf8.RuneCountInString(it.Name) > declarativeMaxName:
 		return "name must be 1-512 characters"
 	case it.ObjectID == "" || utf8.RuneCountInString(it.ObjectID) > declarativeMaxObjectID:

@@ -115,8 +115,8 @@ type PlanInput struct {
 	Live    map[string][]*Live
 	Markers Markers
 	// Prune deletes managed objects absent from Desired; PruneAll also deletes
-	// unmanaged ones (never seeded objects, never Users unless the kind filter
-	// names User).
+	// unmanaged ones (never seeded objects, never Users or ServiceAccounts
+	// unless the kind filter names that kind).
 	Prune        bool
 	PruneAll     bool
 	ForceSecrets bool
@@ -285,14 +285,15 @@ func planPrune(in PlanInput, desiredKeys map[string]bool) []*Item {
 	return items
 }
 
-// pruneAllCovers keeps --prune-all away from human users: User objects are
-// only deleted without a marker when the kind filter names User explicitly.
+// pruneAllCovers keeps --prune-all away from accounts: User and ServiceAccount
+// objects are only deleted without a marker when the kind filter names that
+// kind explicitly (a service account owns the tokens CI pipelines use).
 func pruneAllCovers(in PlanInput, kind string) bool {
-	if kind != KindUser {
+	if kind != KindUser && kind != KindServiceAccount {
 		return true
 	}
 
-	return in.Kinds != nil && in.Kinds[KindUser]
+	return in.Kinds != nil && in.Kinds[kind]
 }
 
 // sortDeletes orders deletions by reverse dependency: highest rank first.
@@ -346,13 +347,12 @@ func checkRefs(in PlanInput, plan *Plan, desiredKeys map[string]bool, deletes []
 		k, _ := in.Registry.Get(it.Kind)
 
 		for _, r := range k.Refs(it.Desired) {
-			id := Ident(r.Kind, r.Key)
-
-			if _, fetched := in.Live[r.Kind]; !fetched && !desiredKeys[id] {
+			if refSatisfied(r, desiredKeys, liveKeys, deleted) {
 				continue
 			}
 
-			if desiredKeys[id] || (liveKeys[id] && !deleted[id]) {
+			// A kind that was not fetched cannot say the object is missing.
+			if _, fetched := in.Live[r.Kind]; !fetched {
 				continue
 			}
 
@@ -360,13 +360,26 @@ func checkRefs(in PlanInput, plan *Plan, desiredKeys map[string]bool, deletes []
 				"%w: %s references %s %q, which is in neither the manifests nor on the server",
 				errMissingRef,
 				r.Field,
-				r.Kind,
+				strings.Join(r.kinds(), " or "),
 				r.Key,
 			)
 
 			break
 		}
 	}
+}
+
+// refSatisfied reports whether the object r names is in the manifests or
+// remains on the server, as any of the kinds r accepts.
+func refSatisfied(r Ref, desiredKeys, liveKeys, deleted map[string]bool) bool {
+	for _, kind := range r.kinds() {
+		id := Ident(kind, r.Key)
+		if desiredKeys[id] || (liveKeys[id] && !deleted[id]) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // SpecHash is the digest recorded in the ownership marker: sha256 of the

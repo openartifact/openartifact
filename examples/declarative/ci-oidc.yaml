@@ -1,0 +1,47 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# A service account for a CI pipeline, the permission it needs, and the trust
+# policy that lets the GitHub Actions jobs of one repository exchange their ID
+# token for a short-lived token of that account (see docs/integrations/ci.md).
+# A service account cannot sign in and has no password; applying this creates
+# the account, and tokens come from the exchange or from the API.
+apiVersion: openartifact.io/v1
+kind: ServiceAccount
+metadata:
+  name: ci-publisher
+spec:
+  description: Publishes release builds from GitHub Actions
+---
+# A service account is assigned like a user.
+apiVersion: openartifact.io/v1
+kind: PermissionTarget
+metadata:
+  name: ci-publisher-npm
+spec:
+  repository_filter: "npm-hosted"
+  path_pattern: ".*"
+  actions: [read, write]
+  assignments:
+    users: [ci-publisher]
+---
+# Conditions are ANDed across entries and ORed within one entry's patterns.
+# The shared GitHub issuer needs a condition on an identity claim such as
+# repository, with a pattern that starts with a literal character: the server
+# refuses the policy otherwise. token_ttl_seconds is 60 to 3600 (default 900).
+apiVersion: openartifact.io/v1
+kind: OIDCTrustPolicy
+metadata:
+  name: github-release
+spec:
+  issuer: https://token.actions.githubusercontent.com
+  audience: https://oa.example.com
+  service_account: ci-publisher
+  conditions:
+    - claim: repository
+      patterns: [acme/shop]
+    - claim: ref
+      patterns: ["refs/tags/v*"]
+  token_ttl_seconds: 900
+  enabled: true

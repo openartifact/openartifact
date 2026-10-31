@@ -100,5 +100,7 @@
   "ui.settings.health.desc": "数据库、存储、扫描器和构建信息。",
   "ui.settings.unknown": "未知设置",
   "ui.settings.unknownHint": "不存在使用此名称的设置分区。",
-  "ui.settings.hub": "设置"
+  "ui.settings.hub": "设置",
+  "ui.settings.service-accounts.title": "服务账号",
+  "ui.settings.service-accounts.desc": "用于自动化的身份、其令牌和 CI 信任策略。"
 }

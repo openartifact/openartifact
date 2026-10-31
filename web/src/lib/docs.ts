@@ -45,6 +45,8 @@ export const ROUTE_DOCS: Readonly<Record<string, DocsPath>> = {
   'settings-password': 'security/authentication',
   'settings-tokens': 'security/authentication',
   'settings-users': 'security/rbac',
+  'settings-service-accounts': 'integrations/ci',
+  'service-account-detail': 'integrations/ci',
   'settings-groups': 'security/rbac',
   'settings-permissions': 'security/rbac',
   'settings-sso': 'security/sso',

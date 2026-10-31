@@ -290,7 +290,7 @@ func TestPermissionTargetKindMetadata(t *testing.T) {
 	}}}
 
 	want := []Ref{
-		{Kind: KindUser, Key: "alice", Field: "assignments.users[0]"},
+		userRef("alice", "assignments.users[0]"),
 		{Kind: KindGroup, Key: "dev", Field: "assignments.groups[0]"},
 	}
 

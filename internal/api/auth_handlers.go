@@ -443,7 +443,7 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// Every miss path still pays for one full Argon2 verification so response
 	// time does not reveal whether the username exists, is disabled, or is
 	// SSO-only.
-	if user == nil || user.Disabled || user.IsService() || user.PasswordHash == nil {
+	if user == nil || user.Disabled || !user.IsHuman() || user.PasswordHash == nil {
 		passwd.BurnPasswordVerification(password)
 		invalid()
 

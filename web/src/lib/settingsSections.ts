@@ -20,6 +20,7 @@ export type SettingsSectionId =
   | 'password'
   | 'tokens'
   | 'users'
+  | 'service-accounts'
   | 'groups'
   | 'permissions'
   | 'sso'
@@ -103,6 +104,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     ['personal', 'ci', 'deploy', 'service', 'api key', 'project token', 'federation token', 'expiry', 'rotate', 'revoke'],
   ),
   section('users', 'access', true, () => import('../pages/settings/sections/UsersPage.vue'), ['sign-in', 'disable', 'invite', 'email', 'password reset', 'create user']),
+  section('service-accounts', 'access', true, () => import('../pages/settings/sections/ServiceAccountsPage.vue'), ['ci', 'automation', 'bot', 'oidc', 'trust policy', 'github actions', 'gitlab', 'token exchange', 'tokenless', 'non-human']),
   section('groups', 'access', true, () => import('../pages/settings/sections/GroupsPage.vue'), ['members', 'team']),
   section('permissions', 'access', true, () => import('../pages/settings/sections/PermissionsPage.vue'), ['acl', 'roles', 'targets']),
   section('sso', 'access', true, () => import('../pages/settings/sections/SSOPage.vue'), ['sso', 'single sign-on', 'oidc', 'google', 'okta', 'login provider', 'saml', 'issuer', 'client id']),

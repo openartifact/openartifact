@@ -8,16 +8,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
-	"strconv"
 )
 
 const (
 	// userRank orders users before every kind that references them.
 	userRank = 10
-
-	// usersPerPage is the largest page the users endpoint serves.
-	usersPerPage = 200
 
 	// bootstrapUsername is the local admin account the server creates on first
 	// start (auth.BootstrapUsername); it is never pruned.
@@ -96,27 +91,23 @@ func nullStr(s *string) string {
 }
 
 func (userKind) List(ctx context.Context, env *Env) ([]*Live, error) {
-	var out []*Live
-
-	for page := 1; ; page++ {
-		var resp struct {
-			Data  []userResponse `json:"data"`
-			Total int            `json:"total"`
-		}
-
-		q := url.Values{"page": {strconv.Itoa(page)}, "per_page": {strconv.Itoa(usersPerPage)}}
-		if err := env.Client.Get(ctx, usersPath+"?"+q.Encode(), &resp); err != nil {
-			return nil, fmt.Errorf("list users: %w", err)
-		}
-
-		for i := range resp.Data {
-			out = append(out, resp.Data[i].live())
-		}
-
-		if len(resp.Data) < usersPerPage || page*usersPerPage >= resp.Total {
-			return out, nil
-		}
+	users, err := listPaged[userResponse](ctx, env.Client, usersPath)
+	if err != nil {
+		return nil, fmt.Errorf("list users: %w", err)
 	}
+
+	out := make([]*Live, len(users))
+	for i := range users {
+		out[i] = users[i].live()
+	}
+
+	return out, nil
+}
+
+// userRef is a reference to the account name, which is a User or a
+// ServiceAccount: both resolve to the same principal on the server.
+func userRef(name, field string) Ref {
+	return Ref{Kind: KindUser, Also: []string{KindServiceAccount}, Key: name, Field: field}
 }
 
 func (userKind) Create(ctx context.Context, env *Env, o *Object) (string, error) {

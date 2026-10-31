@@ -7,7 +7,7 @@ package audit
 // Audit action names. The audit_logs.chk_audit_action constraint admits exactly
 // the values in KnownActions; every action an emitter can produce MUST be
 // declared here, listed in KnownActions and allowed by the latest migration
-// that rewrites the constraint (see migrations/006_audit_cleanup_run.sql). The
+// that rewrites the constraint (see migrations/007_service_accounts_oidc.sql). The
 // integration test TestKnownActionsAcceptedByDatabase inserts each entry of
 // KnownActions into a freshly migrated database.
 const (
@@ -43,6 +43,12 @@ const (
 	ActionAuthPasswordChanged = "auth.password_changed"
 	ActionAuthSSOLogin        = "auth.sso_login"
 	ActionAuthTokenValidate   = "auth.token_validate" //nolint:gosec // action name, not a credential
+
+	// CI OIDC token exchange: a CI job traded its ID token for a service
+	// account token, or presented a verified token no policy accepted.
+
+	ActionAuthOIDCExchange       = "auth.oidc_exchange"
+	ActionAuthOIDCExchangeFailed = "auth.oidc_exchange_failed"
 
 	// Permission management (legacy permission.* names are never emitted).
 
@@ -110,6 +116,14 @@ const (
 	ActionUserUpdated  = "user.updated"
 	ActionUserDisabled = "user.disabled"
 	ActionUserDeleted  = "user.deleted"
+
+	ActionServiceAccountCreated = "service_account.created"
+	ActionServiceAccountUpdated = "service_account.updated"
+	ActionServiceAccountDeleted = "service_account.deleted"
+
+	ActionOIDCPolicyCreated = "oidc_policy.created"
+	ActionOIDCPolicyUpdated = "oidc_policy.updated"
+	ActionOIDCPolicyDeleted = "oidc_policy.deleted"
 
 	ActionGroupCreated       = "group.created"
 	ActionGroupUpdated       = "group.updated"
@@ -184,6 +198,7 @@ var KnownActions = []string{
 
 	ActionAuthLogin, ActionAuthLogout, ActionAuthLoginFailed, ActionAuthTokenCreated,
 	ActionAuthTokenRevoked, ActionAuthPasswordChanged, ActionAuthSSOLogin, ActionAuthTokenValidate,
+	ActionAuthOIDCExchange, ActionAuthOIDCExchangeFailed,
 
 	ActionPermissionTargetCreated, ActionPermissionTargetUpdated, ActionPermissionTargetDeleted,
 	ActionPermissionAssigned, ActionPermissionRevoked,
@@ -208,6 +223,8 @@ var KnownActions = []string{
 	ActionHTTPRequest,
 
 	ActionUserCreated, ActionUserUpdated, ActionUserDisabled, ActionUserDeleted,
+	ActionServiceAccountCreated, ActionServiceAccountUpdated, ActionServiceAccountDeleted,
+	ActionOIDCPolicyCreated, ActionOIDCPolicyUpdated, ActionOIDCPolicyDeleted,
 
 	ActionGroupCreated, ActionGroupUpdated, ActionGroupDeleted,
 	ActionGroupMemberAdded, ActionGroupMemberRemoved, ActionGroupMembersSet,

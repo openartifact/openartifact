@@ -587,6 +587,138 @@
           }
         ]
       },
+      "ServiceAccount": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "OIDCCondition": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "type": "string",
+            "description": "Token claim name, for example `repository`, `ref` or `environment`."
+          },
+          "patterns": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "type": "string"
+            },
+            "description": "Globs (`*` any run of characters including `/`, `?` one character); the claim must match one of them. Case-sensitive."
+          }
+        },
+        "required": [
+          "claim",
+          "patterns"
+        ]
+      },
+      "OIDCTrustPolicy": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Unique name: 1-64 letters, digits, dot, dash or underscore."
+          },
+          "issuer": {
+            "type": "string",
+            "format": "uri",
+            "description": "Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com` or `https://gitlab.com`. Must be https and pass the outbound-request (SSRF) check."
+          },
+          "audience": {
+            "type": "string",
+            "description": "The `aud` value the CI job requests; matched exactly."
+          },
+          "conditions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "$ref": "#/components/schemas/OIDCCondition"
+            },
+            "description": "All conditions must hold. Policies of a shared issuer (GitHub Actions, gitlab.com) need one on an identity claim such as `repository`, `sub` or `project_path`, whose patterns do not start with a wildcard."
+          },
+          "token_ttl_seconds": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 3600,
+            "default": 900,
+            "description": "Lifetime of exchanged tokens."
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "service_account_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "service_account": {
+            "type": "string",
+            "description": "Name of the service account."
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "OIDCExchangeResponse": {
+        "type": "object",
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "description": "A deploy token (`oa_dep_...`) of the service account."
+          },
+          "token_type": {
+            "type": "string",
+            "enum": [
+              "Bearer"
+            ]
+          },
+          "expires_in": {
+            "type": "integer",
+            "description": "Seconds until the token expires."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "Group": {
         "type": "object",
         "properties": {
@@ -14079,6 +14211,663 @@
         }
       }
     },
+    "/api/v1/service-accounts": {
+      "get": {
+        "summary": "List service accounts",
+        "description": "List service accounts, by name (admin only).",
+        "tags": [
+          "Service accounts"
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ServiceAccount"
+                      }
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "per_page": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create service account",
+        "description": "Create a service account: a named non-human principal for automation (admin only). It can hold project roles, group memberships and permission assignments like a user, and own API tokens through `/api/v1/users/{id}/tokens`, but it cannot sign in.",
+        "tags": [
+          "Service accounts"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "3-64 letters, digits, dash or underscore; unique among users and service accounts; cannot be changed."
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "disabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Service account created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceAccount"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "409": {
+            "description": "A user or service account with this name exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/service-accounts/{id}": {
+      "get": {
+        "summary": "Get service account",
+        "description": "Get one service account (admin only).",
+        "tags": [
+          "Service accounts"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceAccount"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Service account not found"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update service account",
+        "description": "Change the description or disable or re-enable a service account (admin only). A disabled account's tokens, including those already issued, authenticate nothing.",
+        "tags": [
+          "Service accounts"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "description": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "disabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Service account updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceAccount"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Service account not found"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete service account",
+        "description": "Delete a service account with its tokens, group memberships, project roles, permission assignments and trust policies (admin only).",
+        "tags": [
+          "Service accounts"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Service account deleted"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Service account not found"
+          }
+        }
+      }
+    },
+    "/api/v1/oidc-trust-policies": {
+      "get": {
+        "summary": "List CI OIDC trust policies",
+        "description": "List the trust policies of the CI OIDC token exchange, by name (admin only).",
+        "tags": [
+          "CI OIDC"
+        ],
+        "responses": {
+          "200": {
+            "description": "Trust policies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OIDCTrustPolicy"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create CI OIDC trust policy",
+        "description": "Trust the ID tokens of a CI system that match the conditions and map them to a service account (admin only). See `POST /api/v1/auth/oidc/exchange`.",
+        "tags": [
+          "CI OIDC"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Unique name: 1-64 letters, digits, dot, dash or underscore."
+                  },
+                  "issuer": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com` or `https://gitlab.com`. Must be https and pass the outbound-request (SSRF) check."
+                  },
+                  "audience": {
+                    "type": "string",
+                    "description": "The `aud` value the CI job requests; matched exactly."
+                  },
+                  "conditions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "items": {
+                      "$ref": "#/components/schemas/OIDCCondition"
+                    },
+                    "description": "All conditions must hold. Policies of a shared issuer (GitHub Actions, gitlab.com) need one on an identity claim such as `repository`, `sub` or `project_path`, whose patterns do not start with a wildcard."
+                  },
+                  "service_account_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "token_ttl_seconds": {
+                    "type": "integer",
+                    "minimum": 60,
+                    "maximum": 3600,
+                    "default": 900,
+                    "description": "Lifetime of exchanged tokens."
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                },
+                "required": [
+                  "name",
+                  "issuer",
+                  "audience",
+                  "conditions",
+                  "service_account_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Trust policy created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OIDCTrustPolicy"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including an issuer that fails the outbound-request check or a missing identity condition for a shared issuer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "409": {
+            "description": "A trust policy with this name exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/oidc-trust-policies/{id}": {
+      "get": {
+        "summary": "Get CI OIDC trust policy",
+        "description": "Get one trust policy (admin only).",
+        "tags": [
+          "CI OIDC"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trust policy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OIDCTrustPolicy"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Trust policy not found"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update CI OIDC trust policy",
+        "description": "Change any field of a trust policy; omitted fields keep their value (admin only). Tokens already exchanged stay valid until they expire (at most one hour).",
+        "tags": [
+          "CI OIDC"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Unique name: 1-64 letters, digits, dot, dash or underscore."
+                  },
+                  "issuer": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com` or `https://gitlab.com`. Must be https and pass the outbound-request (SSRF) check."
+                  },
+                  "audience": {
+                    "type": "string",
+                    "description": "The `aud` value the CI job requests; matched exactly."
+                  },
+                  "conditions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "items": {
+                      "$ref": "#/components/schemas/OIDCCondition"
+                    },
+                    "description": "All conditions must hold. Policies of a shared issuer (GitHub Actions, gitlab.com) need one on an identity claim such as `repository`, `sub` or `project_path`, whose patterns do not start with a wildcard."
+                  },
+                  "service_account_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "token_ttl_seconds": {
+                    "type": "integer",
+                    "minimum": 60,
+                    "maximum": 3600,
+                    "default": 900,
+                    "description": "Lifetime of exchanged tokens."
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Trust policy updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OIDCTrustPolicy"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Trust policy not found"
+          },
+          "409": {
+            "description": "A trust policy with this name exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete CI OIDC trust policy",
+        "description": "Delete a trust policy (admin only). Tokens already exchanged stay valid until they expire (at most one hour); disable the service account to cut them off at once.",
+        "tags": [
+          "CI OIDC"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Trust policy deleted"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Trust policy not found"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/oidc/exchange": {
+      "post": {
+        "summary": "Exchange a CI ID token for an access token",
+        "description": "Trade the OpenID Connect ID token of a CI job (GitHub Actions, GitLab CI, ...) for a short-lived deploy token of the service account a trust policy maps it to. No credentials are needed: the ID token is the credential. Its signature is verified against the issuer's published keys, and its issuer, audience, expiry and claims are checked against the enabled trust policies. Every refusal of the token is the same `401`, whatever the cause. Rate-limited per client address.",
+        "tags": [
+          "CI OIDC"
+        ],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "description": "The CI job's ID token (a JWT)."
+                  },
+                  "policy": {
+                    "type": "string",
+                    "description": "Name of the trust policy to use; by default the oldest policy that accepts the token."
+                  }
+                },
+                "required": [
+                  "token"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OIDCExchangeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token not accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/groups": {
       "get": {
         "summary": "List groups",
@@ -14654,7 +15443,9 @@
                             "SSOProvider",
                             "Webhook",
                             "StorageTier",
-                            "TierPolicy"
+                            "TierPolicy",
+                            "ServiceAccount",
+                            "OIDCTrustPolicy"
                           ]
                         },
                         "name": {

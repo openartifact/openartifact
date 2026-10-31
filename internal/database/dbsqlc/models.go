@@ -171,7 +171,7 @@ type AuthUser struct {
 	ExternalID         *string    `db:"external_id" json:"external_id"`
 	ProviderSlug       *string    `db:"provider_slug" json:"provider_slug"`
 	SsoManagedGroups   bool       `db:"sso_managed_groups" json:"sso_managed_groups"`
-	// human: a person; service: the account behind one project token.
+	// human: a person; service: the account behind one project token; service_account: an administrator-managed non-human principal.
 	Kind string `db:"kind" json:"kind"`
 	// The only project a service user belongs to.
 	ProjectID *string `db:"project_id" json:"project_id"`
@@ -675,6 +675,21 @@ type NixSigningKey struct {
 	CreatedBy    string    `db:"created_by" json:"created_by"`
 	CreatedAt    time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// Rules exchanging a CI OIDC ID token for a short-lived token of a service account.
+type OidcTrustPolicy struct {
+	ID               string          `db:"id" json:"id"`
+	Name             string          `db:"name" json:"name"`
+	Issuer           string          `db:"issuer" json:"issuer"`
+	Audience         string          `db:"audience" json:"audience"`
+	Conditions       json.RawMessage `db:"conditions" json:"conditions"`
+	ServiceAccountID string          `db:"service_account_id" json:"service_account_id"`
+	TokenTtlSeconds  int32           `db:"token_ttl_seconds" json:"token_ttl_seconds"`
+	Enabled          bool            `db:"enabled" json:"enabled"`
+	CreatedBy        string          `db:"created_by" json:"created_by"`
+	CreatedAt        time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt        time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 type OsvAdvisory struct {

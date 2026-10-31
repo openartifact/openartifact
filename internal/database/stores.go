@@ -60,6 +60,8 @@ type PostgresDB struct {
 	*RepositoryStore
 	*CurationStore
 	*UserStore
+	*ServiceAccountStore
+	*OIDCPolicyStore
 	*SessionStore
 	*UserGroupStore
 	*TokenStore
@@ -130,6 +132,8 @@ func newPostgresDB(c *core) *PostgresDB {
 		RepositoryStore:      &RepositoryStore{core: c},
 		CurationStore:        &CurationStore{core: c},
 		UserStore:            &UserStore{core: c},
+		ServiceAccountStore:  &ServiceAccountStore{core: c},
+		OIDCPolicyStore:      &OIDCPolicyStore{core: c},
 		SessionStore:         &SessionStore{core: c},
 		UserGroupStore:       &UserGroupStore{core: c},
 		TokenStore:           &TokenStore{core: c},

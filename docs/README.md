@@ -84,7 +84,7 @@ These pages are also published, one version per release, at <https://openartifac
 | Page | Contents |
 |---|---|
 | [CLI](integrations/cli.md) | `oa` commands (including `trash` and repository delete confirmation), login and configuration |
-| [CI integration](integrations/ci.md) | Upload, bundle and promote from Jenkins, Drone, Woodpecker or any shell with `oa`; least-privilege CI tokens |
+| [CI integration](integrations/ci.md) | Upload, bundle and promote from Jenkins, Drone, Woodpecker or any shell with `oa`; least-privilege CI tokens, tokenless login with GitHub Actions or GitLab OIDC |
 | [Declarative configuration](integrations/declarative.md) | `oa apply`, `oa diff` and `oa export`: manage users, repositories, permissions and more from YAML manifests, GitOps usage |
 | [MCP server](integrations/mcp.md) | Tools, permissions and client configuration (Claude, Cursor, VS Code, Codex, omp) |
 | [REST API](integrations/api.md) | OpenAPI spec, interactive API reference, authentication, conventions |

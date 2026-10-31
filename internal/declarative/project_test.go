@@ -367,7 +367,7 @@ func TestProjectKindMetadata(t *testing.T) {
 	}}
 
 	want := []Ref{
-		{Kind: KindUser, Key: "alice", Field: "members[0].username"},
+		userRef("alice", "members[0].username"),
 		{Kind: KindGroup, Key: "dev", Field: "groups[0].group"},
 	}
 

@@ -39,6 +39,7 @@
   "common.export.csv": "导出 CSV",
   "common.export.failed": "导出失败",
   "common.save": "保存",
+  "common.add": "添加",
   "common.saving": "保存中...",
   "common.cancel": "取消",
   "common.create": "创建",

@@ -8,10 +8,12 @@ package declarative
 func DefaultRegistry() *Registry {
 	return NewRegistry(
 		NewUserKind(),
+		NewServiceAccountKind(),
 		NewGroupKind(),
 		NewProjectKind(),
 		NewRepositoryKind(),
 		NewPermissionTargetKind(),
+		NewOIDCTrustPolicyKind(),
 		NewSSOProviderKind(),
 		NewWebhookKind(),
 		NewStorageTierKind(),

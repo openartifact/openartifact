@@ -536,8 +536,9 @@ func sessionPrincipal(ctx context.Context, r *http.Request, db sessionPrincipalS
 	}
 
 	user, err := db.GetUserByID(ctx, session.UserID)
-	// Service accounts have no session; never accept one.
-	if err != nil || user == nil || user.Disabled || user.IsService() {
+	// Service accounts (project-token users and administrator-managed ones)
+	// have no session; never accept one.
+	if err != nil || user == nil || user.Disabled || !user.IsHuman() {
 		return nil
 	}
 
