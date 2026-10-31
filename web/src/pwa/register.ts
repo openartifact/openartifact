@@ -13,6 +13,42 @@ interface ServiceWorkerOptions {
   reload?: () => void
   /** Notified once per waiting worker; `apply` activates it and reloads the page. */
   onUpdate?: (apply: () => void) => void
+  /**
+   * Path of a content-hashed asset of the running page (its entry script).
+   * A waiting worker that precaches it belongs to the release already on
+   * screen, so no reload is offered. Defaults to the document's module script.
+   */
+  pageAsset?: string | null
+  /** A worker of the release on screen took over quietly: any standing offer is moot. */
+  onCurrent?: () => void
+}
+
+/** How long a waiting worker may take to say what it precaches. */
+const ASSET_QUERY_MS = 3000
+
+/** Path of the running page's entry script, null when there is none. */
+function entryScript(): string | null {
+  if (typeof document === 'undefined') return null
+  const src = document.querySelector<HTMLScriptElement>('script[type="module"][src]')?.src
+  return src ? new URL(src).pathname : null
+}
+
+/**
+ * Asks worker whether its precache lists url (sw.ts answers HAS_ASSET on the
+ * given port); null when it does not answer in time.
+ */
+function precaches(worker: ServiceWorker, url: string): Promise<boolean | null> {
+  // Executor form: the app's TypeScript lib (and older browsers) predate Promise.withResolvers.
+  return new Promise((resolve) => {
+    const channel = new MessageChannel()
+    const timer = setTimeout(() => resolve(null), ASSET_QUERY_MS)
+    channel.port1.onmessage = (e: MessageEvent) => {
+      clearTimeout(timer)
+      channel.port1.close()
+      resolve(e.data === true)
+    }
+    worker.postMessage({ type: 'HAS_ASSET', url }, [channel.port2])
+  })
 }
 
 /**
@@ -25,6 +61,7 @@ export function registerServiceWorker(opts: ServiceWorkerOptions = {}): Promise<
   if (!container) return Promise.resolve(undefined)
 
   const reload = opts.reload ?? (() => window.location.reload())
+  const pageAsset = opts.pageAsset === undefined ? entryScript() : opts.pageAsset
   const announced = new WeakSet<ServiceWorker>()
   let registration: ServiceWorkerRegistration | undefined
   let applying = false
@@ -34,14 +71,30 @@ export function registerServiceWorker(opts: ServiceWorkerOptions = {}): Promise<
     if (applying) reload()
   })
 
-  const announce = (worker: ServiceWorker | null) => {
+  const announce = async (worker: ServiceWorker | null) => {
     // A waiting worker next to no controller is the first install, not an update.
     if (!worker || !container.controller || announced.has(worker)) return
     announced.add(worker)
+
+    // Navigations always reach the network, so a page loaded after the deploy
+    // already runs the release the waiting worker belongs to: activate it
+    // quietly (no reload, nothing changes for the user) instead of offering one.
+    if (pageAsset && (await precaches(worker, pageAsset)) === true) {
+      worker.postMessage({ type: 'SKIP_WAITING' })
+      // An offer made for an older worker that was still waiting at load is withdrawn.
+      opts.onCurrent?.()
+      return
+    }
+
     opts.onUpdate?.(() => {
-      applying = true
       // A newer release may have replaced the worker this offer was made for.
       const target = registration?.waiting ?? worker
+      // Another tab may have activated it already: then only the reload is left.
+      if (target.state === 'activating' || target.state === 'activated') {
+        reload()
+        return
+      }
+      applying = true
       target.postMessage({ type: 'SKIP_WAITING' })
     })
   }
@@ -50,11 +103,11 @@ export function registerServiceWorker(opts: ServiceWorkerOptions = {}): Promise<
     .register(SW_URL, { scope: '/' })
     .then((reg) => {
       registration = reg
-      announce(reg.waiting)
+      void announce(reg.waiting)
       reg.addEventListener('updatefound', () => {
         const installing = reg.installing
         installing?.addEventListener('statechange', () => {
-          if (installing.state === 'installed') announce(installing)
+          if (installing.state === 'installed') void announce(installing)
         })
       })
       // Long-lived tabs and installed apps rarely navigate: poll for a new worker.
@@ -84,6 +137,10 @@ export function startServiceWorker(): void {
           action: { label: t('pwa.reload'), run: apply },
           timeoutMs: 0,
         })
+      },
+      onCurrent: () => {
+        if (offer !== undefined) useToastStore().dismiss(offer)
+        offer = undefined
       },
     })
 
