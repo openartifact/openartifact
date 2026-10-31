@@ -5,12 +5,14 @@
 package proxy
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"reflect"
 	"slices"
@@ -343,6 +345,22 @@ func FuzzOCITarget(f *testing.F) {
 	})
 }
 
+// decodeExact decodes JSON keeping numbers as json.Number, so any valid number round-trips.
+func decodeExact(data []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return errors.New("trailing data after JSON value")
+	}
+
+	return nil
+}
+
 // FuzzOCIRewriteTagList feeds arbitrary upstream tag listings to the rewrite
 // of their repository name: a listing is accepted only when it is a JSON
 // object, and the result names the repository the client used and keeps every
@@ -351,6 +369,7 @@ func FuzzOCIRewriteTagList(f *testing.F) {
 	f.Add(`{"name":"library/alpine","tags":["3.19","latest"]}`, "alpine")
 	f.Add(`{"tags":null,"extra":{"a":[1,2.5e3,"<&>"]}}`, "my/img")
 	f.Add(`{"name":5}`, "a/b")
+	f.Add(`{"name":"x","tags":[555555552.5e35555555555555]}`+"\n\n", "x")
 	f.Add(`{"name":"a","name":"b","tags":[]}`, "x")
 	f.Add(`[]`, "x")
 	f.Add(`{`, "x")
@@ -363,9 +382,11 @@ func FuzzOCIRewriteTagList(f *testing.F) {
 
 		out, err := rewriteTagList([]byte(body), name)
 
+		// Numbers are compared as their literal text: a valid JSON number may be out of float64 range
+		// (2.5e35555), which rewriteTagList passes through untouched.
 		var in map[string]any
 
-		isObject := json.Unmarshal([]byte(body), &in) == nil && in != nil
+		isObject := decodeExact([]byte(body), &in) == nil && in != nil
 		if (err == nil) != isObject {
 			t.Fatalf("rewriteTagList(%q) = %q, %v but the body is a JSON object = %v", body, out, err, isObject)
 		}
@@ -375,7 +396,7 @@ func FuzzOCIRewriteTagList(f *testing.F) {
 		}
 
 		var got map[string]any
-		if err := json.Unmarshal(out, &got); err != nil || got == nil {
+		if err := decodeExact(out, &got); err != nil || got == nil {
 			t.Fatalf("rewriteTagList(%q) = %q is not a JSON object: %v", body, out, err)
 		}
 
