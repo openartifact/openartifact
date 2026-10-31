@@ -20,9 +20,9 @@ export interface Issue {
 }
 
 export interface LocaleStats {
-  /** keys of the English catalog (plural variants counted one by one) */
+  /** keys the locale must have (see `requiredKeys`) */
   total: number
-  /** English keys this locale has a non-empty value for (a plural group counts as translated when its `_other` is) */
+  /** required keys this locale has a non-empty value for (see `requiredKeys`) */
   translated: number
   missing: number
 }
@@ -94,10 +94,82 @@ export function checkSource(en: LocaleFiles): Issue[] {
 }
 
 /**
+ * Keys a locale must translate: every plain English key, and of a plural group
+ * the forms English has that the language also uses (`other` always).
+ */
+function requiredKeys(tag: string, english: Map<string, { area: string; value: string }>): string[] {
+  const allowed = new Set(pluralCategories(tag))
+  const groups = pluralGroups(english.keys())
+  const out: string[] = []
+  for (const key of english.keys()) {
+    const plural = splitPlural(key)
+    if (plural && groups.has(plural.base) && plural.category !== 'other' && !allowed.has(plural.category)) continue
+    out.push(key)
+  }
+
+  return out
+}
+
+export interface MissingEntry {
+  area: string
+  key: string
+  /** English text to translate (the `_other` form for a plural form English lacks) */
+  source: string
+}
+
+/** Required keys the locale has no non-empty value for, in English catalog order. */
+export function missingEntries(tag: string, en: LocaleFiles, files: LocaleFiles): MissingEntry[] {
+  const english = flatten(en)
+  const own = flatten(files)
+  const out: MissingEntry[] = []
+  for (const key of requiredKeys(tag, english)) {
+    if ((own.get(key)?.value ?? '') !== '') continue
+    const src = english.get(key)!
+    out.push({ area: src.area, key, source: src.value })
+  }
+
+  return out
+}
+
+/**
+ * Catalog `existing` with `add` merged in, ordered like English (`source`);
+ * keys English lacks (plural forms of other languages) follow their `_other`.
+ * Throws on a key that is not in English, an empty value, or placeholders that
+ * differ from English.
+ */
+export function mergeCatalog(source: Messages, existing: Messages, add: Messages): Messages {
+  const merged: Record<string, string> = { ...existing }
+  for (const [key, value] of Object.entries(add)) {
+    const plural = splitPlural(key)
+    const ref = source[key] ?? (plural ? source[`${plural.base}_other`] : undefined)
+    if (ref === undefined) throw new Error(`${key}: not in the English catalog`)
+    if (value === '') throw new Error(`${key}: empty translation`)
+    if (!same(placeholdersOf(ref), placeholdersOf(value))) {
+      throw new Error(`${key}: placeholders {${placeholdersOf(value).join('} {')}} differ from English {${placeholdersOf(ref).join('} {')}}`)
+    }
+    merged[key] = value
+  }
+  const out: Record<string, string> = {}
+  for (const key of Object.keys(source)) {
+    if (key in merged) out[key] = merged[key]!
+    const plural = splitPlural(key)
+    if (plural?.category === 'other') {
+      for (const k of Object.keys(merged)) {
+        if (!(k in source) && splitPlural(k)?.base === plural.base) out[k] = merged[k]!
+      }
+    }
+  }
+  for (const key of Object.keys(merged)) if (!(key in out)) out[key] = merged[key]!
+
+  return out
+}
+
+/**
  * Checks one translated locale against English. Errors: a key English does
  * not have (or lives in another file), a placeholder set that differs, a plural
- * form the language does not use, a plural group without `_other`. Missing keys
- * are warnings (the UI falls back to English); empty values count as missing.
+ * form the language does not use, a plural group without `_other`, and every
+ * missing key (the UI would fall back to English, but a string ships in every
+ * language); empty values count as missing.
  */
 export function checkLocale(tag: string, en: LocaleFiles, files: LocaleFiles): { issues: Issue[]; stats: LocaleStats } {
   const issues: Issue[] = []
@@ -143,14 +215,12 @@ export function checkLocale(tag: string, en: LocaleFiles, files: LocaleFiles): {
 
   let translated = 0
   let missing = 0
-  for (const [key, { area }] of english) {
-    const plural = splitPlural(key)
-    if (plural && groups.has(plural.base) && plural.category !== 'other') continue
-    const ok = (own.get(key)?.value ?? '') !== ''
-    if (ok) translated++
+  const absent = new Set(missingEntries(tag, en, files).map((m) => m.key))
+  for (const key of requiredKeys(tag, english)) {
+    if (!absent.has(key)) translated++
     else {
       missing++
-      issues.push({ level: 'warn', locale: tag, area, key, message: 'missing (English is used)' })
+      issues.push({ level: 'error', locale: tag, area: english.get(key)?.area ?? english.get(`${splitPlural(key)!.base}_other`)!.area, key, message: 'missing translation' })
     }
   }
 

@@ -62,5 +62,12 @@
   "shell.action.createToken": "Zugriffstoken erstellen",
   "shell.action.createUser": "Benutzer erstellen",
   "shell.action.createBundle": "Release-Bundle erstellen",
+  "shell.action.themeDark": "Zum dunklen Design wechseln",
+  "shell.action.themeLight": "Zum hellen Design wechseln",
+  "shell.action.language": "Sprache auf {language} umstellen",
+  "shell.action.languageAuto": "Sprache auf die Browser-Vorgabe umstellen",
+  "shell.action.repoSettings": "Einstellungen von {name} öffnen",
+  "shell.action.repoCopyInstall": "Installationsbefehl für {name} kopieren",
+  "shell.action.repoCopied": "Installationsbefehl für {name} kopiert",
   "shell.action.signOut": "Abmelden"
 }

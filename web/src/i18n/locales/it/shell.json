@@ -62,5 +62,12 @@
   "shell.action.createToken": "Crea token di accesso",
   "shell.action.createUser": "Crea utente",
   "shell.action.createBundle": "Crea bundle di rilascio",
+  "shell.action.themeDark": "Passa al tema scuro",
+  "shell.action.themeLight": "Passa al tema chiaro",
+  "shell.action.language": "Cambia lingua in {language}",
+  "shell.action.languageAuto": "Cambia lingua su quella predefinita del browser",
+  "shell.action.repoSettings": "Apri le impostazioni di {name}",
+  "shell.action.repoCopyInstall": "Copia il comando di installazione per {name}",
+  "shell.action.repoCopied": "Comando di installazione per {name} copiato",
   "shell.action.signOut": "Esci"
 }

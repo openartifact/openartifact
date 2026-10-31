@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'bun:test'
-import { checkLocale, checkSource, findUnusedKeys, placeholdersOf, splitPlural } from '../catalogCheck'
+import { checkLocale, checkSource, findUnusedKeys, mergeCatalog, missingEntries, placeholdersOf, splitPlural } from '../catalogCheck'
 
 const en = {
   a: {
@@ -15,7 +15,9 @@ const en = {
   b: { 'b.other': 'Other' },
 }
 
-const errors = (r: { issues: { level: string; key: string; message: string }[] }) => r.issues.filter((i) => i.level === 'error')
+// partial catalogs in the tests below: gaps are covered by their own tests
+const errors = (r: { issues: { level: string; key: string; message: string }[] }) =>
+  r.issues.filter((i) => i.level === 'error' && i.message !== 'missing translation')
 
 describe('placeholders and plural keys', () => {
   it('lists placeholders sorted and unique', () => {
@@ -37,7 +39,7 @@ describe('checkLocale', () => {
       b: { 'b.other': 'Anderes' },
     })
     expect(r.issues).toEqual([])
-    expect(r.stats).toEqual({ total: 4, translated: 4, missing: 0 })
+    expect(r.stats).toEqual({ total: 5, translated: 5, missing: 0 })
   })
 
   it('fails on a key English does not have', () => {
@@ -75,11 +77,21 @@ describe('checkLocale', () => {
     expect(errors(r).map((i) => i.message)).toEqual(['plural group has no "other" form'])
   })
 
-  it('reports missing and empty keys as warnings, not errors', () => {
+  it('fails on missing and empty keys', () => {
     const r = checkLocale('de', en, { a: { 'a.hello': '', 'a.plain': 'Schlicht' } })
-    expect(errors(r)).toEqual([])
-    expect(r.issues.filter((i) => i.level === 'warn').map((i) => i.key).sort()).toEqual(['a.count_other', 'a.hello', 'b.other'])
-    expect(r.stats).toEqual({ total: 4, translated: 1, missing: 3 })
+    expect(r.issues.filter((i) => i.message === 'missing translation').map((i) => `${i.level}:${i.key}`).sort()).toEqual([
+      'error:a.count_one',
+      'error:a.count_other',
+      'error:a.hello',
+      'error:b.other',
+    ])
+    expect(r.stats).toEqual({ total: 5, translated: 1, missing: 4 })
+  })
+
+  it('does not require plural forms the language does not use', () => {
+    const r = checkLocale('ja', en, { a: { 'a.hello': 'x {name}', 'a.plain': 'x', 'a.count_other': '{n}' }, b: { 'b.other': 'x' } })
+    expect(r.issues).toEqual([])
+    expect(r.stats).toEqual({ total: 4, translated: 4, missing: 0 })
   })
 
   it('fails on non-string values', () => {
@@ -101,5 +113,36 @@ describe('findUnusedKeys', () => {
   it('counts literal keys, plural bases and dynamic prefixes as used', () => {
     const catalog = { a: { ...en.a, 'dyn.one': 'x', 'dyn.two': 'y', 'a.dead': 'z' } }
     expect(findUnusedKeys(catalog, source)).toEqual([{ area: 'a', key: 'a.plain' }, { area: 'a', key: 'a.dead' }])
+  })
+})
+
+describe('missingEntries', () => {
+  it('lists required keys in English order with the English text', () => {
+    expect(missingEntries('de', en, { a: { 'a.plain': 'Schlicht', 'a.count_other': '' } })).toEqual([
+      { area: 'a', key: 'a.hello', source: 'Hello {name}' },
+      { area: 'a', key: 'a.count_one', source: '{n} file' },
+      { area: 'a', key: 'a.count_other', source: '{n} files' },
+      { area: 'b', key: 'b.other', source: 'Other' },
+    ])
+    expect(missingEntries('ja', en, {}).map((m) => m.key)).toEqual(['a.hello', 'a.plain', 'a.count_other', 'b.other'])
+  })
+})
+
+describe('mergeCatalog', () => {
+  const source = en.a
+
+  it('orders keys like English and keeps extra plural forms after other', () => {
+    const merged = mergeCatalog(source, { 'a.count_many': '{n} de', 'a.plain': 'Schlicht' }, { 'a.hello': 'Hallo {name}', 'a.count_other': '{n} Dateien' })
+    expect(Object.keys(merged)).toEqual(['a.hello', 'a.plain', 'a.count_other', 'a.count_many'])
+  })
+
+  it('accepts a plural form English lacks', () => {
+    expect(mergeCatalog(source, {}, { 'a.count_few': '{n} x' })['a.count_few']).toBe('{n} x')
+  })
+
+  it('rejects unknown keys, empty values and changed placeholders', () => {
+    expect(() => mergeCatalog(source, {}, { 'a.nope': 'x' })).toThrow('not in the English catalog')
+    expect(() => mergeCatalog(source, {}, { 'a.plain': '' })).toThrow('empty')
+    expect(() => mergeCatalog(source, {}, { 'a.hello': 'Hallo {nom}' })).toThrow('placeholders')
   })
 })

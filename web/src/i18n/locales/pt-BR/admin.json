@@ -377,6 +377,7 @@
   "adm.ai.unavailable.body": "Este binário do servidor foi compilado sem análise por IA, então não há nada para configurar aqui. Use uma compilação padrão para ativá-la.",
   "adm.audit.details": "Detalhes",
   "adm.gpg.eyebrow": "Chave GPG",
+  "adm.gpg.table": "Chaves de assinatura",
   "adm.gpg.empty.title": "Nenhuma chave de assinatura",
   "adm.gpg.empty.hint": "Importe uma chave privada ou gere uma e depois ative-a globalmente ou para um repositório deb ou rpm para assinar seus metadados.",
   "adm.gpg.noSecretKey": "O armazenamento de chaves está desativado: defina OPENARTIFACT_SECRET_KEY no servidor para importar ou gerar chaves de assinatura.",

@@ -61,5 +61,12 @@
   "shell.action.createToken": "アクセストークンを作成",
   "shell.action.createUser": "ユーザーを作成",
   "shell.action.createBundle": "リリースバンドルを作成",
+  "shell.action.themeDark": "ダークテーマに切り替え",
+  "shell.action.themeLight": "ライトテーマに切り替え",
+  "shell.action.language": "言語を {language} に変更",
+  "shell.action.languageAuto": "言語をブラウザーの既定に変更",
+  "shell.action.repoSettings": "{name} の設定を開く",
+  "shell.action.repoCopyInstall": "{name} のインストールコマンドをコピー",
+  "shell.action.repoCopied": "{name} のインストールコマンドをコピーしました",
   "shell.action.signOut": "サインアウト"
 }

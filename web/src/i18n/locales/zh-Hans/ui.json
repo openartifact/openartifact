@@ -22,6 +22,7 @@
   "ui.table.loadMore": "加载更多",
   "ui.table.selected": "已选择 {count} 项",
   "ui.table.actions": "操作",
+  "ui.table.moreActions": "更多操作",
   "ui.filter.search": "搜索",
   "ui.filter.clear": "清除筛选",
   "ui.severity.critical": "严重",

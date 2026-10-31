@@ -62,5 +62,12 @@
   "shell.action.createToken": "Créer un jeton d'accès",
   "shell.action.createUser": "Créer un utilisateur",
   "shell.action.createBundle": "Créer un bundle de release",
+  "shell.action.themeDark": "Passer au thème sombre",
+  "shell.action.themeLight": "Passer au thème clair",
+  "shell.action.language": "Changer la langue en {language}",
+  "shell.action.languageAuto": "Utiliser la langue par défaut du navigateur",
+  "shell.action.repoSettings": "Ouvrir les paramètres de {name}",
+  "shell.action.repoCopyInstall": "Copier la commande d'installation de {name}",
+  "shell.action.repoCopied": "Commande d'installation de {name} copiée",
   "shell.action.signOut": "Se déconnecter"
 }

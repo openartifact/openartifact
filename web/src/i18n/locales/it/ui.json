@@ -22,6 +22,7 @@
   "ui.table.loadMore": "Carica altro",
   "ui.table.selected": "{count} selezionati",
   "ui.table.actions": "Azioni",
+  "ui.table.moreActions": "Altre azioni",
   "ui.filter.search": "Ricerca",
   "ui.filter.clear": "Azzera filtri",
   "ui.severity.critical": "Critica",
