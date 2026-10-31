@@ -1,0 +1,5 @@
+go test fuzz v1
+string("pacman")
+string("")
+string("linux")
+string("6.11.5.arch1-1")
