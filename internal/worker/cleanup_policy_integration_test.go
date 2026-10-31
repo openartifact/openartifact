@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"testing"
@@ -120,6 +121,10 @@ func TestCleanupPolicySelection(t *testing.T) {
 		{
 			name: "keep since 25 days removes only the older", keepSince: new(25),
 			gone: []string{"a/1.0/jar", "a/1.0/pom", "a/2.0/jar", "a/2.0/pom", "b/1.0/jar"},
+		},
+		{
+			name: "keep since beyond the timestamp range keeps everything", keepSince: new(math.MaxInt32),
+			gone: nil,
 		},
 		{
 			name: "both criteria: a row is kept when either protects it", keepLast: new(4), keepSince: new(25),

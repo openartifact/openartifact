@@ -447,6 +447,13 @@ type cleanupCandidate struct {
 // trash; there is no HTTP principal in a worker.
 const cleanupActor = "cleanup-policy"
 
+// maxKeepSinceDays caps the keep_since_days of the age cutoff. A policy may
+// keep up to math.MaxInt32 days, but now() minus more than about 2.4 million
+// days is before 4713 BC, which timestamptz cannot hold (the query fails with
+// "timestamp out of range"). A million days (about 2700 years) keeps every row
+// just the same.
+const maxKeepSinceDays = 1_000_000
+
 // selectCandidates returns the rows the policy would delete. A row is selected
 // when it is outside the newest keep_last_n versions of its package (if set)
 // AND older than keep_since_days (if set), i.e. it is kept when either
@@ -472,7 +479,7 @@ func (w *CleanupWorker) selectCandidates(ctx context.Context, policy *models.Cle
 	}
 
 	if policy.KeepSinceDays != nil {
-		args = append(args, *policy.KeepSinceDays)
+		args = append(args, min(*policy.KeepSinceDays, maxKeepSinceDays))
 		conds = append(conds, fmt.Sprintf("created_at < now() - make_interval(days => $%d)", len(args)))
 	}
 
