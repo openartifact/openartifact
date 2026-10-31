@@ -295,5 +295,6 @@ var GoHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	Immutable:  goImmutable,
 	IsMetadata: func(key string) bool { return keyName(key) == "list" || strings.HasSuffix(key, "/@latest") },
 	Published:  (*Service).goInfoPublished,
+	Versions:   (*Service).goVersions,
 	BlobPath:   presign.GoBlobPath,
 }

@@ -7,6 +7,8 @@
   "artifact.notFound.hint": "{repo} has no package named {name}. It may have been deleted or moved to the trash.",
   "artifact.notFound.search": "Search packages",
   "artifact.notFound.repo": "Open repository",
+  "artifact.metadataOnly.title": "Proxied package",
+  "artifact.metadataOnly.hint": "{repo} serves {name} from its upstream on demand, so its versions are not stored as separate packages here. Versions the repository holds back are listed above.",
   "artifact.versionNotFound.title": "Version not found",
   "artifact.versionNotFound.hint": "{name} has no version {version}.",
   "artifact.versionNotFound.latest": "Open the latest version",

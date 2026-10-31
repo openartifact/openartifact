@@ -20,7 +20,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <template v-else-if="versions.length === 0">
       <PageHeader :title="pkgName" :crumbs="crumbs" />
       <HeldBackList v-if="heldBack.length > 0" class="mb-6" :pkg="pkgName" :held="heldBack" />
-      <StateBlock variant="empty" :title="t('artifact.notFound.title')" :hint="tp('artifact.notFound.hint', { name: pkgName, repo: repoName })">
+      <StateBlock v-if="metadataOnly" variant="empty" :title="t('artifact.metadataOnly.title')" :hint="tp('artifact.metadataOnly.hint', { name: pkgName, repo: repoName })" data-testid="metadata-only">
+        <template #action>
+          <AppButton variant="secondary" :to="`/repos/${encodeURIComponent(repoName)}`">{{ t('artifact.notFound.repo') }}</AppButton>
+        </template>
+      </StateBlock>
+      <StateBlock v-else variant="empty" :title="t('artifact.notFound.title')" :hint="tp('artifact.notFound.hint', { name: pkgName, repo: repoName })">
         <template #action>
           <AppButton :to="{ path: '/packages', query: { q: pkgName } }">{{ t('artifact.notFound.search') }}</AppButton>
           <AppButton variant="secondary" :to="`/repos/${encodeURIComponent(repoName)}`">{{ t('artifact.notFound.repo') }}</AppButton>
@@ -130,7 +135,7 @@ const param = (name: string): string | undefined => {
 }
 const requestedVersion = computed(() => param('v'))
 
-const { repoName, pkgName, versions, entry, detail, summary, heldBack, format, repository, caps, loading, error, reload } = useArtifact({
+const { repoName, pkgName, versions, entry, detail, summary, heldBack, format, repository, caps, loading, error, reload, metadataOnly } = useArtifact({
   repo: () => param('repo') ?? '',
   pkg: () => param('pkg') ?? '',
   version: () => requestedVersion.value,

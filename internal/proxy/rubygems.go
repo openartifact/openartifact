@@ -524,5 +524,6 @@ var RubyGemsHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 		return true
 	},
 	Published: (*Service).rubygemsPublished,
+	Versions:  (*Service).rubygemsVersions,
 	BlobPath:  presign.RubyGemsBlobPath,
 }

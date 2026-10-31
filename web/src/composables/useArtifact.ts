@@ -67,7 +67,16 @@ export function useArtifact(source: ArtifactSource) {
   const repoName = computed(source.repo)
   const pkgName = computed(source.pkg)
   const format = computed(() => repository.value?.format ?? rows.value[0]?.format ?? '')
-  const versions = computed(() => groupVersions(rows.value))
+  // A proxy package is also backed by the cached upstream metadata (its row has an empty version): that is not a
+  // version a client can install, so the page never shows it as one. Only a proxy whose format lists versions
+  // (held-back endpoint `supported`) has such a row; other formats keep versionless rows (raw files).
+  const heldBackSupported = ref(false)
+  const realRows = computed(() => (heldBackSupported.value ? rows.value.filter((r) => r.version !== '') : rows.value))
+  // Some proxies (pypi) list no row for the cached metadata at all: what the gate holds back then proves the package exists.
+  const metadataOnly = computed(
+    () => realRows.value.length === 0 && (rows.value.length > 0 || (repository.value?.repo_type === 'proxy' && heldBack.value.length > 0)),
+  )
+  const versions = computed(() => groupVersions(realRows.value))
   const entry = computed(() => selectVersion(versions.value, source.version()))
   const caps = computed(() => artifactCapabilities({ isAdmin: session.isAdmin, permissions: repository.value?.permissions }))
 
@@ -81,7 +90,7 @@ export function useArtifact(source: ArtifactSource) {
       if (mine !== listGeneration) return
       repository.value = repo
       rows.value = list.filter((p) => p.name === pkgName.value)
-      void loadHeldBack()
+      await loadHeldBack()
     } catch (err) {
       if (mine !== listGeneration) return
       rows.value = []
@@ -96,10 +105,13 @@ export function useArtifact(source: ArtifactSource) {
   async function loadHeldBack(): Promise<void> {
     const mine = listGeneration
     heldBack.value = []
+    heldBackSupported.value = false
     if (repository.value?.repo_type !== 'proxy') return
     try {
       const res = await listHeldBackVersions(repoName.value, pkgName.value)
-      if (mine === listGeneration) heldBack.value = res.versions
+      if (mine !== listGeneration) return
+      heldBack.value = res.versions
+      heldBackSupported.value = res.supported
     } catch {
       // An extra: the page shows the versions it has.
     }
@@ -179,5 +191,5 @@ export function useArtifact(source: ArtifactSource) {
   }
   provide(KEY, context)
 
-  return { ...context, loading, error }
+  return { ...context, loading, error, metadataOnly }
 }

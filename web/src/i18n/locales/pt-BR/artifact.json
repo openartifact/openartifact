@@ -7,6 +7,8 @@
   "artifact.notFound.hint": "{repo} não tem um pacote chamado {name}. Ele pode ter sido excluído ou movido para a lixeira.",
   "artifact.notFound.search": "Buscar pacotes",
   "artifact.notFound.repo": "Abrir repositório",
+  "artifact.metadataOnly.title": "Pacote em proxy",
+  "artifact.metadataOnly.hint": "{repo} serve {name} do seu upstream sob demanda, então suas versões não são armazenadas aqui como pacotes separados. As versões retidas pelo repositório estão listadas acima.",
   "artifact.versionNotFound.title": "Versão não encontrada",
   "artifact.versionNotFound.hint": "{name} não tem a versão {version}.",
   "artifact.versionNotFound.latest": "Abrir a versão mais recente",

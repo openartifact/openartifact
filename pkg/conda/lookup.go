@@ -240,3 +240,27 @@ func EarliestBuild(r io.Reader, limit int64, name, version string) (time.Time, b
 
 	return earliest, ok, err
 }
+
+// BuildTimes is, for every version of the package called name (compared without
+// regard to case) in the plain repodata.json in r, the earliest "timestamp" of
+// its entries; the zero time for a version none of whose entries carries one.
+// limit bounds the bytes read.
+func BuildTimes(r io.Reader, limit int64, name string) (map[string]time.Time, error) {
+	out := make(map[string]time.Time)
+
+	err := Scan(r, limit, Visitor{Entry: func(_ Section, _ string, raw json.RawMessage) error {
+		n, v := EntryIdentity(raw)
+		if v == "" || !strings.EqualFold(n, name) {
+			return nil
+		}
+
+		built := EntryTimestamp(raw)
+		if first, seen := out[v]; !seen || (!built.IsZero() && (first.IsZero() || built.Before(first))) {
+			out[v] = built
+		}
+
+		return nil
+	}})
+
+	return out, err
+}

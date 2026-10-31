@@ -510,6 +510,7 @@ func (s *Service) locateAnsibleTarball(
 var AnsibleHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	Serve:     (*Service).serveAnsible,
 	Published: (*Service).ansiblePublished,
+	Versions:  (*Service).ansibleVersions,
 	// Tarballs, checked against the artifact sha256 of their version document.
 	Immutable:  func(key string) bool { return strings.HasPrefix(key, ansibleArtifactDir) },
 	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, ansibleArtifactDir) },

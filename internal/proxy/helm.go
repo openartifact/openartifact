@@ -455,6 +455,7 @@ var HelmHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	},
 	IsMetadata: func(key string) bool { return keyName(key) == helmIndexKey },
 	Published:  (*Service).helmPublished,
+	Versions:   (*Service).helmVersions,
 	BlobPath:   presign.HelmBlobPath,
 }
 
