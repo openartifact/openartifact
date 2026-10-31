@@ -282,6 +282,10 @@ export type Repository = {
      */
     min_age_hours?: number;
     /**
+     * Proxy repositories only. How the repository's curation rules apply: off ignores them (default), denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches. Rules are managed under /api/v1/repositories/{name}/curation-rules.
+     */
+    curation_mode?: 'off' | 'denylist' | 'allowlist';
+    /**
      * Whether the repository is blocked
      */
     blocked?: boolean;
@@ -574,6 +578,61 @@ export type RepositoryMember = {
      * Resolution order within the group (lowest first)
      */
     priority: number;
+};
+
+/**
+ * One curation rule of a proxy repository. Package and version patterns are globs (`*` any run of characters, `?` one character) matched against the package name normalized the way the format shows it and the version string as clients see it; an empty version pattern matches every version.
+ */
+export type CurationRule = {
+    id: string;
+    action: 'block' | 'allow';
+    package_pattern: string;
+    version_pattern: string;
+    /**
+     * Shown to clients that are refused the version.
+     */
+    reason: string;
+    /**
+     * Login name of the caller that created the rule; empty when unknown.
+     */
+    created_by: string;
+    created_at: string;
+};
+
+export type CurationRules = {
+    /**
+     * In creation order.
+     */
+    rules: Array<CurationRule>;
+};
+
+export type AvailabilityReason = {
+    source: 'curation' | 'min_age' | 'quarantine' | 'license_policy' | 'repository_blocked';
+    detail: string;
+    /**
+     * When a min_age hold ends.
+     */
+    until?: string;
+    /**
+     * The curation rule that blocks the version; absent for a version an allowlist does not list.
+     */
+    rule_id?: string;
+};
+
+export type AvailabilityResponse = {
+    /**
+     * True when no hold applies.
+     */
+    available: boolean;
+    reasons: Array<AvailabilityReason>;
+    /**
+     * The publish time the upstream states, when the cached metadata dates the version.
+     */
+    published_at?: string;
+    /**
+     * off: the repository has no minimum age. checked: it has one and the version was dated. unknown: it has one but the cached metadata does not date the version, so the check could not run (the proxy lets an undated version through).
+     */
+    min_age: 'off' | 'checked' | 'unknown';
 };
 
 export type CleanupPolicy = {
@@ -3884,6 +3943,10 @@ export type PostApiV1RepositoriesData = {
          * Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600.
          */
         min_age_hours?: number;
+        /**
+         * Proxy repositories only (400 for other types). off ignores the curation rules (default), denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches.
+         */
+        curation_mode?: 'off' | 'denylist' | 'allowlist';
         blocked?: boolean;
         /**
          * For group repos: ordered member repository names (first hit wins). Members must be hosted or proxy repositories of the group's format; groups cannot be nested.
@@ -9835,6 +9898,10 @@ export type PostApiV1ProjectsByProjectRepositoriesData = {
          * Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600.
          */
         min_age_hours?: number;
+        /**
+         * Proxy repositories only (400 for other types). off ignores the curation rules (default), denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches.
+         */
+        curation_mode?: 'off' | 'denylist' | 'allowlist';
         member_repos?: Array<string>;
         presign_downloads?: boolean | null;
         trash_retention_days?: number | null;
@@ -11001,6 +11068,10 @@ export type PatchApiV1RepositoryByNameData = {
          * Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600.
          */
         min_age_hours?: number;
+        /**
+         * Proxy repositories only (400 for other types). off ignores the curation rules, denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches. A change is audited as repository.updated.
+         */
+        curation_mode?: 'off' | 'denylist' | 'allowlist';
         blocked?: boolean;
         member_repos?: Array<string>;
         /**
@@ -11714,6 +11785,209 @@ export type GetApiV1BundlesByNameByVersionPromotionsResponses = {
 };
 
 export type GetApiV1BundlesByNameByVersionPromotionsResponse = GetApiV1BundlesByNameByVersionPromotionsResponses[keyof GetApiV1BundlesByNameByVersionPromotionsResponses];
+
+export type GetApiV1RepositoriesByNameCurationRulesData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/curation-rules';
+};
+
+export type GetApiV1RepositoriesByNameCurationRulesErrors = {
+    /**
+     * The repository is not a proxy repository (`validation_failed`)
+     */
+    400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
+    /**
+     * Repository not found
+     */
+    404: Error;
+};
+
+export type GetApiV1RepositoriesByNameCurationRulesError = GetApiV1RepositoriesByNameCurationRulesErrors[keyof GetApiV1RepositoriesByNameCurationRulesErrors];
+
+export type GetApiV1RepositoriesByNameCurationRulesResponses = {
+    /**
+     * The rules
+     */
+    200: CurationRules;
+};
+
+export type GetApiV1RepositoriesByNameCurationRulesResponse = GetApiV1RepositoriesByNameCurationRulesResponses[keyof GetApiV1RepositoriesByNameCurationRulesResponses];
+
+export type PostApiV1RepositoriesByNameCurationRulesData = {
+    body: {
+        action: 'block' | 'allow';
+        package_pattern: string;
+        /**
+         * Empty or absent matches every version.
+         */
+        version_pattern?: string;
+        reason?: string;
+    };
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/curation-rules';
+};
+
+export type PostApiV1RepositoriesByNameCurationRulesErrors = {
+    /**
+     * Invalid rule, or the repository is not a proxy repository (`validation_failed`)
+     */
+    400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
+    /**
+     * Repository not found
+     */
+    404: Error;
+    /**
+     * The repository already holds the maximum number of rules (`conflict`)
+     */
+    409: Error;
+};
+
+export type PostApiV1RepositoriesByNameCurationRulesError = PostApiV1RepositoriesByNameCurationRulesErrors[keyof PostApiV1RepositoriesByNameCurationRulesErrors];
+
+export type PostApiV1RepositoriesByNameCurationRulesResponses = {
+    /**
+     * Rule created
+     */
+    201: CurationRule;
+};
+
+export type PostApiV1RepositoriesByNameCurationRulesResponse = PostApiV1RepositoriesByNameCurationRulesResponses[keyof PostApiV1RepositoriesByNameCurationRulesResponses];
+
+export type DeleteApiV1RepositoriesByNameCurationRulesByIdData = {
+    body?: never;
+    path: {
+        name: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/curation-rules/{id}';
+};
+
+export type DeleteApiV1RepositoriesByNameCurationRulesByIdErrors = {
+    /**
+     * The repository is not a proxy repository (`validation_failed`)
+     */
+    400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
+    /**
+     * Repository or rule not found (also a rule of another repository, or an id that is not a UUID)
+     */
+    404: Error;
+};
+
+export type DeleteApiV1RepositoriesByNameCurationRulesByIdError = DeleteApiV1RepositoriesByNameCurationRulesByIdErrors[keyof DeleteApiV1RepositoriesByNameCurationRulesByIdErrors];
+
+export type DeleteApiV1RepositoriesByNameCurationRulesByIdResponses = {
+    /**
+     * Rule deleted
+     */
+    204: void;
+};
+
+export type DeleteApiV1RepositoriesByNameCurationRulesByIdResponse = DeleteApiV1RepositoriesByNameCurationRulesByIdResponses[keyof DeleteApiV1RepositoriesByNameCurationRulesByIdResponses];
+
+export type PatchApiV1RepositoriesByNameCurationRulesByIdData = {
+    body: {
+        action?: 'block' | 'allow';
+        package_pattern?: string;
+        version_pattern?: string;
+        reason?: string;
+    };
+    path: {
+        name: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/curation-rules/{id}';
+};
+
+export type PatchApiV1RepositoriesByNameCurationRulesByIdErrors = {
+    /**
+     * Invalid rule, or the repository is not a proxy repository (`validation_failed`)
+     */
+    400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
+    /**
+     * Repository or rule not found (also a rule of another repository, or an id that is not a UUID)
+     */
+    404: Error;
+};
+
+export type PatchApiV1RepositoriesByNameCurationRulesByIdError = PatchApiV1RepositoriesByNameCurationRulesByIdErrors[keyof PatchApiV1RepositoriesByNameCurationRulesByIdErrors];
+
+export type PatchApiV1RepositoriesByNameCurationRulesByIdResponses = {
+    /**
+     * Rule updated
+     */
+    200: CurationRule;
+};
+
+export type PatchApiV1RepositoriesByNameCurationRulesByIdResponse = PatchApiV1RepositoriesByNameCurationRulesByIdResponses[keyof PatchApiV1RepositoriesByNameCurationRulesByIdResponses];
+
+export type GetApiV1RepositoriesByNameAvailabilityData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query: {
+        /**
+         * Package name, at most 1024 bytes.
+         */
+        package: string;
+        /**
+         * Version string as clients see it, at most 1024 bytes.
+         */
+        version: string;
+    };
+    url: '/api/v1/repositories/{name}/availability';
+};
+
+export type GetApiV1RepositoriesByNameAvailabilityErrors = {
+    /**
+     * Missing or oversized `package` or `version`, or the repository is a group (`validation_failed`)
+     */
+    400: Error;
+    /**
+     * No read access to the repository
+     */
+    403: Error;
+    /**
+     * Repository not found
+     */
+    404: Error;
+};
+
+export type GetApiV1RepositoriesByNameAvailabilityError = GetApiV1RepositoriesByNameAvailabilityErrors[keyof GetApiV1RepositoriesByNameAvailabilityErrors];
+
+export type GetApiV1RepositoriesByNameAvailabilityResponses = {
+    /**
+     * The verdict
+     */
+    200: AvailabilityResponse;
+};
+
+export type GetApiV1RepositoriesByNameAvailabilityResponse = GetApiV1RepositoriesByNameAvailabilityResponses[keyof GetApiV1RepositoriesByNameAvailabilityResponses];
 
 export type DeleteApiV1RepositoriesByNameCleanupPoliciesByIdData = {
     body?: never;

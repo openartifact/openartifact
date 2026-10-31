@@ -211,7 +211,9 @@ type Field struct {
 	Fields map[string]*Field
 	// Elem is the element type of a TList/TSet/TMap.
 	Elem *Field
-	// KeyBy names the identity key of TSet/TList elements that are objects.
+	// KeyBy names the identity key of TSet/TList elements that are objects. A
+	// comma-separated list names a composite key: the elements are identified by
+	// their values of those fields, joined with "|" (an absent field is "").
 	KeyBy string
 }
 

@@ -839,11 +839,12 @@ func isFilteredListRoute(method string, segs []string) bool {
 }
 
 // isReadOnlyRoute reports whether (method, segs) is a read-only route with its
-// own scope: GET repository/{name}, the security findings routes or the
-// counts-only repository security summary.
+// own scope: GET repository/{name}, the security findings routes, the
+// counts-only repository security summary or the availability explanation.
 func isReadOnlyRoute(method string, segs []string) bool {
 	return isSafeMethod(method) && (len(segs) == 2 && segs[0] == "repository" && isPlainName(segs[1]) ||
-		isSecurityFindingsRoute(method, segs) || isRepoSecuritySummaryRoute(method, segs))
+		isSecurityFindingsRoute(method, segs) || isRepoSecuritySummaryRoute(method, segs) ||
+		isRepoAvailabilityRoute(segs))
 }
 
 // classifyReadOnlyRoute is the scope of a route isReadOnlyRoute accepted.
@@ -856,7 +857,8 @@ func classifyReadOnlyRoute(segs []string) routeScope {
 		return routeScope{action: "manage", anyAuthenticated: true}
 	}
 
-	// A repository, or its counts-only security summary: anyone who can read it.
+	// A repository, its counts-only security summary or its availability
+	// explanation: anyone who can read it.
 	return routeScope{action: "read", repoName: segs[1]}
 }
 
@@ -877,6 +879,13 @@ func isRepoSecuritySummaryRoute(method string, segs []string) bool {
 		segs[2] == "security" && segs[3] == "summary"
 }
 
+// isRepoAvailabilityRoute reports whether segs (of an /api/v1/ path) is
+// repositories/{name}/availability, the explanation of why a package version is
+// or is not available (the caller's method is already known to be safe).
+func isRepoAvailabilityRoute(segs []string) bool {
+	return len(segs) == 3 && segs[0] == "repositories" && isPlainName(segs[1]) && segs[2] == "availability"
+}
+
 // isDelegatedRepoReadOrQuota reports whether {name}/{leaf} is a delegated
 // route of a repository: any quota route but the reconcile POST (a different
 // path depth), and the GET usage, activity and members reads.
@@ -893,13 +902,15 @@ func isDelegatedRepoReadOrQuota(method, leaf string) bool {
 
 // delegatedRepoName returns the repository of a route whose administration is
 // delegated to project maintainers and owners (global manage still passes):
-// PATCH/DELETE repository/{name}, the cleanup-policy routes, the quota routes
-// and the GET usage, activity and members routes of the repository, or "" for any other route. The one exception in the
+// PATCH/DELETE repository/{name}, the cleanup-policy and curation-rule routes,
+// the quota routes and the GET usage, activity and members routes of the
+// repository, or "" for any other route. The one exception in the
 // quota family, POST .../quota/reconcile, stays administrative.
 func delegatedRepoName(method string, segs []string) string {
 	switch {
 	case len(segs) == 2 && segs[0] == "repository" && (method == http.MethodPatch || method == http.MethodDelete):
 	case len(segs) >= 3 && len(segs) <= 5 && segs[0] == "repositories" && segs[2] == "cleanup-policies":
+	case len(segs) >= 3 && len(segs) <= 4 && segs[0] == "repositories" && segs[2] == "curation-rules":
 	case len(segs) == 3 && segs[0] == "repositories" && isDelegatedRepoReadOrQuota(method, segs[2]):
 	default:
 		return ""

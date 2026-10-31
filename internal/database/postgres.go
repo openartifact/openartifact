@@ -187,9 +187,9 @@ func (p *core) Migrate(ctx context.Context) error {
 // returns the matching Scan destinations.
 const repoColumns = `id, name, format, description, COALESCE(public, false), COALESCE(allow_full_unpublish, false),
 	COALESCE(repo_type, 'hosted'), COALESCE(upstream_url, ''), COALESCE(upstream_username, ''), COALESCE(upstream_password_enc,
-	''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(max_stale_seconds, 604800), min_age_hours, curation_mode,
-	COALESCE(blocked, false), project_id, presign_downloads, trash_retention_days, immutable_releases, merge_proxy_versions,
-	sign_packages, federated, deleted_at, COALESCE(deleted_by, ''), created_at, updated_at`
+	''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(max_stale_seconds, 604800),
+	min_age_hours, curation_mode, COALESCE(blocked, false), project_id, presign_downloads, trash_retention_days,
+	immutable_releases, merge_proxy_versions, sign_packages, federated, deleted_at, COALESCE(deleted_by, ''), created_at, updated_at`
 
 func repoScanDest(r *models.Repository) []any {
 	return []any{

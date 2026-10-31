@@ -18,6 +18,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/openartifact/openartifact/internal/curation"
 	"github.com/openartifact/openartifact/internal/repotype"
 )
 
@@ -28,6 +29,7 @@ const (
 
 	repoFieldQuota    = "quota"
 	repoFieldCleanup  = "cleanup_policies"
+	repoFieldCuration = "curation_rules"
 	repoTypeHosted    = "hosted"
 	repoTypeProxy     = "proxy"
 	repoTypeGroup     = "group"
@@ -54,6 +56,7 @@ var (
 var repoProxyOnly = []string{
 	"upstream_url", "upstream_username", "upstream_password",
 	"cache_ttl_seconds", "negative_cache_ttl_seconds", "max_stale_seconds", "min_age_hours",
+	"curation_mode", repoFieldCuration,
 }
 
 // repositoryKind implements the Repository manifest kind.
@@ -117,6 +120,7 @@ func (repositoryKind) Schema() *Field {
 		"negative_cache_ttl_seconds": repoIntField(1),
 		"max_stale_seconds":          repoIntField(0),
 		"min_age_hours":              repoIntField(0),
+		"curation_mode":              {Type: TString, Enum: []string{curation.ModeOff, curation.ModeDenylist, curation.ModeAllowlist}},
 		"member_repos":               {Type: TList, Elem: repoStrField()},
 		"presign_downloads":          {Type: TBool, Nullable: true},
 		"trash_retention_days":       {Type: TInt, Nullable: true, Min: 0, HasMin: true},
@@ -128,6 +132,16 @@ func (repositoryKind) Schema() *Field {
 			"max_artifact_count":     repoIntField(0),
 			"warn_threshold_percent": repoIntField(0),
 		}},
+		repoFieldCuration: {
+			Type:  TSet,
+			KeyBy: "action,package_pattern,version_pattern",
+			Elem: &Field{Type: TObject, Fields: map[string]*Field{
+				"action":          {Type: TString, Required: true, Enum: []string{curation.ActionBlock, curation.ActionAllow}},
+				"package_pattern": {Type: TString, Required: true},
+				"version_pattern": repoStrField(),
+				"reason":          repoStrField(),
+			}},
+		},
 		repoFieldCleanup: {Type: TSet, KeyBy: "name", Elem: &Field{Type: TObject, Fields: map[string]*Field{
 			"name":            {Type: TString, Required: true},
 			"enabled":         repoBoolField(),
@@ -168,6 +182,7 @@ func (repositoryKind) Validate(o *Object) []error {
 	errs = append(errs, repoValidateRanges(o)...)
 	errs = append(errs, repoValidateMembers(o)...)
 	errs = append(errs, repoValidateCleanup(o)...)
+	errs = append(errs, repoValidateCuration(o)...)
 
 	return errs
 }
@@ -314,6 +329,27 @@ func repoValidateCleanup(o *Object) []error {
 	return errs
 }
 
+// repoValidateCuration applies the server's rule validation to every entry of
+// curation_rules, so a rule it would refuse fails before anything is applied.
+func repoValidateCuration(o *Object) []error {
+	var errs []error
+
+	list, _ := o.Spec[repoFieldCuration].([]any)
+
+	for i, e := range list {
+		r, _ := e.(map[string]any)
+		rule := &curation.Rule{
+			Action: Str(r, "action"), Package: Str(r, "package_pattern"), Version: Str(r, "version_pattern"), Reason: Str(r, "reason"),
+		}
+
+		if err := curation.ValidateRule(rule); err != nil {
+			errs = append(errs, fmt.Errorf("%w: %s[%d]: %w", errRepositoryInvalid, repoFieldCuration, i, err))
+		}
+	}
+
+	return errs
+}
+
 // repoAPI is the repository object of GET /api/v1/repositories.
 type repoAPI struct {
 	ID                      string  `json:"id"`
@@ -334,6 +370,7 @@ type repoAPI struct {
 	NegativeCacheTTLSeconds *int    `json:"negative_cache_ttl_seconds"`
 	MaxStaleSeconds         *int    `json:"max_stale_seconds"`
 	MinAgeHours             *int    `json:"min_age_hours"`
+	CurationMode            *string `json:"curation_mode"`
 }
 
 // repoNum converts an optional API integer into its canonical form (nil stays
@@ -384,6 +421,11 @@ func (r *repoAPI) spec() map[string]any {
 		s["negative_cache_ttl_seconds"] = repoNum(r.NegativeCacheTTLSeconds)
 		s["max_stale_seconds"] = repoNum(r.MaxStaleSeconds)
 		s["min_age_hours"] = repoNum(r.MinAgeHours)
+		s["curation_mode"] = curation.ModeOff
+
+		if r.CurationMode != nil {
+			s["curation_mode"] = *r.CurationMode
+		}
 	case repoTypeGroup:
 		s["merge_proxy_versions"] = r.MergeProxyVersions
 	case repoTypeHosted:
@@ -463,6 +505,42 @@ func repoQuota(ctx context.Context, c *Client, name string) (map[string]any, err
 		"max_artifact_count":     float64(q.MaxArtifactCount),
 		"warn_threshold_percent": float64(q.WarnThresholdPercent),
 	}, nil
+}
+
+// repoRule is a curation rule of GET .../curation-rules.
+type repoRule struct {
+	ID             string `json:"id"`
+	Action         string `json:"action"`
+	PackagePattern string `json:"package_pattern"`
+	VersionPattern string `json:"version_pattern"`
+	Reason         string `json:"reason"`
+}
+
+// elem renders the rule in manifest shape.
+func (r *repoRule) elem() map[string]any {
+	return map[string]any{
+		"action":          r.Action,
+		"package_pattern": r.PackagePattern,
+		"version_pattern": r.VersionPattern,
+		"reason":          r.Reason,
+	}
+}
+
+// identity is the key the schema identifies a rule by (Field.KeyBy).
+func (r *repoRule) identity() string {
+	return r.Action + "|" + r.PackagePattern + "|" + r.VersionPattern
+}
+
+func repoRules(ctx context.Context, c *Client, name string) ([]repoRule, error) {
+	var resp struct {
+		Rules []repoRule `json:"rules"`
+	}
+
+	if err := c.Get(ctx, repoURL(name, "curation-rules"), &resp); err != nil {
+		return nil, fmt.Errorf("list curation rules of repository %q: %w", name, err)
+	}
+
+	return resp.Rules, nil
 }
 
 // repoPolicy is a cleanup policy of GET .../cleanup-policies.
@@ -547,7 +625,8 @@ func (repositoryKind) List(ctx context.Context, env *Env) ([]*Live, error) {
 }
 
 // repoLive builds the live object of r, fetching the sub-resources the list
-// answer does not carry: group members, quota and cleanup policies.
+// answer does not carry: group members, quota, cleanup policies and the
+// curation rules of a proxy.
 func repoLive(ctx context.Context, c *Client, r *repoAPI) (*Live, error) {
 	spec := r.spec()
 
@@ -579,14 +658,28 @@ func repoLive(ctx context.Context, c *Client, r *repoAPI) (*Live, error) {
 
 	spec[repoFieldCleanup] = elems
 
+	if spec["repo_type"] == repoTypeProxy {
+		rules, err := repoRules(ctx, c, r.Name)
+		if err != nil {
+			return nil, err
+		}
+
+		ruleElems := make([]any, 0, len(rules))
+		for i := range rules {
+			ruleElems = append(ruleElems, rules[i].elem())
+		}
+
+		spec[repoFieldCuration] = ruleElems
+	}
+
 	return &Live{Kind: KindRepository, Key: r.Name, ID: r.ID, Spec: spec, Secrets: map[string]bool{}}, nil
 }
 
-// Create posts the repository and then reconciles its quota and cleanup
-// policies. When a follow-up step fails the repository id is still returned
+// Create posts the repository and then reconciles its quota, cleanup
+// policies and curation rules. When a follow-up step fails the repository id is still returned
 // with the error: the repository exists and a later apply completes it.
 func (repositoryKind) Create(ctx context.Context, env *Env, o *Object) (string, error) {
-	body := Omit(o.Spec, repoFieldQuota, repoFieldCleanup)
+	body := Omit(o.Spec, repoFieldQuota, repoFieldCleanup, repoFieldCuration)
 	body["name"] = o.Name
 
 	id, err := env.Client.create(ctx, "/api/v1/repositories", body, "repository", o.Name)
@@ -606,11 +699,18 @@ func (repositoryKind) Create(ctx context.Context, env *Env, o *Object) (string, 
 		}
 	}
 
+	if want, ok := o.Spec[repoFieldCuration].([]any); ok {
+		if err := repoReconcileRules(ctx, env.Client, o.Name, want); err != nil {
+			return id, err
+		}
+	}
+
 	return id, nil
 }
 
 // Update PATCHes the changed scalar fields (member_repos and project included)
-// and reconciles the quota and cleanup policies when they changed.
+// and reconciles the quota, cleanup policies and curation rules when they
+// changed.
 func (repositoryKind) Update(ctx context.Context, env *Env, live *Live, o *Object, changes []Change) (string, error) {
 	var (
 		scalar []Change
@@ -623,7 +723,7 @@ func (repositoryKind) Update(ctx context.Context, env *Env, live *Live, o *Objec
 		switch TopField(c.Path) {
 		case repoFieldQuota:
 			quota = append(quota, Change{Path: strings.TrimPrefix(c.Path, repoFieldQuota+"."), New: c.New})
-		case repoFieldCleanup:
+		case repoFieldCleanup, repoFieldCuration:
 		default:
 			scalar = append(scalar, c)
 		}
@@ -647,6 +747,12 @@ func (repositoryKind) Update(ctx context.Context, env *Env, live *Live, o *Objec
 
 	if want, ok := o.Spec[repoFieldCleanup].([]any); ok && top[repoFieldCleanup] {
 		if err := repoReconcilePolicies(ctx, env.Client, live.Key, want); err != nil {
+			return live.ID, err
+		}
+	}
+
+	if want, ok := o.Spec[repoFieldCuration].([]any); ok && top[repoFieldCuration] {
+		if err := repoReconcileRules(ctx, env.Client, live.Key, want); err != nil {
 			return live.ID, err
 		}
 	}
@@ -797,6 +903,62 @@ func repoPolicyPatch(want, current map[string]any) map[string]any {
 	}
 
 	return patch
+}
+
+// repoReconcileRules makes the repository's curation rules match want. A rule
+// is identified by its action and patterns: missing ones are created, a rule
+// whose reason differs is updated, unlisted ones are deleted. Rules are deleted
+// after the new ones exist, so a swap never leaves the repository without the
+// rules of either side.
+func repoReconcileRules(ctx context.Context, c *Client, name string, want []any) error {
+	current, err := repoRules(ctx, c, name)
+	if err != nil {
+		return err
+	}
+
+	byKey := make(map[string]*repoRule, len(current))
+	for i := range current {
+		byKey[current[i].identity()] = &current[i]
+	}
+
+	wanted := make(map[string]bool, len(want))
+
+	for _, e := range want {
+		w, _ := e.(map[string]any)
+		key := Str(w, "action") + "|" + Str(w, "package_pattern") + "|" + Str(w, "version_pattern")
+		wanted[key] = true
+
+		rule, exists := byKey[key]
+		if !exists {
+			if err := c.Do(ctx, http.MethodPost, repoURL(name, "curation-rules"), w, nil); err != nil {
+				return fmt.Errorf("create curation rule %q of repository %q: %w", key, name, err)
+			}
+
+			continue
+		}
+
+		if r, ok := w["reason"]; !ok || r == rule.Reason {
+			continue
+		}
+
+		patch := map[string]any{"reason": w["reason"]}
+		if err := c.Do(ctx, http.MethodPatch, repoURL(name, "curation-rules", PathEscape(rule.ID)), patch, nil); err != nil {
+			return fmt.Errorf("update curation rule %q of repository %q: %w", key, name, err)
+		}
+	}
+
+	for i := range current {
+		rule := &current[i]
+		if wanted[rule.identity()] {
+			continue
+		}
+
+		if err := c.Do(ctx, http.MethodDelete, repoURL(name, "curation-rules", PathEscape(rule.ID)), nil, nil); err != nil {
+			return fmt.Errorf("delete curation rule %q of repository %q: %w", rule.identity(), name, err)
+		}
+	}
+
+	return nil
 }
 
 // Delete soft-deletes the repository (it lands in the trash unless its

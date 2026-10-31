@@ -81,6 +81,7 @@ func TestOpenAPISpecMatchesRoutes(t *testing.T) {
 	NewRepositoriesHandler(nil, nil, nil).RegisterAuthed(r)
 	NewFederationHandler(nil, nil, nil, nil, false, nil).RegisterAuthed(r)
 	NewCleanupHandler(nil, nil, nil, nil).RegisterAuthed(r)
+	NewCurationHandler(nil, nil, nil, nil).RegisterAuthed(r)
 	NewDockerGCHandler(nil, nil, nil, nil).RegisterAuthed(r)
 	NewTrashHandler(nil, nil, nil).RegisterAuthed(r)
 	NewBundlesHandler(nil, nil, nil).RegisterAuthed(r)

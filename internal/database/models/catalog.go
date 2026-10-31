@@ -70,6 +70,15 @@ type ArtifactSecurity struct {
 	ScannedAt   *time.Time
 }
 
+// VersionHolds reports which scan-based holds apply to the stored files of one
+// package version: Quarantined by a vulnerability or secret scan result,
+// LicenseBlocked by a license scan result the repository's license policy
+// flagged.
+type VersionHolds struct {
+	Quarantined    bool
+	LicenseBlocked bool
+}
+
 // PackageRollupOptions select and order the per-package rollup of one
 // repository.
 type PackageRollupOptions struct {

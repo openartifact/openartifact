@@ -74,6 +74,7 @@ curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
 | `negative_cache_ttl_seconds` | proxy | Default 60, max 86400 (1 d). |
 | `max_stale_seconds` | proxy | Default 604800 (7 d), max 31536000 (365 d), `0` disables serve-stale. |
 | `min_age_hours` | proxy | Default `0` (off), max 87600 (10 y). See [Minimum age](#minimum-age). |
+| `curation_mode` | proxy | `off` (default), `denylist` or `allowlist`; the [curation rules](#package-curation) take effect only in the last two. Any other value: `400`. |
 | `member_repos` | group | Member repository names in priority order, at most 200. |
 | `trash_retention_days` | all | Days deleted items stay in the [trash](../operations/trash.md). Integer `>= 0`, or `null`/omitted for the server default (`OPENARTIFACT_TRASH_RETENTION`, 7); `0` deletes permanently and immediately. Negative is `400`. |
 | `immutable_releases` | all | Default `false`. When `true`, deleting or overwriting a released version is `409` unless an admin passes `?force=true` ([per format](../operations/trash.md#immutable-releases)). |
@@ -82,8 +83,8 @@ curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
 | `federated` | hosted | Default `false`. When `true`, the repository replicates with peer instances ([federation](../operations/federation.md)). Needs `federation.enabled` on the server, a federation-capable format and global admin rights; `400` otherwise. Can also be switched on later from the Federation section of the repository's Settings tab or `PUT /api/v1/repositories/{name}/federation`. |
 
 - For `cache_ttl_seconds` and `negative_cache_ttl_seconds`, `0` or an omitted field selects the default (it does not disable caching); negative values are `400`; values above the max are clamped. For `max_stale_seconds` only an omitted field selects the default: an explicit `0` means "never serve stale"; negative is `400`.
-- `upstream_*`, TTL fields and `member_repos` on a repository of another type are `400 validation_failed`. A name that already exists is `409 conflict`, including the name of a repository that is still in the [trash](../operations/trash.md#repositories) (names stay reserved until the repository is purged or restored).
-- The response shows `upstream_url`, `upstream_username` and the three TTL fields for proxies only; the password is never included. `upstream_password_set` is `true` when a password is stored, so a client can show that without ever seeing the secret.
+- `upstream_*`, TTL fields, `min_age_hours`, `curation_mode` and `member_repos` on a repository of another type are `400 validation_failed`. A name that already exists is `409 conflict`, including the name of a repository that is still in the [trash](../operations/trash.md#repositories) (names stay reserved until the repository is purged or restored).
+- The response shows `upstream_url`, `upstream_username`, the three TTL fields, `min_age_hours` and `curation_mode` for proxies only; the password is never included. `upstream_password_set` is `true` when a password is stored, so a client can show that without ever seeing the secret.
 
 Update with `PATCH /api/v1/repository/{repo}` (note the singular `repository`; admin only). Accepted fields: `description`, `public`, `blocked`, `trash_retention_days`, `immutable_releases`, the proxy fields above (`upstream_url` may not be emptied), `merge_proxy_versions` for groups (global admins only), and `member_repos` for groups (replaces the list; `[]` clears it, an absent field leaves it unchanged). Name, format and type cannot change. A blocked repository answers `403` on proxy requests and is skipped as a group member. `GET /api/v1/repository/{repo}` returns one repository; `GET /api/v1/repositories` lists the ones the caller may read.
 
@@ -140,6 +141,96 @@ The proxy cache worker runs every 5 minutes and deletes entries expired by more 
 A version whose publish time the upstream does not state is not hidden. Files already in the cache stay served. A version becomes visible by itself once it is old enough (rendered documents are revalidated at most every few minutes). Groups containing the proxy inherit the filter.
 
 The gate applies to the formats whose upstream metadata dates each version: npm, pypi, composer, helm, nuget, rubygems, go, cargo, conda, ansible. A conda proxy rebuilds `repodata.json` and `.zst` when the gate is on (`.bz2` answers `404`). Other proxy formats (for example deb, rpm, apk, pacman, maven, docker, terraform, raw) ignore the setting because their upstream metadata dates no version.
+
+### Package curation
+
+Package curation lets an administrator decide which upstream packages and versions a proxy may serve, instead of mirroring everything the upstream publishes. A proxy repository has a `curation_mode` and a list of rules:
+
+| `curation_mode` | Effect |
+|---|---|
+| `off` (default) | The rules are kept but ignored; the proxy serves everything. |
+| `denylist` | A version that matches a `block` rule is unavailable; everything else is served. `allow` rules only matter for the [minimum age](#minimum-age). |
+| `allowlist` | Only a version that matches an `allow` rule is available. A package no rule allows is unavailable. |
+
+A rule has an `action` (`block` or `allow`), a `package_pattern`, an optional `version_pattern` (empty matches every version) and an optional `reason` (at most 500 characters), which clients that are refused the version see. Patterns are globs over a name without spaces: `*` matches any run of characters (including none, `/` and `:`), `?` exactly one character, anything else itself; matching is case-sensitive and a hostile pattern cannot make it slow. A package pattern is at most 255 and a version pattern at most 128 characters; a repository holds at most 1000 rules.
+
+Rules are matched against the package name in the form below and against the version exactly as the format shows it to clients:
+
+| Format | Package name | Version |
+|---|---|---|
+| npm | lower case with its scope: `@scope/name` | as in the packument |
+| pypi | PEP 503 normalized: lower case, runs of `-`, `_`, `.` as one `-` | as the file names spell it |
+| composer | `vendor/name`, lower case | as the p2 document shows it (`1.2.3`, `v1.2.3`, `dev-main`) |
+| helm | chart name (the key under `entries`) | as in the index |
+| nuget | package id, lower case | normalized (`1.0` is `1.0.0`) |
+| rubygems | gem name | without the platform |
+| go | module path as `go.mod` shows it (decoded) | with its `v`: `v1.2.3` |
+| cargo | lower case, `_` as `-` | as the index shows it |
+| conda | `name` of the repodata entry, lower case | `version` of the entry |
+| ansible | `namespace.name`, lower case | as Galaxy shows it |
+| maven, ivy, sbt | `group:artifact` | as the version directory shows it |
+| docker | image name as written below the repository (`library/alpine`) | tag or digest as requested |
+| conan | recipe name, lower case | as the reference shows it |
+| deb, rpm, apk, pacman | package name from the file name | `version` as the file name shows it (`<version>-<release>` for rpm, apk and pacman) |
+
+How a rule is applied:
+
+- A `block` rule beats an `allow` rule: a version matching both is unavailable.
+- A matching `allow` rule (in `denylist` or `allowlist` mode) also exempts the version from the [minimum age](#minimum-age), so a version an administrator vetted is served at once.
+- With `curation_mode` `off` no rule has any effect, so a rule list can be prepared and switched on later.
+- A version that is unavailable is dropped from the metadata the proxy renders (the other versions stay, and "latest" style pointers move to the newest one left; a package left without versions behaves like one with no versions, `404`) and its files are refused with `403` and the reason in the body. The refusal also holds for files already in the cache, so a rule added after a file was cached applies at once. Rendered documents change their `ETag` when the mode or the rules change.
+- Curation never needs publish dates: nothing is fetched from the upstream just to apply a rule.
+- Groups containing the proxy inherit the rules through that member: a group serves what its proxy members serve.
+- The rules of a repository are cached for `DB_AUTH_CACHE_TTL_MS` (default 2000 ms): a change made through the same server instance applies at once, one made through another replica within that time. If the rules cannot be read the request fails with `500`; it is never served ungated.
+- The rules table is part of the [recovery journal](../operations/disaster-recovery.md), so a rebuilt instance does not serve again what had been blocked.
+
+Coverage differs by format:
+
+| Formats | Metadata | Download |
+|---|---|---|
+| npm, pypi, composer, helm, nuget, rubygems, go, cargo, conda, ansible | Blocked versions are left out of what the proxy renders | `403`, also for cached files |
+| maven, ivy, sbt, deb, rpm, apk, pacman, conan 2 | Served as the upstream has them: a client may still list a blocked package | `403`, also for cached files |
+| docker | Tag lists pass through | Manifests: `403 DENIED`; blobs addressed by digest are not gated |
+| terraform, raw | Not covered: rules have no effect | Not covered |
+
+The per-format pages say what is gated and how each name is spelled, for example [npm](../formats/npm.md#proxy-and-group-repositories) and [PyPI](../formats/pypi.md#proxy-and-group).
+
+Manage curation with the REST API. Setting the mode needs the same rights as any repository update (`PATCH /api/v1/repository/{repo}` is admin only); the rule endpoints need global admin or the maintainer or owner role in the repository's project, and answer `400` for a repository that is not a proxy:
+
+```sh
+# mode: off, denylist or allowlist
+curl -X PATCH HOST/api/v1/repository/npm-proxy -H "Authorization: Bearer <TOKEN>" \
+  -H 'Content-Type: application/json' -d '{"curation_mode":"denylist"}'
+
+# add a rule; 201 with the rule, including its id
+curl -X POST HOST/api/v1/repositories/npm-proxy/curation-rules -H "Authorization: Bearer <TOKEN>" \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"block","package_pattern":"left-pad","version_pattern":"1.*","reason":"malware"}'
+
+curl HOST/api/v1/repositories/npm-proxy/curation-rules -H "Authorization: Bearer <TOKEN>"
+curl -X PATCH HOST/api/v1/repositories/npm-proxy/curation-rules/<ID> -H "Authorization: Bearer <TOKEN>" \
+  -H 'Content-Type: application/json' -d '{"reason":"confirmed malware"}'
+curl -X DELETE HOST/api/v1/repositories/npm-proxy/curation-rules/<ID> -H "Authorization: Bearer <TOKEN>"
+```
+
+The list answers `{"rules":[...]}` in creation order; each rule has `id`, `action`, `package_pattern`, `version_pattern`, `reason`, `created_by` and `created_at`. `PATCH` changes any of `action`, `package_pattern`, `version_pattern` and `reason` and leaves absent fields as they were. A rule id that belongs to another repository, or is not a UUID, is `404`; an invalid action or pattern is `400 validation_failed`; the 1001st rule is `409 conflict`. Every change is written to the [audit log](../operations/monitoring.md#audit-log) as `curation.rule_created`, `curation.rule_updated` or `curation.rule_deleted` (a change of the mode is a `repository.updated` event naming the old and new mode). Both settings can also be kept in a [declarative](../integrations/declarative.md) `Repository` manifest as `curation_mode` and `curation_rules`.
+
+To see why a version is or is not served, ask the repository:
+
+```sh
+curl 'HOST/api/v1/repositories/npm-proxy/availability?package=left-pad&version=1.3.0' \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
+```json
+{
+  "available": false,
+  "reasons": [{"source": "curation", "detail": "blocked by repository curation: malware", "rule_id": "..."}],
+  "min_age": "off"
+}
+```
+
+It needs read access to the repository. Each reason has a `source` (`curation`, `min_age`, `quarantine`, `license_policy` or `repository_blocked`) and a `detail`; a `min_age` reason carries `until`, a `curation` reason the `rule_id` that blocks the version (none when an allowlist simply does not list it). For a proxy the answer covers the blocked flag, the rules and the minimum age. The publish time is read from the metadata already cached, never fetched, and reported as `published_at`; `min_age` is `off` (no minimum age), `checked` or `unknown` (the repository has a minimum age but the cached metadata does not date the version, so it could not be checked). For a hosted repository it covers the blocked flag and the quarantine and license-policy holds of the stored version, for the formats stored in the generic package tables (scan results are matched through the version's files). A group has no verdict of its own and answers `400`: ask one of its members.
 
 ### Behavior notes
 

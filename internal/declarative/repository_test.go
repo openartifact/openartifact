@@ -100,6 +100,8 @@ func repoSubAnswer(req repoFakeReq) (int, any, bool) {
 		return http.StatusOK, repoQuotaJSON(0, 0, 80), true
 	case req.Method == http.MethodGet && strings.HasSuffix(req.Path, "/cleanup-policies"):
 		return http.StatusOK, map[string]any{"policies": []any{}}, true
+	case req.Method == http.MethodGet && strings.HasSuffix(req.Path, "/curation-rules"):
+		return http.StatusOK, map[string]any{"rules": []any{}}, true
 	}
 
 	return 0, nil, false
@@ -210,6 +212,7 @@ func TestRepositoryList(t *testing.T) {
 				"immutable_releases": false,
 				"upstream_url":       "https://registry.npmjs.org", "upstream_username": "bot",
 				"cache_ttl_seconds": 3600.0, "negative_cache_ttl_seconds": 60.0, "max_stale_seconds": 0.0, "min_age_hours": 0.0,
+				"curation_mode": "off", "curation_rules": []any{},
 				"quota": zeroQuota, "cleanup_policies": []any{},
 			},
 		},

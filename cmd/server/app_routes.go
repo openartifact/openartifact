@@ -299,6 +299,8 @@ func (a *app) registerRepositoryRoutes() {
 
 	api.NewCleanupHandler(db, log, evaluator, w.cleanup).RegisterAuthed(authedAPI)
 
+	api.NewCurationHandler(db, log, evaluator, w.proxySvc).RegisterAuthed(authedAPI)
+
 	api.NewDockerGCHandler(db, log, evaluator, w.dockerGC).RegisterAuthed(authedAPI)
 
 	api.NewTrashHandler(db, log, evaluator).

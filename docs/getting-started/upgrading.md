@@ -96,6 +96,9 @@ The cleanup policy editor of a repository shows a live preview of what the polic
 The web UI can now edit a proxy repository's upstream, cache TTLs, serve-stale window, minimum age and blocked state (**Edit proxy settings** on the repository page); the upstream URL, username and password fields moved there from the repository's Settings tab. A proxy with nothing cached yet shows its client command and where the first request is fetched from. See [Editing proxy settings in the web UI](../repositories/hosted-proxy-group.md#editing-proxy-settings-in-the-web-ui).
 
 Web UI: tooltips and menus are drawn above everything (a menu in a scrolling table is no longer clipped) and flip at the screen edge; the "new version available" offer is a row under the header instead of a card over the bottom right of the page (timed notifications still float there briefly); the UI honours the operating system's reduced-motion setting everywhere; a development server (version `dev`) no longer registers the service worker.
+
+Migrations `005_curation` and `005_curation_validate` add `repositories.curation_mode` (default `off`, no behavior change), the `curation_rules` table (part of the recovery journal) and the `curation.rule_*` audit actions. Proxy repositories can restrict which upstream packages and versions they serve with a denylist or an allowlist of rules, managed through `curation_mode` and `/api/v1/repositories/{name}/curation-rules`; `GET /api/v1/repositories/{name}/availability` explains why a version is or is not served. See [Package curation](../repositories/hosted-proxy-group.md#package-curation).
+
 ### 0.15.1
 
 No migrations; replaces 0.15.0 in place. Fixes found by the fuzzers (#336):
