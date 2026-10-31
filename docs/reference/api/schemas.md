@@ -744,6 +744,21 @@ A signing key. Private key material is never part of the API.
 | `status` | string | no | Overall health status. One of: `healthy`, `degraded`. |
 | `version` | string | no | Application version |
 
+### HeldBackResponse
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `supported` | boolean | yes | False when the repository's format cannot list the versions of a package or the metadata is not cached yet; versions is then empty. |
+| `versions` | array of [HeldBackVersion](#heldbackversion) | yes | - |
+
+### HeldBackVersion
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `published_at` | string (date-time) | no | The publish time the upstream states, when known. |
+| `reasons` | array of [AvailabilityReason](#availabilityreason) | yes | Never empty. |
+| `version` | string | yes | - |
+
 ### LicenseBlockedError
 
 Upload rejected by a license policy with action `block`.

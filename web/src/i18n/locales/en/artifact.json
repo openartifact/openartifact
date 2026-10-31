@@ -197,5 +197,22 @@
   "artifact.activity.column.when": "When",
   "artifact.activity.column.actor": "Actor",
   "artifact.activity.column.action": "Action",
-  "artifact.activity.column.details": "Details"
+  "artifact.activity.column.details": "Details",
+  "artifact.availability.title": "Not available to clients",
+  "artifact.availability.intro": "{name} {version} is held back by this repository: its clients cannot download it.",
+  "artifact.availability.source.min_age": "Minimum age",
+  "artifact.availability.source.curation": "Curation",
+  "artifact.availability.source.quarantine": "Quarantine",
+  "artifact.availability.source.license_policy": "License policy",
+  "artifact.availability.source.repository_blocked": "Repository blocked",
+  "artifact.availability.until": "Available {when}",
+  "artifact.availability.untilTitle": "Held back until {date}",
+  "artifact.availability.rule": "Open the curation rules",
+  "artifact.availability.published": "Published {when}",
+  "artifact.availability.unknownAge": "This repository has a minimum age, but the cached upstream metadata does not date this version, so the age check could not run.",
+  "artifact.versions.column.availability": "Availability",
+  "artifact.versions.availableAt": "Available {when}",
+  "artifact.versions.blocked": "Blocked: {reason}",
+  "artifact.heldBack.title": "Held back by this repository",
+  "artifact.heldBack.hint": "These versions of {name} exist upstream but are not served yet."
 }

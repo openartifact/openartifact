@@ -262,6 +262,26 @@ func (s *Service) cargoPublished(ctx context.Context, repo *models.Repository, c
 	return published, !published.IsZero()
 }
 
+// cargoVersions is Hooks.Versions: the versions of the cached index file of crate.
+func (s *Service) cargoVersions(ctx context.Context, repo *models.Repository, crate string) ([]DatedVersion, bool) {
+	body, ok := s.cachedDocBody(ctx, repo, cargoIndexDoc(pkgcargo.IndexPathFor(strings.ToLower(crate))))
+	if !ok {
+		return nil, false
+	}
+
+	entries, err := pkgcargo.ParseIndex(body)
+	if err != nil {
+		return nil, false
+	}
+
+	out := make([]DatedVersion, len(entries))
+	for i, e := range entries {
+		out[i] = DatedVersion{Version: e.Vers, Published: e.Published()}
+	}
+
+	return out, true
+}
+
 // cargoCrateDir is the key prefix of the crate download endpoint; everything
 // outside it is index data or config.json.
 const cargoCrateDir = "api/v1/crates/"
@@ -270,6 +290,7 @@ const cargoCrateDir = "api/v1/crates/"
 var CargoHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	Serve:     (*Service).serveCargo,
 	Published: (*Service).cargoPublished,
+	Versions:  (*Service).cargoVersions,
 	// Crate files, not index files or config.json.
 	Immutable:  func(key string) bool { return strings.HasPrefix(key, cargoCrateDir) && keyName(key) == "download" },
 	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, cargoCrateDir) },

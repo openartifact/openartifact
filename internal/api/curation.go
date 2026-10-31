@@ -19,6 +19,7 @@ import (
 	"github.com/openartifact/openartifact/internal/curation"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -58,6 +59,7 @@ type CurationStore interface {
 // satisfied by *proxy.Service.
 type PublishTimeSource interface {
 	PublishTime(ctx context.Context, repo *models.Repository, pkg, version string) (time.Time, bool)
+	HeldBackVersions(ctx context.Context, repo *models.Repository, pkg string) ([]proxy.HeldBack, bool, error)
 }
 
 // CurationHandler serves the curation rules of proxy repositories and the
@@ -83,6 +85,7 @@ func (h *CurationHandler) RegisterAuthed(r chi.Router) {
 	r.With(requireUUIDParams("id")).Patch("/api/v1/repositories/{name}/curation-rules/{id}", h.handleUpdate)
 	r.With(requireUUIDParams("id")).Delete("/api/v1/repositories/{name}/curation-rules/{id}", h.handleDelete)
 	r.Get("/api/v1/repositories/{name}/availability", h.handleAvailability)
+	r.Get("/api/v1/repositories/{name}/held-back-versions", h.handleHeldBack)
 }
 
 func curationRuleToResponse(r *curation.Rule) responses.CurationRuleResponse {
@@ -358,6 +361,73 @@ func (h *CurationHandler) handleAvailability(w http.ResponseWriter, r *http.Requ
 	}
 
 	resp.Available = len(resp.Reasons) == 0
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleHeldBack lists the versions of a proxy package the repository's gate
+// (minimum age and curation rules) keeps from its clients, so that a client can
+// tell them from versions that do not exist.
+//
+//	GET /api/v1/repositories/{name}/held-back-versions?package=P
+//
+// The versions come from the upstream metadata already cached (the upstream is
+// never asked): "supported" is false when the format cannot list versions or
+// nothing is cached yet. Only proxy repositories have such a list: anything
+// else is a 400.
+func (h *CurationHandler) handleHeldBack(w http.ResponseWriter, r *http.Request) {
+	repo, ok := h.loadRepo(w, r, "list held-back versions")
+	if !ok {
+		return
+	}
+
+	if p := currentPrincipal(r); p != nil && !p.IsAnonymous {
+		allowed, err := h.evaluator.Evaluate(r.Context(), *p, repo.Name, "", "read")
+		if err != nil || !allowed {
+			writeError(w, http.StatusForbidden, "forbidden", "access denied")
+			return
+		}
+	}
+
+	pkg := r.URL.Query().Get("package")
+	if pkg == "" || len(pkg) > maxAvailabilityParam {
+		writeError(w, http.StatusBadRequest, "validation_failed",
+			fmt.Sprintf("package is required (at most %d bytes)", maxAvailabilityParam))
+
+		return
+	}
+
+	if repo.RepoType != repotype.Proxy || h.published == nil {
+		writeError(w, http.StatusBadRequest, "validation_failed", "only a proxy repository holds versions back")
+
+		return
+	}
+
+	held, supported, err := h.published.HeldBackVersions(r.Context(), repo, pkg)
+	if err != nil {
+		h.dbError(w, "list held-back versions: db error", err)
+		return
+	}
+
+	resp := responses.HeldBackResponse{Supported: supported, Versions: make([]responses.HeldBackVersion, 0, len(held))}
+
+	for _, v := range held {
+		reason := responses.AvailabilityReason{Source: v.Hold.Source, Detail: v.Hold.Detail}
+		if !v.Hold.Until.IsZero() {
+			reason.Until = v.Hold.Until.UTC().Format(time.RFC3339)
+		}
+
+		if v.Hold.Rule != nil {
+			reason.RuleID = v.Hold.Rule.ID
+		}
+
+		item := responses.HeldBackVersion{Version: v.Version, Reasons: []responses.AvailabilityReason{reason}}
+		if !v.Published.IsZero() {
+			item.PublishedAt = v.Published.UTC().Format(time.RFC3339)
+		}
+
+		resp.Versions = append(resp.Versions, item)
+	}
 
 	writeJSON(w, http.StatusOK, resp)
 }

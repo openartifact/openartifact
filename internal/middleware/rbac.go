@@ -883,9 +883,12 @@ func isRepoSecuritySummaryRoute(method string, segs []string) bool {
 
 // isRepoAvailabilityRoute reports whether segs (of an /api/v1/ path) is
 // repositories/{name}/availability, the explanation of why a package version is
-// or is not available (the caller's method is already known to be safe).
+// or is not available, or repositories/{name}/held-back-versions, the list of
+// the versions of a proxy package that are held back (the caller's method is
+// already known to be safe).
 func isRepoAvailabilityRoute(segs []string) bool {
-	return len(segs) == 3 && segs[0] == "repositories" && isPlainName(segs[1]) && segs[2] == "availability"
+	return len(segs) == 3 && segs[0] == "repositories" && isPlainName(segs[1]) &&
+		(segs[2] == "availability" || segs[2] == "held-back-versions")
 }
 
 // isRepoActivityRoute reports whether segs (of an /api/v1/ path) is

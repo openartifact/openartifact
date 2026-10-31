@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/curation"
@@ -169,4 +170,54 @@ func (s *Service) PublishTime(ctx context.Context, repo *models.Repository, pkg,
 	}
 
 	return h.Published(s, ctx, repo, pkg, version)
+}
+
+// HeldBack is a version of an upstream package the repository's gate keeps from
+// its clients.
+type HeldBack struct {
+	Version string
+	// Published is the zero time when the upstream states none.
+	Published time.Time
+	Hold      curation.Hold
+}
+
+// HeldBackVersions lists the versions of pkg the gate of proxy repository repo
+// holds back (by the minimum age or the curation rules), newest first, computed
+// from the metadata already cached: it never fetches. supported is false when
+// the format cannot list versions or the metadata is not cached; the list is
+// then empty. A gate that holds nothing back answers an empty list without
+// reading the metadata.
+func (s *Service) HeldBackVersions(ctx context.Context, repo *models.Repository, pkg string) ([]HeldBack, bool, error) {
+	h, found := hooks.Lookup(repo.Format)
+	if !found || h.Versions == nil {
+		return nil, false, nil
+	}
+
+	g, err := s.gateFor(ctx, repo, time.Now())
+	if err != nil {
+		return nil, false, err
+	}
+
+	versions, ok := h.Versions(s, ctx, repo, pkg)
+	if !ok {
+		return nil, false, nil
+	}
+
+	var held []HeldBack
+
+	for _, v := range versions {
+		if hidden, hold := g.Hidden(pkg, v.Version, v.Published); hidden {
+			held = append(held, HeldBack{Version: v.Version, Published: v.Published, Hold: hold})
+		}
+	}
+
+	sort.Slice(held, func(i, j int) bool {
+		if !held[i].Published.Equal(held[j].Published) {
+			return held[i].Published.After(held[j].Published)
+		}
+
+		return held[i].Version > held[j].Version
+	})
+
+	return held, true, nil
 }

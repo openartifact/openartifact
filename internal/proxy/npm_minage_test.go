@@ -5,15 +5,18 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/curation"
 	"github.com/openartifact/openartifact/internal/database/models"
 	pkgnpm "github.com/openartifact/openartifact/pkg/npm"
 )
@@ -355,5 +358,45 @@ func TestRenderNPM_MinAgeBoundaries(t *testing.T) {
 	_, err = renderNPM([]byte(doc), p, "http://oa.test/repos/r", newGate(repo, nil, time.Date(2024, 5, 1, 1, 0, 0, 0, time.UTC)))
 	if !errors.Is(err, errNotFound) {
 		t.Errorf("every version too new: err = %v, want errNotFound", err)
+	}
+}
+
+func TestNPMHeldBackVersions_ListsFromTheCachedPackumentOnly(t *testing.T) {
+	f, reg := minAgeFixture(t, npmMinAgeGate)
+	f.useCuration(curation.ModeDenylist, blockRule("lib", "1.0.0"))
+
+	ctx := context.Background()
+
+	if held, supported, err := f.svc.HeldBackVersions(ctx, f.repo, "lib"); err != nil || supported || len(held) != 0 {
+		t.Fatalf("nothing cached: held=%v supported=%v err=%v; want an unsupported empty list", held, supported, err)
+	}
+
+	if reg.abbrServed.Load() != 0 {
+		t.Fatal("listing the held-back versions fetched from the upstream")
+	}
+
+	if w := f.do(http.MethodGet, "lib"); w.Code != http.StatusOK {
+		t.Fatalf("packument = %d", w.Code)
+	}
+
+	held, supported, err := f.svc.HeldBackVersions(ctx, f.repo, "lib")
+	if err != nil || !supported {
+		t.Fatalf("supported=%v err=%v", supported, err)
+	}
+
+	var got []string
+
+	for _, h := range held {
+		got = append(got, h.Version+":"+h.Hold.Source)
+
+		if h.Hold.Source == curation.SourceMinAge && h.Hold.Until.IsZero() {
+			t.Errorf("%s: min_age hold without an end", h.Version)
+		}
+	}
+
+	// Newest first; 1.1.0 (72h) and the undated 0.9.0 pass, 1.0.0 is curated.
+	want := []string{"2.0.0:min_age", "2.1.0-rc.1:min_age", "1.0.0:curation"}
+	if !slices.Equal(got, want) {
+		t.Errorf("held back = %v, want %v", got, want)
 	}
 }

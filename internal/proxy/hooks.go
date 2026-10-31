@@ -93,6 +93,13 @@ type Hooks struct {
 	// publish time (see Service.PublishTime).
 	Published func(s *Service, ctx context.Context, repo *models.Repository, pkg, version string) (time.Time, bool)
 
+	// Versions lists every version of pkg the format's CACHED metadata names,
+	// with the publish time it states (zero when it states none), for the
+	// held-back listing of the REST API; ok is false when the metadata is not
+	// cached or unreadable. It never fetches. Nil means the format cannot list
+	// the versions (see Service.HeldBackVersions).
+	Versions func(s *Service, ctx context.Context, repo *models.Repository, pkg string) ([]DatedVersion, bool)
+
 	// BlobPath reports whether rel, a file below the repository root, is a
 	// package download that may be redirected to the object store rather than
 	// metadata (see presign.Register). Register hands it to presign. Nil means
@@ -171,3 +178,10 @@ func isHTMLForPackage(format, key string, resp *http.Response) bool {
 
 // keyName is the last path segment of a cache key.
 func keyName(key string) string { return key[strings.LastIndexByte(key, '/')+1:] }
+
+// DatedVersion is a version of an upstream package with its publish time.
+type DatedVersion struct {
+	Version string
+	// Published is the zero time when the upstream states none.
+	Published time.Time
+}

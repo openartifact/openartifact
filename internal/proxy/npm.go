@@ -311,6 +311,7 @@ var NPMHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	IsMetadata: func(key string) bool { return !strings.Contains(key, "/-/") },
 	BlobPath:   presign.NPMBlobPath,
 	Published:  (*Service).npmPublished,
+	Versions:   (*Service).npmVersions,
 }
 
 // npmPublished dates version of pkg from the cached full packument.
@@ -323,4 +324,24 @@ func (s *Service) npmPublished(ctx context.Context, repo *models.Repository, pkg
 	published, found, err := pkgnpm.PublishedAt(doc, version)
 
 	return published, found && err == nil
+}
+
+// npmVersions is Hooks.Versions: the versions of the cached full packument.
+func (s *Service) npmVersions(ctx context.Context, repo *models.Repository, pkg string) ([]DatedVersion, bool) {
+	doc, ok := s.cachedDocBody(ctx, repo, npmPackumentDoc(pkg, false))
+	if !ok {
+		return nil, false
+	}
+
+	list, err := pkgnpm.Versions(doc)
+	if err != nil {
+		return nil, false
+	}
+
+	out := make([]DatedVersion, len(list))
+	for i, v := range list {
+		out[i] = DatedVersion{Version: v.Version, Published: v.Published}
+	}
+
+	return out, true
 }

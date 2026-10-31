@@ -1404,6 +1404,49 @@
           "detail"
         ]
       },
+      "HeldBackVersion": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The publish time the upstream states, when known."
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AvailabilityReason"
+            },
+            "description": "Never empty."
+          }
+        },
+        "required": [
+          "version",
+          "reasons"
+        ]
+      },
+      "HeldBackResponse": {
+        "type": "object",
+        "properties": {
+          "supported": {
+            "type": "boolean",
+            "description": "False when the repository's format cannot list the versions of a package or the metadata is not cached yet; versions is then empty."
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HeldBackVersion"
+            }
+          }
+        },
+        "required": [
+          "supported",
+          "versions"
+        ]
+      },
       "AvailabilityResponse": {
         "type": "object",
         "properties": {
@@ -21749,6 +21792,85 @@
           },
           "400": {
             "description": "Missing or oversized `package` or `version`, or the repository is a group (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No read access to the repository",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          },
+          {}
+        ]
+      }
+    },
+    "/api/v1/repositories/{name}/held-back-versions": {
+      "get": {
+        "summary": "List the versions of a proxy package held back by the gate",
+        "description": "Lists the versions of one package of a proxy repository that the repository's gate keeps from its clients: the minimum age and the curation rules, the same gate the proxy applies to downloads and metadata. The versions are read from the upstream metadata already cached, never fetched, so `supported` is `false` (and the list empty) when the format cannot list the versions of a package or nothing is cached yet. Newest first. Only proxy repositories hold versions back: any other repository type is a 400.",
+        "tags": [
+          "Curation"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "package",
+            "in": "query",
+            "required": true,
+            "description": "Package name, at most 1024 bytes.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The held-back versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeldBackResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or oversized `package`, or the repository is not a proxy (`validation_failed`)",
             "content": {
               "application/json": {
                 "schema": {

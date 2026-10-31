@@ -1067,3 +1067,22 @@ type AvailabilityResponse struct {
 	// be held back).
 	MinAge string `json:"min_age"`
 }
+
+// HeldBackVersion is a version of a proxy package its repository keeps from
+// clients, with why.
+type HeldBackVersion struct {
+	Version string `json:"version"`
+	// PublishedAt is the publish time the upstream states (RFC 3339), when known.
+	PublishedAt string `json:"published_at,omitempty"`
+	// Reasons is never empty; a reason has the shape of an availability reason.
+	Reasons []AvailabilityReason `json:"reasons"`
+}
+
+// HeldBackResponse lists the versions of a proxy package its repository holds
+// back, computed from the upstream metadata already cached.
+type HeldBackResponse struct {
+	// Supported is false when the repository's format cannot list the versions
+	// of a package or the metadata is not cached yet; Versions is then empty.
+	Supported bool              `json:"supported"`
+	Versions  []HeldBackVersion `json:"versions"`
+}

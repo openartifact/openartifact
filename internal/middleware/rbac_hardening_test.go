@@ -246,6 +246,18 @@ func TestClassifyAPIRoute(t *testing.T) {
 		},
 		{
 			http.MethodGet,
+			"/api/v1/repositories/app/held-back-versions",
+			routeScope{action: "read", repoName: "app"},
+			"the held-back version list needs repo read",
+		},
+		{
+			http.MethodPost,
+			"/api/v1/repositories/app/held-back-versions",
+			routeScope{action: "manage"},
+			"the held-back version list is read-only",
+		},
+		{
+			http.MethodGet,
 			"/api/v1/repositories/a%2Fb/availability",
 			routeScope{action: "manage"},
 			"escaped name never read scoped for availability",
