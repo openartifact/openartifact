@@ -601,26 +601,26 @@ export type CleanupPolicy = {
 };
 
 export type Webhook = {
-    id?: string;
-    repository_id?: string | null;
-    name?: string;
-    url?: string;
-    events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted' | 'vulnerability.new'>;
-    content_type?: string;
+    id: string;
+    repository_id: string | null;
+    name: string;
+    url: string;
+    events: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted' | 'vulnerability.new'>;
+    content_type: string;
     /**
      * Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes.
      */
-    payload_format?: 'openartifact' | 'cloudevents' | 'slack' | 'teams' | 'discord';
-    ssl_verify?: boolean;
-    max_retries?: number;
-    timeout_seconds?: number;
-    created_at?: string;
-    updated_at?: string;
-    enabled?: boolean;
+    payload_format: 'openartifact' | 'cloudevents' | 'slack' | 'teams' | 'discord';
+    ssl_verify: boolean;
+    max_retries: number;
+    timeout_seconds: number;
+    created_at: string;
+    updated_at: string;
+    enabled: boolean;
     /**
      * Secret is write-only and never returned
      */
-    has_secret?: boolean;
+    has_secret: boolean;
 };
 
 export type WebhookDelivery = {
@@ -681,26 +681,26 @@ export type SearchResult = {
     /**
      * Number of matching packages (repositories are not counted); with group=package, the number of distinct packages
      */
-    total?: number;
+    total: number;
     /**
      * Matching packages/artifacts, best match first (exact name, prefix, other substring), then newest first. With group=package, one entry per package: its latest version
      */
-    packages?: Array<SearchPackageHit>;
+    packages: Array<SearchPackageHit>;
     /**
      * Repositories whose own name matches the query, ordered by name
      */
-    repositories?: Array<SearchRepositoryHit>;
+    repositories: Array<SearchRepositoryHit>;
 };
 
 export type SearchPackageHit = {
-    repository?: string;
-    name?: string;
-    version?: string;
-    format?: string;
-    path?: string;
-    sha256?: string;
-    size?: number;
-    created_at?: string;
+    repository: string;
+    name: string;
+    version: string;
+    format: string;
+    path: string;
+    sha256: string;
+    size: number;
+    created_at: string;
     metadata?: {
         [key: string]: string;
     };
@@ -711,9 +711,9 @@ export type SearchPackageHit = {
 };
 
 export type SearchRepositoryHit = {
-    name?: string;
-    format?: string;
-    description?: string;
+    name: string;
+    format: string;
+    description: string;
 };
 
 export type PermissionTarget = {
@@ -2186,23 +2186,23 @@ export type VulnScanOverviewRow = {
  * Counts of the scans in the overview.
  */
 export type VulnScanSummary = {
-    total?: number;
-    completed?: number;
-    partial?: number;
-    failed?: number;
+    total: number;
+    completed: number;
+    partial: number;
+    failed: number;
     /**
      * Scans still pending or running.
      */
-    scanning?: number;
-    quarantined?: number;
+    scanning: number;
+    quarantined: number;
     /**
      * Scans with at least one finding of that severity or worse: `high` counts the scans with a critical or a high finding, and so on. Matches the `severity` filter of the list.
      */
-    severity_at_least?: {
-        critical?: number;
-        high?: number;
-        medium?: number;
-        low?: number;
+    severity_at_least: {
+        critical: number;
+        high: number;
+        medium: number;
+        low: number;
     };
 };
 

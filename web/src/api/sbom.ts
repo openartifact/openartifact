@@ -3,17 +3,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { request, downloadAttachment, JSON_HEADERS } from './client'
+import type { SbomReport } from './generated/types.gen'
 
 /** One stored SBOM report; `artifact_id` is the package row (file) it describes. */
-export interface SbomItem {
-  id: string
-  artifact_id: string
-  format: string
-  spec_version?: string
-  component_count?: number
-  generated_at?: string
-  created_at?: string
-}
+export type SbomItem = Required<Pick<SbomReport, 'id' | 'artifact_id' | 'format'>> &
+  Pick<SbomReport, 'spec_version' | 'component_count' | 'generated_at' | 'created_at'>
 
 /** Document formats a report can be generated in. */
 export const SBOM_FORMATS = ['cyclonedx', 'spdx', 'spdx-json', 'spdx3-json'] as const

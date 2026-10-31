@@ -3,28 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { request } from './client'
-import type { Repository } from './generated/types.gen'
+import type { RecentPackage, Repository, RepositoryStats, SecurityHealth, SecuritySummary, UnifiedToken } from './generated/types.gen'
+
+export type { RecentPackage, RepositoryStats, SecurityHealth }
 
 // Home dashboard sources. Every function is one endpoint; the page decides what a
 // 403 or an error means for its block. Shapes follow the web rationalization
 // backend contract (snake_case).
-
-/** Catalog figures of one repository in `GET /repositories`. */
-export interface RepositoryStats {
-  package_count: number
-  size_bytes: number
-  last_published_at?: string
-  security: {
-    critical: number
-    high: number
-    medium: number
-    low: number
-    secrets: number
-    license_violations: number
-    scanned_at?: string
-  }
-  quota: { limit_bytes?: number; used_bytes: number }
-}
 
 export type RepositoryWithStats = Repository & { stats?: RepositoryStats }
 
@@ -53,58 +38,16 @@ export async function listRepositoryPage(filters: RepositoryFilters = {}): Promi
   return { total: res?.total ?? repositories.length, repositories }
 }
 
-export interface ScannerHealth {
-  name: string
-  ready: boolean
-  message?: string
-  docs_url?: string
-}
-
 /** `GET /api/v1/security/health` (admin). */
-export interface SecurityHealth {
-  scanners: ScannerHealth[]
-  last_scan_at?: string
-  scans_pending?: number
-  scans_failed_24h?: number
-  dependency_track?: { enabled: boolean; last_push_ok?: boolean; last_push_at?: string }
-  ai?: { enabled: boolean }
-  unscanned_repositories?: number
-}
-
 export const getSecurityHealth = () => request<SecurityHealth>('/api/v1/security/health')
 
-export interface FindingCounts {
-  total: number
-  critical: number
-  high: number
-  medium: number
-  low: number
-  quarantined: number
-}
-
 /** `GET /api/v1/security/findings/summary`. */
-export interface FindingsSummary {
-  by_type: Record<'vuln' | 'license' | 'secret' | 'ai', FindingCounts>
-  scanned_repositories: number
-  total_repositories: number
-  last_scan_at?: string
-}
+export type FindingsSummary = SecuritySummary
 
 export const getFindingsSummary = () => request<FindingsSummary>('/api/v1/security/findings/summary')
 
 /** One row of `GET /api/v1/tokens`. */
-export interface TokenRow {
-  id: string
-  type: 'personal' | 'project' | 'federation'
-  name: string
-  owner: string
-  project?: string
-  repository?: string
-  created_at: string
-  expires_at?: string
-  last_used_at?: string
-  expired: boolean
-}
+export type TokenRow = UnifiedToken
 
 export interface TokenPage {
   total: number
@@ -119,15 +62,6 @@ export async function listTokens(params: { expiresBefore?: string; limit?: numbe
   const res = await request<Partial<TokenPage>>(`/api/v1/tokens?${qs}`)
   const tokens = res?.tokens ?? []
   return { total: res?.total ?? tokens.length, tokens }
-}
-
-export interface RecentPackage {
-  repository: string
-  format: string
-  name: string
-  version: string
-  created_at: string
-  created_by_name?: string
 }
 
 export async function listRecentPackages(params: { mine: boolean; limit?: number }): Promise<RecentPackage[]> {

@@ -6,7 +6,7 @@
 // Exit 1 on errors: keys a locale has but English does not, placeholder sets
 // that differ, plural forms the language does not use, English keys no code
 // refers to, files that are not catalogs. Missing translations are reported
-// (counts, or every key with --missing) but never fail the check: the UI falls
+// (per-locale counts and absent catalog files, or every key with --missing) but never fail the check: the UI falls
 // back to English.
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
@@ -68,7 +68,7 @@ for (const { area, key } of findUnusedKeys(en, sourceText(root))) {
   issues.push({ level: 'error', locale: 'en', area, key, message: 'key is not used by any source file' })
 }
 
-const stats: { tag: string; total: number; translated: number; missing: number; files: number }[] = []
+const stats: { tag: string; total: number; translated: number; missing: number; files: number; absent: string[] }[] = []
 for (const { tag } of SUPPORTED_LOCALES) {
   if (tag === SOURCE_LOCALE || (only && only !== tag)) continue
   const files = load(tag)
@@ -78,7 +78,7 @@ for (const { tag } of SUPPORTED_LOCALES) {
   if (present < AREAS.length) {
     issues.push({ level: 'warn', locale: tag, area: '-', key: '-', message: `${AREAS.length - present} catalog file(s) absent: ${AREAS.filter((a) => !files[a]).join(', ')}` })
   }
-  stats.push({ tag, ...result.stats, files: present })
+  stats.push({ tag, ...result.stats, files: present, absent: AREAS.filter((a) => !files[a]) })
 }
 // Directories under locales/ that are not a supported locale never load.
 for (const dir of readdirSync(localesDir)) {
@@ -91,6 +91,7 @@ console.log(`English catalog: ${enKeys} keys in ${Object.keys(en).length} files`
 for (const s of stats) {
   const pct = s.total ? ((s.translated / s.total) * 100).toFixed(1) : '0.0'
   console.log(`  ${s.tag.padEnd(8)} ${String(s.translated).padStart(5)}/${s.total} translated (${pct}%), ${s.missing} missing, ${s.files} files`)
+  if (s.absent.length > 0) console.log(`  ${''.padEnd(8)} missing catalogs: ${s.absent.join(', ')}`)
 }
 
 const real = issues.filter((i) => i.level === 'error')

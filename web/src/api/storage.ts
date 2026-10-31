@@ -4,43 +4,9 @@
 
 import { request, JSON_HEADERS } from './client'
 import { pagedResponse, type PagedResult } from './transform'
+import type { StorageBackend, StoragePrimary } from './generated/types.gen'
 
-/**
- * Mirrors the server's StorageBackendResponse. The generated type is stale
- * (no `config`/status fields, narrower `kind`), so it is declared locally.
- * Secret config fields are never returned; the server reports a
- * `has_<field>: true` flag in `config` instead.
- */
-export interface StorageBackend {
-  id?: string
-  name?: string
-  kind?: string
-  config?: Record<string, unknown>
-  /** `healthy` | `unreachable` | `unknown` */
-  status?: string
-  status_message?: string | null
-  last_checked_at?: string | null
-  /** Blobs stored on this backend and their total size. */
-  usage?: { blob_count: number; size_bytes: number }
-  created_at?: string
-  updated_at?: string
-}
-
-/**
- * The primary blob store the server is configured with (read-only; set by
- * the `storage.*` configuration). `location` never carries a credential.
- */
-export interface StoragePrimary {
-  name: string
-  kind: string
-  source: 'config'
-  location: Record<string, string>
-  /** `healthy` | `unreachable` | `unknown` */
-  status: 'healthy' | 'unreachable' | 'unknown'
-  status_message?: string | null
-  last_checked_at?: string | null
-  usage?: { blob_count: number; size_bytes: number }
-}
+export type { StorageBackend, StoragePrimary }
 
 export interface StorageList extends PagedResult<StorageBackend> {
   primary?: StoragePrimary

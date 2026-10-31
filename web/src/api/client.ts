@@ -99,10 +99,26 @@ export function setClientSpanFactory(start: ((method: string) => ClientSpan) | u
  * session: a 401 outside the auth probes clears the session, redirects to
  * login and throws.
  */
-async function send(path: string, init: RequestInit): Promise<Response> {
-  const headers = new Headers(init.headers)
+/** The headers every API call carries: the XHR marker, the CSRF token, and `extra` (which wins). */
+function standardHeaders(extra?: HeadersInit): Headers {
+  const headers = new Headers(extra)
   headers.set('X-Requested-With', 'XMLHttpRequest')
   for (const [name, value] of Object.entries(csrfHeader())) headers.set(name, value)
+  return headers
+}
+
+/** Handles a 401 outside the auth probes: clears the session, redirects to login and throws. */
+async function rejectExpired(path: string, status: number): Promise<void> {
+  // These endpoints return 401 for reasons other than an expired session
+  // (bad credentials, wrong current password, "not signed in" probe), so
+  // their 401s propagate as ApiError without clearing the session.
+  if (status !== 401 || NO_REDIRECT_401.has(path)) return
+  await expireSession()
+  throw new ApiError(t('session.expired'), 401, SESSION_EXPIRED)
+}
+
+async function send(path: string, init: RequestInit): Promise<Response> {
+  const headers = standardHeaders(init.headers)
 
   const span = startClientSpan?.(init.method ?? 'GET')
   if (span) headers.set('traceparent', span.traceparent)
@@ -120,15 +136,7 @@ async function send(path: string, init: RequestInit): Promise<Response> {
   }
   span?.end(res.status)
 
-  // These endpoints return 401 for reasons other than an expired session
-  // (bad credentials, wrong current password, "not signed in" probe), so
-  // their 401s propagate as ApiError without clearing the session.
-  const isAuthProbe = NO_REDIRECT_401.has(path)
-
-  if (res.status === 401 && !isAuthProbe) {
-    await expireSession()
-    throw new ApiError(t('session.expired'), 401, SESSION_EXPIRED)
-  }
+  await rejectExpired(path, res.status)
 
   return res
 }
@@ -164,6 +172,78 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   const text = await res.text()
   if (!text) return undefined as T
   return JSON.parse(text) as T
+}
+
+export interface UploadOptions {
+  /** Defaults to POST. */
+  method?: string
+  /** A FormData (multipart) or a File/Blob sent as the raw body. */
+  body: XMLHttpRequestBodyInit
+  headers?: Record<string, string>
+  /** Aborting rejects the upload with an ApiError('aborted', 0). */
+  signal?: AbortSignal
+  /** Called with the bytes sent so far while the browser can compute the total. */
+  onProgress?: (loaded: number, total: number) => void
+}
+
+/**
+ * Sends a body with upload progress (fetch cannot report it, so this one call
+ * path uses XMLHttpRequest) with the same headers, credentials, error mapping
+ * and expired-session handling as request(). Resolves on a 2xx answer.
+ */
+export function upload(path: string, opts: UploadOptions): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const method = opts.method ?? 'POST'
+    const xhr = new XMLHttpRequest()
+    xhr.open(method, path)
+    xhr.withCredentials = true
+    const headers = standardHeaders(opts.headers)
+    const span = startClientSpan?.(method)
+    if (span) headers.set('traceparent', span.traceparent)
+    headers.forEach((value, name) => xhr.setRequestHeader(name, value))
+
+    const onAbort = () => xhr.abort()
+    const finish = (settle: () => void) => {
+      opts.signal?.removeEventListener('abort', onAbort)
+      settle()
+    }
+    xhr.upload.addEventListener('progress', (ev) => {
+      if (ev.lengthComputable) opts.onProgress?.(ev.loaded, ev.total)
+    })
+    xhr.addEventListener('load', () => {
+      span?.end(xhr.status)
+      if (xhr.status >= 200 && xhr.status < 300) {
+        finish(resolve)
+        return
+      }
+      let body: unknown
+      try {
+        body = JSON.parse(xhr.responseText)
+      } catch {
+        // non-JSON body: keep the HTTP status message
+      }
+      const failure = apiErrorFromBody(xhr.status, body)
+      rejectExpired(path, xhr.status).then(
+        () => finish(() => reject(failure)),
+        (err) => finish(() => reject(err)),
+      )
+    })
+    xhr.addEventListener('error', () => {
+      span?.fail(new Error('network error'))
+      finish(() => reject(new ApiError('network error', 0)))
+    })
+    xhr.addEventListener('abort', () => {
+      span?.fail(new Error('aborted'))
+      finish(() => reject(new ApiError('aborted', 0)))
+    })
+
+    if (opts.signal?.aborted) {
+      finish(() => reject(new ApiError('aborted', 0)))
+      return
+    }
+    opts.signal?.addEventListener('abort', onAbort, { once: true })
+    xhr.send(opts.body)
+  })
 }
 
 /** Extracts the attachment filename from a Content-Disposition header value. */
