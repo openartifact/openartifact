@@ -115,23 +115,21 @@ describe('RepoDefaultsRows: upstream', () => {
     expect((wrapper.find('#rl-upstream-url').element as HTMLInputElement).placeholder).toBe('https://pypi.org/simple')
   })
 
-  it('does not force the row open when a URL is already there, nor in edit mode', async () => {
+  it('does not force the row open when a URL is already there', async () => {
     const withUrl = await mountRows({ form: { format: 'maven', upstreamUrl: 'https://repo.example.org' } })
     await typeButtons(withUrl.wrapper)[1].trigger('click')
     expect(isOpen(withUrl.wrapper, 'upstream')).toBe(false)
     expect(summary(withUrl.wrapper, 'upstream')).toBe('https://repo.example.org')
-
-    const edit = await mountRows({ mode: 'edit', form: { format: 'maven', type: 'proxy' } })
-    expect(isOpen(edit.wrapper, 'upstream')).toBe(false)
   })
 
-  it('summarises URL with the username and only shows the keep-password hint on edit', async () => {
-    const edit = await mountRows({ mode: 'edit', form: { type: 'proxy', format: 'maven', upstreamUrl: ' https://r.example.org ', upstreamUsername: 'svc' } })
-    expect(summary(edit.wrapper, 'upstream')).toBe('https://r.example.org · svc')
-    const editHint = edit.wrapper.find('#rl-upstream-pass').element.closest('div')!.parentElement!.textContent
-    const create = await mountRows({ form: { type: 'proxy', format: 'maven' } })
-    const createHint = create.wrapper.find('#rl-upstream-pass').element.closest('div')!.parentElement!.textContent
-    expect(editHint!.length).toBeGreaterThan(createHint!.length)
+  it('summarises the URL with the username on create', async () => {
+    const create = await mountRows({ form: { type: 'proxy', format: 'maven', upstreamUrl: ' https://r.example.org ', upstreamUsername: 'svc' } })
+    expect(summary(create.wrapper, 'upstream')).toBe('https://r.example.org · svc')
+  })
+
+  it('has no upstream row in edit mode: a proxy\'s upstream is edited on the proxy settings card', async () => {
+    const edit = await mountRows({ mode: 'edit', form: { format: 'maven', type: 'proxy' } })
+    expect(row(edit.wrapper, 'upstream').exists()).toBe(false)
   })
 
   it('writes typed upstream values to the form', async () => {

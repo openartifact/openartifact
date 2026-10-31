@@ -37,11 +37,10 @@ describe('repo form', () => {
     expect(buildCreateBody(emptyRepoForm({ name: 'g', type: 'group', project: 'acme' }), { isAdmin: true }).project).toBe('acme')
   })
 
-  it('keeps the stored password on update unless a new one is typed', () => {
+  it('never sends upstream fields on update: ProxySettingsForm owns them', () => {
     const repo = { name: 'p', format: 'npm', repo_type: 'proxy', upstream_url: 'https://u' } as Repository
-    const form = repoFormFrom(repo)
-    expect('upstream_password' in buildUpdateBody(form, repo, { isAdmin: true })).toBe(false)
-    expect(buildUpdateBody({ ...form, upstreamPassword: 'x' }, repo, { isAdmin: true }).upstream_password).toBe('x')
+    const body = buildUpdateBody({ ...repoFormFrom(repo), upstreamUrl: 'https://other', upstreamPassword: 'x' }, repo, { isAdmin: true })
+    expect(Object.keys(body).filter((k) => k.startsWith('upstream'))).toEqual([])
   })
 
   it('resets trash retention with an explicit null and moves project only for admins', () => {

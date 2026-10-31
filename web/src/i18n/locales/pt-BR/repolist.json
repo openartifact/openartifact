@@ -64,7 +64,6 @@
   "rl.upstream.required": "Obrigatório para este formato.",
   "rl.upstream.optional": "Deixe vazio para usar o padrão do formato.",
   "rl.upstream.pacman": "Para usar este proxy como membro de um grupo, termine a URL com uma seção, por exemplo https://geo.mirror.pkgbuild.com/extra.",
-  "rl.upstream.passwordKeep": "Deixe vazio para manter a senha atual.",
   "rl.members.none": "Nenhum membro",
   "rl.members.count_one": "{n} membro",
   "rl.members.count_other": "{n} membros",
