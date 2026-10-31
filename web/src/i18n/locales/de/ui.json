@@ -100,5 +100,7 @@
   "ui.settings.health.desc": "Datenbank, Speicher, Scanner und Build-Informationen.",
   "ui.settings.unknown": "Unbekannte Einstellung",
   "ui.settings.unknownHint": "Es gibt keinen Einstellungsbereich mit diesem Namen.",
-  "ui.settings.hub": "Einstellungen"
+  "ui.settings.hub": "Einstellungen",
+  "ui.settings.service-accounts.title": "Servicekonten",
+  "ui.settings.service-accounts.desc": "Identitäten für die Automatisierung, ihre Token und CI-Vertrauensrichtlinien."
 }

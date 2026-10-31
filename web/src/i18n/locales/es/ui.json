@@ -100,5 +100,7 @@
   "ui.settings.health.desc": "Base de datos, almacenamiento, escáneres e información de compilación.",
   "ui.settings.unknown": "Ajuste desconocido",
   "ui.settings.unknownHint": "No existe ninguna sección de ajustes con este nombre.",
-  "ui.settings.hub": "Ajustes"
+  "ui.settings.hub": "Ajustes",
+  "ui.settings.service-accounts.title": "Cuentas de servicio",
+  "ui.settings.service-accounts.desc": "Identidades para la automatización, sus tokens y las políticas de confianza de CI."
 }

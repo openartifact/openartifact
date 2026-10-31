@@ -39,6 +39,7 @@
   "common.export.csv": "CSV をエクスポート",
   "common.export.failed": "エクスポートに失敗しました",
   "common.save": "保存",
+  "common.add": "追加",
   "common.saving": "保存中...",
   "common.cancel": "キャンセル",
   "common.create": "作成",

@@ -100,5 +100,7 @@
   "ui.settings.health.desc": "Banco de dados, armazenamento, scanners e informações de build.",
   "ui.settings.unknown": "Configuração desconhecida",
   "ui.settings.unknownHint": "Não existe uma seção de configurações com este nome.",
-  "ui.settings.hub": "Configurações"
+  "ui.settings.hub": "Configurações",
+  "ui.settings.service-accounts.title": "Contas de serviço",
+  "ui.settings.service-accounts.desc": "Identidades para automação, seus tokens e políticas de confiança do CI."
 }

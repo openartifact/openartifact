@@ -48,11 +48,21 @@ func NewAdminServiceAccountsHandler(
 }
 
 func (h *AdminServiceAccountsHandler) Register(r chi.Router) {
-	r.Post("/api/v1/service-accounts", h.handleCreate)
-	r.Get("/api/v1/service-accounts", h.handleList)
-	r.With(requireUUIDParams("id")).Get("/api/v1/service-accounts/{id}", h.handleGet)
-	r.With(requireUUIDParams("id")).Patch("/api/v1/service-accounts/{id}", h.handlePatch)
-	r.With(requireUUIDParams("id")).Delete("/api/v1/service-accounts/{id}", h.handleDelete)
+	registerAdminCollection(r, "/api/v1/service-accounts", h.handleCreate, h.handleList, h.handleGet, h.handlePatch, h.handleDelete)
+}
+
+// registerAdminCollection wires the five routes of an administrator-managed
+// collection: create and list on the collection path, get, patch and delete on
+// the member path keyed by a UUID {id}.
+func registerAdminCollection(r chi.Router, path string, create, list, get, patch, del http.HandlerFunc) {
+	member := path + "/{id}"
+	byID := r.With(requireUUIDParams("id"))
+
+	r.Post(path, create)
+	r.Get(path, list)
+	byID.Get(member, get)
+	byID.Patch(member, patch)
+	byID.Delete(member, del)
 }
 
 type serviceAccountResponse struct {

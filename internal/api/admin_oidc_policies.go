@@ -42,11 +42,7 @@ func NewAdminOIDCPoliciesHandler(db AdminOIDCPoliciesStore, log *logger.Logger, 
 }
 
 func (h *AdminOIDCPoliciesHandler) Register(r chi.Router) {
-	r.Post("/api/v1/oidc-trust-policies", h.handleCreate)
-	r.Get("/api/v1/oidc-trust-policies", h.handleList)
-	r.With(requireUUIDParams("id")).Get("/api/v1/oidc-trust-policies/{id}", h.handleGet)
-	r.With(requireUUIDParams("id")).Patch("/api/v1/oidc-trust-policies/{id}", h.handlePatch)
-	r.With(requireUUIDParams("id")).Delete("/api/v1/oidc-trust-policies/{id}", h.handleDelete)
+	registerAdminCollection(r, "/api/v1/oidc-trust-policies", h.handleCreate, h.handleList, h.handleGet, h.handlePatch, h.handleDelete)
 }
 
 type oidcPolicyResponse struct {
