@@ -1375,6 +1375,22 @@
       },
       "Webhook": {
         "type": "object",
+        "required": [
+          "id",
+          "repository_id",
+          "name",
+          "url",
+          "enabled",
+          "events",
+          "content_type",
+          "payload_format",
+          "has_secret",
+          "ssl_verify",
+          "max_retries",
+          "timeout_seconds",
+          "created_at",
+          "updated_at"
+        ],
         "properties": {
           "id": {
             "type": "string",
@@ -1618,6 +1634,11 @@
       },
       "SearchResult": {
         "type": "object",
+        "required": [
+          "total",
+          "packages",
+          "repositories"
+        ],
         "properties": {
           "total": {
             "type": "integer",
@@ -1641,6 +1662,16 @@
       },
       "SearchPackageHit": {
         "type": "object",
+        "required": [
+          "repository",
+          "format",
+          "name",
+          "version",
+          "path",
+          "sha256",
+          "size",
+          "created_at"
+        ],
         "properties": {
           "repository": {
             "type": "string"
@@ -1682,6 +1713,11 @@
       },
       "SearchRepositoryHit": {
         "type": "object",
+        "required": [
+          "name",
+          "format",
+          "description"
+        ],
         "properties": {
           "name": {
             "type": "string"
@@ -4841,6 +4877,15 @@
       "VulnScanSummary": {
         "type": "object",
         "description": "Counts of the scans in the overview.",
+        "required": [
+          "total",
+          "completed",
+          "partial",
+          "failed",
+          "scanning",
+          "quarantined",
+          "severity_at_least"
+        ],
         "properties": {
           "total": {
             "type": "integer"
@@ -4864,6 +4909,12 @@
           "severity_at_least": {
             "type": "object",
             "description": "Scans with at least one finding of that severity or worse: `high` counts the scans with a critical or a high finding, and so on. Matches the `severity` filter of the list.",
+            "required": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ],
             "properties": {
               "critical": {
                 "type": "integer"

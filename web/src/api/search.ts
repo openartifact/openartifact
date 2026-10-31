@@ -3,27 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { request, ApiError } from './client'
+import type { ChecksumHit, SearchPackageHit, SearchRepositoryHit, SearchResult as GeneratedSearchResult } from './generated/types.gen'
 
-export interface SearchPackageHit {
-  name: string
-  version: string
-  format: string
-  repository: string
-  description?: string
-  /** Only with `group=package`: how many versions of the package matched. */
-  version_count?: number
-}
+export type { ChecksumHit, SearchPackageHit }
+export type SearchRepoHit = SearchRepositoryHit
 
-export interface SearchRepoHit {
-  name: string
-  format: string
-  description?: string
-}
-
-export interface SearchResult {
-  packages: SearchPackageHit[]
-  repositories: SearchRepoHit[]
-}
+/** The packages and repositories of a search answer (the client fills them in empty for a 404/501). */
+export type SearchResult = Pick<GeneratedSearchResult, 'packages' | 'repositories'>
 
 export interface SearchParams {
   q: string
@@ -107,18 +93,6 @@ export async function searchPackageGroups(
     }),
   )
   return { packages, total: res?.total ?? packages.length }
-}
-
-/** A stored file whose checksum matched. */
-export interface ChecksumHit {
-  repository: string
-  format: string
-  name: string
-  version: string
-  filename: string
-  checksum: string
-  /** `sha256` | `sha1` | `md5` */
-  algorithm: string
 }
 
 export interface ChecksumSearchResult {

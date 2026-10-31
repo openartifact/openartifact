@@ -3,72 +3,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { request, preflight, JSON_HEADERS } from './client'
-import type { Repository, RepositoryMember } from './generated/types.gen'
+import type {
+  ActivityEntry,
+  PackageFile,
+  PackageGroup,
+  QuotaLine,
+  Repository,
+  RepositoryMember,
+  RepositoryStats,
+  RepositoryUsage,
+  RepoSecuritySummary,
+} from './generated/types.gen'
 
-export type { Repository, RepositoryMember }
+export type { PackageGroup, QuotaLine, Repository, RepositoryMember, RepositoryStats, RepositoryUsage, RepoSecuritySummary }
 
-export interface PackageItem {
-  id: string
-  name: string
-  version: string
-  size?: number
-  sha256?: string
-  format: string
-  /** Architecture, platform or classifier of this file; empty when the format has none. */
-  arch?: string
-  filename?: string
-  created_at?: string
-  /** Vulnerability counts of this file's latest scan. */
-  security?: { critical: number; high: number; medium: number; low: number }
-  /** A critical or high vulnerability, a secret finding or a quarantined scan result. */
-  flagged?: boolean
-  /** Latest completed scan; absent when never scanned. */
-  scanned_at?: string
-}
+/** One file of a package listing (the listing's row). */
+export type PackageItem = PackageFile
 
 /** Security counts of a repository from its artifacts' latest scans (raw: VEX does not suppress any). */
-export interface RepositorySecurity {
-  critical: number
-  high: number
-  medium: number
-  low: number
-  secrets: number
-  /** Artifacts whose license scan is quarantined. */
-  license_violations: number
-  /** Latest completed scan; absent when never scanned. */
-  scanned_at?: string
-}
-
-/** A storage quota next to its live usage; limits are absent when unlimited. */
-export interface QuotaLine {
-  limit_bytes?: number
-  used_bytes: number
-  soft_limit_bytes?: number
-  warn_threshold_percent: number
-  max_artifact_count?: number
-  artifact_count: number
-  usage_percent: number
-  exceeded: boolean
-}
-
-/** Catalog figures a repository list row carries. */
-export interface RepositoryStats {
-  package_count: number
-  size_bytes: number
-  last_published_at?: string
-  security: RepositorySecurity
-  quota: { limit_bytes?: number; used_bytes: number }
-}
+export type RepositorySecurity = RepositoryStats['security']
 
 export type RepositoryListItem = Repository & { stats?: RepositoryStats }
-
-export interface RepositoryUsage {
-  package_count: number
-  version_count: number
-  size_bytes: number
-  last_published_at?: string
-  quota: QuotaLine
-}
 
 export type RepositorySort = 'name' | 'updated' | 'last_published' | 'size'
 
@@ -278,23 +233,6 @@ export async function listAllPackages(
   return items
 }
 
-/** One package (repository, format, name) rolled up across its versions. */
-export interface PackageGroup {
-  name: string
-  format: string
-  latest_version: string
-  version_count: number
-  /** Size of the latest version, all its files summed. */
-  size_bytes: number
-  updated_at: string
-  /** Vulnerability counts of the latest version. */
-  security: { critical: number; high: number; medium: number; low: number }
-  /** A critical or high vulnerability, a secret finding or a quarantined scan result. */
-  flagged: boolean
-  /** Latest completed scan of the latest version; absent when never scanned. */
-  scanned_at?: string
-}
-
 interface ListPackageGroupsParams {
   page?: number
   limit?: number
@@ -334,30 +272,12 @@ export async function updateRepoMembers(name: string, memberRepos: string[]): Pr
   return res.members ?? []
 }
 
-/** Counts of the latest scans of a repository; no finding details. */
-export interface RepoSecuritySummary {
-  scanned_at: string | null
-  vuln: { critical: number; high: number; medium: number; low: number }
-  license: { violations: number }
-  secret: { count: number }
-  ai: { quarantine_recommended: number; review_required: number }
-  quarantined: boolean
-}
-
 export function getRepoSecuritySummary(name: string): Promise<RepoSecuritySummary> {
   return request<RepoSecuritySummary>(`/api/v1/repositories/${encodeURIComponent(name)}/security/summary`)
 }
 
 /** An audit event of a repository with the actor and the subject resolved to names. */
-export interface RepoActivityEntry {
-  id: string
-  timestamp: string
-  action: string
-  actor: string
-  actor_name: string
-  message?: string
-  subject: { kind: string; name: string | null; version?: string; repository?: string; project?: string } | null
-}
+export type RepoActivityEntry = ActivityEntry
 
 interface RepoActivityPage {
   items: RepoActivityEntry[]

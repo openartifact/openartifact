@@ -377,6 +377,7 @@
   "adm.ai.unavailable.body": "Ce binaire du serveur a été compilé sans analyse par IA : il n'y a rien à configurer ici. Utilisez une version standard pour l'activer.",
   "adm.audit.details": "Détails",
   "adm.gpg.eyebrow": "Clé GPG",
+  "adm.gpg.table": "Clés de signature",
   "adm.gpg.empty.title": "Aucune clé de signature",
   "adm.gpg.empty.hint": "Importez une clé privée ou générez-en une, puis activez-la globalement ou pour un dépôt deb ou rpm afin de signer ses métadonnées.",
   "adm.gpg.noSecretKey": "Le stockage des clés est désactivé : définissez OPENARTIFACT_SECRET_KEY sur le serveur pour importer ou générer des clés de signature.",

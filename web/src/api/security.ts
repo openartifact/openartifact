@@ -13,6 +13,11 @@ import type {
   LicenseScanResult,
   LicenseScanRunResult,
   OsvMirrorStatus,
+  SecurityFinding,
+  SecurityFindingCounts,
+  SecurityHealth,
+  SecuritySummary,
+  VulnScanSummary,
   VulnScanner as VulnScannerInfo,
   VulnScanRequest,
   VulnScanResult,
@@ -64,16 +69,7 @@ export async function listVulnScans(repo: string): Promise<VulnScan[]> {
 
 export type VulnSeverity = 'critical' | 'high' | 'medium' | 'low'
 
-export interface VulnScanSummary {
-  total: number
-  completed: number
-  partial: number
-  failed: number
-  scanning: number
-  quarantined: number
-  /** Scans with at least one finding of the severity or worse (`high` counts critical + high). */
-  severity_at_least: Record<VulnSeverity, number>
-}
+export type { VulnScanSummary }
 
 function queryString(params: Record<string, string | number | boolean | undefined>): string {
   const q = new URLSearchParams()
@@ -235,39 +231,10 @@ export const FINDING_TYPES: readonly FindingType[] = ['vuln', 'license', 'secret
 export type FindingSeverity = 'critical' | 'high' | 'medium' | 'low' | 'none'
 export type FindingStatus = 'open' | 'quarantined' | 'suppressed'
 
-export interface FindingCounts {
-  critical: number
-  high: number
-  medium: number
-  low: number
-}
+export type FindingCounts = SecurityFindingCounts
 
 /** One stored scan result (a package version of one type) that reports something. */
-export interface SecurityFinding {
-  id: string
-  type: FindingType
-  repository: string
-  format: string
-  package_name: string
-  package_version: string
-  /** The artifact the result belongs to, `name@version`. */
-  artifact_id: string
-  severity: FindingSeverity
-  counts: FindingCounts
-  /** One line: the worst vulnerability id, the licenses, the worst secret finding or the AI note. */
-  title: string
-  /** Scanner of a vulnerability result (osv, trivy, grype or a comma-joined list); empty for the other types. */
-  scanner: string
-  status: FindingStatus
-  quarantined: boolean
-  vex_status?: 'affected' | 'under_investigation' | 'fixed' | 'not_affected'
-  /** Vulnerabilities of a vuln finding in the CISA KEV catalog; 0 for the other types. */
-  kev_count: number
-  /** Highest EPSS score (0..1) among the vulnerabilities; null when none is scored. */
-  max_epss: number | null
-  priority: ExploitPriority
-  scanned_at: string
-}
+export type { SecurityFinding }
 
 /** Filters the findings list, summary and export share. `type` is a comma-separated list; empty means every type. */
 export interface FindingFilters {
@@ -292,27 +259,9 @@ interface FindingsPage {
   next_cursor?: string
 }
 
-export interface FindingTypeSummary extends FindingCounts {
-  total: number
-  quarantined: number
-}
+export type { SecuritySummary, SecurityHealth }
 
-export interface SecuritySummary {
-  by_type: Record<FindingType, FindingTypeSummary>
-  scanned_repositories: number
-  total_repositories: number
-  last_scan_at: string | null
-}
-
-export interface SecurityHealth {
-  scanners: { name: string; ready: boolean; message?: string; docs_url?: string }[]
-  last_scan_at: string | null
-  scans_pending: number
-  scans_failed_24h: number
-  dependency_track: { enabled: boolean; last_push_ok?: boolean; last_push_at?: string }
-  ai: { enabled: boolean }
-  unscanned_repositories: number
-}
+export type FindingTypeSummary = SecuritySummary['by_type'][FindingType]
 
 /** The findings the caller may triage, worst first, keyset-paginated. Admins see every repository; project maintainers their own. */
 export async function listFindings(params: FindingFilters & { limit?: number; cursor?: string }): Promise<FindingsPage> {

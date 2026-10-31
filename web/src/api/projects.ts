@@ -8,7 +8,13 @@ import type { Repository } from './repositories'
 import type { ProjectCleanupPreview } from './generated'
 import type { ApiCleanupPolicy } from '../lib/cleanupPolicy'
 import type {
-  Project as GeneratedProject,
+  Project,
+  ProjectListItem,
+  ProjectMember,
+  ProjectMemberCreateRequest,
+  ProjectMemberUpdateRequest,
+  ProjectSettings,
+  ProjectTokenCreateRequest,
   ProjectActivityEntry,
   ActivityPage,
   ProjectQuota as GeneratedProjectQuota,
@@ -17,13 +23,11 @@ import type {
   ProjectCreateRequest,
   ProjectGroup,
   ProjectGroupUpdateRequest,
-  ProjectMember as GeneratedProjectMember,
-  ProjectTokenCreateRequest as GeneratedProjectTokenCreateRequest,
   ProjectTokenCreateResponse as GeneratedProjectTokenCreateResponse,
   ProjectUpdateRequest,
 } from './generated/types.gen'
 
-export type { ProjectActivityEntry, ProjectCreateRequest, ProjectGroup, ProjectGroupUpdateRequest, ProjectUpdateRequest }
+export type { Project, ProjectListItem, ProjectMember, ProjectActivityEntry, ProjectCreateRequest, ProjectGroup, ProjectGroupUpdateRequest, ProjectUpdateRequest }
 
 /** Name of the built-in system project: the default, whose membership grants nothing. */
 export const SYSTEM_PROJECT_NAME = 'system'
@@ -39,28 +43,6 @@ export type ProjectGroupRole = (typeof PROJECT_GROUP_ROLES)[number]
 /** Repository types a project may allow. */
 export const PROJECT_REPO_TYPES = ['hosted', 'proxy', 'group'] as const
 export type ProjectRepoType = (typeof PROJECT_REPO_TYPES)[number]
-
-/** A project as the API returns it: the stored record plus the caller's view of it. */
-export type Project = GeneratedProject & {
-  /** The caller's effective role; global admins who hold no role are reported as owner. */
-  my_role?: ProjectMemberRole
-  /** Live repositories owned by the project. */
-  repository_count?: number
-  /** The built-in system project. */
-  is_system?: boolean
-}
-
-/** A project row of the list: the project plus the counters the list endpoint computes. */
-export type ProjectListItem = Project & {
-  /** Users with a direct role in the project. */
-  member_count?: number
-  /** Stored bytes across the project's repositories. */
-  usage?: { size_bytes?: number }
-  /** Present only when a size limit is set. */
-  quota?: { limit_bytes?: number }
-}
-
-export type ProjectMember = GeneratedProjectMember & { username?: string }
 
 /** One `/auth/me` entry: a project the caller holds a role in. */
 export interface ProjectMembership {
@@ -79,22 +61,6 @@ interface ProjectRepositoryPage {
   total: number
   page: number
   limit: number
-}
-
-/** Add by `user_id` or `username`; the role defaults to viewer server-side. */
-interface ProjectMemberCreateRequest {
-  user_id?: string
-  username?: string
-  role?: ProjectMemberRole
-}
-
-interface ProjectMemberUpdateRequest {
-  role: ProjectMemberRole
-}
-
-interface ProjectSettings {
-  /** Any user may create projects, not only global admins. */
-  self_create: boolean
 }
 
 const enc = encodeURIComponent
@@ -184,7 +150,6 @@ export const getProjectSettings = () => request<ProjectSettings>('/api/v1/admin/
 export const updateProjectSettings = (body: ProjectSettings) =>
   send<ProjectSettings>('/api/v1/admin/projects/settings', 'PUT', body)
 
-type ProjectTokenCreateRequest = GeneratedProjectTokenCreateRequest
 type ProjectTokenCreated = GeneratedProjectTokenCreateResponse
 
 /** Session only (API tokens get 403). The clear-text secret is in the response, once. */
