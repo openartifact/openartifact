@@ -49,7 +49,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </button>
     </div>
 
-    <nav class="nice-scroll flex-1 overflow-y-auto px-2 py-3" :aria-label="t('shell.primaryNav')">
+    <nav class="nice-scroll flex-1 overflow-y-auto overflow-x-hidden px-2 py-3" :aria-label="t('shell.primaryNav')">
       <ul class="space-y-0.5">
         <li v-for="item in items" :key="item.id">
           <SidebarLink
