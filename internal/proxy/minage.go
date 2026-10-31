@@ -32,7 +32,7 @@ import (
 
 // errTooNew is returned by a download's locate hook for a file of a version
 // younger than the repository's minimum age.
-var errTooNew = errors.New("version is younger than the repository's minimum age")
+var errTooNewOld = errors.New("version is younger than the repository's minimum age")
 
 // minAge is repo's minimum age, 0 when the gate is off.
 func minAge(repo *models.Repository) time.Duration {

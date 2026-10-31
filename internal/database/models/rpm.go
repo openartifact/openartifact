@@ -26,8 +26,11 @@ type Repository struct {
 	// this many hours ago is hidden from the metadata and refused on download;
 	// 0 disables the gate.
 	MinAgeHours int
-	Blocked     bool // proxy only
-	ProjectID   *string
+	// CurationMode is proxy only: "off" (default), "denylist" or "allowlist"
+	// (internal/curation); the rules live in curation_rules.
+	CurationMode string
+	Blocked      bool // proxy only
+	ProjectID    *string
 	// PresignDownloads overrides storage.presignDownloads for this repository:
 	// nil inherits the global setting, true/false force redirect/streaming.
 	PresignDownloads *bool

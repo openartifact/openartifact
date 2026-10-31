@@ -133,6 +133,9 @@ func tailTables() []Table {
 		{Name: "docker_tags", Key: idKey()},
 		{Name: "artifact_refs", Key: idKey()},
 		{Name: "artifact_properties", Key: idKey()},
+		// A rebuilt instance must not serve what an administrator blocked: the
+		// rules ride with the repositories they belong to.
+		{Name: "curation_rules", Key: idKey()},
 	}
 }
 

@@ -7,7 +7,7 @@ package audit
 // Audit action names. The audit_logs.chk_audit_action constraint admits exactly
 // the values in KnownActions; every action an emitter can produce MUST be
 // declared here, listed in KnownActions and allowed by the latest migration
-// that rewrites the constraint (see migrations/002_audit_actions.sql). The
+// that rewrites the constraint (see migrations/005_curation.sql). The
 // integration test TestKnownActionsAcceptedByDatabase inserts each entry of
 // KnownActions into a freshly migrated database.
 const (
@@ -161,6 +161,12 @@ const (
 
 	ActionDependencyTrackConfigChanged = "dependency_track.config_changed"
 	ActionLicensePolicyChanged         = "license.policy_changed"
+
+	// Proxy curation rules (migrations/005_curation.sql).
+
+	ActionCurationRuleCreated = "curation.rule_created"
+	ActionCurationRuleUpdated = "curation.rule_updated"
+	ActionCurationRuleDeleted = "curation.rule_deleted"
 )
 
 // KnownActions lists every action the audit_logs constraint accepts.
@@ -222,4 +228,6 @@ var KnownActions = []string{
 	ActionFederationPeerDeleted, ActionFederationPeerResynced, ActionFederationTokenCreated, ActionFederationTokenRevoked,
 
 	ActionDependencyTrackConfigChanged, ActionLicensePolicyChanged,
+
+	ActionCurationRuleCreated, ActionCurationRuleUpdated, ActionCurationRuleDeleted,
 }
