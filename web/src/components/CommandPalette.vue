@@ -115,15 +115,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { MagnifyingGlassIcon } from '@heroicons/vue/24/outline'
 import FormatBadge from './FormatBadge.vue'
 import DialogFrame from './ui/DialogFrame.vue'
 import { paletteIcon } from './navIcons'
 import { useUIStore } from '../stores/ui'
 import { useSessionStore } from '../stores/session'
-import { useThemeStore } from '../stores/theme'
-import { useSignOut } from '../composables/useSignOut'
+import { usePaletteActions } from '../composables/usePaletteActions'
 import { usePaletteSearch } from '../composables/usePaletteSearch'
 import {
   buildGroups,
@@ -135,14 +133,12 @@ import {
   type PaletteGroupId,
   type PaletteItem,
 } from '../lib/palette'
-import { loadRecent, recentStorageKey, type RecentItem } from '../lib/paletteRecent'
+import { repoSearchTerm, toActionRecent, type BoundAction } from '../lib/paletteActions'
+import { loadRecent, pushRecent, recentStorageKey, saveRecent, type RecentItem } from '../lib/paletteRecent'
 import { t, tp, tpn, type TranslationKey } from '../i18n'
 
 const ui = useUIStore()
 const session = useSessionStore()
-const theme = useThemeStore()
-const router = useRouter()
-const signOut = useSignOut()
 
 const GROUP_TITLE: Record<PaletteGroupId, TranslationKey> = {
   recent: 'shell.palette.group.recent',
@@ -163,12 +159,13 @@ const recent = ref<RecentItem[]>([])
 const lockedMessage = ref('')
 
 const search = usePaletteSearch({ isAdmin: () => session.isAdmin })
+const { context, env } = usePaletteActions(() => search.canCreateProject.value)
 const parsed = computed(() => parseQuery(query.value))
 
 const groups = computed(() =>
   buildGroups({
     query: parsed.value,
-    context: { isAdmin: session.isAdmin, canCreateRepo: session.canCreateRepo },
+    context: context.value,
     recent: recent.value,
     entities: search.entities.value,
   }),
@@ -196,7 +193,9 @@ watch(query, (text) => {
   lockedMessage.value = ''
   active.value = 0
   const p = parseQuery(text)
-  search.setQuery(p.text, p.checksum !== null || p.mode === 'actions')
+  // A checksum is looked up on the Packages page; the actions list only needs the repositories its actions apply to.
+  const scope = p.checksum !== null ? 'none' : p.mode === 'actions' ? 'repositories' : 'all'
+  search.setQuery(repoSearchTerm(p.text, context.value), scope)
 })
 
 // Results that arrive later must not move the user's selection: keep the same item active.
@@ -219,6 +218,8 @@ watch(
     if (!open) return
     recent.value = loadRecent(window.localStorage, recentStorageKey(session.user?.id))
     active.value = 0
+    // Whether "Create project" is offered depends on the projects list; admins never need it.
+    if (!session.isAdmin) search.warm()
   },
   { immediate: true },
 )
@@ -254,8 +255,17 @@ async function activate(item: PaletteItem | undefined): Promise<void> {
     return
   }
   close()
-  if (item.action === 'toggle-theme') theme.setMode(theme.resolved === 'dark' ? 'light' : 'dark')
-  else if (item.action === 'sign-out') await signOut()
-  else if (item.to) await router.push(item.to)
+  if (item.action) {
+    remember(item.action)
+    await item.action.run(env)
+  } else if (item.to) await env.go(item.to)
+}
+
+/** Keeps a run action in Recent (the visited-path watcher in App records the routes). */
+function remember(action: BoundAction): void {
+  const entry = toActionRecent(action)
+  if (!entry || !session.user?.id) return
+  const key = recentStorageKey(session.user.id)
+  saveRecent(window.localStorage, key, pushRecent(loadRecent(window.localStorage, key), entry))
 }
 </script>

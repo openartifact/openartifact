@@ -17,10 +17,19 @@ import {
   type EntityResults,
   type PaletteItem,
 } from '../palette'
+import type { PaletteContext } from '../paletteActions'
 import type { RecentItem } from '../paletteRecent'
 
-const admin = { isAdmin: true, canCreateRepo: true }
-const dev = { isAdmin: false, canCreateRepo: false }
+const base: PaletteContext = {
+  isAdmin: false,
+  canCreateRepo: false,
+  canCreateProject: false,
+  projectRoles: {},
+  theme: 'light',
+  language: 'en',
+}
+const admin: PaletteContext = { ...base, isAdmin: true, canCreateRepo: true, canCreateProject: true }
+const dev: PaletteContext = base
 
 const item = (title: string, extra: Partial<PaletteItem> = {}): PaletteItem => ({
   id: title,
@@ -28,6 +37,17 @@ const item = (title: string, extra: Partial<PaletteItem> = {}): PaletteItem => (
   title,
   icon: 'repos',
   ...extra,
+})
+
+const repoItem = (name: string, extra: { project?: string } = {}): PaletteItem => ({
+  id: `repo:${name}`,
+  group: 'repositories',
+  title: name,
+  icon: 'repos',
+  format: 'npm',
+  mono: true,
+  to: `/repos/${name}`,
+  repo: { name, format: 'npm', repoType: 'hosted', ...extra },
 })
 
 function groups(raw: string, ctx = admin, entities: EntityResults = EMPTY_ENTITIES, recent: RecentItem[] = []) {
@@ -111,12 +131,12 @@ describe('buildGroups', () => {
   it('shows only actions after ">"', () => {
     expect(ids('>')).toEqual(['actions'])
     expect(titles('>create repo', 'actions')).toEqual(['Create repository'])
-    expect(titles('>theme', 'actions')).toEqual(['Toggle theme'])
+    expect(titles('>theme', 'actions')).toEqual(['Switch to dark theme'])
     expect(ids('>zzzz')).toEqual([])
   })
 
   it('offers the verbs the spec names', () => {
-    expect(titles('>', 'actions')).toEqual(expect.arrayContaining(['Create repository', 'Create project', 'Create access token', 'Toggle theme', 'Sign out']))
+    expect(titles('>', 'actions')).toEqual(expect.arrayContaining(['Create repository', 'Create project', 'Create access token', 'Switch to dark theme', 'Sign out']))
   })
 
   it('finds a page, a settings section and its keywords', () => {
@@ -138,26 +158,66 @@ describe('buildGroups', () => {
     expect(profile.locked).toBe(false)
   })
 
-  it('locks the admin-only actions and repository creation for people who cannot create repositories', () => {
-    const all = groups('>create', dev)[0]!.items
-    const by = Object.fromEntries(all.map((i) => [i.title, i]))
-    expect(by['Create repository']!.locked).toBe(true)
-    expect(by['Create user']!.locked).toBe(true)
-    expect(by['Create release bundle']!.locked).toBe(true)
-    expect(by['Create project']!.locked).toBeFalsy()
-    expect(by['Create access token']!.locked).toBeFalsy()
-    const ok = groups('>create repo', { isAdmin: false, canCreateRepo: true })[0]!.items[0]!
-    expect(ok.locked).toBe(false)
+  it('hides the actions a role may not run instead of listing them locked', () => {
+    const names = (ctx: PaletteContext) => groups('>create', ctx)[0]!.items.map((i) => i.title)
+    expect(names(dev)).toEqual(['Create access token'])
+    expect(names({ ...dev, canCreateRepo: true })).toEqual(['Create repository', 'Create access token'])
+    expect(names({ ...dev, canCreateProject: true })).toEqual(['Create project', 'Create access token'])
+    expect(names(admin)).toEqual(['Create repository', 'Create project', 'Create access token', 'Create user', 'Create release bundle'])
   })
 
-  it('routes the verbs and the actions that are not navigation', () => {
+  it('names the theme the toggle switches to', () => {
+    expect(titles('>theme', 'actions', { ...admin, theme: 'dark' })).toEqual(['Switch to light theme'])
+  })
+
+  it('finds a language by its name and leaves out the current one', () => {
+    expect(titles('>italiano', 'actions')).toEqual(['Change language to Italiano'])
+    expect(titles('>language', 'actions')).toHaveLength(8)
+    expect(titles('>language', 'actions')).not.toContain('Change language to English')
+    expect(titles('>language', 'actions', { ...admin, language: 'auto' })).not.toContain('Change language to the browser default')
+    expect(titles('>', 'actions').some((x) => x.startsWith('Change language'))).toBe(false)
+  })
+
+  it('offers repository actions when the text matches a repository name', () => {
+    const entities: EntityResults = { ...EMPTY_ENTITIES, repositories: [repoItem('web-npm'), repoItem('data-raw', { project: 'data' })] }
+    const names = (raw: string, ctx = admin) =>
+      groups(raw, ctx, entities).find((g) => g.id === 'actions')?.items.map((i) => i.title) ?? []
+    expect(names('web-npm')).toEqual(['Open settings of web-npm', 'Copy install command for web-npm'])
+    expect(names('>web-npm')).toEqual(['Open settings of web-npm', 'Copy install command for web-npm'])
+    expect(names('', admin)).toEqual(['Create repository', 'Create project', 'Create access token', 'Create user'])
+  })
+
+  it('finds a repository action by its verb and the repository in either order', () => {
+    const entities: EntityResults = { ...EMPTY_ENTITIES, repositories: [repoItem('web-npm')] }
+    const names = (raw: string) => groups(raw, admin, entities).find((g) => g.id === 'actions')?.items.map((i) => i.title) ?? []
+    expect(names('>settings web')[0]).toBe('Open settings of web-npm')
+    expect(names('>web copy')[0]).toBe('Copy install command for web-npm')
+    // the repository group still finds the repository from the name part alone
+    expect(groups('settings web', admin, entities).find((g) => g.id === 'repositories')!.items.map((i) => i.title)).toEqual(['web-npm'])
+  })
+
+  it('gives only the best matching repositories their actions', () => {
+    const entities: EntityResults = {
+      ...EMPTY_ENTITIES,
+      repositories: ['web-a', 'web-b', 'web-c', 'web-d'].map((n) => repoItem(n)),
+    }
+    const names = groups('>web', admin, entities)[0]!.items.map((i) => i.title)
+    expect(names.filter((x) => x.startsWith('Open settings of'))).toEqual(['Open settings of web-a', 'Open settings of web-b', 'Open settings of web-c'])
+  })
+
+  it('hides "Open settings of" from people who do not administer the repository', () => {
+    const entities: EntityResults = { ...EMPTY_ENTITIES, repositories: [repoItem('data-raw', { project: 'data' })] }
+    const names = (ctx: PaletteContext) => groups('>data-raw', ctx, entities)[0]!.items.map((i) => i.title)
+    expect(names(dev)).toEqual(['Copy install command for data-raw'])
+    expect(names({ ...dev, projectRoles: { data: 'developer' } })).toEqual(['Copy install command for data-raw'])
+    expect(names({ ...dev, projectRoles: { data: 'maintainer' } })).toEqual(['Open settings of data-raw', 'Copy install command for data-raw'])
+    expect(names({ ...dev, projectRoles: { other: 'owner' } })).toEqual(['Copy install command for data-raw'])
+  })
+
+  it('marks every action as something that runs', () => {
     const all = groups('>', admin)[0]!.items
-    const by = Object.fromEntries(all.map((i) => [i.title, i]))
-    expect(by['Create repository']!.to).toBe('/repos?new=1')
-    expect(by['Create project']!.to).toBe('/projects?new=1')
-    expect(by['Create access token']!.to).toBe('/settings/tokens?new=1')
-    expect(by['Toggle theme']!.action).toBe('toggle-theme')
-    expect(by['Sign out']!.action).toBe('sign-out')
+    expect(all.every((i) => i.action !== undefined && i.to === undefined)).toBe(true)
+    expect(itemHint(all[0]!)).toBe('Action')
   })
 
   it('leads with a checksum lookup routed to the Packages page in checksum mode', () => {
@@ -202,6 +262,20 @@ describe('buildGroups', () => {
     expect(dev1).toEqual(['web-npm'])
     const adm = groups('', admin, EMPTY_ENTITIES, recent).find((g) => g.id === 'recent')!.items
     expect(adm).toHaveLength(4)
+  })
+
+  it('lists the actions the user ran, as long as they may still run them', () => {
+    const recent: RecentItem[] = [
+      { kind: 'action', action: 'create-token' },
+      { kind: 'action', action: 'create-user' },
+      { kind: 'action', action: 'repo-settings', repo: { name: 'data-raw', format: 'npm', repoType: 'hosted', project: 'data' } },
+      { kind: 'action', action: 'no-such-action' },
+      { kind: 'repo', to: '/repos/web-npm', label: 'web-npm' },
+    ]
+    const titlesOf = (ctx: PaletteContext) => groups('', ctx, EMPTY_ENTITIES, recent).find((g) => g.id === 'recent')!.items.map((i) => i.title)
+    expect(titlesOf(admin)).toEqual(['Create access token', 'Create user', 'Open settings of data-raw', 'web-npm'])
+    expect(titlesOf(dev)).toEqual(['Create access token', 'web-npm'])
+    expect(titlesOf({ ...dev, projectRoles: { data: 'owner' } })).toEqual(['Create access token', 'Open settings of data-raw', 'web-npm'])
   })
 
   it('does not show Recent while a query is typed', () => {
