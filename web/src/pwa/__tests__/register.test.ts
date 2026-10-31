@@ -11,8 +11,19 @@ import { t } from '../../i18n'
 class FakeWorker extends EventTarget {
   state = 'installed'
   posted: unknown[] = []
-  postMessage(msg: unknown) {
-    this.posted.push(msg)
+  /** Settles on the first recorded message (the activation request). */
+  readonly firstPost = Promise.withResolvers<void>()
+  constructor(public precached: string[] = []) {
+    super()
+  }
+  postMessage(msg: unknown, transfer?: MessagePort[]) {
+    const m = msg as { type?: string; url?: string }
+    // Answers the release query like sw.ts; only the activation request is recorded.
+    if (m.type === 'HAS_ASSET') transfer?.[0]?.postMessage(this.precached.includes(m.url ?? ''))
+    else {
+      this.posted.push(msg)
+      this.firstPost.resolve()
+    }
   }
 }
 
@@ -128,6 +139,58 @@ describe('registerServiceWorker', () => {
     applies[0]()
     expect(first.posted).toEqual([])
     expect(second.posted).toEqual([{ type: 'SKIP_WAITING' }])
+  })
+
+  it('activates quietly, without an offer, a worker of the release already on screen', async () => {
+    const c = new FakeContainer(reg, true)
+    const applies: Array<() => void> = []
+    let reloads = 0
+    reg.waiting = new FakeWorker(['/assets/index-new.js'])
+    await registerServiceWorker({
+      container: asContainer(c),
+      pageAsset: '/assets/index-new.js',
+      reload: () => reloads++,
+      onUpdate: (apply) => applies.push(apply),
+    })
+    await reg.waiting.firstPost.promise
+
+    expect(applies).toHaveLength(0)
+    expect(reg.waiting.posted).toEqual([{ type: 'SKIP_WAITING' }])
+    c.dispatchEvent(new Event('controllerchange'))
+    expect(reloads).toBe(0)
+  })
+
+  it('offers the reload when the page runs an older release than the waiting worker', async () => {
+    const c = new FakeContainer(reg, true)
+    const offered = Promise.withResolvers<void>()
+    reg.waiting = new FakeWorker(['/assets/index-new.js'])
+    await registerServiceWorker({
+      container: asContainer(c),
+      pageAsset: '/assets/index-old.js',
+      onUpdate: () => offered.resolve(),
+    })
+
+    await offered.promise
+    expect(reg.waiting.posted).toEqual([])
+  })
+
+  it('reloads at once when another tab already activated the offered worker', async () => {
+    const c = new FakeContainer(reg, true)
+    const applies: Array<() => void> = []
+    let reloads = 0
+    const w = new FakeWorker()
+    reg.waiting = w
+    await registerServiceWorker({ container: asContainer(c), reload: () => reloads++, onUpdate: (a) => applies.push(a) })
+
+    // The other tab's Reload activated it: no waiting worker is left and no controllerchange will follow here.
+    w.state = 'activated'
+    reg.waiting = null
+    c.dispatchEvent(new Event('controllerchange'))
+    expect(reloads).toBe(0)
+
+    applies[0]()
+    expect(reloads).toBe(1)
+    expect(w.posted).toEqual([])
   })
 
   it('survives a failed registration', async () => {

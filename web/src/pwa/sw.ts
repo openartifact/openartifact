@@ -82,6 +82,8 @@ sw.addEventListener('activate', (event) => {
 
 sw.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') void sw.skipWaiting()
+  // register.ts asks whether the page on screen is already this release.
+  if (event.data && event.data.type === 'HAS_ASSET') event.ports[0]?.postMessage(precached.has(String(event.data.url)))
 })
 
 sw.addEventListener('fetch', (event) => {
