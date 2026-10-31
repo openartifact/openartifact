@@ -8,8 +8,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/presign"
@@ -29,6 +31,10 @@ import (
 //     config.json "dl" template (cached under "config.json") and the digest from
 //     the crate's index entry; bytes that do not match its cksum are refused and
 //     never cached.
+//
+// With a minimum age (see minage.go) the index file is rendered without the
+// entries whose "pubtime" is too young (an entry without one stays), and a
+// crate file of such a version is refused.
 
 // cargoConfigKey is the cache key of the upstream's own config.json.
 const cargoConfigKey = "config.json"
@@ -84,13 +90,74 @@ var cargoConfigDoc = metaDoc{ //nolint:gochecknoglobals // read-only descriptor
 	bad:   badDocUpstream,
 }
 
+// serveCargoIndex answers an index file: verbatim, or with the versions the
+// minimum-age gate holds back left out (a crate none of whose versions is old
+// enough is not found, as a crate without versions is).
 func (s *Service) serveCargoIndex(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgcargo.Path) {
-	s.serveVerbatim(w, r, repo, cargoIndexDoc(p.IndexPath))
+	if minAge(repo) == 0 {
+		s.serveVerbatim(w, r, repo, cargoIndexDoc(p.IndexPath))
+		return
+	}
+
+	now := time.Now()
+	stamp := gateStamp(repo, now)
+
+	s.serveRendered(w, r, repo, renderedDoc{
+		metaDoc: cargoIndexDoc(p.IndexPath),
+		maxAge:  cargoIndexMaxAge,
+		// The rendering depends on the cached blob and on how many versions the
+		// gate holds back at this time.
+		etag: func(blobKey string) string { return `"` + blobKey + `~` + stamp + `"` },
+		render: func(body []byte, res *resolution) ([]byte, string, error) {
+			out, err := filterCargoIndex(repo, body, now)
+
+			ct := res.entry.ContentType
+			if ct == "" {
+				ct = "text/plain"
+			}
+
+			return out, ct, err
+		},
+	})
+}
+
+// cargoIndexMaxAge is how long shared caches may reuse the gated rendering of
+// a public repository's index file.
+const cargoIndexMaxAge = 60
+
+// filterCargoIndex leaves out of the index file doc the entries whose "pubtime"
+// is younger than repo's minimum age at now; an entry without a pubtime stays.
+// It is errNotFound when no entry is left, and wraps errUnusableDoc when doc
+// does not parse.
+func filterCargoIndex(repo *models.Repository, doc []byte, now time.Time) ([]byte, error) {
+	entries, err := pkgcargo.ParseIndex(doc)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", errUnusableDoc, err)
+	}
+
+	out := make([]byte, 0, len(doc))
+
+	for _, e := range entries {
+		if tooNew(repo, e.Published(), now) {
+			continue
+		}
+
+		out = append(out, e.Line...)
+		out = append(out, '\n')
+	}
+
+	if len(out) == 0 {
+		return nil, errNotFound
+	}
+
+	return out, nil
 }
 
 func (s *Service) serveCargoCrate(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgcargo.Path) {
+	now := time.Now()
+
 	s.serveDownload(w, r, repo, "api/v1/crates/"+p.Crate+"/"+p.Version+"/download", func(ctx context.Context) (download, error) {
-		return s.locateCargoCrate(ctx, repo, p)
+		return s.locateCargoCrate(ctx, repo, p, now)
 	})
 }
 
@@ -115,8 +182,9 @@ func (s *Service) cargoDownloadTemplate(ctx context.Context, repo *models.Reposi
 
 // locateCargoCrate finds one crate file: the URL the upstream's dl template
 // gives, cached only when it matches the cksum of its index entry. A version
-// the index does not list is errNotFound.
-func (s *Service) locateCargoCrate(ctx context.Context, repo *models.Repository, p pkgcargo.Path) (download, error) {
+// the index does not list is errNotFound, one younger than the repository's
+// minimum age at now is errTooNew.
+func (s *Service) locateCargoCrate(ctx context.Context, repo *models.Repository, p pkgcargo.Path, now time.Time) (download, error) {
 	crate := strings.ToLower(p.Crate)
 
 	entry, _, err := parseDoc(ctx, s, repo, cargoIndexDoc(pkgcargo.IndexPathFor(crate)),
@@ -134,6 +202,10 @@ func (s *Service) locateCargoCrate(ctx context.Context, repo *models.Repository,
 
 	if entry == nil {
 		return download{}, errNotFound
+	}
+
+	if tooNew(repo, entry.Published(), now) {
+		return download{}, fmt.Errorf("crate %s %s: %w", p.Crate, p.Version, errTooNew)
 	}
 
 	if !pkgcargo.ValidCksum(entry.Cksum) {

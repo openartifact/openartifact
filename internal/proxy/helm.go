@@ -15,6 +15,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/pathseg"
@@ -32,7 +33,10 @@ import (
 //     is involved, so the cache stays upstream-shaped and the ETag does not
 //     depend on the host the request came in on.
 //     Versions that only list URLs that cannot be mirrored (oci://) are left
-//     out: this server could not serve them.
+//     out: this server could not serve them. So are versions younger than the
+//     minimum age (min_age_hours) by their "created" timestamp, and a file only
+//     such versions list is refused (errTooNew); a version without a parsable
+//     "created" passes.
 //   - Charts (GET /charts/<file>) are cached under "charts/<file>", immutable
 //     (or for the repository TTL when the index lists no digest for them).
 //     The upstream URL and digest come from the cached index entry whose URL
@@ -117,19 +121,22 @@ var helmIndexDoc = metaDoc{ //nolint:gochecknoglobals // read-only descriptor
 }
 
 // helmIndexETag identifies one rendering of a cached index: the upstream body
-// and everything the rewritten URLs derive from.
-func (s *Service) helmIndexETag(repo *models.Repository, blobKey string) string {
-	sum := sha256.Sum256([]byte(blobKey + "\x00" + repo.Name + "\x00" + repo.UpstreamURL))
+// everything the rewritten URLs derive from and the minimum-age gate (which
+// versions it lets through at now).
+func (s *Service) helmIndexETag(repo *models.Repository, blobKey string, now time.Time) string {
+	sum := sha256.Sum256([]byte(blobKey + "\x00" + repo.Name + "\x00" + repo.UpstreamURL + "\x00" + gateStamp(repo, now)))
 	return `"` + hex.EncodeToString(sum[:]) + `"`
 }
 
 func (s *Service) serveHelmIndex(w http.ResponseWriter, r *http.Request, repo *models.Repository) {
+	now := time.Now()
+
 	s.serveRendered(w, r, repo, renderedDoc{
 		metaDoc: helmIndexDoc,
 		maxAge:  helmIndexMaxAge,
-		etag:    func(blobKey string) string { return s.helmIndexETag(repo, blobKey) },
+		etag:    func(blobKey string) string { return s.helmIndexETag(repo, blobKey, now) },
 		render: func(body []byte, _ *resolution) ([]byte, string, error) {
-			out, err := s.renderHelmIndex(repo, body)
+			out, err := s.renderHelmIndex(repo, body, now)
 			return out, "application/yaml", err
 		},
 	})
@@ -168,8 +175,9 @@ func resolveChartURL(upstream *url.URL, raw string) (*url.URL, bool) {
 }
 
 // renderHelmIndex points every chart URL of the cached upstream index at this
-// repository.
-func (s *Service) renderHelmIndex(repo *models.Repository, body []byte) ([]byte, error) {
+// repository. A version the minimum age holds back at now is left out (after
+// its files were named: the names of the later ones do not depend on the gate).
+func (s *Service) renderHelmIndex(repo *models.Repository, body []byte, now time.Time) ([]byte, error) {
 	ix, err := pkghelm.ParseIndex(body)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errNotHelmIndex, err)
@@ -201,6 +209,10 @@ func (s *Service) renderHelmIndex(repo *models.Repository, body []byte) ([]byte,
 			}
 		}
 
+		if tooNew(repo, cv.Published(), now) {
+			return nil
+		}
+
 		return out
 	})
 
@@ -214,15 +226,18 @@ func (s *Service) renderHelmIndex(repo *models.Repository, body []byte) ([]byte,
 
 func (s *Service) serveHelmChart(w http.ResponseWriter, r *http.Request, repo *models.Repository, file string) {
 	key := helmChartsDir + file
+	now := time.Now()
+
 	s.serveDownload(w, r, repo, key, func(ctx context.Context) (download, error) {
-		return s.locateHelmChart(ctx, repo, file, key)
+		return s.locateHelmChart(ctx, repo, file, key, now)
 	})
 }
 
 // locateHelmChart finds file in the cached index: where it lives upstream and
 // the digest it must have; bytes that do not match are refused and never
-// cached. A file no version of the index lists is errNotFound.
-func (s *Service) locateHelmChart(ctx context.Context, repo *models.Repository, file, key string) (download, error) {
+// cached. A file no version of the index lists is errNotFound; one that only
+// versions younger than the minimum age at now list is errTooNew.
+func (s *Service) locateHelmChart(ctx context.Context, repo *models.Repository, file, key string, now time.Time) (download, error) {
 	ix, _, err := parseDoc(ctx, s, repo, helmIndexDoc, func(body []byte, _ *resolution) (*pkghelm.Index, error) {
 		return pkghelm.ParseIndex(body)
 	})
@@ -236,49 +251,69 @@ func (s *Service) locateHelmChart(ctx context.Context, repo *models.Repository, 
 		return download{}, errInternal
 	}
 
-	target, digest, found := locateHelmFile(ix, upstream, file)
+	held := func(cv pkghelm.ChartVersion) bool { return tooNew(repo, cv.Published(), now) }
+
+	f, found := locateHelmFile(ix, upstream, file, held)
 	if !found {
 		return download{}, errNotFound
 	}
 
-	want, ok := helmDigest(digest)
+	if f.held {
+		return download{}, errTooNew
+	}
+
+	want, ok := helmDigest(f.digest)
 	if !ok {
-		s.log.Warnw("upstream helm index lists an unusable digest, refusing", "repo", repo.Name, "path", key, "digest", digest)
+		s.log.Warnw("upstream helm index lists an unusable digest, refusing", "repo", repo.Name, "path", key, "digest", f.digest)
 		return download{}, errVerify
 	}
 
-	return download{url: target.String(), opts: fetchOpts{wantSHA256: want, unverified: want == ""}}, nil
+	return download{url: f.target.String(), opts: fetchOpts{wantSHA256: want, unverified: want == ""}}, nil
+}
+
+// helmFile is a chart file located in an index.
+type helmFile struct {
+	target *url.URL
+	digest string
+	// held is set when every version that lists the file is held back by the
+	// minimum age.
+	held bool
 }
 
 // locateHelmFile returns where the charts/<file> of the index lives upstream
 // and the digest it must have. A <chart>.prov file is not listed in an index:
-// it sits next to its chart and has no digest.
-func locateHelmFile(ix *pkghelm.Index, upstream *url.URL, file string) (*url.URL, string, bool) {
-	if target, digest, found := findHelmChart(ix, upstream, file); found {
-		return target, digest, true
+// it sits next to its chart and has no digest. held says which versions the
+// minimum age holds back.
+func locateHelmFile(ix *pkghelm.Index, upstream *url.URL, file string, held func(pkghelm.ChartVersion) bool) (helmFile, bool) {
+	if f, found := findHelmChart(ix, upstream, file, held); found {
+		return f, true
 	}
 
 	chart, isProv := strings.CutSuffix(file, helmProvExt)
 	if !isProv {
-		return nil, "", false
+		return helmFile{}, false
 	}
 
-	target, _, found := findHelmChart(ix, upstream, chart)
+	f, found := findHelmChart(ix, upstream, chart, held)
 	if !found {
-		return nil, "", false
+		return helmFile{}, false
 	}
 
-	prov := *target
+	prov := *f.target
 	prov.Path += helmProvExt
 	prov.RawPath = ""
 
-	return &prov, "", true
+	return helmFile{target: &prov, held: f.held}, true
 }
 
 // findHelmChart returns the URL and digest of the first index entry that lists
-// a chart URL ending in file.
-func findHelmChart(ix *pkghelm.Index, upstream *url.URL, file string) (*url.URL, string, bool) {
-	var namer helmFileNamer
+// a chart URL ending in file and is not held back; when only held entries list
+// it, the first of them, flagged.
+func findHelmChart(ix *pkghelm.Index, upstream *url.URL, file string, held func(pkghelm.ChartVersion) bool) (helmFile, bool) {
+	var (
+		namer helmFileNamer
+		first *helmFile
+	)
 
 	for cv := range ix.Versions() {
 		for _, raw := range cv.URLs {
@@ -287,13 +322,25 @@ func findHelmChart(ix *pkghelm.Index, upstream *url.URL, file string) (*url.URL,
 				continue
 			}
 
-			if f, ok := namer.name(target); ok && f == file {
-				return target, cv.Digest, true
+			if f, ok := namer.name(target); !ok || f != file {
+				continue
+			}
+
+			if !held(cv) {
+				return helmFile{target: target, digest: cv.Digest}, true
+			}
+
+			if first == nil {
+				first = &helmFile{target: target, digest: cv.Digest, held: true}
 			}
 		}
 	}
 
-	return nil, "", false
+	if first == nil {
+		return helmFile{}, false
+	}
+
+	return *first, true
 }
 
 // helmFileNamer assigns every chart URL of an index the file name it is served

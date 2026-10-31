@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
@@ -45,6 +46,9 @@ import (
 //     version it picked) and the legacy specs.4.8.gz family (gem search, gem list
 //     -r) are cached verbatim after a structural check (zlib/gzip stream holding a
 //     Marshal 4.8 document).
+//   - With a minimum age info/<gem> is served without the versions created too
+//     recently (dated by the upstream's API) and their gems and gemspecs are
+//     refused (rubygems_minage.go).
 
 const (
 	// rubygemsMaxAge is how long shared caches may reuse a public repository's
@@ -104,7 +108,35 @@ func (s *Service) serveRubyGems(w http.ResponseWriter, r *http.Request, repo *mo
 		return
 	}
 
-	s.serveVerbatim(w, r, repo, rubygemsDoc(key, p.Kind))
+	switch {
+	case p.Kind == compactindex.KindInfo && minAge(repo) > 0:
+		s.serveRubyGemsInfo(w, r, repo, p, key)
+	case p.Kind == compactindex.KindGemspec && minAge(repo) > 0:
+		s.serveRubyGemspec(w, r, repo, p, key)
+	default:
+		s.serveVerbatim(w, r, repo, rubygemsDoc(key, p.Kind))
+	}
+}
+
+// serveRubyGemspec answers a gemspec, refused when the version it describes
+// is too new (checked only when the file is not cached yet).
+func (s *Service) serveRubyGemspec(w http.ResponseWriter, r *http.Request, repo *models.Repository, p compactindex.Path, key string) {
+	d := rubygemsDoc(key, p.Kind)
+	d.locate = func(ctx context.Context) (string, error) {
+		if err := s.checkRubyGemspec(ctx, repo, p.File, time.Now()); err != nil {
+			return "", err
+		}
+
+		target, err := upstreamURL(repo.UpstreamURL, key)
+		if err != nil {
+			s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
+			return "", errInternal
+		}
+
+		return target, nil
+	}
+
+	s.serveVerbatim(w, r, repo, d)
 }
 
 // rubygemsDoc is a compact index file, gemspec or legacy specs index, cached
@@ -230,6 +262,12 @@ func (s *Service) locateRubyGem(ctx context.Context, repo *models.Repository, p 
 			continue
 		}
 
+		if minAge(repo) > 0 {
+			if cerr := s.checkRubyGemsFile(ctx, repo, sp, true, time.Now()); cerr != nil {
+				return download{}, cerr
+			}
+		}
+
 		if line.Checksum == "" {
 			return download{url: target, opts: fetchOpts{unverified: true}}, nil
 		}
@@ -298,6 +336,24 @@ func (s *Service) writeCompactEntry(
 		return
 	}
 
+	digest := ""
+	if raw, derr := hex.DecodeString(entry.BlobKey); derr == nil {
+		digest = `sha-256="` + base64.StdEncoding.EncodeToString(raw) + `"`
+	}
+
+	s.writeCompactFile(w, r, repo, md5sum, digest, entry.SizeBytes, body)
+}
+
+// writeCompactFile serves a compact index file of size bytes whose MD5 is
+// md5sum and whose SHA-256 is the Repr-Digest value digest ("" for none).
+func (s *Service) writeCompactFile(
+	w http.ResponseWriter,
+	r *http.Request,
+	repo *models.Repository,
+	md5sum, digest string,
+	size int64,
+	body io.Reader,
+) {
 	etag := `"` + md5sum + `"`
 	if base.Revalidate(w, r, repo.Public, etag, rubygemsMaxAge) {
 		return
@@ -307,24 +363,23 @@ func (s *Service) writeCompactEntry(
 	h.Set("Content-Type", "text/plain; charset=utf-8")
 	h.Set("Accept-Ranges", "bytes")
 
-	if raw, derr := hex.DecodeString(entry.BlobKey); derr == nil {
-		digest := `sha-256="` + base64.StdEncoding.EncodeToString(raw) + `"`
+	if digest != "" {
 		h.Set("Digest", digest)
 		h.Set("Repr-Digest", digest)
 	}
 
-	start, length, status := byteRange(r, entry.SizeBytes, etag)
+	start, length, status := byteRange(r, size, etag)
 
 	switch status {
 	case http.StatusRequestedRangeNotSatisfiable:
-		h.Set("Content-Range", "bytes */"+strconv.FormatInt(entry.SizeBytes, 10))
+		h.Set("Content-Range", "bytes */"+strconv.FormatInt(size, 10))
 		w.WriteHeader(status)
 
 		return
 	case http.StatusPartialContent:
 		h.Set(
 			"Content-Range",
-			"bytes "+strconv.FormatInt(start, 10)+"-"+strconv.FormatInt(start+length-1, 10)+"/"+strconv.FormatInt(entry.SizeBytes, 10),
+			"bytes "+strconv.FormatInt(start, 10)+"-"+strconv.FormatInt(start+length-1, 10)+"/"+strconv.FormatInt(size, 10),
 		)
 	}
 

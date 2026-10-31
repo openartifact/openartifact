@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
@@ -50,6 +51,9 @@ import (
 //     whatever the upstream publishes, must be a zip with a nuspec; a body
 //     that fails is refused and never cached.
 //   - Search and autocomplete are passed through uncached.
+//   - With a minimum age the versions published too recently are left out of
+//     the registration and flat container documents and their files refused
+//     (nuget_minage.go).
 //
 // Ids and versions are lower-cased (versions normalized) as the protocol
 // prescribes, so every spelling shares one cache entry.
@@ -551,15 +555,32 @@ func (s *Service) serveNuGetDoc(w http.ResponseWriter, r *http.Request, repo *mo
 
 	repoURL := s.nugetRepoURL(w, r, repo)
 
+	gate, err := s.nugetGateFor(r.Context(), repo, idx, p, time.Now())
+	if err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
+
 	s.serveRendered(w, r, repo, renderedDoc{
 		metaDoc: s.nugetDoc(repo, idx, p),
 		maxAge:  nugetMetaMaxAge,
 		// The rendering depends on the service index and the repository URL
-		// (origin included) as well as on the cached document.
-		etag: func(blobKey string) string { return nugetETag(blobKey, idxRes.entry.BlobKey, repoURL) },
+		// (origin included) as well as on the cached document, and on the
+		// minimum age gate (which hides versions until they are old enough).
+		etag: func(blobKey string) string {
+			if stamp := gate.stamp(); stamp != "" {
+				return nugetETag(blobKey, idxRes.entry.BlobKey, repoURL, stamp)
+			}
+
+			return nugetETag(blobKey, idxRes.entry.BlobKey, repoURL)
+		},
 		render: func(body []byte, _ *resolution) ([]byte, string, error) {
 			doc, gerr := gunzipDoc(body)
 			if gerr != nil {
+				return nil, "", gerr
+			}
+
+			if doc, gerr = gate.apply(doc, p); gerr != nil {
 				return nil, "", gerr
 			}
 
@@ -610,65 +631,28 @@ func (s *Service) locateNuGetPackageFile(ctx context.Context, repo *models.Repos
 		opts: fetchOpts{verify: verifyNuspec},
 	}
 
-	if strings.HasSuffix(p.file, ".nupkg") {
-		digest, derr := s.nugetDigest(ctx, repo, idx, p)
-		if derr != nil {
-			return download{}, derr
+	now := time.Now()
+	nupkg := strings.HasSuffix(p.file, ".nupkg")
+
+	if nupkg || minAge(repo) > 0 {
+		meta, merr := s.nugetLeafMeta(ctx, repo, idx, p, nupkg)
+		if merr != nil {
+			return download{}, merr
 		}
 
-		d.opts.verify = func(spool io.ReadSeeker) error { return verifyNupkg(spool, digest) }
-		// Without a published hash (leaf or catalog entry missing) only the
-		// structure is checked. A size alone does not vouch for the content.
-		d.opts.unverified = len(digest.Hash) == 0
+		if tooNew(repo, meta.published, now) {
+			return download{}, fmt.Errorf("nuget %s %s: %w", p.id, p.version, errTooNew)
+		}
+
+		if nupkg {
+			d.opts.verify = func(spool io.ReadSeeker) error { return verifyNupkg(spool, meta.digest) }
+			// Without a published hash (leaf or catalog entry missing) only the
+			// structure is checked. A size alone does not vouch for the content.
+			d.opts.unverified = len(meta.digest.Hash) == 0
+		}
 	}
 
 	return d, nil
-}
-
-// nugetDigest looks up what the upstream publishes about a package: the
-// catalog entry its registration leaf names carries packageHash and
-// packageSize. An upstream without a leaf or catalog (or whose catalog entry
-// has neither) yields the zero Digest; any other failure is returned, so a
-// package is never accepted unverified because the check could not run.
-func (s *Service) nugetDigest(
-	ctx context.Context,
-	repo *models.Repository,
-	idx *pkgnuget.ServiceIndex,
-	p nugetPath,
-) (pkgnuget.Digest, error) {
-	leafPath := nugetPath{kind: nugetRegLeaf, id: p.id, version: p.version}
-
-	catalog, _, err := parseDoc(ctx, s, repo, s.nugetDoc(repo, idx, leafPath),
-		func(body []byte, _ *resolution) (string, error) {
-			leaf, gerr := gunzipDoc(body)
-			if gerr != nil {
-				return "", gerr
-			}
-
-			return pkgnuget.CatalogEntryURL(leaf), nil
-		})
-	if errors.Is(err, errNotFound) {
-		return pkgnuget.Digest{}, nil
-	}
-
-	if err != nil {
-		return pkgnuget.Digest{}, err
-	}
-
-	if catalog == "" || catalog == nugetDocURL(idx, leafPath) {
-		return pkgnuget.Digest{}, nil
-	}
-
-	doc, err := s.fetchNuGetDocument(ctx, repo, catalog)
-	if errors.Is(err, errNotFound) {
-		return pkgnuget.Digest{}, nil
-	}
-
-	if err != nil {
-		return pkgnuget.Digest{}, err
-	}
-
-	return pkgnuget.ParseCatalogDigest(doc), nil
 }
 
 // verifyNupkg refuses a package that contradicts its published digest or is

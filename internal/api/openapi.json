@@ -705,6 +705,10 @@
             "type": "integer",
             "description": "Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000."
           },
+          "min_age_hours": {
+            "type": "integer",
+            "description": "Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600."
+          },
           "blocked": {
             "type": "boolean",
             "description": "Whether the repository is blocked"
@@ -8039,6 +8043,10 @@
                   "max_stale_seconds": {
                     "type": "integer",
                     "description": "Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000."
+                  },
+                  "min_age_hours": {
+                    "type": "integer",
+                    "description": "Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600."
                   },
                   "blocked": {
                     "type": "boolean"
@@ -18123,6 +18131,10 @@
                   "max_stale_seconds": {
                     "type": "integer"
                   },
+                  "min_age_hours": {
+                    "type": "integer",
+                    "description": "Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600."
+                  },
                   "member_repos": {
                     "type": "array",
                     "items": {
@@ -19855,6 +19867,10 @@
                   "max_stale_seconds": {
                     "type": "integer",
                     "description": "Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000."
+                  },
+                  "min_age_hours": {
+                    "type": "integer",
+                    "description": "Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600."
                   },
                   "blocked": {
                     "type": "boolean"

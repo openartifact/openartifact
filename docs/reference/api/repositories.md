@@ -95,6 +95,7 @@ Create a new repository (admin only)
 | `max_stale_seconds` | integer | no | Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000. |
 | `member_repos` | array of string | no | For group repos: ordered member repository names (first hit wins). Members must be hosted or proxy repositories of the group's format; groups cannot be nested. |
 | `merge_proxy_versions` | boolean | no | Group repositories only, administrators only (403 otherwise). Default false: hosted members win a package name and proxy versions of the same name are hidden. true merges proxy versions into the group. |
+| `min_age_hours` | integer | no | Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600. |
 | `name` | string | yes | Repository name (1-100 alphanumeric/hyphen/underscore) |
 | `negative_cache_ttl_seconds` | integer | no | - |
 | `presign_downloads` | boolean | no | Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected. Nullable. |
@@ -1795,6 +1796,7 @@ Update repository configuration. Requires global admin, or the maintainer or own
 | `max_stale_seconds` | integer | no | Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000. |
 | `member_repos` | array of string | no | - |
 | `merge_proxy_versions` | boolean | no | Group repositories only, administrators only (403 otherwise). Absent leaves it unchanged. |
+| `min_age_hours` | integer | no | Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600. |
 | `negative_cache_ttl_seconds` | integer | no | - |
 | `presign_downloads` | boolean | no | Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected. Omit to leave unchanged; send null to inherit. Nullable. |
 | `project` | string | no | Move the repository to the named project (global admin only; unknown project: 404). Access of the old and new project's members changes immediately. |

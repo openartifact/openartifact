@@ -33,6 +33,8 @@ type fakeGalaxy struct {
 	versions []string
 	tarballs map[string]string // file name -> bytes served
 	pageMax  int
+	// created overrides the created_at of a version (default: a fixed 2024 date).
+	created map[string]string
 	// contentHost, when set, is the origin of download_url and the signed URLs.
 	contentHost string
 	// downloadAuth records the Authorization header the tarball request carried.
@@ -88,6 +90,14 @@ func (g *fakeGalaxy) handler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (g *fakeGalaxy) createdAt(version, def string) string {
+	if c, ok := g.created[version]; ok {
+		return c
+	}
+
+	return def
+}
+
 func (g *fakeGalaxy) writeList(w http.ResponseWriter, r *http.Request, self string) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
@@ -97,10 +107,11 @@ func (g *fakeGalaxy) writeList(w http.ResponseWriter, r *http.Request, self stri
 
 	for i := offset; i < min(offset+limit, len(g.versions)); i++ {
 		v := g.versions[i]
+		created := g.createdAt(v, "2024-01-0"+strconv.Itoa(i+1)+"T00:00:00.000000Z")
 		data = append(data, map[string]any{
 			"version": v, "href": self + ansibleCanonical + "index/ns/demo/versions/" + v + "/",
-			"created_at":       "2024-01-0" + strconv.Itoa(i+1) + "T00:00:00.000000Z",
-			"updated_at":       "2024-01-0" + strconv.Itoa(i+1) + "T00:00:00.000000Z",
+			"created_at":       created,
+			"updated_at":       created,
 			"requires_ansible": ">=2.14", "marks": []string{},
 		})
 	}
@@ -133,7 +144,7 @@ func (g *fakeGalaxy) writeVersion(w http.ResponseWriter, v, self string) {
 
 	doc, _ := json.Marshal(map[string]any{
 		"version": v, "href": self + ansibleCanonical + "index/ns/demo/versions/" + v + "/",
-		"created_at": "2024-01-01T00:00:00.000000Z", "updated_at": "2024-01-01T00:00:00.000000Z",
+		"created_at": g.createdAt(v, "2024-01-01T00:00:00.000000Z"), "updated_at": g.createdAt(v, "2024-01-01T00:00:00.000000Z"),
 		"marks":        []string{},
 		"artifact":     map[string]any{"filename": file, "sha256": sum(ansibleTarballFor(v)), "size": len(body)},
 		"collection":   map[string]string{"name": "demo", "href": self + ansibleCanonical + "index/ns/demo/"},

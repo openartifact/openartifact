@@ -1065,8 +1065,9 @@ type Repository struct {
 	// Groups only. false (default): when a hosted member holds a package name, proxy members' versions and files of that name are hidden. true: versions of all members are merged.
 	MergeProxyVersions bool `db:"merge_proxy_versions" json:"merge_proxy_versions"`
 	// Hosted rpm repositories only: sign uploaded RPMs with the active GPG key.
-	SignPackages bool `db:"sign_packages" json:"sign_packages"`
-	Federated    bool `db:"federated" json:"federated"`
+	SignPackages bool  `db:"sign_packages" json:"sign_packages"`
+	Federated    bool  `db:"federated" json:"federated"`
+	MinAgeHours  int32 `db:"min_age_hours" json:"min_age_hours"`
 }
 
 type RepositoryAttestationAttach struct {

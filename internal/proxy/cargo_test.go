@@ -29,6 +29,7 @@ type fakeCargo struct {
 	dlTemplate string            // overrides the dl advertised in config.json
 	rawConfig  string            // overrides the whole config.json
 	badIndex   bool              // answer index files with an HTML page
+	pubtime    map[string]string // "<crate>/<version>" -> pubtime of its index line (none by default)
 	down       atomic.Bool
 	indexPaths []string
 	indexAuth  []string
@@ -66,10 +67,16 @@ func (g *fakeCargo) cksum(key string) string {
 }
 
 func (g *fakeCargo) line(crate, vers string) string {
-	b, _ := json.Marshal(map[string]any{
+	entry := map[string]any{
 		"name": crate, "vers": vers, "deps": []any{}, "features": map[string]any{},
 		"cksum": g.cksum(crate + "/" + vers), "yanked": false,
-	})
+	}
+
+	if t, ok := g.pubtime[crate+"/"+vers]; ok {
+		entry["pubtime"] = t
+	}
+
+	b, _ := json.Marshal(entry)
 
 	return string(b)
 }

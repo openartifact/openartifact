@@ -73,6 +73,7 @@ curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
 | `cache_ttl_seconds` | proxy | Default 3600 (1 h), max 2592000 (30 d). |
 | `negative_cache_ttl_seconds` | proxy | Default 60, max 86400 (1 d). |
 | `max_stale_seconds` | proxy | Default 604800 (7 d), max 31536000 (365 d), `0` disables serve-stale. |
+| `min_age_hours` | proxy | Default `0` (off), max 87600 (10 y). See [Minimum age](#minimum-age). |
 | `member_repos` | group | Member repository names in priority order, at most 200. |
 | `trash_retention_days` | all | Days deleted items stay in the [trash](../operations/trash.md). Integer `>= 0`, or `null`/omitted for the server default (`OPENARTIFACT_TRASH_RETENTION`, 7); `0` deletes permanently and immediately. Negative is `400`. |
 | `immutable_releases` | all | Default `false`. When `true`, deleting or overwriting a released version is `409` unless an admin passes `?force=true` ([per format](../operations/trash.md#immutable-releases)). |
@@ -117,6 +118,17 @@ Any upstream failure other than 404/410 answers `502` with a generic message and
 When an expired entry cannot be revalidated because the upstream is unreachable (including a host name that does not resolve), times out (30 s for response headers), answers 5xx or breaks the transfer, the cached copy is served with `200` and `Warning: 110 - "Response is Stale"`, and a warning is logged. This holds for up to `max_stale_seconds` past the entry's expiry; with `0` the client gets `502`. A successful refetch replaces the entry. 401/403 from the upstream are not treated as an outage and stay `502`.
 
 The proxy cache worker runs every 5 minutes and deletes entries expired by more than one hour. Cached files are additionally kept for the repository's `max_stale_seconds`, so a larger value trades disk for availability. Blobs no other cache entry references are then deleted.
+
+### Minimum age
+
+`min_age_hours` hides versions the upstream published recently, so a freshly published (possibly malicious) release is not picked up straight away. A version the upstream published less than `min_age_hours` ago has both effects:
+
+- it is dropped from the metadata the proxy renders, and "latest" style pointers move to the newest remaining version; a package whose versions are all too new behaves like a package with no versions;
+- its files are refused on download with `403` and the reason in the body.
+
+A version whose publish time the upstream does not state is not hidden. Files already in the cache stay served. A version becomes visible by itself once it is old enough (rendered documents are revalidated at most every few minutes). Groups containing the proxy inherit the filter.
+
+The gate applies to the formats whose upstream metadata dates each version: npm, pypi, composer, helm, nuget, rubygems, go, cargo, conda, ansible. A conda proxy rebuilds `repodata.json` and `.zst` when the gate is on (`.bz2` answers `404`). Other proxy formats (for example deb, rpm, apk, pacman, maven, docker, terraform, raw) ignore the setting because their upstream metadata dates no version.
 
 ### Behavior notes
 

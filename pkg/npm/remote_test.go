@@ -14,6 +14,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParsePath(t *testing.T) {
@@ -120,23 +121,37 @@ func TestRewriteTarballsRejectsGarbage(t *testing.T) {
 	}
 }
 
-func TestFindTarball(t *testing.T) {
+func TestFindRelease(t *testing.T) {
 	doc := `{"versions":{
 	  "1.0.0":{"dist":{"tarball":"https://r/p/-/p-1.0.0.tgz","shasum":"s1"}},
 	  "2.0.0":{"dist":{"tarball":"https://r/p/-/renamed.tgz","integrity":"sha512-X","shasum":"s2"}}}}`
 
-	d, ok, err := FindTarball([]byte(doc), "p", "p-1.0.0.tgz")
-	if err != nil || !ok || d.Shasum != "s1" || d.Tarball != "https://r/p/-/p-1.0.0.tgz" {
-		t.Errorf("conventional name: %+v %v %v", d, ok, err)
+	r, ok, err := FindRelease([]byte(doc), "p", "p-1.0.0.tgz")
+	if d := r.Dist; err != nil || !ok || r.Version != "1.0.0" || d.Shasum != "s1" || d.Tarball != "https://r/p/-/p-1.0.0.tgz" {
+		t.Errorf("conventional name: %+v %v %v", r, ok, err)
 	}
 
-	d, ok, err = FindTarball([]byte(doc), "p", "renamed.tgz")
-	if err != nil || !ok || d.Integrity != "sha512-X" {
-		t.Errorf("unconventional name (scan): %+v %v %v", d, ok, err)
+	r, ok, err = FindRelease([]byte(doc), "p", "renamed.tgz")
+	if err != nil || !ok || r.Version != "2.0.0" || r.Dist.Integrity != "sha512-X" {
+		t.Errorf("unconventional name (scan): %+v %v %v", r, ok, err)
 	}
 
-	if _, ok, _ := FindTarball([]byte(doc), "p", "p-3.0.0.tgz"); ok {
+	if _, ok, _ := FindRelease([]byte(doc), "p", "p-3.0.0.tgz"); ok {
 		t.Error("unlisted tarball found")
+	}
+}
+
+func TestFindReleasePublished(t *testing.T) {
+	doc := `{"versions":{"1.0.0":{"dist":{"tarball":"https://r/p/-/p-1.0.0.tgz"}},"2.0.0":{"dist":{"tarball":"https://r/p/-/p-2.0.0.tgz"}}},
+	  "time":{"created":"2020-01-01T00:00:00.000Z","1.0.0":"2020-01-02T03:04:05.678Z","2.0.0":"garbage"}}`
+
+	r, ok, err := FindRelease([]byte(doc), "p", "p-1.0.0.tgz")
+	if want := time.Date(2020, 1, 2, 3, 4, 5, 678e6, time.UTC); err != nil || !ok || !r.Published.Equal(want) {
+		t.Errorf("published = %v, %v, %v; want %v", r.Published, ok, err, want)
+	}
+
+	if r, ok, err = FindRelease([]byte(doc), "p", "p-2.0.0.tgz"); err != nil || !ok || !r.Published.IsZero() {
+		t.Errorf("unparsable time = %v, %v, %v; want zero", r.Published, ok, err)
 	}
 }
 

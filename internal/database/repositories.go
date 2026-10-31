@@ -117,9 +117,9 @@ func updateRepositoryRow(ctx context.Context, db repoExecer, repo *models.Reposi
 		ctx,
 		`UPDATE repositories SET description = $1, public = $2, repo_type = $3, upstream_url = NULLIF($4,''), upstream_username =
 			NULLIF($5,''), upstream_password_enc = NULLIF($6,''), cache_ttl_seconds = $7, negative_cache_ttl_seconds = $8,
-			max_stale_seconds = $9, blocked = $10, project_id = $11, trash_retention_days = $12, immutable_releases = $13,
-			presign_downloads = $15, merge_proxy_versions = $16, sign_packages = $17, updated_at = now() WHERE id = $14 AND deleted_at
-			IS NULL`,
+			max_stale_seconds = $9, blocked = $10, project_id = $11, trash_retention_days = $12,
+			immutable_releases = $13, presign_downloads = $15, merge_proxy_versions = $16, sign_packages = $17, updated_at = now(),
+			min_age_hours = $18 WHERE id = $14 AND deleted_at IS NULL`,
 		repo.Description,
 		repo.Public,
 		repo.RepoType,
@@ -137,6 +137,7 @@ func updateRepositoryRow(ctx context.Context, db repoExecer, repo *models.Reposi
 		repo.PresignDownloads,
 		repo.MergeProxyVersions,
 		repo.SignPackages,
+		repo.MinAgeHours,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update repository: %w", err)
@@ -169,10 +170,10 @@ func (p *RepositoryStore) CreateRepository(ctx context.Context, repo *models.Rep
 	return p.db.QueryRowContext(
 		ctx,
 		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username,
-			upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, blocked, project_id,
-			trash_retention_days, immutable_releases, presign_downloads, allow_full_unpublish, merge_proxy_versions, sign_packages)
-			VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14,
-			$15, $16, $17, $18, $19) RETURNING id, created_at, updated_at`,
+			upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, min_age_hours, blocked,
+			project_id, trash_retention_days, immutable_releases, presign_downloads, allow_full_unpublish, merge_proxy_versions,
+			sign_packages) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11,
+			$12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING id, created_at, updated_at`,
 		repo.Name,
 		repo.Format,
 		repo.Description,
@@ -184,6 +185,7 @@ func (p *RepositoryStore) CreateRepository(ctx context.Context, repo *models.Rep
 		repo.CacheTTLSeconds,
 		repo.NegativeCacheTTLSeconds,
 		repo.MaxStaleSeconds,
+		repo.MinAgeHours,
 		repo.Blocked,
 		repo.ProjectID,
 		repo.TrashRetentionDays,

@@ -20,6 +20,10 @@ type MemberOptions struct {
 	// asked about the name in the file name and about the entry's own "name"
 	// field, so a document cannot smuggle a package past it by lying in one.
 	Hidden func(name string) bool
+	// Drop, when set, is asked about every entry that passed the checks above
+	// (its raw JSON is only valid during the call) and drops the entry when it
+	// returns true.
+	Drop func(entry json.RawMessage) bool
 	// MaxBytes bounds the decoded size of the member's document.
 	MaxBytes int64
 }
@@ -32,6 +36,8 @@ type MemberStats struct {
 	Duplicates int
 	// Hidden entries were dropped by MemberOptions.Hidden.
 	Hidden int
+	// Dropped entries were dropped by MemberOptions.Drop.
+	Dropped int
 	// Invalid entries were dropped: a key that is no package file name, or one
 	// listed in the wrong section.
 	Invalid int
@@ -124,6 +130,11 @@ func (b *Builder) addEntry(s Section, filename string, raw json.RawMessage, o Me
 
 	if o.Hidden != nil && (o.Hidden(f.Name) || o.Hidden(entryName(raw))) {
 		st.Hidden++
+		return nil
+	}
+
+	if o.Drop != nil && o.Drop(raw) {
+		st.Dropped++
 		return nil
 	}
 

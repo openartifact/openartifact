@@ -121,7 +121,7 @@ func repoListFixture() map[string]any {
 			"id": "id-px", "name": "npm-proxy", "format": "npm", "description": nil, "public": false,
 			"repo_type": "proxy", "project": "platform", "presign_downloads": nil, "trash_retention_days": nil,
 			"upstream_url": "https://registry.npmjs.org", "upstream_username": "bot",
-			"cache_ttl_seconds": 3600, "negative_cache_ttl_seconds": 60, "max_stale_seconds": 0,
+			"cache_ttl_seconds": 3600, "negative_cache_ttl_seconds": 60, "max_stale_seconds": 0, "min_age_hours": 0,
 		},
 		map[string]any{
 			"id": "id-grp", "name": "npm-all", "format": "npm", "description": "", "public": false,
@@ -209,7 +209,7 @@ func TestRepositoryList(t *testing.T) {
 				"project": "platform", "presign_downloads": nil, "trash_retention_days": nil,
 				"immutable_releases": false,
 				"upstream_url":       "https://registry.npmjs.org", "upstream_username": "bot",
-				"cache_ttl_seconds": 3600.0, "negative_cache_ttl_seconds": 60.0, "max_stale_seconds": 0.0,
+				"cache_ttl_seconds": 3600.0, "negative_cache_ttl_seconds": 60.0, "max_stale_seconds": 0.0, "min_age_hours": 0.0,
 				"quota": zeroQuota, "cleanup_policies": []any{},
 			},
 		},

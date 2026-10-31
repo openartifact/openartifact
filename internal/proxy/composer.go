@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/presign"
@@ -49,6 +50,10 @@ import (
 //     versions (branches) for the repository TTL.
 //   - A version whose dist is not a zip loses its dist, so Composer installs it
 //     from its "source".
+//   - With a minimum age (min_age_hours) a version whose "time" is younger is
+//     left out of the rendered document (judged on the expanded entries; a
+//     package with nothing left is a 404) and its dist is refused (errTooNew).
+//     A version without a "time" passes.
 const (
 	// composerDistDir is the key prefix of the dists.
 	composerDistDir = "dists/"
@@ -142,20 +147,42 @@ func (s *Service) serveComposerMetadata(w http.ResponseWriter, r *http.Request, 
 	// dist.url is downloaded by Composer as-is, so it is absolute and its origin
 	// is part of the validator below; the rewrite happens at serve time.
 	root := s.publicBase(w, r) + composerRepoPath(repo)
+	now := time.Now()
 
 	s.serveRendered(w, r, repo, renderedDoc{
 		metaDoc: composerDoc(p.Name, p.Dev),
 		maxAge:  composerMaxAge,
-		// What is served depends on the cached document and on the origin of the dist URLs.
+		// What is served depends on the cached document, on the origin of the dist
+		// URLs and on which versions the minimum age lets through now.
 		etag: func(blobKey string) string {
-			sum := sha256.Sum256([]byte(blobKey + "\x00" + root))
+			sum := sha256.Sum256([]byte(blobKey + "\x00" + root + "\x00" + gateStamp(repo, now)))
 			return `"` + hex.EncodeToString(sum[:16]) + `"`
 		},
 		render: func(doc []byte, _ *resolution) ([]byte, string, error) {
-			out, err := pkgcomposer.RenderSource(doc, p.Name, root)
+			out, err := renderComposerDoc(repo, doc, p.Name, root, now)
 			return out, jsonMediaType, err
 		},
 	})
+}
+
+// renderComposerDoc renders the cached upstream p2 document of name for a
+// client of the repository at root: the versions the minimum age holds back at
+// now are left out (judged on the expanded entries, so a version that only
+// inherited its "time" in the minified upstream document is dated right), and
+// errNotFound when none is left, as for a package the upstream does not list.
+func renderComposerDoc(repo *models.Repository, doc []byte, name, root string, now time.Time) ([]byte, error) {
+	var keep func(pkgcomposer.Version) bool
+
+	if minAge(repo) > 0 {
+		keep = func(v pkgcomposer.Version) bool { return !tooNew(repo, v.Published(), now) }
+	}
+
+	out, err := pkgcomposer.RenderSource(doc, name, root, keep)
+	if errors.Is(err, pkgcomposer.ErrNoneLeft) {
+		return nil, errNotFound
+	}
+
+	return out, err //nolint:wrapcheck // logged by serveRendered
 }
 
 func (s *Service) serveComposerDist(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgcomposer.Path) {
@@ -165,16 +192,26 @@ func (s *Service) serveComposerDist(w http.ResponseWriter, r *http.Request, repo
 		return
 	}
 
+	now := time.Now()
+
 	s.serveDownload(w, r, repo, key, func(ctx context.Context) (download, error) {
-		return s.locateComposerDist(ctx, repo, p)
+		return s.locateComposerDist(ctx, repo, p, now)
 	})
 }
 
 // composerPublishedDist finds the dist the upstream's documents publish for the
 // version of p. A version that is a branch lives in the "~dev" document, any
 // other in the plain one; a version Composer cannot normalize is looked up in
-// both. errNotFound when none lists it.
-func (s *Service) composerPublishedDist(ctx context.Context, repo *models.Repository, p pkgcomposer.Path) (pkgcomposer.Dist, error) {
+// both. It also returns when the upstream published the version (zero when it
+// does not say). errNotFound when none lists it.
+func (s *Service) composerPublishedDist(
+	ctx context.Context, repo *models.Repository, p pkgcomposer.Path,
+) (pkgcomposer.Dist, time.Time, error) {
+	type published struct {
+		dist pkgcomposer.Dist
+		time time.Time
+	}
+
 	devs := []bool{false, true}
 
 	if normalized, err := pkgcomposer.Normalize(p.Version); err == nil {
@@ -182,14 +219,16 @@ func (s *Service) composerPublishedDist(ctx context.Context, repo *models.Reposi
 	}
 
 	for _, dev := range devs {
-		d, _, err := parseDoc(ctx, s, repo, composerDoc(p.Name, dev), func(doc []byte, _ *resolution) (*pkgcomposer.Dist, error) {
+		d, _, err := parseDoc(ctx, s, repo, composerDoc(p.Name, dev), func(doc []byte, _ *resolution) (*published, error) {
 			versions, perr := pkgcomposer.ParseDocument(doc, p.Name)
 			if perr != nil {
 				return nil, perr //nolint:wrapcheck // logged by parseDoc
 			}
 
-			if d, ok := pkgcomposer.FindDist(versions, p.Version); ok {
-				return &d, nil
+			if v, ok := pkgcomposer.FindVersion(versions, p.Version); ok {
+				if d, ok := v.ZipDist(); ok {
+					return &published{dist: d, time: v.Published()}, nil
+				}
 			}
 
 			return nil, nil //nolint:nilnil // not listed: the other document may list it
@@ -199,30 +238,35 @@ func (s *Service) composerPublishedDist(ctx context.Context, repo *models.Reposi
 		}
 
 		if err != nil {
-			return pkgcomposer.Dist{}, err
+			return pkgcomposer.Dist{}, time.Time{}, err
 		}
 
 		if d != nil {
-			return *d, nil
+			return d.dist, d.time, nil
 		}
 	}
 
-	return pkgcomposer.Dist{}, errNotFound
+	return pkgcomposer.Dist{}, time.Time{}, errNotFound
 }
 
 // locateComposerDist finds the dist the upstream's documents publish for the
-// version of p. The reference in the request must be the one that dist has (a
+// version of p; errTooNew when the version is younger than the repository's
+// minimum age at now. The reference in the request must be the one that dist has (a
 // stale or forged URL is errNotFound, without a negative cache entry: the
 // document may simply be stale). It is cached only when its SHA-1 matches a
 // non-empty "shasum".
-func (s *Service) locateComposerDist(ctx context.Context, repo *models.Repository, p pkgcomposer.Path) (download, error) {
-	dist, err := s.composerPublishedDist(ctx, repo, p)
+func (s *Service) locateComposerDist(ctx context.Context, repo *models.Repository, p pkgcomposer.Path, now time.Time) (download, error) {
+	dist, published, err := s.composerPublishedDist(ctx, repo, p)
 	if err != nil {
 		return download{}, err
 	}
 
 	if dist.ProxyRef() != p.Ref {
 		return download{}, errNotFound
+	}
+
+	if tooNew(repo, published, now) {
+		return download{}, errTooNew
 	}
 
 	return download{url: dist.URL, opts: fetchOpts{

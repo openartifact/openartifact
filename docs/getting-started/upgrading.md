@@ -85,6 +85,10 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Unreleased
+
+Migration `004_repository_min_age` adds `repositories.min_age_hours` (default `0`, no behavior change). Proxy repositories can set it to hide versions the upstream published less than that many hours ago; see [Minimum age](../repositories/hosted-proxy-group.md#minimum-age).
+
 ### 0.15.1
 
 No migrations; replaces 0.15.0 in place. Fixes found by the fuzzers (#336):

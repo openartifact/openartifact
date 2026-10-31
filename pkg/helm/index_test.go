@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 const sampleIndex = `apiVersion: v1
@@ -195,5 +196,53 @@ func TestChartFile(t *testing.T) {
 
 	if _, ok := RelativeChartFile("oci://x/y:1"); ok {
 		t.Error("RelativeChartFile accepted an oci url")
+	}
+}
+
+func TestChartVersion_Published(t *testing.T) {
+	for created, want := range map[string]string{
+		"2026-03-10T12:00:00Z":           "2026-03-10T12:00:00Z",
+		"2026-03-10T12:00:00.123456789Z": "2026-03-10T12:00:00.123456789Z",
+		"2026-03-10T14:00:00+02:00":      "2026-03-10T12:00:00Z",
+		"":                               "",
+		"yesterday":                      "",
+		"2026-03-10 12:00:00 +0000 UTC":  "",
+	} {
+		got := ChartVersion{Created: created}.Published()
+
+		if want == "" {
+			if !got.IsZero() {
+				t.Errorf("Published(%q) = %v, want the zero time", created, got)
+			}
+
+			continue
+		}
+
+		if got.UTC().Format(time.RFC3339Nano) != want {
+			t.Errorf("Published(%q) = %v, want %s", created, got, want)
+		}
+	}
+}
+
+func TestParseIndex_VersionsCarryCreated(t *testing.T) {
+	const doc = `apiVersion: v1
+entries:
+  app:
+  - {name: app, version: 1.0.0, created: "2026-03-10T12:00:00Z", urls: [a.tgz]}
+  - {name: app, version: 0.9.0, urls: [b.tgz]}
+`
+
+	ix, err := ParseIndex([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got []string
+	for cv := range ix.Versions() {
+		got = append(got, cv.Created)
+	}
+
+	if len(got) != 2 || got[0] != "2026-03-10T12:00:00Z" || got[1] != "" {
+		t.Errorf("created = %q", got)
 	}
 }

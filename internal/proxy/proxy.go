@@ -345,6 +345,8 @@ func (s *Service) writeResolveError(w http.ResponseWriter, r *http.Request, err 
 	switch {
 	case errors.Is(err, errNotFound):
 		http.NotFound(w, r)
+	case errors.Is(err, errTooNew):
+		http.Error(w, errTooNew.Error(), http.StatusForbidden)
 	case errors.Is(err, errUpstream):
 		http.Error(w, "upstream repository error", http.StatusBadGateway)
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):

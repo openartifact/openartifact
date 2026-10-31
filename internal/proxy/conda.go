@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
@@ -32,7 +33,8 @@ const DefaultMaxCondaIndex int64 = 2 << 30
 // to the channel) resolve through the proxy and every download is checked
 // against the digest the repodata lists. Everything else a channel may carry
 // (repodata.jlap, sharded repodata, index pages) answers 404 and clients fall
-// back to the plain files.
+// back to the plain files. With a minimum age the repodata is rebuilt without
+// the packages too young (see conda_minage.go).
 func (s *Service) serveConda(w http.ResponseWriter, r *http.Request, repo *models.Repository, relPath string) {
 	p, ok := conda.ParsePath(relPath)
 	if !ok {
@@ -40,12 +42,19 @@ func (s *Service) serveConda(w http.ResponseWriter, r *http.Request, repo *model
 		return
 	}
 
+	if p.Kind == conda.KindRepodata && minAge(repo) > 0 {
+		s.serveCondaGated(w, r, repo, p)
+		return
+	}
+
 	switch p.Kind {
 	case conda.KindRepodata, conda.KindChanneldata:
 		s.serveVerbatim(w, r, repo, s.condaDoc(p))
 	case conda.KindPackage:
+		now := time.Now()
+
 		s.serveDownload(w, r, repo, p.Key(), func(ctx context.Context) (download, error) {
-			return s.locateCondaPackage(ctx, repo, p)
+			return s.locateCondaPackage(ctx, repo, p, now)
 		})
 	case conda.KindOther:
 		http.NotFound(w, r)
@@ -77,8 +86,9 @@ func (s *Service) condaDoc(p conda.Path) metaDoc {
 func (s *Service) condaIndexLimit() int64 { return min(s.maxBody, s.maxCondaIndex) }
 
 // locateCondaPackage finds a package file in the upstream's repodata and the
-// digest it lists: a file the repodata does not list is not served at all.
-func (s *Service) locateCondaPackage(ctx context.Context, repo *models.Repository, p conda.Path) (download, error) {
+// digest it lists: a file the repodata does not list is not served at all, one
+// built less than the repository's minimum age before now is errTooNew.
+func (s *Service) locateCondaPackage(ctx context.Context, repo *models.Repository, p conda.Path, now time.Time) (download, error) {
 	key := p.Key()
 
 	target, err := upstreamURL(repo.UpstreamURL, key)
@@ -94,6 +104,10 @@ func (s *Service) locateCondaPackage(ctx context.Context, repo *models.Repositor
 
 	if err != nil {
 		return download{}, err
+	}
+
+	if tooNew(repo, entry.Published, now) {
+		return download{}, fmt.Errorf("conda package %s: %w", p.File, errTooNew)
 	}
 
 	opts := fetchOpts{wantSHA256: entry.SHA256}
