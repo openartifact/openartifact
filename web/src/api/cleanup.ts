@@ -40,3 +40,16 @@ export async function runCleanupPolicy(repo: string, id: string): Promise<void> 
 export function dryRunCleanupPolicy(repo: string, id: string): Promise<CleanupPreview> {
   return request<CleanupPreview>(`${policyUrl(repo, id)}/dry-run`, { method: 'POST' })
 }
+
+/**
+ * Previews a policy that is not saved yet (the editor's form): the same answer as {@link dryRunCleanupPolicy},
+ * nothing is stored. `signal` cancels the request when the form changes again.
+ */
+export function previewCleanupDraft(repo: string, body: CleanupPolicyInput, signal?: AbortSignal): Promise<CleanupPreview> {
+  return request<CleanupPreview>(`${baseUrl(repo)}/dry-run`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+    signal,
+  })
+}

@@ -89,6 +89,8 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 Migration `004_repository_min_age` adds `repositories.min_age_hours` (default `0`, no behavior change). Proxy repositories can set it to hide versions the upstream published less than that many hours ago; see [Minimum age](../repositories/hosted-proxy-group.md#minimum-age).
 
+The cleanup policy editor of a repository shows a live preview of what the policy would delete (rows, size, a sample), backed by the new `POST /api/v1/repositories/{name}/cleanup-policies/dry-run`; the dry-run answer gains a `bytes` field. See [Cleanup](../repositories/cleanup-and-quotas.md#api).
+
 ### 0.15.1
 
 No migrations; replaces 0.15.0 in place. Fixes found by the fuzzers (#336):

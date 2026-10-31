@@ -55,7 +55,7 @@ At least one of `keep_last_n` or `keep_since_days` is required; zero or negative
 - A package whose blob is referenced by a [release bundle](release-bundles.md) item is skipped and kept.
 - A **quarantined** package (a scan quarantined it) is skipped and kept: cleanup never removes the evidence of a finding.
 - Every row deleted permanently also gives its usage (its blob's size and one artifact) back to the repository's counters, in one update at the end of the run. Rows moved to the trash keep counting until they are purged (see [trash and quotas](#trash-and-quotas)). A row that an API delete removed between selection and deletion is skipped, so nothing is released twice. A Go module releases its zip and its `go.mod` together as one artifact.
-- A [dry run](#api) lists what a run would remove, applying all the protections above, without removing anything. The policy list has a preview button (eye icon) that shows it, for repository policies and for project default policies (listed per repository).
+- A [dry run](#api) lists what a run would remove, applying all the protections above, without removing anything. The policy list has a preview button (eye icon) that shows it, for repository policies and for project default policies (listed per repository). The repository policy editor also shows a live preview while you edit (count, size, a sample of the rows); it never deletes anything.
 
 ### API
 
@@ -69,7 +69,8 @@ All routes need an admin principal.
 | `PUT /api/v1/repositories/{repo}/cleanup-policies/{id}` | Partial update: only the fields sent change (an unset criterion cannot be cleared). The result must validate, except that disabling a policy is always allowed. |
 | `DELETE /api/v1/repositories/{repo}/cleanup-policies/{id}` | Delete; `204`. |
 | `POST /api/v1/repositories/{repo}/cleanup-policies/{id}/run` | Start an immediate asynchronous run; `202`. `409` if it is already running, `400` if the stored policy is invalid. |
-| `POST /api/v1/repositories/{repo}/cleanup-policies/{id}/dry-run` | Evaluate the policy now and answer `200` with `{repository, format, dry_run, rows, items:[{id,name,version}], truncated}`: the rows a run would remove (or move to the trash), at most 500 listed. Nothing is changed. A version made of several files counts one row per file. |
+| `POST /api/v1/repositories/{repo}/cleanup-policies/{id}/dry-run` | Evaluate the policy now and answer `200` with `{repository, format, dry_run, rows, bytes, items:[{id,name,version}], truncated}`: the rows a run would remove (or move to the trash), at most 500 listed, and `bytes`, the size of the blobs they reference (a blob shared by two rows counts twice; docker tags count 0). Nothing is changed. A version made of several files counts one row per file. |
+| `POST /api/v1/repositories/{repo}/cleanup-policies/dry-run` | Same for a policy that is not saved: the body is a new policy as create takes it (the name is optional), validated the same way (`400 validation_failed`), answer as above. Nothing is stored. The policy editor uses it for its live preview. |
 | `POST /api/v1/projects/{project}/cleanup-policies/{id}/dry-run` | Same for a project default policy (owners and admins): `200` with `{dry_run, rows, repositories:[<repository dry run>]}`, one entry per repository the policy would cover |
 
 ```sh
