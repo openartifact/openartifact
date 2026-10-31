@@ -136,7 +136,6 @@
   "repoDetail.proxy.maxStaleHint": "Durée au-delà de son TTL pendant laquelle un fichier en cache est encore servi lorsque l'amont est indisponible.",
   "repoDetail.proxy.cachedHint": "Fichiers déjà récupérés depuis l'amont. Ils sont en lecture seule.",
   "repoDetail.proxy.emptyTitle": "Rien en cache pour l'instant",
-  "repoDetail.proxy.emptyHint": "Rien en cache pour l'instant : les fichiers sont récupérés depuis l'amont à la première requête.",
   "repoDetail.group.title": "Membres",
   "repoDetail.group.hint": "Les requêtes sont résolues auprès des membres dans cet ordre ; la première correspondance l'emporte.",
   "repoDetail.group.position": "Position",

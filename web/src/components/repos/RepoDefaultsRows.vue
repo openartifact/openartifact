@@ -46,7 +46,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <p v-else class="text-sm text-muted">{{ t('rl.project.moveHint') }}</p>
     </FormRow>
 
-    <FormRow v-if="form.type === 'proxy'" v-model:open="upstreamOpen" id="upstream" :label="t('rl.row.upstream')" :summary="upstreamSummary(form, upstreamUrlRequired(form.format))">
+    <FormRow v-if="mode === 'create' && form.type === 'proxy'" v-model:open="upstreamOpen" id="upstream" :label="t('rl.row.upstream')" :summary="upstreamSummary(form, upstreamUrlRequired(form.format))">
       <FormField :label="t('repos.new.upstreamUrl')" id="rl-upstream-url" :hint="upstreamHint">
         <input id="rl-upstream-url" v-model="form.upstreamUrl" type="url" :placeholder="upstreamUrlPlaceholder(form.format)" :class="INPUT_CLASS" />
       </FormField>
@@ -54,7 +54,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <FormField :label="t('repos.new.upstreamUsername')" id="rl-upstream-user">
           <input id="rl-upstream-user" v-model="form.upstreamUsername" type="text" autocomplete="off" :class="INPUT_CLASS" />
         </FormField>
-        <FormField :label="t('repos.new.upstreamPassword')" id="rl-upstream-pass" :hint="mode === 'edit' ? t('rl.upstream.passwordKeep') : undefined">
+        <FormField :label="t('repos.new.upstreamPassword')" id="rl-upstream-pass">
           <input id="rl-upstream-pass" v-model="form.upstreamPassword" type="password" autocomplete="new-password" :class="INPUT_CLASS" />
         </FormField>
       </div>
@@ -160,7 +160,7 @@ const upstreamOpen = ref(false)
 watch(
   () => [form.value.type, form.value.format] as const,
   ([type, format]) => {
-    if (props.mode === 'create' && type === 'proxy' && upstreamUrlRequired(format) && form.value.upstreamUrl.trim() === '') upstreamOpen.value = true
+    if (type === 'proxy' && upstreamUrlRequired(format) && form.value.upstreamUrl.trim() === '') upstreamOpen.value = true
   },
 )
 

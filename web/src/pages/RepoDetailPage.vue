@@ -37,25 +37,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div class="mb-6 space-y-4">
         <ConnectClientPanel :format="repo.format" :repo="repo.name" :repo-type="repo.repo_type" :read-only="repo.repo_type === 'proxy' || repo.repo_type === 'group'" />
         <PackageUploadZone v-if="canUpload && showUpload" :repo="repo.name" :format="repo.format" @uploaded="onUploaded" />
-        <dl
-          v-if="repo.repo_type === 'proxy'"
-          class="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1.5 rounded-lg border border-border bg-surface px-4 py-3 text-xs"
-          :aria-label="t('repoDetail.proxy.title')"
-        >
-          <dt class="text-muted">{{ t('repoDetail.proxy.url') }}</dt>
-          <dd class="min-w-0 break-all font-mono text-foreground">
-            {{ repo.upstream_url || '—' }}
-            <span v-if="repo.upstream_username" class="font-sans text-muted">· {{ tp('repoDetail.proxy.authenticatedAs', { user: repo.upstream_username }) }}</span>
-          </dd>
-          <dt class="text-muted">{{ t('repoDetail.proxy.cacheTtl') }}</dt>
-          <dd class="text-foreground">{{ formatDuration(repo.cache_ttl_seconds) }}</dd>
-          <dt class="text-muted">{{ t('repoDetail.proxy.negativeCacheTtl') }}</dt>
-          <dd class="text-foreground">{{ formatDuration(repo.negative_cache_ttl_seconds) }}</dd>
-          <dt class="text-muted" :title="t('repoDetail.proxy.maxStaleHint')">{{ t('repoDetail.proxy.maxStale') }}</dt>
-          <dd class="text-foreground">{{ repo.max_stale_seconds ? formatDuration(repo.max_stale_seconds) : t('repoDetail.proxy.maxStaleOff') }}</dd>
-          <dt class="text-muted" :title="t('repoDetail.proxy.minAgeHint')">{{ t('repoDetail.proxy.minAge') }}</dt>
-          <dd class="text-foreground">{{ repo.min_age_hours ? tp('repoDetail.proxy.minAgeValue', { hours: String(repo.min_age_hours) }) : t('repoDetail.proxy.minAgeOff') }}</dd>
-        </dl>
+        <ProxySettingsCard v-if="repo.repo_type === 'proxy'" :repo="repo" @saved="(r) => (repo = r)" />
       </div>
 
       <AppTabs :key="repoName" :tabs="tabs" :label="t('repoDetail.tabs')">
@@ -79,6 +61,7 @@ import ConnectClientPanel from '../components/ConnectClientPanel.vue'
 import PackageUploadZone from '../components/PackageUploadZone.vue'
 import PageHeader from '../components/PageHeader.vue'
 import RepoMeta from '../components/RepoMeta.vue'
+import ProxySettingsCard from '../components/repos/ProxySettingsCard.vue'
 import RepoActivityTab from '../components/repos/RepoActivityTab.vue'
 import RepoMembersTab from '../components/repos/RepoMembersTab.vue'
 import RepoPackagesTab from '../components/repos/RepoPackagesTab.vue'
@@ -90,9 +73,8 @@ import StateBlock from '../components/ui/StateBlock.vue'
 import { ApiError } from '../api/client'
 import { getRepository, type Repository } from '../api/repositories'
 import type { TabDef } from '../composables/useUrlTab'
-import { formatDuration } from '../lib/duration'
 import { useSessionStore } from '../stores/session'
-import { t, tp } from '../i18n'
+import { t } from '../i18n'
 
 const route = useRoute()
 const session = useSessionStore()

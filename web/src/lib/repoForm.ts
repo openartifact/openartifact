@@ -73,8 +73,6 @@ export function repoFormFrom(r: Repository): RepoForm {
     type: r.repo_type ?? 'hosted',
     isPublic: r.public ?? false,
     project: r.project && r.project !== SYSTEM_PROJECT_NAME ? r.project : '',
-    upstreamUrl: r.upstream_url ?? '',
-    upstreamUsername: r.upstream_username ?? '',
     members: [...(r.member_repos ?? [])],
     retentionDays: r.trash_retention_days == null ? '' : String(r.trash_retention_days),
     immutableReleases: r.immutable_releases ?? false,
@@ -148,7 +146,7 @@ export function buildCreateBody(form: RepoForm, ctx: { isAdmin: boolean }): Crea
   }
 }
 
-/** Body of PATCH /repository/{name}: only what the repository's type and the caller's role allow. */
+/** Body of PATCH /repository/{name}: only what the repository's type and the caller's role allow. A proxy's upstream is edited by `ProxySettingsForm`. */
 export function buildUpdateBody(form: RepoForm, repo: Repository, ctx: { isAdmin: boolean }): CreateBody {
   const type = repo.repo_type ?? 'hosted'
   return {
@@ -163,13 +161,6 @@ export function buildUpdateBody(form: RepoForm, repo: Repository, ctx: { isAdmin
     ...(type === 'group' && ctx.isAdmin ? { merge_proxy_versions: form.mergeProxyVersions } : {}),
     ...(ctx.isAdmin && form.project !== (repo.project === SYSTEM_PROJECT_NAME ? '' : (repo.project ?? ''))
       ? { project: form.project || SYSTEM_PROJECT_NAME }
-      : {}),
-    ...(type === 'proxy'
-      ? {
-          upstream_url: form.upstreamUrl.trim(),
-          upstream_username: form.upstreamUsername,
-          ...(form.upstreamPassword ? { upstream_password: form.upstreamPassword } : {}),
-        }
       : {}),
   }
 }

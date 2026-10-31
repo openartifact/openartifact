@@ -105,8 +105,7 @@ const form = ref(repoFormFrom(props.repo))
 const initial = ref(JSON.stringify(form.value))
 const dirty = computed(() => JSON.stringify(form.value) !== initial.value)
 // The name is fixed after creation, so the create-time name rules do not apply: an empty prefix and the stored name always pass.
-// Unlike at creation, no proxy format falls back to a default upstream here: the server refuses an empty upstream_url on update.
-const valid = computed(() => formValid(form.value, '', form.value.type === 'proxy'))
+const valid = computed(() => formValid(form.value, '', false))
 const saving = ref(false)
 const saveError = ref('')
 

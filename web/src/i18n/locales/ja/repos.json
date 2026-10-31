@@ -131,7 +131,6 @@
   "repoDetail.proxy.maxStaleHint": "アップストリームが停止しているとき、TTL を過ぎたキャッシュ済みファイルを引き続き配信する期間です。",
   "repoDetail.proxy.cachedHint": "アップストリームから取得済みのファイルです。読み取り専用です。",
   "repoDetail.proxy.emptyTitle": "キャッシュはまだありません",
-  "repoDetail.proxy.emptyHint": "キャッシュはまだありません。ファイルは最初のリクエスト時にアップストリームから取得されます。",
   "repoDetail.group.title": "メンバー",
   "repoDetail.group.hint": "リクエストはこの順序でメンバーに対して解決され、最初に一致したものが優先されます。",
   "repoDetail.group.position": "順序",

@@ -131,7 +131,6 @@
   "repoDetail.proxy.maxStaleHint": "上游宕机时，缓存文件在超过 TTL 后仍会继续提供的时长。",
   "repoDetail.proxy.cachedHint": "已从上游获取的文件。它们是只读的。",
   "repoDetail.proxy.emptyTitle": "尚无缓存",
-  "repoDetail.proxy.emptyHint": "尚无缓存 - 文件会在首次请求时从上游获取。",
   "repoDetail.group.title": "成员",
   "repoDetail.group.hint": "请求按此顺序在成员中解析；第一个匹配项优先。",
   "repoDetail.group.position": "位置",
