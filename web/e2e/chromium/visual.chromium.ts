@@ -44,26 +44,26 @@ for (const theme of ['light', 'dark'] as const) {
     it('expanded sidebar', async (ui) => {
       await openShell(ui, '/no-such-page', theme, false)
       await expectLoc(ui.getByTestId('nav-repos')).toBeVisible()
-      await expectMatchesBaseline(`shell-expanded-${theme}`, await ui.page.screenshot())
+      await expectMatchesBaseline(`shell-expanded-${theme}`, { target: ui.page })
     })
 
     it('collapsed sidebar', async (ui) => {
       await openShell(ui, '/no-such-page', theme, true)
-      await expectMatchesBaseline(`shell-collapsed-${theme}`, await ui.page.screenshot())
+      await expectMatchesBaseline(`shell-collapsed-${theme}`, { target: ui.page })
     })
 
     it('tooltip of the collapsed rail', async (ui) => {
       await openShell(ui, '/no-such-page', theme, true)
       await ui.page.hover('[data-testid="nav-repos"]')
       await expectLoc(ui.locator('[role="tooltip"]')).toBeVisible()
-      await expectMatchesBaseline(`shell-rail-tooltip-${theme}`, await ui.page.screenshot({ clip: { x: 0, y: 0, width: 320, height: 360 } }))
+      await expectMatchesBaseline(`shell-rail-tooltip-${theme}`, { target: ui.page, clip: { x: 0, y: 0, width: 320, height: 360 } })
     })
 
     it('header', async (ui) => {
       await openShell(ui, '/no-such-page', theme, false)
       const header = await ui.page.$('header')
       if (header === null) throw new Error('the page has no <header>')
-      await expectMatchesBaseline(`header-${theme}`, await header.screenshot())
+      await expectMatchesBaseline(`header-${theme}`, { target: header })
     })
 
     it('toast', async (ui) => {
@@ -75,7 +75,7 @@ for (const theme of ['light', 'dark'] as const) {
       await ui.getByTestId('artifact-menu').click()
       await ui.getByRole('menuitem', { name: 'Copy link to this version' }).click()
       const toast = await toastAtRest(ui)
-      await expectMatchesBaseline(`toast-${theme}`, await toast.screenshot())
+      await expectMatchesBaseline(`toast-${theme}`, { target: toast })
     })
   })
 }

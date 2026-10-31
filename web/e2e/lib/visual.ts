@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import pixelmatch from 'pixelmatch'
-import type { ElementHandle } from 'puppeteer-core'
+import type { ElementHandle, Page } from 'puppeteer-core'
 import { PNG } from 'pngjs'
 import { RESULTS_DIR } from './browser'
 import type { Ui } from './ui'
@@ -35,12 +35,32 @@ export async function freeze(ui: Ui): Promise<void> {
   await ui.page.evaluate(() => document.fonts.ready.then(() => undefined))
 }
 
+/** What a snapshot is taken of: the viewport, or one element. `clip` is relative to the viewport, or to the element. */
+export interface Shot {
+  target: Page | ElementHandle<Element>
+  clip?: { x: number; y: number; width: number; height: number }
+}
+
 /**
- * Compares a PNG with the stored baseline `<name>.png` (or writes it under
+ * A PNG of `shot`, painted from the surface that is on screen. Every snapshot goes through here and
+ * nothing may call `screenshot()` another way: with puppeteer's default `captureBeyondViewport: true`
+ * a clipped shot (a `clip`, or an element) makes Chromium resize the view to 1x1 for a moment. A
+ * frame that lands in that window lays the page out at 1x1, the pointer is then outside it and
+ * Chromium sends `mouseleave` to the whole hover chain: a tooltip that was open is gone before the
+ * pixels are read (rare, only under CPU load, and only the hover snapshot depends on it). Everything
+ * snapshotted lies inside the viewport, so nothing needs the emulation.
+ */
+async function capture({ target, clip }: Shot): Promise<Uint8Array> {
+  return target.screenshot({ captureBeyondViewport: false, ...(clip === undefined ? {} : { clip }) })
+}
+
+/**
+ * Compares a snapshot of `shot` with the stored baseline `<name>.png` (or writes it under
  * UPDATE_SNAPSHOTS=1). A mismatch leaves `<name>.{expected,actual,diff}.png`
  * in test-results/visual, which CI uploads, and fails with the pixel count.
  */
-export async function expectMatchesBaseline(name: string, actual: Uint8Array): Promise<void> {
+export async function expectMatchesBaseline(name: string, shot: Shot): Promise<void> {
+  const actual = await capture(shot)
   const file = join(BASELINE_DIR, `${name}.png`)
   if (UPDATE) {
     await mkdir(BASELINE_DIR, { recursive: true })
