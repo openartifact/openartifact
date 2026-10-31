@@ -87,6 +87,8 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ### Unreleased
 
+The command palette runs actions (create a token, repository or project, open the settings of a repository, copy its install command, switch theme or language, sign out) and lists the ones you ran under Recent; actions you may not run are no longer shown locked. See [Command palette](web-ui.md#command-palette).
+
 Migration `004_repository_min_age` adds `repositories.min_age_hours` (default `0`, no behavior change). Proxy repositories can set it to hide versions the upstream published less than that many hours ago; see [Minimum age](../repositories/hosted-proxy-group.md#minimum-age).
 
 ### 0.15.1

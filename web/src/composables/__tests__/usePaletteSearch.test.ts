@@ -48,6 +48,52 @@ describe('usePaletteSearch', () => {
     expect(s.entities.value.users[0]!.to).toBe('/settings/users?q=chen_wei')
   })
 
+  it('carries what repository actions need on every repository result', async () => {
+    repos.mockResolvedValue([
+      { id: '1', name: 'web-npm', format: 'npm', repo_type: 'proxy', project: 'web' },
+      { id: '2', name: 'plain', format: 'raw' },
+    ] as never)
+    const s = make()
+    s.setQuery('web')
+    await wait(40)
+    expect(s.entities.value.repositories.map((r) => r.repo)).toEqual([
+      { name: 'web-npm', format: 'npm', repoType: 'proxy', project: 'web' },
+      { name: 'plain', format: 'raw', repoType: 'hosted', project: undefined },
+    ])
+  })
+
+  it('searches only repositories for the actions-only scope', async () => {
+    repos.mockResolvedValue([{ id: '1', name: 'web-npm', format: 'npm' }] as never)
+    const s = make()
+    s.setQuery('web', 'repositories')
+    await wait(40)
+    expect(repos).toHaveBeenCalledTimes(1)
+    expect(pkgs).not.toHaveBeenCalled()
+    expect(projects).not.toHaveBeenCalled()
+    expect(bundles).not.toHaveBeenCalled()
+    expect(users).not.toHaveBeenCalled()
+    expect(s.status.value).toBe('ready')
+    expect(s.entities.value.repositories).toHaveLength(1)
+  })
+
+  it('reports whether the caller may create projects once the projects list is loaded', async () => {
+    projects.mockResolvedValue({ projects: [], can_create: true })
+    const s = make(false)
+    expect(s.canCreateProject.value).toBe(false)
+    s.warm()
+    await wait(10)
+    expect(s.canCreateProject.value).toBe(true)
+    expect(projects).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves project creation off when the projects list cannot be loaded', async () => {
+    projects.mockRejectedValue(new Error('boom'))
+    const s = make(false)
+    s.warm()
+    await wait(10)
+    expect(s.canCreateProject.value).toBe(false)
+  })
+
   it('treats a null bundle list (no match) as empty, not as a failed source', async () => {
     bundles.mockResolvedValue({ total: 0, page: 1, limit: 5, bundles: null } as never)
     const s = make()
@@ -79,8 +125,8 @@ describe('usePaletteSearch', () => {
   it('does not call the API below the minimum length, for a checksum, or for an actions-only query', async () => {
     const s = make()
     s.setQuery('s')
-    s.setQuery('a'.repeat(40), true)
-    s.setQuery('create', true)
+    s.setQuery('a'.repeat(40), 'none')
+    s.setQuery('create', 'none')
     await wait(40)
     expect(repos).not.toHaveBeenCalled()
     expect(s.status.value).toBe('idle')

@@ -61,6 +61,5 @@
   "shell.action.createToken": "创建访问令牌",
   "shell.action.createUser": "创建用户",
   "shell.action.createBundle": "创建发布捆绑包",
-  "shell.action.toggleTheme": "切换主题",
   "shell.action.signOut": "退出登录"
 }
