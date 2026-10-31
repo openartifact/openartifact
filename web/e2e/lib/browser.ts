@@ -6,7 +6,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { test } from 'bun:test'
 import puppeteer, { type Browser } from 'puppeteer-core'
-import { ADMIN, CDP_URL, DEV, requireEnv, type Account } from '../env'
+import { ADMIN, CDP_URL, CHROMIUM_CDP_URL, DEV, requireEnv, type Account } from '../env'
 import { login, sessionCookies } from './api'
 import { Ui } from './ui'
 import { eventually } from './wait'
@@ -20,11 +20,26 @@ const ACCOUNTS: Record<Exclude<Role, 'anon'>, () => Account> = { admin: ADMIN, d
 /** Where failure reports are written (git-ignored; uploaded by CI). */
 export const RESULTS_DIR = join(import.meta.dirname, '..', '..', 'test-results')
 
-let connection: Promise<Browser> | undefined
+/**
+ * The engine a spec runs in. Lightpanda is fast and has no rendering, which is
+ * all the functional suites need; Chromium renders, so the visual and the
+ * colour-contrast specs (`e2e/chromium`) run in it.
+ */
+export type Engine = 'lightpanda' | 'chromium'
 
-/** The Lightpanda server, connected once per test process. */
-export function browser(): Promise<Browser> {
-  connection ??= puppeteer.connect({ browserURL: CDP_URL })
+/** Viewport of the Chromium specs: a laptop screen, where the sidebar is the desktop rail. */
+export const CHROMIUM_VIEWPORT = { width: 1366, height: 768, deviceScaleFactor: 1 } as const
+
+const ENDPOINTS: Record<Engine, string> = { lightpanda: CDP_URL, chromium: CHROMIUM_CDP_URL }
+const connections = new Map<Engine, Promise<Browser>>()
+
+/** The browser of an engine, connected once per test process. */
+export function browser(engine: Engine = 'lightpanda'): Promise<Browser> {
+  let connection = connections.get(engine)
+  if (connection === undefined) {
+    connection = puppeteer.connect({ browserURL: ENDPOINTS[engine], ...(engine === 'chromium' ? { defaultViewport: CHROMIUM_VIEWPORT } : {}) })
+    connections.set(engine, connection)
+  }
   return connection
 }
 
@@ -58,9 +73,9 @@ function cookiesOf(role: Role): Promise<CookieData[]> {
  * context per connection, so the next test waits until this one is gone.
  * A failure leaves a report in RESULTS_DIR before it propagates.
  */
-export async function withUi(role: Role, name: string, fn: (ui: Ui) => Promise<void>): Promise<void> {
+export async function withUi(role: Role, name: string, fn: (ui: Ui) => Promise<void>, engine: Engine = 'lightpanda'): Promise<void> {
   const origin = new URL(requireEnv('OA_URL')).origin
-  const connected = await browser()
+  const connected = await browser(engine)
   const context = await eventually(() => connected.createBrowserContext(), 15_000)
   try {
     const cookies = await cookiesOf(role)
@@ -72,7 +87,7 @@ export async function withUi(role: Role, name: string, fn: (ui: Ui) => Promise<v
     try {
       await fn(ui)
     } catch (err) {
-      await report(name, ui, err)
+      await report(name, ui, err, engine)
       throw err
     }
   } finally {
@@ -81,24 +96,26 @@ export async function withUi(role: Role, name: string, fn: (ui: Ui) => Promise<v
 }
 
 /** `test` that runs as `role` in a browser page of its own. */
-export function testAs(role: Role) {
+export function testAs(role: Role, engine: Engine = 'lightpanda') {
   return (name: string, fn: (ui: Ui) => Promise<void>, timeoutMs = 90_000): void => {
-    test(name, () => withUi(role, name, fn), timeoutMs)
+    test(name, () => withUi(role, name, fn, engine), timeoutMs)
   }
 }
 
-async function report(name: string, ui: Ui, err: unknown): Promise<void> {
+async function report(name: string, ui: Ui, err: unknown, engine: Engine): Promise<void> {
   const dir = join(RESULTS_DIR, name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 120))
   const lines: string[] = [`test: ${name}`, `url: ${ui.page.url()}`, `error: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`]
   const found = problems(ui.findings)
   if (found.length > 0) lines.push('page reported:', ...found.map((p) => `  ${p}`))
-  try {
-    // Lightpanda's own account of the page: HTTP status, JS errors, resources it skipped.
-    const session = await ui.page.createCDPSession()
-    const status = await session.send('LP.getPageStatus' as never)
-    lines.push(`LP.getPageStatus: ${JSON.stringify(status)}`)
-  } catch (statusErr) {
-    lines.push(`LP.getPageStatus unavailable: ${String(statusErr)}`)
+  if (engine === 'lightpanda') {
+    try {
+      // Lightpanda's own account of the page: HTTP status, JS errors, resources it skipped.
+      const session = await ui.page.createCDPSession()
+      const status = await session.send('LP.getPageStatus' as never)
+      lines.push(`LP.getPageStatus: ${JSON.stringify(status)}`)
+    } catch (statusErr) {
+      lines.push(`LP.getPageStatus unavailable: ${String(statusErr)}`)
+    }
   }
   let html = ''
   try {
@@ -111,4 +128,5 @@ async function report(name: string, ui: Ui, err: unknown): Promise<void> {
   await writeFile(join(dir, 'failure.txt'), `${lines.join('\n')}\n`)
   await writeFile(join(dir, 'console.log'), `${ui.findings.console.join('\n')}\n`)
   await writeFile(join(dir, 'page.html'), html)
+  if (engine === 'chromium') await ui.page.screenshot({ path: join(dir, 'page.png') }).catch((shotErr: unknown) => console.error(`failure screenshot failed: ${String(shotErr)}`))
 }

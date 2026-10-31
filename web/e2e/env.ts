@@ -12,6 +12,9 @@ export function requireEnv(name: string): string {
 /** CDP endpoint of the Lightpanda server (`lightpanda serve`). */
 export const CDP_URL = process.env.LIGHTPANDA_CDP_URL ?? 'http://127.0.0.1:9222'
 
+/** CDP endpoint of the Chromium that renders the visual and contrast specs (`bun run e2e:chromium`). */
+export const CHROMIUM_CDP_URL = process.env.CHROMIUM_CDP_URL ?? 'http://127.0.0.1:9223'
+
 export interface Account {
   username: string
   password: string
