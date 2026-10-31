@@ -48,6 +48,19 @@ function serve(permissions: Record<string, boolean>, packages: unknown[] = PACKA
   })
 }
 
+/** A proxy npm repository whose cached packument row has an empty version, with `packages` listed and nothing held back. */
+function serveProxy(packages: unknown[]): void {
+  fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = String(input)
+    if (url === '/api/v1/repository/web') return json({ name: 'web', format: 'npm', repo_type: 'proxy', permissions: {} })
+    if (url.startsWith('/api/v1/repositories/web/packages?')) return json({ packages, total: packages.length })
+    if (url.startsWith('/api/v1/repositories/web/held-back-versions')) return json({ supported: true, versions: [] })
+    if (url.includes('/packages/f-')) return json({ id: 'f-new-amd64', filename: 'w.tgz', sha256: SHA, files: [], metadata: [], dependencies: [], version_count: 2, latest_version: '2.0.0' })
+    if (url.startsWith('/api/v1/repositories/web/security/summary')) return json(SUMMARY)
+    return json({}, 404)
+  })
+}
+
 async function mountAt(path: string, admin = false) {
   setActivePinia(createPinia())
   useSessionStore().user = { id: 'u1', username: 'jo', is_admin: admin } as never
@@ -91,7 +104,7 @@ describe('ArtifactPage', () => {
 
   it('never shows the cached upstream metadata row of a proxy package as a version', async () => {
     const meta = { id: 'f-meta', name: '@acme/widget', version: '', format: 'npm', size: 9, created_at: '2026-03-01T00:00:00Z' }
-    serve({ write: false, delete: false, manage: false, admin: false }, [meta, ...PACKAGES])
+    serveProxy([meta, ...PACKAGES])
     const { wrapper } = await mountAt('/repos/web/packages/@acme/widget')
     const select = wrapper.get('[data-testid=version-select]').element as HTMLSelectElement
     expect(select.value).toBe('2.0.0')
@@ -101,7 +114,7 @@ describe('ArtifactPage', () => {
 
   it('explains a proxy package that is known only from cached metadata', async () => {
     const meta = { id: 'f-meta', name: '@acme/widget', version: '', format: 'npm', size: 9, created_at: '2026-03-01T00:00:00Z' }
-    serve({ write: false, delete: false, manage: false, admin: false }, [meta])
+    serveProxy([meta])
     const { wrapper } = await mountAt('/repos/web/packages/@acme/widget')
     expect(wrapper.get('[data-testid=metadata-only]').text()).toContain('Proxied package')
     expect(wrapper.find('[data-testid=version-select]').exists()).toBe(false)
