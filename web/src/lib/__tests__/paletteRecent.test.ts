@@ -8,6 +8,7 @@ import {
   loadRecent,
   pushRecent,
   recentFromPath,
+  recentKey,
   recentStorageKey,
   saveRecent,
   type RecentItem,
@@ -26,6 +27,31 @@ describe('pushRecent', () => {
     for (let i = 0; i < RECENT_LIMIT + 5; i++) list = pushRecent(list, repo(`r${i}`))
     expect(list).toHaveLength(RECENT_LIMIT)
     expect(list[0]!.to).toBe(`/repos/r${RECENT_LIMIT + 4}`)
+  })
+})
+
+describe('action runs', () => {
+  const npm = { name: 'web-npm', format: 'npm', repoType: 'hosted', project: 'web' }
+  const settings = (name: string): RecentItem => ({ kind: 'action', action: 'repo-settings', repo: { ...npm, name } })
+  const token: RecentItem = { kind: 'action', action: 'create-token' }
+
+  it('dedupes a repeated run but keeps the same action on another repository', () => {
+    const list = pushRecent(pushRecent(pushRecent(pushRecent([], settings('a')), settings('b')), token), settings('a'))
+    expect(list.map(recentKey)).toEqual([recentKey(settings('a')), recentKey(token), recentKey(settings('b'))])
+  })
+
+  it('does not mix an action with a route of the same text', () => {
+    expect(recentKey(token)).not.toBe(recentKey(repo('create-token')))
+    expect(pushRecent([repo('a')], token)).toHaveLength(2)
+  })
+
+  it('survives a round trip and drops malformed runs', () => {
+    const data = new Map<string, string>()
+    const s = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v) }
+    saveRecent(s, 'k', [settings('a'), token])
+    expect(loadRecent(s, 'k')).toEqual([settings('a'), token])
+    s.setItem('k', JSON.stringify([token, { kind: 'action' }, { kind: 'action', action: 'x', repo: { name: 1 } }, { kind: 'action', action: 7 }]))
+    expect(loadRecent(s, 'k')).toEqual([token])
   })
 })
 
@@ -48,7 +74,7 @@ describe('storage', () => {
   it('drops malformed and off-site entries and survives broken storage', () => {
     const s = memory()
     s.setItem('k', JSON.stringify([repo('a'), { kind: 'repo', to: 'https://evil.example', label: 'x' }, { kind: 'repo', to: '//evil.example', label: 'x' }, { kind: 'nope', to: '/x', label: 'x' }, 7]))
-    expect(loadRecent(s, 'k').map((r) => r.to)).toEqual(['/repos/a'])
+    expect(loadRecent(s, 'k').map(recentKey)).toEqual(['/repos/a'])
     s.setItem('k', '{not json')
     expect(loadRecent(s, 'k')).toEqual([])
     expect(loadRecent(undefined, 'k')).toEqual([])

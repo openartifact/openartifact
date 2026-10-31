@@ -62,6 +62,5 @@
   "shell.action.createToken": "Zugriffstoken erstellen",
   "shell.action.createUser": "Benutzer erstellen",
   "shell.action.createBundle": "Release-Bundle erstellen",
-  "shell.action.toggleTheme": "Design umschalten",
   "shell.action.signOut": "Abmelden"
 }

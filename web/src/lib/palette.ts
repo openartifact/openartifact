@@ -7,7 +7,17 @@
 // feed it data, so all of it is tested without a DOM.
 
 import { resolveNav, sectionPath, settingsSections, type NavIcon } from './navigation'
-import type { RecentItem } from './paletteRecent'
+import {
+  bindRecentAction,
+  globalActions,
+  languageActions,
+  repoActions,
+  repoSearchTerm,
+  type BoundAction,
+  type PaletteContext,
+  type RepoSubject,
+} from './paletteActions'
+import { recentKey, type RecentItem } from './paletteRecent'
 import { t, tp } from '../i18n'
 
 export type PaletteGroupId =
@@ -22,8 +32,6 @@ export type PaletteGroupId =
   | 'actions'
   | 'search'
 
-export type PaletteActionId = 'toggle-theme' | 'sign-out'
-
 export type PaletteIcon =
   | NavIcon
   | 'plus'
@@ -32,6 +40,8 @@ export type PaletteIcon =
   | 'tag'
   | 'theme'
   | 'sign-out'
+  | 'clipboard'
+  | 'language'
   | 'document'
   | 'user'
   | 'search'
@@ -51,7 +61,9 @@ export interface PaletteItem {
   /** In-app destination (may carry a query string). */
   to?: string
   /** Something to run instead of navigating. */
-  action?: PaletteActionId
+  action?: BoundAction
+  /** The repository a repository result stands for; its actions are offered when it matches. */
+  repo?: RepoSubject
   /** The role cannot use the item: it is listed, explains why, and does nothing. */
   locked?: boolean
 }
@@ -147,12 +159,6 @@ export function highlightParts(text: string, query: string): { text: string; mat
 // ---------------------------------------------------------------------------
 // Static items
 
-export interface PaletteContext {
-  isAdmin: boolean
-  /** Admins, and maintainers or owners of a project, may create repositories. */
-  canCreateRepo: boolean
-}
-
 export function pageItems(ctx: PaletteContext): PaletteItem[] {
   return resolveNav(ctx.isAdmin).map((n) => ({
     id: `page:${n.id}`,
@@ -178,19 +184,38 @@ export function sectionItems(ctx: PaletteContext): PaletteItem[] {
   }))
 }
 
-export function actionItems(ctx: PaletteContext): PaletteItem[] {
-  return [
-    { id: 'action:create-repo', group: 'actions', title: t('shell.action.createRepo'), keywords: 'new add repo', icon: 'plus', to: '/repos?new=1', locked: !ctx.canCreateRepo },
-    { id: 'action:create-project', group: 'actions', title: t('shell.action.createProject'), keywords: 'new add team', icon: 'projects', to: '/projects?new=1' },
-    { id: 'action:create-token', group: 'actions', title: t('shell.action.createToken'), keywords: 'new personal ci pat api key', icon: 'ticket', to: '/settings/tokens?new=1' },
-    { id: 'action:create-user', group: 'actions', title: t('shell.action.createUser'), keywords: 'new invite add account', icon: 'user-plus', to: '/settings/users?new=1', locked: !ctx.isAdmin },
-    { id: 'action:create-bundle', group: 'actions', title: t('shell.action.createBundle'), keywords: 'new seal release', icon: 'tag', to: '/bundles?new=1', locked: !ctx.isAdmin },
-    { id: 'action:toggle-theme', group: 'actions', title: t('shell.action.toggleTheme'), keywords: 'theme appearance dark light mode', icon: 'theme', action: 'toggle-theme' },
-    { id: 'action:sign-out', group: 'actions', title: t('shell.action.signOut'), keywords: 'log out logout', icon: 'sign-out', action: 'sign-out' },
-  ]
+/** A bound action as a list item: in the Actions group, or in Recent. */
+export function actionItem(action: BoundAction, group: 'actions' | 'recent' = 'actions'): PaletteItem {
+  return {
+    id: `${group === 'recent' ? 'recent:action' : 'action'}:${action.key}`,
+    group,
+    title: action.title,
+    description: action.description,
+    keywords: action.keywords,
+    icon: action.icon,
+    action,
+  }
 }
 
-const RECENT_ICON: Record<RecentItem['kind'], PaletteIcon> = {
+/** How many of the best-matching repositories get their own actions. */
+const REPO_ACTION_REPOS = 3
+
+/**
+ * Every action the caller may run for `text`, unranked. Without text only the
+ * global ones are offered; with text the language choices and the actions of
+ * the best-matching repositories join them (they are too many to list blind).
+ */
+export function actionItems(ctx: PaletteContext, text = '', repositories: readonly PaletteItem[] = []): PaletteItem[] {
+  const actions = globalActions(ctx)
+  if (text) {
+    actions.push(...languageActions(ctx))
+    const repos = rankItems(repositories, repoSearchTerm(text, ctx)).flatMap((r) => (r.repo ? [r.repo] : []))
+    for (const repo of repos.slice(0, REPO_ACTION_REPOS)) actions.push(...repoActions(ctx, repo))
+  }
+  return actions.map((a) => actionItem(a))
+}
+
+const RECENT_ICON: Record<Exclude<RecentItem['kind'], 'action'>, PaletteIcon> = {
   page: 'document',
   section: 'settings',
   repo: 'repos',
@@ -199,22 +224,29 @@ const RECENT_ICON: Record<RecentItem['kind'], PaletteIcon> = {
   bundle: 'bundles',
 }
 
-/** Recent entries as items, skipping those the role can no longer open. */
+/** Recent entries as items, skipping those the role can no longer open or run. */
 export function recentItems(recent: readonly RecentItem[], ctx: PaletteContext): PaletteItem[] {
   const lockedPaths = new Set<string>()
   for (const p of pageItems(ctx)) if (p.locked && p.to) lockedPaths.add(p.to)
   for (const s of sectionItems(ctx)) if (s.locked && s.to) lockedPaths.add(s.to)
-  return recent
-    .filter((r) => !lockedPaths.has(r.to) && !(r.kind === 'bundle' && !ctx.isAdmin))
-    .map((r) => ({
-      id: `recent:${r.to}`,
-      group: 'recent' as const,
-      title: r.label,
-      description: r.sub,
-      icon: RECENT_ICON[r.kind],
-      mono: r.kind !== 'page' && r.kind !== 'section',
-      to: r.to,
-    }))
+  return recent.flatMap((r): PaletteItem[] => {
+    if (r.kind === 'action') {
+      const action = bindRecentAction(r, ctx)
+      return action ? [actionItem(action, 'recent')] : []
+    }
+    if (lockedPaths.has(r.to) || (r.kind === 'bundle' && !ctx.isAdmin)) return []
+    return [
+      {
+        id: `recent:${recentKey(r)}`,
+        group: 'recent',
+        title: r.label,
+        description: r.sub,
+        icon: RECENT_ICON[r.kind],
+        mono: r.kind !== 'page' && r.kind !== 'section',
+        to: r.to,
+      },
+    ]
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -246,7 +278,7 @@ const LIMITS: Record<PaletteGroupId, number> = {
   bundles: 4,
   settings: 5,
   users: 4,
-  actions: 8,
+  actions: 10,
   search: 2,
 }
 
@@ -290,7 +322,8 @@ function withKeywordHint(items: PaletteItem[], text: string): PaletteItem[] {
  * The groups to show, in display order.
  * - Empty text: Recent, Pages, a few suggested Actions.
  * - `>` prefix: Actions only.
- * - Otherwise: ranked static matches (Pages, Settings, Actions), the entity
+ * - Otherwise: ranked static matches (Pages, Settings, Actions, which include
+ *   the actions of the matching repositories), the entity
  *   results as they arrive (already filtered by the server for packages, ranked
  *   here for the rest), and the search row, which leads when the text is a
  *   checksum.
@@ -302,7 +335,7 @@ export function buildGroups({ query, context, recent, entities }: PaletteSources
   }
 
   if (query.mode === 'actions') {
-    add('actions', rankItems(actionItems(context), query.text))
+    add('actions', rankItems(actionItems(context, query.text, entities.repositories), query.text))
     return out
   }
 
@@ -315,13 +348,13 @@ export function buildGroups({ query, context, recent, entities }: PaletteSources
 
   if (query.checksum) add('search', searchItems(query))
   add('pages', rankItems(pageItems(context), query.text))
-  add('repositories', rankItems(entities.repositories, query.text))
+  add('repositories', rankItems(entities.repositories, repoSearchTerm(query.text, context)))
   add('packages', entities.packages)
   add('projects', rankItems(entities.projects, query.text))
   add('bundles', rankItems(entities.bundles, query.text))
   add('settings', withKeywordHint(rankItems(sectionItems(context), query.text), query.text))
   add('users', rankItems(entities.users, query.text))
-  add('actions', rankItems(actionItems(context), query.text))
+  add('actions', rankItems(actionItems(context, query.text, entities.repositories), query.text))
   if (!query.checksum) add('search', searchItems(query))
   return out
 }

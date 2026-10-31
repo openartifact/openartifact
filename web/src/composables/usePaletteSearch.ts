@@ -19,6 +19,13 @@ import { EMPTY_ENTITIES, type EntityResults, type PaletteItem } from '../lib/pal
  */
 type PaletteSearchStatus = 'idle' | 'loading' | 'ready' | 'tooBroad' | 'error'
 
+/**
+ * What a query is searched in: `all` sources, `repositories` only (the
+ * actions-only list needs just the repositories its actions apply to), or
+ * `none` (a checksum is looked up on the Packages page, not here).
+ */
+type PaletteSearchScope = 'all' | 'repositories' | 'none'
+
 interface PaletteSearchOptions {
   debounceMs?: number
   /** Hits per source. */
@@ -50,8 +57,11 @@ export function usePaletteSearch(options: PaletteSearchOptions) {
 
   const status = ref<PaletteSearchStatus>('idle')
   const entities = shallowRef<EntityResults>(EMPTY_ENTITIES)
+  // The API's `can_create` of the projects list: whether the caller may create a project.
+  const canCreateProject = ref(false)
 
   let query = ''
+  let scope: PaletteSearchScope = 'all'
   let generation = 0
   let timer: ReturnType<typeof setTimeout> | undefined
   let controller: AbortController | undefined
@@ -72,8 +82,9 @@ export function usePaletteSearch(options: PaletteSearchOptions) {
   }
 
   function loadProjects(): Promise<PaletteItem[]> {
-    projectsLoad ??= listProjects().then((res) =>
-      res.projects.flatMap((p): PaletteItem[] =>
+    projectsLoad ??= listProjects().then((res) => {
+      canCreateProject.value = res.can_create
+      return res.projects.flatMap((p): PaletteItem[] =>
         p.name
           ? [{
               id: `project:${p.name}`,
@@ -85,8 +96,8 @@ export function usePaletteSearch(options: PaletteSearchOptions) {
               to: `/projects/${enc(p.name)}`,
             }]
           : [],
-      ),
-    )
+      )
+    })
     projectsLoad.catch(() => {
       projectsLoad = undefined
     })
@@ -115,29 +126,34 @@ export function usePaletteSearch(options: PaletteSearchOptions) {
             format: r.format,
             mono: true,
             to: `/repos/${enc(r.name)}`,
+            repo: { name: r.name, format: r.format, repoType: r.repo_type ?? 'hosted', project: r.project },
           })),
         }),
       ),
-      search({ q, limit, group: 'package', signal }).then((res) =>
-        apply(gen, {
-          packages: res.packages.map((p) => ({
-            id: `package:${p.repository}:${p.name}`,
-            group: 'packages',
-            title: p.name,
-            description: `${p.version} · ${p.repository}`,
-            icon: 'packages',
-            format: p.format,
-            mono: true,
-            to: packagePath(p.repository, p.name),
-          })),
-        }),
-      ).catch((err: unknown) => {
-        if (err instanceof ApiError && err.code === QUERY_TOO_BROAD) tooBroad = true
-        else throw err
-      }),
-      loadProjects().then((items) => apply(gen, { projects: items })),
     ]
-    if (options.isAdmin()) {
+    if (scope === 'all') {
+      sources.push(
+        search({ q, limit, group: 'package', signal }).then((res) =>
+          apply(gen, {
+            packages: res.packages.map((p) => ({
+              id: `package:${p.repository}:${p.name}`,
+              group: 'packages',
+              title: p.name,
+              description: `${p.version} · ${p.repository}`,
+              icon: 'packages',
+              format: p.format,
+              mono: true,
+              to: packagePath(p.repository, p.name),
+            })),
+          }),
+        ).catch((err: unknown) => {
+          if (err instanceof ApiError && err.code === QUERY_TOO_BROAD) tooBroad = true
+          else throw err
+        }),
+        loadProjects().then((items) => apply(gen, { projects: items })),
+      )
+    }
+    if (scope === 'all' && options.isAdmin()) {
       sources.push(
         listBundles({ name: q, limit }).then((res) =>
           apply(gen, {
@@ -184,12 +200,16 @@ export function usePaletteSearch(options: PaletteSearchOptions) {
     status.value = failed ? 'error' : tooBroad ? 'tooBroad' : 'ready'
   }
 
-  /** Sets the text to search for; text below the minimum clears the entity results. */
-  function setQuery(text: string, checksum = false): void {
+  /**
+   * Sets the text to search for and where; text below the minimum clears the
+   * entity results and asks nothing.
+   */
+  function setQuery(text: string, searchScope: PaletteSearchScope = 'all'): void {
     cancel()
     query = text.trim()
+    scope = searchScope
     entities.value = EMPTY_ENTITIES
-    if (query.length < minChars || checksum || query.startsWith('>')) {
+    if (query.length < minChars || scope === 'none') {
       status.value = 'idle'
       return
     }
@@ -205,6 +225,14 @@ export function usePaletteSearch(options: PaletteSearchOptions) {
     void run()
   }
 
+  /**
+   * Fetches the projects list ahead of any query: its `can_create` decides
+   * whether "Create project" is offered. A failure leaves the action hidden.
+   */
+  function warm(): void {
+    loadProjects().catch(() => {})
+  }
+
   /** Forgets everything of the closed palette, including the cached projects. */
   function reset(): void {
     setQuery('')
@@ -213,5 +241,5 @@ export function usePaletteSearch(options: PaletteSearchOptions) {
 
   if (getCurrentScope()) onScopeDispose(cancel)
 
-  return { status: readonly(status), entities, setQuery, retry, reset }
+  return { status: readonly(status), entities, canCreateProject: readonly(canCreateProject), setQuery, retry, reset, warm }
 }

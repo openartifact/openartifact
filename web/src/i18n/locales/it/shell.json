@@ -62,6 +62,5 @@
   "shell.action.createToken": "Crea token di accesso",
   "shell.action.createUser": "Crea utente",
   "shell.action.createBundle": "Crea bundle di rilascio",
-  "shell.action.toggleTheme": "Cambia tema",
   "shell.action.signOut": "Esci"
 }
