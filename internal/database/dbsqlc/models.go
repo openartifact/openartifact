@@ -313,6 +313,18 @@ type ConanFile struct {
 	PackageRevision string `db:"package_revision" json:"package_revision"`
 }
 
+type CurationRule struct {
+	ID             string    `db:"id" json:"id"`
+	RepositoryID   string    `db:"repository_id" json:"repository_id"`
+	Action         string    `db:"action" json:"action"`
+	PackagePattern string    `db:"package_pattern" json:"package_pattern"`
+	VersionPattern string    `db:"version_pattern" json:"version_pattern"`
+	Reason         string    `db:"reason" json:"reason"`
+	CreatedBy      string    `db:"created_by" json:"created_by"`
+	CreatedAt      time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
+}
+
 // Deb side of package_files: the distribution and component the .deb is published in, and its control stanza
 type DebFile struct {
 	ID             string `db:"id" json:"id"`
@@ -1065,9 +1077,10 @@ type Repository struct {
 	// Groups only. false (default): when a hosted member holds a package name, proxy members' versions and files of that name are hidden. true: versions of all members are merged.
 	MergeProxyVersions bool `db:"merge_proxy_versions" json:"merge_proxy_versions"`
 	// Hosted rpm repositories only: sign uploaded RPMs with the active GPG key.
-	SignPackages bool  `db:"sign_packages" json:"sign_packages"`
-	Federated    bool  `db:"federated" json:"federated"`
-	MinAgeHours  int32 `db:"min_age_hours" json:"min_age_hours"`
+	SignPackages bool   `db:"sign_packages" json:"sign_packages"`
+	Federated    bool   `db:"federated" json:"federated"`
+	MinAgeHours  int32  `db:"min_age_hours" json:"min_age_hours"`
+	CurationMode string `db:"curation_mode" json:"curation_mode"`
 }
 
 type RepositoryAttestationAttach struct {

@@ -64,6 +64,8 @@ The Maven layout is recognised when the path has more than four segments and its
 
 An Ivy or sbt proxy mirrors an upstream by path, like a [raw or Maven proxy](../repositories/hosted-proxy-group.md#proxy-repositories): `upstream_url` is the root of an Ivy-layout or Maven-layout repository and `HOST/repos/<format>/PROXY/<path>` is fetched from `<upstream_url>/<path>`. There is no default upstream. Both layouts above work, so the same proxy serves Ivy resolvers, sbt (including plugin resolution) and coursier. `https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases` is the sbt plugin repository (Ivy layout):
 
+[Package curation](../repositories/hosted-proxy-group.md#package-curation) applies to the files of a version: rules name a module `group:module` (the group dotted, as for Maven) and a version; the jar, POM and `ivy.xml` of a blocked version answer `403` with the reason, even when cached. `maven-metadata.xml`, checksum and signature files are not gated, so a resolver may still list the version.
+
 ```sh
 curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
   -H 'Content-Type: application/json' \

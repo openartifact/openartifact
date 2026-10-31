@@ -709,6 +709,11 @@
             "type": "integer",
             "description": "Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600."
           },
+          "curation_mode": {
+            "type": "string",
+            "enum": ["off", "denylist", "allowlist"],
+            "description": "Proxy repositories only. How the repository's curation rules apply: off ignores them (default), denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches. Rules are managed under /api/v1/repositories/{name}/curation-rules."
+          },
           "blocked": {
             "type": "boolean",
             "description": "Whether the repository is blocked"
@@ -1312,6 +1317,121 @@
           "format",
           "repo_type",
           "priority"
+        ]
+      },
+      "CurationRule": {
+        "type": "object",
+        "description": "One curation rule of a proxy repository. Package and version patterns are globs (`*` any run of characters, `?` one character) matched against the package name normalized the way the format shows it and the version string as clients see it; an empty version pattern matches every version.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string",
+            "enum": ["block", "allow"]
+          },
+          "package_pattern": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "version_pattern": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Shown to clients that are refused the version."
+          },
+          "created_by": {
+            "type": "string",
+            "description": "Login name of the caller that created the rule; empty when unknown."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "package_pattern",
+          "version_pattern",
+          "reason",
+          "created_by",
+          "created_at"
+        ]
+      },
+      "CurationRules": {
+        "type": "object",
+        "properties": {
+          "rules": {
+            "type": "array",
+            "description": "In creation order.",
+            "items": {
+              "$ref": "#/components/schemas/CurationRule"
+            }
+          }
+        },
+        "required": [
+          "rules"
+        ]
+      },
+      "AvailabilityReason": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": ["curation", "min_age", "quarantine", "license_policy", "repository_blocked"]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When a min_age hold ends."
+          },
+          "rule_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The curation rule that blocks the version; absent for a version an allowlist does not list."
+          }
+        },
+        "required": [
+          "source",
+          "detail"
+        ]
+      },
+      "AvailabilityResponse": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "True when no hold applies."
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AvailabilityReason"
+            }
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The publish time the upstream states, when the cached metadata dates the version."
+          },
+          "min_age": {
+            "type": "string",
+            "enum": ["off", "checked", "unknown"],
+            "description": "off: the repository has no minimum age. checked: it has one and the version was dated. unknown: it has one but the cached metadata does not date the version, so the check could not run (the proxy lets an undated version through)."
+          }
+        },
+        "required": [
+          "available",
+          "reasons",
+          "min_age"
         ]
       },
       "CleanupPolicy": {
@@ -8104,6 +8224,11 @@
                   "min_age_hours": {
                     "type": "integer",
                     "description": "Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600."
+                  },
+                  "curation_mode": {
+                    "type": "string",
+                    "enum": ["off", "denylist", "allowlist"],
+                    "description": "Proxy repositories only (400 for other types). off ignores the curation rules (default), denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches."
                   },
                   "blocked": {
                     "type": "boolean"
@@ -18192,6 +18317,11 @@
                     "type": "integer",
                     "description": "Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600."
                   },
+                  "curation_mode": {
+                    "type": "string",
+                    "enum": ["off", "denylist", "allowlist"],
+                    "description": "Proxy repositories only (400 for other types). off ignores the curation rules (default), denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches."
+                  },
                   "member_repos": {
                     "type": "array",
                     "items": {
@@ -19929,6 +20059,11 @@
                     "type": "integer",
                     "description": "Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600."
                   },
+                  "curation_mode": {
+                    "type": "string",
+                    "enum": ["off", "denylist", "allowlist"],
+                    "description": "Proxy repositories only (400 for other types). off ignores the curation rules, denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches. A change is audited as repository.updated."
+                  },
                   "blocked": {
                     "type": "boolean"
                   },
@@ -21234,6 +21369,416 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/repositories/{name}/curation-rules": {
+      "get": {
+        "summary": "List curation rules",
+        "description": "The curation rules of a proxy repository in creation order. Requires global admin, or the maintainer or owner role in the repository's project. The rules only take effect while the repository's `curation_mode` is `denylist` or `allowlist`.",
+        "tags": [
+          "Curation"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The rules",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurationRules"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The repository is not a proxy repository (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create curation rule",
+        "description": "Add a block or allow rule to a proxy repository. A repository holds at most 1000 rules. Audited as `curation.rule_created`. Requires global admin, or the maintainer or owner role in the repository's project.",
+        "tags": [
+          "Curation"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": ["block", "allow"]
+                  },
+                  "package_pattern": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "version_pattern": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "description": "Empty or absent matches every version."
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "action",
+                  "package_pattern"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Rule created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurationRule"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid rule, or the repository is not a proxy repository (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The repository already holds the maximum number of rules (`conflict`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/curation-rules/{id}": {
+      "patch": {
+        "summary": "Update curation rule",
+        "description": "Change any of the rule's action, patterns and reason; absent fields keep their value. The rule must belong to the repository in the path. Audited as `curation.rule_updated`. Requires global admin, or the maintainer or owner role in the repository's project.",
+        "tags": [
+          "Curation"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": ["block", "allow"]
+                  },
+                  "package_pattern": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "version_pattern": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Rule updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurationRule"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid rule, or the repository is not a proxy repository (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or rule not found (also a rule of another repository, or an id that is not a UUID)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete curation rule",
+        "description": "Remove a rule. The rule must belong to the repository in the path. Audited as `curation.rule_deleted`. Requires global admin, or the maintainer or owner role in the repository's project.",
+        "tags": [
+          "Curation"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Rule deleted"
+          },
+          "400": {
+            "description": "The repository is not a proxy repository (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or rule not found (also a rule of another repository, or an id that is not a UUID)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/availability": {
+      "get": {
+        "summary": "Explain whether a package version is available",
+        "description": "Evaluates the holds that apply to one package version of a repository and lists the ones that do. A proxy repository reports its blocked flag, its curation rules and its minimum age; the publish time comes from the metadata already cached, never from the upstream, so `min_age` is `unknown` when the repository has a minimum age but the version cannot be dated. A hosted repository reports its blocked flag and the quarantine and license-policy holds of the stored version (only for formats stored in the generic package tables; scan results are matched through the version's files). A group repository has no verdict of its own, because it serves what its members serve: ask a member (400). Package and version are matched the way the format names them, see the Package curation section of the repository docs. Needs read access to the repository.",
+        "tags": [
+          "Curation"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "package",
+            "in": "query",
+            "required": true,
+            "description": "Package name, at most 1024 bytes.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": true,
+            "description": "Version string as clients see it, at most 1024 bytes.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The verdict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailabilityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or oversized `package` or `version`, or the repository is a group (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No read access to the repository",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          },
+          {}
+        ]
       }
     },
     "/api/v1/repositories/{name}/cleanup-policies/{id}": {

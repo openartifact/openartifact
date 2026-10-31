@@ -99,6 +99,8 @@ Debian repositories need nothing equivalent: apt verifies the signed `Release`/`
 
 An RPM proxy repository mirrors `repodata/` and `Packages/` from `upstream_url`. `.rpm` files below a `Packages/` directory are immutable once cached; `.rpm` files elsewhere (flat layouts) and `repodata/` are served from cache until `cache_ttl_seconds` (default 1 hour) and then revalidated. Upstream metadata and signatures pass through unchanged, so clients must trust the upstream's key. Negative caching and serve-stale: [hosted, proxy, group](../repositories/hosted-proxy-group.md).
 
+[Package curation](../repositories/hosted-proxy-group.md#package-curation) refuses the download of a blocked `.rpm` (`403` with the reason, even when cached): rules name the package as in the NEVRA file name `<name>-<version>-<release>.<arch>.rpm` and the version as `<version>-<release>` (no epoch). `repodata/` is served as the upstream has it, so dnf still lists a blocked package; `.drpm` delta files are not gated.
+
 ## Group
 
 An RPM group publishes merged `repodata/` (`repomd.xml`, `primary`, `filelists`, `other` and `modules`), signed with the server key (`repomd.xml.asc`), and serves `Packages/` files from the member that owns them. Use `baseurl=HOST/repos/GROUP` and `gpgkey=HOST/repos/GROUP/public.key` as for a hosted repository. Merging rules, regeneration and limits: [Deb and RPM groups](../repositories/hosted-proxy-group.md#deb-and-rpm-groups).

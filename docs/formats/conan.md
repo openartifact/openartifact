@@ -110,6 +110,8 @@ How the two protocols share a repository:
 
 A conan proxy caches another Conan remote (default upstream `https://center2.conan.io`) and a conan group serves several repositories as one remote. Clients are set up as for a hosted repository (`conan remote add REPO HOST/repos/REPO`, `conan remote login`); the repository is read-only, so `conan upload` is `405`. How the proxy caches, authenticates to the upstream and what a group merges: [Conan proxies](../repositories/hosted-proxy-group.md#conan-proxies) and [Group repositories](../repositories/hosted-proxy-group.md#group-repositories).
 
+[Package curation](../repositories/hosted-proxy-group.md#package-curation) on a proxy names a recipe by its name and a version as the reference shows it (`zlib`, `1.3.1`); the Conan 2 revision, file-list and file requests of a blocked recipe answer `403` with the reason, even when cached. Searches and Conan 1 paths are not gated.
+
 ```sh
 conan remote add conan-proxy HOST/repos/conan-proxy
 conan remote login conan-proxy <USERNAME> -p <TOKEN>

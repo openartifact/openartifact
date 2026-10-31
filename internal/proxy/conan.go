@@ -480,4 +480,6 @@ var ConanHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	Immutable:  conanRevisionFile,
 	IsMetadata: func(key string) bool { return !strings.Contains(key, "/files/") },
 	BlobPath:   presign.ConanBlobPath,
+	// The recipe of a Conan 2 path: gated before Serve (see conanCoordinates).
+	Coordinates: conanCoordinates,
 }

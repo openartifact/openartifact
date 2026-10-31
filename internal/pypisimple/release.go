@@ -33,6 +33,13 @@ func (f *File) Uploaded() time.Time {
 // normalized name) belongs to, in a canonical spelling so that "1.0" and
 // "1.0.0" name one release. It is "" for a name that carries no version.
 func FileVersion(project, filename string) string {
+	return canonicalVersion(SpelledVersion(project, filename))
+}
+
+// SpelledVersion returns the version a distribution file of project belongs to
+// as the file name spells it ("1.0.0", "2.0rc1", "1.0-1"), "" for a name that
+// carries no version. Curation rules match this spelling.
+func SpelledVersion(project, filename string) string {
 	stem := strings.TrimSuffix(filename, MetadataSuffix)
 	lower := strings.ToLower(stem)
 
@@ -47,14 +54,14 @@ func FileVersion(project, filename string) string {
 					return ""
 				}
 
-				return canonicalVersion(parts[1])
+				return parts[1]
 			}
 
 			break
 		}
 	}
 
-	return canonicalVersion(versionAfterName(project, stem))
+	return versionAfterName(project, stem)
 }
 
 // versionAfterName returns the part of an sdist-style stem after the project
@@ -92,6 +99,13 @@ func canonicalVersion(v string) string {
 // Releases maps a release (the files of one version) to the time its first
 // file was uploaded.
 type Releases map[string]time.Time
+
+// PublishedVersion returns when the release spelled version (any spelling that
+// canonicalizes alike: "1.0" and "1.0.0") was first uploaded, the zero time when
+// unknown.
+func (r Releases) PublishedVersion(version string) time.Time {
+	return r["v:"+canonicalVersion(version)]
+}
 
 // releaseKey names the release a file belongs to; a file whose name carries no
 // version is a release of its own.
@@ -131,14 +145,14 @@ func (r Releases) Published(project, filename string) time.Time {
 	return r[releaseKey(project, filename)]
 }
 
-// Filter returns the files for which keep reports true, given the first upload
-// time of the release each belongs to (zero when unknown). The input is not
-// modified.
-func (r Releases) Filter(project string, files []File, keep func(published time.Time) bool) []File {
+// Filter returns the files for which keep reports true, given the version each
+// is spelled with (SpelledVersion) and the first upload time of the release it
+// belongs to (zero when unknown). The input is not modified.
+func (r Releases) Filter(project string, files []File, keep func(version string, published time.Time) bool) []File {
 	out := make([]File, 0, len(files))
 
 	for i := range files {
-		if keep(r.Published(project, files[i].Filename)) {
+		if keep(SpelledVersion(project, files[i].Filename), r.Published(project, files[i].Filename)) {
 			out = append(out, files[i])
 		}
 	}

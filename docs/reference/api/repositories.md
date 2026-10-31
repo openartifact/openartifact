@@ -88,6 +88,7 @@ Create a new repository (admin only)
 |---|---|---|---|
 | `blocked` | boolean | no | - |
 | `cache_ttl_seconds` | integer | no | - |
+| `curation_mode` | string | no | Proxy repositories only (400 for other types). off ignores the curation rules (default), denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches. One of: `off`, `denylist`, `allowlist`. |
 | `description` | string | no | - |
 | `federated` | boolean | no | Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true). |
 | `format` | string | yes | One of: `ansible`, `apk`, `cargo`, `composer`, `conan`, `conda`, `deb`, `docker`, `go`, `helm`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `pacman`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. |
@@ -1791,6 +1792,7 @@ Update repository configuration. Requires global admin, or the maintainer or own
 |---|---|---|---|
 | `blocked` | boolean | no | - |
 | `cache_ttl_seconds` | integer | no | - |
+| `curation_mode` | string | no | Proxy repositories only (400 for other types). off ignores the curation rules, denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches. A change is audited as repository.updated. One of: `off`, `denylist`, `allowlist`. |
 | `description` | string | no | - |
 | `immutable_releases` | boolean | no | When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true. |
 | `max_stale_seconds` | integer | no | Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000. |

@@ -321,7 +321,7 @@ func TestRenderNPM_MinAgeBoundaries(t *testing.T) {
 	  "versions":{"1.0.0":{},"2.0.0":{},"3.0.0":{}},
 	  "time":{"1.0.0":"2024-05-01T00:00:00Z","2.0.0":"2024-05-09T12:00:00Z","3.0.0":"2024-05-09T12:00:01Z"}}`
 
-	out, err := renderNPM([]byte(doc), p, "http://oa.test/repos/r", repo, now)
+	out, err := renderNPM([]byte(doc), p, "http://oa.test/repos/r", newGate(repo, nil, now))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,13 +346,13 @@ func TestRenderNPM_MinAgeBoundaries(t *testing.T) {
 	}
 
 	// The same document, an hour later, offers 3.0.0.
-	out, err = renderNPM([]byte(doc), p, "http://oa.test/repos/r", repo, now.Add(time.Hour))
+	out, err = renderNPM([]byte(doc), p, "http://oa.test/repos/r", newGate(repo, nil, now.Add(time.Hour)))
 	if err != nil || decodeGated(t, string(out)).DistTags["latest"] != "3.0.0" {
 		t.Errorf("an hour later: %s, %v; want latest=3.0.0", out, err)
 	}
 
 	// Everything dated and too new: no document.
-	_, err = renderNPM([]byte(doc), p, "http://oa.test/repos/r", repo, time.Date(2024, 5, 1, 1, 0, 0, 0, time.UTC))
+	_, err = renderNPM([]byte(doc), p, "http://oa.test/repos/r", newGate(repo, nil, time.Date(2024, 5, 1, 1, 0, 0, 0, time.UTC)))
 	if !errors.Is(err, errNotFound) {
 		t.Errorf("every version too new: err = %v, want errNotFound", err)
 	}

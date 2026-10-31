@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/curation"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -450,13 +451,13 @@ func TestNuGetMinAge_GateStampMovesWithTime(t *testing.T) {
 	repo := &models.Repository{MinAgeHours: 24}
 	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 
-	g := nugetGate{repo: repo, now: now}
-	if later := (nugetGate{repo: repo, now: now.Add(gateStampBucket)}); later.stamp() == g.stamp() {
+	g := nugetGate{versionGate: newGate(repo, nil, now)}
+	if later := (nugetGate{versionGate: newGate(repo, nil, now.Add(curation.StampBucket))}); later.Stamp() == g.Stamp() {
 		t.Error("stamp does not change as time passes")
 	}
 
-	if off := (nugetGate{repo: &models.Repository{}, now: now}); off.stamp() != "" {
-		t.Errorf("gate off: stamp = %q", off.stamp())
+	if off := (nugetGate{versionGate: newGate(&models.Repository{}, nil, now)}); off.Stamp() != "" {
+		t.Errorf("gate off: stamp = %q", off.Stamp())
 	}
 }
 
@@ -481,7 +482,7 @@ func TestGateNuGetItems_Boundaries(t *testing.T) {
 
 	var got []string
 
-	for _, it := range gateNuGetItems(repo, items, now) {
+	for _, it := range gateNuGetItems(newGate(repo, nil, now), "pkg", items) {
 		v, _ := nugetItemMeta(it)
 		got = append(got, v)
 	}
@@ -490,7 +491,7 @@ func TestGateNuGetItems_Boundaries(t *testing.T) {
 		t.Errorf("kept %v, want %v", got, want)
 	}
 
-	if kept := gateNuGetItems(&models.Repository{}, items, now); len(kept) != len(items) {
+	if kept := gateNuGetItems(newGate(&models.Repository{}, nil, now), "pkg", items); len(kept) != len(items) {
 		t.Errorf("gate off kept %d of %d", len(kept), len(items))
 	}
 }
@@ -506,7 +507,9 @@ func TestGateNuGetVersions(t *testing.T) {
 		"4.0.0-beta": now.Add(-48 * time.Hour),
 	}}
 
-	out, err := gateNuGetVersions(repo, doc, dates, now)
+	g := newGate(repo, nil, now)
+
+	out, err := gateNuGetVersions(g, "pkg", doc, dates)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -523,25 +526,25 @@ func TestGateNuGetVersions(t *testing.T) {
 	// Not in the registration yet: new, unless the registration is incomplete.
 	extra := []byte(`{"versions":["1.0.0","9.0.0"]}`)
 
-	out, _ = gateNuGetVersions(repo, extra, dates, now)
+	out, _ = gateNuGetVersions(g, "pkg", extra, dates)
 	if strings.Contains(string(out), "9.0.0") {
 		t.Errorf("a version unknown to the registration was kept: %s", out)
 	}
 
 	dates.complete = false
 
-	out, _ = gateNuGetVersions(repo, extra, dates, now)
+	out, _ = gateNuGetVersions(g, "pkg", extra, dates)
 	if !strings.Contains(string(out), "9.0.0") {
 		t.Errorf("incomplete registration: unknown version dropped: %s", out)
 	}
 
 	// Nothing left.
-	if _, err := gateNuGetVersions(repo, []byte(`{"versions":["2.0.0"]}`), dates, now); !errors.Is(err, errNotFound) {
+	if _, err := gateNuGetVersions(g, "pkg", []byte(`{"versions":["2.0.0"]}`), dates); !errors.Is(err, errNotFound) {
 		t.Errorf("all young: err = %v, want errNotFound", err)
 	}
 
 	// No dates: unchanged.
-	if out, err := gateNuGetVersions(repo, doc, nil, now); err != nil || string(out) != string(doc) {
+	if out, err := gateNuGetVersions(g, "pkg", doc, nil); err != nil || string(out) != string(doc) {
 		t.Errorf("no dates: %s, %v", out, err)
 	}
 }
@@ -562,11 +565,13 @@ func TestGateNuGetRegIndex_Pages(t *testing.T) {
 	}
 
 	// One page narrowed, one emptied (and dropped), one not inline (kept).
-	out, err := gateNuGetRegIndex(repo, doc(
+	g := newGate(repo, nil, now)
+
+	out, err := gateNuGetRegIndex(g, "pkg", doc(
 		page("1.0.0", "2.0.0", nugetItemAt("1.0.0", old), nugetItemAt("2.0.0", young)),
 		page("3.0.0", "3.0.0", nugetItemAt("3.0.0", young)),
 		`{"@id":"p3","lower":"4.0.0","upper":"5.0.0","count":2}`,
-	), now)
+	))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -582,12 +587,12 @@ func TestGateNuGetRegIndex_Pages(t *testing.T) {
 
 	// Nothing hidden: the document is returned as it is.
 	same := doc(page("1.0.0", "1.0.0", nugetItemAt("1.0.0", old)))
-	if out, err := gateNuGetRegIndex(repo, same, now); err != nil || !bytes.Equal(out, same) {
+	if out, err := gateNuGetRegIndex(g, "pkg", same); err != nil || !bytes.Equal(out, same) {
 		t.Errorf("nothing hidden: %s, %v", out, err)
 	}
 
 	// Everything hidden and every page inline: no package.
-	if _, err := gateNuGetRegIndex(repo, doc(page("1.0.0", "1.0.0", nugetItemAt("1.0.0", young))), now); !errors.Is(err, errNotFound) {
+	if _, err := gateNuGetRegIndex(g, "pkg", doc(page("1.0.0", "1.0.0", nugetItemAt("1.0.0", young)))); !errors.Is(err, errNotFound) {
 		t.Errorf("all young: err = %v, want errNotFound", err)
 	}
 }

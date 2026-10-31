@@ -478,11 +478,21 @@ func (d *docLoader) list(n *yaml.Node, f *Field, path string) any {
 
 // elemIdentity is the dedupe/sort identity of a set element.
 func elemIdentity(f *Field, v any) string {
-	if m, ok := v.(map[string]any); ok && f.KeyBy != "" {
+	m, ok := v.(map[string]any)
+	if !ok || f.KeyBy == "" {
+		return fmt.Sprint(v)
+	}
+
+	if !strings.Contains(f.KeyBy, ",") {
 		return fmt.Sprint(m[f.KeyBy])
 	}
 
-	return fmt.Sprint(v)
+	parts := strings.Split(f.KeyBy, ",")
+	for i, k := range parts {
+		parts[i] = Str(m, k)
+	}
+
+	return strings.Join(parts, "|")
 }
 
 func (d *docLoader) stringMap(n *yaml.Node, f *Field, path string) any {

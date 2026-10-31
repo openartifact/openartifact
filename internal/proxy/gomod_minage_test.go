@@ -37,8 +37,10 @@ func (e *goEnv) getAt(path string, now time.Time) *httptest.ResponseRecorder {
 	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 
-	if !e.svc.serveGoGated(w, r, e.repo, req, now) {
-		e.svc.serveVerbatim(w, r, e.repo, e.svc.goDoc(e.repo, req, now))
+	g := newGate(e.repo, nil, now)
+
+	if !e.svc.serveGoGated(w, r, e.repo, req, g) {
+		e.svc.serveVerbatim(w, r, e.repo, e.svc.goDoc(e.repo, req, g))
 	}
 
 	return w

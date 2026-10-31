@@ -37,6 +37,22 @@ func TestFileVersion(t *testing.T) {
 	}
 }
 
+func TestSpelledVersion(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct{ project, filename, want string }{
+		{"requests", "requests-2.32.0-py3-none-any.whl", "2.32.0"},
+		{"requests", "requests-2.32.0.tar.gz", "2.32.0"},
+		{"requests", "requests-2.32.0-py3-none-any.whl.metadata", "2.32.0"},
+		{"foo", "Foo-V1_2_0.tar.gz", "V1_2_0"},
+		{"foo", "foo.tar.gz", ""},
+	} {
+		if got := SpelledVersion(tt.project, tt.filename); got != tt.want {
+			t.Errorf("SpelledVersion(%q, %q) = %q, want %q", tt.project, tt.filename, got, tt.want)
+		}
+	}
+}
+
 func TestUploaded(t *testing.T) {
 	t.Parallel()
 
@@ -92,7 +108,7 @@ func TestReleases_EarliestFileDatesTheRelease(t *testing.T) {
 
 	cutoff := time.Date(2024, 2, 15, 0, 0, 0, 0, time.UTC)
 
-	kept := rel.Filter("foo", files, func(published time.Time) bool { return published.IsZero() || published.Before(cutoff) })
+	kept := rel.Filter("foo", files, func(_ string, published time.Time) bool { return published.IsZero() || published.Before(cutoff) })
 
 	var names []string
 	for _, f := range kept {

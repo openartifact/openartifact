@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/curation"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -45,6 +46,7 @@ type authCache struct {
 	perms    map[string]cacheEntry[[]*models.PermissionTarget]
 	repos    map[string]cacheEntry[*models.Repository]
 	projects map[string]cacheEntry[[]*models.ProjectGrant]
+	curation map[string]cacheEntry[[]*curation.Rule]
 }
 
 type cacheEntry[V any] struct {
@@ -72,7 +74,7 @@ func (c *authCache) invalidate() {
 	defer c.mu.Unlock()
 
 	c.gen++
-	c.tokens, c.users, c.groups, c.perms, c.repos, c.projects = nil, nil, nil, nil, nil, nil
+	c.tokens, c.users, c.groups, c.perms, c.repos, c.projects, c.curation = nil, nil, nil, nil, nil, nil, nil
 }
 
 // AuthCacheTTL is the configured lifetime of auth-derived cache entries (0:

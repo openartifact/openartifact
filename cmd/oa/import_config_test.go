@@ -117,6 +117,8 @@ metadata:
 spec:
   cache_ttl_seconds: 3600
   cleanup_policies: []
+  curation_mode: "off"
+  curation_rules: []
   description: ""
   format: npm
   immutable_releases: false

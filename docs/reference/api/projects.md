@@ -629,6 +629,7 @@ Create a repository owned by the project. Requires the maintainer or owner role 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `cache_ttl_seconds` | integer | no | - |
+| `curation_mode` | string | no | Proxy repositories only (400 for other types). off ignores the curation rules (default), denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches. One of: `off`, `denylist`, `allowlist`. |
 | `description` | string | no | - |
 | `federated` | boolean | no | Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true). |
 | `format` | string | yes | - |

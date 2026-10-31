@@ -146,6 +146,9 @@ type Service struct {
 	// (GOSUMDB=off) verifies their structure only.
 	sumdb *sumDB
 
+	// curation supplies the curation rules of proxy repositories (WithCuration).
+	curation CurationSource
+
 	nuget nugetIndexCache // parsed NuGet upstream service indexes
 
 	gemMD5 md5Memo // MD5 ETags of cached RubyGems compact index files
@@ -243,7 +246,12 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 		return
 	}
 
-	if h, ok := hooks.Lookup(repo.Format); ok && h.Serve != nil {
+	h, hasHooks := hooks.Lookup(repo.Format)
+	if hasHooks && s.curationRefusal(w, r, repo, h, relPath) {
+		return
+	}
+
+	if hasHooks && h.Serve != nil {
 		h.Serve(s, w, r, repo, relPath)
 		return
 	}
@@ -345,6 +353,7 @@ func (s *Service) writeResolveError(w http.ResponseWriter, r *http.Request, err 
 	switch {
 	case errors.Is(err, errNotFound):
 		http.NotFound(w, r)
+	case writeGateError(w, err):
 	case errors.Is(err, errTooNew):
 		http.Error(w, errTooNew.Error(), http.StatusForbidden)
 	case errors.Is(err, errUpstream):

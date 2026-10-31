@@ -100,30 +100,60 @@ func (s *Service) serveRubyGems(w http.ResponseWriter, r *http.Request, repo *mo
 
 	key := strings.TrimPrefix(relPath, "/")
 
+	g, err := s.gateFor(r.Context(), repo, time.Now())
+	if err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
+
 	if p.Kind == compactindex.KindGem {
+		// Curation is checked before the cache is read, so a gem cached before
+		// the rules changed is refused too. The minimum age needs the dates of
+		// the versions API, looked up only when the file is fetched: a cached gem
+		// of a version that has aged in is served as it is.
+		if cerr := s.checkRubyGemCurated(r.Context(), repo, g, p.File); cerr != nil {
+			s.writeResolveError(w, r, cerr)
+			return
+		}
+
 		s.serveDownload(w, r, repo, key, func(ctx context.Context) (download, error) {
-			return s.locateRubyGem(ctx, repo, p, key)
+			return s.locateRubyGem(ctx, repo, g, p, key)
 		})
 
 		return
 	}
 
 	switch {
-	case p.Kind == compactindex.KindInfo && minAge(repo) > 0:
-		s.serveRubyGemsInfo(w, r, repo, p, key)
-	case p.Kind == compactindex.KindGemspec && minAge(repo) > 0:
-		s.serveRubyGemspec(w, r, repo, p, key)
+	case p.Kind == compactindex.KindInfo && g.Active():
+		s.serveRubyGemsInfo(w, r, repo, g, p, key)
+	case p.Kind == compactindex.KindGemspec && g.Active():
+		s.serveRubyGemspec(w, r, repo, g, p, key)
 	default:
+		// versions, names and the legacy indexes state nothing the gate can
+		// filter reliably (see rubygems_minage.go).
 		s.serveVerbatim(w, r, repo, rubygemsDoc(key, p.Kind))
 	}
 }
 
-// serveRubyGemspec answers a gemspec, refused when the version it describes
-// is too new (checked only when the file is not cached yet).
-func (s *Service) serveRubyGemspec(w http.ResponseWriter, r *http.Request, repo *models.Repository, p compactindex.Path, key string) {
+// serveRubyGemspec answers a gemspec, refused when the version it describes is
+// held back by the gate: by curation also when the file is cached, by the
+// minimum age only when it is not cached yet.
+func (s *Service) serveRubyGemspec(
+	w http.ResponseWriter,
+	r *http.Request,
+	repo *models.Repository,
+	g versionGate,
+	p compactindex.Path,
+	key string,
+) {
+	if err := s.checkRubyGemCurated(r.Context(), repo, g, p.File); err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
+
 	d := rubygemsDoc(key, p.Kind)
 	d.locate = func(ctx context.Context) (string, error) {
-		if err := s.checkRubyGemspec(ctx, repo, p.File, time.Now()); err != nil {
+		if err := s.checkRubyGemspec(ctx, repo, g, p.File); err != nil {
 			return "", err
 		}
 
@@ -237,7 +267,13 @@ func (s *Service) rubygemsInfoLine(ctx context.Context, repo *models.Repository,
 // matches the checksum of its info line. A version the info does not list is
 // errNotFound without a negative cache entry: the info may simply be stale. The
 // file name does not say where the name ends, so every reading is looked up.
-func (s *Service) locateRubyGem(ctx context.Context, repo *models.Repository, p compactindex.Path, key string) (download, error) {
+func (s *Service) locateRubyGem(
+	ctx context.Context,
+	repo *models.Repository,
+	g versionGate,
+	p compactindex.Path,
+	key string,
+) (download, error) {
 	target, err := upstreamURL(repo.UpstreamURL, key)
 	if err != nil {
 		s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
@@ -262,10 +298,8 @@ func (s *Service) locateRubyGem(ctx context.Context, repo *models.Repository, p 
 			continue
 		}
 
-		if minAge(repo) > 0 {
-			if cerr := s.checkRubyGemsFile(ctx, repo, sp, true, time.Now()); cerr != nil {
-				return download{}, cerr
-			}
+		if cerr := s.checkRubyGemsFile(ctx, repo, g, sp, true); cerr != nil {
+			return download{}, cerr
 		}
 
 		if line.Checksum == "" {
@@ -489,5 +523,6 @@ var RubyGemsHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 
 		return true
 	},
-	BlobPath: presign.RubyGemsBlobPath,
+	Published: (*Service).rubygemsPublished,
+	BlobPath:  presign.RubyGemsBlobPath,
 }

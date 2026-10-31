@@ -560,7 +560,7 @@ func TestBuilderDropsEntriesByContent(t *testing.T) {
 
 	st, err := b.Add(strings.NewReader(doc), MemberOptions{
 		MaxBytes: 1 << 20,
-		Drop:     func(raw json.RawMessage) bool { return bytes.Contains(raw, []byte(`"k":1`)) },
+		Drop:     func(_ File, raw json.RawMessage) bool { return bytes.Contains(raw, []byte(`"k":1`)) },
 	})
 	if err != nil || st.Added != 1 || st.Dropped != 2 {
 		t.Fatalf("Add = %+v, %v; want 1 added, 2 dropped", st, err)
@@ -577,5 +577,62 @@ func TestBuilderDropsEntriesByContent(t *testing.T) {
 	_, err = d.WriteTo(&out)
 	if doc := out.String(); err != nil || !strings.Contains(doc, `"b-1-0.tar.bz2"`) || strings.Contains(doc, `"a-1-0`) {
 		t.Errorf("document %s (%v)", doc, err)
+	}
+}
+
+func TestBuilderDropSeesTheParsedFileName(t *testing.T) {
+	doc := `{"packages":{"scikit-learn-1.4.0-py_0.tar.bz2":{"name":"scikit-learn"},"b-2-0.tar.bz2":{"name":"b"}}}`
+
+	b, err := NewBuilder("linux-64", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+
+	var seen []File
+
+	_, err = b.Add(strings.NewReader(doc), MemberOptions{
+		MaxBytes: 1 << 20,
+		Drop:     func(f File, _ json.RawMessage) bool { seen = append(seen, f); return false },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[File]bool{
+		{Name: "scikit-learn", Version: "1.4.0", Build: "py_0", Ext: ExtTarBz2}: true,
+		{Name: "b", Version: "2", Build: "0", Ext: ExtTarBz2}:                   true,
+	}
+
+	if len(seen) != 2 || !want[seen[0]] || !want[seen[1]] {
+		t.Errorf("Drop saw %+v, want %+v", seen, want)
+	}
+}
+
+func TestEarliestBuild(t *testing.T) {
+	doc := `{"packages":{
+"a-1.0-0.tar.bz2":{"name":"a","version":"1.0","timestamp":1700000100},
+"a-1.0-1.tar.bz2":{"name":"a","version":"1.0","timestamp":1700000000000},
+"a-2.0-0.tar.bz2":{"name":"a","version":"2.0","timestamp":1800000000},
+"b-1.0-0.tar.bz2":{"name":"b","version":"1.0"}}}`
+
+	cases := []struct {
+		name, pkg, version string
+		want               int64
+		ok                 bool
+	}{
+		{"earliest of several builds, either unit", "A", "1.0", 1700000000, true},
+		{"other version", "a", "2.0", 1800000000, true},
+		{"undated entry", "b", "1.0", 0, false},
+		{"unknown", "c", "1.0", 0, false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok, err := EarliestBuild(strings.NewReader(doc), 1<<20, c.pkg, c.version)
+			if err != nil || ok != c.ok || (ok && got.Unix() != c.want) {
+				t.Errorf("EarliestBuild = %v, %v, %v; want %d, %v", got, ok, err, c.want, c.ok)
+			}
+		})
 	}
 }

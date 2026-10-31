@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <!--
   Everything a repository's maintainers configure, in one place: the same fields as the create drawer,
-  the storage quota, cleanup policies, federation and deletion.
+  the storage quota, package curation (proxies), cleanup policies, federation and deletion.
 -->
 <template>
   <div class="space-y-6">
@@ -37,6 +37,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <ApkKeyPanel v-if="repo.format === 'apk' && repo.repo_type !== 'proxy'" :repo="repo.name" />
     <NixKeyPanel v-if="repo.format === 'nix' && repo.repo_type !== 'proxy'" :repo="repo.name" />
+
+    <RepoCurationSection v-if="curates" :repo="repo" @saved="(r) => emit('saved', r)" />
 
     <section class="space-y-4 rounded-lg border border-border bg-surface p-5" :aria-label="t('repoDetail.tab.cleanup')">
       <h2 class="text-sm font-semibold text-foreground">{{ t('repoDetail.tab.cleanup') }}</h2>
@@ -74,6 +76,7 @@ import ApkKeyPanel from './ApkKeyPanel.vue'
 import NixKeyPanel from './NixKeyPanel.vue'
 import QuotaBar from './QuotaBar.vue'
 import RepoCleanupTab from './RepoCleanupTab.vue'
+import RepoCurationSection from './RepoCurationSection.vue'
 import RepoDefaultsRows from './RepoDefaultsRows.vue'
 import RepoFederationTab from './RepoFederationTab.vue'
 import RepoQuotaTab from './RepoQuotaTab.vue'
@@ -100,6 +103,9 @@ const emit = defineEmits<{ saved: [repo: Repository] }>()
 const session = useSessionStore()
 const toasts = useToastStore()
 const router = useRouter()
+
+// Curation rules decide what a proxy may serve: only the repository's maintainers and global admins manage them.
+const curates = computed(() => props.repo.repo_type === 'proxy' && (session.isAdmin || props.repo.permissions?.admin === true))
 
 const form = ref(repoFormFrom(props.repo))
 const initial = ref(JSON.stringify(form.value))

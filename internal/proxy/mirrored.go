@@ -52,6 +52,7 @@ var DebHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	IsMetadata:  func(key string) bool { return inDir(key, "dists") },
 	PackageExts: []string{".deb", ".udeb"},
 	BlobPath:    presign.DebBlobPath,
+	Coordinates: debCoordinates,
 }
 
 // MavenHooks is the proxy hooks of the maven format.
@@ -60,6 +61,7 @@ var MavenHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	IsMetadata:  func(key string) bool { return strings.HasPrefix(keyName(key), "maven-metadata") },
 	PackageExts: []string{".jar", ".pom", ".zip", ".war", ".ear", ".aar", ".module", ".gz"},
 	BlobPath:    presign.MavenBlobPath,
+	Coordinates: mavenDownloadCoordinates,
 }
 
 // RawHooks is the proxy hooks of the raw format: every file is a download,
@@ -79,4 +81,5 @@ var RPMHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	IsMetadata:  func(key string) bool { return inDir(key, "repodata") },
 	PackageExts: []string{".rpm"},
 	BlobPath:    presign.RPMBlobPath,
+	Coordinates: rpmCoordinates,
 }

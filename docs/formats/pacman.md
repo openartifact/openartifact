@@ -122,6 +122,8 @@ sudo pacman-key --lsign-key FINGERPRINT
 
 A pacman proxy mirrors the **root** of an Arch mirror by path. `upstream_url` defaults to `https://geo.mirror.pkgbuild.com`; any mirror root works, and a custom upstream with a path prefix works too ([creating repositories](../repositories/hosted-proxy-group.md#creating-repositories)). One proxy covers every repository (`core`, `extra`, ...) and architecture of the mirror, because paths pass through unchanged.
 
+[Package curation](../repositories/hosted-proxy-group.md#package-curation) refuses the download of a blocked package file (`403` with the reason, even when cached): rules name the package and a version as `<version>-<pkgrel>` from the file name `<name>-<version>-<pkgrel>-<arch>.pkg.tar.<ext>` (an epoch is written as the mirror shows it, `1:2.0-1`). Sync databases and `.sig` files are served as the upstream has them, so pacman still lists a blocked package.
+
 Put the proxy at the top of `/etc/pacman.d/mirrorlist`:
 
 ```

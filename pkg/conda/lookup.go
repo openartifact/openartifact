@@ -25,6 +25,9 @@ type Entry struct {
 	// SHA256 and MD5 are lowercase hex, "" when the entry has none (or a
 	// malformed one).
 	SHA256, MD5 string
+	// Name and Version are the package name and version the entry itself
+	// states ("" when it has none), which need not agree with its file name.
+	Name, Version string
 	// Size is the file size in bytes, -1 when the entry has none.
 	Size int64
 	// Published is the entry's "timestamp" (see EntryTimestamp), the zero time
@@ -132,9 +135,11 @@ func decodeEntry(r io.Reader) (Entry, error) {
 
 func parseEntry(raw json.RawMessage) (Entry, error) {
 	var doc struct {
-		SHA256 string      `json:"sha256"`
-		MD5    string      `json:"md5"`
-		Size   json.Number `json:"size"`
+		SHA256  string      `json:"sha256"`
+		MD5     string      `json:"md5"`
+		Size    json.Number `json:"size"`
+		Name    string      `json:"name"`
+		Version string      `json:"version"`
 		// The build time as the repodata states it; not every entry has one.
 		Timestamp json.RawMessage `json:"timestamp"`
 	}
@@ -143,7 +148,7 @@ func parseEntry(raw json.RawMessage) (Entry, error) {
 		return Entry{}, fmt.Errorf("%w: %w", ErrMalformed, err)
 	}
 
-	e := Entry{Size: -1, Published: timestampTime(doc.Timestamp)}
+	e := Entry{Size: -1, Name: doc.Name, Version: doc.Version, Published: timestampTime(doc.Timestamp)}
 
 	if s := strings.ToLower(doc.SHA256); sha256HexRE.MatchString(s) {
 		e.SHA256 = s
@@ -192,4 +197,46 @@ func timestampTime(raw json.RawMessage) time.Time {
 	}
 
 	return time.UnixMilli(int64(v)).UTC()
+}
+
+// EntryIdentity is the "name" and "version" a repodata entry states about its
+// package, "" for a field it lacks or that is not a string.
+func EntryIdentity(raw json.RawMessage) (string, string) {
+	var doc struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	}
+
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return "", ""
+	}
+
+	return doc.Name, doc.Version
+}
+
+// EarliestBuild is the earliest "timestamp" among the entries of the plain
+// repodata.json in r whose name (compared without regard to case) and version
+// are the given ones: when the package version was first built, the nearest
+// thing to a publish time a channel states. ok is false when no matching entry
+// carries a timestamp. limit bounds the bytes read.
+func EarliestBuild(r io.Reader, limit int64, name, version string) (time.Time, bool, error) {
+	var (
+		earliest time.Time
+		ok       bool
+	)
+
+	err := Scan(r, limit, Visitor{Entry: func(_ Section, _ string, raw json.RawMessage) error {
+		n, v := EntryIdentity(raw)
+		if v != version || !strings.EqualFold(n, name) {
+			return nil
+		}
+
+		if built := EntryTimestamp(raw); !built.IsZero() && (!ok || built.Before(earliest)) {
+			earliest, ok = built, true
+		}
+
+		return nil
+	}})
+
+	return earliest, ok, err
 }

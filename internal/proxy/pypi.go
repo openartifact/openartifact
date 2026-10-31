@@ -49,7 +49,7 @@ func (s *Service) servePyPI(w http.ResponseWriter, r *http.Request, repo *models
 
 // pageETag identifies one rendering of a cached page: the upstream body, the
 // repository (links embed its name), the path, the serialization and the
-// minimum-age gate (gateStamp, "" for a page the gate does not apply to).
+// version gate (Gate.Stamp, "" for a page the gate does not apply to).
 func pageETag(repo *models.Repository, key, blobKey string, offer pypisimple.Offer, gate string) string {
 	in := repo.Name + "\x00" + key + "\x00" + blobKey + "\x00" + offer.ContentType
 	if gate != "" {
@@ -104,7 +104,11 @@ func (s *Service) servePyPIProject(w http.ResponseWriter, r *http.Request, repo 
 
 	// One clock reading per request: the validator and the rendering agree on
 	// which versions are old enough.
-	now := time.Now()
+	g, err := s.gateFor(r.Context(), repo, time.Now())
+	if err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
 
 	s.servePyPIPage(
 		w,
@@ -112,14 +116,14 @@ func (s *Service) servePyPIProject(w http.ResponseWriter, r *http.Request, repo 
 		repo,
 		offer,
 		pypiPageDoc(pypiProjectKey(project), project+"/"),
-		gateStamp(repo, now),
+		g.Stamp(),
 		func(body []byte, contentType string) ([]byte, error) {
 			files, perr := pypisimple.ParseProject(body, contentType)
 			if perr != nil {
 				return nil, fmt.Errorf("%w: %w", errUnusableDoc, perr)
 			}
 
-			files, perr = gatePyPIFiles(repo, project, files, now)
+			files, perr = gatePyPIFiles(g, project, files)
 			if perr != nil {
 				return nil, perr
 			}
@@ -131,20 +135,22 @@ func (s *Service) servePyPIProject(w http.ResponseWriter, r *http.Request, repo 
 	)
 }
 
-// gatePyPIFiles applies the minimum-age gate to a project page's files: the
-// files of a release whose first upload is younger than the repository's
-// minimum age at now are dropped (PEP 700 upload-time, JSON pages only; a
-// release no file of which states a time passes). A page that listed files
-// and has none left is a project with nothing to offer: errNotFound, as pypi
-// answers for an unknown project. Only the files are rendered, so a PEP 700
-// "versions" list of the upstream never reaches the client.
-func gatePyPIFiles(repo *models.Repository, project string, files []pypisimple.File, now time.Time) ([]pypisimple.File, error) {
-	if minAge(repo) == 0 || len(files) == 0 {
+// gatePyPIFiles applies the version gate to a project page's files: the files
+// of a release the gate holds back are dropped. Curation judges each file by the
+// version its name spells (SpelledVersion); the minimum age by the first upload
+// of the release (PEP 700 upload-time, JSON pages only; a release no file of
+// which states a time passes). A page that listed files and has none left is a
+// project with nothing to offer: errNotFound, as pypi answers for an unknown
+// project. Only the files are rendered, so a PEP 700 "versions" list of the
+// upstream never reaches the client.
+func gatePyPIFiles(g versionGate, project string, files []pypisimple.File) ([]pypisimple.File, error) {
+	if !g.Active() || len(files) == 0 {
 		return files, nil
 	}
 
-	kept := pypisimple.NewReleases(project, files).Filter(project, files, func(published time.Time) bool {
-		return !tooNew(repo, published, now)
+	kept := pypisimple.NewReleases(project, files).Filter(project, files, func(version string, published time.Time) bool {
+		hidden, _ := g.Hidden(project, version, published)
+		return !hidden
 	})
 	if len(kept) == 0 {
 		return nil, errNotFound
@@ -177,15 +183,32 @@ func (s *Service) servePyPIPage(
 }
 
 func (s *Service) servePyPIFile(w http.ResponseWriter, r *http.Request, repo *models.Repository, project, filename string) {
+	g, err := s.gateFor(r.Context(), repo, time.Now())
+	if err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
+
+	// A file already in the cache is served without locate, and with it the
+	// minimum age (a file that was served once stays served). Curation is
+	// checked first anyway, from the file name alone, so a version curated after
+	// it was cached is refused too.
+	if g.Set.Active() {
+		if gerr := checkGate(g, project, pypisimple.SpelledVersion(project, filename), time.Time{}); gerr != nil {
+			s.writeResolveError(w, r, gerr)
+			return
+		}
+	}
+
 	s.serveDownload(w, r, repo, pypiFileKey(project, filename), func(ctx context.Context) (download, error) {
-		return s.locatePyPIFile(ctx, repo, project, filename)
+		return s.locatePyPIFile(ctx, repo, project, filename, g)
 	})
 }
 
 // locatePyPIFile finds a distribution file (or its PEP 658 .metadata) where
 // the cached project page says it lives, with the published sha256 it must
 // have. A file the page does not list is not found.
-func (s *Service) locatePyPIFile(ctx context.Context, repo *models.Repository, project, filename string) (download, error) {
+func (s *Service) locatePyPIFile(ctx context.Context, repo *models.Repository, project, filename string, g versionGate) (download, error) {
 	target, err := upstreamURL(repo.UpstreamURL, project+"/")
 	if err != nil {
 		s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
@@ -226,8 +249,9 @@ func (s *Service) locatePyPIFile(ctx context.Context, repo *models.Repository, p
 		return download{}, errNotFound
 	}
 
-	if tooNew(repo, pypisimple.NewReleases(project, files).Published(project, name), time.Now()) {
-		return download{}, fmt.Errorf("pypi %s %s: %w", project, name, errTooNew)
+	published := pypisimple.NewReleases(project, files).Published(project, name)
+	if gerr := checkGate(g, project, pypisimple.SpelledVersion(project, name), published); gerr != nil {
+		return download{}, gerr
 	}
 
 	key := pypiFileKey(project, filename)
@@ -263,4 +287,31 @@ var PyPIHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	Immutable:  func(key string) bool { return strings.HasPrefix(key, "files/") },
 	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, "files/") },
 	BlobPath:   presign.PyPIBlobPath,
+	Published:  (*Service).pypiPublished,
+}
+
+// pypiPublished dates version of project (a release, in the spelling of its file
+// names or any equivalent one) from the cached project page: the first upload of
+// the release (PEP 700, JSON pages only).
+func (s *Service) pypiPublished(ctx context.Context, repo *models.Repository, project, version string) (time.Time, bool) {
+	project = pypisimple.NormalizeName(project)
+
+	entry, err := s.db.GetProxyCacheEntry(ctx, repo.ID, pypiProjectKey(project))
+	if err != nil || entry == nil || !pypisimple.IsJSON(entry.ContentType) {
+		return time.Time{}, false // HTML pages state no upload times
+	}
+
+	body, ok := s.cachedDocBody(ctx, repo, pypiPageDoc(pypiProjectKey(project), project+"/"))
+	if !ok {
+		return time.Time{}, false
+	}
+
+	files, err := pypisimple.ParseProject(body, entry.ContentType)
+	if err != nil {
+		return time.Time{}, false
+	}
+
+	published := pypisimple.NewReleases(project, files).PublishedVersion(version)
+
+	return published, !published.IsZero()
 }

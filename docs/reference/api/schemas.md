@@ -171,6 +171,24 @@ What an audit event acted on, resolved server-side. `name` is null when the subj
 | `repository` | string | no | Name of the repository the event belongs to. |
 | `version` | string | no | Package version, for `package` subjects that record one. |
 
+### AvailabilityReason
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `detail` | string | yes | - |
+| `rule_id` | string (uuid) | no | The curation rule that blocks the version; absent for a version an allowlist does not list. |
+| `source` | string | yes | One of: `curation`, `min_age`, `quarantine`, `license_policy`, `repository_blocked`. |
+| `until` | string (date-time) | no | When a min_age hold ends. |
+
+### AvailabilityResponse
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `available` | boolean | yes | True when no hold applies. |
+| `min_age` | string | yes | off: the repository has no minimum age. checked: it has one and the version was dated. unknown: it has one but the cached metadata does not date the version, so the check could not run (the proxy lets an undated version through). One of: `off`, `checked`, `unknown`. |
+| `published_at` | string (date-time) | no | The publish time the upstream states, when the cached metadata dates the version. |
+| `reasons` | array of [AvailabilityReason](#availabilityreason) | yes | - |
+
 ### Backup
 
 | Field | Type | Required | Description |
@@ -382,6 +400,26 @@ A stored GPG key the caller may seal bundles with. Never carries private key mat
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `name` | string | yes | - |
+
+### CurationRule
+
+One curation rule of a proxy repository. Package and version patterns are globs (`*` any run of characters, `?` one character) matched against the package name normalized the way the format shows it and the version string as clients see it; an empty version pattern matches every version.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `action` | string | yes | One of: `block`, `allow`. |
+| `created_at` | string (date-time) | yes | - |
+| `created_by` | string | yes | Login name of the caller that created the rule; empty when unknown. |
+| `id` | string (uuid) | yes | - |
+| `package_pattern` | string | yes | Maximum length: 255. |
+| `reason` | string | yes | Shown to clients that are refused the version. Maximum length: 500. |
+| `version_pattern` | string | yes | Maximum length: 128. |
+
+### CurationRules
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `rules` | array of [CurationRule](#curationrule) | yes | In creation order. |
 
 ### DeclarativeObject
 
@@ -1538,6 +1576,7 @@ Counts only; no finding ids, titles or other details.
 | `blocked` | boolean | no | Whether the repository is blocked |
 | `cache_ttl_seconds` | integer | no | Cache TTL in seconds |
 | `created_at` | string (date-time) | no | Creation timestamp |
+| `curation_mode` | string | no | Proxy repositories only. How the repository's curation rules apply: off ignores them (default), denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches. Rules are managed under /api/v1/repositories/{name}/curation-rules. One of: `off`, `denylist`, `allowlist`. |
 | `description` | string | no | Repository description |
 | `federated` | boolean | no | True when federation is enabled: the repository keeps a change log that peer instances pull to stay in sync. Hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw only. Peers and tokens are managed under /api/v1/repositories/{name}/federation. |
 | `format` | string | yes | Package format. One of: `ansible`, `apk`, `cargo`, `composer`, `conan`, `conda`, `deb`, `docker`, `go`, `helm`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `pacman`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. |

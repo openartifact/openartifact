@@ -28,6 +28,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/bgtask"
 	"github.com/openartifact/openartifact/internal/crypto"
+	"github.com/openartifact/openartifact/internal/curation"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/federation"
@@ -444,6 +445,18 @@ func normalizeMinAge(v *int) (int, error) {
 	return *v, nil
 }
 
+// normalizeCurationMode validates curation_mode; absent means off.
+func normalizeCurationMode(v *string) (string, error) {
+	switch {
+	case v == nil:
+		return curation.ModeOff, nil
+	case !curation.ValidMode(*v):
+		return "", validationError("curation_mode must be one of off, denylist, allowlist")
+	}
+
+	return *v, nil
+}
+
 // resolveGroupMembers validates a member list for a group repository and
 // returns the member repository IDs in priority order.
 // A non-nil reader must be able to read every member (403 otherwise): a group
@@ -559,6 +572,7 @@ type createRepositoryBody struct {
 	NegativeCacheTTLSeconds int      `json:"negative_cache_ttl_seconds"`
 	MaxStaleSeconds         *int     `json:"max_stale_seconds"`
 	MinAgeHours             *int     `json:"min_age_hours"`
+	CurationMode            *string  `json:"curation_mode"`
 	MemberRepos             []string `json:"member_repos"`
 	// PresignDownloads overrides storage.presignDownloads (null/absent inherits).
 	PresignDownloads *bool `json:"presign_downloads"`
@@ -763,6 +777,12 @@ func (h *RepositoriesHandler) createRepository(
 			return
 		}
 
+		curationMode, err := normalizeCurationMode(body.CurationMode)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
+
 		encPassword, ok := h.protectUpstreamPassword(w, "create repository", body.UpstreamPassword)
 		if !ok {
 			return
@@ -775,8 +795,9 @@ func (h *RepositoriesHandler) createRepository(
 		repo.NegativeCacheTTLSeconds = negTTL
 		repo.MaxStaleSeconds = maxStale
 		repo.MinAgeHours = minAge
+		repo.CurationMode = curationMode
 	default:
-		if hasUpstream || body.MinAgeHours != nil {
+		if hasUpstream || body.MinAgeHours != nil || body.CurationMode != nil {
 			writeError(w, http.StatusBadRequest, "validation_failed", "upstream_* fields are only valid for proxy repositories")
 			return
 		}
@@ -910,6 +931,7 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		NegativeCacheTTLSeconds *int      `json:"negative_cache_ttl_seconds"`
 		MaxStaleSeconds         *int      `json:"max_stale_seconds"`
 		MinAgeHours             *int      `json:"min_age_hours"`
+		CurationMode            *string   `json:"curation_mode"`
 		Blocked                 *bool     `json:"blocked"`
 		MemberRepos             *[]string `json:"member_repos"`
 		// PresignDownloads is tri-state: absent leaves the override unchanged,
@@ -982,7 +1004,7 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 
 	touchesUpstream := body.UpstreamURL != nil || body.UpstreamUsername != nil || body.UpstreamPassword != nil ||
 		body.CacheTTLSeconds != nil || body.NegativeCacheTTLSeconds != nil || body.MaxStaleSeconds != nil ||
-		body.MinAgeHours != nil
+		body.MinAgeHours != nil || body.CurationMode != nil
 	if touchesUpstream && repo.RepoType != "proxy" {
 		writeError(w, http.StatusBadRequest, "validation_failed", "upstream and cache fields are only valid for proxy repositories")
 		return
@@ -1090,6 +1112,18 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		repo.MinAgeHours = minAge
 	}
 
+	oldCurationMode := curationModeOf(repo)
+
+	if body.CurationMode != nil {
+		mode, err := normalizeCurationMode(body.CurationMode)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
+
+		repo.CurationMode = mode
+	}
+
 	if body.Blocked != nil {
 		repo.Blocked = *body.Blocked
 	}
@@ -1147,7 +1181,22 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 
 	h.metadataChanged(repo)
 
+	if newMode := curationModeOf(repo); newMode != oldCurationMode {
+		auditRepository(r, repo, audit.ActionRepositoryUpdated, "repository", repo.ID,
+			"curation mode of "+repo.Name+" changed from "+oldCurationMode+" to "+newMode)
+	}
+
 	writeJSON(w, http.StatusOK, h.repositoryResponse(ctx, repo, map[string]string{}))
+}
+
+// curationModeOf is the curation mode of repo, "off" for a repository that
+// never set one.
+func curationModeOf(repo *models.Repository) string {
+	if repo.CurationMode == "" {
+		return curation.ModeOff
+	}
+
+	return repo.CurationMode
 }
 
 // moveToProject reassigns repo to the project (admin PATCH with "project").
@@ -1740,6 +1789,8 @@ func RepositoryToResponse(r *models.Repository) responses.RepositoryResponse {
 		resp.MaxStaleSeconds = &maxStale
 		minAge := r.MinAgeHours
 		resp.MinAgeHours = &minAge
+		mode := curationModeOf(r)
+		resp.CurationMode = &mode
 	}
 
 	return resp

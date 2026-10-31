@@ -48,9 +48,10 @@ import (
 //     sha256 equals the artifact.sha256 of that document. Other bytes are
 //     refused and never cached.
 //
-// With a minimum age (see minage.go and ansible_minage.go) the version list
-// leaves out the versions whose created_at is too young, and the detail document
-// and tarball of such a version are refused.
+// With the version gate on (see gate.go and ansible_minage.go) the version list
+// leaves out the versions it holds back (a created_at too young for the minimum
+// age, or a version the curation rules of "namespace.name" make unavailable),
+// and the detail document and tarball of such a version are refused.
 //
 // The upstream is asked for api/v3/collections/...; Galaxy answers with a
 // redirect to its canonical plugin path, which the client follows.
@@ -151,11 +152,10 @@ func (s *Service) ansibleVersionsDoc(repo *models.Repository, p pkgansible.Path)
 }
 
 // ansibleVersionList returns the cached version list of a collection, newest
-// first, fetching it when it is absent or expired, without the versions the
-// repository's minimum age holds back at now (a collection with none left is
-// errNotFound).
+// first, fetching it when it is absent or expired, without the versions g holds
+// back (a collection with none left is errNotFound).
 func (s *Service) ansibleVersionList(
-	ctx context.Context, repo *models.Repository, p pkgansible.Path, now time.Time,
+	ctx context.Context, repo *models.Repository, p pkgansible.Path, g versionGate,
 ) (*resolution, []pkgansible.VersionRef, error) {
 	page, res, err := parseDoc(ctx, s, repo, s.ansibleVersionsDoc(repo, p),
 		func(doc []byte, _ *resolution) (*pkgansible.VersionPage, error) {
@@ -165,7 +165,7 @@ func (s *Service) ansibleVersionList(
 		return nil, nil, err
 	}
 
-	refs := filterAnsibleVersions(repo, page.Versions, now)
+	refs := filterAnsibleVersions(g, ansibleCollection(p), page.Versions)
 	if len(refs) == 0 {
 		return nil, nil, errNotFound
 	}
@@ -311,7 +311,13 @@ func ansibleVersionListBody(versions []pkgansible.VersionRef) ([]byte, error) {
 }
 
 func (s *Service) serveAnsibleCollection(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgansible.Path) {
-	res, refs, err := s.ansibleVersionList(r.Context(), repo, p, time.Now())
+	g, err := s.gateFor(r.Context(), repo, time.Now())
+	if err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
+
+	res, refs, err := s.ansibleVersionList(r.Context(), repo, p, g)
 	if err != nil {
 		s.writeResolveError(w, r, err)
 		return
@@ -327,7 +333,13 @@ func (s *Service) serveAnsibleVersions(w http.ResponseWriter, r *http.Request, r
 		return
 	}
 
-	res, refs, err := s.ansibleVersionList(r.Context(), repo, p, time.Now())
+	g, err := s.gateFor(r.Context(), repo, time.Now())
+	if err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
+
+	res, refs, err := s.ansibleVersionList(r.Context(), repo, p, g)
 	if err != nil {
 		s.writeResolveError(w, r, err)
 		return
@@ -392,9 +404,22 @@ func (s *Service) ansibleVersionDoc(
 }
 
 func (s *Service) serveAnsibleVersion(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgansible.Path) {
+	g, err := s.gateFor(r.Context(), repo, time.Now())
+	if err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
+
+	// Curation needs only the names: a curated version is refused before its
+	// document is read or fetched.
+	if err = checkGate(g, ansibleCollection(p), p.Version, time.Time{}); err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
+
 	res, doc, err := s.ansibleVersionDoc(r.Context(), repo, p)
 	if err == nil {
-		err = checkAnsibleAge(repo, doc, time.Now())
+		err = checkAnsibleGate(g, ansibleCollection(p), doc)
 	}
 
 	if err != nil {
@@ -408,10 +433,23 @@ func (s *Service) serveAnsibleVersion(w http.ResponseWriter, r *http.Request, re
 
 func (s *Service) serveAnsibleDownload(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgansible.Path) {
 	key := ansibleArtifactDir + pkgansible.FileName(p.Namespace, p.Name, p.Version)
-	now := time.Now()
+
+	g, err := s.gateFor(r.Context(), repo, time.Now())
+	if err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
+
+	// The curation rules need no created_at, so they are asked before the cache
+	// is read: a tarball cached before the rules were set is refused too. The
+	// minimum age is checked in locateAnsibleTarball, when the file is fetched.
+	if err = checkGate(g, ansibleCollection(p), p.Version, time.Time{}); err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
 
 	s.serveDownload(w, r, repo, key, func(ctx context.Context) (download, error) {
-		return s.locateAnsibleTarball(ctx, repo, p, key, now)
+		return s.locateAnsibleTarball(ctx, repo, p, key, g)
 	})
 }
 
@@ -440,14 +478,13 @@ func ansibleDownloadTarget(docURL, downloadURL string) (string, error) {
 
 // locateAnsibleTarball finds a collection tarball at the URL its version
 // document names, cached only when it matches the document's digest. A version
-// the upstream does not list is errNotFound, one younger than the repository's
-// minimum age at now is errTooNew.
+// the upstream does not list is errNotFound, one g holds back is its gateError.
 func (s *Service) locateAnsibleTarball(
-	ctx context.Context, repo *models.Repository, p pkgansible.Path, key string, now time.Time,
+	ctx context.Context, repo *models.Repository, p pkgansible.Path, key string, g versionGate,
 ) (download, error) {
 	_, doc, err := s.ansibleVersionDoc(ctx, repo, p)
 	if err == nil {
-		err = checkAnsibleAge(repo, doc, now)
+		err = checkAnsibleGate(g, ansibleCollection(p), doc)
 	}
 
 	if err != nil {
@@ -471,9 +508,41 @@ func (s *Service) locateAnsibleTarball(
 
 // AnsibleHooks is the proxy hooks of the ansible format.
 var AnsibleHooks = Hooks{ //nolint:gochecknoglobals // format hook table
-	Serve: (*Service).serveAnsible,
+	Serve:     (*Service).serveAnsible,
+	Published: (*Service).ansiblePublished,
 	// Tarballs, checked against the artifact sha256 of their version document.
 	Immutable:  func(key string) bool { return strings.HasPrefix(key, ansibleArtifactDir) },
 	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, ansibleArtifactDir) },
 	BlobPath:   presign.AnsibleBlobPath,
+}
+
+// ansiblePublished is Hooks.Published: the created_at of version in the cached
+// version list of the collection "namespace.name".
+func (s *Service) ansiblePublished(ctx context.Context, repo *models.Repository, collection, version string) (time.Time, bool) {
+	namespace, name, ok := strings.Cut(collection, ".")
+	if !ok {
+		return time.Time{}, false
+	}
+
+	p := pkgansible.Path{Namespace: namespace, Name: name}
+
+	body, ok := s.cachedDocBody(ctx, repo, s.ansibleVersionsDoc(repo, p))
+	if !ok {
+		return time.Time{}, false
+	}
+
+	page, err := pkgansible.ParseVersionPage(bytes.NewReader(body))
+	if err != nil {
+		return time.Time{}, false
+	}
+
+	for _, v := range page.Versions {
+		if v.Version == version {
+			published := galaxyPublished(v.CreatedAt)
+
+			return published, !published.IsZero()
+		}
+	}
+
+	return time.Time{}, false
 }

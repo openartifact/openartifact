@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/curation"
 	"github.com/openartifact/openartifact/internal/database/models"
 	pkgcomposer "github.com/openartifact/openartifact/pkg/composer"
 )
@@ -85,7 +86,7 @@ func TestRenderComposerDoc_HidesVersionsYoungerThanTheGate(t *testing.T) {
 	now := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
 	doc := composerMinAgeDoc(t, now)
 
-	out, err := renderComposerDoc(composerGated(24), doc, "acme/lib", composerBase+"/repos/packagist", now)
+	out, err := renderComposerDoc(newGate(composerGated(24), nil, now), doc, "acme/lib", composerBase+"/repos/packagist")
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -115,7 +116,7 @@ func TestRenderComposerDoc_GateOffChangesNothing(t *testing.T) {
 	}
 
 	for _, repo := range []*models.Repository{composerGated(0), composerGated(-1), nil} {
-		got, err := renderComposerDoc(repo, doc, "acme/lib", root, now)
+		got, err := renderComposerDoc(newGate(repo, nil, now), doc, "acme/lib", root)
 		if err != nil || string(got) != string(want) {
 			t.Errorf("repo %+v: err %v, output differs from the ungated rendering", repo, err)
 		}
@@ -133,7 +134,7 @@ func TestRenderComposerDoc_AgesPastTheGateWithTheClock(t *testing.T) {
 
 	// One second later 1.0.1 is exactly at the threshold and passes, 1.3.0 is
 	// still young.
-	out, err := renderComposerDoc(repo, doc, "acme/lib", "https://x/repos/r", now.Add(time.Second))
+	out, err := renderComposerDoc(newGate(repo, nil, now.Add(time.Second)), doc, "acme/lib", "https://x/repos/r")
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -142,7 +143,7 @@ func TestRenderComposerDoc_AgesPastTheGateWithTheClock(t *testing.T) {
 		t.Errorf("versions = %v", got)
 	}
 
-	out, err = renderComposerDoc(repo, doc, "acme/lib", "https://x/repos/r", now.Add(23*time.Hour+time.Second))
+	out, err = renderComposerDoc(newGate(repo, nil, now.Add(23*time.Hour+time.Second)), doc, "acme/lib", "https://x/repos/r")
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -165,7 +166,15 @@ func TestRenderComposerDoc_EveryVersionTooNewIsNotFound(t *testing.T) {
 		t.Fatalf("encode: %v", err)
 	}
 
-	if _, err := renderComposerDoc(composerGated(24), body, "acme/lib", "https://x/repos/r", now); !errors.Is(err, errNotFound) {
+	if _, err := renderComposerDoc(
+		newGate(composerGated(24), nil, now),
+		body,
+		"acme/lib",
+		"https://x/repos/r",
+	); !errors.Is(
+		err,
+		errNotFound,
+	) {
 		t.Errorf("err = %v, want errNotFound", err)
 	}
 }
@@ -173,21 +182,21 @@ func TestRenderComposerDoc_EveryVersionTooNewIsNotFound(t *testing.T) {
 func TestGateStamp_ChangesWithGateAndBucket(t *testing.T) {
 	now := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
 
-	if got := gateStamp(composerGated(0), now); got != "" {
+	if got := newGate(composerGated(0), nil, now).Stamp(); got != "" {
 		t.Errorf("stamp with the gate off = %q", got)
 	}
 
-	a := gateStamp(composerGated(24), now)
+	a := newGate(composerGated(24), nil, now).Stamp()
 
-	if a == "" || a == gateStamp(composerGated(48), now) {
+	if a == "" || a == newGate(composerGated(48), nil, now).Stamp() {
 		t.Errorf("stamp does not depend on the threshold: %q", a)
 	}
 
-	if a != gateStamp(composerGated(24), now.Add(gateStampBucket-time.Second)) {
+	if a != newGate(composerGated(24), nil, now.Add(curation.StampBucket-time.Second)).Stamp() {
 		t.Errorf("stamp changed inside its bucket")
 	}
 
-	if a == gateStamp(composerGated(24), now.Add(gateStampBucket)) {
+	if a == newGate(composerGated(24), nil, now.Add(curation.StampBucket)).Stamp() {
 		t.Errorf("stamp did not change with the next bucket")
 	}
 }

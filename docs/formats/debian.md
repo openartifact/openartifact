@@ -78,6 +78,8 @@ Set `GPG_ENABLED=true`, `GPG_KEY_PATH` and `GPG_PASSPHRASE` to sign `InRelease` 
 
 A Debian proxy repository mirrors `dists/` and `pool/` from `upstream_url`. `.deb` and `.udeb` files below a `pool/` directory (the Debian archive layout, where a file name is never reused) are immutable once cached; the same files in a flat repository, and everything else (indexes, `Release`) is served from cache until `cache_ttl_seconds` (default 1 hour) and then revalidated. The upstream's signed `InRelease` is passed through unchanged, so clients must trust the upstream's key. Negative caching and serve-stale: [hosted, proxy, group](../repositories/hosted-proxy-group.md).
 
+[Package curation](../repositories/hosted-proxy-group.md#package-curation) refuses the download of a blocked `.deb`/`.udeb` (`403` with the reason, even when cached): rules name the package as in the file name `<name>_<version>_<arch>.deb` and the version as that file name shows it (no epoch). `dists/` indexes are served as the upstream has them, so apt still lists a blocked package, and source files are not gated.
+
 ## Group
 
 A Debian group publishes merged `Release`, `InRelease`, `Release.gpg` and `Packages.gz`/`Packages.xz` for each distribution at least one member has, signed with the server key, and serves `pool/` files from the member that owns them. Use it like a hosted repository: `deb [signed-by=/etc/apt/keyrings/REPO.asc] HOST/repos/GROUP bookworm main`, with the key from `HOST/repos/GROUP/public.key`. Merging rules, regeneration and limits: [Deb and RPM groups](../repositories/hosted-proxy-group.md#deb-and-rpm-groups).

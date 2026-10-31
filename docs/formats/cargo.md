@@ -47,6 +47,8 @@ The server accepts `Authorization: Bearer <TOKEN>` or Basic with the token as pa
 
 **Minimum age:** with `min_age_hours` set on the proxy, an index entry whose `pubtime` (the publish time the sparse index states per version, RFC 3339) is younger than that is left out of the index file the proxy serves, and its `.crate` answers `403` unless it is already cached; a crate none of whose versions is old enough is `404`. An entry without a `pubtime` (an upstream or version that does not state one) is not held back. Cargo has no "latest" pointer in the index, so nothing else moves: it resolves to the newest remaining version that satisfies the requirement. A version pinned in a `Cargo.lock` that is hidden cannot be fetched until it is old enough. The `ETag` of the index changes with the threshold and, every 5 minutes, with the clock, so a version that has aged enough appears without a stale `304`. A group with the proxy as a member merges only what the proxy lists. See [Minimum age](../repositories/hosted-proxy-group.md#minimum-age).
 
+**Curation:** a proxy repository can also hold back crates and versions by administrator rules, see [package curation](../repositories/hosted-proxy-group.md#package-curation). Rules name a crate lower-cased with `_` as `-` (`serde-json`) and a version as the index shows it; a matching version is left out of the index file like a too-young one (with no `pubtime` needed) and its `.crate` answers `403` even when it is already cached.
+
 Private proxies and groups work like private hosted repositories: `config.json` carries `"auth-required": true` and cargo needs the token (`token = "Bearer <TOKEN>"`, see above).
 
 ## Endpoints

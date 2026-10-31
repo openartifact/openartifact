@@ -129,6 +129,8 @@ type RepositoryResponse struct {
 	NegativeCacheTTLSeconds *int `json:"negative_cache_ttl_seconds,omitempty"`
 	MaxStaleSeconds         *int `json:"max_stale_seconds,omitempty"`
 	MinAgeHours             *int `json:"min_age_hours,omitempty"`
+	// CurationMode: "off", "denylist" or "allowlist" (see CurationRuleResponse).
+	CurationMode *string `json:"curation_mode,omitempty"`
 }
 
 // RepositoryPermissions reports which actions the calling principal may perform on one repository.
@@ -1019,4 +1021,49 @@ type AttestationAttachResponse struct {
 	Created bool `json:"created"`
 	// Replaced is the digest of the earlier attestation this one replaced.
 	Replaced string `json:"replaced,omitempty"`
+}
+
+// CurationRuleResponse is one curation rule of a proxy repository.
+type CurationRuleResponse struct {
+	ID string `json:"id"`
+	// Action is "block" or "allow".
+	Action string `json:"action"`
+	// PackagePattern is a glob over the normalized package name; VersionPattern
+	// a glob over the version string ("" matches every version).
+	PackagePattern string `json:"package_pattern"`
+	VersionPattern string `json:"version_pattern"`
+	Reason         string `json:"reason"`
+	CreatedBy      string `json:"created_by"`
+	CreatedAt      string `json:"created_at"`
+}
+
+// CurationRulesResponse is the list answer of the curation rules endpoint.
+type CurationRulesResponse struct {
+	Rules []CurationRuleResponse `json:"rules"`
+}
+
+// AvailabilityReason is one reason a package version is not available.
+type AvailabilityReason struct {
+	// Source is "min_age", "curation", "quarantine", "license_policy" or
+	// "repository_blocked".
+	Source string `json:"source"`
+	Detail string `json:"detail"`
+	// Until is when a minimum-age hold ends (RFC 3339).
+	Until string `json:"until,omitempty"`
+	// RuleID is the curation rule that blocks the version; absent for a
+	// version the allowlist does not list.
+	RuleID string `json:"rule_id,omitempty"`
+}
+
+// AvailabilityResponse explains whether a package version can be fetched from a
+// repository.
+type AvailabilityResponse struct {
+	Available bool                 `json:"available"`
+	Reasons   []AvailabilityReason `json:"reasons"`
+	// PublishedAt is the publish time the upstream states (RFC 3339), when known.
+	PublishedAt string `json:"published_at,omitempty"`
+	// MinAge is "off" (no minimum age), "checked" or "unknown" (the repository
+	// has a minimum age but the publish time is not known, so the version cannot
+	// be held back).
+	MinAge string `json:"min_age"`
 }

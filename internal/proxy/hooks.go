@@ -76,6 +76,23 @@ type Hooks struct {
 		s *Service, w http.ResponseWriter, r *http.Request, repo *models.Repository, entry *models.ProxyCacheEntry, key string, body io.Reader,
 	) bool
 
+	// Coordinates derives the package and version a download of rel (the path
+	// below the repository root) belongs to, in the names the curation rules
+	// match (see internal/curation), for the formats that have no gate of their
+	// own in Serve: Service.Serve refuses the download of a version the
+	// repository's curation makes unavailable. ok is false for anything that is
+	// not the file of one package version (metadata, indexes). Nil means the
+	// format's downloads are not checked here (either it gates in Serve, or
+	// curation does not apply to it).
+	Coordinates func(rel string) (pkg, version string, ok bool)
+
+	// Published answers the publish time the upstream states for version of pkg
+	// from the format's CACHED metadata (never an upstream fetch), for the
+	// availability explanation of the REST API; ok is false when the metadata is
+	// not cached or does not date the version. Nil means the format has no
+	// publish time (see Service.PublishTime).
+	Published func(s *Service, ctx context.Context, repo *models.Repository, pkg, version string) (time.Time, bool)
+
 	// BlobPath reports whether rel, a file below the repository root, is a
 	// package download that may be redirected to the object store rather than
 	// metadata (see presign.Register). Register hands it to presign. Nil means

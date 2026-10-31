@@ -145,13 +145,18 @@ func (s *Service) serveNPMPackument(w http.ResponseWriter, r *http.Request, repo
 	// dist.tarball is absolute (pacote keeps it verbatim), so the origin is
 	// part of the validator below and the rewrite happens at serve time.
 	tarballBase := s.publicBase(w, r) + "/repos/" + repo.Name
-	now := time.Now()
+
+	g, err := s.gateFor(r.Context(), repo, time.Now())
+	if err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
 
 	// The abbreviated document carries no publish times, so a gated repository
-	// answers an abbreviated request from the full packument (a registry may
-	// answer with the full document; clients read it the same way) rather than
-	// let it list versions the gate holds back.
-	abbreviated = abbreviated && minAge(repo) == 0
+	// (minimum age or curation) answers an abbreviated request from the full
+	// packument (a registry may answer with the full document; clients read it
+	// the same way) rather than let it list versions the gate holds back.
+	abbreviated = abbreviated && !g.Active()
 
 	s.serveRendered(w, r, repo, renderedDoc{
 		metaDoc: npmPackumentDoc(p.Package, abbreviated),
@@ -160,11 +165,11 @@ func (s *Service) serveNPMPackument(w http.ResponseWriter, r *http.Request, repo
 		// The rendered document depends on the cached blob, the origin of the tarball URLs and the gate;
 		// a version manifest and a packument of the same blob differ by path.
 		etag: func(blobKey string) string {
-			sum := sha256.Sum256([]byte(blobKey + "\x00" + tarballBase + "\x00" + p.Version + "\x00" + gateStamp(repo, now)))
+			sum := sha256.Sum256([]byte(blobKey + "\x00" + tarballBase + "\x00" + p.Version + "\x00" + g.Stamp()))
 			return `"` + hex.EncodeToString(sum[:]) + `"`
 		},
 		render: func(body []byte, res *resolution) ([]byte, string, error) {
-			out, err := renderNPM(body, p, tarballBase, repo, now)
+			out, err := renderNPM(body, p, tarballBase, g)
 
 			ct := "application/json"
 			if abbreviated && strings.HasPrefix(res.entry.ContentType, pkgnpm.AbbreviatedContentType) {
@@ -176,21 +181,24 @@ func (s *Service) serveNPMPackument(w http.ResponseWriter, r *http.Request, repo
 	})
 }
 
-// renderNPM hides the versions repo's minimum age holds back at now, points
+// renderNPM hides the versions the gate holds back (minimum age, curation), points
 // the packument's tarball URLs at this repository and, for a version path, cuts
 // that version's manifest out. A packument whose every version is held back is
 // errNotFound, as a package without versions.
-func renderNPM(doc []byte, p pkgnpm.Path, tarballBase string, repo *models.Repository, now time.Time) ([]byte, error) {
-	if minAge(repo) > 0 {
+func renderNPM(doc []byte, p pkgnpm.Path, tarballBase string, g versionGate) ([]byte, error) {
+	if g.Active() {
 		var err error
 
-		doc, err = pkgnpm.HideVersions(doc, func(published time.Time) bool { return tooNew(repo, published, now) })
+		doc, err = pkgnpm.HideVersions(doc, func(version string, published time.Time) bool {
+			hidden, _ := g.Hidden(p.Package, version, published)
+			return hidden
+		})
 		if errors.Is(err, pkgnpm.ErrAllVersionsHidden) {
 			return nil, errNotFound
 		}
 
 		if err != nil {
-			return nil, fmt.Errorf("apply minimum age: %w", err)
+			return nil, fmt.Errorf("apply version gate: %w", err)
 		}
 	}
 
@@ -216,24 +224,39 @@ func renderNPM(doc []byte, p pkgnpm.Path, tarballBase string, repo *models.Repos
 }
 
 func (s *Service) serveNPMTarball(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgnpm.Path) {
+	g, err := s.gateFor(r.Context(), repo, time.Now())
+	if err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
+
+	// A tarball already in the cache is served without locate, and with it the
+	// minimum age (a file that was served once stays served). Curation is
+	// checked first anyway, from the packument, so a version curated after it
+	// was cached is refused too. Only the rules decide here: the publish time is
+	// not passed.
+	if g.Set.Active() {
+		rel, rerr := s.findNPMRelease(r.Context(), repo, p)
+		if rerr == nil && rel != nil {
+			rerr = checkGate(g, p.Package, rel.Version, time.Time{})
+		}
+
+		if rerr != nil {
+			s.writeResolveError(w, r, rerr)
+			return
+		}
+	}
+
 	s.serveDownload(w, r, repo, p.Package+"/-/"+p.File, func(ctx context.Context) (download, error) {
-		return s.locateNPMTarball(ctx, repo, p)
+		return s.locateNPMTarball(ctx, repo, p, g)
 	})
 }
 
 // locateNPMTarball finds p.File in the cached packument: the URL its version's
 // dist object names, cached only when the bytes match dist.integrity /
 // dist.shasum. A file no version of the packument lists is errNotFound.
-func (s *Service) locateNPMTarball(ctx context.Context, repo *models.Repository, p pkgnpm.Path) (download, error) {
-	rel, _, err := parseDoc(ctx, s, repo, npmPackumentDoc(p.Package, false),
-		func(doc []byte, _ *resolution) (*pkgnpm.Release, error) {
-			rel, found, ferr := pkgnpm.FindRelease(doc, p.Package, p.File)
-			if ferr != nil || !found {
-				return nil, ferr //nolint:wrapcheck // logged by parseDoc
-			}
-
-			return &rel, nil
-		})
+func (s *Service) locateNPMTarball(ctx context.Context, repo *models.Repository, p pkgnpm.Path, g versionGate) (download, error) {
+	rel, err := s.findNPMRelease(ctx, repo, p)
 	if err != nil {
 		return download{}, err
 	}
@@ -242,8 +265,8 @@ func (s *Service) locateNPMTarball(ctx context.Context, repo *models.Repository,
 		return download{}, errNotFound
 	}
 
-	if tooNew(repo, rel.Published, time.Now()) {
-		return download{}, fmt.Errorf("%w: %s@%s", errTooNew, p.Package, rel.Version)
+	if gerr := checkGate(g, p.Package, rel.Version, rel.Published); gerr != nil {
+		return download{}, gerr
 	}
 
 	dist := &rel.Dist
@@ -265,6 +288,21 @@ func (s *Service) locateNPMTarball(ctx context.Context, repo *models.Repository,
 	}}, nil
 }
 
+// findNPMRelease is the release of the cached packument whose tarball is p.File;
+// nil when no version lists that file.
+func (s *Service) findNPMRelease(ctx context.Context, repo *models.Repository, p pkgnpm.Path) (*pkgnpm.Release, error) {
+	rel, _, err := parseDoc(ctx, s, repo, npmPackumentDoc(p.Package, false),
+		func(doc []byte, _ *resolution) (*pkgnpm.Release, error) {
+			rel, found, ferr := pkgnpm.FindRelease(doc, p.Package, p.File)
+			if ferr != nil || !found {
+				return nil, ferr //nolint:wrapcheck // logged by parseDoc
+			}
+
+			return &rel, nil
+		})
+	return rel, err
+}
+
 // NPMHooks is the proxy hooks of the npm format.
 var NPMHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	Serve: (*Service).serveNPM,
@@ -272,4 +310,17 @@ var NPMHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	Immutable:  func(key string) bool { return strings.HasSuffix(keyName(key), ".tgz") && strings.Contains(key, "/-/") },
 	IsMetadata: func(key string) bool { return !strings.Contains(key, "/-/") },
 	BlobPath:   presign.NPMBlobPath,
+	Published:  (*Service).npmPublished,
+}
+
+// npmPublished dates version of pkg from the cached full packument.
+func (s *Service) npmPublished(ctx context.Context, repo *models.Repository, pkg, version string) (time.Time, bool) {
+	doc, ok := s.cachedDocBody(ctx, repo, npmPackumentDoc(pkg, false))
+	if !ok {
+		return time.Time{}, false
+	}
+
+	published, found, err := pkgnpm.PublishedAt(doc, version)
+
+	return published, found && err == nil
 }

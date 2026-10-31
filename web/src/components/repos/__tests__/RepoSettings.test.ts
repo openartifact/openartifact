@@ -146,6 +146,25 @@ describe('RepoSettings: which fields each repository type offers', () => {
   })
 })
 
+describe('RepoSettings: curation', () => {
+  const shown = (w: VueWrapper) => w.find('[data-testid="curation-section"]').exists()
+  const proxy = (over: Partial<Repository> = {}) => repo({ repo_type: 'proxy', upstream_url: 'https://registry.example.org', ...over })
+
+  it('is offered to a global admin on a proxy repository only', async () => {
+    serve()
+    expect(shown(await mountSettings(proxy(), { admin: true }))).toBe(true)
+    expect(shown(await mountSettings(repo(), { admin: true }))).toBe(false)
+    expect(shown(await mountSettings(repo({ repo_type: 'group' }), { admin: true }))).toBe(false)
+  })
+
+  it('is offered to the maintainers of the repository and hidden from everyone else', async () => {
+    serve()
+    expect(shown(await mountSettings(proxy({ permissions: { admin: true } as Repository['permissions'] })))).toBe(true)
+    expect(shown(await mountSettings(proxy({ permissions: { admin: false } as Repository['permissions'] })))).toBe(false)
+    expect(shown(await mountSettings(proxy()))).toBe(false)
+  })
+})
+
 describe('RepoSettings: saving', () => {
   it('keeps save disabled until something changes, and sends only hosted-allowed fields', async () => {
     const calls = serve((c) => (c.method === 'PATCH' ? json(repo({ description: 'new' })) : undefined))

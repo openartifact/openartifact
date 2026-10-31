@@ -81,6 +81,8 @@ Rules checked on `PUT`:
 ## Proxy and group
 
 - **Proxy:** requests are mirrored by path from `upstream_url`, cached content-addressed and recorded under the repository. Released artifacts (not `-SNAPSHOT`, not `maven-metadata*.xml`, not `archetype-catalog.xml`) and their checksum and signature files (`.md5`, `.sha1`, `.sha256`, `.sha512`, `.asc`) are immutable once cached; `maven-metadata.xml`, `archetype-catalog.xml` and `-SNAPSHOT` files (and their checksums) are revalidated after `cache_ttl_seconds`. An HTML answer for a `.jar`, `.pom` or `.zip` path (a captive portal page) is refused with `502` and not cached. Negative caching, serve-stale and SSRF rules are in [hosted, proxy, group](../repositories/hosted-proxy-group.md).
+
+- **Curation:** [package curation](../repositories/hosted-proxy-group.md#package-curation) rules name an artifact `group:artifact` and a version as the version directory shows it. The files of a blocked version (`.jar`, `.pom`, `.module`, classifier and archive files) answer `403` with the reason, even when already cached; `maven-metadata.xml` still lists the version, and checksum and signature files are not gated.
 - **Group:** an ordered list of hosted and proxy Maven members; the first member holding the file answers, and each member is authorized for the caller as if requested directly. `maven-metadata.xml` and its checksums are merged across readable members (versions united and ordered, `latest`, `release` and `lastUpdated` recomputed).
 
 ## Signing

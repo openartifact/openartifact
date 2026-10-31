@@ -20,13 +20,13 @@ type agePack struct {
 }
 
 // ageHide hides what was published at or after cutoff.
-func ageHide(cutoff string) func(time.Time) bool {
+func ageHide(cutoff string) func(string, time.Time) bool {
 	c, err := time.Parse(time.RFC3339, cutoff)
 	if err != nil {
 		panic(err)
 	}
 
-	return func(p time.Time) bool { return !p.Before(c) }
+	return func(_ string, p time.Time) bool { return !p.IsZero() && !p.Before(c) }
 }
 
 func TestHideVersions(t *testing.T) {
@@ -122,21 +122,35 @@ func TestHideVersionsPrereleaseFallbackAndOtherTagsDropped(t *testing.T) {
 	}
 }
 
-func TestHideVersionsUnknownTimeIsKeptAndAllHiddenIsReported(t *testing.T) {
+func TestHideVersionsAsksEveryVersionWithItsTimeOrZero(t *testing.T) {
 	const doc = `{"dist-tags":{"latest":"2.0.0"},"versions":{"1.0.0":{},"2.0.0":{}},"time":{"2.0.0":"not a time"}}`
 
-	out, err := HideVersions([]byte(doc), func(time.Time) bool { return true })
+	seen := map[string]bool{}
+
+	out, err := HideVersions([]byte(doc), func(v string, p time.Time) bool {
+		seen[v] = p.IsZero()
+		return false
+	})
 	if err != nil || string(out) != doc {
-		t.Errorf("unknown times: %s, %v; want the document unchanged", out, err)
+		t.Errorf("nothing hidden: %s, %v; want the document unchanged", out, err)
+	}
+
+	if len(seen) != 2 || !seen["1.0.0"] || !seen["2.0.0"] {
+		t.Errorf("hide saw %v; want both versions with a zero time", seen)
+	}
+
+	out, err = HideVersions([]byte(doc), func(v string, _ time.Time) bool { return v == "2.0.0" })
+	if err != nil || strings.Contains(string(out), `"2.0.0":{`) || !strings.Contains(string(out), `"latest":"1.0.0"`) {
+		t.Errorf("hiding an undated version by name: %s, %v", out, err)
 	}
 
 	const all = `{"versions":{"1.0.0":{},"2.0.0":{}},"time":{"1.0.0":"2020-01-01T00:00:00Z","2.0.0":"2020-01-02T00:00:00Z"}}`
-	if _, err := HideVersions([]byte(all), func(time.Time) bool { return true }); !errors.Is(err, ErrAllVersionsHidden) {
+	if _, err := HideVersions([]byte(all), func(string, time.Time) bool { return true }); !errors.Is(err, ErrAllVersionsHidden) {
 		t.Errorf("all hidden: err = %v, want ErrAllVersionsHidden", err)
 	}
 
 	// A packument without versions is not "all hidden".
-	out, err = HideVersions([]byte(`{"name":"p"}`), func(time.Time) bool { return true })
+	out, err = HideVersions([]byte(`{"name":"p"}`), func(string, time.Time) bool { return true })
 	if err != nil || !strings.Contains(string(out), `"p"`) {
 		t.Errorf("no versions: %s, %v", out, err)
 	}
