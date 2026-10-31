@@ -163,10 +163,10 @@ func TestClassifyAPIRoute(t *testing.T) {
 		{
 			http.MethodGet,
 			"/api/v1/repositories/app/activity",
-			routeScope{action: "manage", delegateRepo: "app"},
-			"repository activity is delegated",
+			routeScope{action: "read", repoName: "app"},
+			"repository activity is open to readers (the handler narrows it)",
 		},
-		{http.MethodPost, "/api/v1/repositories/app/activity", routeScope{action: "manage"}, "only reads of activity are delegated"},
+		{http.MethodPost, "/api/v1/repositories/app/activity", routeScope{action: "manage"}, "only reads of activity are readable"},
 		{http.MethodGet, "/api/v1/repositories/a%2Fb/activity", routeScope{action: "manage"}, "escaped name never delegated for activity"},
 		{
 			http.MethodGet,

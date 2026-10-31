@@ -92,16 +92,14 @@ func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func
 	}
 }
 
+// routeToAction names the audit action of a mutating route that has no handler
+// of its own to record it. Repository creation and artifact uploads are
+// recorded by their handlers (they know the repository and the package, and
+// only record what succeeded).
 func routeToAction(method, routeTemplate string) string {
 	switch {
-	case method == "POST" && routeTemplate == "/api/v1/repositories":
-		return audit.ActionRepositoryCreated
 	case method == "DELETE" && routeTemplate == "/api/v1/repository/{name}":
 		return audit.ActionRepositoryDeleted
-	case method == "POST" && (routeTemplate == "/api/v1/repositories/{name}/debs" || routeTemplate == "/api/v1/repositories/{name}/apks"):
-		return audit.ActionArtifactUploaded
-	case method == "PUT" && routeTemplate == "/repos/{repo}/{pkg:.*}":
-		return audit.ActionArtifactUploaded
 	case method == "POST" && routeTemplate == "/api/v1/auth/change-password":
 		return audit.ActionAuthPasswordChanged
 	case method == "POST" && (routeTemplate == "/api/v1/auth/tokens" || routeTemplate == "/api/v1/users/{id}/tokens"):

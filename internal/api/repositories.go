@@ -875,6 +875,8 @@ func (h *RepositoriesHandler) createRepository(
 	webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventRepoCreated,
 		webhook.RepositoryPayload(webhook.EventRepoCreated, repo.Name, repo.Format, repo.RepoType))
 
+	auditRepository(r, repo, audit.ActionRepositoryCreated, "repository", repo.ID, "created "+repo.RepoType+" "+repo.Format+" repository")
+
 	if project != nil {
 		h.emitProjectRepoEvent(
 			r,
@@ -886,6 +888,73 @@ func (h *RepositoriesHandler) createRepository(
 	}
 
 	writeJSON(w, http.StatusCreated, h.repositoryResponse(r.Context(), repo, map[string]string{}))
+}
+
+// updateRepositoryBody is the body of PATCH /api/v1/repository/{name}. A
+// pointer field left absent leaves the setting unchanged; MemberRepos is a
+// pointer so that an explicit empty list ([]) clears the group while an
+// absent/null field leaves it unchanged.
+type updateRepositoryBody struct {
+	Description             *string   `json:"description"`
+	Public                  *bool     `json:"public"`
+	UpstreamURL             *string   `json:"upstream_url"`
+	UpstreamUsername        *string   `json:"upstream_username"`
+	UpstreamPassword        *string   `json:"upstream_password"`
+	CacheTTLSeconds         *int      `json:"cache_ttl_seconds"`
+	NegativeCacheTTLSeconds *int      `json:"negative_cache_ttl_seconds"`
+	MaxStaleSeconds         *int      `json:"max_stale_seconds"`
+	MinAgeHours             *int      `json:"min_age_hours"`
+	CurationMode            *string   `json:"curation_mode"`
+	Blocked                 *bool     `json:"blocked"`
+	MemberRepos             *[]string `json:"member_repos"`
+	// PresignDownloads is tri-state: absent leaves the override unchanged,
+	// null clears it (inherit storage.presignDownloads), true/false set it.
+	PresignDownloads json.RawMessage `json:"presign_downloads"`
+	// Project moves the repository to the named project.
+	Project *string `json:"project"`
+	// TrashRetentionDays: absent leaves it unchanged, null resets it to
+	// the server default, a number sets it (0 = no trash).
+	TrashRetentionDays nullableInt `json:"trash_retention_days"`
+	ImmutableReleases  *bool       `json:"immutable_releases"`
+	// MergeProxyVersions: groups only, administrators only.
+	MergeProxyVersions *bool `json:"merge_proxy_versions"`
+	SignPackages       *bool `json:"sign_packages"`
+}
+
+// changedFields names the settings the request sets, in a fixed order, for the
+// repository's audit event. It never carries a value (the upstream password is
+// one of the fields).
+func (b *updateRepositoryBody) changedFields() []string {
+	var out []string
+
+	for _, f := range []struct {
+		name string
+		set  bool
+	}{
+		{"description", b.Description != nil},
+		{"public", b.Public != nil},
+		{"blocked", b.Blocked != nil},
+		{"project", b.Project != nil},
+		{"upstream URL", b.UpstreamURL != nil},
+		{"upstream username", b.UpstreamUsername != nil},
+		{"upstream password", b.UpstreamPassword != nil},
+		{"cache TTL", b.CacheTTLSeconds != nil},
+		{"negative cache TTL", b.NegativeCacheTTLSeconds != nil},
+		{"max stale", b.MaxStaleSeconds != nil},
+		{"minimum age", b.MinAgeHours != nil},
+		{"group members", b.MemberRepos != nil},
+		{"presigned downloads", b.PresignDownloads != nil},
+		{"trash retention", b.TrashRetentionDays.Set},
+		{"immutable releases", b.ImmutableReleases != nil},
+		{"merged proxy versions", b.MergeProxyVersions != nil},
+		{"package signing", b.SignPackages != nil},
+	} {
+		if f.set {
+			out = append(out, f.name)
+		}
+	}
+
+	return out
 }
 
 //nolint:gocyclo,cyclop // validation-heavy request handler
@@ -919,34 +988,8 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// MemberRepos is a pointer so that an explicit empty list ([]) clears the
-	// group while an absent/null field leaves it unchanged.
-	var body struct {
-		Description             *string   `json:"description"`
-		Public                  *bool     `json:"public"`
-		UpstreamURL             *string   `json:"upstream_url"`
-		UpstreamUsername        *string   `json:"upstream_username"`
-		UpstreamPassword        *string   `json:"upstream_password"`
-		CacheTTLSeconds         *int      `json:"cache_ttl_seconds"`
-		NegativeCacheTTLSeconds *int      `json:"negative_cache_ttl_seconds"`
-		MaxStaleSeconds         *int      `json:"max_stale_seconds"`
-		MinAgeHours             *int      `json:"min_age_hours"`
-		CurationMode            *string   `json:"curation_mode"`
-		Blocked                 *bool     `json:"blocked"`
-		MemberRepos             *[]string `json:"member_repos"`
-		// PresignDownloads is tri-state: absent leaves the override unchanged,
-		// null clears it (inherit storage.presignDownloads), true/false set it.
-		PresignDownloads json.RawMessage `json:"presign_downloads"`
-		// Project moves the repository to the named project.
-		Project *string `json:"project"`
-		// TrashRetentionDays: absent leaves it unchanged, null resets it to
-		// the server default, a number sets it (0 = no trash).
-		TrashRetentionDays nullableInt `json:"trash_retention_days"`
-		ImmutableReleases  *bool       `json:"immutable_releases"`
-		// MergeProxyVersions: groups only, administrators only.
-		MergeProxyVersions *bool `json:"merge_proxy_versions"`
-		SignPackages       *bool `json:"sign_packages"`
-	}
+	var body updateRepositoryBody
+
 	if err := decodeJSON(r, &body); err != nil {
 		writeBadJSON(w, err)
 		return
@@ -1184,6 +1227,10 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	if newMode := curationModeOf(repo); newMode != oldCurationMode {
 		auditRepository(r, repo, audit.ActionRepositoryUpdated, "repository", repo.ID,
 			"curation mode of "+repo.Name+" changed from "+oldCurationMode+" to "+newMode)
+	}
+
+	if fields := body.changedFields(); len(fields) > 0 {
+		auditRepository(r, repo, audit.ActionRepositoryUpdated, "repository", repo.ID, "settings changed: "+strings.Join(fields, ", "))
 	}
 
 	writeJSON(w, http.StatusOK, h.repositoryResponse(ctx, repo, map[string]string{}))

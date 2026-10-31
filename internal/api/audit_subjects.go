@@ -177,16 +177,18 @@ func auditActorName(l *models.AuditLog, d auditDetails, names *models.AuditNames
 	return ""
 }
 
-// isAuditPackageKind reports whether rt is the resource type of a trash-able
-// package row: a kind a format registered in its storage descriptor, one of the
-// docker kinds (docker keeps dedicated tables, no descriptor) or the terraform
-// provider kind that delete handlers still audit under.
+// isAuditPackageKind reports whether rt is the resource type of a package row:
+// a kind a format registered in its storage descriptor, one of the docker kinds
+// (docker keeps dedicated tables, no descriptor), the terraform provider kind
+// that delete handlers still audit under, or the generic "artifact" that
+// uploads and quarantine events are recorded with (they name the package in
+// their details).
 func isAuditPackageKind(rt string) bool {
 	switch models.TrashKind(rt) { //nolint:exhaustive // only the non-descriptor kinds are listed
 	case models.TrashKindDockerManifest, models.TrashKindDockerTag, models.TrashKindTerraformProvider:
 		return true
 	default:
-		return len(storage.TrashFormatsOfKind(rt)) > 0
+		return rt == "artifact" || len(storage.TrashFormatsOfKind(rt)) > 0
 	}
 }
 

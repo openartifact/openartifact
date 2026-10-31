@@ -383,6 +383,8 @@ func (w *CleanupWorker) runPolicy(ctx context.Context, policy *models.CleanupPol
 	}
 
 	run, deleted, err := w.deleteArtifacts(ctx, policy, repo, t)
+	auditCleanupRun(ctx, policy, repo, run, deleted, err)
+
 	// Also after a partial run: whatever was removed before the error must
 	// leave the generated metadata.
 	if deleted > 0 {

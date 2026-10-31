@@ -204,6 +204,8 @@ func (h *LicenseHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	auditQuarantine(r, repo, body.Quarantined, "license", updated.ArtifactID, "", "")
+
 	writeJSON(w, http.StatusOK, scanResultToMap(updated))
 }
 

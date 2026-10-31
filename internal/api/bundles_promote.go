@@ -7,7 +7,9 @@ package api
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -59,7 +61,7 @@ func (h *BundlesHandler) promoteBundle(
 		return
 	}
 
-	h.announcePromotion(r, bundle, targetRepo, report)
+	h.announcePromotion(r, bundle, targetRepo, items, report)
 
 	writeJSON(w, http.StatusOK, promoteResponse(report))
 }
@@ -80,6 +82,7 @@ func (h *BundlesHandler) announcePromotion(
 	r *http.Request,
 	bundle *models.ReleaseBundle,
 	target *models.Repository,
+	items []*models.ReleaseBundleItem,
 	report *promote.Report,
 ) {
 	from := ""
@@ -99,6 +102,7 @@ func (h *BundlesHandler) announcePromotion(
 		report.Replaced,
 	)
 	auditPromotion(r, bundle.ID, target.ID, details)
+	auditPromotedOut(r, bundle, target, items, report.Promotion.ToStage)
 
 	webhook.Emit(r.Context(), h.publisher, target.ID, webhook.EventBundlePromoted, webhook.BundlePromotedPayload(webhook.BundlePromotion{
 		Repository: target.Name,
@@ -112,6 +116,34 @@ func (h *BundlesHandler) announcePromotion(
 		Existing:   report.Existing,
 		Replaced:   report.Replaced,
 	}))
+}
+
+// auditPromotedOut records an artifact.promoted event against every repository
+// the bundle's items were copied out of, so a source repository's activity shows
+// what left it, as the target's shows what arrived (bundle.promoted).
+func auditPromotedOut(
+	r *http.Request,
+	bundle *models.ReleaseBundle,
+	target *models.Repository,
+	items []*models.ReleaseBundleItem,
+	toStage string,
+) {
+	perSource := map[string]int{}
+
+	for _, it := range items {
+		if it.SourceRepoID != target.ID {
+			perSource[it.SourceRepoID]++
+		}
+	}
+
+	for _, src := range slices.Sorted(maps.Keys(perSource)) {
+		logAdminAudit(r, adminAuditEvent{
+			repositoryID: src, action: audit.ActionArtifactPromoted, resourceType: "bundle", resourceID: bundle.ID,
+			details: fmt.Sprintf("%d items of bundle %s %s promoted out to stage %s (%s)",
+				perSource[src], bundle.Name, bundle.Version, toStage, target.Name),
+			subject: bundle.Name + " " + bundle.Version,
+		})
+	}
 }
 
 // auditPromotion records the bundle.promoted audit event against the target repository.

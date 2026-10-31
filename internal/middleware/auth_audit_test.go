@@ -260,7 +260,9 @@ func TestRouteToActionAuthEvents(t *testing.T) {
 		{"POST", "/api/v1/users/{id}/tokens", "auth.token_created"},
 		{"DELETE", "/api/v1/auth/tokens/{id}", "auth.token_revoked"},
 		{"DELETE", "/api/v1/users/{id}/tokens/{tokenId}", "auth.token_revoked"},
-		{"POST", "/api/v1/repositories", "repository.created"},
+		// Recorded by the handlers, which know the repository and only record successes.
+		{"POST", "/api/v1/repositories", ""},
+		{"PUT", "/repos/{name}", ""},
 		{"DELETE", "/api/v1/repository/{name}", "repository.deleted"},
 		// The trash handlers audit restore/purge themselves (internal/trash).
 		{"POST", "/api/v1/trash/{kind}/{id}/restore", ""},

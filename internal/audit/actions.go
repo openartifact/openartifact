@@ -7,7 +7,7 @@ package audit
 // Audit action names. The audit_logs.chk_audit_action constraint admits exactly
 // the values in KnownActions; every action an emitter can produce MUST be
 // declared here, listed in KnownActions and allowed by the latest migration
-// that rewrites the constraint (see migrations/005_curation.sql). The
+// that rewrites the constraint (see migrations/006_audit_cleanup_run.sql). The
 // integration test TestKnownActionsAcceptedByDatabase inserts each entry of
 // KnownActions into a freshly migrated database.
 const (
@@ -146,6 +146,7 @@ const (
 
 	ActionCleanupPolicyChanged = "cleanup.policy_changed"
 	ActionCleanupRunStarted    = "cleanup.run_started"
+	ActionCleanupRunCompleted  = "cleanup.run_completed"
 
 	// Federation.
 
@@ -222,7 +223,7 @@ var KnownActions = []string{
 
 	ActionBackupRestoreStarted,
 
-	ActionCleanupPolicyChanged, ActionCleanupRunStarted,
+	ActionCleanupPolicyChanged, ActionCleanupRunStarted, ActionCleanupRunCompleted,
 
 	ActionFederationEnabledChanged, ActionFederationPeerCreated, ActionFederationPeerUpdated,
 	ActionFederationPeerDeleted, ActionFederationPeerResynced, ActionFederationTokenCreated, ActionFederationTokenRevoked,

@@ -287,13 +287,14 @@ interface RepoActivityPage {
 
 export async function listRepoActivity(
   name: string,
-  params: { cursor?: string; limit?: number; packageName?: string; version?: string } = {},
+  params: { cursor?: string; limit?: number; packageName?: string; version?: string; category?: string } = {},
 ): Promise<RepoActivityPage> {
   const qs = new URLSearchParams()
   if (params.cursor) qs.set('cursor', params.cursor)
   if (params.limit != null) qs.set('limit', String(params.limit))
   if (params.packageName) qs.set('package_name', params.packageName)
   if (params.version) qs.set('version', params.version)
+  if (params.category) qs.set('category', params.category)
   const query = qs.toString() ? `?${qs}` : ''
   const res = await request<{ data?: RepoActivityEntry[]; has_more?: boolean; next_cursor?: string }>(
     `/api/v1/repositories/${encodeURIComponent(name)}/activity${query}`,

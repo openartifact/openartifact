@@ -138,6 +138,11 @@ func auditFilterWhere(params models.AuditListParams) (string, []any) {
 		where += ` AND action NOT LIKE 'project.token\_%'`
 	}
 
+	if len(params.Actions) > 0 {
+		args = append(args, params.Actions)
+		where += fmt.Sprintf(" AND action = ANY($%d::text[])", len(args))
+	}
+
 	if action != "" {
 		args = append(args, "%"+escapeLike(action)+"%")
 		where += fmt.Sprintf(" AND action ILIKE $%d", len(args))

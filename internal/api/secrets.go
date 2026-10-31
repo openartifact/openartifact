@@ -194,6 +194,8 @@ func (h *SecretsHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	auditQuarantine(r, repo, body.Quarantined, "secret", result.ArtifactID, "", "")
+
 	writeJSON(w, http.StatusOK, secretScanResultToMap(updated))
 }
 

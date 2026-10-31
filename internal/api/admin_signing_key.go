@@ -142,7 +142,7 @@ func (h *signingKeyAdmin[I]) handleReplace(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	auditAdmin(r, audit.ActionRepositoryUpdated, "repository", repo.ID, h.noun+" of "+repo.Name+" replaced, "+h.describe(info))
+	auditRepository(r, repo, audit.ActionRepositoryUpdated, "repository", repo.ID, h.noun+" of "+repo.Name+" replaced, "+h.describe(info))
 
 	writeJSON(w, http.StatusOK, h.respond(info))
 }

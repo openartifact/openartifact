@@ -345,7 +345,8 @@ func (a *app) registerDependencyTrack() {
 
 	api.NewDependencyTrackHandler(a.db, a.log, a.web.evaluator, a.feat.dtPusher).RegisterAuthed(a.web.authed)
 
-	a.feat.dtPublisher = dtrack.NewUploadPublisher(a.feat.uploadPublisher, a.feat.dtPusher)
+	// Every upload is also recorded as an audit event of its repository.
+	a.feat.dtPublisher = dtrack.NewUploadPublisher(middleware.NewUploadAuditPublisher(a.feat.uploadPublisher), a.feat.dtPusher)
 }
 
 // registerWebhooksAndBackup registers the webhooks and backup APIs.

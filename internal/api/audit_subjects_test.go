@@ -27,6 +27,7 @@ func TestIsAuditPackageKind(t *testing.T) {
 		{"docker_manifest", true},
 		{"docker_tag", true},
 		{"terraform_provider", true},
+		{"artifact", true},
 		{"repository", false},
 		{"user", false},
 		{"login", false},

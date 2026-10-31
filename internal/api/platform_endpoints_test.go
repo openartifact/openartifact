@@ -330,27 +330,26 @@ func TestRepositoryUsageUnlimitedOmitsLimits(t *testing.T) {
 	}
 }
 
-func TestRepositoryUsageAndActivityAuthorization(t *testing.T) {
-	for _, path := range []string{"/api/v1/repositories/r/usage", "/api/v1/repositories/r/activity"} {
-		t.Run(path, func(t *testing.T) {
-			db := &platformMockDB{
-				repo:  &models.Repository{ID: platRepoID, Name: "r"},
-				quota: &models.StorageQuota{},
-				usage: &models.RepositoryUsage{},
-				audit: &models.AuditPage{},
-			}
+// The usage route is administrative; the activity route is readable (its
+// handler narrows what a non-admin sees, see repositories_activity_test.go).
+func TestRepositoryUsageAuthorization(t *testing.T) {
+	const path = "/api/v1/repositories/r/usage"
 
-			for _, p := range []*auth.Principal{platAnonP(), platUser()} {
-				if code, _ := platformGet(t, platformRouter(t, db), p, path); code != http.StatusForbidden {
-					t.Errorf("%+v: status = %d, want 403", p, code)
-				}
-			}
+	db := &platformMockDB{
+		repo:  &models.Repository{ID: platRepoID, Name: "r"},
+		quota: &models.StorageQuota{},
+		usage: &models.RepositoryUsage{},
+	}
 
-			db.repo = nil
-			if code, _ := platformGet(t, platformRouter(t, db), platAdminP(), path); code != http.StatusNotFound {
-				t.Errorf("unknown repository: status = %d, want 404", code)
-			}
-		})
+	for _, p := range []*auth.Principal{platAnonP(), platUser()} {
+		if code, _ := platformGet(t, platformRouter(t, db), p, path); code != http.StatusForbidden {
+			t.Errorf("%+v: status = %d, want 403", p, code)
+		}
+	}
+
+	db.repo = nil
+	if code, _ := platformGet(t, platformRouter(t, db), platAdminP(), path); code != http.StatusNotFound {
+		t.Errorf("unknown repository: status = %d, want 404", code)
 	}
 }
 

@@ -99,6 +99,8 @@ Web UI: tooltips and menus are drawn above everything (a menu in a scrolling tab
 
 Migrations `005_curation` and `005_curation_validate` add `repositories.curation_mode` (default `off`, no behavior change), the `curation_rules` table (part of the recovery journal) and the `curation.rule_*` audit actions. Proxy repositories can restrict which upstream packages and versions they serve with a denylist or an allowlist of rules, managed through `curation_mode` and `/api/v1/repositories/{name}/curation-rules`; `GET /api/v1/repositories/{name}/availability` explains why a version is or is not served. See [Package curation](../repositories/hosted-proxy-group.md#package-curation).
 
+Migration `006_audit_repository_activity` replaces the single-column audit index on `repository_id` with `(repository_id, created_at DESC, id)` (built `CONCURRENTLY`) so a repository's timeline pages without a sort, and `006_audit_cleanup_run` adds the `cleanup.run_completed` audit action. The repository **Activity** tab now lists uploads, deletions, trash restores and purges, promotions, quarantine, settings changes, cleanup runs and federation events, and `GET /api/v1/repositories/{name}/activity` is readable by anyone who can read the repository: readers see the artifact events only, repository admins see everything ([Project activity](../security/projects.md#project-activity)).
+
 ### 0.15.1
 
 No migrations; replaces 0.15.0 in place. Fixes found by the fuzzers (#336):
