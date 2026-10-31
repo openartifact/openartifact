@@ -44,12 +44,12 @@ describe('RepoDetailPage', () => {
     w.unmount()
   })
 
-  it('hides the maintainer tabs from a plain reader but keeps the connect block', async () => {
+  it('hides the maintainer tabs from a plain reader but keeps the connect block and the activity of the artifacts', async () => {
     const w = await mountPage({ ...repo, permissions: {} }, { id: 'u', username: 'ann' })
     const names = tabNames(w).join('|')
     expect(names).toContain('Security')
+    expect(names).toContain('Activity')
     expect(names).not.toContain('Settings')
-    expect(names).not.toContain('Activity')
     expect(w.text()).toContain('Connect a client')
     w.unmount()
   })

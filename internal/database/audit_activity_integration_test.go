@@ -219,3 +219,108 @@ func TestAuditExportKeysetWalkAndRange(t *testing.T) {
 		t.Errorf("since-only returned %d rows, want 12", len(open))
 	}
 }
+
+// TestAuditRepositoryTimeline checks the repository activity query: only that
+// repository's entries, only the requested actions, keyset paging visits every
+// row once, and the page comes from the (repository_id, created_at, id) index
+// without sorting the repository's entries.
+func TestAuditRepositoryTimeline(t *testing.T) {
+	pg := newQuotaTestDB(t, 4)
+	ctx := context.Background()
+	db := pg.GetDB()
+
+	var projectID, repoA, repoB string
+	if err := db.QueryRowContext(ctx, `INSERT INTO projects (name, slug) VALUES ('acme', 'acme') RETURNING id`).
+		Scan(&projectID); err != nil {
+		t.Fatalf("insert project: %v", err)
+	}
+
+	if err := db.QueryRowContext(
+		ctx, `INSERT INTO repositories (name, format, project_id) VALUES ('a', 'raw', $1) RETURNING id`, projectID,
+	).Scan(&repoA); err != nil {
+		t.Fatalf("insert repository a: %v", err)
+	}
+
+	if err := db.QueryRowContext(
+		ctx, `INSERT INTO repositories (name, format, project_id) VALUES ('b', 'raw', $1) RETURNING id`, projectID,
+	).Scan(&repoB); err != nil {
+		t.Fatalf("insert repository b: %v", err)
+	}
+
+	// 3000 entries of A (uploads, plus a delete every tenth) and 500 of B, all
+	// at distinct seconds except the last 20 of A, which tie.
+	if _, err := db.ExecContext(ctx, `INSERT INTO audit_logs (action, repository_id, created_at)
+		SELECT CASE WHEN g % 10 = 0 THEN 'artifact.deleted' ELSE 'artifact.uploaded' END, $1::uuid,
+			now() - (GREATEST(g, 21) || ' seconds')::interval
+		FROM generate_series(1, 3000) g`, repoA); err != nil {
+		t.Fatalf("insert A: %v", err)
+	}
+
+	if _, err := db.ExecContext(ctx, `INSERT INTO audit_logs (action, repository_id, created_at)
+		SELECT 'artifact.uploaded', $1::uuid, now() - (g || ' seconds')::interval FROM generate_series(1, 500) g`, repoB); err != nil {
+		t.Fatalf("insert B: %v", err)
+	}
+
+	if _, err := db.ExecContext(ctx, `ANALYZE audit_logs`); err != nil {
+		t.Fatalf("analyze: %v", err)
+	}
+
+	list := func(p models.AuditListParams) *models.AuditPage {
+		t.Helper()
+
+		p.NoTotal = true
+
+		page, err := pg.ListAuditLogs(ctx, p)
+		if err != nil {
+			t.Fatalf("ListAuditLogs: %v", err)
+		}
+
+		return page
+	}
+
+	deletes := list(models.AuditListParams{RepositoryID: repoA, Actions: []string{"artifact.deleted"}, Limit: 500})
+	if len(deletes.Logs) != 300 || deletes.Next != nil {
+		t.Errorf("deletes = %d rows, next = %v, want 300 and no next", len(deletes.Logs), deletes.Next)
+	}
+
+	both := list(models.AuditListParams{RepositoryID: repoA, Actions: []string{"artifact.deleted", "artifact.uploaded"}, Limit: 5000})
+	if len(both.Logs) != 3000 {
+		t.Errorf("both actions = %d rows, want 3000", len(both.Logs))
+	}
+
+	if none := list(models.AuditListParams{RepositoryID: repoA, Actions: []string{"artifact.purged"}, Limit: 10}); len(none.Logs) != 0 {
+		t.Errorf("purged = %d rows, want 0", len(none.Logs))
+	}
+
+	seen := map[string]bool{}
+
+	var after *models.AuditCursor
+
+	for range 200 {
+		page := list(models.AuditListParams{RepositoryID: repoA, Limit: 100, After: after})
+		for _, l := range page.Logs {
+			if seen[l.ID] {
+				t.Fatalf("row %s returned twice", l.ID)
+			}
+
+			seen[l.ID] = true
+		}
+
+		if page.Next == nil {
+			break
+		}
+
+		after = page.Next
+	}
+
+	if len(seen) != 3000 {
+		t.Errorf("paging visited %d rows of repository a, want 3000", len(seen))
+	}
+
+	where, args := auditFilterWhere(models.AuditListParams{RepositoryID: repoA})
+
+	plan := explain(t, db, `EXPLAIN SELECT id FROM audit_logs `+where+` ORDER BY created_at DESC, id LIMIT 26`, args...)
+	if !strings.Contains(plan, "idx_audit_logs_repository_created") || strings.Contains(plan, "Sort") {
+		t.Errorf("plan does not read the page from idx_audit_logs_repository_created:\n%s", plan)
+	}
+}

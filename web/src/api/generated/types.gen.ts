@@ -7964,6 +7964,10 @@ export type GetApiV1RepositoriesByNameActivityData = {
     };
     query?: {
         /**
+         * Event types to keep, comma separated or repeated: `uploads`, `deletions`, `trash`, `promotions`, `quarantine` (any reader) and `cleanup`, `settings`, `federation` (repository admins only).
+         */
+        category?: string;
+        /**
          * Exact package name as recorded with the event.
          */
         package_name?: string;
@@ -7990,11 +7994,11 @@ export type GetApiV1RepositoriesByNameActivityData = {
 
 export type GetApiV1RepositoriesByNameActivityErrors = {
     /**
-     * Malformed cursor
+     * Malformed cursor or unknown category
      */
     400: unknown;
     /**
-     * Admin or project maintainer access required
+     * An admin-only category was requested without admin access to the repository, or an anonymous caller filtered by actor
      */
     403: unknown;
     /**

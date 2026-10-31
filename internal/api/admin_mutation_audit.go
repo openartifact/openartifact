@@ -6,6 +6,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/audit"
@@ -27,24 +28,69 @@ func auditRepository(r *http.Request, repo *models.Repository, action, resourceT
 }
 
 func auditAdminIn(r *http.Request, repositoryID, action, resourceType, resourceID, details string) {
+	logAdminAudit(r, adminAuditEvent{
+		repositoryID: repositoryID, action: action, resourceType: resourceType, resourceID: resourceID, details: details,
+	})
+}
+
+// auditQuarantine records that an administrator quarantined or released an
+// artifact from the review of one of its scans (kind: "vulnerability", "license"
+// or "secret"). artifactID is the scan result's artifact id; pkg and version name
+// the package version when the scan result carries them.
+func auditQuarantine(r *http.Request, repo *models.Repository, quarantined bool, kind, artifactID, pkg, version string) {
+	// A scan result records the artifact by a name@version id or by the row id
+	// of the package; a row id is never shown as a name.
+	subject := artifactID
+	if isUUIDString(artifactID) {
+		subject = strings.TrimSpace(pkg + " " + version)
+	}
+
+	if subject == "" {
+		subject = "an artifact"
+	}
+
+	action, msg := audit.ActionArtifactReleased, "released from quarantine"
+	if quarantined {
+		action, msg = audit.ActionArtifactQuarantined, "quarantined"
+	}
+
+	logAdminAudit(r, adminAuditEvent{
+		repositoryID: repo.ID, action: action, resourceType: "artifact",
+		details: msg + " after " + kind + " review: " + subject,
+		pkg:     pkg, version: version, subject: subject,
+	})
+}
+
+// adminAuditEvent is one audit event of a request's principal. pkg, version and
+// subject are optional: the package version the event concerns and the display
+// name of what it acted on (see audit.AuditEvent).
+type adminAuditEvent struct {
+	repositoryID, action, resourceType, resourceID, details string
+	pkg, version, subject                                   string
+}
+
+func logAdminAudit(r *http.Request, e adminAuditEvent) {
 	l := audit.Default()
 	if l == nil {
 		return
 	}
 
 	ev := audit.AuditEvent{
-		Action:       action,
+		Action:       e.action,
 		ActorType:    "system",
-		ResourceType: &resourceType,
-		Details:      details,
+		ResourceType: &e.resourceType,
+		Details:      e.details,
+		Package:      e.pkg,
+		Version:      e.version,
+		Subject:      e.subject,
 	}
 
-	if resourceID != "" {
-		ev.ResourceID = &resourceID
+	if e.resourceID != "" {
+		ev.ResourceID = &e.resourceID
 	}
 
-	if repositoryID != "" {
-		ev.RepositoryID = &repositoryID
+	if e.repositoryID != "" {
+		ev.RepositoryID = &e.repositoryID
 	}
 
 	if p := currentPrincipal(r); p != nil && !p.IsAnonymous {

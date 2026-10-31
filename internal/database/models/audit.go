@@ -49,6 +49,9 @@ type AuditListParams struct {
 	// package match, see audit.Event.Package.
 	PackageName    string
 	PackageVersion string
+	// Actions, when non-empty, keeps only entries whose action is exactly one
+	// of them (Action is a substring match; both may be set).
+	Actions []string
 	// HideProjectTokenEvents drops project.token_* entries (token mint and
 	// revoke), which only maintainers may see.
 	HideProjectTokenEvents bool

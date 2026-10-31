@@ -531,6 +531,8 @@ func (h *VulnHandler) handleQuarantine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	auditQuarantine(r, repo, body.Quarantined, "vulnerability", updated.ArtifactID, updated.PackageName, updated.PackageVersion)
+
 	resp, err := h.scanResponse(ctx, updated)
 	if err != nil {
 		h.dbError(w, "quarantine vuln artifact: exploit signals", err)

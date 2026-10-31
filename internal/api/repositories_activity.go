@@ -5,11 +5,13 @@
 package api
 
 import (
-	"net/http"
-
 	"context"
+	"net/http"
+	"slices"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -38,20 +40,132 @@ func (h *RepositoryActivityHandler) RegisterAuthed(r chi.Router) {
 	r.Get("/api/v1/repositories/{name}/activity", h.handleList)
 }
 
-// handleList returns the audit events recorded against one repository, newest
-// first, with actor and subject names resolved. package_name and version keep
-// only the events that record that package version (deletions, restores and
-// purges do; events without a package never match). Keyset paging only
-// (`cursor`, `next_cursor`, `has_more`): no row is counted. Client addresses
-// are left out. Global admins and the repository's project maintainers only.
+// activityCategory is one event type of the repository timeline: the audit
+// actions it covers and whether it is reserved to the repository's admins.
+type activityCategory struct {
+	actions   []string
+	adminOnly bool
+}
+
+// activityCategories is the closed set of values of the `category` filter.
+// Whoever may read the repository sees the events of the artifacts it holds:
+// uploads, deletions, trash restores and purges, promotions in and out,
+// quarantine and release. The operational events - who changed which setting,
+// what the cleanup policies removed and the federation traffic - name
+// administrators' decisions and the infrastructure around the repository and
+// stay with its admins.
 //
-//	GET /api/v1/repositories/{name}/activity?package_name=&version=&actor=&action=&cursor=&limit=
+//nolint:gochecknoglobals // immutable lookup table
+var activityCategories = map[string]activityCategory{
+	"uploads":    {actions: []string{audit.ActionArtifactUploaded}},
+	"deletions":  {actions: []string{audit.ActionArtifactDeleted}},
+	"trash":      {actions: []string{audit.ActionArtifactRestored, audit.ActionArtifactPurged, audit.ActionRepositoryRestored}},
+	"promotions": {actions: []string{audit.ActionBundlePromoted, audit.ActionArtifactPromoted}},
+	"quarantine": {actions: []string{audit.ActionArtifactQuarantined, audit.ActionArtifactReleased}},
+	"cleanup": {
+		actions:   []string{audit.ActionCleanupPolicyChanged, audit.ActionCleanupRunStarted, audit.ActionCleanupRunCompleted},
+		adminOnly: true,
+	},
+	"settings": {
+		actions: []string{
+			audit.ActionRepositoryCreated, audit.ActionRepositoryUpdated,
+			audit.ActionRepositoryBlocked, audit.ActionRepositoryUnblocked,
+		},
+		adminOnly: true,
+	},
+	"federation": {
+		actions: []string{
+			audit.ActionFederationEnabledChanged, audit.ActionFederationPeerCreated, audit.ActionFederationPeerUpdated,
+			audit.ActionFederationPeerDeleted, audit.ActionFederationPeerResynced,
+			audit.ActionFederationTokenCreated, audit.ActionFederationTokenRevoked,
+		},
+		adminOnly: true,
+	},
+}
+
+// activityFilterError is a refused `category` filter: its HTTP status and the
+// message for the client.
+type activityFilterError struct {
+	status  int
+	message string
+}
+
+// activityActions turns the `category` parameter (comma separated, repeatable)
+// into the audit actions to keep. With no category an admin gets every event of
+// the repository (nil), anyone else every category open to readers. An unknown
+// category is a 400, an admin-only one asked by a non-admin a 403.
+func activityActions(values []string, isAdmin bool) ([]string, *activityFilterError) {
+	var names []string
+
+	for _, v := range values {
+		for n := range strings.SplitSeq(v, ",") {
+			if n = strings.TrimSpace(n); n != "" {
+				names = append(names, n)
+			}
+		}
+	}
+
+	if len(names) == 0 {
+		if isAdmin {
+			return nil, nil
+		}
+
+		return readerActions(), nil
+	}
+
+	var actions []string
+
+	for _, n := range names {
+		c, ok := activityCategories[n]
+		if !ok {
+			return nil, &activityFilterError{http.StatusBadRequest, "unknown category"}
+		}
+
+		if c.adminOnly && !isAdmin {
+			return nil, &activityFilterError{http.StatusForbidden, "admin access required for this category"}
+		}
+
+		actions = append(actions, c.actions...)
+	}
+
+	slices.Sort(actions)
+
+	return slices.Compact(actions), nil
+}
+
+// readerActions lists the actions of every category open to readers.
+func readerActions() []string {
+	var out []string
+
+	for _, c := range activityCategories {
+		if !c.adminOnly {
+			out = append(out, c.actions...)
+		}
+	}
+
+	slices.Sort(out)
+
+	return out
+}
+
+// handleList returns the audit events recorded against one repository, newest
+// first, with actor and subject names resolved. Keyset paging only (`cursor`,
+// `next_cursor`, `has_more`): no row is counted. package_name and version keep
+// only the events that record that package version; `category` (comma
+// separated: uploads, deletions, trash, promotions, quarantine, cleanup,
+// settings, federation) keeps one or more event types.
+//
+// Visibility follows the repository: whoever may read it (the route's RBAC
+// scope is a read of the repository, anonymous included on a public one) sees
+// the artifact events (activityCategories); its admins - global admins, the
+// project's maintainers and delegated repository admins - also see settings,
+// cleanup and federation events. The server applies the restriction, whatever
+// the client asks for. Client addresses are never returned, and an anonymous
+// caller gets no actor names and cannot filter by actor.
+//
+//	GET /api/v1/repositories/{name}/activity?category=&package_name=&version=&actor=&action=&cursor=&limit=
 func (h *RepositoryActivityHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	name := urlparams.Vars(r)["name"]
-
-	if !requireRepoAdmin(w, r, h.evaluator, name) {
-		return
-	}
 
 	repo, err := h.db.GetRepositoryByName(r.Context(), name)
 	if err != nil {
@@ -66,7 +180,38 @@ func (h *RepositoryActivityHandler) handleList(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	principal := currentPrincipal(r)
+	signedIn := principal != nil && !principal.IsAnonymous
+
+	isAdmin := false
+
+	if signedIn {
+		isAdmin, err = h.evaluator.EvaluateRepoAdmin(r.Context(), *principal, name)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
+			return
+		}
+	}
+
 	q := r.URL.Query()
+
+	if !signedIn && q.Get("actor") != "" {
+		writeError(w, http.StatusForbidden, "forbidden", "sign in to filter by actor")
+		return
+	}
+
+	actions, ferr := activityActions(q["category"], isAdmin)
+	if ferr != nil {
+		code := "bad_request"
+		if ferr.status == http.StatusForbidden {
+			code = "forbidden"
+		}
+
+		writeError(w, ferr.status, code, ferr.message)
+
+		return
+	}
+
 	limit := queryIntParam(r, "limit", activityDefaultPerPage, 1, activityMaxPerPage)
 
 	params := models.AuditListParams{
@@ -75,6 +220,7 @@ func (h *RepositoryActivityHandler) handleList(w http.ResponseWriter, r *http.Re
 		PackageVersion: q.Get("version"),
 		Actor:          q.Get("actor"),
 		Action:         q.Get("action"),
+		Actions:        actions,
 		Limit:          limit,
 		NoTotal:        true,
 	}
@@ -97,5 +243,13 @@ func (h *RepositoryActivityHandler) handleList(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	writeJSON(w, http.StatusOK, activityPage(r.Context(), h.db, h.log, page, limit))
+	resp := activityPage(r.Context(), h.db, h.log, page, limit)
+
+	if !signedIn {
+		for i := range resp.Data {
+			resp.Data[i].Actor, resp.Data[i].ActorName = "", ""
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }

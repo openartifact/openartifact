@@ -123,13 +123,14 @@ Create a new repository (admin only)
 
 Repository activity
 
-Audit events recorded against one repository (deletions, restores, purges, repository and project changes), newest first, with actor and subject names resolved. `package_name` and `version` keep only the events that record that package version: deletions, restores and purges do, other events never match. Keyset paging only: follow `next_cursor` while `has_more` is true; no row is counted. Client addresses are not returned. Requires global admin or the maintainer or owner role in the repository's project (a caller who cannot read the repository gets 404).
+Audit events recorded against one repository, newest first, with actor and subject names resolved: uploads, deletions, trash restores and purges, promotions in and out, quarantine and release (readable by anyone who can read the repository), and its creation and settings changes, cleanup runs with their counts and federation events (repository admins only: global admins, the project's maintainers and owners, delegated repository admins). `category` keeps one or more event types; without it a reader gets every reader category and an admin every event. The server applies the restriction whatever is asked. `package_name` and `version` keep only the events that record that package version. Keyset paging only: follow `next_cursor` while `has_more` is true; no row is counted. Client addresses are never returned; an anonymous caller (public repository) gets no actor names and cannot filter by actor.
 
 **Parameters**
 
 | Name | In | Type | Required | Description |
 |---|---|---|---|---|
 | `name` | path | string | yes | - |
+| `category` | query | string | no | Event types to keep, comma separated or repeated: `uploads`, `deletions`, `trash`, `promotions`, `quarantine` (any reader) and `cleanup`, `settings`, `federation` (repository admins only). |
 | `package_name` | query | string | no | Exact package name as recorded with the event. |
 | `version` | query | string | no | Exact version as recorded with the event. |
 | `actor` | query | string | no | Case-insensitive substring of the actor name or actor id. |
@@ -142,8 +143,8 @@ Audit events recorded against one repository (deletions, restores, purges, repos
 | Status | Description | Body |
 |---|---|---|
 | `200` | One page of activity | `application/json`: [ActivityPage](schemas.md#activitypage) |
-| `400` | Malformed cursor | - |
-| `403` | Admin or project maintainer access required | - |
+| `400` | Malformed cursor or unknown category | - |
+| `403` | An admin-only category was requested without admin access to the repository, or an anonymous caller filtered by actor | - |
 | `404` | Repository not found | - |
 
 ### `GET /api/v1/repositories/{name}/apk-key`
