@@ -197,5 +197,22 @@
   "artifact.activity.column.when": "Date",
   "artifact.activity.column.actor": "Auteur",
   "artifact.activity.column.action": "Action",
-  "artifact.activity.column.details": "Détails"
+  "artifact.activity.column.details": "Détails",
+  "artifact.availability.title": "Indisponible pour les clients",
+  "artifact.availability.intro": "{name} {version} est retenue par ce dépôt : ses clients ne peuvent pas la télécharger.",
+  "artifact.availability.source.min_age": "Âge minimal",
+  "artifact.availability.source.curation": "Curation",
+  "artifact.availability.source.quarantine": "Quarantaine",
+  "artifact.availability.source.license_policy": "Politique de licences",
+  "artifact.availability.source.repository_blocked": "Dépôt bloqué",
+  "artifact.availability.until": "Disponible {when}",
+  "artifact.availability.untilTitle": "Retenue jusqu'au {date}",
+  "artifact.availability.rule": "Ouvrir les règles de curation",
+  "artifact.availability.published": "Publiée {when}",
+  "artifact.availability.unknownAge": "Ce dépôt a un âge minimal, mais les métadonnées amont en cache ne datent pas cette version : le contrôle de l'âge n'a pas pu être effectué.",
+  "artifact.versions.column.availability": "Disponibilité",
+  "artifact.versions.availableAt": "Disponible {when}",
+  "artifact.versions.blocked": "Bloquée : {reason}",
+  "artifact.heldBack.title": "Retenues par ce dépôt",
+  "artifact.heldBack.hint": "Ces versions de {name} existent en amont mais ne sont pas encore servies."
 }

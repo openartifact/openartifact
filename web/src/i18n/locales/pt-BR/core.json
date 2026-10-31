@@ -32,6 +32,8 @@
   "theme.dark": "Escuro",
   "theme.auto": "Sistema",
   "common.justNow": "agora mesmo",
+  "common.inTime": "em {time}",
+  "common.anyMoment": "a qualquer momento",
   "common.loading": "Carregando...",
   "common.export.jsonl": "Exportar JSONL",
   "common.export.csv": "Exportar CSV",

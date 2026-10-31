@@ -32,6 +32,8 @@
   "theme.dark": "ダーク",
   "theme.auto": "システム",
   "common.justNow": "たった今",
+  "common.inTime": "{time}後",
+  "common.anyMoment": "まもなく",
   "common.loading": "読み込み中...",
   "common.export.jsonl": "JSONL をエクスポート",
   "common.export.csv": "CSV をエクスポート",

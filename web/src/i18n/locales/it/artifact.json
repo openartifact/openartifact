@@ -197,5 +197,22 @@
   "artifact.activity.column.when": "Quando",
   "artifact.activity.column.actor": "Autore",
   "artifact.activity.column.action": "Azione",
-  "artifact.activity.column.details": "Dettagli"
+  "artifact.activity.column.details": "Dettagli",
+  "artifact.availability.title": "Non disponibile per i client",
+  "artifact.availability.intro": "{name} {version} è trattenuta da questo repository: i suoi client non possono scaricarla.",
+  "artifact.availability.source.min_age": "Età minima",
+  "artifact.availability.source.curation": "Curation",
+  "artifact.availability.source.quarantine": "Quarantena",
+  "artifact.availability.source.license_policy": "Policy sulle licenze",
+  "artifact.availability.source.repository_blocked": "Repository bloccato",
+  "artifact.availability.until": "Disponibile {when}",
+  "artifact.availability.untilTitle": "Trattenuta fino al {date}",
+  "artifact.availability.rule": "Apri le regole di curation",
+  "artifact.availability.published": "Pubblicata {when}",
+  "artifact.availability.unknownAge": "Questo repository ha un'età minima, ma i metadati upstream in cache non datano questa versione: il controllo dell'età non ha potuto essere eseguito.",
+  "artifact.versions.column.availability": "Disponibilità",
+  "artifact.versions.availableAt": "Disponibile {when}",
+  "artifact.versions.blocked": "Bloccata: {reason}",
+  "artifact.heldBack.title": "Trattenute da questo repository",
+  "artifact.heldBack.hint": "Queste versioni di {name} esistono upstream ma non vengono ancora servite."
 }
