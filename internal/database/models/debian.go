@@ -36,6 +36,16 @@ type DebianArchitecture struct {
 	UpdatedAt      time.Time
 }
 
+// DebControl is what a deb upload stores in the same transaction as the package
+// row: the maintainer and homepage (version metadata) and the control stanza
+// map Packages generation renders. A row never exists without them, so no
+// index can list a package with a stanza stripped of Depends, Maintainer, etc.
+type DebControl struct {
+	Maintainer string
+	Homepage   string
+	Fields     map[string]string
+}
+
 // DebPackage represents a Debian package published on the generic package tables (package_files and deb_files).
 type DebPackage struct {
 	ID             string

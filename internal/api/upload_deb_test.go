@@ -82,14 +82,10 @@ func (d *debAPIDB) UpsertBlob(_ context.Context, sha string, _ string, _ int64) 
 	return "blob-" + sha, nil
 }
 
-func (d *debAPIDB) CreateDebPackage(_ context.Context, p *models.Component, _, _ string) error {
+func (d *debAPIDB) CreateDebPackage(_ context.Context, p *models.Component, _, _ string, _ models.DebControl) error {
 	p.ID = lookupPackageID
 	d.pkgs[p.ID] = p
 
-	return nil
-}
-
-func (d *debAPIDB) SetDebControlFields(context.Context, string, string, string, map[string]string) error {
 	return nil
 }
 

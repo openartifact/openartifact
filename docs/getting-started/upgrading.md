@@ -101,6 +101,8 @@ Migrations `005_curation` and `005_curation_validate` add `repositories.curation
 
 Migration `006_audit_repository_activity` replaces the single-column audit index on `repository_id` with `(repository_id, created_at DESC, id)` (built `CONCURRENTLY`) so a repository's timeline pages without a sort, and `006_audit_cleanup_run` adds the `cleanup.run_completed` audit action. The repository **Activity** tab now lists uploads, deletions, trash restores and purges, promotions, quarantine, settings changes, cleanup runs and federation events, and `GET /api/v1/repositories/{name}/activity` is readable by anyone who can read the repository: readers see the artifact events only, repository admins see everything ([Project activity](../security/projects.md#project-activity)).
 
+Fix: a deb upload stores the package row and its control data (Depends, Maintainer, Description, ...) in one transaction. Before, the row was visible for a moment without them, so a `Packages` index regenerated at that moment (triggered by a concurrent upload to the same repository) listed the package with a stripped stanza until the next regeneration; a crash in that moment left the stanza stripped for good. No migration; existing packages are unaffected.
+
 ### 0.15.1
 
 No migrations; replaces 0.15.0 in place. Fixes found by the fuzzers (#336):

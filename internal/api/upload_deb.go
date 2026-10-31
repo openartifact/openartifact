@@ -59,7 +59,7 @@ var (
 type DebUploadStore interface {
 	ArtifactExists(ctx context.Context, sha256 string, repositoryID string) (bool, error)
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
-	CreateDebPackage(ctx context.Context, pkg *models.Component, distID string, compID string) error
+	CreateDebPackage(ctx context.Context, pkg *models.Component, distID string, compID string, control models.DebControl) error
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	DeleteComponent(ctx context.Context, componentID string) error
 	GetDebBlobInfo(ctx context.Context, blobID string) (string, int64, error)
@@ -72,7 +72,6 @@ type DebUploadStore interface {
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
 	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
-	SetDebControlFields(ctx context.Context, packageID string, maintainer string, homepage string, fields map[string]string) error
 	UpsertBlob(ctx context.Context, sha256 string, blobKey string, sizeBytes int64) (string, error)
 }
 
@@ -403,23 +402,22 @@ func (h *DebUploadHandler) uploadPipeline(
 			CreatedAt: importmeta.CreatedAt(ctx),
 		}
 
-		if err := h.db.CreateDebPackage(ctx, record, dist.ID, comp.ID); err != nil {
+		// The control stanza (Depends, Maintainer, etc. of the Packages entry) is stored
+		// with the row: a regeneration triggered by another upload must never list this
+		// package without it.
+		control := models.DebControl{
+			Maintainer: pkg.Maintainer,
+			Homepage:   pkg.Homepage,
+			Fields:     formatdeb.ControlFieldsToStore(debFile.ControlFile.Fields),
+		}
+
+		if err := h.db.CreateDebPackage(ctx, record, dist.ID, comp.ID, control); err != nil {
 			if errors.Is(err, database.ErrDuplicate) {
 				duplicate = true
 				return nil
 			}
 
 			return fmt.Errorf("failed to create component record: %w", err)
-		}
-
-		// Persist the control stanza so Packages entries carry Depends, Maintainer, etc.
-		if err := h.db.SetDebControlFields(ctx, record.ID, pkg.Maintainer, pkg.Homepage,
-			formatdeb.ControlFieldsToStore(debFile.ControlFile.Fields)); err != nil {
-			if delErr := h.db.DeleteComponent(ctx, record.ID); delErr != nil {
-				h.log.Warnw("failed to roll back deb package after control persist error", "id", record.ID, "error", delErr)
-			}
-
-			return fmt.Errorf("failed to store control fields: %w", err)
 		}
 
 		return nil
