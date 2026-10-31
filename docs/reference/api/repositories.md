@@ -379,7 +379,9 @@ Replace the comps (package groups) XML of a hosted RPM repository. The body is t
 |---|---|---|
 | `200` | comps stored | `application/json`: [CompsUploadResult](schemas.md#compsuploadresult) |
 | `400` | Invalid XML or not an RPM repository | `application/json`: [Error](schemas.md#error) |
+| `403` | Write permission on the repository required | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
+| `405` | Proxy and group repositories are read-only | `application/json`: [Error](schemas.md#error) |
 | `413` | Body too large | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/debs`
@@ -877,6 +879,7 @@ Delete a package row (an id of the package listing) from a hosted repository of 
 | `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or package not found | `application/json`: [Error](schemas.md#error) |
+| `405` | Proxy and group repositories are read-only | `application/json`: [Error](schemas.md#error) |
 | `409` | Release versions are immutable in this repository | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/packages/{id}/delta`

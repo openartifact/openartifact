@@ -5,6 +5,7 @@
 package sbom
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/pkgdeps"
 )
 
 func sign(n int) int {
@@ -180,7 +182,9 @@ var purlAllowed = regexp.MustCompile(`^pkg:[a-z]+/[A-Za-z0-9._~:%/-]*(@[A-Za-z0-
 
 // FuzzPURL builds Package URLs from arbitrary names, namespaces and versions:
 // the purl is made of unreserved characters and %XX escapes only, its type and
-// version survive decoding, and the name decodes back to the (normalized) name.
+// version survive decoding, and the name decodes back to the name as the format
+// writes it: normalized, pacman under "arch", a deb or rpm under its namespace
+// (told by the version when none is given).
 func FuzzPURL(f *testing.F) {
 	f.Add("npm", "", "@babel/core", "7.0.0")
 	f.Add("maven", "", "org.example:lib", "1.0")
@@ -222,10 +226,14 @@ func FuzzPURL(f *testing.F) {
 			}
 		case "pypi":
 			want = strings.ToLower(strings.ReplaceAll(name, "_", "-"))
-		}
-
-		if namespace != "" && (typ == "deb" || typ == "rpm") {
-			want = namespace + "/" + want
+		case "alpm":
+			want = "arch/" + name
+		case "deb":
+			want = cmp.Or(namespace, pkgdeps.DebVersionNamespace(version)) + "/" + name
+		case "rpm":
+			if ns := cmp.Or(namespace, pkgdeps.RPMVersionNamespace(version)); ns != "" {
+				want = ns + "/" + name
+			}
 		}
 
 		var decoded []string

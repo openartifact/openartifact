@@ -1,0 +1,5 @@
+go test fuzz v1
+string("rpm")
+string("")
+string("bash")
+string("5.1.8-6.el9")
