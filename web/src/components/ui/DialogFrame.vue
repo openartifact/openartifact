@@ -17,10 +17,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <Dialog as="div" class="relative z-50" :aria-label="label" @close="emit('close')">
       <TransitionChild
         as="template"
-        enter="motion-safe:duration-150 motion-safe:ease-out"
+        enter="duration-150 ease-out"
         enter-from="opacity-0"
         enter-to="opacity-100"
-        leave="motion-safe:duration-100 motion-safe:ease-in"
+        leave="duration-100 ease-in"
         leave-from="opacity-100"
         leave-to="opacity-0"
       >
@@ -64,24 +64,24 @@ const LAYOUTS: Record<
   center: {
     align: 'items-center justify-center p-4',
     panel: 'transform transition-all',
-    enter: 'motion-safe:duration-200 motion-safe:ease-out',
-    leave: 'motion-safe:duration-150 motion-safe:ease-in',
+    enter: 'duration-200 ease-out',
+    leave: 'duration-150 ease-in',
     hidden: 'opacity-0 scale-95',
     shown: 'opacity-100 scale-100',
   },
   right: {
     align: 'items-stretch justify-end',
     panel: 'transition-transform',
-    enter: 'motion-safe:duration-200 motion-safe:ease-out',
-    leave: 'motion-safe:duration-150 motion-safe:ease-in',
+    enter: 'duration-200 ease-out',
+    leave: 'duration-150 ease-in',
     hidden: 'translate-x-full',
     shown: 'translate-x-0',
   },
   top: {
     align: 'items-start justify-center p-4 pt-[10vh]',
     panel: 'transform',
-    enter: 'motion-safe:duration-150 motion-safe:ease-out',
-    leave: 'motion-safe:duration-100 motion-safe:ease-in',
+    enter: 'duration-150 ease-out',
+    leave: 'duration-100 ease-in',
     hidden: 'opacity-0 scale-95',
     shown: 'opacity-100 scale-100',
   },

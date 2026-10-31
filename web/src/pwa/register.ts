@@ -147,3 +147,31 @@ export function startServiceWorker(): void {
   if (document.readyState === 'complete') register()
   else window.addEventListener('load', register, { once: true })
 }
+
+/** What a server reports as its version when it was built without a release stamp (a plain `go build`). */
+const DEV_VERSION = 'dev'
+
+/** Unregisters every service worker of this origin, so a development instance stops serving a stale shell. */
+export async function retireServiceWorkers(container: ServiceWorkerContainer | undefined = navigatorContainer()): Promise<void> {
+  if (!container?.getRegistrations) return
+  const registrations = await container.getRegistrations().catch(() => [])
+  await Promise.all(registrations.map((r) => r.unregister().catch(() => false)))
+}
+
+function navigatorContainer(): ServiceWorkerContainer | undefined {
+  return typeof navigator === 'undefined' ? undefined : navigator.serviceWorker
+}
+
+/**
+ * The service worker of a production page. A server built without a release stamp (version
+ * "dev") is a development instance: every rebuild changes the precache, so a worker there would
+ * offer an update after each one. It gets no worker, and one an earlier visit installed is
+ * removed. Anything else, including a server that does not say its version, is production.
+ */
+export async function startServiceWorkerForServer(serverVersion: () => Promise<string | null>): Promise<void> {
+  if ((await serverVersion()) === DEV_VERSION) {
+    await retireServiceWorkers()
+    return
+  }
+  startServiceWorker()
+}

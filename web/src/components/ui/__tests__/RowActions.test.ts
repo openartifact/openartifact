@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach } from 'bun:test'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { Cog6ToothIcon, PencilIcon, TrashIcon, ArrowDownTrayIcon } from '@heroicons/vue/20/solid'
+import TooltipHost from '../TooltipHost.vue'
 import RowActions, { type RowAction } from '../RowActions.vue'
 
 const base: RowAction[] = [
@@ -24,14 +25,26 @@ async function render(props: Record<string, unknown>, slots: Record<string, stri
 describe('RowActions', () => {
   beforeEach(() => document.body.replaceChildren())
 
-  it('renders icon-only controls named "<action>: <subject>" with the bare action as tooltip', async () => {
+  it('renders icon-only controls named "<action>: <subject>"', async () => {
     const w = await render({ actions: base, subject: 'charts' })
     const controls = w.findAll('[data-testid="row-actions"] > *')
     expect(controls.map((c) => c.attributes('aria-label'))).toEqual(['Edit: charts', 'Settings: charts', 'Delete: charts'])
-    expect(controls.map((c) => c.attributes('title'))).toEqual(['Edit', 'Settings', 'Delete'])
     // No visible text: the label never takes column width.
     expect(controls.map((c) => c.text())).toEqual(['', '', ''])
     expect(w.find('[data-testid="action-more"]').exists()).toBe(false)
+  })
+
+  it('shows the bare action as a tooltip on keyboard focus, outside the table', async () => {
+    const host = mount(TooltipHost, { attachTo: document.body })
+    const w = await render({ actions: base, subject: 'charts' })
+    ;(w.get('[data-testid="action-edit"]').element as HTMLElement).focus()
+    await flushPromises()
+    const tip = document.body.querySelector('[role="tooltip"]')
+    expect(tip?.textContent?.trim()).toBe('Edit')
+    expect(w.element.contains(tip)).toBe(false)
+    // The button is already named "Edit: charts": the tooltip is not read a second time.
+    expect(w.get('[data-testid="action-edit"]').attributes('aria-describedby')).toBeUndefined()
+    host.unmount()
   })
 
   it('uses a native button for actions and a link for navigation', async () => {

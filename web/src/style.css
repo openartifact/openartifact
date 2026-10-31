@@ -169,11 +169,6 @@ input[type='radio'] {
   background: rgb(var(--color-surface-hover));
   animation: skelPulse 1.5s ease-in-out infinite;
 }
-@media (prefers-reduced-motion: reduce) {
-  .skel {
-    animation: none;
-  }
-}
 
 /* Bar fill animation */
 .bar-fill {
@@ -247,4 +242,26 @@ input[type='radio'] {
 /* A column dropped by useColumnFit because the table does not fit its container. */
 [data-col-hidden] {
   display: none;
+}
+
+/*
+ * Reduced motion, for the whole app: transitions and animations finish at once (a hair above zero, so
+ * transitionend/animationend still fire for the code that waits on them) and smooth scrolling is off.
+ * Components therefore carry no motion-reduce variants of their own. The spinner keeps turning: it is
+ * the only sign that work is going on. The toast countdown bar is hidden, because a bar that is empty
+ * from the start would claim the toast is about to go.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.animate-spin),
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+  .toast-timer {
+    display: none;
+  }
 }

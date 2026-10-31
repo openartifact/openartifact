@@ -32,6 +32,11 @@ const DEFAULT_TIMEOUT_MS: Record<ToastLevel, number> = {
 
 const MAX_VISIBLE = 5
 
+/** A toast that stays until dismissed (the "new version" offer): it is docked in the page, not floated over it. */
+export function isSticky(toast: Toast): boolean {
+  return toast.timeoutMs === 0
+}
+
 export const useToastStore = defineStore('toast', () => {
   const queue = ref<Toast[]>([])
   let nextId = 1

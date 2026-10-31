@@ -16,32 +16,44 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {{ t('artifact.action.download') }}
     </AppButton>
 
-    <Menu as="div" class="relative">
+    <Menu as="div">
       <MenuButton
+        ref="menuButton"
+        v-tooltip="t('artifact.action.more')"
         class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary max-md:h-11 max-md:w-11"
         :aria-label="t('artifact.action.more')"
         data-testid="artifact-menu"
       >
         <EllipsisHorizontalIcon class="h-5 w-5" aria-hidden="true" />
       </MenuButton>
-      <MenuItems class="absolute right-0 z-30 mt-2 w-60 origin-top-right rounded-md border border-border bg-surface py-1 shadow-lg focus:outline-none">
-        <MenuItem v-slot="{ active }">
-          <button type="button" :class="[ITEM, active && 'bg-surface-hover']" @click="copyPermalink">
-            <LinkIcon class="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />{{ t('artifact.action.permalink') }}
-          </button>
-        </MenuItem>
-        <MenuItem v-if="ctx.caps.value.admin" v-slot="{ active }">
-          <button type="button" :class="[ITEM, active && 'bg-surface-hover']" data-testid="action-quarantine" @click="toggleQuarantine">
-            <component :is="quarantined ? ArrowUturnLeftIcon : LockClosedIcon" class="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
-            {{ quarantined ? t('artifact.action.release') : t('artifact.action.quarantine') }}
-          </button>
-        </MenuItem>
-        <MenuItem v-if="canDelete" v-slot="{ active }">
-          <button type="button" :class="[ITEM, 'text-danger', active && 'bg-surface-hover']" data-testid="action-delete" @click="confirmOpen = true">
-            <TrashIcon class="h-4 w-4 shrink-0" aria-hidden="true" />{{ t('artifact.action.delete') }}
-          </button>
-        </MenuItem>
-      </MenuItems>
+      <!-- Teleported and fixed (useFloating): the page's scroll container must not clip the menu. -->
+      <Teleport to="body">
+        <PopupTransition>
+          <MenuItems
+            ref="menuItems"
+            class="z-50 w-60 rounded-md border border-border bg-surface py-1 shadow-lg focus:outline-none"
+            :style="menuStyle"
+            data-testid="artifact-menu-items"
+          >
+            <MenuItem v-slot="{ active }">
+              <button type="button" :class="[ITEM, active && 'bg-surface-hover']" @click="copyPermalink">
+                <LinkIcon class="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />{{ t('artifact.action.permalink') }}
+              </button>
+            </MenuItem>
+            <MenuItem v-if="ctx.caps.value.admin" v-slot="{ active }">
+              <button type="button" :class="[ITEM, active && 'bg-surface-hover']" data-testid="action-quarantine" @click="toggleQuarantine">
+                <component :is="quarantined ? ArrowUturnLeftIcon : LockClosedIcon" class="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
+                {{ quarantined ? t('artifact.action.release') : t('artifact.action.quarantine') }}
+              </button>
+            </MenuItem>
+            <MenuItem v-if="canDelete" v-slot="{ active }">
+              <button type="button" :class="[ITEM, 'text-danger', active && 'bg-surface-hover']" data-testid="action-delete" @click="confirmOpen = true">
+                <TrashIcon class="h-4 w-4 shrink-0" aria-hidden="true" />{{ t('artifact.action.delete') }}
+              </button>
+            </MenuItem>
+          </MenuItems>
+        </PopupTransition>
+      </Teleport>
     </Menu>
 
     <ConfirmDialog
@@ -63,10 +75,13 @@ import { useRouter } from 'vue-router'
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
 import { ArrowDownTrayIcon, ArrowUturnLeftIcon, EllipsisHorizontalIcon, LinkIcon, LockClosedIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import AppButton from '../AppButton.vue'
+import PopupTransition from '../ui/PopupTransition.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import { setVersionQuarantine } from '../../api/artifact'
 import { deletePackage, downloadPackage } from '../../api/repositories'
 import { useArtifactContext } from '../../composables/useArtifact'
+import { useFloating, type ElementRef } from '../../composables/useFloating'
+import { vTooltip } from '../../lib/tooltip'
 import { artifactPath } from '../../lib/artifactPath'
 import { primaryFile } from '../../lib/artifactVersions'
 import { supportsPackageDelete } from '../../lib/formats'
@@ -74,6 +89,10 @@ import { useToastStore } from '../../stores/toast'
 import { t, tp } from '../../i18n'
 
 const ITEM = 'flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground max-md:min-h-11'
+
+const menuButton = ref<ElementRef>(null)
+const menuItems = ref<ElementRef>(null)
+const { style: menuStyle } = useFloating(menuButton, menuItems, { placement: 'bottom-end' })
 
 const ctx = useArtifactContext()
 const router = useRouter()

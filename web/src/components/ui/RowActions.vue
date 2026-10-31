@@ -16,15 +16,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <div class="flex items-center justify-end gap-0.5" data-testid="row-actions">
     <slot />
     <template v-for="a in shown" :key="a.key">
-      <router-link v-if="a.to && !a.disabled" :to="a.to" :class="buttonClass(a)" :aria-label="nameOf(a.label)" :title="a.label" :data-testid="`action-${a.key}`">
+      <router-link v-if="a.to && !a.disabled" :to="a.to" :class="buttonClass(a)" :aria-label="nameOf(a.label)" v-tooltip="a.label" :data-testid="`action-${a.key}`">
         <component :is="a.icon" class="h-4 w-4" aria-hidden="true" />
       </router-link>
       <button
         v-else
         type="button"
         :class="buttonClass(a)"
+        v-tooltip="a.label"
         :aria-label="nameOf(a.label)"
-        :title="a.label"
         :disabled="a.disabled || a.loading"
         :aria-busy="a.loading || undefined"
         :aria-pressed="a.pressed"
@@ -36,22 +36,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </button>
     </template>
 
-    <Menu v-if="overflow.length > 0" as="div" class="relative">
+    <Menu v-if="overflow.length > 0" as="div">
       <MenuButton
+        ref="anchor"
+        v-tooltip="t('ui.table.moreActions')"
         :class="buttonClass()"
         :aria-label="nameOf(t('ui.table.moreActions'))"
-        :title="t('ui.table.moreActions')"
         data-testid="action-more"
-        @click="place"
       >
         <EllipsisHorizontalIcon class="h-4 w-4" aria-hidden="true" />
       </MenuButton>
-      <!-- Teleported and fixed: the table's scroll container would clip an absolutely positioned menu. -->
+      <!-- Teleported and fixed (useFloating): the table's scroll container would clip an absolutely positioned menu. -->
       <Teleport to="body">
         <MenuItems
           ref="items"
-          class="fixed z-50 min-w-44 rounded-md border border-border bg-surface py-1 shadow-lg focus:outline-none"
-          :style="position"
+          class="z-50 min-w-44 rounded-md border border-border bg-surface py-1 shadow-lg focus:outline-none"
+          :style="style"
           data-testid="row-actions-menu"
         >
           <MenuItem v-for="a in overflow" :key="a.key" v-slot="{ active, close }" :disabled="a.disabled || a.loading" as="template">
@@ -100,7 +100,8 @@ export interface RowAction {
 import { computed, ref } from 'vue'
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
 import { ArrowPathIcon, EllipsisHorizontalIcon } from '@heroicons/vue/20/solid'
-import { useEventListener } from '@vueuse/core'
+import { useFloating, type ElementRef } from '../../composables/useFloating'
+import { vTooltip } from '../../lib/tooltip'
 import { t } from '../../i18n'
 
 const props = withDefaults(
@@ -135,28 +136,8 @@ function itemClass(a: RowAction, active: boolean): string {
   return `flex min-h-9 w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm max-md:min-h-11 ${tone} ${active ? 'bg-surface-hover' : ''} ${a.disabled ? 'pointer-events-none opacity-40' : ''}`
 }
 
-// The menu is fixed to the viewport next to its button; it follows the button while the page or the table scrolls.
-const anchor = ref<HTMLElement | null>(null)
-const position = ref<Record<string, string>>({})
-const items = ref<{ $el: HTMLElement } | null>(null)
-
-function reposition(): void {
-  const el = anchor.value
-  if (!el) return
-  const r = el.getBoundingClientRect()
-  const height = items.value?.$el?.offsetHeight ?? 0
-  const above = height > 0 && r.bottom + 4 + height > window.innerHeight && r.top - 4 - height > 0
-  position.value = {
-    right: `${Math.max(8, window.innerWidth - r.right)}px`,
-    ...(above ? { bottom: `${window.innerHeight - r.top + 4}px` } : { top: `${r.bottom + 4}px` }),
-  }
-}
-
-function place(e: MouseEvent): void {
-  anchor.value = e.currentTarget as HTMLElement
-  reposition()
-}
-
-useEventListener(window, 'scroll', reposition, { capture: true, passive: true })
-useEventListener(window, 'resize', reposition, { passive: true })
+// The menu is fixed to the viewport next to its button (right edges flush); it follows the button while the page or the table scrolls.
+const anchor = ref<ElementRef>(null)
+const items = ref<ElementRef>(null)
+const { style } = useFloating(anchor, items, { placement: 'bottom-end' })
 </script>

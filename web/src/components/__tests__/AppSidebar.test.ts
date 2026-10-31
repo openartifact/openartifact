@@ -12,6 +12,7 @@ import { useSessionStore, type User } from '../../stores/session'
 import { useUIStore } from '../../stores/ui'
 import { useBrandingStore } from '../../stores/branding'
 import AppSidebar from '../AppSidebar.vue'
+import TooltipHost from '../ui/TooltipHost.vue'
 
 let session: StoreGeneric
 let ui: StoreGeneric
@@ -27,8 +28,8 @@ function makeRouter() {
   })
 }
 
-function mountSidebar(router = makeRouter()) {
-  return { wrapper: mount(AppSidebar, { global: { plugins: [router] } }), router }
+function mountSidebar(router = makeRouter(), attachTo?: HTMLElement) {
+  return { wrapper: mount(AppSidebar, { attachTo, global: { plugins: [router] } }), router }
 }
 
 describe('AppSidebar', () => {
@@ -106,25 +107,33 @@ describe('AppSidebar', () => {
     it('narrows the rail and keeps accessible names and tooltips when collapsed', async () => {
       session.user = makeUser({ is_admin: false })
       ui.sidebarCollapsed = true
-      const { wrapper } = mountSidebar()
+      // Attached: focus only means something on an element that is in the document.
+      const { wrapper } = mountSidebar(makeRouter(), document.body)
+      const host = mount(TooltipHost, { attachTo: document.body })
       const tooltip = () => document.body.querySelector('[role="tooltip"]')
       expect(wrapper.get('#app-sidebar').classes()).toContain('md:w-16')
       // The tooltip lives outside the scrolling nav (it would widen and clip it) and only while pointed at.
       expect(tooltip()).toBeNull()
       const repos = wrapper.get('[data-testid="nav-repos"]')
       expect(repos.get('.sr-only').text()).toBe('Repositories')
-      await repos.trigger('mouseenter')
+      // The tooltip opens on keyboard focus (hover has a delay, covered with the directive's tests).
+      ;(repos.element as HTMLElement).focus()
+      await flushPromises()
       expect(tooltip()?.textContent?.trim()).toBe('Repositories')
       expect(wrapper.get('nav').find('[role="tooltip"]').exists()).toBe(false)
-      await repos.trigger('mouseleave')
+      ;(repos.element as HTMLElement).blur()
+      await flushPromises()
       expect(tooltip()).toBeNull()
-      // A locked item carries its reason in the name and the tooltip, also on keyboard focus.
+      // A locked item carries its reason in the name and the tooltip.
       const bundles = wrapper.get('[data-testid="nav-bundles"]')
       expect(bundles.get('.sr-only').text()).toContain('Requires administrator')
-      await bundles.trigger('focusin')
+      ;(bundles.element as HTMLElement).focus()
+      await flushPromises()
       expect(tooltip()?.textContent).toContain('Requires administrator')
-      await bundles.trigger('keydown', { key: 'Escape' })
+      bundles.element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await flushPromises()
       expect(tooltip()).toBeNull()
+      host.unmount()
       wrapper.unmount()
     })
 
