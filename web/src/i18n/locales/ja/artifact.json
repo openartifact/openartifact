@@ -7,6 +7,8 @@
   "artifact.notFound.hint": "{repo} に {name} という名前のパッケージはありません。削除されたか、ゴミ箱に移動された可能性があります。",
   "artifact.notFound.search": "パッケージを検索",
   "artifact.notFound.repo": "リポジトリを開く",
+  "artifact.metadataOnly.title": "プロキシされたパッケージ",
+  "artifact.metadataOnly.hint": "{repo} は {name} を必要に応じて上流から提供するため、そのバージョンは個別のパッケージとしてここに保存されません。リポジトリが保留しているバージョンを上に示します。",
   "artifact.versionNotFound.title": "バージョンが見つかりません",
   "artifact.versionNotFound.hint": "{name} にバージョン {version} はありません。",
   "artifact.versionNotFound.latest": "最新バージョンを開く",

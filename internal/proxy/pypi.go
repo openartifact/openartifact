@@ -288,6 +288,7 @@ var PyPIHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, "files/") },
 	BlobPath:   presign.PyPIBlobPath,
 	Published:  (*Service).pypiPublished,
+	Versions:   (*Service).pypiVersions,
 }
 
 // pypiPublished dates version of project (a release, in the spelling of its file

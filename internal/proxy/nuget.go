@@ -803,5 +803,6 @@ var NuGetHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	Immutable:  nugetImmutable,
 	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, nugetPackageDir) },
 	Published:  (*Service).nugetPublished,
+	Versions:   (*Service).nugetVersionList,
 	BlobPath:   presign.NuGetBlobPath,
 }

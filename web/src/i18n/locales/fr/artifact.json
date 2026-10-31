@@ -7,6 +7,8 @@
   "artifact.notFound.hint": "{repo} ne contient aucun paquet nommé {name}. Il a peut-être été supprimé ou placé dans la corbeille.",
   "artifact.notFound.search": "Rechercher des paquets",
   "artifact.notFound.repo": "Ouvrir le dépôt",
+  "artifact.metadataOnly.title": "Paquet en proxy",
+  "artifact.metadataOnly.hint": "{repo} sert {name} depuis son amont à la demande ; ses versions ne sont donc pas stockées ici comme des paquets distincts. Les versions retenues par le dépôt sont listées ci-dessus.",
   "artifact.versionNotFound.title": "Version introuvable",
   "artifact.versionNotFound.hint": "{name} n'a pas de version {version}.",
   "artifact.versionNotFound.latest": "Ouvrir la dernière version",

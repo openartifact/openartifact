@@ -7,6 +7,8 @@
   "artifact.notFound.hint": "{repo} non contiene alcun pacchetto chiamato {name}. Potrebbe essere stato eliminato o spostato nel cestino.",
   "artifact.notFound.search": "Cerca pacchetti",
   "artifact.notFound.repo": "Apri repository",
+  "artifact.metadataOnly.title": "Pacchetto in proxy",
+  "artifact.metadataOnly.hint": "{repo} serve {name} dal suo upstream su richiesta, quindi le sue versioni non sono salvate qui come pacchetti separati. Le versioni trattenute dal repository sono elencate qui sopra.",
   "artifact.versionNotFound.title": "Versione non trovata",
   "artifact.versionNotFound.hint": "{name} non ha alcuna versione {version}.",
   "artifact.versionNotFound.latest": "Apri l'ultima versione",

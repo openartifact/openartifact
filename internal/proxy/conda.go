@@ -324,31 +324,51 @@ func (s *Service) condaPublished(ctx context.Context, repo *models.Repository, p
 func (s *Service) cachedCondaBuild(
 	ctx context.Context, repo *models.Repository, idx conda.Path, pkg, version string,
 ) (time.Time, bool, bool) {
+	var (
+		built time.Time
+		ok    bool
+	)
+
+	cached := s.scanCachedRepodata(ctx, repo, idx, func(plain io.Reader) error {
+		var err error
+
+		built, ok, err = conda.EarliestBuild(plain, s.condaIndexLimit(), pkg, version)
+		ok = ok && err == nil
+
+		return nil
+	})
+
+	return built, ok, cached
+}
+
+// scanCachedRepodata runs scan on the plain repodata of the cached idx, without
+// fetching anything, and reports whether idx is in the cache at all.
+func (s *Service) scanCachedRepodata(ctx context.Context, repo *models.Repository, idx conda.Path, scan func(io.Reader) error) bool {
 	entry, err := s.db.GetProxyCacheEntry(ctx, repo.ID, idx.Key())
 	if err != nil || entry == nil || entry.StatusCode == http.StatusNotFound || entry.BlobKey == "" {
-		return time.Time{}, false, false
+		return false
 	}
 
 	if s.packuments.Acquire(ctx) != nil {
-		return time.Time{}, false, true
+		return true
 	}
 	defer s.packuments.Release()
 
 	rc, err := s.blobStore.Get(ctx, entry.BlobKey)
 	if err != nil {
-		return time.Time{}, false, false
+		return false
 	}
 	defer func() { base.CloseLog(rc, s.log) }()
 
 	plain, _, err := conda.Open(rc, s.condaIndexLimit())
 	if err != nil {
-		return time.Time{}, false, true
+		return true
 	}
 	defer func() { _ = plain.Close() }()
 
-	built, ok, err := conda.EarliestBuild(plain, s.condaIndexLimit(), pkg, version)
+	_ = scan(plain)
 
-	return built, ok && err == nil, true
+	return true
 }
 
 // condaImmutable reports whether name is a conda package file.
@@ -360,6 +380,7 @@ func condaImmutable(name string) bool {
 var CondaHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	Serve:     (*Service).serveConda,
 	Published: (*Service).condaPublished,
+	Versions:  (*Service).condaVersions,
 	// Package files, verified against the repodata digest; repodata moves.
 	Immutable: func(key string) bool { return condaImmutable(keyName(key)) },
 	// channeldata.json; repodata is capped by IsLargeMetadata instead.

@@ -67,7 +67,14 @@ export function useArtifact(source: ArtifactSource) {
   const repoName = computed(source.repo)
   const pkgName = computed(source.pkg)
   const format = computed(() => repository.value?.format ?? rows.value[0]?.format ?? '')
-  const versions = computed(() => groupVersions(rows.value))
+  // A proxy package is also backed by the cached upstream metadata (its row has an empty version): that is not a
+  // version a client can install, so the page never shows it as one.
+  const realRows = computed(() => rows.value.filter((r) => r.version !== ''))
+  // Some proxies (pypi) list no row for the cached metadata at all: what the gate holds back then proves the package exists.
+  const metadataOnly = computed(
+    () => realRows.value.length === 0 && (rows.value.length > 0 || (repository.value?.repo_type === 'proxy' && heldBack.value.length > 0)),
+  )
+  const versions = computed(() => groupVersions(realRows.value))
   const entry = computed(() => selectVersion(versions.value, source.version()))
   const caps = computed(() => artifactCapabilities({ isAdmin: session.isAdmin, permissions: repository.value?.permissions }))
 
@@ -179,5 +186,5 @@ export function useArtifact(source: ArtifactSource) {
   }
   provide(KEY, context)
 
-  return { ...context, loading, error }
+  return { ...context, loading, error, metadataOnly }
 }

@@ -7,6 +7,8 @@
   "artifact.notFound.hint": "{repo} 中没有名为 {name} 的软件包。它可能已被删除或移入回收站。",
   "artifact.notFound.search": "搜索软件包",
   "artifact.notFound.repo": "打开仓库",
+  "artifact.metadataOnly.title": "代理包",
+  "artifact.metadataOnly.hint": "{repo} 按需从上游提供 {name},因此其版本不会作为单独的包存储在此处。仓库扣留的版本列在上方。",
   "artifact.versionNotFound.title": "未找到版本",
   "artifact.versionNotFound.hint": "{name} 没有版本 {version}。",
   "artifact.versionNotFound.latest": "打开最新版本",

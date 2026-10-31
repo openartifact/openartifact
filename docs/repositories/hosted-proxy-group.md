@@ -252,7 +252,7 @@ curl 'HOST/api/v1/repositories/npm-proxy/held-back-versions?package=left-pad' \
 }
 ```
 
-The list is newest first and is computed with the same gate as downloads, from the upstream metadata already cached (the upstream is never asked), so it is empty with `"supported": false` when nothing of the package is cached yet or the format cannot list versions (npm and cargo can). It needs read access to the repository; a repository that is not a proxy is `400`. The package page of the web UI shows these versions greyed out in the Versions tab, with "available in X" or the reason for the block.
+The list is newest first and is computed with the same gate as downloads, from the upstream metadata already cached (the upstream is never asked), so it is empty with `"supported": false` when nothing of the package is cached yet or the format cannot list versions with their times. Every format the gate filters can: npm, cargo, composer, helm, rubygems, ansible and conda from their cached metadata; a PyPI proxy only when its cached project page is JSON (an HTML page states no upload times); a NuGet proxy for the pages inline in the cached registration index; a Go proxy from the cached `@v/list`, where a version whose `.info` was never fetched has no time (the minimum age cannot hold it back, curation still can); a conda version is dated by its earliest build. It needs read access to the repository; a repository that is not a proxy is `400`. The package page of the web UI shows these versions greyed out in the Versions tab, with "available in X" or the reason for the block.
 
 ### Behavior notes
 

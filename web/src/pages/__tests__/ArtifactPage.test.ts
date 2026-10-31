@@ -89,6 +89,42 @@ describe('ArtifactPage', () => {
     wrapper.unmount()
   })
 
+  it('never shows the cached upstream metadata row of a proxy package as a version', async () => {
+    const meta = { id: 'f-meta', name: '@acme/widget', version: '', format: 'npm', size: 9, created_at: '2026-03-01T00:00:00Z' }
+    serve({ write: false, delete: false, manage: false, admin: false }, [meta, ...PACKAGES])
+    const { wrapper } = await mountAt('/repos/web/packages/@acme/widget')
+    const select = wrapper.get('[data-testid=version-select]').element as HTMLSelectElement
+    expect(select.value).toBe('2.0.0')
+    expect([...select.options].map((o) => o.value)).toEqual(['2.0.0', '1.0.0'])
+    wrapper.unmount()
+  })
+
+  it('explains a proxy package that is known only from cached metadata', async () => {
+    const meta = { id: 'f-meta', name: '@acme/widget', version: '', format: 'npm', size: 9, created_at: '2026-03-01T00:00:00Z' }
+    serve({ write: false, delete: false, manage: false, admin: false }, [meta])
+    const { wrapper } = await mountAt('/repos/web/packages/@acme/widget')
+    expect(wrapper.get('[data-testid=metadata-only]').text()).toContain('Proxied package')
+    expect(wrapper.find('[data-testid=version-select]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows a proxy package with no row at all as proxied when the gate holds versions back', async () => {
+    fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      if (url === '/api/v1/repository/web') return json({ name: 'web', format: 'pypi', repo_type: 'proxy', permissions: {} })
+      if (url.startsWith('/api/v1/repositories/web/packages?')) return json({ packages: [], total: 0 })
+      if (url.startsWith('/api/v1/repositories/web/held-back-versions')) {
+        return json({ supported: true, versions: [{ version: '2.0.0', reasons: [{ source: 'min_age', detail: 'too new', until: '2099-01-01T00:00:00Z' }] }] })
+      }
+      return json({}, 404)
+    })
+    const { wrapper } = await mountAt('/repos/web/packages/widget')
+    expect(wrapper.get('[data-testid=metadata-only]').text()).toContain('Proxied package')
+    expect(wrapper.get('[data-testid=held-back-list]').text()).toContain('2.0.0')
+    expect(wrapper.text()).not.toContain('Package not found')
+    wrapper.unmount()
+  })
+
   it('hides the activity tab from readers and shows only counts on the security tab', async () => {
     serve({ write: false, delete: false, manage: false, admin: false })
     const { wrapper } = await mountAt('/repos/web/packages/@acme/widget?tab=security')

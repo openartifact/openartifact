@@ -320,6 +320,7 @@ var ComposerHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, composerDistDir) },
 	BlobPath:   presign.ComposerBlobPath,
 	Published:  (*Service).composerPublished,
+	Versions:   (*Service).composerVersions,
 }
 
 // composerPublished dates version of the package name from the cached p2
