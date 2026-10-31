@@ -168,17 +168,15 @@ func TestDebStoreRoundTrip(t *testing.T) {
 	}
 	reserveOS(t, pg, repoID, 100)
 
-	if err := pg.CreateDebPackage(ctx, pkg, dist.ID, comp.ID); err != nil {
+	control := map[string]string{"Package": "hello", "Section": "utils"}
+	ctl := models.DebControl{Maintainer: "Jane <j@x>", Homepage: "https://x", Fields: control}
+
+	if err := pg.CreateDebPackage(ctx, pkg, dist.ID, comp.ID, ctl); err != nil {
 		t.Fatalf("CreateDebPackage: %v", err)
 	}
 
 	if pkg.ID == "" || pkg.CreatedAt.IsZero() || pkg.UpdatedAt.IsZero() {
 		t.Fatalf("create did not stamp the package: %+v", pkg)
-	}
-
-	control := map[string]string{"Package": "hello", "Section": "utils"}
-	if err := pg.SetDebControlFields(ctx, pkg.ID, "Jane <j@x>", "https://x", control); err != nil {
-		t.Fatalf("SetDebControlFields: %v", err)
 	}
 
 	// Generic rows.
@@ -259,15 +257,54 @@ func TestDebStoreRoundTrip(t *testing.T) {
 	dup := *pkg
 	dup.ID = ""
 
-	if err := pg.CreateDebPackage(ctx, &dup, dist.ID, comp.ID); !errors.Is(err, ErrDuplicate) {
+	other := models.DebControl{Maintainer: "Mallory <m@x>", Fields: map[string]string{"Package": "hello", "Section": "evil"}}
+	if err := pg.CreateDebPackage(ctx, &dup, dist.ID, comp.ID, other); !errors.Is(err, ErrDuplicate) {
 		t.Errorf("duplicate create = %v, want ErrDuplicate", err)
+	}
+
+	// A refused duplicate leaves the control data of the live package alone.
+	if err := pg.GetDB().QueryRowContext(ctx, `SELECT control_fields::text FROM deb_files WHERE id = $1`, pkg.ID).
+		Scan(&storedControl); err != nil {
+		t.Fatal(err)
+	}
+
+	jsonEq(t, "control_fields after a duplicate", storedControl, `{"Package":"hello","Section":"utils"}`)
+
+	// Control data the database refuses (NUL cannot be stored in jsonb) fails the whole
+	// create: the row is written with its control data or not at all.
+	bad := &models.Component{
+		RepositoryID: repoID,
+		ArtifactID:   blobID,
+		Name:         "bad",
+		Version:      "1.0",
+		Arch:         "all",
+		Filename:     "bad_1.0_all.deb",
+	}
+
+	if err := pg.CreateDebPackage(
+		ctx,
+		bad,
+		dist.ID,
+		comp.ID,
+		models.DebControl{Fields: map[string]string{"Description": "a\x00b"}},
+	); err == nil {
+		t.Fatal("create with control data the database refuses succeeded")
+	}
+
+	if p, v, f := osCounts(t, pg, repoID); p != 1 || v != 1 || f != 1 {
+		t.Fatalf("rows after the failed create = %d/%d/%d packages/versions/files, want 1/1/1", p, v, f)
+	}
+
+	var sides int
+	if err := pg.GetDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM deb_files`).Scan(&sides); err != nil || sides != 1 {
+		t.Fatalf("deb_files after the failed create = %d, %v, want 1", sides, err)
 	}
 
 	// An empty filename is rendered from the coordinates.
 	noName := &models.Component{RepositoryID: repoID, ArtifactID: blobID, Name: "lib", Version: "1.0", Arch: "all"}
 	reserveOS(t, pg, repoID, 100)
 
-	if err := pg.CreateDebPackage(ctx, noName, dist.ID, comp.ID); err != nil {
+	if err := pg.CreateDebPackage(ctx, noName, dist.ID, comp.ID, models.DebControl{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -277,6 +314,14 @@ func TestDebStoreRoundTrip(t *testing.T) {
 	if err != nil || path != "pool/main/l/lib/lib_1.0_all.deb" {
 		t.Errorf("derived path = %q, %v", path, err)
 	}
+
+	// No control data at all is an empty stanza map, not a JSON null.
+	if err := pg.GetDB().QueryRowContext(ctx, `SELECT control_fields::text FROM deb_files WHERE id = $1`, noName.ID).
+		Scan(&storedControl); err != nil {
+		t.Fatal(err)
+	}
+
+	jsonEq(t, "empty control_fields", storedControl, `{}`)
 
 	requireOSUsage(t, pg, repoID, 200, 2)
 	requireOSPending(t, pg, repoID, 0)
@@ -290,7 +335,6 @@ func TestDebStoreRoundTrip(t *testing.T) {
 		t.Errorf("rows after delete = %d/%d/%d", p, v, f)
 	}
 
-	var sides int
 	if err := pg.GetDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM deb_files`).Scan(&sides); err != nil || sides != 0 {
 		t.Errorf("deb_files after delete = %d, %v", sides, err)
 	}

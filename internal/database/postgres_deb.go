@@ -119,26 +119,26 @@ func (p *DebStore) GetOrCreateDebianArchitecture(ctx context.Context, distID, na
 	return m, nil
 }
 
-// SetDebControlFields stores the control stanza of a live deb package (deb_files.control_fields)
-// and its maintainer and homepage (the version metadata).
-func (p *DebStore) SetDebControlFields(ctx context.Context, packageID, maintainer, homepage string, fields map[string]string) error {
+// debControlParams encodes the control stanza of a deb package (deb_files.control_fields) and
+// its maintainer and homepage (the version metadata) for the SetDebControlFields query; the
+// caller sets the file id.
+func debControlParams(ctl models.DebControl) (dbsqlc.SetDebControlFieldsParams, error) {
+	fields := ctl.Fields
+	if fields == nil {
+		fields = map[string]string{}
+	}
+
 	raw, err := json.Marshal(fields)
 	if err != nil {
-		return fmt.Errorf("marshal control fields: %w", err)
+		return dbsqlc.SetDebControlFieldsParams{}, fmt.Errorf("marshal control fields: %w", err)
 	}
 
-	meta, err := json.Marshal(nonEmptyStrings(map[string]string{"maintainer": maintainer, "homepage": homepage}))
+	meta, err := json.Marshal(nonEmptyStrings(map[string]string{"maintainer": ctl.Maintainer, "homepage": ctl.Homepage}))
 	if err != nil {
-		return fmt.Errorf("marshal deb metadata: %w", err)
+		return dbsqlc.SetDebControlFieldsParams{}, fmt.Errorf("marshal deb metadata: %w", err)
 	}
 
-	if err := p.q.SetDebControlFields(ctx, dbsqlc.SetDebControlFieldsParams{
-		ID: packageID, ControlFields: raw, Metadata: meta,
-	}); err != nil {
-		return fmt.Errorf("set deb control fields: %w", err)
-	}
-
-	return nil
+	return dbsqlc.SetDebControlFieldsParams{ControlFields: raw, Metadata: meta}, nil
 }
 
 // GetDebBlobInfo resolves a blobs.id UUID to its content sha256 and size ("" / 0 if unknown).

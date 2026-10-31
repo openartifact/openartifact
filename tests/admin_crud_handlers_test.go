@@ -1235,7 +1235,7 @@ func (m *MockDatabase) ListDebPackagesByRepo(ctx context.Context, repoID string)
 func (m *MockDatabase) GetRpmPackageByID(ctx context.Context, id string) (*models.RpmPackage, error) {
 	return nil, nil
 }
-func (m *MockDatabase) CreateDebPackage(ctx context.Context, pkg *models.Component, distID, compID string) error {
+func (m *MockDatabase) CreateDebPackage(ctx context.Context, pkg *models.Component, distID, compID string, _ models.DebControl) error {
 	return m.storeUploadedComponent(pkg)
 }
 func (m *MockDatabase) CreateRpmPackage(ctx context.Context, pkg *models.Component) error {

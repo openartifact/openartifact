@@ -659,7 +659,7 @@ type SetDebControlFieldsParams struct {
 }
 
 // The control stanza and the maintainer/homepage of the version metadata, set
-// after the row is written. Only a live file is touched.
+// in the transaction that writes the row. Only a live file is touched.
 func (q *Queries) SetDebControlFields(ctx context.Context, arg SetDebControlFieldsParams) error {
 	_, err := q.db.Exec(ctx, setDebControlFields, arg.Metadata, arg.ControlFields, arg.ID)
 	return err

@@ -126,7 +126,7 @@ WHERE f.repository_id = $1
   AND (sqlc.arg(arch)::text = '' OR f.arch = sqlc.arg(arch));
 
 -- The control stanza and the maintainer/homepage of the version metadata, set
--- after the row is written. Only a live file is touched.
+-- in the transaction that writes the row. Only a live file is touched.
 -- name: SetDebControlFields :exec
 WITH target AS (
     UPDATE deb_files d SET control_fields = sqlc.arg(control_fields)::jsonb

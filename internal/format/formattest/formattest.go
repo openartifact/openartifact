@@ -240,7 +240,7 @@ type formatStore interface {
 	CreateComposerPackage(ctx context.Context, p *models.ComposerPackage) error
 	CreateConanPackage(ctx context.Context, pkg *models.ConanPackage) error
 	CreateCondaPackage(ctx context.Context, pkg *models.CondaPackage) error
-	CreateDebPackage(ctx context.Context, pkg *models.Component, distID string, compID string) error
+	CreateDebPackage(ctx context.Context, pkg *models.Component, distID string, compID string, control models.DebControl) error
 	CreateGoModule(ctx context.Context, mod *models.GoModule) error
 	CreateHelmChart(ctx context.Context, chart *models.HelmChart) error
 	CreateIvyArtifact(ctx context.Context, artifact *models.IvyArtifact) error
@@ -405,7 +405,6 @@ type formatStore interface {
 	SearchNuGetPackages(ctx context.Context, repoID string, query string, skip int, take int) ([]*models.NuGetPackage, int, error)
 	SearchRubyGems(ctx context.Context, repoID string, query string) ([]*models.RubyGem, error)
 	SetConanPackageDigests(ctx context.Context, id string, md5 string, sha1 string) error
-	SetDebControlFields(ctx context.Context, packageID string, maintainer string, homepage string, fields map[string]string) error
 	SetNuGetDependencyGroups(ctx context.Context, repoID string, packageID string, version string, groups []byte) error
 	SetPacmanSignature(ctx context.Context, repoID string, id string, signature string, source string, key string) error
 	TerraformModuleStamp(ctx context.Context, repoID string, name string, system string) (string, error)

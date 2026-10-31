@@ -143,7 +143,7 @@ func (f *groupFixture) debPackage(repo *models.Repository, name, version string)
 		RepositoryID: repo.ID, ArtifactID: f.blob(repo.Name + name + version),
 		Name: name, Version: version, Arch: "amd64", Filename: name + "_" + version + "_amd64.deb",
 	}
-	if err := f.pg.CreateDebPackage(ctx, pkg, dist.ID, comp.ID); err != nil {
+	if err := f.pg.CreateDebPackage(ctx, pkg, dist.ID, comp.ID, models.DebControl{}); err != nil {
 		f.t.Fatalf("CreateDebPackage: %v", err)
 	}
 }

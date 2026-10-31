@@ -32,7 +32,8 @@ import (
 //	   part           = distribution_id (the cleanup partition is name, arch, distribution)
 //	   attrs          = {installed_size} (only when not zero); checksums = {}
 //	deb_files (id = F.id): distribution_id, component_id, control_fields (the Packages stanza
-//	   map, written after the row by SetDebControlFields, read whole by Packages generation)
+//	   map, written in the transaction of the row by CreateDebPackage, read whole by Packages
+//	   generation)
 //
 // The distribution graph (debian_distributions/components/architectures) is untouched.
 type DebStore struct{ *core }
@@ -42,13 +43,21 @@ func debVersionKey(version, arch, componentID string) string {
 	return version + "|" + arch + "|" + componentID
 }
 
-// CreateDebPackage inserts a DEB package with distribution and component references.
+// CreateDebPackage inserts a DEB package with distribution and component references
+// and its control data. The row, the control stanza and the maintainer/homepage commit
+// together: a metadata regeneration that runs while an upload is in flight sees the
+// package complete or not at all.
 // A live package with the same name, version, architecture and component, or the same
 // pool path, is ErrDuplicate.
-func (p *DebStore) CreateDebPackage(ctx context.Context, pkg *models.Component, distID, compID string) error {
+func (p *DebStore) CreateDebPackage(ctx context.Context, pkg *models.Component, distID, compID string, ctl models.DebControl) error {
 	compName, err := p.q.GetDebianComponentName(ctx, compID)
 	if err != nil {
 		return fmt.Errorf("get debian component: %w", err)
+	}
+
+	control, err := debControlParams(ctl)
+	if err != nil {
+		return err
 	}
 
 	file := pkg.Filename
@@ -85,6 +94,12 @@ func (p *DebStore) CreateDebPackage(ctx context.Context, pkg *models.Component, 
 			ID: files[0].ID, DistributionID: distID, ComponentID: compID,
 		}); err != nil {
 			return fmt.Errorf("insert deb file: %w", err)
+		}
+
+		control.ID = files[0].ID
+
+		if err := q.SetDebControlFields(ctx, control); err != nil {
+			return fmt.Errorf("set deb control fields: %w", err)
 		}
 
 		return nil
