@@ -35,6 +35,7 @@ const (
 	repoMaxCacheTTL   = 30 * 24 * 3600
 	repoMaxNegTTL     = 24 * 3600
 	repoMaxStale      = 365 * 24 * 3600
+	repoMaxMinAge     = 10 * 365 * 24
 	repoMaxTrashDays  = 36500
 	repoMaxWarnPct    = 100
 	repoPathPrefix    = "/api/v1/repositories/"
@@ -52,7 +53,7 @@ var (
 //nolint:gochecknoglobals // immutable lookup table
 var repoProxyOnly = []string{
 	"upstream_url", "upstream_username", "upstream_password",
-	"cache_ttl_seconds", "negative_cache_ttl_seconds", "max_stale_seconds",
+	"cache_ttl_seconds", "negative_cache_ttl_seconds", "max_stale_seconds", "min_age_hours",
 }
 
 // repositoryKind implements the Repository manifest kind.
@@ -115,6 +116,7 @@ func (repositoryKind) Schema() *Field {
 		"cache_ttl_seconds":          repoIntField(1),
 		"negative_cache_ttl_seconds": repoIntField(1),
 		"max_stale_seconds":          repoIntField(0),
+		"min_age_hours":              repoIntField(0),
 		"member_repos":               {Type: TList, Elem: repoStrField()},
 		"presign_downloads":          {Type: TBool, Nullable: true},
 		"trash_retention_days":       {Type: TInt, Nullable: true, Min: 0, HasMin: true},
@@ -233,6 +235,7 @@ func repoValidateRanges(o *Object) []error {
 		{"cache_ttl_seconds", 1, repoMaxCacheTTL},
 		{"negative_cache_ttl_seconds", 1, repoMaxNegTTL},
 		{"max_stale_seconds", 0, repoMaxStale},
+		{"min_age_hours", 0, repoMaxMinAge},
 		{"trash_retention_days", 0, repoMaxTrashDays},
 	}
 
@@ -330,6 +333,7 @@ type repoAPI struct {
 	CacheTTLSeconds         *int    `json:"cache_ttl_seconds"`
 	NegativeCacheTTLSeconds *int    `json:"negative_cache_ttl_seconds"`
 	MaxStaleSeconds         *int    `json:"max_stale_seconds"`
+	MinAgeHours             *int    `json:"min_age_hours"`
 }
 
 // repoNum converts an optional API integer into its canonical form (nil stays
@@ -379,6 +383,7 @@ func (r *repoAPI) spec() map[string]any {
 		s["cache_ttl_seconds"] = repoNum(r.CacheTTLSeconds)
 		s["negative_cache_ttl_seconds"] = repoNum(r.NegativeCacheTTLSeconds)
 		s["max_stale_seconds"] = repoNum(r.MaxStaleSeconds)
+		s["min_age_hours"] = repoNum(r.MinAgeHours)
 	case repoTypeGroup:
 		s["merge_proxy_versions"] = r.MergeProxyVersions
 	case repoTypeHosted:

@@ -636,6 +636,7 @@ Create a repository owned by the project. Requires the maintainer or owner role 
 | `max_stale_seconds` | integer | no | - |
 | `member_repos` | array of string | no | - |
 | `merge_proxy_versions` | boolean | no | Group repositories only, administrators only (403 otherwise). Default false: hosted members win a package name and proxy versions of the same name are hidden. true merges proxy versions into the group. |
+| `min_age_hours` | integer | no | Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600. |
 | `name` | string | yes | - |
 | `negative_cache_ttl_seconds` | integer | no | - |
 | `presign_downloads` | boolean | no | Nullable. |

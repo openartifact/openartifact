@@ -6,6 +6,7 @@ package composer_test
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -101,5 +102,55 @@ func TestNames(t *testing.T) {
 		if pkg != want[0] || dev != want[1] || ok != want[2] {
 			t.Errorf("MetadataName(%q) = %q %v %v, want %v", file, pkg, dev, ok, want)
 		}
+	}
+}
+
+func TestVersionPublishedAndRenderSourceFilter(t *testing.T) {
+	t.Parallel()
+
+	for published, want := range map[string]string{
+		"2026-03-10T12:00:00+00:00": "2026-03-10T12:00:00Z",
+		"2026-03-10T14:00:00+02:00": "2026-03-10T12:00:00Z",
+		"":                          "",
+		"not a time":                "",
+	} {
+		got := composer.Version{"time": published}.Published()
+		if (want == "") != got.IsZero() || (want != "" && got.UTC().Format(time.RFC3339) != want) {
+			t.Errorf("Published(%q) = %v, want %q", published, got, want)
+		}
+	}
+
+	if !(composer.Version{}).Published().IsZero() || !(composer.Version{"time": 5}).Published().IsZero() {
+		t.Error("an entry without a string time must be undated")
+	}
+
+	// The filter sees expanded entries: 1.1.0 only inherits "time" from 1.2.0.
+	doc, err := composer.EncodeDocument(map[string][]composer.Version{"a/b": {
+		{"name": "a/b", "version": "1.2.0", "time": "2026-03-10T11:00:00+00:00"},
+		{"name": "a/b", "version": "1.1.0", "time": "2026-03-10T11:00:00+00:00"},
+		{"name": "a/b", "version": "1.0.0", "time": "2026-01-01T00:00:00+00:00"},
+	}}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	old := func(v composer.Version) bool {
+		return v.Published().Before(time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC))
+	}
+
+	out, err := composer.RenderSource(doc, "a/b", "https://x/repos/r", old)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := composer.Decode(out)
+	if err != nil || len(pkgs["a/b"]) != 1 || pkgs["a/b"][0].VersionString() != "1.0.0" {
+		t.Errorf("filtered = %v, %v", pkgs, err)
+	}
+
+	none := func(composer.Version) bool { return false }
+
+	if _, err := composer.RenderSource(doc, "a/b", "https://x/repos/r", none); !errors.Is(err, composer.ErrNoneLeft) {
+		t.Errorf("err = %v, want ErrNoneLeft", err)
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/presign"
@@ -144,19 +145,26 @@ func (s *Service) serveNPMPackument(w http.ResponseWriter, r *http.Request, repo
 	// dist.tarball is absolute (pacote keeps it verbatim), so the origin is
 	// part of the validator below and the rewrite happens at serve time.
 	tarballBase := s.publicBase(w, r) + "/repos/" + repo.Name
+	now := time.Now()
+
+	// The abbreviated document carries no publish times, so a gated repository
+	// answers an abbreviated request from the full packument (a registry may
+	// answer with the full document; clients read it the same way) rather than
+	// let it list versions the gate holds back.
+	abbreviated = abbreviated && minAge(repo) == 0
 
 	s.serveRendered(w, r, repo, renderedDoc{
 		metaDoc: npmPackumentDoc(p.Package, abbreviated),
 		maxAge:  packumentMaxAge,
 		vary:    "Accept",
-		// The rendered document depends on the cached blob and the origin of the tarball URLs;
+		// The rendered document depends on the cached blob, the origin of the tarball URLs and the gate;
 		// a version manifest and a packument of the same blob differ by path.
 		etag: func(blobKey string) string {
-			sum := sha256.Sum256([]byte(blobKey + "\x00" + tarballBase + "\x00" + p.Version))
+			sum := sha256.Sum256([]byte(blobKey + "\x00" + tarballBase + "\x00" + p.Version + "\x00" + gateStamp(repo, now)))
 			return `"` + hex.EncodeToString(sum[:]) + `"`
 		},
 		render: func(body []byte, res *resolution) ([]byte, string, error) {
-			out, err := renderNPM(body, p, tarballBase)
+			out, err := renderNPM(body, p, tarballBase, repo, now)
 
 			ct := "application/json"
 			if abbreviated && strings.HasPrefix(res.entry.ContentType, pkgnpm.AbbreviatedContentType) {
@@ -168,9 +176,24 @@ func (s *Service) serveNPMPackument(w http.ResponseWriter, r *http.Request, repo
 	})
 }
 
-// renderNPM points the packument's tarball URLs at this repository and, for a
-// version path, cuts that version's manifest out.
-func renderNPM(doc []byte, p pkgnpm.Path, tarballBase string) ([]byte, error) {
+// renderNPM hides the versions repo's minimum age holds back at now, points
+// the packument's tarball URLs at this repository and, for a version path, cuts
+// that version's manifest out. A packument whose every version is held back is
+// errNotFound, as a package without versions.
+func renderNPM(doc []byte, p pkgnpm.Path, tarballBase string, repo *models.Repository, now time.Time) ([]byte, error) {
+	if minAge(repo) > 0 {
+		var err error
+
+		doc, err = pkgnpm.HideVersions(doc, func(published time.Time) bool { return tooNew(repo, published, now) })
+		if errors.Is(err, pkgnpm.ErrAllVersionsHidden) {
+			return nil, errNotFound
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("apply minimum age: %w", err)
+		}
+	}
+
 	out, err := pkgnpm.RewriteTarballs(doc, p.Package, tarballBase)
 	if err != nil {
 		return nil, fmt.Errorf("rewrite packument: %w", err)
@@ -202,22 +225,28 @@ func (s *Service) serveNPMTarball(w http.ResponseWriter, r *http.Request, repo *
 // dist object names, cached only when the bytes match dist.integrity /
 // dist.shasum. A file no version of the packument lists is errNotFound.
 func (s *Service) locateNPMTarball(ctx context.Context, repo *models.Repository, p pkgnpm.Path) (download, error) {
-	dist, _, err := parseDoc(ctx, s, repo, npmPackumentDoc(p.Package, false),
-		func(doc []byte, _ *resolution) (*pkgnpm.Dist, error) {
-			dist, found, ferr := pkgnpm.FindTarball(doc, p.Package, p.File)
+	rel, _, err := parseDoc(ctx, s, repo, npmPackumentDoc(p.Package, false),
+		func(doc []byte, _ *resolution) (*pkgnpm.Release, error) {
+			rel, found, ferr := pkgnpm.FindRelease(doc, p.Package, p.File)
 			if ferr != nil || !found {
 				return nil, ferr //nolint:wrapcheck // logged by parseDoc
 			}
 
-			return &dist, nil
+			return &rel, nil
 		})
 	if err != nil {
 		return download{}, err
 	}
 
-	if dist == nil {
+	if rel == nil {
 		return download{}, errNotFound
 	}
+
+	if tooNew(repo, rel.Published, time.Now()) {
+		return download{}, fmt.Errorf("%w: %s@%s", errTooNew, p.Package, rel.Version)
+	}
+
+	dist := &rel.Dist
 
 	var vouched bool
 

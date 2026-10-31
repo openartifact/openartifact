@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
@@ -46,6 +47,10 @@ import (
 //     without the repository's credentials) and cached, immutable, only when its
 //     sha256 equals the artifact.sha256 of that document. Other bytes are
 //     refused and never cached.
+//
+// With a minimum age (see minage.go and ansible_minage.go) the version list
+// leaves out the versions whose created_at is too young, and the detail document
+// and tarball of such a version are refused.
 //
 // The upstream is asked for api/v3/collections/...; Galaxy answers with a
 // redirect to its canonical plugin path, which the client follows.
@@ -146,9 +151,11 @@ func (s *Service) ansibleVersionsDoc(repo *models.Repository, p pkgansible.Path)
 }
 
 // ansibleVersionList returns the cached version list of a collection, newest
-// first, fetching it when it is absent or expired.
+// first, fetching it when it is absent or expired, without the versions the
+// repository's minimum age holds back at now (a collection with none left is
+// errNotFound).
 func (s *Service) ansibleVersionList(
-	ctx context.Context, repo *models.Repository, p pkgansible.Path,
+	ctx context.Context, repo *models.Repository, p pkgansible.Path, now time.Time,
 ) (*resolution, []pkgansible.VersionRef, error) {
 	page, res, err := parseDoc(ctx, s, repo, s.ansibleVersionsDoc(repo, p),
 		func(doc []byte, _ *resolution) (*pkgansible.VersionPage, error) {
@@ -158,7 +165,12 @@ func (s *Service) ansibleVersionList(
 		return nil, nil, err
 	}
 
-	return res, page.Versions, nil
+	refs := filterAnsibleVersions(repo, page.Versions, now)
+	if len(refs) == 0 {
+		return nil, nil, errNotFound
+	}
+
+	return res, refs, nil
 }
 
 // ansibleVersionsTransform replaces the first page of an upstream version list
@@ -299,7 +311,7 @@ func ansibleVersionListBody(versions []pkgansible.VersionRef) ([]byte, error) {
 }
 
 func (s *Service) serveAnsibleCollection(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgansible.Path) {
-	res, refs, err := s.ansibleVersionList(r.Context(), repo, p)
+	res, refs, err := s.ansibleVersionList(r.Context(), repo, p, time.Now())
 	if err != nil {
 		s.writeResolveError(w, r, err)
 		return
@@ -315,7 +327,7 @@ func (s *Service) serveAnsibleVersions(w http.ResponseWriter, r *http.Request, r
 		return
 	}
 
-	res, refs, err := s.ansibleVersionList(r.Context(), repo, p)
+	res, refs, err := s.ansibleVersionList(r.Context(), repo, p, time.Now())
 	if err != nil {
 		s.writeResolveError(w, r, err)
 		return
@@ -381,6 +393,10 @@ func (s *Service) ansibleVersionDoc(
 
 func (s *Service) serveAnsibleVersion(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgansible.Path) {
 	res, doc, err := s.ansibleVersionDoc(r.Context(), repo, p)
+	if err == nil {
+		err = checkAnsibleAge(repo, doc, time.Now())
+	}
+
 	if err != nil {
 		s.writeResolveError(w, r, err)
 		return
@@ -392,8 +408,10 @@ func (s *Service) serveAnsibleVersion(w http.ResponseWriter, r *http.Request, re
 
 func (s *Service) serveAnsibleDownload(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgansible.Path) {
 	key := ansibleArtifactDir + pkgansible.FileName(p.Namespace, p.Name, p.Version)
+	now := time.Now()
+
 	s.serveDownload(w, r, repo, key, func(ctx context.Context) (download, error) {
-		return s.locateAnsibleTarball(ctx, repo, p, key)
+		return s.locateAnsibleTarball(ctx, repo, p, key, now)
 	})
 }
 
@@ -422,9 +440,16 @@ func ansibleDownloadTarget(docURL, downloadURL string) (string, error) {
 
 // locateAnsibleTarball finds a collection tarball at the URL its version
 // document names, cached only when it matches the document's digest. A version
-// the upstream does not list is errNotFound.
-func (s *Service) locateAnsibleTarball(ctx context.Context, repo *models.Repository, p pkgansible.Path, key string) (download, error) {
+// the upstream does not list is errNotFound, one younger than the repository's
+// minimum age at now is errTooNew.
+func (s *Service) locateAnsibleTarball(
+	ctx context.Context, repo *models.Repository, p pkgansible.Path, key string, now time.Time,
+) (download, error) {
 	_, doc, err := s.ansibleVersionDoc(ctx, repo, p)
+	if err == nil {
+		err = checkAnsibleAge(repo, doc, now)
+	}
+
 	if err != nil {
 		return download{}, err
 	}

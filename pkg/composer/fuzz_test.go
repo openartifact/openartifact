@@ -91,7 +91,7 @@ func FuzzRenderSource(f *testing.F) {
 	const root = "https://oa.example/repos/php"
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		out, err := RenderSource(data, "a/b", root)
+		out, err := RenderSource(data, "a/b", root, nil)
 		if err != nil {
 			return
 		}

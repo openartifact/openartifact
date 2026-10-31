@@ -16,6 +16,7 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // MaxIndexBytes bounds one index file read into memory. The largest crates
@@ -117,8 +118,26 @@ func parseIndexPath(rest string) (Path, error) {
 type Entry struct {
 	Vers  string
 	Cksum string
+	// Pubtime is the entry's "pubtime", the publish time as the index states it
+	// (RFC 3339, UTC); "" when the index does not carry one. See Published.
+	Pubtime string
 	// Line is the raw JSON of the entry, without the newline.
 	Line []byte
+}
+
+// Published is the publish time of the entry's version, the zero time when the
+// index does not state one or states one that does not parse.
+func (e Entry) Published() time.Time {
+	if e.Pubtime == "" {
+		return time.Time{}
+	}
+
+	t, err := time.Parse(time.RFC3339, e.Pubtime)
+	if err != nil {
+		return time.Time{}
+	}
+
+	return t
 }
 
 var errBadIndex = errors.New("not a cargo index file")
@@ -139,16 +158,17 @@ func ParseIndex(doc []byte) ([]Entry, error) {
 		}
 
 		var e struct {
-			Name  *string `json:"name"`
-			Vers  *string `json:"vers"`
-			Cksum string  `json:"cksum"`
+			Name    *string `json:"name"`
+			Vers    *string `json:"vers"`
+			Cksum   string  `json:"cksum"`
+			Pubtime string  `json:"pubtime"`
 		}
 
 		if err := json.Unmarshal(line, &e); err != nil || e.Name == nil || e.Vers == nil {
 			return nil, errBadIndex
 		}
 
-		entries = append(entries, Entry{Vers: *e.Vers, Cksum: e.Cksum, Line: bytes.Clone(line)})
+		entries = append(entries, Entry{Vers: *e.Vers, Cksum: e.Cksum, Pubtime: e.Pubtime, Line: bytes.Clone(line)})
 	}
 
 	if err := sc.Err(); err != nil || len(entries) == 0 {

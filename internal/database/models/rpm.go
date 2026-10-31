@@ -22,8 +22,12 @@ type Repository struct {
 	// MaxStaleSeconds is proxy only: how long past expiry a cached copy may be served when the upstream fails; 0 disables,
 	// default 604800.
 	MaxStaleSeconds int
-	Blocked         bool // proxy only
-	ProjectID       *string
+	// MinAgeHours is proxy only: a version the upstream published less than
+	// this many hours ago is hidden from the metadata and refused on download;
+	// 0 disables the gate.
+	MinAgeHours int
+	Blocked     bool // proxy only
+	ProjectID   *string
 	// PresignDownloads overrides storage.presignDownloads for this repository:
 	// nil inherits the global setting, true/false force redirect/streaming.
 	PresignDownloads *bool

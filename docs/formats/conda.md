@@ -78,8 +78,8 @@ Only these paths (relative to `HOST/repos/REPO`) are answered; everything else i
 
 | Path | Notes |
 |---|---|
-| `<subdir>/repodata.json`, `.json.zst`, `.json.bz2` | the upstream file, byte for byte |
-| `<subdir>/current_repodata.json`, `.json.zst`, `.json.bz2` | the upstream file, byte for byte |
+| `<subdir>/repodata.json`, `.json.zst`, `.json.bz2` | the upstream file, byte for byte (with a minimum age: rebuilt, no `.bz2`, see below) |
+| `<subdir>/current_repodata.json`, `.json.zst`, `.json.bz2` | the upstream file, byte for byte (with a minimum age: rebuilt, no `.bz2`, see below) |
 | `<subdir>/<name>-<version>-<build>.conda` / `.tar.bz2` | package, verified (below) |
 | `channeldata.json` | the upstream file, byte for byte |
 
@@ -88,6 +88,7 @@ Only these paths (relative to `HOST/repos/REPO`) are answered; everything else i
 - **Caching.** A repodata or channeldata file is cached for the repository's `cache_ttl_seconds` and served from the cache until it expires, then downloaded again whole (there is no conditional revalidation, so set a TTL that fits how fresh the channel has to be; conda clients revalidate against the proxy's `ETag` on their own schedule). When the upstream is down a cached copy is served for up to `max_stale_seconds`. Unlisted names are remembered for `negative_cache_ttl_seconds`.
 - **Large indexes.** Index files are streamed to a temporary file while they are downloaded, validated with a streaming JSON scan (no document is ever held in memory), and then served from storage. The limit is 2 GiB, as downloaded and as decompressed (a compression bomb is refused). An index that is not a JSON object with `packages` or `packages.conda`, or that carries `info.base_url` (which would send clients to download from another host), is refused with `502` and not cached.
 - **Package verification.** A package is only served if the upstream's `repodata.json.zst` (else `repodata.json`) lists it, and only if the bytes downloaded match the listed `sha256`. An entry without `sha256` is checked against `md5` and `size`. A mismatch is `502` and nothing is cached; a file the repodata does not list is `404`. A package whose entry has no digest at all is cached for the repository TTL only, not as an immutable file. Verified packages are cached immutably.
+- **Minimum age.** With `min_age_hours` set on the proxy, a package whose repodata entry has a `timestamp` younger than that is hidden: `repodata.json`, `current_repodata.json` and their `.zst` copies are then rebuilt from the cached upstream file without those entries (a streaming pass spooled to disk, bounded like a group's merge, so each rebuild costs CPU in proportion to the index), and a download of such a package answers `403` unless it is already cached. The rebuilt document has `info.subdir`, `packages` and `packages.conda` only (the same form a group serves; `removed` and other top-level keys are not carried over), and `.json.bz2` answers `404` (it cannot be produced; clients fall back to `.zst` or plain). `timestamp` is the build time the package's author wrote into the package, in milliseconds (older entries in seconds), not the time it was uploaded to the channel; an entry without one is not held back. The `ETag` changes with the threshold and, every 5 minutes, with the clock. A group with the proxy as a member merges the rebuilt files. See [Minimum age](../repositories/hosted-proxy-group.md#minimum-age).
 - **Other behavior** that every proxy shares (credentials sent only to the upstream origin, [quarantine and scanning](../security/scanning.md), RBAC, size limits, never exposing upstream error text) is described under [proxy repositories](../repositories/hosted-proxy-group.md).
 
 ### What a group serves

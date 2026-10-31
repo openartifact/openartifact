@@ -13,6 +13,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 
@@ -46,6 +47,21 @@ type ChartVersion struct {
 	// URLs are the entry's "urls" as published: absolute, or relative to the
 	// repository URL.
 	URLs []string
+	// Created is the entry's "created" field verbatim: when the chart was
+	// packaged, "" when absent. Published parses it.
+	Created string
+}
+
+// Published is when the chart version was created as its index states it (an
+// RFC 3339 time, as helm writes it); the zero time when the index states none
+// or one that does not parse.
+func (cv ChartVersion) Published() time.Time {
+	t, err := time.Parse(time.RFC3339, cv.Created)
+	if err != nil {
+		return time.Time{}
+	}
+
+	return t
 }
 
 // ParseIndex parses doc. The document must be a mapping with an apiVersion and
@@ -152,6 +168,7 @@ func chartVersion(listName string, e *yaml.Node) (ChartVersion, bool) {
 		Name:    listName,
 		Version: scalarOf(e, "version"),
 		Digest:  scalarOf(e, "digest"),
+		Created: scalarOf(e, "created"),
 	}
 
 	if u := mapValue(e, "urls"); u != nil && u.Kind == yaml.SequenceNode {

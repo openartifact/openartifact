@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/presign"
@@ -47,9 +48,15 @@ func (s *Service) servePyPI(w http.ResponseWriter, r *http.Request, repo *models
 }
 
 // pageETag identifies one rendering of a cached page: the upstream body, the
-// repository (links embed its name), the path and the serialization.
-func pageETag(repo *models.Repository, key, blobKey string, offer pypisimple.Offer) string {
-	sum := sha256.Sum256([]byte(repo.Name + "\x00" + key + "\x00" + blobKey + "\x00" + offer.ContentType))
+// repository (links embed its name), the path, the serialization and the
+// minimum-age gate (gateStamp, "" for a page the gate does not apply to).
+func pageETag(repo *models.Repository, key, blobKey string, offer pypisimple.Offer, gate string) string {
+	in := repo.Name + "\x00" + key + "\x00" + blobKey + "\x00" + offer.ContentType
+	if gate != "" {
+		in += "\x00" + gate
+	}
+
+	sum := sha256.Sum256([]byte(in))
 
 	return `"` + hex.EncodeToString(sum[:16]) + `"`
 }
@@ -78,7 +85,7 @@ func (s *Service) servePyPIIndex(w http.ResponseWriter, r *http.Request, repo *m
 		return
 	}
 
-	s.servePyPIPage(w, r, repo, offer, pypiPageDoc(pypiIndexKey, ""), func(body []byte, contentType string) ([]byte, error) {
+	s.servePyPIPage(w, r, repo, offer, pypiPageDoc(pypiIndexKey, ""), "", func(body []byte, contentType string) ([]byte, error) {
 		names, perr := pypisimple.ParseIndex(body, contentType)
 		if perr != nil {
 			return nil, fmt.Errorf("%w: %w", errUnusableDoc, perr)
@@ -95,16 +102,26 @@ func (s *Service) servePyPIProject(w http.ResponseWriter, r *http.Request, repo 
 		return
 	}
 
+	// One clock reading per request: the validator and the rendering agree on
+	// which versions are old enough.
+	now := time.Now()
+
 	s.servePyPIPage(
 		w,
 		r,
 		repo,
 		offer,
 		pypiPageDoc(pypiProjectKey(project), project+"/"),
+		gateStamp(repo, now),
 		func(body []byte, contentType string) ([]byte, error) {
 			files, perr := pypisimple.ParseProject(body, contentType)
 			if perr != nil {
 				return nil, fmt.Errorf("%w: %w", errUnusableDoc, perr)
+			}
+
+			files, perr = gatePyPIFiles(repo, project, files, now)
+			if perr != nil {
+				return nil, perr
 			}
 
 			return pypisimple.RenderProject(offer.Format, project, pypisimple.ServableFiles(files), func(f *pypisimple.File) string {
@@ -112,6 +129,28 @@ func (s *Service) servePyPIProject(w http.ResponseWriter, r *http.Request, repo 
 			})
 		},
 	)
+}
+
+// gatePyPIFiles applies the minimum-age gate to a project page's files: the
+// files of a release whose first upload is younger than the repository's
+// minimum age at now are dropped (PEP 700 upload-time, JSON pages only; a
+// release no file of which states a time passes). A page that listed files
+// and has none left is a project with nothing to offer: errNotFound, as pypi
+// answers for an unknown project. Only the files are rendered, so a PEP 700
+// "versions" list of the upstream never reaches the client.
+func gatePyPIFiles(repo *models.Repository, project string, files []pypisimple.File, now time.Time) ([]pypisimple.File, error) {
+	if minAge(repo) == 0 || len(files) == 0 {
+		return files, nil
+	}
+
+	kept := pypisimple.NewReleases(project, files).Filter(project, files, func(published time.Time) bool {
+		return !tooNew(repo, published, now)
+	})
+	if len(kept) == 0 {
+		return nil, errNotFound
+	}
+
+	return kept, nil
 }
 
 // servePyPIPage answers one rewritten simple page from the cached upstream
@@ -122,13 +161,14 @@ func (s *Service) servePyPIPage(
 	repo *models.Repository,
 	offer pypisimple.Offer,
 	doc metaDoc,
+	gate string,
 	render func(body []byte, contentType string) ([]byte, error),
 ) {
 	s.serveRendered(w, r, repo, renderedDoc{
 		metaDoc: doc,
 		maxAge:  pypiPageMaxAge,
 		vary:    "Accept",
-		etag:    func(blobKey string) string { return pageETag(repo, doc.key, blobKey, offer) },
+		etag:    func(blobKey string) string { return pageETag(repo, doc.key, blobKey, offer, gate) },
 		render: func(body []byte, res *resolution) ([]byte, string, error) {
 			out, err := render(body, res.entry.ContentType)
 			return out, offer.ContentType, err
@@ -184,6 +224,10 @@ func (s *Service) locatePyPIFile(ctx context.Context, repo *models.Repository, p
 
 	if file == nil || (wantMeta && !file.CoreMetadata) {
 		return download{}, errNotFound
+	}
+
+	if tooNew(repo, pypisimple.NewReleases(project, files).Published(project, name), time.Now()) {
+		return download{}, fmt.Errorf("pypi %s %s: %w", project, name, errTooNew)
 	}
 
 	key := pypiFileKey(project, filename)

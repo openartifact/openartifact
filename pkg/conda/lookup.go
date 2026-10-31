@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // ErrNotListed is a package file the repodata does not list.
@@ -25,6 +27,9 @@ type Entry struct {
 	SHA256, MD5 string
 	// Size is the file size in bytes, -1 when the entry has none.
 	Size int64
+	// Published is the entry's "timestamp" (see EntryTimestamp), the zero time
+	// when it has none.
+	Published time.Time
 }
 
 var (
@@ -130,13 +135,15 @@ func parseEntry(raw json.RawMessage) (Entry, error) {
 		SHA256 string      `json:"sha256"`
 		MD5    string      `json:"md5"`
 		Size   json.Number `json:"size"`
+		// The build time as the repodata states it; not every entry has one.
+		Timestamp json.RawMessage `json:"timestamp"`
 	}
 
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return Entry{}, fmt.Errorf("%w: %w", ErrMalformed, err)
 	}
 
-	e := Entry{Size: -1}
+	e := Entry{Size: -1, Published: timestampTime(doc.Timestamp)}
 
 	if s := strings.ToLower(doc.SHA256); sha256HexRE.MatchString(s) {
 		e.SHA256 = s
@@ -151,4 +158,38 @@ func parseEntry(raw json.RawMessage) (Entry, error) {
 	}
 
 	return e, nil
+}
+
+// secondsLimit tells seconds from milliseconds in a repodata timestamp: a
+// value below it (the year 5138 in seconds, 1973 in milliseconds) is seconds.
+// conda-build writes milliseconds; older entries have seconds.
+const secondsLimit = 1e11
+
+// EntryTimestamp is the "timestamp" of a repodata entry: when the package was
+// built, the only date repodata carries. The zero time when the entry has none,
+// or one that is not a positive number.
+func EntryTimestamp(raw json.RawMessage) time.Time {
+	var doc struct {
+		Timestamp json.RawMessage `json:"timestamp"`
+	}
+
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return time.Time{}
+	}
+
+	return timestampTime(doc.Timestamp)
+}
+
+// timestampTime reads a JSON number (a string holding one is as good).
+func timestampTime(raw json.RawMessage) time.Time {
+	v, err := strconv.ParseFloat(strings.Trim(string(raw), `"`), 64)
+	if err != nil || v <= 0 || v >= 1e18 {
+		return time.Time{}
+	}
+
+	if v < secondsLimit {
+		return time.Unix(int64(v), 0).UTC()
+	}
+
+	return time.UnixMilli(int64(v)).UTC()
 }

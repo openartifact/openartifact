@@ -198,6 +198,7 @@ A proxy repository serves a public registry through OpenArtifact: `registry.terr
 - **Module details** (`GET /MODULE/SYSTEM/VERSION`) are generated from the version list: `published_at` is absent and `downloads` is `0`.
 - **Quarantine, blocking and RBAC** apply as for other proxies: a blocked repository answers `403`, a quarantined package answers `403` with code `ARTIFACT_QUARANTINED` and no ticket is issued. Proxy caches are not counted against the storage quota.
 - **Downloads need** the same `AUTH_HMAC_KEY` on every replica, as for hosted repositories; without a ticket key the download calls answer `503`.
+- **Minimum age is not applied.** `min_age_hours` has no effect on a terraform proxy: the registry protocol's version lists, provider package documents and module download answers carry no publish time of a version (the registries' own web API states one only outside the protocol, for the latest version).
 
 Create one with the API or the web UI:
 

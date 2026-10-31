@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestIndexPathFor(t *testing.T) {
@@ -163,6 +164,28 @@ func TestParseConfig(t *testing.T) {
 	for _, bad := range []string{``, `{}`, `{"dl":""}`, `{"dl":3}`, `[]`, `<html>`} {
 		if _, err := ParseConfig(strings.NewReader(bad)); err == nil {
 			t.Errorf("ParseConfig accepted %q", bad)
+		}
+	}
+}
+
+func TestEntryPublished(t *testing.T) {
+	doc := `{"name":"a","vers":"1.0.0","cksum":"x","pubtime":"2025-11-12T19:30:12Z"}
+{"name":"a","vers":"1.1.0","cksum":"x"}
+{"name":"a","vers":"1.2.0","cksum":"x","pubtime":"last week"}
+`
+
+	entries, err := ParseIndex([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := entries[0].Published(), time.Date(2025, 11, 12, 19, 30, 12, 0, time.UTC); !got.Equal(want) {
+		t.Errorf("Published = %v, want %v", got, want)
+	}
+
+	for _, e := range entries[1:] {
+		if !e.Published().IsZero() {
+			t.Errorf("%s: Published = %v, want the zero time", e.Vers, e.Published())
 		}
 	}
 }

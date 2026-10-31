@@ -278,6 +278,10 @@ export type Repository = {
      */
     max_stale_seconds?: number;
     /**
+     * Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600.
+     */
+    min_age_hours?: number;
+    /**
      * Whether the repository is blocked
      */
     blocked?: boolean;
@@ -3872,6 +3876,10 @@ export type PostApiV1RepositoriesData = {
          * Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000.
          */
         max_stale_seconds?: number;
+        /**
+         * Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600.
+         */
+        min_age_hours?: number;
         blocked?: boolean;
         /**
          * For group repos: ordered member repository names (first hit wins). Members must be hosted or proxy repositories of the group's format; groups cannot be nested.
@@ -9819,6 +9827,10 @@ export type PostApiV1ProjectsByProjectRepositoriesData = {
         cache_ttl_seconds?: number;
         negative_cache_ttl_seconds?: number;
         max_stale_seconds?: number;
+        /**
+         * Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600.
+         */
+        min_age_hours?: number;
         member_repos?: Array<string>;
         presign_downloads?: boolean | null;
         trash_retention_days?: number | null;
@@ -10981,6 +10993,10 @@ export type PatchApiV1RepositoryByNameData = {
          * Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000.
          */
         max_stale_seconds?: number;
+        /**
+         * Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600.
+         */
+        min_age_hours?: number;
         blocked?: boolean;
         member_repos?: Array<string>;
         /**

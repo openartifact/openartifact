@@ -53,6 +53,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <dd class="text-foreground">{{ formatDuration(repo.negative_cache_ttl_seconds) }}</dd>
           <dt class="text-muted" :title="t('repoDetail.proxy.maxStaleHint')">{{ t('repoDetail.proxy.maxStale') }}</dt>
           <dd class="text-foreground">{{ repo.max_stale_seconds ? formatDuration(repo.max_stale_seconds) : t('repoDetail.proxy.maxStaleOff') }}</dd>
+          <dt class="text-muted" :title="t('repoDetail.proxy.minAgeHint')">{{ t('repoDetail.proxy.minAge') }}</dt>
+          <dd class="text-foreground">{{ repo.min_age_hours ? tp('repoDetail.proxy.minAgeValue', { hours: String(repo.min_age_hours) }) : t('repoDetail.proxy.minAgeOff') }}</dd>
         </dl>
       </div>
 

@@ -59,6 +59,7 @@ const (
 	defaultMaxStaleSeconds         = 7 * 24 * 3600
 	maxCacheTTLSeconds             = 30 * 24 * 3600
 	maxNegativeCacheTTLSeconds     = 24 * 3600
+	maxMinAgeHours                 = 10 * 365 * 24
 	maxMaxStaleSeconds             = 365 * 24 * 3600
 )
 
@@ -431,6 +432,18 @@ func normalizeMaxStale(v *int) (int, error) {
 	return min(*v, maxMaxStaleSeconds), nil
 }
 
+// normalizeMinAge validates min_age_hours; absent means the gate is off.
+func normalizeMinAge(v *int) (int, error) {
+	switch {
+	case v == nil:
+		return 0, nil
+	case *v < 0 || *v > maxMinAgeHours:
+		return 0, validationError("min_age_hours must be between 0 and 87600")
+	}
+
+	return *v, nil
+}
+
 // resolveGroupMembers validates a member list for a group repository and
 // returns the member repository IDs in priority order.
 // A non-nil reader must be able to read every member (403 otherwise): a group
@@ -545,6 +558,7 @@ type createRepositoryBody struct {
 	CacheTTLSeconds         int      `json:"cache_ttl_seconds"`
 	NegativeCacheTTLSeconds int      `json:"negative_cache_ttl_seconds"`
 	MaxStaleSeconds         *int     `json:"max_stale_seconds"`
+	MinAgeHours             *int     `json:"min_age_hours"`
 	MemberRepos             []string `json:"member_repos"`
 	// PresignDownloads overrides storage.presignDownloads (null/absent inherits).
 	PresignDownloads *bool `json:"presign_downloads"`
@@ -743,6 +757,12 @@ func (h *RepositoriesHandler) createRepository(
 			return
 		}
 
+		minAge, err := normalizeMinAge(body.MinAgeHours)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
+
 		encPassword, ok := h.protectUpstreamPassword(w, "create repository", body.UpstreamPassword)
 		if !ok {
 			return
@@ -754,8 +774,9 @@ func (h *RepositoriesHandler) createRepository(
 		repo.CacheTTLSeconds = ttl
 		repo.NegativeCacheTTLSeconds = negTTL
 		repo.MaxStaleSeconds = maxStale
+		repo.MinAgeHours = minAge
 	default:
-		if hasUpstream {
+		if hasUpstream || body.MinAgeHours != nil {
 			writeError(w, http.StatusBadRequest, "validation_failed", "upstream_* fields are only valid for proxy repositories")
 			return
 		}
@@ -888,6 +909,7 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		CacheTTLSeconds         *int      `json:"cache_ttl_seconds"`
 		NegativeCacheTTLSeconds *int      `json:"negative_cache_ttl_seconds"`
 		MaxStaleSeconds         *int      `json:"max_stale_seconds"`
+		MinAgeHours             *int      `json:"min_age_hours"`
 		Blocked                 *bool     `json:"blocked"`
 		MemberRepos             *[]string `json:"member_repos"`
 		// PresignDownloads is tri-state: absent leaves the override unchanged,
@@ -959,7 +981,8 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	touchesUpstream := body.UpstreamURL != nil || body.UpstreamUsername != nil || body.UpstreamPassword != nil ||
-		body.CacheTTLSeconds != nil || body.NegativeCacheTTLSeconds != nil || body.MaxStaleSeconds != nil
+		body.CacheTTLSeconds != nil || body.NegativeCacheTTLSeconds != nil || body.MaxStaleSeconds != nil ||
+		body.MinAgeHours != nil
 	if touchesUpstream && repo.RepoType != "proxy" {
 		writeError(w, http.StatusBadRequest, "validation_failed", "upstream and cache fields are only valid for proxy repositories")
 		return
@@ -1055,6 +1078,16 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		}
 
 		repo.MaxStaleSeconds = maxStale
+	}
+
+	if body.MinAgeHours != nil {
+		minAge, err := normalizeMinAge(body.MinAgeHours)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
+
+		repo.MinAgeHours = minAge
 	}
 
 	if body.Blocked != nil {
@@ -1705,6 +1738,8 @@ func RepositoryToResponse(r *models.Repository) responses.RepositoryResponse {
 		resp.CacheTTLSeconds = &ttl
 		resp.NegativeCacheTTLSeconds = &negTTL
 		resp.MaxStaleSeconds = &maxStale
+		minAge := r.MinAgeHours
+		resp.MinAgeHours = &minAge
 	}
 
 	return resp

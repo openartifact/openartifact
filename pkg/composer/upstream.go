@@ -13,6 +13,7 @@ import (
 	"io"
 	"maps"
 	"strings"
+	"time"
 )
 
 // ErrDocument is a p2 document that cannot be used: not JSON, without the
@@ -103,16 +104,15 @@ func ParseDocument(data []byte, name string) ([]Version, error) {
 	return out, nil
 }
 
-// FindDist returns the zip dist the source published for version (the exact
-// "version" string).
-func FindDist(versions []Version, version string) (Dist, bool) {
+// FindVersion returns the entry whose "version" is exactly version.
+func FindVersion(versions []Version, version string) (Version, bool) {
 	for _, v := range versions {
 		if v.VersionString() == version {
-			return v.ZipDist()
+			return v, true
 		}
 	}
 
-	return Dist{}, false
+	return nil, false
 }
 
 // RelinkSource points the dists of entries a source other than this server
@@ -170,13 +170,54 @@ func RelinkMember(versions []Version, name, root string) {
 	}
 }
 
+// ErrNoneLeft is a document whose every version was filtered out.
+var ErrNoneLeft = errors.New("no version left")
+
+// Published is when the entry's source published the version ("time"); the zero
+// time when it states none or one that does not parse.
+func (v Version) Published() time.Time {
+	s, _ := v["time"].(string)
+	if s == "" {
+		return time.Time{}
+	}
+
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return time.Time{}
+	}
+
+	return t
+}
+
+// Filter returns the entries of versions for which keep is true, in order.
+func Filter(versions []Version, keep func(Version) bool) []Version {
+	out := make([]Version, 0, len(versions))
+
+	for _, v := range versions {
+		if keep(v) {
+			out = append(out, v)
+		}
+	}
+
+	return out
+}
+
 // RenderSource turns the p2 document of package name as a source other than
 // this server published it into the document a proxy repository at root serves:
-// only that package, with its dists relinked, minified.
-func RenderSource(data []byte, name, root string) ([]byte, error) {
+// only that package, only the versions keep accepts (nil keeps all), with its
+// dists relinked, minified. The filter sees the expanded entries, so a version
+// that inherited its fields in the minified upstream document is judged by what
+// it inherited. ErrNoneLeft when keep rejects every version.
+func RenderSource(data []byte, name, root string, keep func(Version) bool) ([]byte, error) {
 	versions, err := ParseDocument(data, name)
 	if err != nil {
 		return nil, err
+	}
+
+	if keep != nil {
+		if versions = Filter(versions, keep); len(versions) == 0 {
+			return nil, ErrNoneLeft
+		}
 	}
 
 	RelinkSource(versions, name, root)

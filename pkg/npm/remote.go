@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/pathseg"
 )
@@ -281,37 +282,63 @@ func rewriteVersions(top map[string]json.RawMessage, pkg, tarballBase string) er
 	return err
 }
 
-// FindTarball locates the version whose dist.tarball has the given filename
-// and returns that version's upstream tarball URL, integrity and shasum. The
-// version named by the conventional filename is tried first.
-func FindTarball(doc []byte, pkg, file string) (Dist, bool, error) {
+// Release is one version of a packument as a tarball lookup finds it.
+type Release struct {
+	Version string
+	// Published is the packument's time[Version]; zero when it is absent or
+	// not an RFC 3339 time.
+	Published time.Time
+	Dist      Dist
+}
+
+// FindRelease locates the version whose dist.tarball has the given filename
+// and returns that version's upstream tarball URL, integrity and shasum and
+// its publish time. The version named by the conventional filename is tried
+// first.
+func FindRelease(doc []byte, pkg, file string) (Release, bool, error) {
 	top, err := parsePackument(doc)
 	if err != nil {
-		return Dist{}, false, err
+		return Release{}, false, err
 	}
 
 	versions, err := objectOf(top["versions"])
 	if err != nil {
-		return Dist{}, false, err
+		return Release{}, false, err
 	}
 
+	ver, d, found, err := findDist(versions, pkg, file)
+	if err != nil || !found {
+		return Release{}, false, err
+	}
+
+	times, err := objectOf(top["time"])
+	if err != nil {
+		return Release{}, false, err
+	}
+
+	published, _ := publishedAt(times[ver])
+
+	return Release{Version: ver, Published: published, Dist: d}, true, nil
+}
+
+func findDist(versions map[string]json.RawMessage, pkg, file string) (string, Dist, bool, error) {
 	// <unscoped>-<version>.tgz: try that version before scanning.
 	if guess, ok := strings.CutSuffix(file, ".tgz"); ok {
 		unscoped := pkg[strings.LastIndexByte(pkg, '/')+1:]
 		if ver, ok := strings.CutPrefix(guess, unscoped+"-"); ok {
 			if d, found, err := distOf(versions[ver], file); err != nil || found {
-				return d, found, err
+				return ver, d, found, err
 			}
 		}
 	}
 
-	for _, raw := range versions {
+	for ver, raw := range versions {
 		if d, found, err := distOf(raw, file); err != nil || found {
-			return d, found, err
+			return ver, d, found, err
 		}
 	}
 
-	return Dist{}, false, nil
+	return "", Dist{}, false, nil
 }
 
 // Dist is the dist object of one version.

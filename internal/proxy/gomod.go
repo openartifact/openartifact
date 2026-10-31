@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
@@ -37,6 +38,10 @@ import (
 // and fetched in that form. ".mod" and ".zip" bodies are verified before they
 // are cached (see gosumdb.go); ".info", "@latest" and "list" are checked to be
 // what they claim (JSON with the requested Version; one version per line).
+//
+// With a minimum age (see minage.go) the list, @latest and ".info" are
+// answered from the publish times of the ".info" documents, and ".mod" and
+// ".zip" of a version that is too new are refused (see gomod_minage.go).
 
 // goKind is the kind of GOPROXY resource.
 type goKind int
@@ -166,13 +171,21 @@ func (s *Service) serveGo(w http.ResponseWriter, r *http.Request, repo *models.R
 		return
 	}
 
-	s.serveVerbatim(w, r, repo, s.goDoc(req))
+	now := time.Now()
+
+	if minAge(repo) > 0 && s.serveGoGated(w, r, repo, req, now) {
+		return
+	}
+
+	s.serveVerbatim(w, r, repo, s.goDoc(repo, req, now))
 }
 
 // goDoc is a GOPROXY resource, cached verbatim under its request path once it
-// passes the check for its kind.
-func (s *Service) goDoc(req goRequest) metaDoc {
-	return metaDoc{
+// passes the check for its kind. While the repository has a minimum age, a
+// ".mod" or ".zip" is fetched only when its version is old enough at now (see
+// gomod_minage.go).
+func (s *Service) goDoc(repo *models.Repository, req goRequest, now time.Time) metaDoc {
+	d := metaDoc{
 		key: req.key,
 		url: func(upstream string) (string, error) { return goUpstreamURL(upstream, req.key) },
 		opts: func(context.Context, string) fetchOpts {
@@ -201,8 +214,16 @@ func (s *Service) goDoc(req goRequest) metaDoc {
 
 			return o
 		},
-		what: "go module file",
+		// list, .info and @latest are read back by the minimum-age gate.
+		limit: maxGoMeta,
+		what:  "go module file",
 	}
+
+	if minAge(repo) > 0 && (req.kind == goMod || req.kind == goZip) {
+		d.locate = s.goGateLocate(repo, req, now)
+	}
+
+	return d
 }
 
 // verifyGoList refuses a list that is not one version per line: an HTML error

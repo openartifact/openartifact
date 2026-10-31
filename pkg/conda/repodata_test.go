@@ -13,6 +13,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -512,5 +513,69 @@ func TestParseFilename(t *testing.T) {
 		if _, ok := ParseFilename(bad); ok {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+func TestEntryTimestamp(t *testing.T) {
+	want := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
+
+	cases := []struct {
+		entry string
+		want  time.Time
+	}{
+		{fmt.Sprintf(`{"timestamp":%d}`, want.UnixMilli()), want},
+		{fmt.Sprintf(`{"timestamp":%d}`, want.Unix()), want},
+		{fmt.Sprintf(`{"timestamp":"%d"}`, want.UnixMilli()), want},
+		{`{"timestamp":0}`, time.Time{}},
+		{`{"timestamp":-5}`, time.Time{}},
+		{`{"timestamp":"x"}`, time.Time{}},
+		{`{"timestamp":null}`, time.Time{}},
+		{`{"name":"a"}`, time.Time{}},
+		{`7`, time.Time{}},
+	}
+
+	for _, c := range cases {
+		if got := EntryTimestamp(json.RawMessage(c.entry)); !got.Equal(c.want) {
+			t.Errorf("EntryTimestamp(%s) = %v, want %v", c.entry, got, c.want)
+		}
+	}
+
+	// The lookup reads it with the digests.
+	doc := fmt.Sprintf(`{"packages":{"a-1-0.tar.bz2":{"name":"a","timestamp":%d}}}`, want.UnixMilli())
+
+	e, err := Lookup(strings.NewReader(doc), "a-1-0.tar.bz2", 1<<20)
+	if err != nil || !e.Published.Equal(want) {
+		t.Errorf("Lookup = %+v, %v; want Published %v", e, err, want)
+	}
+}
+
+func TestBuilderDropsEntriesByContent(t *testing.T) {
+	doc := `{"packages":{"a-1-0.tar.bz2":{"name":"a","k":1},"b-1-0.tar.bz2":{"name":"b","k":2}},"packages.conda":{"c-1-0.conda":{"name":"c","k":1}}}`
+
+	b, err := NewBuilder("linux-64", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+
+	st, err := b.Add(strings.NewReader(doc), MemberOptions{
+		MaxBytes: 1 << 20,
+		Drop:     func(raw json.RawMessage) bool { return bytes.Contains(raw, []byte(`"k":1`)) },
+	})
+	if err != nil || st.Added != 1 || st.Dropped != 2 {
+		t.Fatalf("Add = %+v, %v; want 1 added, 2 dropped", st, err)
+	}
+
+	d, err := b.Finish()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	var out bytes.Buffer
+
+	_, err = d.WriteTo(&out)
+	if doc := out.String(); err != nil || !strings.Contains(doc, `"b-1-0.tar.bz2"`) || strings.Contains(doc, `"a-1-0`) {
+		t.Errorf("document %s (%v)", doc, err)
 	}
 }

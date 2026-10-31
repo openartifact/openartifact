@@ -128,6 +128,7 @@ type RepositoryResponse struct {
 	CacheTTLSeconds         *int `json:"cache_ttl_seconds,omitempty"`
 	NegativeCacheTTLSeconds *int `json:"negative_cache_ttl_seconds,omitempty"`
 	MaxStaleSeconds         *int `json:"max_stale_seconds,omitempty"`
+	MinAgeHours             *int `json:"min_age_hours,omitempty"`
 }
 
 // RepositoryPermissions reports which actions the calling principal may perform on one repository.
