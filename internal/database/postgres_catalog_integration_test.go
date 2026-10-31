@@ -87,6 +87,67 @@ func TestCatalogRollupGroupsVersions(t *testing.T) {
 	}
 }
 
+// TestCatalogRollupDocker runs the rollup of a docker repository. Docker has no
+// hosted branch, so the row branch is the only arm of the union and names the
+// result columns: a column the outer query reads by name (package_id) must be
+// aliased there, or the query does not parse at all.
+func TestCatalogRollupDocker(t *testing.T) {
+	pg := newQuotaTestDB(t, 4)
+	db := pg.GetDB()
+
+	repo := seedRepo(t, db, "catalog-docker", "docker")
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO docker_tags (repository_id, name, manifest_digest, image) VALUES
+			($1, '1.0.0', 'sha256:' || lpad('1', 64, '0'), 'app'),
+			($1, 'latest', 'sha256:' || lpad('2', 64, '0'), 'app')`, repo); err != nil {
+		t.Fatalf("seed docker tags: %v", err)
+	}
+
+	for _, opts := range []models.PackageRollupOptions{
+		{Page: 1, Limit: 10},
+		{Page: 5, Limit: 10},
+		{Query: "app", Page: 1, Limit: 10},
+		{SortByName: true, Page: 1, Limit: 10},
+		{Flagged: true, Page: 1, Limit: 10},
+	} {
+		opts.RepoID, opts.RepoFormat = repo, "docker"
+
+		rows, total, err := pg.ListRepoPackageRollup(ctx, opts)
+		if err != nil {
+			t.Fatalf("docker rollup %+v: %v", opts, err)
+		}
+
+		// The package is found by every filter but the flagged one (no finding
+		// flags a tag); page 5 is past the end and carries no row.
+		wantTotal := 1
+		if opts.Flagged {
+			wantTotal = 0
+		}
+
+		if total != wantTotal {
+			t.Fatalf("docker rollup %+v total %d, want %d", opts, total, wantTotal)
+		}
+
+		if opts.Page > 1 || opts.Flagged {
+			if len(rows) != 0 {
+				t.Fatalf("docker rollup %+v rows %+v, want none", opts, rows)
+			}
+
+			continue
+		}
+
+		if len(rows) != 1 {
+			t.Fatalf("docker rollup %+v rows %+v, want 1", opts, rows)
+		}
+
+		if r := rows[0]; r.Format != "docker" || r.Name != "catalog-docker/app" || r.VersionCount != 2 || r.LatestVersion == "" {
+			t.Fatalf("docker rollup row %+v", r)
+		}
+	}
+}
+
 func TestCatalogRollupFlagged(t *testing.T) {
 	f, _ := seedCatalog(t)
 	ctx := context.Background()

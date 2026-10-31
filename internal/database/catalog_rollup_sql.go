@@ -122,7 +122,10 @@ func rollupQuery(opts rollupFilter) (string, []any) {
 
 	if len(rowBranches) > 0 {
 		ctes = append(ctes, rowRollupCTEs(rowBranches, a, opts.flagged)...)
-		parts = append(parts, "SELECT format, name, version_count, created_at, updated_at, NULL::uuid, latest_version FROM rowgrouped")
+		parts = append(
+			parts,
+			"SELECT format, name, version_count, created_at, updated_at, NULL::uuid AS package_id, latest_version FROM rowgrouped",
+		)
 	}
 
 	order, outer := "created_at DESC, format, name", "p.created_at DESC, p.format, p.name"

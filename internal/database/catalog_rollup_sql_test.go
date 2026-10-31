@@ -54,6 +54,13 @@ func TestRollupQueryShape(t *testing.T) {
 		if strings.Contains(query, "hosted AS") || !strings.Contains(query, "rowgrouped AS") {
 			t.Errorf("docker rollup:\n%s", query)
 		}
+
+		// A UNION names its columns after the first arm, so with no hosted arm the
+		// row arm alone must name the package id the outer query joins on; an
+		// unaliased NULL::uuid is named uuid and the query fails to parse.
+		if !strings.Contains(query, "NULL::uuid AS package_id") {
+			t.Errorf("docker rollup lacks the package_id alias:\n%s", query)
+		}
 	})
 
 	t.Run("flagged reads the flagged versions", func(t *testing.T) {
