@@ -161,14 +161,14 @@ func startAuditStream(t *testing.T, endpoint string) (*audit.Logger, *prometheus
 	return audit.NewLogger(harness.Database, harness.Log, nil, 1000, audit.WithOTLP()), dropped, shutdown
 }
 
-// auditHTTPServer serves POST /api/v1/repositories (audited as
-// repository.created) behind the request id and audit middleware.
+// auditHTTPServer serves DELETE /api/v1/repository/{name} (audited by the
+// middleware as repository.deleted) behind the request id and audit middleware.
 func auditHTTPServer(t *testing.T, al *audit.Logger) *httptest.Server {
 	t.Helper()
 
 	r := chi.NewRouter()
 	r.Use(middleware.AuditMiddleware(al))
-	r.Post("/api/v1/repositories", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusCreated) })
+	r.Delete("/api/v1/repository/{name}", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 
 	srv := httptest.NewServer(middleware.RequestIDMiddleware(r))
 	t.Cleanup(srv.Close)
@@ -176,11 +176,11 @@ func auditHTTPServer(t *testing.T, al *audit.Logger) *httptest.Server {
 	return srv
 }
 
-// postRepository sends one audited request and returns its X-Request-ID.
-func postRepository(t *testing.T, srv *httptest.Server) string {
+// deleteRepository sends one audited request and returns its X-Request-ID.
+func deleteRepository(t *testing.T, srv *httptest.Server) string {
 	t.Helper()
 
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, srv.URL+"/api/v1/repositories", http.NoBody)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodDelete, srv.URL+"/api/v1/repository/it", http.NoBody)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,8 +192,8 @@ func postRepository(t *testing.T, srv *httptest.Server) string {
 
 	_ = resp.Body.Close()
 
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("status = %d, want 201", resp.StatusCode)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
 	}
 
 	return resp.Header.Get("X-Request-ID")
@@ -346,7 +346,7 @@ func TestOTLPAuditEventsArriveOnceWithTheirRow(t *testing.T) {
 		})
 	}
 
-	httpRequestID := postRepository(t, auditHTTPServer(t, al))
+	httpRequestID := deleteRepository(t, auditHTTPServer(t, al))
 
 	if err := al.Shutdown(t.Context()); err != nil {
 		t.Fatal(err)
@@ -376,7 +376,7 @@ func TestOTLPAuditEventsArriveOnceWithTheirRow(t *testing.T) {
 		perAction[got["openartifact.audit.request_id"]]++
 
 		if got["openartifact.audit.request_id"] == httpRequestID {
-			if got["openartifact.audit.action"] != audit.ActionRepositoryCreated || got["openartifact.audit.status"] != "201" {
+			if got["openartifact.audit.action"] != audit.ActionRepositoryDeleted || got["openartifact.audit.status"] != "204" {
 				t.Errorf("request event: %v", got)
 			}
 
@@ -428,7 +428,7 @@ func TestOTLPAuditCollectorOutageDropsAndCounts(t *testing.T) {
 	srv := auditHTTPServer(t, al)
 
 	// One event through a live collector first: the pipeline works.
-	first := postRepository(t, srv)
+	first := deleteRepository(t, srv)
 	if got := waitForAuditRecords(t, col, 1, func(r auditLogRecord) bool {
 		return r.attrs()["openartifact.audit.request_id"] == first
 	}); len(got) != 1 {
@@ -442,7 +442,7 @@ func TestOTLPAuditCollectorOutageDropsAndCounts(t *testing.T) {
 	for range requests {
 		start := time.Now()
 
-		ids = append(ids, postRepository(t, srv))
+		ids = append(ids, deleteRepository(t, srv))
 
 		if d := time.Since(start); d > slowest {
 			t.Fatalf("a request took %s during the collector outage", d)
