@@ -3,17 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { request, JSON_HEADERS } from './client'
-
-// Hand-typed until the apk endpoints are in openapi.json and the generated client is rebuilt.
+import type { ApkSigningKey } from './generated/types.gen'
 
 /** The abuild-format RSA signing key of an apk repository (never carries the private half). */
-export interface ApkKey {
-  key_name: string
-  fingerprint: string
-  public_key: string
-  created_at: string
-  updated_at: string
-}
+export type ApkKey = ApkSigningKey
 
 /** Both fields are optional: an empty body generates a fresh key. */
 export interface ApkKeyInput {

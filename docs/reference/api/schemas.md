@@ -1672,32 +1672,32 @@ Catalog figures of a repository. Only present in the repository list (GET /api/v
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `created_at` | string (date-time) | no | - |
-| `format` | string | no | - |
+| `created_at` | string (date-time) | yes | - |
+| `format` | string | yes | - |
 | `metadata` | map of string | no | - |
-| `name` | string | no | - |
-| `path` | string | no | - |
-| `repository` | string | no | - |
-| `sha256` | string | no | - |
-| `size` | integer (int64) | no | - |
-| `version` | string | no | - |
+| `name` | string | yes | - |
+| `path` | string | yes | - |
+| `repository` | string | yes | - |
+| `sha256` | string | yes | - |
+| `size` | integer (int64) | yes | - |
+| `version` | string | yes | - |
 | `version_count` | integer | no | Only with group=package: the number of versions of the package that match the search |
 
 ### SearchRepositoryHit
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `description` | string | no | - |
-| `format` | string | no | - |
-| `name` | string | no | - |
+| `description` | string | yes | - |
+| `format` | string | yes | - |
+| `name` | string | yes | - |
 
 ### SearchResult
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `packages` | array of [SearchPackageHit](#searchpackagehit) | no | Matching packages/artifacts, best match first (exact name, prefix, other substring), then newest first. With group=package, one entry per package: its latest version |
-| `repositories` | array of [SearchRepositoryHit](#searchrepositoryhit) | no | Repositories whose own name matches the query, ordered by name |
-| `total` | integer | no | Number of matching packages (repositories are not counted); with group=package, the number of distinct packages |
+| `packages` | array of [SearchPackageHit](#searchpackagehit) | yes | Matching packages/artifacts, best match first (exact name, prefix, other substring), then newest first. With group=package, one entry per package: its latest version |
+| `repositories` | array of [SearchRepositoryHit](#searchrepositoryhit) | yes | Repositories whose own name matches the query, ordered by name |
+| `total` | integer | yes | Number of matching packages (repositories are not counted); with group=package, the number of distinct packages |
 
 ### SecurityFinding
 
@@ -2201,17 +2201,17 @@ Counts of the scans in the overview.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `completed` | integer | no | - |
-| `failed` | integer | no | - |
-| `partial` | integer | no | - |
-| `quarantined` | integer | no | - |
-| `scanning` | integer | no | Scans still pending or running. |
-| `severity_at_least` | object | no | Scans with at least one finding of that severity or worse: `high` counts the scans with a critical or a high finding, and so on. Matches the `severity` filter of the list. |
-| `severity_at_least.critical` | integer | no | - |
-| `severity_at_least.high` | integer | no | - |
-| `severity_at_least.low` | integer | no | - |
-| `severity_at_least.medium` | integer | no | - |
-| `total` | integer | no | - |
+| `completed` | integer | yes | - |
+| `failed` | integer | yes | - |
+| `partial` | integer | yes | - |
+| `quarantined` | integer | yes | - |
+| `scanning` | integer | yes | Scans still pending or running. |
+| `severity_at_least` | object | yes | Scans with at least one finding of that severity or worse: `high` counts the scans with a critical or a high finding, and so on. Matches the `severity` filter of the list. |
+| `severity_at_least.critical` | integer | yes | - |
+| `severity_at_least.high` | integer | yes | - |
+| `severity_at_least.low` | integer | yes | - |
+| `severity_at_least.medium` | integer | yes | - |
+| `total` | integer | yes | - |
 
 ### VulnScanner
 
@@ -2233,20 +2233,20 @@ Whether one vulnerability scanner can run on the server. Fixed, client-safe text
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `content_type` | string | no | - |
-| `created_at` | string (date-time) | no | - |
-| `enabled` | boolean | no | - |
-| `events` | array of string | no | Items: one of: `artifact.uploaded`, `artifact.deleted`, `repository.created`, `repository.deleted`, `artifact.restored`, `artifact.purged`, `repository.restored`, `repository.purged`, `bundle.promoted`, `vulnerability.new`. |
-| `has_secret` | boolean | no | Secret is write-only and never returned |
-| `id` | string (uuid) | no | - |
-| `max_retries` | integer | no | - |
-| `name` | string | no | - |
-| `payload_format` | string | no | Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes. One of: `openartifact`, `cloudevents`, `slack`, `teams`, `discord`. Default: `openartifact`. |
-| `repository_id` | string (uuid) | no | Nullable. |
-| `ssl_verify` | boolean | no | - |
-| `timeout_seconds` | integer | no | - |
-| `updated_at` | string (date-time) | no | - |
-| `url` | string (uri) | no | - |
+| `content_type` | string | yes | - |
+| `created_at` | string (date-time) | yes | - |
+| `enabled` | boolean | yes | - |
+| `events` | array of string | yes | Items: one of: `artifact.uploaded`, `artifact.deleted`, `repository.created`, `repository.deleted`, `artifact.restored`, `artifact.purged`, `repository.restored`, `repository.purged`, `bundle.promoted`, `vulnerability.new`. |
+| `has_secret` | boolean | yes | Secret is write-only and never returned |
+| `id` | string (uuid) | yes | - |
+| `max_retries` | integer | yes | - |
+| `name` | string | yes | - |
+| `payload_format` | string | yes | Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes. One of: `openartifact`, `cloudevents`, `slack`, `teams`, `discord`. Default: `openartifact`. |
+| `repository_id` | string (uuid) | yes | Nullable. |
+| `ssl_verify` | boolean | yes | - |
+| `timeout_seconds` | integer | yes | - |
+| `updated_at` | string (date-time) | yes | - |
+| `url` | string (uri) | yes | - |
 
 ### WebhookDelivery
 
