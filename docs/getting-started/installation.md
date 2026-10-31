@@ -242,7 +242,7 @@ The web UI is an installable app (PWA): it opens in its own window without brows
 What the installed app does and does not do:
 
 - It is the same UI, served by the same server, and signs in like any browser tab: no separate login mode, and sessions, tokens and permissions are unchanged.
-- The service worker (`/sw.js`) caches only the build assets and the static app shell (offline page, icons, manifest). API, repository (`/repos/`), registry (`/v2/`), `/metrics`, `/health`, login and SSO responses are never cached and never touched by the worker, so no data is served from a previous session.
+- The service worker (`/sw.js`) caches only the build assets and the static app shell (offline page, icons, manifest). API, repository (`/repos/`), registry (`/v2/`), `/metrics`, `/health`, login and SSO responses are never cached and never touched by the worker, so no data is served from a previous session. A server built without a release stamp (version `dev`, a plain `go build`) is a development instance: the UI registers no worker there and removes one an earlier visit left, so a rebuild never offers an update.
 - Without a network connection, opening a page shows a small "You are offline" page with a **Try again** link instead of the browser error page.
 - After an upgrade the UI shows a **New version available** notice with a **Reload** button. The page is never reloaded on its own, so a form in progress is not lost; the new version is used after you click it (or reopen the app).
 - A reverse proxy must pass `/sw.js` and `/manifest.webmanifest` on with their `Cache-Control: no-cache` header, or an upgrade is noticed late. To remove the app, uninstall it from the browser or OS like any other app.

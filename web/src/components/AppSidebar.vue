@@ -17,7 +17,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     tabindex="-1"
     class="flex shrink-0 flex-col border-r border-border bg-surface outline-none
       max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:w-72 max-md:max-w-[85vw] max-md:shadow-xl max-md:transition-transform max-md:duration-200 max-md:ease-out
-      motion-reduce:transition-none
       md:relative md:transition-[width] md:duration-200 md:ease-out"
     :class="[
       collapsed ? 'md:w-16' : 'md:w-60',

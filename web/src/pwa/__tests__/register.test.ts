@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach } from 'bun:test'
 import { createPinia, setActivePinia } from 'pinia'
-import { registerServiceWorker, startServiceWorker } from '../register'
+import { registerServiceWorker, retireServiceWorkers, startServiceWorker, startServiceWorkerForServer } from '../register'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n'
 
@@ -247,5 +247,63 @@ describe('startServiceWorker update toast', () => {
     } finally {
       Reflect.deleteProperty(navigator, 'serviceWorker')
     }
+  })
+})
+
+describe('startServiceWorkerForServer', () => {
+  function install(registrations: Array<{ unregister: () => Promise<boolean> }>) {
+    const reg = new FakeRegistration()
+    const c = new FakeContainer(reg, false) as FakeContainer & { getRegistrations?: () => Promise<unknown[]> }
+    c.getRegistrations = () => Promise.resolve(registrations)
+    Object.defineProperty(navigator, 'serviceWorker', { value: c, configurable: true })
+    return c
+  }
+  const settle = () => new Promise((r) => setTimeout(r, 0))
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('registers the worker of a release build', async () => {
+    const c = install([])
+    try {
+      await startServiceWorkerForServer(() => Promise.resolve('0.15.1'))
+      await settle()
+      expect(c.registered).toEqual([['/sw.js', { scope: '/' }]])
+    } finally {
+      Reflect.deleteProperty(navigator, 'serviceWorker')
+    }
+  })
+
+  it('registers no worker for a development server and removes one left by an earlier visit', async () => {
+    let unregistered = 0
+    const c = install([{ unregister: () => Promise.resolve(++unregistered > 0) }])
+    try {
+      await startServiceWorkerForServer(() => Promise.resolve('dev'))
+      await settle()
+      expect(c.registered).toEqual([])
+      expect(unregistered).toBe(1)
+    } finally {
+      Reflect.deleteProperty(navigator, 'serviceWorker')
+    }
+  })
+
+  it('treats a server that does not say its version as a release', async () => {
+    const c = install([])
+    try {
+      await startServiceWorkerForServer(() => Promise.resolve(null))
+      await settle()
+      expect(c.registered).toHaveLength(1)
+    } finally {
+      Reflect.deleteProperty(navigator, 'serviceWorker')
+    }
+  })
+})
+
+describe('retireServiceWorkers', () => {
+  it('does nothing without service worker support, and survives a failing unregister', async () => {
+    await retireServiceWorkers(undefined)
+    const failing = { getRegistrations: () => Promise.resolve([{ unregister: () => Promise.reject(new Error('busy')) }]) }
+    await retireServiceWorkers(failing as unknown as ServiceWorkerContainer)
   })
 })

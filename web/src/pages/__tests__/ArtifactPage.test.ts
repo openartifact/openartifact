@@ -155,7 +155,7 @@ describe('ArtifactPage', () => {
     const { wrapper } = await mountAt('/repos/web/packages/@acme/widget', true)
     await wrapper.get('[data-testid=artifact-menu]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid=action-delete]').trigger('click')
+    document.body.querySelector<HTMLElement>('[data-testid=action-delete]')!.click()
     await flushPromises()
     expect(sent().some((c) => c.startsWith('DELETE'))).toBe(false)
     const confirm = [...document.body.querySelectorAll('button')].filter((b) => b.textContent?.trim() === 'Delete version').pop()!

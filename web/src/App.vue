@@ -27,6 +27,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- While the off-canvas menu is open nothing behind it can take focus. -->
     <div class="flex min-w-0 flex-1 flex-col" :inert="showShell && isMobile && ui.mobileNavOpen">
       <AppHeader v-if="showShell" />
+      <ToastBanner />
       <main
         id="main-content"
         class="nice-scroll flex-1 overflow-auto outline-none"
@@ -48,6 +49,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
 
     <ToastHost />
+    <TooltipHost />
     <!-- The palette is a separate chunk, requested the first time it opens. -->
     <CommandPalette v-if="showShell && ui.commandPaletteLoaded" />
   </div>
@@ -60,7 +62,9 @@ import { useEventListener, useMediaQuery } from '@vueuse/core'
 import AppHeader from './components/AppHeader.vue'
 import AppSidebar from './components/AppSidebar.vue'
 import PoweredBy from './components/PoweredBy.vue'
+import ToastBanner from './components/ToastBanner.vue'
 import ToastHost from './components/ToastHost.vue'
+import TooltipHost from './components/ui/TooltipHost.vue'
 import PageLoadingFallback from './components/PageLoadingFallback.vue'
 import { useUIStore } from './stores/ui'
 import { useSessionStore } from './stores/session'

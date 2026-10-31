@@ -14,7 +14,8 @@ import { useSessionStore } from './stores/session'
 import { isSessionExpired } from './api/client'
 import { initI18n, t } from './i18n'
 import { captureInstallPrompt } from './composables/useInstallPrompt'
-import { startServiceWorker } from './pwa/register'
+import { retireServiceWorkers, startServiceWorkerForServer } from './pwa/register'
+import { loadAppVersion } from './composables/useAppVersion'
 import { recordError, startTelemetry, stopTelemetry } from './telemetry'
 
 // The catalog of the user's language is fetched before anything renders in it.
@@ -77,5 +78,8 @@ watch(
 app.mount('#app')
 void branding.refresh()
 
-// Not in dev: Vite serves modules the worker would otherwise have to ignore.
-if (import.meta.env.PROD) startServiceWorker()
+// Not in dev: Vite serves modules the worker would otherwise have to ignore, and a development
+// server (an unstamped build) would offer an update after every rebuild. Both also drop a worker an
+// earlier visit left behind.
+if (import.meta.env.PROD) void startServiceWorkerForServer(loadAppVersion)
+else void retireServiceWorkers()

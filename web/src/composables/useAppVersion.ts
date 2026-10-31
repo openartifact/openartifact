@@ -32,6 +32,11 @@ function load(): Promise<void> {
   return inflight
 }
 
+/** The server version once the system info has been fetched; null when the server does not say or cannot be reached. */
+export function loadAppVersion(): Promise<string | null> {
+  return load().then(() => version.value)
+}
+
 export function useAppVersion(): Ref<string | null> {
   void load()
   return version

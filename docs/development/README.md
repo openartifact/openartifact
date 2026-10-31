@@ -72,6 +72,8 @@ bun run build          # → web/dist, embedded into the server binary
 bun run generate-api   # regenerate src/api/generated from internal/api/openapi.json
 ```
 
+The UI registers its service worker only in a production build served by a stamped server (`make build` stamps the version; a plain `go build` reports `dev`), and removes a worker an earlier visit left in any other case, so a development instance does not offer an update after every rebuild.
+
 Start the server on `:8080` for the dev server to talk to. Build the server with `-tags dev` and set `OPENARTIFACT_DEV=1` to make it proxy UI requests to `http://localhost:5173` instead of serving the embedded build (release binaries ignore the variable).
 
 ### Binary size

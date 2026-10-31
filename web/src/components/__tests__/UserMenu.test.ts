@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, beforeEach, spyOn, type Mock } from 'bun:test'
-import { mount, flushPromises } from '@vue/test-utils'
+import { DOMWrapper, mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createPinia, setActivePinia, type StoreGeneric } from 'pinia'
 import * as authApi from '../../api/auth'
@@ -13,6 +13,9 @@ import { useThemeStore } from '../../stores/theme'
 import { useToastStore } from '../../stores/toast'
 import { useUIStore } from '../../stores/ui'
 import UserMenu from '../UserMenu.vue'
+
+// The panel is teleported to the body, outside the wrapper.
+const body = () => new DOMWrapper(document.body)
 
 let session: StoreGeneric
 let toasts: StoreGeneric
@@ -36,6 +39,7 @@ async function mountMenu() {
 
 describe('UserMenu', () => {
   beforeEach(() => {
+    document.body.replaceChildren()
     setActivePinia(createPinia())
     session = useSessionStore()
     toasts = useToastStore()
@@ -49,45 +53,75 @@ describe('UserMenu', () => {
     session.user = makeUser({ username: 'chen_wei', is_admin: true })
     const { wrapper } = await mountMenu()
     expect(wrapper.get('[data-testid="user-menu"]').attributes('aria-label')).toBe('Account menu for chen_wei')
-    expect(wrapper.get('[data-testid="user-menu-name"]').text()).toBe('chen_wei')
-    expect(wrapper.get('[data-testid="user-menu-role"]').text()).toBe('Administrator')
+    expect(body().get('[data-testid="user-menu-name"]').text()).toBe('chen_wei')
+    expect(body().get('[data-testid="user-menu-role"]').text()).toBe('Administrator')
   })
 
   it('shows a non-admin as a member and "?" without a user', async () => {
     session.user = makeUser()
-    expect((await mountMenu()).wrapper.get('[data-testid="user-menu-role"]').text()).toBe('Member')
+    expect((await mountMenu(), body()).get('[data-testid="user-menu-role"]').text()).toBe('Member')
     session.user = null
     expect((await mountMenu()).wrapper.get('[data-testid="user-menu"] [data-initial]').attributes('data-initial')).toBe('?')
   })
 
   it('links the profile and the personal access tokens, and closes on navigation', async () => {
     session.user = makeUser()
-    const { wrapper, router } = await mountMenu()
-    expect(wrapper.find('a[href="/settings/profile"]').exists()).toBe(true)
-    await wrapper.get('a[href="/settings/tokens?type=personal"]').trigger('click')
+    const { router } = await mountMenu()
+    expect(body().find('a[href="/settings/profile"]').exists()).toBe(true)
+    await body().get('a[href="/settings/tokens?type=personal"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/settings/tokens?type=personal')
-    expect(wrapper.find('[data-testid="user-menu-panel"]').exists()).toBe(false)
+    expect(body().find('[data-testid="user-menu-panel"]').exists()).toBe(false)
+  })
+
+  it('is a disclosure button: collapsed until pressed, then expanded and controlling a fixed panel on the body', async () => {
+    session.user = makeUser()
+    const { wrapper } = await mountMenu()
+    const button = wrapper.get('[data-testid="user-menu"]')
+    const panel = body().get('[data-testid="user-menu-panel"]')
+    expect(button.attributes('aria-expanded')).toBe('true')
+    expect(button.attributes('aria-controls')).toBe(panel.attributes('id'))
+    expect(wrapper.element.contains(panel.element)).toBe(false)
+    expect((panel.element as HTMLElement).style.position).toBe('fixed')
+  })
+
+  it('closes on Escape with the focus back on the menu button', async () => {
+    session.user = makeUser()
+    const { wrapper } = await mountMenu()
+    ;(body().get('[data-testid="about-open"]').element as HTMLElement).focus()
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(body().find('[data-testid="user-menu-panel"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="user-menu"]').attributes('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="user-menu"]').element)
+  })
+
+  it('closes on a press outside', async () => {
+    session.user = makeUser()
+    await mountMenu()
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await flushPromises()
+    expect(body().find('[data-testid="user-menu-panel"]').exists()).toBe(false)
   })
 
   it('switches the theme between light, dark and system', async () => {
     session.user = makeUser()
     const theme = useThemeStore()
     const { wrapper } = await mountMenu()
-    const group = wrapper.get('[role="radiogroup"]')
+    const group = body().get('[role="radiogroup"]')
     expect(group.attributes('aria-label')).toBe('Theme')
-    await wrapper.get('[data-testid="theme-dark"]').trigger('click')
+    await body().get('[data-testid="theme-dark"]').trigger('click')
     expect(theme.mode).toBe('dark')
-    expect(wrapper.get('[data-testid="theme-dark"]').attributes('aria-checked')).toBe('true')
-    expect(wrapper.get('[data-testid="theme-light"]').attributes('aria-checked')).toBe('false')
-    await wrapper.get('[data-testid="theme-auto"]').trigger('click')
+    expect(body().get('[data-testid="theme-dark"]').attributes('aria-checked')).toBe('true')
+    expect(body().get('[data-testid="theme-light"]').attributes('aria-checked')).toBe('false')
+    await body().get('[data-testid="theme-auto"]').trigger('click')
     expect(theme.mode).toBe('auto')
   })
 
   it('opens About with the attribution', async () => {
     session.user = makeUser()
     const { wrapper } = await mountMenu()
-    await wrapper.get('[data-testid="about-open"]').trigger('click')
+    await body().get('[data-testid="about-open"]').trigger('click')
     await flushPromises()
     expect(document.body.textContent).toContain('Powered by OpenArtifact')
   })
@@ -95,7 +129,7 @@ describe('UserMenu', () => {
   it('signs out, clears the session and goes to /login', async () => {
     session.user = makeUser()
     const { wrapper, router } = await mountMenu()
-    await wrapper.get('[data-testid="sign-out"]').trigger('click')
+    await body().get('[data-testid="sign-out"]').trigger('click')
     await flushPromises()
     expect(logout).toHaveBeenCalled()
     expect(session.user).toBeNull()
@@ -106,7 +140,7 @@ describe('UserMenu', () => {
     logout.mockRejectedValueOnce(new Error('network fail'))
     session.user = makeUser()
     const { wrapper, router } = await mountMenu()
-    await wrapper.get('[data-testid="sign-out"]').trigger('click')
+    await body().get('[data-testid="sign-out"]').trigger('click')
     await flushPromises()
     expect(session.user).not.toBeNull()
     expect(router.currentRoute.value.path).toBe('/repos')
@@ -117,7 +151,7 @@ describe('UserMenu', () => {
     logout.mockRejectedValueOnce(new ApiError('Unauthorized', 401))
     session.user = makeUser()
     const { wrapper, router } = await mountMenu()
-    await wrapper.get('[data-testid="sign-out"]').trigger('click')
+    await body().get('[data-testid="sign-out"]').trigger('click')
     await flushPromises()
     expect(session.user).toBeNull()
     expect(router.currentRoute.value.path).toBe('/login')
@@ -127,7 +161,7 @@ describe('UserMenu', () => {
     useUIStore().sidebarCollapsed = true
     session.user = makeUser()
     const { wrapper, router } = await mountMenu()
-    await wrapper.get('[data-testid="sign-out"]').trigger('click')
+    await body().get('[data-testid="sign-out"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/login')
   })
