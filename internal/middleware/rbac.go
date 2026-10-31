@@ -895,6 +895,7 @@ func isRepoAvailabilityRoute(segs []string) bool {
 func isRepoActivityRoute(method string, segs []string) bool {
 	return isSafeMethod(method) && len(segs) == 3 && segs[0] == "repositories" && isPlainName(segs[1]) && segs[2] == "activity"
 }
+
 // isDelegatedRepoReadOrQuota reports whether {name}/{leaf} is a delegated
 // route of a repository: any quota route but the reconcile POST (a different
 // path depth), and the GET usage and members reads.
