@@ -24,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
+	"github.com/openartifact/openartifact/internal/proxy"
 )
 
 // curationMockDBStore is what curationMockDB is used as.
@@ -138,6 +139,22 @@ func (f fakePublished) PublishTime(_ context.Context, _ *models.Repository, pkg,
 	t, ok := f[pkg+"@"+version]
 
 	return t, ok
+}
+
+func (fakePublished) HeldBackVersions(context.Context, *models.Repository, string) ([]proxy.HeldBack, bool, error) {
+	return nil, false, nil
+}
+
+// fakeHeld lists a fixed set of held-back versions.
+type fakeHeld struct {
+	fakePublished
+
+	held      []proxy.HeldBack
+	supported bool
+}
+
+func (f fakeHeld) HeldBackVersions(context.Context, *models.Repository, string) ([]proxy.HeldBack, bool, error) {
+	return f.held, f.supported, nil
 }
 
 func curationRequest(
@@ -508,5 +525,54 @@ func TestCurationAvailabilityWithoutSourceOrRules(t *testing.T) {
 	if rw := curationRequest(t, db, nil, http.MethodGet, "/api/v1/repositories/px/availability?package=a&version=1", ""); rw.Code !=
 		http.StatusInternalServerError {
 		t.Errorf("rules read failure: status %d, want 500", rw.Code)
+	}
+}
+
+func TestCurationHeldBack(t *testing.T) {
+	published := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
+	until := published.Add(24 * time.Hour)
+	src := fakeHeld{supported: true, held: []proxy.HeldBack{
+		{Version: "2.0.0", Published: published, Hold: curation.Hold{Source: curation.SourceMinAge, Detail: "too young", Until: until}},
+		{Version: "1.0.0", Hold: curation.Hold{Source: curation.SourceCuration, Detail: "blocked", Rule: &curation.Rule{ID: missingID}}},
+	}}
+	path := "/api/v1/repositories/px/held-back-versions?package=lib"
+
+	got := decodeResp[responses.HeldBackResponse](t, curationRequest(t, newCurationDB(), src, http.MethodGet, path, ""))
+	if !got.Supported || len(got.Versions) != 2 {
+		t.Fatalf("response = %+v, want two supported versions", got)
+	}
+
+	if v := got.Versions[0]; v.Version != "2.0.0" || v.PublishedAt != published.Format(time.RFC3339) ||
+		len(v.Reasons) != 1 || v.Reasons[0].Until != until.Format(time.RFC3339) || v.Reasons[0].RuleID != "" {
+		t.Errorf("min_age version = %+v", v)
+	}
+
+	if v := got.Versions[1]; v.PublishedAt != "" || len(v.Reasons) != 1 || v.Reasons[0].RuleID != missingID || v.Reasons[0].Until != "" {
+		t.Errorf("curated version = %+v", v)
+	}
+
+	empty := decodeResp[responses.HeldBackResponse](t, curationRequest(t, newCurationDB(), fakeHeld{}, http.MethodGet, path, ""))
+	if empty.Supported || empty.Versions == nil || len(empty.Versions) != 0 {
+		t.Errorf("unsupported = %+v, want supported false and an empty (non-null) list", empty)
+	}
+
+	for name, tc := range map[string]struct {
+		path string
+		src  PublishTimeSource
+	}{
+		"no package":   {"/api/v1/repositories/px/held-back-versions", src},
+		"hosted":       {"/api/v1/repositories/hosted/held-back-versions?package=lib", src},
+		"group":        {"/api/v1/repositories/grp/held-back-versions?package=lib", src},
+		"no source":    {path, nil},
+		"unknown repo": {"/api/v1/repositories/nope/held-back-versions?package=lib", src},
+	} {
+		want := http.StatusBadRequest
+		if name == "unknown repo" {
+			want = http.StatusNotFound
+		}
+
+		if rw := curationRequest(t, newCurationDB(), tc.src, http.MethodGet, tc.path, ""); rw.Code != want {
+			t.Errorf("%s: status %d, want %d", name, rw.Code, want)
+		}
 	}
 }

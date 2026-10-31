@@ -258,3 +258,32 @@ func TestCargoCuration_PublishedReadsTheCachedIndexOnly(t *testing.T) {
 		t.Error("PublishTime reached the upstream")
 	}
 }
+
+func TestCargoCuration_HeldBackVersionsReadTheCachedIndexOnly(t *testing.T) {
+	f, g := cargoFixture(t)
+	g.pubtime = map[string]string{"demo/1.0.0": "2025-01-02T03:04:05Z"}
+	f.useCuration(curation.ModeDenylist, blockRule("demo", "1.1.0"))
+
+	ctx := context.Background()
+
+	if held, supported, err := f.svc.HeldBackVersions(ctx, f.repo, "demo"); err != nil || supported || len(held) != 0 {
+		t.Fatalf("index not cached: held=%v supported=%v err=%v", held, supported, err)
+	}
+
+	if f.hits.Load() != 0 {
+		t.Fatalf("HeldBackVersions reached the upstream: %d requests", f.hits.Load())
+	}
+
+	f.do(http.MethodGet, cargoGateIndex)
+
+	hits := f.hits.Load()
+
+	held, supported, err := f.svc.HeldBackVersions(ctx, f.repo, "demo")
+	if err != nil || !supported || len(held) != 1 || held[0].Version != "1.1.0" || held[0].Hold.Source != curation.SourceCuration {
+		t.Fatalf("held=%+v supported=%v err=%v; want only 1.1.0, curated", held, supported, err)
+	}
+
+	if f.hits.Load() != hits {
+		t.Error("HeldBackVersions reached the upstream")
+	}
+}

@@ -195,5 +195,22 @@
   "artifact.activity.column.when": "日時",
   "artifact.activity.column.actor": "実行者",
   "artifact.activity.column.action": "操作",
-  "artifact.activity.column.details": "詳細"
+  "artifact.activity.column.details": "詳細",
+  "artifact.availability.title": "クライアントには利用できません",
+  "artifact.availability.intro": "{name} {version} はこのリポジトリで保留されています。クライアントはダウンロードできません。",
+  "artifact.availability.source.min_age": "最小経過時間",
+  "artifact.availability.source.curation": "キュレーション",
+  "artifact.availability.source.quarantine": "隔離",
+  "artifact.availability.source.license_policy": "ライセンスポリシー",
+  "artifact.availability.source.repository_blocked": "リポジトリはブロックされています",
+  "artifact.availability.until": "{when}に利用可能",
+  "artifact.availability.untilTitle": "{date}まで保留",
+  "artifact.availability.rule": "キュレーションルールを開く",
+  "artifact.availability.published": "{when}に公開",
+  "artifact.availability.unknownAge": "このリポジトリには最小経過時間がありますが、キャッシュ済みの上流メタデータにこのバージョンの日時がないため、経過時間を確認できませんでした。",
+  "artifact.versions.column.availability": "可用性",
+  "artifact.versions.availableAt": "{when}に利用可能",
+  "artifact.versions.blocked": "ブロック済み: {reason}",
+  "artifact.heldBack.title": "このリポジトリで保留中",
+  "artifact.heldBack.hint": "{name} のこれらのバージョンは上流に存在しますが、まだ配信されていません。"
 }

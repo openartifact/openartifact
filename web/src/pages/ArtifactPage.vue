@@ -19,6 +19,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <template v-else-if="versions.length === 0">
       <PageHeader :title="pkgName" :crumbs="crumbs" />
+      <HeldBackList v-if="heldBack.length > 0" class="mb-6" :pkg="pkgName" :held="heldBack" />
       <StateBlock variant="empty" :title="t('artifact.notFound.title')" :hint="tp('artifact.notFound.hint', { name: pkgName, repo: repoName })">
         <template #action>
           <AppButton :to="{ path: '/packages', query: { q: pkgName } }">{{ t('artifact.notFound.search') }}</AppButton>
@@ -29,6 +30,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <template v-else-if="!entry">
       <PageHeader :title="pkgName" :crumbs="crumbs" />
+      <AvailabilityPanel v-if="requestedVersion" class="mb-6" :repo="repoName" :pkg="pkgName" :version="requestedVersion" :enabled="explainable" :can-manage="caps.maintain" />
       <StateBlock variant="empty" :title="t('artifact.versionNotFound.title')" :hint="tp('artifact.versionNotFound.hint', { version: requestedVersion ?? '', name: pkgName })">
         <template #action><AppButton :to="artifactPath(repoName, pkgName)">{{ t('artifact.versionNotFound.latest') }}</AppButton></template>
       </StateBlock>
@@ -60,6 +62,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <div class="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <div class="min-w-0 space-y-6">
+          <AvailabilityPanel :repo="repoName" :pkg="pkgName" :version="entry.version" :enabled="explainable" :can-manage="caps.maintain" />
           <ArtifactInstall
             :format="format"
             :repo="repoName"
@@ -97,6 +100,8 @@ import ArtifactActions from '../components/artifact/ArtifactActions.vue'
 import ArtifactAside from '../components/artifact/ArtifactAside.vue'
 import ArtifactInstall from '../components/artifact/ArtifactInstall.vue'
 import ArtifactOverviewTab from '../components/artifact/ArtifactOverviewTab.vue'
+import AvailabilityPanel from '../components/artifact/AvailabilityPanel.vue'
+import HeldBackList from '../components/artifact/HeldBackList.vue'
 import AppTabs from '../components/ui/AppTabs.vue'
 import SeverityBadge from '../components/ui/SeverityBadge.vue'
 import StateBlock from '../components/ui/StateBlock.vue'
@@ -125,11 +130,14 @@ const param = (name: string): string | undefined => {
 }
 const requestedVersion = computed(() => param('v'))
 
-const { repoName, pkgName, versions, entry, detail, summary, format, repository, caps, loading, error, reload } = useArtifact({
+const { repoName, pkgName, versions, entry, detail, summary, heldBack, format, repository, caps, loading, error, reload } = useArtifact({
   repo: () => param('repo') ?? '',
   pkg: () => param('pkg') ?? '',
   version: () => requestedVersion.value,
 })
+
+// A group repository has no verdict of its own: its members answer.
+const explainable = computed(() => repository.value !== null && repository.value.repo_type !== 'group')
 
 const worst = computed(() => worstSeverity(summary.value?.vuln))
 

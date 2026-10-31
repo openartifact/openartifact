@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { computed, inject, provide, ref, shallowRef, watch, type ComputedRef, type InjectionKey, type Ref } from 'vue'
+import { listHeldBackVersions, type HeldBackVersion } from '../api/curation'
 import { getPackageDetail, getSecuritySummary, type PackageDetail, type SecuritySummary } from '../api/artifact'
 import { getRepository, listPackageVersions, type PackageItem, type Repository } from '../api/repositories'
 import { artifactCapabilities, type ArtifactCapabilities } from '../lib/artifactSecurity'
@@ -21,6 +22,8 @@ export interface ArtifactContext {
   detail: Ref<PackageDetail | null>
   /** Why the shown version's detail could not load; empty otherwise. */
   detailError: Ref<string>
+  /** Versions of a proxy package its gate holds back (minimum age, curation), from cached metadata; empty otherwise. */
+  heldBack: Ref<HeldBackVersion[]>
   /** Counts of the shown version's scans; null while loading, when it failed or for a never-scanned version. */
   summary: Ref<SecuritySummary | null>
   caps: ComputedRef<ArtifactCapabilities>
@@ -59,6 +62,7 @@ export function useArtifact(source: ArtifactSource) {
   const detail = ref<PackageDetail | null>(null)
   const detailError = ref('')
   const summary = ref<SecuritySummary | null>(null)
+  const heldBack = ref<HeldBackVersion[]>([])
 
   const repoName = computed(source.repo)
   const pkgName = computed(source.pkg)
@@ -77,12 +81,27 @@ export function useArtifact(source: ArtifactSource) {
       if (mine !== listGeneration) return
       repository.value = repo
       rows.value = list.filter((p) => p.name === pkgName.value)
+      void loadHeldBack()
     } catch (err) {
       if (mine !== listGeneration) return
       rows.value = []
+      heldBack.value = []
       error.value = err instanceof Error ? err.message : String(err)
     } finally {
       if (mine === listGeneration) loading.value = false
+    }
+  }
+
+  // Versions the gate holds back are not stored, so they are not in the list: ask which they are.
+  async function loadHeldBack(): Promise<void> {
+    const mine = listGeneration
+    heldBack.value = []
+    if (repository.value?.repo_type !== 'proxy') return
+    try {
+      const res = await listHeldBackVersions(repoName.value, pkgName.value)
+      if (mine === listGeneration) heldBack.value = res.versions
+    } catch {
+      // An extra: the page shows the versions it has.
     }
   }
 
@@ -150,6 +169,7 @@ export function useArtifact(source: ArtifactSource) {
     detail,
     detailError,
     summary,
+    heldBack,
     caps,
     reload: async () => {
       await loadList()

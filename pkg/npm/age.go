@@ -196,3 +196,38 @@ func higher(a, b string) bool {
 
 	return strings.Compare(a, b) > 0
 }
+
+// VersionTime is one version of a packument with its time entry.
+type VersionTime struct {
+	Version string
+	// Published is the zero time when the packument has no RFC 3339 time entry for it.
+	Published time.Time
+}
+
+// Versions lists the versions of a full packument with their time entries, in
+// no particular order.
+func Versions(doc []byte) ([]VersionTime, error) {
+	top, err := parsePackument(doc)
+	if err != nil {
+		return nil, err
+	}
+
+	versions, err := objectOf(top["versions"])
+	if err != nil {
+		return nil, err
+	}
+
+	times, err := objectOf(top["time"])
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]VersionTime, 0, len(versions))
+
+	for v := range versions {
+		t, _ := publishedAt(times[v])
+		out = append(out, VersionTime{Version: v, Published: t})
+	}
+
+	return out, nil
+}

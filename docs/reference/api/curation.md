@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Curation API
 
-5 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+6 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -145,4 +145,28 @@ Remove a rule. The rule must belong to the repository in the path. Audited as `c
 | `400` | The repository is not a proxy repository (`validation_failed`) | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or rule not found (also a rule of another repository, or an id that is not a UUID) | `application/json`: [Error](schemas.md#error) |
+
+### `GET /api/v1/repositories/{name}/held-back-versions`
+
+List the versions of a proxy package held back by the gate
+
+Lists the versions of one package of a proxy repository that the repository's gate keeps from its clients: the minimum age and the curation rules, the same gate the proxy applies to downloads and metadata. The versions are read from the upstream metadata already cached, never fetched, so `supported` is `false` (and the list empty) when the format cannot list the versions of a package or nothing is cached yet. Newest first. Only proxy repositories hold versions back: any other repository type is a 400.
+
+**Security:** `bearerAuth` or `cookieAuth` or .
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+| `package` | query | string | yes | Package name, at most 1024 bytes. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The held-back versions | `application/json`: [HeldBackResponse](schemas.md#heldbackresponse) |
+| `400` | Missing or oversized `package`, or the repository is not a proxy (`validation_failed`) | `application/json`: [Error](schemas.md#error) |
+| `403` | No read access to the repository | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
 

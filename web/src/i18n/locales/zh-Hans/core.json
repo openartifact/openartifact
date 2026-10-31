@@ -32,6 +32,8 @@
   "theme.dark": "深色",
   "theme.auto": "跟随系统",
   "common.justNow": "刚刚",
+  "common.inTime": "{time}后",
+  "common.anyMoment": "即将",
   "common.loading": "加载中...",
   "common.export.jsonl": "导出 JSONL",
   "common.export.csv": "导出 CSV",

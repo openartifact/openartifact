@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { t } from '../i18n'
+import { t, tp } from '../i18n'
 import { formatLocale } from './intl'
 
 type DateInput = string | number | Date | null | undefined
@@ -63,6 +63,22 @@ export function timeAgo(value: DateInput, { fallback = '—', maxDays }: { fallb
   const days = Math.floor(hours / 24)
   if (maxDays !== undefined && days >= maxDays) return formatDate(d)
   return compactUnit(days, 'day')
+}
+
+/**
+ * Countdown to a future time: "in 3h" (narrow unit of the active language, same
+ * granularity as `timeAgo`), "any moment now" under a minute or once it has passed.
+ */
+export function timeUntil(value: DateInput, fallback = '—'): string {
+  const d = toDate(value)
+  if (!d) return fallback
+  const ms = d.getTime() - Date.now()
+  if (ms < 60_000) return t('common.anyMoment')
+  const minutes = Math.ceil(ms / 60_000)
+  if (minutes < 60) return tp('common.inTime', { time: compactUnit(minutes, 'minute') })
+  const hours = Math.ceil(minutes / 60)
+  if (hours < 24) return tp('common.inTime', { time: compactUnit(hours, 'hour') })
+  return tp('common.inTime', { time: compactUnit(Math.ceil(hours / 24), 'day') })
 }
 
 /** True when `value` is a valid timestamp in the past; a missing expiry never expires. */

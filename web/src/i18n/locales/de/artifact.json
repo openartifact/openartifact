@@ -197,5 +197,22 @@
   "artifact.activity.column.when": "Zeitpunkt",
   "artifact.activity.column.actor": "Akteur",
   "artifact.activity.column.action": "Aktion",
-  "artifact.activity.column.details": "Details"
+  "artifact.activity.column.details": "Details",
+  "artifact.availability.title": "Für Clients nicht verfügbar",
+  "artifact.availability.intro": "{name} {version} wird von diesem Repository zurückgehalten: Seine Clients können sie nicht herunterladen.",
+  "artifact.availability.source.min_age": "Mindestalter",
+  "artifact.availability.source.curation": "Curation",
+  "artifact.availability.source.quarantine": "Quarantäne",
+  "artifact.availability.source.license_policy": "Lizenzrichtlinie",
+  "artifact.availability.source.repository_blocked": "Repository gesperrt",
+  "artifact.availability.until": "Verfügbar {when}",
+  "artifact.availability.untilTitle": "Zurückgehalten bis {date}",
+  "artifact.availability.rule": "Curation-Regeln öffnen",
+  "artifact.availability.published": "Veröffentlicht {when}",
+  "artifact.availability.unknownAge": "Dieses Repository hat ein Mindestalter, aber die zwischengespeicherten Upstream-Metadaten datieren diese Version nicht, daher konnte die Altersprüfung nicht laufen.",
+  "artifact.versions.column.availability": "Verfügbarkeit",
+  "artifact.versions.availableAt": "Verfügbar {when}",
+  "artifact.versions.blocked": "Gesperrt: {reason}",
+  "artifact.heldBack.title": "Von diesem Repository zurückgehalten",
+  "artifact.heldBack.hint": "Diese Versionen von {name} existieren upstream, werden aber noch nicht ausgeliefert."
 }

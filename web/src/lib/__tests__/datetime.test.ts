@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'bun:test'
-import { formatDate, formatDateTime, formatTimestamp, formatUtc, isExpired, timeAgo } from '../datetime'
+import { formatDate, formatDateTime, formatTimestamp, formatUtc, isExpired, timeAgo, timeUntil } from '../datetime'
 import { formatDuration } from '../duration'
 
 describe('datetime', () => {
@@ -85,5 +85,22 @@ describe('formatUtc', () => {
   it('falls back for missing or invalid values', () => {
     expect(formatUtc(undefined)).toBe('—')
     expect(formatUtc('nope', 'n/a')).toBe('n/a')
+  })
+})
+
+describe('timeUntil', () => {
+  const from = (ms: number): string => new Date(Date.now() + ms).toISOString()
+  it('counts down in the narrow unit of the span, rounding up', () => {
+    expect(timeUntil(from(30 * 60_000 + 5_000))).toBe('in 31m')
+    expect(timeUntil(from(3 * 3_600_000 - 5_000))).toBe('in 3h')
+    expect(timeUntil(from(50 * 3_600_000))).toBe('in 3d')
+  })
+  it('is "any moment now" under a minute and once passed', () => {
+    expect(timeUntil(from(20_000))).toBe('any moment now')
+    expect(timeUntil(from(-3_600_000))).toBe('any moment now')
+  })
+  it('falls back for nothing', () => {
+    expect(timeUntil(null)).toBe('—')
+    expect(timeUntil('garbage', 'n/a')).toBe('n/a')
   })
 })

@@ -619,6 +619,26 @@ export type AvailabilityReason = {
     rule_id?: string;
 };
 
+export type HeldBackVersion = {
+    version: string;
+    /**
+     * The publish time the upstream states, when known.
+     */
+    published_at?: string;
+    /**
+     * Never empty.
+     */
+    reasons: Array<AvailabilityReason>;
+};
+
+export type HeldBackResponse = {
+    /**
+     * False when the repository's format cannot list the versions of a package or the metadata is not cached yet; versions is then empty.
+     */
+    supported: boolean;
+    versions: Array<HeldBackVersion>;
+};
+
 export type AvailabilityResponse = {
     /**
      * True when no hold applies.
@@ -11992,6 +12012,46 @@ export type GetApiV1RepositoriesByNameAvailabilityResponses = {
 };
 
 export type GetApiV1RepositoriesByNameAvailabilityResponse = GetApiV1RepositoriesByNameAvailabilityResponses[keyof GetApiV1RepositoriesByNameAvailabilityResponses];
+
+export type GetApiV1RepositoriesByNameHeldBackVersionsData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query: {
+        /**
+         * Package name, at most 1024 bytes.
+         */
+        package: string;
+    };
+    url: '/api/v1/repositories/{name}/held-back-versions';
+};
+
+export type GetApiV1RepositoriesByNameHeldBackVersionsErrors = {
+    /**
+     * Missing or oversized `package`, or the repository is not a proxy (`validation_failed`)
+     */
+    400: Error;
+    /**
+     * No read access to the repository
+     */
+    403: Error;
+    /**
+     * Repository not found
+     */
+    404: Error;
+};
+
+export type GetApiV1RepositoriesByNameHeldBackVersionsError = GetApiV1RepositoriesByNameHeldBackVersionsErrors[keyof GetApiV1RepositoriesByNameHeldBackVersionsErrors];
+
+export type GetApiV1RepositoriesByNameHeldBackVersionsResponses = {
+    /**
+     * The held-back versions
+     */
+    200: HeldBackResponse;
+};
+
+export type GetApiV1RepositoriesByNameHeldBackVersionsResponse = GetApiV1RepositoriesByNameHeldBackVersionsResponses[keyof GetApiV1RepositoriesByNameHeldBackVersionsResponses];
 
 export type DeleteApiV1RepositoriesByNameCleanupPoliciesByIdData = {
     body?: never;

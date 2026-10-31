@@ -232,6 +232,28 @@ curl 'HOST/api/v1/repositories/npm-proxy/availability?package=left-pad&version=1
 
 It needs read access to the repository. Each reason has a `source` (`curation`, `min_age`, `quarantine`, `license_policy` or `repository_blocked`) and a `detail`; a `min_age` reason carries `until`, a `curation` reason the `rule_id` that blocks the version (none when an allowlist simply does not list it). For a proxy the answer covers the blocked flag, the rules and the minimum age. The publish time is read from the metadata already cached, never fetched, and reported as `published_at`; `min_age` is `off` (no minimum age), `checked` or `unknown` (the repository has a minimum age but the cached metadata does not date the version, so it could not be checked). For a hosted repository it covers the blocked flag and the quarantine and license-policy holds of the stored version, for the formats stored in the generic package tables (scan results are matched through the version's files). A group has no verdict of its own and answers `400`: ask one of its members.
 
+
+To tell a version the repository holds back from one that does not exist, list the held-back versions of a package:
+
+```sh
+curl 'HOST/api/v1/repositories/npm-proxy/held-back-versions?package=left-pad' \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
+```json
+{
+  "supported": true,
+  "versions": [
+    {"version": "1.3.1", "published_at": "2026-10-31T08:00:00Z",
+     "reasons": [{"source": "min_age", "detail": "version is younger than the repository's minimum age", "until": "2026-11-01T08:00:00Z"}]},
+    {"version": "1.2.0",
+     "reasons": [{"source": "curation", "detail": "blocked by repository curation: malware", "rule_id": "..."}]}
+  ]
+}
+```
+
+The list is newest first and is computed with the same gate as downloads, from the upstream metadata already cached (the upstream is never asked), so it is empty with `"supported": false` when nothing of the package is cached yet or the format cannot list versions (npm and cargo can). It needs read access to the repository; a repository that is not a proxy is `400`. The package page of the web UI shows these versions greyed out in the Versions tab, with "available in X" or the reason for the block.
+
 ### Behavior notes
 
 - Concurrent requests for the same uncached path share one upstream fetch. Clients get the first byte once the whole file is cached.
