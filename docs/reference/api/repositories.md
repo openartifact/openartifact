@@ -379,6 +379,7 @@ Replace the comps (package groups) XML of a hosted RPM repository. The body is t
 |---|---|---|
 | `200` | comps stored | `application/json`: [CompsUploadResult](schemas.md#compsuploadresult) |
 | `400` | Invalid XML or not an RPM repository | `application/json`: [Error](schemas.md#error) |
+| `403` | Write permission on the repository required | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
 | `413` | Body too large | `application/json`: [Error](schemas.md#error) |
 

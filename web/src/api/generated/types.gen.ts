@@ -1023,11 +1023,14 @@ export type StoragePrimary = {
 export type StorageBackend = {
     id?: string;
     name?: string;
-    kind?: 'filesystem' | 's3' | 'gcs' | 'azure';
+    kind?: 'filesystem' | 's3' | 'garage' | 'seaweedfs' | 'gcs' | 'azure' | 'oci';
     config?: {
         [key: string]: unknown;
     };
-    status?: 'ok' | 'degraded' | 'error' | 'unknown';
+    /**
+     * Result of the last connection test (POST /api/v1/admin/storage/{name}/test); unknown until the backend is tested.
+     */
+    status?: 'unknown' | 'healthy' | 'degraded' | 'unreachable';
     status_message?: string | null;
     last_checked_at?: string | null;
     created_at?: string;
@@ -8394,9 +8397,9 @@ export type GetApiV1AdminStorageByNameError = GetApiV1AdminStorageByNameErrors[k
 
 export type GetApiV1AdminStorageByNameResponses = {
     /**
-     * Storage backend details
+     * Storage backend details, or the primary store for the name primary
      */
-    200: StorageBackend;
+    200: StorageBackend | StoragePrimary;
 };
 
 export type GetApiV1AdminStorageByNameResponse = GetApiV1AdminStorageByNameResponses[keyof GetApiV1AdminStorageByNameResponses];
@@ -13544,6 +13547,10 @@ export type PutApiV1RepositoriesByNameCompsErrors = {
      * Invalid XML or not an RPM repository
      */
     400: Error;
+    /**
+     * Write permission on the repository required
+     */
+    403: Error;
     /**
      * Repository not found
      */

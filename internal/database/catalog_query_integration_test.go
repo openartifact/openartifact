@@ -253,6 +253,45 @@ func TestCatalogRollupTrashed(t *testing.T) {
 	}
 }
 
+// TestCatalogRollupDockerRepository: a docker repository has no hosted branch,
+// so its tags are the first branch of the rollup: the tags of an image group
+// into one package, with or without a search.
+func TestCatalogRollupDockerRepository(t *testing.T) {
+	pg := newQuotaTestDB(t, 4)
+	s := newQuotaSeeder(t, pg, "rollup-docker", "docker")
+
+	seedDockerImage(s, "sha256:aaaa", "v1")
+	seedDockerImage(s, "sha256:bbbb", "v2")
+	s.exec(`UPDATE docker_tags SET created_at = now() - interval '1 hour' WHERE repository_id = $1 AND name = 'v1'`, s.repo)
+
+	for _, tc := range []struct {
+		query, latest string
+		versions      int
+	}{
+		{"", "v2", 2},
+		{"v1", "v1", 1},
+	} {
+		rows, total, err := pg.ListRepoPackageRollup(context.Background(), models.PackageRollupOptions{
+			RepoID: s.repo, RepoFormat: "docker", Query: tc.query, Page: 1, Limit: 10,
+		})
+		if err != nil {
+			t.Fatalf("q=%q: %v", tc.query, err)
+		}
+
+		if total != 1 || len(rows) != 1 || rows[0].Name != "rollup-docker/app" || rows[0].LatestVersion != tc.latest ||
+			rows[0].VersionCount != tc.versions {
+			t.Fatalf(
+				"q=%q: rows %+v total %d, want rollup-docker/app at %s with %d versions",
+				tc.query,
+				rows,
+				total,
+				tc.latest,
+				tc.versions,
+			)
+		}
+	}
+}
+
 // TestCatalogPackageCountPerRepository: the count is per repository and ignores
 // the packages of the others, a repository without packages is 0.
 func TestCatalogPackageCountPerRepository(t *testing.T) {

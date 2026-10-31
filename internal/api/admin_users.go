@@ -130,7 +130,7 @@ func (h *AdminUsersHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page := queryIntParam(r, "page", 1, 1, 0)
+	page := queryIntParam(r, "page", 1, 1, 10000)
 	perPage := queryIntParam(r, "per_page", 50, 1, 200)
 
 	users, total, err := h.db.ListUsers(r.Context(), page, perPage)

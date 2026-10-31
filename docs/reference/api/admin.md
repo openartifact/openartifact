@@ -717,7 +717,7 @@ Fields of the `202` response (`application/json`):
 
 Get storage backend
 
-Get details of a specific storage backend (admin only)
+Get details of a specific storage backend (admin only). The reserved name primary returns the configured primary store (StoragePrimary).
 
 **Parameters**
 
@@ -729,7 +729,7 @@ Get details of a specific storage backend (admin only)
 
 | Status | Description | Body |
 |---|---|---|
-| `200` | Storage backend details | `application/json`: [StorageBackend](schemas.md#storagebackend) |
+| `200` | Storage backend details, or the primary store for the name primary | `application/json`: any |
 | `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |

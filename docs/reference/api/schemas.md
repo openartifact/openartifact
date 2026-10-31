@@ -1796,10 +1796,10 @@ One stored scan result (a package version of one type) that reports something.
 | `config` | object | no | - |
 | `created_at` | string (date-time) | no | - |
 | `id` | string (uuid) | no | - |
-| `kind` | string | no | One of: `filesystem`, `s3`, `gcs`, `azure`. |
+| `kind` | string | no | One of: `filesystem`, `s3`, `garage`, `seaweedfs`, `gcs`, `azure`, `oci`. |
 | `last_checked_at` | string (date-time) | no | Nullable. |
 | `name` | string | no | - |
-| `status` | string | no | One of: `ok`, `degraded`, `error`, `unknown`. |
+| `status` | string | no | Result of the last connection test (POST /api/v1/admin/storage/{name}/test); unknown until the backend is tested. One of: `unknown`, `healthy`, `degraded`, `unreachable`. |
 | `status_message` | string | no | Nullable. |
 | `updated_at` | string (date-time) | no | - |
 | `usage` | object | no | What the backend holds; present on the list and get endpoints. |

@@ -2403,8 +2403,11 @@
             "enum": [
               "filesystem",
               "s3",
+              "garage",
+              "seaweedfs",
               "gcs",
-              "azure"
+              "azure",
+              "oci"
             ]
           },
           "config": {
@@ -2413,11 +2416,12 @@
           "status": {
             "type": "string",
             "enum": [
-              "ok",
+              "unknown",
+              "healthy",
               "degraded",
-              "error",
-              "unknown"
-            ]
+              "unreachable"
+            ],
+            "description": "Result of the last connection test (POST /api/v1/admin/storage/{name}/test); unknown until the backend is tested."
           },
           "status_message": {
             "type": ["string", "null"]
@@ -15940,7 +15944,7 @@
     "/api/v1/admin/storage/{name}": {
       "get": {
         "summary": "Get storage backend",
-        "description": "Get details of a specific storage backend (admin only)",
+        "description": "Get details of a specific storage backend (admin only). The reserved name primary returns the configured primary store (StoragePrimary).",
         "tags": [
           "Admin",
           "Storage"
@@ -15957,11 +15961,18 @@
         ],
         "responses": {
           "200": {
-            "description": "Storage backend details",
+            "description": "Storage backend details, or the primary store for the name primary",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/StorageBackend"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/StorageBackend"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StoragePrimary"
+                    }
+                  ]
                 }
               }
             }
@@ -24426,6 +24437,16 @@
           },
           "400": {
             "description": "Invalid XML or not an RPM repository",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Write permission on the repository required",
             "content": {
               "application/json": {
                 "schema": {
