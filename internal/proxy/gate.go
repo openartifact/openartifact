@@ -156,3 +156,17 @@ func writeGateError(w http.ResponseWriter, err error) bool {
 
 	return true
 }
+
+// PublishTime is the publish time the upstream states for version of pkg in
+// proxy repository repo, read from the metadata already in the cache (it never
+// fetches). ok is false when the format has no publish time, the metadata is
+// not cached or it does not date the version. The REST availability
+// explanation uses it to evaluate the minimum age.
+func (s *Service) PublishTime(ctx context.Context, repo *models.Repository, pkg, version string) (time.Time, bool) {
+	h, found := hooks.Lookup(repo.Format)
+	if !found || h.Published == nil {
+		return time.Time{}, false
+	}
+
+	return h.Published(s, ctx, repo, pkg, version)
+}
