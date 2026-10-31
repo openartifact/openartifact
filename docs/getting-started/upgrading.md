@@ -91,6 +91,8 @@ Migration `004_repository_min_age` adds `repositories.min_age_hours` (default `0
 
 The cleanup policy editor of a repository shows a live preview of what the policy would delete (rows, size, a sample), backed by the new `POST /api/v1/repositories/{name}/cleanup-policies/dry-run`; the dry-run answer gains a `bytes` field. See [Cleanup](../repositories/cleanup-and-quotas.md#api).
 
+The web UI can now edit a proxy repository's upstream, cache TTLs, serve-stale window, minimum age and blocked state (**Edit proxy settings** on the repository page); the upstream URL, username and password fields moved there from the repository's Settings tab. A proxy with nothing cached yet shows its client command and where the first request is fetched from. See [Editing proxy settings in the web UI](../repositories/hosted-proxy-group.md#editing-proxy-settings-in-the-web-ui).
+
 ### 0.15.1
 
 No migrations; replaces 0.15.0 in place. Fixes found by the fuzzers (#336):
