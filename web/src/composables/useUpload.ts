@@ -3,19 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { ref, computed } from 'vue'
-import { ApiError, apiErrorFromBody, csrfHeader, expireSession } from '../api/client'
-
-// Mirrors request()'s error handling for XHR uploads: JSON `{error, code}`
-// bodies become the message instead of the raw response text.
-function parseXhrError(xhr: XMLHttpRequest): ApiError {
-  let body: unknown
-  try {
-    body = JSON.parse(xhr.responseText)
-  } catch {
-    // non-JSON body: keep the HTTP status message
-  }
-  return apiErrorFromBody(xhr.status, body)
-}
+import { upload } from '../api/client'
 
 export type UploadStatus = 'queued' | 'uploading' | 'complete' | 'failed' | 'cancelled'
 
@@ -26,7 +14,7 @@ export interface UploadEntry {
   loaded: number
   total: number
   error?: string
-  xhr?: XMLHttpRequest
+  abort?: AbortController
 }
 
 interface UploadStartOptions {
@@ -60,62 +48,46 @@ export function useUpload() {
   }
 
   function start(entry: UploadEntry, opts: UploadStartOptions): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
-      entry.xhr = xhr
-      entry.status = 'uploading'
-      xhr.open(opts.method ?? 'POST', opts.url)
-      xhr.withCredentials = true
-      xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest')
-      for (const [k, v] of Object.entries(csrfHeader())) xhr.setRequestHeader(k, v)
-      for (const [k, v] of Object.entries(opts.headers ?? {})) xhr.setRequestHeader(k, v)
-      xhr.upload.addEventListener('progress', (ev) => {
-        if (ev.lengthComputable) {
-          entry.loaded = ev.loaded
-          entry.total = ev.total
-        }
-      })
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          entry.status = 'complete'
-          entry.loaded = entry.total
-          resolve()
-          return
-        }
-        const err = parseXhrError(xhr)
-        entry.status = 'failed'
-        entry.error = err.message
-        if (xhr.status === 401) void expireSession()
-        reject(err)
-      })
-      xhr.addEventListener('error', () => {
-        entry.status = 'failed'
-        entry.error = 'network error'
-        reject(new ApiError('network error', 0))
-      })
-      xhr.addEventListener('abort', () => {
-        if (entry.status !== 'complete' && entry.status !== 'failed') entry.status = 'cancelled'
-        reject(new ApiError('aborted', 0))
-      })
-      if (opts.method === 'PUT') {
-        xhr.send(entry.file)
-        return
-      }
+    const abort = new AbortController()
+    entry.abort = abort
+    entry.status = 'uploading'
+    let body: XMLHttpRequestBodyInit
+    if (opts.method === 'PUT') {
+      body = entry.file
+    } else {
       const form = new FormData()
       form.append(opts.field ?? 'file', entry.file, entry.file.name)
       for (const [k, v] of Object.entries(opts.fields ?? {})) form.append(k, v)
-      xhr.send(form)
-    })
+      body = form
+    }
+    return upload(opts.url, {
+      method: opts.method,
+      body,
+      headers: opts.headers,
+      signal: abort.signal,
+      onProgress(loaded, total) {
+        entry.loaded = loaded
+        entry.total = total
+      },
+    }).then(
+      () => {
+        entry.status = 'complete'
+        entry.loaded = entry.total
+      },
+      (err: unknown) => {
+        if (abort.signal.aborted) {
+          if (entry.status !== 'complete' && entry.status !== 'failed') entry.status = 'cancelled'
+        } else {
+          entry.status = 'failed'
+          entry.error = err instanceof Error ? err.message : String(err)
+        }
+        throw err
+      },
+    )
   }
 
   function cancel(entry: UploadEntry): void {
-    if (entry.xhr && (entry.status === 'uploading' || entry.status === 'queued')) {
-      try {
-        entry.xhr.abort()
-      } catch {
-        // ignore
-      }
-    }
+    if (entry.abort && (entry.status === 'uploading' || entry.status === 'queued')) entry.abort.abort()
     // Only entries that are still pending can be cancelled; completed and
     // failed ones keep their final status.
     if (entry.status === 'uploading' || entry.status === 'queued') entry.status = 'cancelled'

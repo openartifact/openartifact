@@ -3,32 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { request, JSON_HEADERS } from './client'
-import type { TokenCreateResponse } from './generated/types.gen'
+import type { TokenCreateResponse, UnifiedToken } from './generated/types.gen'
 
 export type CreatedToken = TokenCreateResponse
 
-export type TokenType = 'personal' | 'project' | 'federation'
+export type { UnifiedToken }
 
-/** One row of the unified token list. The secret is never part of it. */
-export interface UnifiedToken {
-  id: string
-  type: TokenType
-  name: string
-  /** Username: the owner (personal) or the creator (project, federation). */
-  owner: string
-  /** Project of a project token, or of the repository a federation token belongs to. */
-  project?: string
-  /** Repository of a federation token. */
-  repository?: string
-  /** Project role of a project token. */
-  role?: string
-  /** Permission targets a personal token is limited to. */
-  scopes?: string[]
-  created_at: string
-  expires_at?: string
-  last_used_at?: string
-  expired: boolean
-}
+export type TokenType = UnifiedToken['type']
 
 export interface UnifiedTokenPage {
   tokens: UnifiedToken[]

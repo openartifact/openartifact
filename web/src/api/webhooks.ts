@@ -3,23 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { request, JSON_HEADERS } from './client'
+import type { Webhook } from './generated/types.gen'
 
-export interface Webhook {
-  id: string
-  repository_id?: string
-  name: string
-  url: string
-  has_secret?: boolean
-  events: string[]
-  content_type?: string
-  payload_format?: string
-  ssl_verify?: boolean
-  enabled: boolean
-  max_retries?: number
-  timeout_seconds?: number
-  created_at?: string
-  updated_at?: string
-}
+export type { Webhook }
 
 interface WebhookListResponse {
   webhooks?: Webhook[]
