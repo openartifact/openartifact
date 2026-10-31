@@ -87,13 +87,13 @@ describe('RepoSettings: which fields each repository type offers', () => {
     expect(w.find('#rl-upstream-url').exists()).toBe(false)
   })
 
-  it('a proxy shows its upstream URL and username but never the stored password', async () => {
+  it('a proxy has no upstream fields here: they are edited on the proxy settings card', async () => {
     const w = await mountSettings(
       repo({ repo_type: 'proxy', format: 'maven', upstream_url: 'https://repo.example.org/maven2', upstream_username: 'svc' }),
     )
-    expect((w.find('#rl-upstream-url').element as HTMLInputElement).value).toBe('https://repo.example.org/maven2')
-    expect((w.find('#rl-upstream-user').element as HTMLInputElement).value).toBe('svc')
-    expect((w.find('#rl-upstream-pass').element as HTMLInputElement).value).toBe('')
+    expect(row(w, 'upstream').exists()).toBe(false)
+    expect(w.find('#rl-upstream-url').exists()).toBe(false)
+    expect(w.find('#rl-upstream-pass').exists()).toBe(false)
   })
 
   it('a group lists as candidates only same-format non-group repositories other than itself', async () => {
@@ -251,41 +251,18 @@ describe('RepoSettings: saving', () => {
 })
 
 describe('RepoSettings: proxy payload', () => {
-  const proxy = (over: Partial<Repository> = {}) =>
-    repo({ repo_type: 'proxy', format: 'maven', upstream_url: 'https://repo.example.org', upstream_username: 'svc', ...over })
-
-  it('sends the trimmed upstream URL and username, and no password unless one was typed', async () => {
-    const calls = serve((c) => (c.method === 'PATCH' ? json(proxy()) : undefined))
-    const w = await mountSettings(proxy())
-    await w.find('#rl-upstream-url').setValue('  https://repo.example.org/new  ')
+  it('saves a proxy without touching its upstream or cache settings', async () => {
+    const calls = serve((c) => (c.method === 'PATCH' ? json(repo()) : undefined))
+    const w = await mountSettings(
+      repo({ repo_type: 'proxy', format: 'maven', upstream_url: 'https://repo.example.org', upstream_username: 'svc', cache_ttl_seconds: 60 }),
+    )
+    await w.find('textarea').setValue('mirror')
     await save(w)
     const body = writes(calls)[0].body!
-    expect(body).toMatchObject({ upstream_url: 'https://repo.example.org/new', upstream_username: 'svc' })
-    expect('upstream_password' in body).toBe(false)
-    expect('sign_packages' in body).toBe(false)
-    expect('merge_proxy_versions' in body).toBe(false)
-
-    await w.find('#rl-upstream-pass').setValue('s3cret')
-    await save(w)
-    expect(writes(calls)[1].body).toMatchObject({ upstream_password: 's3cret' })
-  })
-
-  it('refuses to save a proxy whose upstream URL was emptied (the server rejects it for every proxy)', async () => {
-    const calls = serve((c) => (c.method === 'PATCH' ? json(proxy()) : undefined))
-    const w = await mountSettings(proxy())
-    await w.find('#rl-upstream-url').setValue('   ')
-    expect(saveDisabled(w)).toBe(true)
-    await save(w)
-    expect(writes(calls)).toHaveLength(0)
-  })
-
-  it('refuses the same for formats with a default upstream, where the stored URL is still required on update', async () => {
-    const calls = serve((c) => (c.method === 'PATCH' ? json(proxy()) : undefined))
-    const w = await mountSettings(proxy({ format: 'pypi', upstream_url: 'https://pypi.org/simple' }))
-    await w.find('#rl-upstream-url').setValue('')
-    expect(saveDisabled(w)).toBe(true)
-    await save(w)
-    expect(writes(calls)).toHaveLength(0)
+    expect(body).toMatchObject({ description: 'mirror' })
+    for (const key of ['upstream_url', 'upstream_username', 'upstream_password', 'cache_ttl_seconds', 'sign_packages', 'merge_proxy_versions']) {
+      expect(key in body).toBe(false)
+    }
   })
 })
 

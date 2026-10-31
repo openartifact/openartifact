@@ -103,6 +103,17 @@ Each entry has `id`, `name`, `format`, `repo_type`, `priority`. `DELETE /api/v1/
 
 Requests are mirrored by path from `upstream_url` (cargo, Composer, Conan, Helm, npm and NuGet proxies are the exception, see [cargo proxies](#cargo-proxies), [Composer proxies](#composer-proxies), [Conan proxies](#conan-proxies), [Helm proxies](#helm-proxies), [npm proxies](#npm-proxies) and [NuGet proxies](#nuget-proxies)). A file is fetched on first request, stored content-addressed in the blob store, recorded under the repository (it appears in the package list and can be downloaded there) and served from the cache afterwards. Path segments that are empty, `.`, `..`, contain backslashes or control characters, and directory paths (trailing `/`) answer `404`; upstream requests carry `Accept-Encoding: identity`, so bytes are mirrored unchanged.
 
+### Editing proxy settings in the web UI
+
+The repository page of a proxy shows its upstream, cache TTLs, serve-stale window, minimum age and blocked state, and **Edit proxy settings** opens them as a form for a global administrator or a maintainer of the repository's project. The form sends one `PATCH` with only the fields you changed:
+
+- An empty TTL sends the server default (`cache_ttl_seconds` 3600, `negative_cache_ttl_seconds` 60); an empty serve-stale window sends the default of 7 days, while an explicit `0` never serves a stale copy. Durations are shown next to the inputs in readable units.
+- The upstream password is write-only and never shown. **Keep** leaves the stored one, **Replace** sets a new one, **Remove** clears it. Changing the upstream host, port, scheme or username removes the stored password on the server, so the form says so and offers **Replace**.
+- Only a global administrator can change `blocked`; a maintainer sees the switch disabled.
+- Values are checked in the browser against the server ranges, and a validation error the server reports for a field is shown under that field.
+
+A proxy with nothing cached yet shows, instead of an empty list, the client command for the repository and says that the first request fetches from its upstream and caches the result.
+
 ### Cache TTLs
 
 - `cache_ttl_seconds` bounds how long mutable files are served without refetching: Alpine `APKINDEX.tar.gz`, Conan `latest`, revision lists and unpinned file lists, Debian `dists/` metadata, Go `@v/list`, `@latest` and branch-query `.info` files, Helm `index.yaml` and `.prov` files, Maven `maven-metadata.xml`, `archetype-catalog.xml` and `-SNAPSHOT` files (also in Ivy and sbt proxies, where checksum and signature files are included), PyPI simple index and project pages, RPM `repodata/` metadata, Terraform discovery, version lists, provider package documents, `SHA256SUMS` files and module archives, and everything in raw repositories.

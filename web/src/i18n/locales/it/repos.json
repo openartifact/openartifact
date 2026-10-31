@@ -132,7 +132,6 @@
   "repoDetail.proxy.maxStaleHint": "Per quanto tempo oltre il TTL un file in cache viene ancora servito quando l'upstream non è raggiungibile.",
   "repoDetail.proxy.cachedHint": "File già recuperati dall'upstream. Sono in sola lettura.",
   "repoDetail.proxy.emptyTitle": "Ancora nulla in cache",
-  "repoDetail.proxy.emptyHint": "Ancora nulla in cache: i file vengono recuperati dall'upstream alla prima richiesta.",
   "repoDetail.group.title": "Membri",
   "repoDetail.group.hint": "Le richieste vengono risolte sui membri in quest'ordine; vince la prima corrispondenza.",
   "repoDetail.group.position": "Posizione",

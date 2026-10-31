@@ -36,7 +36,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :query="list"
       :row-key="(r) => `${r.format}:${r.name}`"
       :empty-title="proxy ? t('repoDetail.proxy.emptyTitle') : t('rl.packages.empty')"
-      :empty-hint="proxy ? t('repoDetail.proxy.emptyHint') : t('rl.packages.emptyHint')"
+      :empty-hint="proxy ? tp('repoDetail.proxy.emptyFetch', { upstream: repo.upstream_url ?? '' }) : t('rl.packages.emptyHint')"
+      :empty-command="proxy ? emptyCommand : undefined"
     >
       <template #cell-name="{ row }">
         <router-link :to="artifactPath(repo.name, row.name)" class="block truncate font-mono text-sm font-semibold text-foreground hover:text-primary" :title="row.name">{{ row.name }}</router-link>
@@ -72,13 +73,17 @@ import { listPackageGroups, type PackageGroup, type Repository } from '../../api
 import { useListQuery } from '../../composables/useListQuery'
 import { boolParam, strParam } from '../../composables/useUrlState'
 import { artifactPath } from '../../lib/artifactPath'
+import { clientSetup } from '../../lib/installCommands'
 import { formatBytesOrDash } from '../../lib/quota'
-import { t } from '../../i18n'
+import { t, tp } from '../../i18n'
 
 const props = defineProps<{ repo: Repository }>()
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low'] as const
 const proxy = computed(() => props.repo.repo_type === 'proxy')
+
+// A proxy with nothing cached yet teaches how to use it: the first client's configure line for this repository.
+const emptyCommand = computed(() => clientSetup(props.repo.format, window.location.origin, props.repo.name, 'proxy')[0]?.configure)
 
 const list = useListQuery({
   filters: { q: strParam(), flagged: boolParam() },

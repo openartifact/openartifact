@@ -132,7 +132,6 @@
   "repoDetail.proxy.maxStaleHint": "Cuánto tiempo después de su TTL se sigue sirviendo un archivo en caché cuando el upstream no está disponible.",
   "repoDetail.proxy.cachedHint": "Archivos ya obtenidos del upstream. Son de solo lectura.",
   "repoDetail.proxy.emptyTitle": "Aún no hay nada en caché",
-  "repoDetail.proxy.emptyHint": "Aún no hay nada en caché: los archivos se obtienen del upstream en la primera solicitud.",
   "repoDetail.group.title": "Miembros",
   "repoDetail.group.hint": "Las solicitudes se resuelven contra los miembros en este orden; gana la primera coincidencia.",
   "repoDetail.group.position": "Posición",

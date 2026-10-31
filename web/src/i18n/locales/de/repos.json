@@ -132,7 +132,6 @@
   "repoDetail.proxy.maxStaleHint": "Wie lange über die TTL hinaus eine zwischengespeicherte Datei noch ausgeliefert wird, wenn der Upstream nicht erreichbar ist.",
   "repoDetail.proxy.cachedHint": "Bereits vom Upstream abgerufene Dateien. Sie sind schreibgeschützt.",
   "repoDetail.proxy.emptyTitle": "Noch nichts zwischengespeichert",
-  "repoDetail.proxy.emptyHint": "Noch nichts zwischengespeichert – Dateien werden bei der ersten Anfrage vom Upstream abgerufen.",
   "repoDetail.group.title": "Mitglieder",
   "repoDetail.group.hint": "Anfragen werden in dieser Reihenfolge gegen die Mitglieder aufgelöst; der erste Treffer gewinnt.",
   "repoDetail.group.position": "Position",

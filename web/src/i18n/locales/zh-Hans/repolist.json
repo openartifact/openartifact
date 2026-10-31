@@ -63,7 +63,6 @@
   "rl.upstream.required": "此格式必须设置。",
   "rl.upstream.optional": "留空则使用格式默认值。",
   "rl.upstream.pacman": "若要将此代理用作分组成员，URL 须以某个 section 结尾，例如 https://geo.mirror.pkgbuild.com/extra。",
-  "rl.upstream.passwordKeep": "留空则保留当前密码。",
   "rl.members.none": "无成员",
   "rl.members.count_other": "{n} 个成员",
   "rl.members.add": "添加成员",
