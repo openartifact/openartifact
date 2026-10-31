@@ -23,6 +23,7 @@ path = [
   "docs/**.png",
   "web/public/**",
   "web/src/**/__snapshots__/**",
+  "web/e2e/chromium/__screenshots__/**",
   "web/src/i18n/locales/**/*.json",
   "web/src/i18n/glossary/*.csv",
   "internal/repotype/testdata/web_parity.json",

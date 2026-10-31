@@ -5,8 +5,10 @@
 # Black-box UI suites against a real server (built with the SPA embedded) and
 # Postgres, driven through Lightpanda over CDP by puppeteer-core under `bun test`
 # (the specs are *.e2e.ts, so the plain unit-test run never picks them up).
+# The same job then runs the Chromium-only specs (*.chromium.ts: pixel snapshots of the
+# app shell and axe colour contrast) in a digest-pinned headless-shell container.
 # See docs/development/testing.md.
-#   e2e     pull requests and main: the browser e2e suite
+#   e2e     pull requests and main: the browser e2e suite and the Chromium specs
 #   monkey  nightly and on demand: a seeded random walk over the UI
 
 name: e2e
@@ -146,14 +148,26 @@ jobs:
         working-directory: web
         run: bun run e2e
 
+      # Lightpanda paints nothing, so pixel snapshots and colour contrast run in a
+      # real Chromium (a digest-pinned headless-shell container, see the script) on
+      # the same built server and seed: only these specs, about 40 s on top.
+      - name: Start Chromium
+        run: scripts/e2e-chromium.sh start
+
+      - name: Visual regression and colour contrast (Chromium)
+        working-directory: web
+        run: bun run e2e:chromium
+
       - name: Collect logs
         if: failure()
         run: |
           mkdir -p "$RUNNER_TEMP/logs"
           cp "$OA_TESTENV_DIR/server.log" "$RUNNER_TEMP/logs/server.log" || true
           cp "$RUNNER_TEMP/lightpanda.log" "$RUNNER_TEMP/logs/lightpanda.log" || true
+          docker logs oa-e2e-chromium >"$RUNNER_TEMP/logs/chromium.log" 2>&1 || true
 
-      # test-results: per failed test, the error, URL, LP.getPageStatus, console and the page HTML.
+      # test-results: per failed test, the error, URL, LP.getPageStatus (Chromium: a page.png), console and the page HTML;
+      # test-results/visual: expected, actual and diff PNG of a snapshot that differs.
       - name: Upload failure reports and logs
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

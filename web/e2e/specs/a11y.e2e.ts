@@ -13,7 +13,8 @@ import { chooseTheme, expectLoc, shellReady } from '../lib/ui'
  *
  * Lightpanda has no rendering engine, so only the layout-independent rules run
  * (see lib/a11y.ts): names, roles, ARIA validity, landmarks, headings, labels,
- * duplicate ids. Colour contrast of either theme is not checked here. What the
+ * duplicate ids. Colour contrast of either theme is checked in Chromium
+ * (`chromium/contrast.chromium.ts`), not here. What the
  * dark pass does prove is that the page renders and stays accessible once the
  * theme is applied through the real user-menu toggle.
  */

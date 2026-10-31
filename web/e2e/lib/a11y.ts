@@ -12,9 +12,9 @@ const AXE_SOURCE = readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8')
 /**
  * Rules that need a rendering engine. Lightpanda computes no layout (boxes are
  * approximations, nothing is painted), so contrast, target size and scroll
- * geometry cannot be judged:
- * these rules are switched off, not guessed. Colour contrast of both themes
- * is therefore NOT covered by the e2e suite.
+ * geometry cannot be judged: these rules are switched off there, not guessed.
+ * Colour contrast of both themes is covered by `e2e/chromium/contrast.chromium.ts`
+ * (`contrastViolations`, run in Chromium).
  */
 export const LAYOUT_DEPENDENT_RULES = [
   'color-contrast',
@@ -31,6 +31,30 @@ export interface AxeViolation {
   nodes: string[]
 }
 
+type AxeRun = { violations: Array<{ id: string; impact: string | null; help: string; nodes: Array<{ target: unknown[]; any: Array<{ data?: { fgColor?: string; bgColor?: string; contrastRatio?: number; expectedContrastRatio?: string } }> }> }> }
+type AxeGlobal = { axe: { run(ctx: unknown, opts: unknown): Promise<AxeRun> } }
+
+/**
+ * Runs the `color-contrast` rule alone, in a page of an engine that paints (Chromium),
+ * and returns every violation as one line: selector, measured ratio, the ratio
+ * the rule expects and both colours.
+ */
+export async function contrastViolations(ui: Ui): Promise<string[]> {
+  await ui.page.evaluate(AXE_SOURCE)
+  return await ui.page.evaluate(async () => {
+    const res = await (globalThis as unknown as AxeGlobal).axe.run(document, {
+      runOnly: { type: 'rule', values: ['color-contrast'] },
+      resultTypes: ['violations'],
+    })
+    return res.violations.flatMap((v) =>
+      v.nodes.map((n) => {
+        const d = n.any[0]?.data
+        return `${n.target.join(' ')}: ${d?.contrastRatio ?? '?'}:1 (needs ${d?.expectedContrastRatio ?? '4.5:1'}), text ${d?.fgColor ?? '?'} on ${d?.bgColor ?? '?'}`
+      }),
+    )
+  })
+}
+
 /**
  * Runs axe-core (injected into the page as a script) with the layout-independent rules of
  * WCAG 2.x A/AA and the best-practice set, and returns the violations of
@@ -41,7 +65,7 @@ export async function seriousViolations(ui: Ui, exclude: string[] = []): Promise
   const rules = Object.fromEntries(LAYOUT_DEPENDENT_RULES.map((id) => [id, { enabled: false }]))
   const found = await ui.page.evaluate(
     async ({ rules, exclude }) => {
-      const axe = (globalThis as unknown as { axe: { run(ctx: unknown, opts: unknown): Promise<{ violations: Array<{ id: string; impact: string | null; help: string; nodes: Array<{ target: unknown[] }> }> }> } }).axe
+      const axe = (globalThis as unknown as AxeGlobal).axe
       const context = exclude.length > 0 ? { include: [document], exclude: exclude.map((s) => [s]) } : document
       const res = await axe.run(context, {
         runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'] },

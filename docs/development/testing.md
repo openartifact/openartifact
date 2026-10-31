@@ -12,6 +12,7 @@ Besides the Go unit and integration tests (see the [development guide](README.md
 |---|---|---|---|
 | API fuzzing (Schemathesis) | `api-fuzz` (`api-fuzz.yml`) | PRs (bounded, fixed seed), nightly (bigger, random seed) | `scripts/api-fuzz.sh` |
 | End to end (Lightpanda over CDP) | `e2e` (`e2e.yml`) | PRs and `main` | `cd web && bun run e2e` |
+| Visual regression and colour contrast (Chromium) | `e2e` (`e2e.yml`, extra steps) | PRs and `main` | `scripts/e2e-chromium.sh start`, then `cd web && bun run e2e:chromium` |
 | Monkey walk | `monkey` (`e2e.yml`) | nightly, manual dispatch with `seed`/`steps` | `cd web && bun run monkey` |
 | Property tests (fast-check) | `web build` (`ci.yml`) | every `bun test` | `cd web && bun test src/lib/__tests__/*.property.test.ts` |
 
@@ -60,9 +61,26 @@ MONKEY_SEED=3 MONKEY_STEPS=300 bun run monkey    # seeded random walk; seed is p
 
 Writing specs: use `testAs(role)` for a signed-in page, the locator helpers in `web/e2e/lib/` (`getByRole`, `getByTestId`, `expectLoc`, `eventually`); wait on selectors, URLs or conditions, never fixed sleeps; assert the expected URL after each navigation (Lightpanda can fall back to `about:blank`, [#3395](https://github.com/lightpanda-io/browser/issues/3395)), and wait for the whole expected location in one `expectUrl` call (path, query and hash): `shellReady` does not wait for the router, the header mounts before a legacy redirect or a lazy page has settled, and the old URL can already satisfy a partial check such as the hash; avoid drag and drop, contenteditable and `scrollIntoView` in nested scroll containers.
 
+### Visual regression and colour contrast (Chromium)
+
+Lightpanda paints nothing, so two kinds of check run in a real Chromium instead: pixel snapshots of the app shell (`web/e2e/chromium/visual.chromium.ts`) and the axe `color-contrast` rule (`contrast.chromium.ts`). They share the built server and seed of the `e2e` job and add about 40 s to it. The browser is the `chromedp/headless-shell` container pinned by tag and digest in `scripts/e2e-chromium.sh`, which CI and a local run both use, so the same engine, fonts and software rasteriser paint both. The specs live outside `specs/` and are named `*.chromium.ts`: `bun run e2e` never runs them.
+
+```sh
+scripts/e2e-chromium.sh start        # podman or docker; listens on 127.0.0.1:9223 (CHROMIUM_CDP_URL overrides)
+. "$OA_TESTENV_DIR/env"              # the server must run on the host, built with the SPA
+cd web
+bun run e2e:chromium                 # snapshots and contrast, both themes
+bun run e2e:visual:update            # rewrite the baselines after an intended change of the look
+scripts/e2e-chromium.sh stop
+```
+
+- **Snapshots** cover the expanded sidebar, the collapsed rail, a rail tooltip, the header and a toast, each in the light and the dark theme, at 1366x768. Baselines are the PNGs in `web/e2e/chromium/__screenshots__`; review the changed images in the pull request like any other diff. The comparison (pixelmatch, `TOLERANCE` in `web/e2e/lib/visual.ts`) allows a per-pixel colour distance of 0.1 and 0.1 % of the pixels to differ: a stray glyph edge passes, a moved icon or a changed token does not. A failure writes `expected`, `actual` and `diff` PNGs to `web/test-results/visual/`, which CI uploads as `e2e-failure`. Animations and transitions are switched off and the web fonts awaited before a shot, and the pointer is parked away from every control.
+- **Contrast** scans the login page, the shell (expanded and collapsed rail), the dashboard, the repository list and detail, an artifact, the security page and the developer dashboard in both themes, plus three overlays while open (rail tooltip, user menu, toast). A failure names the element, the measured ratio, the ratio required and both colours. Fix the colour in the tokens of `web/src/style.css`, not in a component. A rule that needs layout (`target-size`, `scrollable-region-focusable`, `link-in-text-block`) is still skipped; only `color-contrast` moved to Chromium.
+- After bumping the headless-shell tag, refresh the baselines (`bun run e2e:visual:update`) and commit them.
+
 ### Lightpanda gaps (1.0.2) and how the suites work around them
 
-- **No layout or rendering.** No screenshots or visual checks; coordinate clicks are unreliable ([#4029](https://github.com/lightpanda-io/browser/issues/4029), [#4171](https://github.com/lightpanda-io/browser/issues/4171)), so clicks are DOM-level `element.click()`. axe-core runs without the layout-dependent rules `color-contrast`, `color-contrast-enhanced`, `target-size`, `scrollable-region-focusable` and `link-in-text-block`: **colour contrast is not covered in either theme.**
+- **No layout or rendering.** No screenshots or visual checks; coordinate clicks are unreliable ([#4029](https://github.com/lightpanda-io/browser/issues/4029), [#4171](https://github.com/lightpanda-io/browser/issues/4171)), so clicks are DOM-level `element.click()`. axe-core runs without the layout-dependent rules `color-contrast`, `color-contrast-enhanced`, `target-size`, `scrollable-region-focusable` and `link-in-text-block`: colour contrast is covered by the Chromium specs below instead.
 - **CDP message limit of 1 MB** breaks injecting axe-core (about 1.5 MB); raised with `--cdp-max-message-size` ([PR #2760](https://github.com/lightpanda-io/browser/pull/2760)).
 - **One browser context per connection** ([#3076](https://github.com/lightpanda-io/browser/issues/3076), [#3182](https://github.com/lightpanda-io/browser/issues/3182)) and **one page per context** ([#1962](https://github.com/lightpanda-io/browser/issues/1962)): the suites run serially and close each context before opening the next; Playwright's own runner and `AxeBuilder.analyze()` need more and do not work.
 - Playwright on Bun fails the CDP WebSocket handshake ([#2019](https://github.com/lightpanda-io/browser/issues/2019)), hence `puppeteer-core`.
