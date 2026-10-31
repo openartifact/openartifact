@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/curation"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/pypisimple"
 )
@@ -262,9 +263,9 @@ func TestPageETag_GateStampSalts(t *testing.T) {
 
 	repo.MinAgeHours = 24
 
-	a := pageETag(repo, "simple/x/", "blob", offer, gateStamp(repo, now))
-	same := pageETag(repo, "simple/x/", "blob", offer, gateStamp(repo, now.Add(time.Minute)))
-	later := pageETag(repo, "simple/x/", "blob", offer, gateStamp(repo, now.Add(gateStampBucket)))
+	a := pageETag(repo, "simple/x/", "blob", offer, newGate(repo, nil, now).Stamp())
+	same := pageETag(repo, "simple/x/", "blob", offer, newGate(repo, nil, now.Add(time.Minute)).Stamp())
+	later := pageETag(repo, "simple/x/", "blob", offer, newGate(repo, nil, now.Add(curation.StampBucket)).Stamp())
 
 	if a != same {
 		t.Errorf("one bucket, two validators: %s %s", a, same)
@@ -276,7 +277,7 @@ func TestPageETag_GateStampSalts(t *testing.T) {
 
 	repo.MinAgeHours = 0
 
-	off := pageETag(repo, "simple/x/", "blob", offer, gateStamp(repo, now))
+	off := pageETag(repo, "simple/x/", "blob", offer, newGate(repo, nil, now).Stamp())
 	if off == a || off != pageETag(repo, "simple/x/", "blob", offer, "") {
 		t.Errorf("gate off validator %s", off)
 	}
@@ -301,7 +302,7 @@ func TestGatePyPIFiles_Boundaries(t *testing.T) {
 	for _, tt := range tests {
 		files := []pypisimple.File{{Filename: "foo-2.0.tar.gz", UploadTime: stamp(tt.age)}}
 
-		got, err := gatePyPIFiles(repo, "foo", files, now)
+		got, err := gatePyPIFiles(newGate(repo, nil, now), "foo", files)
 		if tt.keeps && (err != nil || len(got) != 1) {
 			t.Errorf("%s: got %v, %v; want kept", tt.name, got, err)
 		}
@@ -320,19 +321,19 @@ func TestGatePyPIFiles_Boundaries(t *testing.T) {
 		{Filename: "foo-4.0.tar.gz", UploadTime: "garbage"},
 	}
 
-	got, err := gatePyPIFiles(repo, "foo", files, now)
+	got, err := gatePyPIFiles(newGate(repo, nil, now), "foo", files)
 	if err != nil || len(got) != 3 || got[0].Filename != "foo-1.0.tar.gz" || got[1].Filename != "foo-3.0.tar.gz" ||
 		got[2].Filename != "foo-4.0.tar.gz" {
 		t.Errorf("got %v, %v", got, err)
 	}
 
-	if got, err := gatePyPIFiles(repo, "foo", nil, now); err != nil || len(got) != 0 {
+	if got, err := gatePyPIFiles(newGate(repo, nil, now), "foo", nil); err != nil || len(got) != 0 {
 		t.Errorf("empty page: %v, %v", got, err)
 	}
 
 	// Gate off: the very same slice, untouched.
 	off := &models.Repository{}
-	if got, err := gatePyPIFiles(off, "foo", files, now); err != nil || len(got) != len(files) {
+	if got, err := gatePyPIFiles(newGate(off, nil, now), "foo", files); err != nil || len(got) != len(files) {
 		t.Errorf("gate off: %v, %v", got, err)
 	}
 }

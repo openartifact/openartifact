@@ -171,20 +171,36 @@ func (s *Service) serveGo(w http.ResponseWriter, r *http.Request, repo *models.R
 		return
 	}
 
-	now := time.Now()
-
-	if minAge(repo) > 0 && s.serveGoGated(w, r, repo, req, now) {
+	g, err := s.gateFor(r.Context(), repo, time.Now())
+	if err != nil {
+		s.writeResolveError(w, r, err)
 		return
 	}
 
-	s.serveVerbatim(w, r, repo, s.goDoc(repo, req, now))
+	// A file or .info of a canonical version is judged by curation before the
+	// cache is read, so one cached before the rules changed is refused too (a
+	// query is judged by the version its .info names, see serveGoInfo). The
+	// minimum age needs the .info lookup of goGateLocate, which only runs when
+	// the file is fetched: a cached .mod or .zip is served as it is.
+	if req.version != "" && canonicalGoVersion(req.version) {
+		if err := checkGate(g, req.module, req.version, time.Time{}); err != nil {
+			s.writeResolveError(w, r, err)
+			return
+		}
+	}
+
+	if g.Active() && s.serveGoGated(w, r, repo, req, g) {
+		return
+	}
+
+	s.serveVerbatim(w, r, repo, s.goDoc(repo, req, g))
 }
 
 // goDoc is a GOPROXY resource, cached verbatim under its request path once it
-// passes the check for its kind. While the repository has a minimum age, a
-// ".mod" or ".zip" is fetched only when its version is old enough at now (see
+// passes the check for its kind. While the gate is active, a ".mod" or ".zip"
+// is fetched only when the gate leaves its version available (see
 // gomod_minage.go).
-func (s *Service) goDoc(repo *models.Repository, req goRequest, now time.Time) metaDoc {
+func (s *Service) goDoc(repo *models.Repository, req goRequest, g versionGate) metaDoc {
 	d := metaDoc{
 		key: req.key,
 		url: func(upstream string) (string, error) { return goUpstreamURL(upstream, req.key) },
@@ -219,8 +235,8 @@ func (s *Service) goDoc(repo *models.Repository, req goRequest, now time.Time) m
 		what:  "go module file",
 	}
 
-	if minAge(repo) > 0 && (req.kind == goMod || req.kind == goZip) {
-		d.locate = s.goGateLocate(repo, req, now)
+	if g.Active() && (req.kind == goMod || req.kind == goZip) {
+		d.locate = s.goGateLocate(repo, req, g)
 	}
 
 	return d
@@ -278,5 +294,6 @@ var GoHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	// .info/.mod/.zip of a canonical version, not list/@latest/queries.
 	Immutable:  goImmutable,
 	IsMetadata: func(key string) bool { return keyName(key) == "list" || strings.HasSuffix(key, "/@latest") },
+	Published:  (*Service).goInfoPublished,
 	BlobPath:   presign.GoBlobPath,
 }

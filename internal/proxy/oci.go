@@ -102,6 +102,10 @@ func (s *Service) ServeOCI(w http.ResponseWriter, r *http.Request, repo *models.
 
 	switch req.Kind {
 	case ocipath.KindManifest:
+		if s.ociCurationRefusal(w, r, repo, image, req.Ref) {
+			return
+		}
+
 		s.serveOCIManifest(w, r, repo, req, image, up)
 	case ocipath.KindBlob:
 		s.serveOCIBlob(w, r, repo, req, image, up)

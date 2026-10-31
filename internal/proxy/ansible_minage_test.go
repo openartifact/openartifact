@@ -35,12 +35,12 @@ func TestFilterAnsibleVersions(t *testing.T) {
 		return out
 	}
 
-	got := versions(filterAnsibleVersions(repo, refs, now))
+	got := versions(filterAnsibleVersions(newGate(repo, nil, now), "ns.demo", refs))
 	if want := []string{"2.0.0", "1.1.0", "1.0.0"}; !slices.Equal(got, want) {
 		t.Errorf("kept %v, want %v", got, want)
 	}
 
-	if got := versions(filterAnsibleVersions(&models.Repository{}, refs, now)); len(got) != len(refs) {
+	if got := versions(filterAnsibleVersions(newGate(&models.Repository{}, nil, now), "ns.demo", refs)); len(got) != len(refs) {
 		t.Errorf("gate 0 kept %v, want everything", got)
 	}
 }

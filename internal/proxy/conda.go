@@ -33,8 +33,10 @@ const DefaultMaxCondaIndex int64 = 2 << 30
 // to the channel) resolve through the proxy and every download is checked
 // against the digest the repodata lists. Everything else a channel may carry
 // (repodata.jlap, sharded repodata, index pages) answers 404 and clients fall
-// back to the plain files. With a minimum age the repodata is rebuilt without
-// the packages too young (see conda_minage.go).
+// back to the plain files. While the version gate is on (minimum age, curation)
+// the repodata is rebuilt without the packages it holds back (see
+// conda_minage.go). Curation matches the package "name" and "version" of the
+// repodata entry (the name lower-case as conda writes it).
 func (s *Service) serveConda(w http.ResponseWriter, r *http.Request, repo *models.Repository, relPath string) {
 	p, ok := conda.ParsePath(relPath)
 	if !ok {
@@ -42,8 +44,14 @@ func (s *Service) serveConda(w http.ResponseWriter, r *http.Request, repo *model
 		return
 	}
 
-	if p.Kind == conda.KindRepodata && minAge(repo) > 0 {
-		s.serveCondaGated(w, r, repo, p)
+	g, err := s.gateFor(r.Context(), repo, time.Now())
+	if err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
+
+	if p.Kind == conda.KindRepodata && g.Active() {
+		s.serveCondaGated(w, r, repo, p, g)
 		return
 	}
 
@@ -51,10 +59,19 @@ func (s *Service) serveConda(w http.ResponseWriter, r *http.Request, repo *model
 	case conda.KindRepodata, conda.KindChanneldata:
 		s.serveVerbatim(w, r, repo, s.condaDoc(p))
 	case conda.KindPackage:
-		now := time.Now()
+		// The curation rules need no timestamp, so the file name alone is asked
+		// before the cache is read: a package cached before the rules were set is
+		// refused too. The minimum age and the entry's own name and version are
+		// checked in locateCondaPackage, when the file is fetched.
+		if f, ok := conda.ParseFilename(p.File); ok {
+			if err = checkGate(g, f.Name, f.Version, time.Time{}); err != nil {
+				s.writeResolveError(w, r, err)
+				return
+			}
+		}
 
 		s.serveDownload(w, r, repo, p.Key(), func(ctx context.Context) (download, error) {
-			return s.locateCondaPackage(ctx, repo, p, now)
+			return s.locateCondaPackage(ctx, repo, p, g)
 		})
 	case conda.KindOther:
 		http.NotFound(w, r)
@@ -87,8 +104,9 @@ func (s *Service) condaIndexLimit() int64 { return min(s.maxBody, s.maxCondaInde
 
 // locateCondaPackage finds a package file in the upstream's repodata and the
 // digest it lists: a file the repodata does not list is not served at all, one
-// built less than the repository's minimum age before now is errTooNew.
-func (s *Service) locateCondaPackage(ctx context.Context, repo *models.Repository, p conda.Path, now time.Time) (download, error) {
+// g holds back (built less than the minimum age ago, or curated away) is its
+// gateError.
+func (s *Service) locateCondaPackage(ctx context.Context, repo *models.Repository, p conda.Path, g versionGate) (download, error) {
 	key := p.Key()
 
 	target, err := upstreamURL(repo.UpstreamURL, key)
@@ -106,8 +124,10 @@ func (s *Service) locateCondaPackage(ctx context.Context, repo *models.Repositor
 		return download{}, err
 	}
 
-	if tooNew(repo, entry.Published, now) {
-		return download{}, fmt.Errorf("conda package %s: %w", p.File, errTooNew)
+	if file, ok := conda.ParseFilename(p.File); ok {
+		if err = condaCheck(g, file, entry.Name, entry.Version, entry.Published); err != nil {
+			return download{}, err
+		}
 	}
 
 	opts := fetchOpts{wantSHA256: entry.SHA256}
@@ -265,6 +285,72 @@ func isCondaIndexKey(key string) bool {
 	return strings.Contains(key[strings.LastIndexByte(key, '/')+1:], "repodata")
 }
 
+// condaPublishSubdirs are the subdirectories condaPublished looks in: the
+// platforms conda channels publish.
+var condaPublishSubdirs = []string{ //nolint:gochecknoglobals // read-only table
+	"noarch", "linux-64", "linux-aarch64", "linux-ppc64le", "linux-s390x", "osx-64", "osx-arm64", "win-64", "win-arm64",
+}
+
+// condaPublished is Hooks.Published: the earliest build "timestamp" of any
+// package of that name and version in the cached repodata of the platform
+// subdirectories (the compressed copy, else the plain one), without fetching
+// anything. The repodata is streamed, never held whole.
+func (s *Service) condaPublished(ctx context.Context, repo *models.Repository, pkg, version string) (time.Time, bool) {
+	var (
+		earliest time.Time
+		found    bool
+	)
+
+	for _, subdir := range condaPublishSubdirs {
+		for _, comp := range []conda.Compression{conda.CompZstd, conda.CompNone} {
+			idx := conda.Path{Kind: conda.KindRepodata, Subdir: subdir, File: conda.RepodataFile(false, comp), Comp: comp}
+
+			built, ok, cached := s.cachedCondaBuild(ctx, repo, idx, pkg, version)
+			if ok && (!found || built.Before(earliest)) {
+				earliest, found = built, true
+			}
+
+			if cached {
+				break
+			}
+		}
+	}
+
+	return earliest, found
+}
+
+// cachedCondaBuild scans the cached repodata idx for the earliest build of the
+// package version, and whether idx is in the cache at all (the third result).
+func (s *Service) cachedCondaBuild(
+	ctx context.Context, repo *models.Repository, idx conda.Path, pkg, version string,
+) (time.Time, bool, bool) {
+	entry, err := s.db.GetProxyCacheEntry(ctx, repo.ID, idx.Key())
+	if err != nil || entry == nil || entry.StatusCode == http.StatusNotFound || entry.BlobKey == "" {
+		return time.Time{}, false, false
+	}
+
+	if s.packuments.Acquire(ctx) != nil {
+		return time.Time{}, false, true
+	}
+	defer s.packuments.Release()
+
+	rc, err := s.blobStore.Get(ctx, entry.BlobKey)
+	if err != nil {
+		return time.Time{}, false, false
+	}
+	defer func() { base.CloseLog(rc, s.log) }()
+
+	plain, _, err := conda.Open(rc, s.condaIndexLimit())
+	if err != nil {
+		return time.Time{}, false, true
+	}
+	defer func() { _ = plain.Close() }()
+
+	built, ok, err := conda.EarliestBuild(plain, s.condaIndexLimit(), pkg, version)
+
+	return built, ok && err == nil, true
+}
+
 // condaImmutable reports whether name is a conda package file.
 func condaImmutable(name string) bool {
 	return strings.HasSuffix(name, conda.ExtConda) || strings.HasSuffix(name, conda.ExtTarBz2)
@@ -272,7 +358,8 @@ func condaImmutable(name string) bool {
 
 // CondaHooks is the proxy hooks of the conda format.
 var CondaHooks = Hooks{ //nolint:gochecknoglobals // format hook table
-	Serve: (*Service).serveConda,
+	Serve:     (*Service).serveConda,
+	Published: (*Service).condaPublished,
 	// Package files, verified against the repodata digest; repodata moves.
 	Immutable: func(key string) bool { return condaImmutable(keyName(key)) },
 	// channeldata.json; repodata is capped by IsLargeMetadata instead.

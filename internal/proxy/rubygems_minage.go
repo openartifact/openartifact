@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -121,25 +122,38 @@ func parseGemDates(doc []byte) (map[string]time.Time, error) {
 	return dates, nil
 }
 
-// gemTooNew reports whether the version field of an info line is too new at
-// now by dates: not listed, or created less than the minimum age ago.
-func gemTooNew(repo *models.Repository, dates map[string]time.Time, version string, now time.Time) bool {
-	created, ok := dates[version]
+// gemNumber is the version of an info file's version field, which carries a
+// "-<platform>" suffix for a platform gem (a version never holds a hyphen).
+// Curation rules name the version, so every platform of it is covered.
+func gemNumber(version string) string {
+	number, _, _ := strings.Cut(version, "-")
 
-	return !ok || tooNew(repo, created, now)
+	return number
 }
 
-// gateRubyGemsInfo returns the info lines of versions old enough at now.
-func gateRubyGemsInfo(
-	repo *models.Repository,
-	lines []compactindex.InfoLine,
-	dates map[string]time.Time,
-	now time.Time,
-) []compactindex.InfoLine {
+// gemPublished is the time the gate is asked about for the version field of an
+// info line: the API's created_at, and now for a version the API does not list
+// (it is too new: the API is read from the cache and may be older than the info
+// file). dates is nil when the minimum age is off or the upstream cannot date
+// its versions: the time is then unknown (zero).
+func gemPublished(dates map[string]time.Time, version string, now time.Time) time.Time {
+	if dates == nil {
+		return time.Time{}
+	}
+
+	if created, ok := dates[version]; ok {
+		return created
+	}
+
+	return now
+}
+
+// gateRubyGemsInfo returns the info lines of gem that the gate leaves available.
+func gateRubyGemsInfo(g versionGate, gem string, lines []compactindex.InfoLine, dates map[string]time.Time) []compactindex.InfoLine {
 	kept := make([]compactindex.InfoLine, 0, len(lines))
 
 	for _, l := range lines {
-		if !gemTooNew(repo, dates, l.Version, now) {
+		if hidden, _ := g.Hidden(gem, gemNumber(l.Version), gemPublished(dates, l.Version, g.Now)); !hidden {
 			kept = append(kept, l)
 		}
 	}
@@ -161,34 +175,80 @@ func (s *Service) rubygemsDates(ctx context.Context, repo *models.Repository, ge
 	return dates, res, err
 }
 
-// checkRubyGemsFile refuses the file of version sp of a gem published too
-// recently; strict makes a version the API does not list too new.
+// checkRubyGemsFile refuses the file of version sp of a gem that the gate holds
+// back: curation, and a version published too recently (the dates are only
+// looked up when the minimum age is on); strict makes a version the API does
+// not list too new.
 func (s *Service) checkRubyGemsFile(
 	ctx context.Context,
 	repo *models.Repository,
+	g versionGate,
 	sp compactindex.FileSplit,
 	strict bool,
-	now time.Time,
 ) error {
-	dates, _, err := s.rubygemsDates(ctx, repo, sp.Name)
-	if err != nil || dates == nil {
+	var published time.Time
+
+	if g.AgeActive() {
+		dates, _, err := s.rubygemsDates(ctx, repo, sp.Name)
+		if err != nil {
+			return err
+		}
+
+		if dates != nil {
+			var listed bool
+
+			if published, listed = dates[sp.Version]; !listed && strict {
+				published = g.Now
+			}
+		}
+	}
+
+	return checkGate(g, sp.Name, gemNumber(sp.Version), published)
+}
+
+// rubygemsReadings returns the readings of a gem file name (see
+// compactindex.SplitFile) the gate must judge. With curation on, the one
+// reading whose cached info file lists the version, when there is one: the other
+// readings name gems that are not the file's, and a rule on one of those must not
+// refuse it. Otherwise every reading.
+func (s *Service) rubygemsReadings(
+	ctx context.Context,
+	repo *models.Repository,
+	g versionGate,
+	file string,
+) ([]compactindex.FileSplit, error) {
+	splits := compactindex.SplitFile(file)
+	if !g.Set.Active() {
+		return splits, nil
+	}
+
+	for _, sp := range splits {
+		line, err := s.rubygemsInfoLine(ctx, repo, sp.Name, sp.Version)
+
+		switch {
+		case errors.Is(err, errNotFound):
+			continue
+		case err != nil:
+			return nil, err
+		case line != nil:
+			return []compactindex.FileSplit{sp}, nil
+		}
+	}
+
+	return splits, nil
+}
+
+// checkRubyGemspec refuses the gemspec of a version the gate holds back (see
+// checkRubyGemsFile). The file name does not say where the name ends: a reading
+// whose gem does not list the version is another reading.
+func (s *Service) checkRubyGemspec(ctx context.Context, repo *models.Repository, g versionGate, file string) error {
+	splits, err := s.rubygemsReadings(ctx, repo, g, file)
+	if err != nil {
 		return err
 	}
 
-	created, listed := dates[sp.Version]
-	if (!listed && strict) || tooNew(repo, created, now) {
-		return fmt.Errorf("gem %s %s: %w", sp.Name, sp.Version, errTooNew)
-	}
-
-	return nil
-}
-
-// checkRubyGemspec refuses the gemspec of a version published too recently
-// (see checkRubyGemsFile). The file name does not say where the name ends: a
-// reading whose gem does not list the version is another reading.
-func (s *Service) checkRubyGemspec(ctx context.Context, repo *models.Repository, file string, now time.Time) error {
-	for _, sp := range compactindex.SplitFile(file) {
-		if err := s.checkRubyGemsFile(ctx, repo, sp, false, now); err != nil {
+	for _, sp := range splits {
+		if err := s.checkRubyGemsFile(ctx, repo, g, sp, false); err != nil {
 			return err
 		}
 	}
@@ -196,21 +256,73 @@ func (s *Service) checkRubyGemspec(ctx context.Context, repo *models.Repository,
 	return nil
 }
 
-// serveRubyGemsInfo answers info/<gem> of a repository with the gate on: the
-// cached info file without the versions that are too new. A gem the upstream
-// cannot date is served as it is.
-func (s *Service) serveRubyGemsInfo(w http.ResponseWriter, r *http.Request, repo *models.Repository, p compactindex.Path, key string) {
-	now := time.Now()
-	d := rubygemsInfoDoc(p.Gem)
-
-	// The dates come first: they take a document slot of their own.
-	dates, datesRes, err := s.rubygemsDates(r.Context(), repo, p.Gem)
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
+// checkRubyGemCurated refuses a gem or gemspec file of a version curation makes
+// unavailable, without any publish time (nothing is fetched for one). It is what
+// guards a file already in the cache, which no fetch step looks at.
+func (s *Service) checkRubyGemCurated(ctx context.Context, repo *models.Repository, g versionGate, file string) error {
+	if !g.Set.Active() {
+		return nil
 	}
 
-	if dates == nil {
+	g.MinAge = 0
+
+	return s.checkRubyGemspec(ctx, repo, g, file)
+}
+
+// rubygemsPublished is Hooks.Published: the created_at of version of gem in the
+// cached versions API document, the newest of its platforms.
+func (s *Service) rubygemsPublished(ctx context.Context, repo *models.Repository, gem, version string) (time.Time, bool) {
+	body, ok := s.cachedDocBody(ctx, repo, rubygemsAPIDoc(gem))
+	if !ok {
+		return time.Time{}, false
+	}
+
+	dates, err := parseGemDates(body)
+	if err != nil {
+		return time.Time{}, false
+	}
+
+	var newest time.Time
+
+	for field, created := range dates {
+		if gemNumber(field) == version && created.After(newest) {
+			newest = created
+		}
+	}
+
+	return newest, !newest.IsZero()
+}
+
+// serveRubyGemsInfo answers info/<gem> of a repository with the gate on: the
+// cached info file without the versions the gate holds back. Without curation a
+// gem the upstream cannot date is served as it is; curation needs no dates (they
+// are looked up only when the minimum age is on).
+func (s *Service) serveRubyGemsInfo(
+	w http.ResponseWriter,
+	r *http.Request,
+	repo *models.Repository,
+	g versionGate,
+	p compactindex.Path,
+	key string,
+) {
+	d := rubygemsInfoDoc(p.Gem)
+
+	var (
+		dates    map[string]time.Time
+		datesRes *resolution
+	)
+
+	// The dates come first: they take a document slot of their own.
+	if g.AgeActive() {
+		var err error
+
+		if dates, datesRes, err = s.rubygemsDates(r.Context(), repo, p.Gem); err != nil {
+			s.writeResolveError(w, r, err)
+			return
+		}
+	}
+
+	if dates == nil && !g.Set.Active() {
 		s.serveVerbatim(w, r, repo, d)
 		return
 	}
@@ -235,7 +347,7 @@ func (s *Service) serveRubyGemsInfo(w http.ResponseWriter, r *http.Request, repo
 		return
 	}
 
-	kept := gateRubyGemsInfo(repo, lines, dates, now)
+	kept := gateRubyGemsInfo(g, p.Gem, lines, dates)
 
 	var out []byte
 	if len(kept) > 0 && len(kept) < len(lines) {
@@ -260,7 +372,7 @@ func (s *Service) serveRubyGemsInfo(w http.ResponseWriter, r *http.Request, repo
 		return
 	}
 
-	if loaded.stale || datesRes.stale {
+	if loaded.stale || (datesRes != nil && datesRes.stale) {
 		w.Header().Set("Warning", staleWarning)
 	}
 

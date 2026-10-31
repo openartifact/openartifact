@@ -20,10 +20,10 @@ type MemberOptions struct {
 	// asked about the name in the file name and about the entry's own "name"
 	// field, so a document cannot smuggle a package past it by lying in one.
 	Hidden func(name string) bool
-	// Drop, when set, is asked about every entry that passed the checks above
-	// (its raw JSON is only valid during the call) and drops the entry when it
-	// returns true.
-	Drop func(entry json.RawMessage) bool
+	// Drop, when set, is asked about every entry that passed the checks above,
+	// with its parsed file name (its raw JSON is only valid during the call),
+	// and drops the entry when it returns true.
+	Drop func(file File, entry json.RawMessage) bool
 	// MaxBytes bounds the decoded size of the member's document.
 	MaxBytes int64
 }
@@ -133,7 +133,7 @@ func (b *Builder) addEntry(s Section, filename string, raw json.RawMessage, o Me
 		return nil
 	}
 
-	if o.Drop != nil && o.Drop(raw) {
+	if o.Drop != nil && o.Drop(f, raw) {
 		st.Dropped++
 		return nil
 	}

@@ -147,34 +147,42 @@ func (s *Service) serveComposerMetadata(w http.ResponseWriter, r *http.Request, 
 	// dist.url is downloaded by Composer as-is, so it is absolute and its origin
 	// is part of the validator below; the rewrite happens at serve time.
 	root := s.publicBase(w, r) + composerRepoPath(repo)
-	now := time.Now()
+
+	g, err := s.gateFor(r.Context(), repo, time.Now())
+	if err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
 
 	s.serveRendered(w, r, repo, renderedDoc{
 		metaDoc: composerDoc(p.Name, p.Dev),
 		maxAge:  composerMaxAge,
 		// What is served depends on the cached document, on the origin of the dist
-		// URLs and on which versions the minimum age lets through now.
+		// URLs and on which versions the gate (minimum age, curation) lets through now.
 		etag: func(blobKey string) string {
-			sum := sha256.Sum256([]byte(blobKey + "\x00" + root + "\x00" + gateStamp(repo, now)))
+			sum := sha256.Sum256([]byte(blobKey + "\x00" + root + "\x00" + g.Stamp()))
 			return `"` + hex.EncodeToString(sum[:16]) + `"`
 		},
 		render: func(doc []byte, _ *resolution) ([]byte, string, error) {
-			out, err := renderComposerDoc(repo, doc, p.Name, root, now)
+			out, err := renderComposerDoc(g, doc, p.Name, root)
 			return out, jsonMediaType, err
 		},
 	})
 }
 
 // renderComposerDoc renders the cached upstream p2 document of name for a
-// client of the repository at root: the versions the minimum age holds back at
-// now are left out (judged on the expanded entries, so a version that only
+// client of the repository at root: the versions the gate holds back (minimum
+// age at its time, curation rules) are left out (judged on the expanded entries, so a version that only
 // inherited its "time" in the minified upstream document is dated right), and
 // errNotFound when none is left, as for a package the upstream does not list.
-func renderComposerDoc(repo *models.Repository, doc []byte, name, root string, now time.Time) ([]byte, error) {
+func renderComposerDoc(g versionGate, doc []byte, name, root string) ([]byte, error) {
 	var keep func(pkgcomposer.Version) bool
 
-	if minAge(repo) > 0 {
-		keep = func(v pkgcomposer.Version) bool { return !tooNew(repo, v.Published(), now) }
+	if g.Active() {
+		keep = func(v pkgcomposer.Version) bool {
+			hidden, _ := g.Hidden(name, v.VersionString(), v.Published())
+			return !hidden
+		}
 	}
 
 	out, err := pkgcomposer.RenderSource(doc, name, root, keep)
@@ -192,10 +200,25 @@ func (s *Service) serveComposerDist(w http.ResponseWriter, r *http.Request, repo
 		return
 	}
 
-	now := time.Now()
+	g, err := s.gateFor(r.Context(), repo, time.Now())
+	if err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
+
+	// A dist already in the cache is served without locate, and with it the
+	// minimum age (a file that was served once stays served). Curation is
+	// checked first anyway, from the path alone, so a version curated after it
+	// was cached is refused too.
+	if g.Set.Active() {
+		if gerr := checkGate(g, p.Name, p.Version, time.Time{}); gerr != nil {
+			s.writeResolveError(w, r, gerr)
+			return
+		}
+	}
 
 	s.serveDownload(w, r, repo, key, func(ctx context.Context) (download, error) {
-		return s.locateComposerDist(ctx, repo, p, now)
+		return s.locateComposerDist(ctx, repo, p, g)
 	})
 }
 
@@ -250,12 +273,12 @@ func (s *Service) composerPublishedDist(
 }
 
 // locateComposerDist finds the dist the upstream's documents publish for the
-// version of p; errTooNew when the version is younger than the repository's
-// minimum age at now. The reference in the request must be the one that dist has (a
+// version of p; the gate's refusal (checkGate) when the version is held back.
+// The reference in the request must be the one that dist has (a
 // stale or forged URL is errNotFound, without a negative cache entry: the
 // document may simply be stale). It is cached only when its SHA-1 matches a
 // non-empty "shasum".
-func (s *Service) locateComposerDist(ctx context.Context, repo *models.Repository, p pkgcomposer.Path, now time.Time) (download, error) {
+func (s *Service) locateComposerDist(ctx context.Context, repo *models.Repository, p pkgcomposer.Path, g versionGate) (download, error) {
 	dist, published, err := s.composerPublishedDist(ctx, repo, p)
 	if err != nil {
 		return download{}, err
@@ -265,8 +288,8 @@ func (s *Service) locateComposerDist(ctx context.Context, repo *models.Repositor
 		return download{}, errNotFound
 	}
 
-	if tooNew(repo, published, now) {
-		return download{}, errTooNew
+	if gerr := checkGate(g, p.Name, p.Version, published); gerr != nil {
+		return download{}, gerr
 	}
 
 	return download{url: dist.URL, opts: fetchOpts{
@@ -296,4 +319,29 @@ var ComposerHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	Immutable:  composerDistImmutable,
 	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, composerDistDir) },
 	BlobPath:   presign.ComposerBlobPath,
+	Published:  (*Service).composerPublished,
+}
+
+// composerPublished dates version of the package name from the cached p2
+// documents (release and dev), never fetching.
+func (s *Service) composerPublished(ctx context.Context, repo *models.Repository, name, version string) (time.Time, bool) {
+	for _, dev := range []bool{false, true} {
+		body, ok := s.cachedDocBody(ctx, repo, composerDoc(name, dev))
+		if !ok {
+			continue
+		}
+
+		versions, err := pkgcomposer.ParseDocument(body, name)
+		if err != nil {
+			continue
+		}
+
+		if v, found := pkgcomposer.FindVersion(versions, version); found {
+			if published := v.Published(); !published.IsZero() {
+				return published, true
+			}
+		}
+	}
+
+	return time.Time{}, false
 }

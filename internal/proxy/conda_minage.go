@@ -20,7 +20,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/conda"
 )
 
-// The minimum-age gate of a conda proxy (see minage.go).
+// The version gate of a conda proxy (see gate.go): minimum age and curation.
 //
 // Repodata dates a package with the "timestamp" of its entry (milliseconds,
 // older entries seconds): when it was built, which is the nearest thing to a
@@ -31,7 +31,11 @@ import (
 // and "packages.conda"; "removed" and the other top-level keys are not carried
 // over), spooled to disk entry by entry, and served plain or zstd-compressed.
 // The .bz2 copy cannot be produced and answers 404 (clients fall back to the
-// others). A package file of an entry too young is refused when it is fetched.
+// others). A package file of an entry the gate holds back is refused (403).
+//
+// Curation names a package by the "name" of its entry (the file name's name
+// too: both are asked) and its version by the entry's "version"; neither needs
+// a timestamp, so a package without one is still curated.
 
 const (
 	// condaGatedMaxAge is how long shared caches may reuse a gated repodata.
@@ -40,19 +44,46 @@ const (
 	condaZstdType = "application/zstd"
 )
 
-// condaTooNew is the Drop hook of a repodata rebuild at now.
-func condaTooNew(repo *models.Repository, now time.Time) func(json.RawMessage) bool {
-	return func(entry json.RawMessage) bool { return tooNew(repo, conda.EntryTimestamp(entry), now) }
+// condaCheck is nil when the package file named file (whose repodata entry states
+// the given name and version, "" for a field it lacks) is available under g, else
+// the gateError of the first coordinates it holds back: the ones of the file
+// name, then the entry's own, which a repodata may state differently.
+func condaCheck(g versionGate, file conda.File, name, version string, published time.Time) error {
+	if err := checkGate(g, file.Name, file.Version, published); err != nil {
+		return err
+	}
+
+	if (name == "" || name == file.Name) && (version == "" || version == file.Version) {
+		return nil
+	}
+
+	if name == "" {
+		name = file.Name
+	}
+
+	if version == "" {
+		version = file.Version
+	}
+
+	return checkGate(g, name, version, published)
+}
+
+// condaDrop is the Drop hook of a repodata rebuild under g.
+func condaDrop(g versionGate) func(conda.File, json.RawMessage) bool {
+	return func(file conda.File, entry json.RawMessage) bool {
+		name, version := conda.EntryIdentity(entry)
+
+		return condaCheck(g, file, name, version, conda.EntryTimestamp(entry)) != nil
+	}
 }
 
 // serveCondaGated answers a repodata request while the gate is on.
-func (s *Service) serveCondaGated(w http.ResponseWriter, r *http.Request, repo *models.Repository, p conda.Path) {
+func (s *Service) serveCondaGated(w http.ResponseWriter, r *http.Request, repo *models.Repository, p conda.Path, g versionGate) {
 	if p.Comp == conda.CompBzip2 {
 		http.NotFound(w, r)
 		return
 	}
 
-	now := time.Now()
 	d := s.condaDoc(p)
 
 	res, err := s.resolveDoc(r.Context(), repo, d)
@@ -69,8 +100,8 @@ func (s *Service) serveCondaGated(w http.ResponseWriter, r *http.Request, repo *
 	}
 
 	// The rendering depends on the cached file and on which entries the gate
-	// holds back at this time.
-	etag := func(blobKey string) string { return `"` + blobKey + `~` + gateStamp(repo, now) + `"` }
+	// holds back at this time and under these rules.
+	etag := func(blobKey string) string { return `"` + blobKey + `~` + g.Stamp() + `"` }
 
 	if base.Revalidate(w, r, repo.Public, etag(res.entry.BlobKey), condaGatedMaxAge) {
 		return
@@ -88,7 +119,7 @@ func (s *Service) serveCondaGated(w http.ResponseWriter, r *http.Request, repo *
 		return
 	}
 
-	doc, loaded, err := s.condaFiltered(r.Context(), repo, d, res, p, now)
+	doc, loaded, err := s.condaFiltered(r.Context(), repo, d, res, p, g)
 	if err != nil {
 		s.failWithoutValidators(w, r, err)
 		return
@@ -105,14 +136,14 @@ func (s *Service) serveCondaGated(w http.ResponseWriter, r *http.Request, repo *
 }
 
 // condaFiltered rebuilds the repodata of d from its cached file without the
-// entries the gate holds back at now. A cache row whose blob is gone is dropped
+// entries g holds back. A cache row whose blob is gone is dropped
 // and the file fetched once more. The returned resolution is the one the
 // document was built from.
 func (s *Service) condaFiltered(
-	ctx context.Context, repo *models.Repository, d metaDoc, res *resolution, p conda.Path, now time.Time,
+	ctx context.Context, repo *models.Repository, d metaDoc, res *resolution, p conda.Path, g versionGate,
 ) (*conda.Document, *resolution, error) {
 	for attempt := 0; ; attempt++ {
-		doc, err := s.buildCondaFiltered(ctx, repo, d.key, res.entry.BlobKey, p, now)
+		doc, err := s.buildCondaFiltered(ctx, repo, d.key, res.entry.BlobKey, p, g)
 		if err == nil {
 			return doc, res, nil
 		}
@@ -136,7 +167,7 @@ func (s *Service) condaFiltered(
 // buildCondaFiltered streams the cached repodata blobKey through a rebuild,
 // holding one of the bounded document slots for the pass.
 func (s *Service) buildCondaFiltered(
-	ctx context.Context, repo *models.Repository, key, blobKey string, p conda.Path, now time.Time,
+	ctx context.Context, repo *models.Repository, key, blobKey string, p conda.Path, g versionGate,
 ) (*conda.Document, error) {
 	if err := s.packuments.Acquire(ctx); err != nil {
 		return nil, err //nolint:wrapcheck // caller checks for cancellation
@@ -156,7 +187,7 @@ func (s *Service) buildCondaFiltered(
 	}
 	defer b.Close()
 
-	_, err = b.Add(rc, conda.MemberOptions{MaxBytes: s.condaIndexLimit(), Drop: condaTooNew(repo, now)})
+	_, err = b.Add(rc, conda.MemberOptions{MaxBytes: s.condaIndexLimit(), Drop: condaDrop(g)})
 
 	switch {
 	case err == nil:

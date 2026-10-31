@@ -73,7 +73,7 @@ func TestFilterCargoIndex(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			out, err := filterCargoIndex(c.repo, c.doc, now)
+			out, err := filterCargoIndex(newGate(c.repo, nil, now), "demo", c.doc)
 			if !errors.Is(err, c.wantErr) {
 				t.Fatalf("err = %v, want %v", err, c.wantErr)
 			}

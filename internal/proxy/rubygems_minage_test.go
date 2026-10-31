@@ -340,7 +340,7 @@ func TestGateRubyGemsInfo_Boundaries(t *testing.T) {
 	}
 
 	var got []string
-	for _, l := range gateRubyGemsInfo(repo, lines, dates, now) {
+	for _, l := range gateRubyGemsInfo(newGate(repo, nil, now), "lib", lines, dates) {
 		got = append(got, l.Version)
 	}
 

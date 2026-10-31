@@ -18,11 +18,12 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/pkg/conda"
 )
 
 func TestCondaTooNew(t *testing.T) {
 	now := time.Date(2025, 6, 2, 12, 0, 0, 0, time.UTC)
-	drop := condaTooNew(&models.Repository{MinAgeHours: 24}, now)
+	drop := condaDrop(newGate(&models.Repository{MinAgeHours: 24}, nil, now))
 
 	ms := func(t time.Time) string { return fmt.Sprintf(`{"timestamp":%d}`, t.UnixMilli()) }
 	sec := func(t time.Time) string { return fmt.Sprintf(`{"timestamp":%d}`, t.Unix()) }
@@ -48,13 +49,13 @@ func TestCondaTooNew(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := drop(json.RawMessage(c.entry)); got != c.want {
+			if got := drop(conda.File{}, json.RawMessage(c.entry)); got != c.want {
 				t.Errorf("dropped = %v, want %v", got, c.want)
 			}
 		})
 	}
 
-	if condaTooNew(&models.Repository{}, now)(json.RawMessage(ms(now))) {
+	if condaDrop(newGate(&models.Repository{}, nil, now))(conda.File{}, json.RawMessage(ms(now))) {
 		t.Error("gate 0 dropped an entry")
 	}
 }

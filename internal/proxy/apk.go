@@ -157,6 +157,8 @@ var APKHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	// Packages whose checksum matched the upstream index; see apkFetchOpts.
 	Immutable:  apkPackageKey,
 	IsMetadata: apkIndexKey,
+
+	Coordinates: apkCoordinates,
 }
 
 // fetchAPK is Hooks.Fetch of apk: a package is verified against the checksum

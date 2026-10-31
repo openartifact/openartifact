@@ -84,5 +84,6 @@ var PacmanHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	) bool {
 		return pacmanNotModified(w, r, entry, key)
 	},
-	BlobPath: presign.PacmanBlobPath,
+	BlobPath:    presign.PacmanBlobPath,
+	Coordinates: pacmanCoordinates,
 }

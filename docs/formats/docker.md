@@ -75,6 +75,8 @@ Errors use the registry JSON shape `{"errors":[{"code","message","detail"}]}`; a
 
 A docker **proxy** pulls through from an upstream registry (default Docker Hub); a docker **group** serves the first member that has an image. Both are read-only and live under `/v2/` only.
 
+[Package curation](../repositories/hosted-proxy-group.md#package-curation) on a proxy gates manifests: rules name an image as written below the repository (`library/alpine`) and a version as the tag or digest the client requests (`3.20`, `sha256:...`), so block a tag and its digest separately. A blocked manifest `GET`/`HEAD` answers `403 DENIED` with the reason, even when cached. Blobs are not gated: a blob addressed by digest stays reachable, but a client cannot find it without the manifest. Tag lists are passed through.
+
 ```sh
 curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" -H 'Content-Type: application/json' \
   -d '{"name":"dockerhub","format":"docker","repo_type":"proxy"}'

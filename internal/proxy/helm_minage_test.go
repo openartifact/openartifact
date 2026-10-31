@@ -71,7 +71,7 @@ func TestRenderHelmIndex_HidesVersionsYoungerThanTheGate(t *testing.T) {
 	now := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
 	s := &Service{}
 
-	out, err := s.renderHelmIndex(helmGated(24), []byte(helmMinAgeIndex(now)), now)
+	out, err := s.renderHelmIndex(helmGated(24), []byte(helmMinAgeIndex(now)), newGate(helmGated(24), nil, now))
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestRenderHelmIndex_HidesVersionsYoungerThanTheGate(t *testing.T) {
 
 	// The held-back same-a took charts/same-1.0.0.tgz; same-b keeps the
 	// hash-qualified name it has in an ungated index.
-	ungated, err := s.renderHelmIndex(helmGated(0), []byte(helmMinAgeIndex(now)), now)
+	ungated, err := s.renderHelmIndex(helmGated(0), []byte(helmMinAgeIndex(now)), newGate(helmGated(0), nil, now))
 	if err != nil {
 		t.Fatalf("render ungated: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestRenderHelmIndex_GateOffAndAging(t *testing.T) {
 	doc := []byte(helmMinAgeIndex(now))
 
 	// 23 h 1 s later app 2.0.0 (created an hour before now) is old enough.
-	later, err := s.renderHelmIndex(helmGated(24), doc, now.Add(23*time.Hour+time.Second))
+	later, err := s.renderHelmIndex(helmGated(24), doc, newGate(helmGated(24), nil, now.Add(23*time.Hour+time.Second)))
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestRenderHelmIndex_GateOffAndAging(t *testing.T) {
 	}
 
 	// created at exactly the threshold passes (the gate holds back what is younger).
-	atEdge, err := s.renderHelmIndex(helmGated(24), doc, now)
+	atEdge, err := s.renderHelmIndex(helmGated(24), doc, newGate(helmGated(24), nil, now))
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}

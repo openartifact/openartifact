@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,9 +35,10 @@ import (
 //     depend on the host the request came in on.
 //     Versions that only list URLs that cannot be mirrored (oci://) are left
 //     out: this server could not serve them. So are versions younger than the
-//     minimum age (min_age_hours) by their "created" timestamp, and a file only
-//     such versions list is refused (errTooNew); a version without a parsable
-//     "created" passes.
+//     minimum age (min_age_hours) by their "created" timestamp and versions the
+//     repository's curation rules make unavailable (chart name and version), and
+//     a file only such versions list is refused (403); a version without a
+//     parsable "created" passes the minimum age.
 //   - Charts (GET /charts/<file>) are cached under "charts/<file>", immutable
 //     (or for the repository TTL when the index lists no digest for them).
 //     The upstream URL and digest come from the cached index entry whose URL
@@ -121,22 +123,26 @@ var helmIndexDoc = metaDoc{ //nolint:gochecknoglobals // read-only descriptor
 }
 
 // helmIndexETag identifies one rendering of a cached index: the upstream body
-// everything the rewritten URLs derive from and the minimum-age gate (which
-// versions it lets through at now).
-func (s *Service) helmIndexETag(repo *models.Repository, blobKey string, now time.Time) string {
-	sum := sha256.Sum256([]byte(blobKey + "\x00" + repo.Name + "\x00" + repo.UpstreamURL + "\x00" + gateStamp(repo, now)))
+// everything the rewritten URLs derive from and the version gate (stamp: which
+// versions it lets through).
+func (s *Service) helmIndexETag(repo *models.Repository, blobKey, stamp string) string {
+	sum := sha256.Sum256([]byte(blobKey + "\x00" + repo.Name + "\x00" + repo.UpstreamURL + "\x00" + stamp))
 	return `"` + hex.EncodeToString(sum[:]) + `"`
 }
 
 func (s *Service) serveHelmIndex(w http.ResponseWriter, r *http.Request, repo *models.Repository) {
-	now := time.Now()
+	g, err := s.gateFor(r.Context(), repo, time.Now())
+	if err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
 
 	s.serveRendered(w, r, repo, renderedDoc{
 		metaDoc: helmIndexDoc,
 		maxAge:  helmIndexMaxAge,
-		etag:    func(blobKey string) string { return s.helmIndexETag(repo, blobKey, now) },
+		etag:    func(blobKey string) string { return s.helmIndexETag(repo, blobKey, g.Stamp()) },
 		render: func(body []byte, _ *resolution) ([]byte, string, error) {
-			out, err := s.renderHelmIndex(repo, body, now)
+			out, err := s.renderHelmIndex(repo, body, g)
 			return out, "application/yaml", err
 		},
 	})
@@ -175,9 +181,10 @@ func resolveChartURL(upstream *url.URL, raw string) (*url.URL, bool) {
 }
 
 // renderHelmIndex points every chart URL of the cached upstream index at this
-// repository. A version the minimum age holds back at now is left out (after
-// its files were named: the names of the later ones do not depend on the gate).
-func (s *Service) renderHelmIndex(repo *models.Repository, body []byte, now time.Time) ([]byte, error) {
+// repository. A version the gate holds back (minimum age, curation) is left out
+// (after its files were named: the names of the later ones do not depend on the
+// gate).
+func (s *Service) renderHelmIndex(repo *models.Repository, body []byte, g versionGate) ([]byte, error) {
 	ix, err := pkghelm.ParseIndex(body)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errNotHelmIndex, err)
@@ -209,7 +216,7 @@ func (s *Service) renderHelmIndex(repo *models.Repository, body []byte, now time
 			}
 		}
 
-		if tooNew(repo, cv.Published(), now) {
+		if hidden, _ := g.Hidden(cv.Name, cv.Version, cv.Published()); hidden {
 			return nil
 		}
 
@@ -226,40 +233,74 @@ func (s *Service) renderHelmIndex(repo *models.Repository, body []byte, now time
 
 func (s *Service) serveHelmChart(w http.ResponseWriter, r *http.Request, repo *models.Repository, file string) {
 	key := helmChartsDir + file
-	now := time.Now()
+
+	g, err := s.gateFor(r.Context(), repo, time.Now())
+	if err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
+
+	// A chart already in the cache is served without locate, and with it the
+	// minimum age (a file that was served once stays served). Curation is
+	// checked first anyway, from the cached index, so a version curated after
+	// the chart was cached is refused too. Only the rules decide here: the
+	// created time is not passed.
+	if g.Set.Active() {
+		_, gerr := s.findHelmFile(r.Context(), repo, file, func(cv pkghelm.ChartVersion) error {
+			return checkGate(g, cv.Name, cv.Version, time.Time{})
+		})
+		if gerr != nil && !errors.Is(gerr, errNotFound) {
+			s.writeResolveError(w, r, gerr)
+			return
+		}
+	}
 
 	s.serveDownload(w, r, repo, key, func(ctx context.Context) (download, error) {
-		return s.locateHelmChart(ctx, repo, file, key, now)
+		return s.locateHelmChart(ctx, repo, file, key, g)
 	})
 }
 
-// locateHelmChart finds file in the cached index: where it lives upstream and
-// the digest it must have; bytes that do not match are refused and never
-// cached. A file no version of the index lists is errNotFound; one that only
-// versions younger than the minimum age at now list is errTooNew.
-func (s *Service) locateHelmChart(ctx context.Context, repo *models.Repository, file, key string, now time.Time) (download, error) {
+// findHelmFile finds file in the cached index. hold is the refusal of a version
+// that lists it (nil when it is available); a file only held versions list
+// answers the first of their refusals, one no version lists is errNotFound.
+func (s *Service) findHelmFile(
+	ctx context.Context, repo *models.Repository, file string, hold func(pkghelm.ChartVersion) error,
+) (helmFile, error) {
 	ix, _, err := parseDoc(ctx, s, repo, helmIndexDoc, func(body []byte, _ *resolution) (*pkghelm.Index, error) {
 		return pkghelm.ParseIndex(body)
 	})
 	if err != nil {
-		return download{}, err
+		return helmFile{}, err
 	}
 
 	upstream, err := helmUpstreamBase(repo.UpstreamURL)
 	if err != nil {
 		s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
-		return download{}, errInternal
+		return helmFile{}, errInternal
 	}
 
-	held := func(cv pkghelm.ChartVersion) bool { return tooNew(repo, cv.Published(), now) }
-
-	f, found := locateHelmFile(ix, upstream, file, held)
+	f, found := locateHelmFile(ix, upstream, file, hold)
 	if !found {
-		return download{}, errNotFound
+		return helmFile{}, errNotFound
 	}
 
-	if f.held {
-		return download{}, errTooNew
+	if f.hold != nil {
+		return helmFile{}, f.hold
+	}
+
+	return f, nil
+}
+
+// locateHelmChart finds file in the cached index: where it lives upstream and
+// the digest it must have; bytes that do not match are refused and never
+// cached. A file no version of the index lists is errNotFound; one that only
+// versions the gate holds back list is refused with the gate's error.
+func (s *Service) locateHelmChart(ctx context.Context, repo *models.Repository, file, key string, g versionGate) (download, error) {
+	f, err := s.findHelmFile(ctx, repo, file, func(cv pkghelm.ChartVersion) error {
+		return checkGate(g, cv.Name, cv.Version, cv.Published())
+	})
+	if err != nil {
+		return download{}, err
 	}
 
 	want, ok := helmDigest(f.digest)
@@ -275,17 +316,17 @@ func (s *Service) locateHelmChart(ctx context.Context, repo *models.Repository, 
 type helmFile struct {
 	target *url.URL
 	digest string
-	// held is set when every version that lists the file is held back by the
-	// minimum age.
-	held bool
+	// hold is set when every version that lists the file is held back: the
+	// refusal of the first of them.
+	hold error
 }
 
 // locateHelmFile returns where the charts/<file> of the index lives upstream
 // and the digest it must have. A <chart>.prov file is not listed in an index:
-// it sits next to its chart and has no digest. held says which versions the
-// minimum age holds back.
-func locateHelmFile(ix *pkghelm.Index, upstream *url.URL, file string, held func(pkghelm.ChartVersion) bool) (helmFile, bool) {
-	if f, found := findHelmChart(ix, upstream, file, held); found {
+// it sits next to its chart and has no digest. hold says which versions are
+// held back (nil: available).
+func locateHelmFile(ix *pkghelm.Index, upstream *url.URL, file string, hold func(pkghelm.ChartVersion) error) (helmFile, bool) {
+	if f, found := findHelmChart(ix, upstream, file, hold); found {
 		return f, true
 	}
 
@@ -294,7 +335,7 @@ func locateHelmFile(ix *pkghelm.Index, upstream *url.URL, file string, held func
 		return helmFile{}, false
 	}
 
-	f, found := findHelmChart(ix, upstream, chart, held)
+	f, found := findHelmChart(ix, upstream, chart, hold)
 	if !found {
 		return helmFile{}, false
 	}
@@ -303,13 +344,13 @@ func locateHelmFile(ix *pkghelm.Index, upstream *url.URL, file string, held func
 	prov.Path += helmProvExt
 	prov.RawPath = ""
 
-	return helmFile{target: &prov, held: f.held}, true
+	return helmFile{target: &prov, hold: f.hold}, true
 }
 
 // findHelmChart returns the URL and digest of the first index entry that lists
 // a chart URL ending in file and is not held back; when only held entries list
-// it, the first of them, flagged.
-func findHelmChart(ix *pkghelm.Index, upstream *url.URL, file string, held func(pkghelm.ChartVersion) bool) (helmFile, bool) {
+// it, the first of them, with its refusal.
+func findHelmChart(ix *pkghelm.Index, upstream *url.URL, file string, hold func(pkghelm.ChartVersion) error) (helmFile, bool) {
 	var (
 		namer helmFileNamer
 		first *helmFile
@@ -326,12 +367,13 @@ func findHelmChart(ix *pkghelm.Index, upstream *url.URL, file string, held func(
 				continue
 			}
 
-			if !held(cv) {
+			herr := hold(cv)
+			if herr == nil {
 				return helmFile{target: target, digest: cv.Digest}, true
 			}
 
 			if first == nil {
-				first = &helmFile{target: target, digest: cv.Digest, held: true}
+				first = &helmFile{target: target, digest: cv.Digest, hold: herr}
 			}
 		}
 	}
@@ -412,5 +454,29 @@ var HelmHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 		return strings.HasPrefix(key, helmChartsDir) && !strings.HasSuffix(keyName(key), helmProvExt)
 	},
 	IsMetadata: func(key string) bool { return keyName(key) == helmIndexKey },
+	Published:  (*Service).helmPublished,
 	BlobPath:   presign.HelmBlobPath,
+}
+
+// helmPublished dates version of the chart name from the cached index's
+// "created" field, never fetching.
+func (s *Service) helmPublished(ctx context.Context, repo *models.Repository, name, version string) (time.Time, bool) {
+	body, ok := s.cachedDocBody(ctx, repo, helmIndexDoc)
+	if !ok {
+		return time.Time{}, false
+	}
+
+	ix, err := pkghelm.ParseIndex(body)
+	if err != nil {
+		return time.Time{}, false
+	}
+
+	for cv := range ix.Versions() {
+		if cv.Name == name && cv.Version == version {
+			published := cv.Published()
+			return published, !published.IsZero()
+		}
+	}
+
+	return time.Time{}, false
 }

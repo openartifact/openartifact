@@ -143,6 +143,8 @@ The signing key is not part of [backups](../operations/backup.md) or declarative
 
 An apk proxy is a pull-through cache of an Alpine mirror. Set `upstream_url` to the mirror root, for example `https://dl-cdn.alpinelinux.org/alpine` (there is no default; the web form suggests this one), and create it with `repo_type: proxy`:
 
+[Package curation](../repositories/hosted-proxy-group.md#package-curation) refuses the download of a blocked package file (`403` with the reason, even when cached): rules name the package and a version as `<version>-r<N>` from the file name `<name>-<version>-r<N>.apk`. `APKINDEX.tar.gz` is served as the upstream has it, so apk still lists a blocked package.
+
 ```sh
 curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
   -H 'Content-Type: application/json' \

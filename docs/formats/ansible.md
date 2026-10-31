@@ -115,6 +115,7 @@ A proxy repository serves the Galaxy API v3 from an upstream (default `https://g
 - **Collection index.** `GET /api/v3/collections/` answers `404`: an upstream cannot be enumerated.
 - A version the upstream does not list answers `404`. Quarantine applies to cached tarballs.
 - **Minimum age.** With `min_age_hours` set on the proxy, a version whose `created_at` (the time Galaxy created the version; `updated_at` moves later and is not used) is younger than that is left out of the version list and of the collection's `highest_version` (which moves to the newest remaining version; a collection with none left is `404`), and its version detail and tarball answer `403` unless the tarball is already cached. A version without a readable `created_at` is not held back. The documents are generated per request, so a version that has aged enough appears at once and their `ETag` follows what they list. A group with the proxy as a member serves only what the proxy does. See [Minimum age](../repositories/hosted-proxy-group.md#minimum-age).
+- **Curation.** [Package curation](../repositories/hosted-proxy-group.md#package-curation) rules name a collection `namespace.name` (lower-case, as Galaxy writes it) and a version as Galaxy shows it; a version the rules make unavailable is left out of the version list and of `highest_version`, and its version detail and tarball answer `403` even when the tarball is already cached. No `created_at` is needed.
 
 ## Group repositories
 

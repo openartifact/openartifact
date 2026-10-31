@@ -30,15 +30,35 @@ func publishedAt(raw json.RawMessage) (time.Time, bool) {
 	return t, err == nil
 }
 
-// HideVersions removes from a full packument every version whose time entry
-// hide reports true for: the version and its time entry go ("created" and
+// PublishedAt is the packument's time entry of version; ok is false when the
+// packument has none for it or it is not an RFC 3339 time.
+func PublishedAt(doc []byte, version string) (time.Time, bool, error) {
+	top, err := parsePackument(doc)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+
+	times, err := objectOf(top["time"])
+	if err != nil {
+		return time.Time{}, false, err
+	}
+
+	t, ok := publishedAt(times[version])
+
+	return t, ok, nil
+}
+
+// HideVersions removes from a full packument every version hide reports true
+// for. hide is asked about every version with its time entry (the zero time
+// when the entry is absent or not an RFC 3339 time, so a rule that needs no
+// date still applies): the version and its time entry go ("created" and
 // "modified" stay), and a dist-tag that pointed at a removed version moves
 // ("latest": to the highest remaining version that is not a prerelease, or
 // the highest remaining one when only prereleases are left) or goes (every
-// other tag). A version without a usable time entry is kept. doc is returned
+// other tag). doc is returned
 // as is when nothing is hidden; ErrAllVersionsHidden when nothing would be
 // left of a packument that had versions.
-func HideVersions(doc []byte, hide func(published time.Time) bool) ([]byte, error) {
+func HideVersions(doc []byte, hide func(version string, published time.Time) bool) ([]byte, error) {
 	top, err := parsePackument(doc)
 	if err != nil {
 		return nil, err
@@ -57,7 +77,8 @@ func HideVersions(doc []byte, hide func(published time.Time) bool) ([]byte, erro
 	hidden := map[string]struct{}{}
 
 	for ver := range versions {
-		if published, ok := publishedAt(times[ver]); ok && hide(published) {
+		published, _ := publishedAt(times[ver])
+		if hide(ver, published) {
 			hidden[ver] = struct{}{}
 		}
 	}

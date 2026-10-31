@@ -225,6 +225,7 @@ var IvyHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	Immutable:   ivyImmutable,
 	IsMetadata:  func(key string) bool { return isIvyMetadata(key) || isIvySidecar(key) || keyName(key) == "ivy.xml" },
 	PackageExts: ivyPackageExts,
+	Coordinates: ivyDownloadCoordinates,
 }
 
 // SbtHooks is the proxy hooks of the sbt format: the same as IvyHooks.

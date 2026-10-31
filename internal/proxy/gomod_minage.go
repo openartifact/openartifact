@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -91,8 +90,8 @@ func (d goInfoDoc) published() time.Time {
 }
 
 // goInfoOf reads the ".info" or "@latest" document req names.
-func (s *Service) goInfoOf(ctx context.Context, repo *models.Repository, req goRequest, now time.Time) (goInfoDoc, error) {
-	doc, _, err := parseDoc(ctx, s, repo, s.goDoc(repo, req, now), func(body []byte, _ *resolution) (goInfoDoc, error) {
+func (s *Service) goInfoOf(ctx context.Context, repo *models.Repository, req goRequest, g versionGate) (goInfoDoc, error) {
+	doc, _, err := parseDoc(ctx, s, repo, s.goDoc(repo, req, g), func(body []byte, _ *resolution) (goInfoDoc, error) {
 		var d goInfoDoc
 
 		// The body was checked when it was fetched; one whose Time does not
@@ -106,14 +105,19 @@ func (s *Service) goInfoOf(ctx context.Context, repo *models.Repository, req goR
 }
 
 // goPublished is the publish time of version of mod: zero for a version the
-// upstream has no ".info" of (it cannot be dated).
-func (s *Service) goPublished(ctx context.Context, repo *models.Repository, mod, version string, now time.Time) (time.Time, error) {
+// upstream has no ".info" of (it cannot be dated), and without a lookup when the
+// gate has no minimum age (curation needs no dates).
+func (s *Service) goPublished(ctx context.Context, repo *models.Repository, g versionGate, mod, version string) (time.Time, error) {
+	if !g.AgeActive() {
+		return time.Time{}, nil
+	}
+
 	req, ok := goInfoRequest(mod, version)
 	if !ok {
 		return time.Time{}, nil
 	}
 
-	doc, err := s.goInfoOf(ctx, repo, req, now)
+	doc, err := s.goInfoOf(ctx, repo, req, g)
 
 	switch {
 	case errors.Is(err, errNotFound):
@@ -126,16 +130,17 @@ func (s *Service) goPublished(ctx context.Context, repo *models.Repository, mod,
 }
 
 // goGateLocate is the locate hook of a ".mod" or ".zip" while the gate is on:
-// the file is fetched from the upstream only when its version is old enough.
-func (s *Service) goGateLocate(repo *models.Repository, req goRequest, now time.Time) func(context.Context) (string, error) {
+// the file is fetched from the upstream only when the gate leaves its version
+// available (the minimum age costs one ".info" lookup, curation none).
+func (s *Service) goGateLocate(repo *models.Repository, req goRequest, g versionGate) func(context.Context) (string, error) {
 	return func(fctx context.Context) (string, error) {
-		published, err := s.goPublished(fctx, repo, req.module, req.version, now)
+		published, err := s.goPublished(fctx, repo, g, req.module, req.version)
 		if err != nil {
 			return "", err
 		}
 
-		if tooNew(repo, published, now) {
-			return "", fmt.Errorf("%s@%s: %w", req.module, req.version, errTooNew)
+		if err := checkGate(g, req.module, req.version, published); err != nil {
+			return "", err
 		}
 
 		target, err := goUpstreamURL(repo.UpstreamURL, req.key)
@@ -150,14 +155,14 @@ func (s *Service) goGateLocate(repo *models.Repository, req goRequest, now time.
 
 // serveGoGated answers a list, @latest or .info request while the gate is on.
 // It reports false for a request the gate does not touch.
-func (s *Service) serveGoGated(w http.ResponseWriter, r *http.Request, repo *models.Repository, req goRequest, now time.Time) bool {
+func (s *Service) serveGoGated(w http.ResponseWriter, r *http.Request, repo *models.Repository, req goRequest, g versionGate) bool {
 	switch req.kind {
 	case goList:
-		s.serveGoList(w, r, repo, req, now)
+		s.serveGoList(w, r, repo, req, g)
 	case goLatest:
-		s.serveGoLatest(w, r, repo, req, now)
+		s.serveGoLatest(w, r, repo, req, g)
 	case goInfo:
-		s.serveGoInfo(w, r, repo, req, now)
+		s.serveGoInfo(w, r, repo, req, g)
 	case goMod, goZip:
 		return false
 	}
@@ -165,47 +170,47 @@ func (s *Service) serveGoGated(w http.ResponseWriter, r *http.Request, repo *mod
 	return true
 }
 
-// serveGoInfo answers a ".info": the upstream's, unless it dates the version
-// (or the revision a query resolves to) as too new.
-func (s *Service) serveGoInfo(w http.ResponseWriter, r *http.Request, repo *models.Repository, req goRequest, now time.Time) {
-	doc, err := s.goInfoOf(r.Context(), repo, req, now)
+// serveGoInfo answers a ".info": the upstream's, unless the gate holds back the
+// version (or the revision a query resolves to).
+func (s *Service) serveGoInfo(w http.ResponseWriter, r *http.Request, repo *models.Repository, req goRequest, g versionGate) {
+	doc, err := s.goInfoOf(r.Context(), repo, req, g)
 	if err != nil {
 		s.writeResolveError(w, r, err)
 		return
 	}
 
-	if tooNew(repo, doc.published(), now) {
-		s.writeResolveError(w, r, fmt.Errorf("%s@%s: %w", req.module, doc.Version, errTooNew))
+	if err := checkGate(g, req.module, doc.Version, doc.published()); err != nil {
+		s.writeResolveError(w, r, err)
 		return
 	}
 
-	s.serveVerbatim(w, r, repo, s.goDoc(repo, req, now))
+	s.serveVerbatim(w, r, repo, s.goDoc(repo, req, g))
 }
 
 // serveGoLatest answers "@latest": the upstream's, or the ".info" of the newest
-// version that is old enough when the upstream's is too new. A module without
-// such a version has no latest (404, as a module without versions).
-func (s *Service) serveGoLatest(w http.ResponseWriter, r *http.Request, repo *models.Repository, req goRequest, now time.Time) {
-	doc, err := s.goInfoOf(r.Context(), repo, req, now)
+// version the gate leaves available when the upstream's is held back. A module
+// without such a version has no latest (404, as a module without versions).
+func (s *Service) serveGoLatest(w http.ResponseWriter, r *http.Request, repo *models.Repository, req goRequest, g versionGate) {
+	doc, err := s.goInfoOf(r.Context(), repo, req, g)
 	if err != nil {
 		s.writeResolveError(w, r, err)
 		return
 	}
 
-	if !tooNew(repo, doc.published(), now) {
-		s.serveVerbatim(w, r, repo, s.goDoc(repo, req, now))
+	if hidden, _ := g.Hidden(req.module, doc.Version, doc.published()); !hidden {
+		s.serveVerbatim(w, r, repo, s.goDoc(repo, req, g))
 		return
 	}
 
 	escMod := strings.TrimSuffix(req.key, "/@latest")
 
-	lines, _, err := s.goListLines(r.Context(), repo, goListRequest(req.module, escMod), now)
+	lines, _, err := s.goListLines(r.Context(), repo, goListRequest(req.module, escMod), g)
 	if err != nil {
 		s.writeResolveError(w, r, err)
 		return
 	}
 
-	walk, err := s.goGateWalk(r.Context(), repo, req.module, goListVersions(lines), now)
+	walk, err := s.goGateWalk(r.Context(), repo, g, req.module, goListVersions(lines))
 	if err != nil {
 		s.writeResolveError(w, r, err)
 		return
@@ -217,18 +222,18 @@ func (s *Service) serveGoLatest(w http.ResponseWriter, r *http.Request, repo *mo
 		return
 	}
 
-	s.serveVerbatim(w, r, repo, s.goDoc(repo, info, now))
+	s.serveVerbatim(w, r, repo, s.goDoc(repo, info, g))
 }
 
 // serveGoList answers a version list without the versions the gate hides.
-func (s *Service) serveGoList(w http.ResponseWriter, r *http.Request, repo *models.Repository, req goRequest, now time.Time) {
-	lines, res, err := s.goListLines(r.Context(), repo, req, now)
+func (s *Service) serveGoList(w http.ResponseWriter, r *http.Request, repo *models.Repository, req goRequest, g versionGate) {
+	lines, res, err := s.goListLines(r.Context(), repo, req, g)
 	if err != nil {
 		s.writeResolveError(w, r, err)
 		return
 	}
 
-	walk, err := s.goGateWalk(r.Context(), repo, req.module, goListVersions(lines), now)
+	walk, err := s.goGateWalk(r.Context(), repo, g, req.module, goListVersions(lines))
 	if err != nil {
 		s.writeResolveError(w, r, err)
 		return
@@ -263,8 +268,8 @@ func (s *Service) serveGoList(w http.ResponseWriter, r *http.Request, repo *mode
 }
 
 // goListLines reads the non-blank lines of the cached version list req.
-func (s *Service) goListLines(ctx context.Context, repo *models.Repository, req goRequest, now time.Time) ([]string, *resolution, error) {
-	return parseDoc(ctx, s, repo, s.goDoc(repo, req, now), func(body []byte, _ *resolution) ([]string, error) {
+func (s *Service) goListLines(ctx context.Context, repo *models.Repository, req goRequest, g versionGate) ([]string, *resolution, error) {
+	return parseDoc(ctx, s, repo, s.goDoc(repo, req, g), func(body []byte, _ *resolution) ([]string, error) {
 		var lines []string
 
 		for line := range strings.SplitSeq(string(body), "\n") {
@@ -294,33 +299,55 @@ func goListVersions(lines []string) []string {
 
 // goWalk is what looking at the newest versions of a module found.
 type goWalk struct {
-	// dropped are the versions that are too new.
+	// dropped are the versions the gate holds back.
 	dropped map[string]struct{}
-	// newest is the newest version that is old enough: the highest release, or
-	// the highest pre-release when no release was found. "" when none was.
+	// newest is the newest version the gate leaves available: the highest
+	// release, or the highest pre-release when no release was found. "" when
+	// none was.
 	newest string
 }
 
-// goGateWalk looks at the ".info" of versions (highest first) until it finds
-// the highest release that is old enough, or has made goGateProbes lookups.
-func (s *Service) goGateWalk(ctx context.Context, repo *models.Repository, mod string, versions []string, now time.Time) (goWalk, error) {
+// goGateWalk applies the gate to versions (highest first). Curation rules need
+// no lookup and judge every version. The minimum age needs the ".info" of a
+// version: they are looked at until the highest release that is old enough is
+// found (everything below it is taken to be old enough), or goGateProbes
+// lookups were made; the newest version is selected among those looked at.
+func (s *Service) goGateWalk(ctx context.Context, repo *models.Repository, g versionGate, mod string, versions []string) (goWalk, error) {
 	w := goWalk{dropped: map[string]struct{}{}}
 
-	var firstEligible string
+	var (
+		firstEligible string
+		selecting     = true
+		probes        int
+	)
 
-	for i, v := range versions {
-		if i >= goGateProbes {
-			break
-		}
-
-		published, err := s.goPublished(ctx, repo, mod, v, now)
-		if err != nil {
-			return goWalk{}, err
-		}
-
-		if tooNew(repo, published, now) {
+	for _, v := range versions {
+		if hidden, _ := g.Hidden(mod, v, time.Time{}); hidden {
 			w.dropped[v] = struct{}{}
 			continue
+		}
+
+		if !selecting {
+			continue
+		}
+
+		if g.AgeActive() {
+			if probes >= goGateProbes {
+				selecting = false
+				continue
+			}
+
+			probes++
+
+			published, err := s.goPublished(ctx, repo, g, mod, v)
+			if err != nil {
+				return goWalk{}, err
+			}
+
+			if hidden, _ := g.Hidden(mod, v, published); hidden {
+				w.dropped[v] = struct{}{}
+				continue
+			}
 		}
 
 		if firstEligible == "" {
@@ -329,7 +356,7 @@ func (s *Service) goGateWalk(ctx context.Context, repo *models.Repository, mod s
 
 		if semver.Prerelease(v) == "" {
 			w.newest = v
-			break
+			selecting = false
 		}
 	}
 
@@ -338,4 +365,27 @@ func (s *Service) goGateWalk(ctx context.Context, repo *models.Repository, mod s
 	}
 
 	return w, nil
+}
+
+// goInfoPublished is Hooks.Published: the Time of the cached ".info" of version
+// (with its "v") of mod.
+func (s *Service) goInfoPublished(ctx context.Context, repo *models.Repository, mod, version string) (time.Time, bool) {
+	req, ok := goInfoRequest(mod, version)
+	if !ok {
+		return time.Time{}, false
+	}
+
+	body, ok := s.cachedDocBody(ctx, repo, s.goDoc(repo, req, versionGate{}))
+	if !ok {
+		return time.Time{}, false
+	}
+
+	var doc goInfoDoc
+	if json.Unmarshal(body, &doc) != nil {
+		return time.Time{}, false
+	}
+
+	published := doc.published()
+
+	return published, !published.IsZero()
 }

@@ -568,7 +568,7 @@ func (s *Service) serveNuGetDoc(w http.ResponseWriter, r *http.Request, repo *mo
 		// (origin included) as well as on the cached document, and on the
 		// minimum age gate (which hides versions until they are old enough).
 		etag: func(blobKey string) string {
-			if stamp := gate.stamp(); stamp != "" {
+			if stamp := gate.Stamp(); stamp != "" {
 				return nugetETag(blobKey, idxRes.entry.BlobKey, repoURL, stamp)
 			}
 
@@ -608,15 +608,31 @@ func renderNuGetDoc(doc []byte, p nugetPath, idx *pkgnuget.ServiceIndex, repoURL
 	}
 }
 
+// serveNuGetPackageFile answers a .nupkg or .nuspec. Curation is checked here,
+// before the cache is read, so a file cached before the rules changed is refused
+// too; the minimum age needs the publish time, which only a fetch looks up (see
+// locateNuGetPackageFile), so a cached file of a version that has aged in is
+// served as it is.
 func (s *Service) serveNuGetPackageFile(w http.ResponseWriter, r *http.Request, repo *models.Repository, p nugetPath) {
+	g, err := s.gateFor(r.Context(), repo, time.Now())
+	if err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
+
+	if err := checkGate(g, p.id, p.version, time.Time{}); err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
+
 	s.serveDownload(w, r, repo, p.key(), func(ctx context.Context) (download, error) {
-		return s.locateNuGetPackageFile(ctx, repo, p)
+		return s.locateNuGetPackageFile(ctx, repo, g, p)
 	})
 }
 
 // locateNuGetPackageFile finds the .nupkg or .nuspec p names in the flat
-// container the service index advertises.
-func (s *Service) locateNuGetPackageFile(ctx context.Context, repo *models.Repository, p nugetPath) (download, error) {
+// container the service index advertises; g refuses a version it holds back.
+func (s *Service) locateNuGetPackageFile(ctx context.Context, repo *models.Repository, g versionGate, p nugetPath) (download, error) {
 	_, idx, err := s.resolveNuGetIndex(ctx, repo)
 	if err != nil {
 		return download{}, err
@@ -631,17 +647,16 @@ func (s *Service) locateNuGetPackageFile(ctx context.Context, repo *models.Repos
 		opts: fetchOpts{verify: verifyNuspec},
 	}
 
-	now := time.Now()
 	nupkg := strings.HasSuffix(p.file, ".nupkg")
 
-	if nupkg || minAge(repo) > 0 {
-		meta, merr := s.nugetLeafMeta(ctx, repo, idx, p, nupkg)
+	if nupkg || g.AgeActive() {
+		meta, merr := s.nugetLeafMeta(ctx, repo, idx, p, nupkg, g.AgeActive())
 		if merr != nil {
 			return download{}, merr
 		}
 
-		if tooNew(repo, meta.published, now) {
-			return download{}, fmt.Errorf("nuget %s %s: %w", p.id, p.version, errTooNew)
+		if gerr := checkGate(g, p.id, p.version, meta.published); gerr != nil {
+			return download{}, gerr
 		}
 
 		if nupkg {
@@ -787,5 +802,6 @@ var NuGetHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	Serve:      (*Service).serveNuGet,
 	Immutable:  nugetImmutable,
 	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, nugetPackageDir) },
+	Published:  (*Service).nugetPublished,
 	BlobPath:   presign.NuGetBlobPath,
 }

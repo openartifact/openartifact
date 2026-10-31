@@ -56,18 +56,34 @@ type nugetDates struct {
 	complete bool
 }
 
-// nugetGate is the minimum-age gate of one request.
-type nugetGate struct {
-	repo *models.Repository
-	now  time.Time
-	// dates are the publish times of the package a version list belongs to; nil
-	// when the feed cannot date its versions.
-	dates *nugetDates
+// publishedOf is the publish time the gate is asked about for the normalized
+// version n of the version list: the registration's, zero when it states none
+// (or when d is nil, the feed cannot date its versions), and now for a version
+// a complete registration has not seen yet (it is brand new).
+func (d *nugetDates) publishedOf(n string, now time.Time) time.Time {
+	if d == nil {
+		return time.Time{}
+	}
+
+	if published, known := d.published[n]; known {
+		return published
+	}
+
+	if d.complete {
+		return now
+	}
+
+	return time.Time{}
 }
 
-// stamp is the gate's part of the validator of a rendered document, "" when
-// the gate is off.
-func (g nugetGate) stamp() string { return gateStamp(g.repo, g.now) }
+// nugetGate is the version gate of one request.
+type nugetGate struct {
+	versionGate
+
+	// dates are the publish times of the package a version list belongs to; nil
+	// when the feed cannot date its versions (or the minimum age is off).
+	dates *nugetDates
+}
 
 // parseNuGetPublished reads a "published" timestamp: the zero time when it is
 // absent, unreadable or the year-1900 placeholder of an unlisted package.
@@ -126,12 +142,14 @@ func nugetItemMeta(raw json.RawMessage) (string, time.Time) {
 	return version, published
 }
 
-// gateNuGetItems returns the items of a registration page old enough at now.
-func gateNuGetItems(repo *models.Repository, items []json.RawMessage, now time.Time) []json.RawMessage {
+// gateNuGetItems returns the items of a registration page of package id that
+// the gate leaves available.
+func gateNuGetItems(g versionGate, id string, items []json.RawMessage) []json.RawMessage {
 	kept := make([]json.RawMessage, 0, len(items))
 
 	for _, it := range items {
-		if _, published := nugetItemMeta(it); !tooNew(repo, published, now) {
+		version, published := nugetItemMeta(it)
+		if hidden, _ := g.Hidden(id, version, published); !hidden {
 			kept = append(kept, it)
 		}
 	}
@@ -139,9 +157,9 @@ func gateNuGetItems(repo *models.Repository, items []json.RawMessage, now time.T
 	return kept
 }
 
-// gateNuGetRegIndex drops the too-new items of the inline pages of a
-// registration index; errNotFound when no page is left.
-func gateNuGetRegIndex(repo *models.Repository, doc []byte, now time.Time) ([]byte, error) {
+// gateNuGetRegIndex drops the unavailable items of the inline pages of the
+// registration index of package id; errNotFound when no page is left.
+func gateNuGetRegIndex(g versionGate, id string, doc []byte) ([]byte, error) {
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(doc, &top); err != nil {
 		return nil, fmt.Errorf("%w: %w", errUnusableDoc, err)
@@ -159,7 +177,7 @@ func gateNuGetRegIndex(repo *models.Repository, doc []byte, now time.Time) ([]by
 	)
 
 	for _, raw := range pages {
-		page, state := gateNuGetInlinePage(repo, raw, now)
+		page, state := gateNuGetInlinePage(g, id, raw)
 
 		switch state {
 		case nugetPageKept:
@@ -211,7 +229,7 @@ const (
 
 // gateNuGetInlinePage gates one page of a registration index; the returned page
 // is the narrowed one for nugetPageNarrowed.
-func gateNuGetInlinePage(repo *models.Repository, raw json.RawMessage, now time.Time) (json.RawMessage, nugetPageState) {
+func gateNuGetInlinePage(g versionGate, id string, raw json.RawMessage) (json.RawMessage, nugetPageState) {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil || fields["items"] == nil {
 		return nil, nugetPageNotInline
@@ -222,7 +240,7 @@ func gateNuGetInlinePage(repo *models.Repository, raw json.RawMessage, now time.
 		return nil, nugetPageNotInline
 	}
 
-	left := gateNuGetItems(repo, items, now)
+	left := gateNuGetItems(g, id, items)
 
 	switch {
 	case len(left) == len(items):
@@ -264,8 +282,9 @@ func marshalNuGetObject(fields map[string]json.RawMessage) ([]byte, error) {
 	return out, nil
 }
 
-// gateNuGetRegPage drops the too-new items of a registration page document.
-func gateNuGetRegPage(repo *models.Repository, doc []byte, now time.Time) ([]byte, error) {
+// gateNuGetRegPage drops the unavailable items of a registration page document
+// of package id.
+func gateNuGetRegPage(g versionGate, id string, doc []byte) ([]byte, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(doc, &fields); err != nil {
 		return nil, fmt.Errorf("%w: %w", errUnusableDoc, err)
@@ -276,7 +295,7 @@ func gateNuGetRegPage(repo *models.Repository, doc []byte, now time.Time) ([]byt
 		return doc, nil //nolint:nilerr // no items: nothing to gate
 	}
 
-	left := gateNuGetItems(repo, items, now)
+	left := gateNuGetItems(g, id, items)
 	if len(left) == len(items) {
 		return doc, nil
 	}
@@ -284,23 +303,26 @@ func gateNuGetRegPage(repo *models.Repository, doc []byte, now time.Time) ([]byt
 	return setNuGetItems(fields, left)
 }
 
-// gateNuGetLeaf answers errNotFound for the leaf of a too-new version.
-func gateNuGetLeaf(repo *models.Repository, doc []byte, now time.Time) error {
-	if _, published := nugetItemMeta(doc); tooNew(repo, published, now) {
+// gateNuGetLeaf answers errNotFound for the leaf of an unavailable version of
+// package id (version is the one the request names, for a leaf that states none).
+func gateNuGetLeaf(g versionGate, id, version string, doc []byte) error {
+	v, published := nugetItemMeta(doc)
+	if v == "" {
+		v, _ = pkgnuget.Normalize(version)
+	}
+
+	if hidden, _ := g.Hidden(id, v, published); hidden {
 		return errNotFound
 	}
 
 	return nil
 }
 
-// gateNuGetVersions drops from a flat container version list the versions that
-// are too new at now by dates; errNotFound when none is left. A nil dates
-// leaves the list alone.
-func gateNuGetVersions(repo *models.Repository, doc []byte, dates *nugetDates, now time.Time) ([]byte, error) {
-	if dates == nil {
-		return doc, nil
-	}
-
+// gateNuGetVersions drops from the flat container version list of package id
+// the versions the gate holds back: by curation, and by the minimum age as
+// dates (which are nil when the feed cannot date its versions) tell;
+// errNotFound when none is left.
+func gateNuGetVersions(g versionGate, id string, doc []byte, dates *nugetDates) ([]byte, error) {
 	versions, err := pkgnuget.ParseVersionList(doc)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errUnusableDoc, err)
@@ -311,8 +333,7 @@ func gateNuGetVersions(repo *models.Repository, doc []byte, dates *nugetDates, n
 	for _, v := range versions {
 		n, _ := pkgnuget.Normalize(v)
 
-		published, known := dates.published[n]
-		if (known && !tooNew(repo, published, now)) || (!known && !dates.complete) {
+		if hidden, _ := g.Hidden(id, n, dates.publishedOf(n, g.Now)); !hidden {
 			kept = append(kept, v)
 		}
 	}
@@ -334,33 +355,39 @@ func gateNuGetVersions(repo *models.Repository, doc []byte, dates *nugetDates, n
 
 // apply gates the upstream document doc (decompressed) of p.
 func (g nugetGate) apply(doc []byte, p nugetPath) ([]byte, error) {
-	if minAge(g.repo) == 0 {
+	if !g.Active() {
 		return doc, nil
 	}
 
 	switch p.kind {
 	case nugetRegIndex:
-		return gateNuGetRegIndex(g.repo, doc, g.now)
+		return gateNuGetRegIndex(g.versionGate, p.id, doc)
 	case nugetRegPage:
-		return gateNuGetRegPage(g.repo, doc, g.now)
+		return gateNuGetRegPage(g.versionGate, p.id, doc)
 	case nugetRegLeaf:
-		return doc, gateNuGetLeaf(g.repo, doc, g.now)
+		return doc, gateNuGetLeaf(g.versionGate, p.id, p.version, doc)
 	case nugetVersions:
-		return gateNuGetVersions(g.repo, doc, g.dates, g.now)
+		return gateNuGetVersions(g.versionGate, p.id, doc, g.dates)
 	default:
 		return doc, nil
 	}
 }
 
 // nugetGateFor prepares the gate of a request for p: the publish times of the
-// package's versions when p is its version list (read before the list is held,
-// as they take documents of their own).
+// package's versions when the minimum age is on and p is its version list (read
+// before the list is held, as they take documents of their own). Curation needs
+// no dates and fetches none.
 func (s *Service) nugetGateFor(
 	ctx context.Context, repo *models.Repository, idx *pkgnuget.ServiceIndex, p nugetPath, now time.Time,
 ) (nugetGate, error) {
-	g := nugetGate{repo: repo, now: now}
+	vg, err := s.gateFor(ctx, repo, now)
+	if err != nil {
+		return nugetGate{}, err
+	}
 
-	if minAge(repo) == 0 || p.kind != nugetVersions {
+	g := nugetGate{versionGate: vg}
+
+	if !vg.AgeActive() || p.kind != nugetVersions {
 		return g, nil
 	}
 
@@ -470,7 +497,7 @@ type nugetLeaf struct {
 // the catalog entry its registration leaf names carries packageHash and
 // packageSize, and the leaf (or that entry) the publish time. The catalog is
 // only fetched when it is needed: for the digest of a .nupkg (wantDigest), or
-// for the publish time the leaf does not state. An upstream without a leaf or
+// for the publish time the leaf does not state (wantDate, the minimum age is on). An upstream without a leaf or
 // catalog (or whose catalog entry has neither) yields the zero value; any other
 // failure is returned, so a package is never accepted unverified or undated
 // because the check could not run.
@@ -479,7 +506,7 @@ func (s *Service) nugetLeafMeta(
 	repo *models.Repository,
 	idx *pkgnuget.ServiceIndex,
 	p nugetPath,
-	wantDigest bool,
+	wantDigest, wantDate bool,
 ) (nugetMeta, error) {
 	leafPath := nugetPath{kind: nugetRegLeaf, id: p.id, version: p.version}
 
@@ -504,7 +531,7 @@ func (s *Service) nugetLeafMeta(
 
 	meta := nugetMeta{published: leaf.published}
 
-	needCatalog := wantDigest || (minAge(repo) > 0 && leaf.published.IsZero())
+	needCatalog := wantDigest || (wantDate && leaf.published.IsZero())
 	if !needCatalog || leaf.catalog == "" || leaf.catalog == nugetDocURL(idx, leafPath) {
 		return meta, nil
 	}
@@ -538,4 +565,49 @@ func parseNuGetCatalogPublished(doc []byte) time.Time {
 	}
 
 	return parseNuGetPublished(in.Published)
+}
+
+// nugetPublished is Hooks.Published: the publish time of version in the cached
+// registration leaf of the package, else in the cached registration index's
+// inline pages. A version of an unlisted package has no time.
+func (s *Service) nugetPublished(ctx context.Context, repo *models.Repository, id, version string) (time.Time, bool) {
+	id = strings.ToLower(id)
+	normalized, _ := pkgnuget.Normalize(version)
+
+	cached := func(p nugetPath) ([]byte, bool) {
+		body, ok := s.cachedDocBody(ctx, repo, metaDoc{key: p.key(), limit: maxNuGetDocBytes, what: "nuget document"})
+		if !ok {
+			return nil, false
+		}
+
+		doc, err := gunzipDoc(body)
+
+		return doc, err == nil
+	}
+
+	if doc, ok := cached(nugetPath{kind: nugetRegLeaf, id: id, version: normalized}); ok {
+		if _, published := nugetItemMeta(doc); !published.IsZero() {
+			return published, true
+		}
+	}
+
+	doc, ok := cached(nugetPath{kind: nugetRegIndex, id: id})
+	if !ok {
+		return time.Time{}, false
+	}
+
+	pages, err := pkgnuget.ParsePages(doc)
+	if err != nil {
+		return time.Time{}, false
+	}
+
+	for _, page := range pages {
+		for _, it := range page.Items {
+			if v, published := nugetItemMeta(it); v == normalized && !published.IsZero() {
+				return published, true
+			}
+		}
+	}
+
+	return time.Time{}, false
 }
