@@ -127,7 +127,9 @@ func (g Gate) Stamp() string {
 	var b strings.Builder
 
 	if g.MinAge > 0 {
-		b.WriteString("h" + strconv.Itoa(int(g.MinAge/time.Hour)) + "@" + strconv.FormatInt(g.Now.Unix()/int64(StampBucket/time.Second), 10))
+		b.WriteString(
+			"h" + strconv.Itoa(int(g.MinAge/time.Hour)) + "@" + strconv.FormatInt(g.Now.Unix()/int64(StampBucket/time.Second), 10),
+		)
 	}
 
 	if g.tag != "" {

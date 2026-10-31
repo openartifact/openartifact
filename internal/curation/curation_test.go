@@ -161,9 +161,16 @@ func TestSetEvaluate(t *testing.T) {
 			pkg: "github.com/foo/bar", ver: "v1.0.0"},
 		{name: "go version keeps v", format: "go", mode: ModeDenylist, rules: rules(block("github.com/foo/bar", "v1.*")),
 			pkg: "github.com/foo/bar", ver: "v1.2.3", hidden: true, blockedByID: "b-github.com/foo/barv1.*"},
-		{name: "maven coordinates", format: "maven", mode: ModeDenylist, rules: rules(block("org.apache.logging.log4j:log4j-core", "2.14.*")),
-			pkg: "org.apache.logging.log4j:log4j-core", ver: "2.14.1", hidden: true,
-			blockedByID: "b-org.apache.logging.log4j:log4j-core2.14.*"},
+		{
+			name:        "maven coordinates",
+			format:      "maven",
+			mode:        ModeDenylist,
+			rules:       rules(block("org.apache.logging.log4j:log4j-core", "2.14.*")),
+			pkg:         "org.apache.logging.log4j:log4j-core",
+			ver:         "2.14.1",
+			hidden:      true,
+			blockedByID: "b-org.apache.logging.log4j:log4j-core2.14.*",
+		},
 	}
 
 	for _, tt := range tests {
