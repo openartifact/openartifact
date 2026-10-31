@@ -85,6 +85,15 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### 0.15.1
+
+No migrations; replaces 0.15.0 in place. Fixes found by the fuzzers (#336):
+
+- **Grouped package listing of docker repositories.** `GET /api/v1/repositories/{name}/packages?group=package` (the package view of the web UI) answered `500` on every docker repository; it lists the images again.
+- **Cleanup policies with a huge `keep_since_days`.** A value above about 2.4 million days made the dry run answer `500` and the scheduled run fail (`timestamp out of range`); such a value now keeps every artifact, as intended. Stored policies need no change.
+- **`GET /api/v1/users` with a huge `page`** answered `500`; `page` is now capped at 10000 like the other lists.
+- **OpenAPI corrections.** `StorageBackend.kind` and `status` list the values the server returns, `GET /api/v1/admin/storage/primary` documents its response, and the `403`/`405` answers of `PUT .../comps` and `DELETE .../packages/{id}` (proxy and group repositories are read-only) are documented.
+
 ### 0.15.0
 
 > **Breaking: 0.15 cannot be upgraded in place.** The package tables were replaced by a generic schema and the 99 migrations of 0.x were squashed into one baseline (`migrations/001_baseline.sql`). A 0.15 server started on a 0.14 database refuses to start (`database predates the 0.15 schema baseline`). Move the data with `oa import openartifact` into an empty 0.15 database, as below. Design: [format plugins](../design/format-plugins.md).
