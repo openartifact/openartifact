@@ -27,6 +27,8 @@ type CleanupRunner interface {
 	TriggerPolicy(ctx context.Context, policyID string) error
 	// PreviewPolicy reports what a run would remove, removing nothing.
 	PreviewPolicy(ctx context.Context, policyID string) (*worker.CleanupPreview, error)
+	// PreviewDraftPolicy is PreviewPolicy for a policy that is not stored.
+	PreviewDraftPolicy(ctx context.Context, policy *models.CleanupPolicy) (*worker.CleanupPreview, error)
 }
 
 // CleanupStore is the part of the database CleanupHandler needs.
@@ -53,6 +55,7 @@ func NewCleanupHandler(db CleanupStore, log *logger.Logger, evaluator *auth.Eval
 func (h *CleanupHandler) RegisterAuthed(r chi.Router) {
 	r.Get("/api/v1/repositories/{name}/cleanup-policies", h.handleList)
 	r.Post("/api/v1/repositories/{name}/cleanup-policies", h.handleCreate)
+	r.Post("/api/v1/repositories/{name}/cleanup-policies/dry-run", h.handleDraftDryRun)
 	r.With(requireUUIDParams("id")).Get("/api/v1/repositories/{name}/cleanup-policies/{id}", h.handleGet)
 	r.With(requireUUIDParams("id")).Put("/api/v1/repositories/{name}/cleanup-policies/{id}", h.handleUpdate)
 	r.With(requireUUIDParams("id")).Delete("/api/v1/repositories/{name}/cleanup-policies/{id}", h.handleDelete)
@@ -101,37 +104,13 @@ func (h *CleanupHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body struct {
-		Name                    string `json:"name"`
-		Enabled                 bool   `json:"enabled"`
-		KeepLastN               *int   `json:"keep_last_n"`
-		KeepSinceDays           *int   `json:"keep_since_days"`
-		KeepDownloadedSinceDays *int   `json:"keep_downloaded_since_days"`
-		NamePattern             string `json:"name_pattern"`
-		ScheduleCron            string `json:"schedule_cron"`
-	}
+	var body cleanupPolicyBody
 	if err := decodeJSON(r, &body); err != nil {
 		writeBadJSON(w, err)
 		return
 	}
 
-	scheduleCron := strings.TrimSpace(body.ScheduleCron)
-	if scheduleCron == "" {
-		scheduleCron = models.DefaultCleanupCron
-	}
-
-	policy := &models.CleanupPolicy{
-		RepositoryID:            repo.ID,
-		Name:                    body.Name,
-		Enabled:                 body.Enabled,
-		KeepLastN:               body.KeepLastN,
-		KeepSinceDays:           body.KeepSinceDays,
-		KeepDownloadedSinceDays: body.KeepDownloadedSinceDays,
-		NamePattern:             body.NamePattern,
-		ScheduleCron:            scheduleCron,
-		CreatedAt:               time.Now(),
-		UpdatedAt:               time.Now(),
-	}
+	policy := body.policy(repo.ID)
 
 	if err := policy.Validate(); err != nil {
 		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
@@ -164,6 +143,39 @@ func (h *CleanupHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, policyToMap(policy))
+}
+
+// cleanupPolicyBody is the body of a new cleanup policy (create and the
+// dry run of an unsaved policy).
+type cleanupPolicyBody struct {
+	Name                    string `json:"name"`
+	Enabled                 bool   `json:"enabled"`
+	KeepLastN               *int   `json:"keep_last_n"`
+	KeepSinceDays           *int   `json:"keep_since_days"`
+	KeepDownloadedSinceDays *int   `json:"keep_downloaded_since_days"`
+	NamePattern             string `json:"name_pattern"`
+	ScheduleCron            string `json:"schedule_cron"`
+}
+
+// policy builds the (unsaved, unvalidated) policy of repository repoID.
+func (b *cleanupPolicyBody) policy(repoID string) *models.CleanupPolicy {
+	scheduleCron := strings.TrimSpace(b.ScheduleCron)
+	if scheduleCron == "" {
+		scheduleCron = models.DefaultCleanupCron
+	}
+
+	return &models.CleanupPolicy{
+		RepositoryID:            repoID,
+		Name:                    b.Name,
+		Enabled:                 b.Enabled,
+		KeepLastN:               b.KeepLastN,
+		KeepSinceDays:           b.KeepSinceDays,
+		KeepDownloadedSinceDays: b.KeepDownloadedSinceDays,
+		NamePattern:             b.NamePattern,
+		ScheduleCron:            scheduleCron,
+		CreatedAt:               time.Now(),
+		UpdatedAt:               time.Now(),
+	}
 }
 
 // cleanupPolicyPatch is the partial-update body of a cleanup policy.
@@ -362,6 +374,7 @@ type cleanupPreviewResponse struct {
 	Format     string                       `json:"format"`
 	DryRun     bool                         `json:"dry_run"`
 	Rows       int                          `json:"rows"`
+	Bytes      int64                        `json:"bytes"`
 	Items      []cleanupPreviewItemResponse `json:"items"`
 	Truncated  bool                         `json:"truncated"`
 }
@@ -404,6 +417,49 @@ func (h *CleanupHandler) handleDryRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, newCleanupPreviewResponse(prev))
 }
 
+// handleDraftDryRun is handleDryRun for a policy that is not stored: the body
+// is a new policy as create takes it (the name may be left out), validated the
+// same way, and evaluated by the same code. Nothing is saved or changed.
+func (h *CleanupHandler) handleDraftDryRun(w http.ResponseWriter, r *http.Request) {
+	repo, ok := h.repoThenRepoAdmin(w, r, "dry-run draft cleanup policy")
+	if !ok {
+		return
+	}
+
+	if !requireCleanupFormat(w, repo) {
+		return
+	}
+
+	var body cleanupPolicyBody
+	if err := decodeJSON(r, &body); err != nil {
+		writeBadJSON(w, err)
+		return
+	}
+
+	if strings.TrimSpace(body.Name) == "" {
+		body.Name = "preview"
+	}
+
+	policy := body.policy(repo.ID)
+	if err := policy.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+		return
+	}
+
+	if h.runner == nil {
+		writeError(w, http.StatusNotImplemented, "not_implemented", "cleanup worker is not available")
+		return
+	}
+
+	prev, err := h.runner.PreviewDraftPolicy(r.Context(), policy)
+	if err != nil {
+		h.writePreviewError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, newCleanupPreviewResponse(prev))
+}
+
 func newCleanupPreviewResponse(prev *worker.CleanupPreview) cleanupPreviewResponse {
 	items := make([]cleanupPreviewItemResponse, len(prev.Items))
 	for i, it := range prev.Items {
@@ -415,6 +471,7 @@ func newCleanupPreviewResponse(prev *worker.CleanupPreview) cleanupPreviewRespon
 		Format:     prev.Format,
 		DryRun:     true,
 		Rows:       prev.Rows,
+		Bytes:      prev.Bytes,
 		Items:      items,
 		Truncated:  prev.Truncated,
 	}

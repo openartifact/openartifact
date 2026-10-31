@@ -10,7 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 REST API of the OpenArtifact artifact repository manager.
 
-This reference is generated from the embedded OpenAPI document `internal/api/openapi.json` and lists 295 endpoints in 28 tags. Authentication, token kinds, CSRF handling and worked examples are in the [REST API guide](../../integrations/api.md).
+This reference is generated from the embedded OpenAPI document `internal/api/openapi.json` and lists 296 endpoints in 28 tags. Authentication, token kinds, CSRF handling and worked examples are in the [REST API guide](../../integrations/api.md).
 
 ## Security
 
@@ -36,7 +36,7 @@ Unless an endpoint says otherwise, a request must satisfy one of: `bearerAuth` o
 | [Backup](backup.md) | 5 | - |
 | [Branding](branding.md) | 7 | - |
 | [Bundles](bundles.md) | 19 | - |
-| [Cleanup](cleanup.md) | 8 | - |
+| [Cleanup](cleanup.md) | 9 | - |
 | [Declarative](declarative.md) | 3 | - |
 | [Dependency-Track](dependency-track.md) | 9 | - |
 | [Documentation](documentation.md) | 3 | - |

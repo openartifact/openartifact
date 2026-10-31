@@ -2536,6 +2536,10 @@ export type CleanupPreview = {
      * Package rows a run would remove (one per file for formats that store files separately)
      */
     rows: number;
+    /**
+     * Size of the blobs the listed rows reference; a blob shared by two rows counts twice, docker tags count 0
+     */
+    bytes: number;
     items: Array<CleanupPreviewItem>;
     /**
      * items is capped at 500 entries
@@ -11823,6 +11827,42 @@ export type PostApiV1RepositoriesByNameCleanupPoliciesByIdRunResponses = {
      */
     202: unknown;
 };
+
+export type PostApiV1RepositoriesByNameCleanupPoliciesDryRunData = {
+    body: {
+        name?: string;
+        keep_last_n?: number;
+        keep_since_days?: number;
+        name_pattern?: string;
+    };
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/cleanup-policies/dry-run';
+};
+
+export type PostApiV1RepositoriesByNameCleanupPoliciesDryRunErrors = {
+    /**
+     * Invalid policy or a format without cleanup support
+     */
+    400: Error;
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1RepositoriesByNameCleanupPoliciesDryRunError = PostApiV1RepositoriesByNameCleanupPoliciesDryRunErrors[keyof PostApiV1RepositoriesByNameCleanupPoliciesDryRunErrors];
+
+export type PostApiV1RepositoriesByNameCleanupPoliciesDryRunResponses = {
+    /**
+     * What a run of this policy would remove
+     */
+    200: CleanupPreview;
+};
+
+export type PostApiV1RepositoriesByNameCleanupPoliciesDryRunResponse = PostApiV1RepositoriesByNameCleanupPoliciesDryRunResponses[keyof PostApiV1RepositoriesByNameCleanupPoliciesDryRunResponses];
 
 export type PostApiV1RepositoriesByNameCleanupPoliciesByIdDryRunData = {
     body?: never;

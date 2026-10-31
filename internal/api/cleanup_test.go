@@ -112,6 +112,12 @@ type fakeRunner struct {
 	ids     []string
 	err     error
 	preview *worker.CleanupPreview
+	drafts  []*models.CleanupPolicy
+}
+
+func (f *fakeRunner) PreviewDraftPolicy(_ context.Context, p *models.CleanupPolicy) (*worker.CleanupPreview, error) {
+	f.drafts = append(f.drafts, p)
+	return f.preview, f.err
 }
 
 func (f *fakeRunner) TriggerPolicy(_ context.Context, id string) error {
@@ -291,4 +297,91 @@ func TestCleanupDryRunReportsWithoutRunning(t *testing.T) {
 	if rw := cleanupRequest(t, db, nil, http.MethodPost, path, ""); rw.Code != http.StatusNotImplemented {
 		t.Errorf("nil runner status = %d", rw.Code)
 	}
+}
+
+func TestCleanupDraftDryRun(t *testing.T) {
+	const path = "/api/v1/repositories/r/cleanup-policies/dry-run"
+
+	newRunner := func() *fakeRunner {
+		return &fakeRunner{preview: &worker.CleanupPreview{
+			Repository: "r", Format: "npm", Rows: 3, Bytes: 4096,
+			Items: []worker.CleanupPreviewItem{{ID: "a", Name: "left-pad", Version: "1.0.0"}},
+		}}
+	}
+
+	t.Run("evaluates the unsaved policy and saves nothing", func(t *testing.T) {
+		db := &cleanupMockDB{}
+		runner := newRunner()
+
+		rw := cleanupRequest(t, db, runner, http.MethodPost, path, `{"keep_last_n":2,"name_pattern":"^left"}`)
+		if rw.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rw.Code, rw.Body)
+		}
+
+		for _, want := range []string{`"dry_run":true`, `"rows":3`, `"bytes":4096`, `"name":"left-pad"`} {
+			if !strings.Contains(rw.Body.String(), want) {
+				t.Errorf("body %s lacks %s", rw.Body, want)
+			}
+		}
+
+		if db.created != 0 || len(runner.ids) != 0 {
+			t.Errorf("created = %d, runner calls = %v; a draft dry run must not save or run", db.created, runner.ids)
+		}
+
+		if len(runner.drafts) != 1 {
+			t.Fatalf("drafts = %d, want 1", len(runner.drafts))
+		}
+
+		got := runner.drafts[0]
+		if got.RepositoryID != "repo-1" || got.KeepLastN == nil || *got.KeepLastN != 2 || got.NamePattern != "^left" || got.Name == "" {
+			t.Errorf("draft = %+v", got)
+		}
+	})
+
+	for name, body := range map[string]string{
+		"no rule":              `{"name":"p"}`,
+		"keep_last_n too low":  `{"keep_last_n":0}`,
+		"keep_since_days <1":   `{"keep_since_days":-3}`,
+		"download rule":        `{"keep_last_n":1,"keep_downloaded_since_days":5}`,
+		"invalid name pattern": `{"keep_last_n":1,"name_pattern":"("}`,
+	} {
+		t.Run("rejects "+name, func(t *testing.T) {
+			runner := newRunner()
+
+			rw := cleanupRequest(t, &cleanupMockDB{}, runner, http.MethodPost, path, body)
+			if rw.Code != http.StatusBadRequest || !strings.Contains(rw.Body.String(), "validation_failed") {
+				t.Errorf("status = %d, body = %s", rw.Code, rw.Body)
+			}
+
+			if len(runner.drafts) != 0 {
+				t.Errorf("an invalid draft reached the evaluator")
+			}
+		})
+	}
+
+	t.Run("rejects malformed JSON", func(t *testing.T) {
+		if rw := cleanupRequest(t, &cleanupMockDB{}, newRunner(), http.MethodPost, path, `{`); rw.Code != http.StatusBadRequest {
+			t.Errorf("status = %d", rw.Code)
+		}
+	})
+
+	t.Run("rejects an unsupported format", func(t *testing.T) {
+		rw := cleanupRequest(t, &cleanupMockDB{format: "bogus"}, newRunner(), http.MethodPost, path, `{"keep_last_n":2}`)
+		if rw.Code != http.StatusBadRequest || !strings.Contains(rw.Body.String(), codeUnsupportedFormat) {
+			t.Errorf("status = %d, body = %s", rw.Code, rw.Body)
+		}
+	})
+
+	t.Run("without a worker", func(t *testing.T) {
+		if rw := cleanupRequest(
+			t,
+			&cleanupMockDB{},
+			nil,
+			http.MethodPost,
+			path,
+			`{"keep_last_n":2}`,
+		); rw.Code != http.StatusNotImplemented {
+			t.Errorf("status = %d", rw.Code)
+		}
+	})
 }

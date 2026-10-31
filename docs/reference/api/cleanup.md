@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Cleanup API
 
-8 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+9 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -72,6 +72,37 @@ Create a new cleanup policy for a repository. Requires global admin, or the main
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
+
+### `POST /api/v1/repositories/{name}/cleanup-policies/dry-run`
+
+Preview what an unsaved cleanup policy would remove (admin; nothing is saved or changed)
+
+Takes the body of a new cleanup policy (the name may be left out), validates it like create and evaluates it with the same code as the dry run of a stored policy. Nothing is stored. Used by the policy editor for a live preview. The list is capped at 500 rows.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+
+**Request body** (required)
+
+`application/json`: object
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `keep_last_n` | integer | no | Minimum: 1. |
+| `keep_since_days` | integer | no | Minimum: 1. |
+| `name` | string | no | - |
+| `name_pattern` | string | no | - |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | What a run of this policy would remove | `application/json`: [CleanupPreview](schemas.md#cleanuppreview) |
+| `400` | Invalid policy or a format without cleanup support | `application/json`: [Error](schemas.md#error) |
+| `default` | Error | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/cleanup-policies/{id}`
 

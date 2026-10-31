@@ -441,6 +441,8 @@ type cleanupCandidate struct {
 	version   string
 	packageID string
 	blobIDs   []string
+	// bytes is the size of the blobs the row references, filled by eligibleCandidates.
+	bytes int64
 }
 
 // cleanupActor is the deleted_by recorded on rows a cleanup policy moves to the
@@ -665,6 +667,8 @@ const cleanupChunkSize = 200
 type blobFacts struct {
 	// bundled: a release bundle references the blob and pins it.
 	bundled bool
+	// sizeBytes is the size of the blob.
+	sizeBytes int64
 }
 
 // deleteChunk removes the rows of chunk the policy may remove and returns how
@@ -804,6 +808,10 @@ nextRow:
 			continue
 		}
 
+		for _, blobID := range c.blobIDs {
+			c.bytes += facts[blobID].sizeBytes
+		}
+
 		eligible = append(eligible, c)
 	}
 
@@ -869,7 +877,7 @@ func (w *CleanupWorker) loadBlobFacts(ctx context.Context, chunk []cleanupCandid
 	}
 
 	rows, err := w.db.GetDB().QueryContext(ctx,
-		`SELECT b.id::text, EXISTS(SELECT 1 FROM release_bundle_items rbi WHERE rbi.sha256 = b.sha256)
+		`SELECT b.id::text, EXISTS(SELECT 1 FROM release_bundle_items rbi WHERE rbi.sha256 = b.sha256), b.size_bytes
 		 FROM blobs b WHERE b.id = ANY($1::uuid[])`, uuidArrayLiteral(ids))
 	if err != nil {
 		return nil, fmt.Errorf("query blobs: %w", err)
@@ -883,7 +891,7 @@ func (w *CleanupWorker) loadBlobFacts(ctx context.Context, chunk []cleanupCandid
 			f  blobFacts
 		)
 
-		if err := rows.Scan(&id, &f.bundled); err != nil {
+		if err := rows.Scan(&id, &f.bundled, &f.sizeBytes); err != nil {
 			return nil, fmt.Errorf("scan blob: %w", err)
 		}
 
