@@ -388,6 +388,8 @@ func rejectNonHosted(w http.ResponseWriter, repo *models.Repository) bool {
 // cannot be created, or returns "" when it can be served.
 func unsupportedRepoTypeMessage(repoType, format string) string {
 	switch {
+	case repoType == repotype.Hosted && repotype.Valid(format) && !repotype.HostedSupported(format):
+		return fmt.Sprintf("hosted repositories are not supported for format %q (supported: %s)", format, repotype.HostedFormats())
 	case repoType == repotype.Proxy && !repotype.ProxySupported(format):
 		return fmt.Sprintf("proxy repositories are not supported for format %q (supported: %s)", format, repotype.ProxyFormats())
 	case repoType == repotype.Group && !repotype.GroupSupported(format):

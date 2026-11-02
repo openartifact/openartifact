@@ -129,6 +129,14 @@ Newest first. Each version starts with **What you must do**; the text below it l
 
 ### Unreleased
 
+**What you must do**
+
+- Nothing. The migration that adds the `huggingface` format to the allowed repository formats applies on start; there is no configuration change.
+
+**New features.**
+
+- **Hugging Face proxy and group repositories.** The new `huggingface` format mirrors the Hugging Face Hub for `hf download`, `huggingface_hub` and `transformers`, caches every file per commit with checksum verification, and honours minimum age and package curation. It exists only as proxy or group: a hosted `huggingface` repository is refused. See [Hugging Face](../formats/huggingface.md).
+
 **Behaviour changes.**
 
 - **Quarantine requests need `quarantined`.** `POST .../vuln|secrets|license/scans/{id}/quarantine` answers `400` when the body has no `quarantined` field instead of treating it as a release, and releasing a scan that is not quarantined no longer writes an `artifact.released` audit event. `oa vuln quarantine` and `oa secret quarantine` now send the field (they always failed with `400` before) and take `--release` to lift a quarantine.

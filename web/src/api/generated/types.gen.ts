@@ -384,7 +384,7 @@ export type Repository = {
     /**
      * Package format
      */
-    format: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
+    format: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
     /**
      * Repository description
      */
@@ -4042,7 +4042,7 @@ export type GetApiV1RepositoriesData = {
         /**
          * Filter by package format
          */
-        format?: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
+        format?: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
         /**
          * Page number (default: 1)
          */
@@ -4116,15 +4116,15 @@ export type PostApiV1RepositoriesData = {
          * Repository name (1-100 alphanumeric/hyphen/underscore)
          */
         name: string;
-        format: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
+        format: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
         description?: string;
         public?: boolean;
         /**
-         * hosted (default), proxy or group. Every format can be a proxy or a group repository. apk, deb, rpm and pacman groups serve generated Release/Packages, repodata, APKINDEX or database files merged across their members. Docker proxies and groups are served under /v2/ only. Proxy and group repositories are read-only.
+         * hosted (default), proxy or group. Every format can be a proxy or a group repository; huggingface only exists as proxy or group (a hosted huggingface repository is rejected with 400). apk, deb, rpm and pacman groups serve generated Release/Packages, repodata, APKINDEX or database files merged across their members. Docker proxies and groups are served under /v2/ only. Proxy and group repositories are read-only.
          */
         repo_type?: 'hosted' | 'proxy' | 'group';
         /**
-         * Required for proxy repos, except for formats with a default upstream: ansible (https://galaxy.ansible.com), cargo (https://index.crates.io), composer (https://repo.packagist.org), conan (https://center2.conan.io), docker (https://registry-1.docker.io), go (https://proxy.golang.org), nix (https://cache.nixos.org), nuget (https://api.nuget.org/v3/index.json), pacman (https://geo.mirror.pkgbuild.com), pypi (https://pypi.org/simple), rubygems (https://rubygems.org) and terraform (https://registry.terraform.io). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy.
+         * Required for proxy repos, except for formats with a default upstream: ansible (https://galaxy.ansible.com), cargo (https://index.crates.io), composer (https://repo.packagist.org), conan (https://center2.conan.io), docker (https://registry-1.docker.io), go (https://proxy.golang.org), huggingface (https://huggingface.co), nix (https://cache.nixos.org), nuget (https://api.nuget.org/v3/index.json), pacman (https://geo.mirror.pkgbuild.com), pypi (https://pypi.org/simple), rubygems (https://rubygems.org) and terraform (https://registry.terraform.io). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy.
          */
         upstream_url?: string;
         upstream_username?: string;

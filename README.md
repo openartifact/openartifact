@@ -33,7 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </p>
 
 OpenArtifact stores and serves npm, PyPI, Maven, Docker/OCI, Helm, Debian, RPM,
-Arch Linux (pacman), Nix, Go, Cargo, Composer (PHP), NuGet, RubyGems, Conda, Conan, Alpine (apk), Terraform/OpenTofu, Ansible collections, Ivy, sbt and raw files behind one URL
+Arch Linux (pacman), Nix, Go, Cargo, Composer (PHP), NuGet, RubyGems, Conda, Conan, Alpine (apk), Terraform/OpenTofu, Ansible collections, Ivy, sbt and raw files (plus Hugging Face models and datasets through a proxy) behind one URL
 scheme and one permission model, on your own infrastructure. Free software under
 the AGPL.
 
@@ -50,7 +50,7 @@ the AGPL.
 
 ## Formats
 
-Hosted, proxy (read-only mirror of an upstream) and group (ordered members, first hit wins) repositories are available for all 22 formats. Docker/OCI proxies and groups are served under `/v2/`. Federation between instances covers cargo, docker, go, helm, maven, npm, nuget, pypi and raw ([federation](docs/operations/federation.md)).
+Hosted, proxy (read-only mirror of an upstream) and group (ordered members, first hit wins) repositories are available for 22 of the 23 formats; Hugging Face has no hosted repositories. Docker/OCI proxies and groups are served under `/v2/`. Federation between instances covers cargo, docker, go, helm, maven, npm, nuget, pypi and raw ([federation](docs/operations/federation.md)).
 
 Client URLs and setup per format: [docs/formats](docs/formats/README.md).
 
@@ -104,7 +104,7 @@ The full page index is [docs/README.md](docs/README.md). Start here:
 | Section | Contents |
 |---|---|
 | [Getting started](docs/getting-started/installation.md) | [Installation](docs/getting-started/installation.md), [first repository](docs/getting-started/first-repository.md), [configuration](docs/getting-started/configuration.md), [web UI](docs/getting-started/web-ui.md), [upgrading](docs/getting-started/upgrading.md) |
-| [Formats](docs/formats/README.md) | Client URLs and setup for all 22 formats, and the [client setup](docs/formats/client-setup.md) commands |
+| [Formats](docs/formats/README.md) | Client URLs and setup for all 23 formats, and the [client setup](docs/formats/client-setup.md) commands |
 | [Repositories](docs/repositories/hosted-proxy-group.md) | [Hosted, proxy and group](docs/repositories/hosted-proxy-group.md), [cleanup and quotas](docs/repositories/cleanup-and-quotas.md), [properties](docs/repositories/properties.md), [release bundles](docs/repositories/release-bundles.md) |
 | [Security](docs/security/authentication.md) | [Authentication](docs/security/authentication.md), [SSO](docs/security/sso.md), [RBAC](docs/security/rbac.md), [projects](docs/security/projects.md), [scanning](docs/security/scanning.md), [findings](docs/security/findings.md), [SBOM](docs/security/sbom.md), [signing](docs/security/signing.md) |
 | [Operations](docs/operations/storage.md) | [Storage](docs/operations/storage.md), [backup](docs/operations/backup.md), [monitoring](docs/operations/monitoring.md), [scaling](docs/operations/scaling.md), [webhooks](docs/operations/webhooks.md) |

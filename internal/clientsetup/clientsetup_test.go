@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/middleware"
+	"github.com/openartifact/openartifact/internal/repotype"
 )
 
 const origin = "https://artifacts.example.com"
@@ -33,7 +34,7 @@ func TestRepoBaseURL(t *testing.T) {
 
 func allFormats() []string {
 	return []string{
-		"ansible", "apk", "cargo", "composer", "conan", "conda", "deb", "docker", "go", "helm", "ivy", "maven", "nix", "npm",
+		"ansible", "apk", "cargo", "composer", "conan", "conda", "deb", "docker", "go", "helm", "huggingface", "ivy", "maven", "nix", "npm",
 		"nuget", "pacman", "pypi", "raw", "rpm", "rubygems", "sbt", "terraform",
 	}
 }
@@ -276,6 +277,10 @@ func TestComposerSecureHTTPOnlyForPlainHTTP(t *testing.T) {
 // are read-only and carry none.
 func TestEveryFormatHasHostedPublishSnippet(t *testing.T) {
 	for _, format := range allFormats() {
+		if !repotype.HostedSupported(format) {
+			continue
+		}
+
 		published := false
 
 		for _, s := range Snippets(format, origin, "my-repo", "hosted") {

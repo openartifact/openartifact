@@ -354,3 +354,24 @@ describe('generated templates', () => {
     expect(setup!.publish).toBe('cargo publish --registry {{base}}$&')
   })
 })
+
+describe('huggingface', () => {
+  const origin = 'https://oa.example'
+
+  it('points HF_ENDPOINT at the repository and keeps the dataset prefix as a repo type', () => {
+    expect(repoBaseUrl('huggingface', origin, 'hf')).toBe('https://oa.example/repos/hf')
+    expect(pullCommand('huggingface', origin, 'hf', 'gpt2', 'abc')).toBe(
+      'HF_ENDPOINT=https://oa.example/repos/hf hf download gpt2 --revision abc',
+    )
+    expect(pullCommand('huggingface', origin, 'hf', 'datasets/org/name', 'abc')).toBe(
+      'HF_ENDPOINT=https://oa.example/repos/hf hf download org/name --repo-type dataset --revision abc',
+    )
+  })
+
+  it('gives the same client setup for every repository type', () => {
+    const setup = clientSetup('huggingface', origin, 'hf', 'proxy')
+    expect(setup[0]!.configure).toContain('export HF_ENDPOINT=https://oa.example/repos/hf\nexport HF_TOKEN=<TOKEN>')
+    expect(setup[0]!.publish).toBeUndefined()
+    expect(clientSetup('huggingface', origin, 'hf', 'hosted')).toEqual(setup)
+  })
+})

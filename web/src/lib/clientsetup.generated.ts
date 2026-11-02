@@ -183,6 +183,14 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
       },
     ],
   },
+  huggingface: {
+    hosted: [
+      {
+        client: 'huggingface_hub',
+        configure: '# environment\nexport HF_ENDPOINT={{base}}\nexport HF_TOKEN=<TOKEN>\n# large files are fetched completely before the first byte is sent\nexport HF_HUB_DOWNLOAD_TIMEOUT=600\n\n# hf CLI\nhf download ORG/MODEL\nhf download ORG/NAME --repo-type dataset\n\n# Python\nfrom huggingface_hub import snapshot_download\nsnapshot_download("ORG/MODEL")\n\nfrom transformers import AutoModel\nAutoModel.from_pretrained("ORG/MODEL")',
+      },
+    ],
+  },
   ivy: {
     hosted: [
       {

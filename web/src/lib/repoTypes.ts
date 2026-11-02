@@ -2,13 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Which formats can be created as proxy or group repositories. The lists come
+// Which formats can be created as hosted, proxy or group repositories. The lists come
 // from the server policy in internal/repotype (formats.generated.ts, generated
 // by cmd/genformats); the server stays authoritative and rejects anything else
 // with validation_failed.
 
 import { ALL_FORMATS, type FormatId } from './formats'
-import { DEFAULT_UPSTREAMS, FEDERATION_FORMATS, GROUP_FORMATS, PROXY_FORMATS } from './formats.generated'
+import { DEFAULT_UPSTREAMS, FEDERATION_FORMATS, GROUP_FORMATS, HOSTED_FORMATS, PROXY_FORMATS } from './formats.generated'
 
 export type RepoType = 'hosted' | 'proxy' | 'group'
 
@@ -48,7 +48,7 @@ export function allowedFormats(type: RepoType): FormatId[] {
     case 'group':
       return ALL_FORMATS.filter((f) => GROUP_FORMATS.includes(f))
     default:
-      return [...ALL_FORMATS]
+      return ALL_FORMATS.filter((f) => HOSTED_FORMATS.includes(f))
   }
 }
 

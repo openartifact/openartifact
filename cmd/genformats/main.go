@@ -107,7 +107,7 @@ func render() []byte {
 
 `)
 
-	var proxy, group, federation, gpg, isolated, osv []string
+	var hosted, proxy, group, federation, gpg, isolated, osv []string
 
 	upstreams := map[string]string{}
 
@@ -118,7 +118,7 @@ func render() []byte {
 			on   bool
 			list *[]string
 		}{
-			{s.Proxy, &proxy}, {s.Group, &group}, {s.Federation, &federation},
+			{!s.NoHosted, &hosted}, {s.Proxy, &proxy}, {s.Group, &group}, {s.Federation, &federation},
 			{s.Signing == repotype.SigningGPG, &gpg}, {s.Mount == repotype.MountIsolated, &isolated}, {s.OSVEcosystem != "", &osv},
 		} {
 			if sel.on {
@@ -139,6 +139,7 @@ func render() []byte {
 		name, doc string
 		names     []string
 	}{
+		{"HOSTED_FORMATS", "Formats that can be created as hosted repositories (the rest are proxy and group only).", hosted},
 		{"PROXY_FORMATS", "Formats that can be created as proxy repositories.", proxy},
 		{"GROUP_FORMATS", "Formats that can be created as group repositories.", group},
 		{"FEDERATION_FORMATS", "Formats whose hosted repositories can be federated.", federation},

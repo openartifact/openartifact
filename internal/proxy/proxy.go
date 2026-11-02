@@ -585,6 +585,11 @@ type fetchOpts struct {
 	// body is still closed by the caller, which also closes the substituted
 	// one after the entry is stored (a file-backed body removes its file then).
 	transform func(resp *http.Response) error
+	// refuse, when set, sees the upstream answer (and the classified error) of
+	// a fetch that did not deliver the file, and may return an error that
+	// carries more of the answer than the classification does (the upstream's
+	// error code and message). A nil return keeps err.
+	refuse func(resp *http.Response, err error) error
 }
 
 // outboundError classifies a failed outbound URL check. A host that does not
@@ -629,6 +634,12 @@ func (s *Service) fetchURL(ctx context.Context, repo *models.Repository, key, ta
 		if err := s.upstreamStatusError(repo, key, resp.StatusCode); err != nil {
 			if errors.Is(err, errNotFound) {
 				s.recordNegative(ctx, repo, key)
+			}
+
+			if o.refuse != nil {
+				if rerr := o.refuse(resp, err); rerr != nil {
+					return nil, rerr
+				}
 			}
 
 			return nil, err

@@ -24,14 +24,20 @@ describe('allowedFormats', () => {
     expect(allowedFormats('proxy')).toContain('pacman')
     expect(allowedFormats('group')).toContain('pacman')
   })
-  it('offers every format for hosted repositories', () => {
-    expect(allowedFormats('hosted')).toEqual(ALL_FORMATS)
+  it('offers every format but huggingface for hosted repositories', () => {
+    expect(allowedFormats('hosted')).toEqual(ALL_FORMATS.filter((f) => f !== 'huggingface'))
   })
-  it('restricts proxy to ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform in picker order', () => {
-    expect(allowedFormats('proxy')).toEqual(['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'])
+  it('offers huggingface for proxy and group repositories only', () => {
+    expect(allowedFormats('hosted')).not.toContain('huggingface')
+    expect(allowedFormats('proxy')).toContain('huggingface')
+    expect(allowedFormats('group')).toContain('huggingface')
+    expect(isFormatAllowed('hosted', 'huggingface')).toBe(false)
   })
-  it('restricts group to ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform', () => {
-    expect(allowedFormats('group')).toEqual(['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'])
+  it('restricts proxy to ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform in picker order', () => {
+    expect(allowedFormats('proxy')).toEqual(['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'])
+  })
+  it('restricts group to ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform', () => {
+    expect(allowedFormats('group')).toEqual(['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'])
     expect(isFormatAllowed('group', 'deb')).toBe(true)
     expect(isFormatAllowed('group', 'rpm')).toBe(true)
     expect(isFormatAllowed('group', 'conda')).toBe(true)
@@ -39,7 +45,7 @@ describe('allowedFormats', () => {
   })
   it('does not leak the shared format list through mutation', () => {
     allowedFormats('hosted').pop()
-    expect(allowedFormats('hosted')).toEqual(ALL_FORMATS)
+    expect(allowedFormats('hosted')).toEqual(ALL_FORMATS.filter((f) => f !== 'huggingface'))
   })
 })
 
@@ -56,10 +62,14 @@ describe('coerceFormat', () => {
     expect(coerceFormat('proxy', 'docker')).toBe('docker')
     expect(coerceFormat('group', 'docker')).toBe('docker')
   })
+  it('moves huggingface to the first hosted format when the type becomes hosted', () => {
+    expect(coerceFormat('hosted', 'huggingface')).toBe(allowedFormats('hosted')[0])
+    expect(coerceFormat('proxy', 'huggingface')).toBe('huggingface')
+  })
 })
 
 describe('upstream URL', () => {
-  it('is optional only for cargo, conan, docker, go, nuget, pypi, rubygems and terraform (well-known defaults)', () => {
+  it('is optional only for cargo, conan, docker, go, nuget, pypi, rubygems terraform and huggingface (well-known defaults)', () => {
     expect(upstreamUrlRequired('terraform')).toBe(false)
     expect(upstreamUrlPlaceholder('terraform')).toBe('https://registry.terraform.io')
     expect(upstreamUrlRequired('docker')).toBe(false)
@@ -69,6 +79,8 @@ describe('upstream URL', () => {
     expect(upstreamUrlRequired('nuget')).toBe(false)
     expect(upstreamUrlRequired('conan')).toBe(false)
     expect(upstreamUrlRequired('rubygems')).toBe(false)
+    expect(upstreamUrlRequired('huggingface')).toBe(false)
+    expect(upstreamUrlPlaceholder('huggingface')).toBe('https://huggingface.co')
     expect(upstreamUrlRequired('maven')).toBe(true)
     expect(upstreamUrlPlaceholder('go')).toBe('https://proxy.golang.org')
     expect(upstreamUrlPlaceholder('docker')).toBe('https://registry-1.docker.io')

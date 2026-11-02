@@ -89,6 +89,10 @@ func TestHostedHandlersAgreeWithMounts(t *testing.T) {
 		routes := chi.NewRouter()
 		h.RegisterRepoRoutes(routes)
 
+		if spec.NoHosted {
+			continue
+		}
+
 		if len(routes.Routes()) == 0 {
 			t.Errorf("%s: the handler registers no route", spec.Name)
 		}
@@ -221,6 +225,14 @@ func TestStorageDescriptorsMatchSpecs(t *testing.T) {
 		if slices.Contains(dedicatedTables, spec.Name) {
 			if registered {
 				t.Errorf("%s keeps dedicated tables and must have no storage descriptor", spec.Name)
+			}
+
+			continue
+		}
+
+		if spec.NoHosted {
+			if registered {
+				t.Errorf("%s keeps no package rows and must have no storage descriptor", spec.Name)
 			}
 
 			continue

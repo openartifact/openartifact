@@ -138,6 +138,11 @@ type Spec struct {
 	// can be served.
 	Proxy bool
 	Group bool
+	// NoHosted marks a format that has no hosted repositories: it can only be
+	// created as a proxy (or a group of proxies). Such a format stores no package
+	// rows, keeps everything in the proxy cache and registers no hosted routes
+	// (huggingface).
+	NoHosted bool
 	// Federation reports whether hosted repositories can be federated
 	// (docs/design/federation.md): the formats whose units the federation
 	// codecs replicate.
@@ -232,6 +237,10 @@ var specs = [...]Spec{
 		Name: "helm", Uploads: helmUploads,
 		Proxy: true, Group: true, Federation: true,
 		Versioning: VersionSemver, PURLType: "helm", OSVEcosystem: "Helm",
+	},
+	{
+		Name: "huggingface", Proxy: true, Group: true, NoHosted: true, DefaultUpstream: "https://huggingface.co",
+		PURLType: "huggingface",
 	},
 	{
 		Name: "ivy", Uploads: ivyUploads,
@@ -347,6 +356,17 @@ func ProxySupported(format string) bool {
 
 	return s.Proxy
 }
+
+// HostedSupported reports whether hosted repositories of format can be created:
+// every format but the proxy-only ones (Spec.NoHosted). An unknown format is not.
+func HostedSupported(format string) bool {
+	s, ok := Lookup(format)
+
+	return ok && !s.NoHosted
+}
+
+// HostedFormats lists the formats that have hosted repositories for error messages.
+func HostedFormats() string { return list(func(s Spec) bool { return !s.NoHosted }) }
 
 // GroupSupported reports whether group repositories of format can be served.
 // Groups resolve members by path (and merge Maven metadata, npm packuments,

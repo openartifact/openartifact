@@ -29,7 +29,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 
 ## Format matrix
 
-`Format id` is the `format` value you use when creating a repository. Every format can be a hosted, proxy or group repository (see [hosted, proxy, group](../repositories/hosted-proxy-group.md)). The Upload column shows how you publish to a hosted repository.
+`Format id` is the `format` value you use when creating a repository. Every format can be a proxy or a group repository, and every format but Hugging Face a hosted one (see [hosted, proxy, group](../repositories/hosted-proxy-group.md)). The Upload column shows how you publish to a hosted repository.
 
 | Format | Format id | Client URL | Types | Upload | Page |
 |---|---|---|---|---|---|
@@ -43,6 +43,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | Docker / OCI | `docker` | `HOST/v2/` (image `HOST/REPO[/image]`) | hosted, proxy, group | `docker push` | [docker](docker.md) |
 | Go modules | `go` | `GOPROXY=HOST/repos/REPO` | hosted, proxy, group | `PUT <module>/@v/<version>` (module zip) | [go](go.md) |
 | Helm | `helm` | `HOST/repos/REPO/` (`index.yaml`, `charts/`) | hosted, proxy, group | `POST /charts` (raw chart `.tgz`) | [helm](helm.md) |
+| Hugging Face | `huggingface` | `HF_ENDPOINT=HOST/repos/REPO` | proxy, group | none (download only) | [huggingface](huggingface.md) |
 | Ivy | `ivy` | `HOST/repos/ivy/REPO` | hosted, proxy, group | `PUT` per file (`ivy:publish`) | [ivy-sbt](ivy-sbt.md) |
 | Maven | `maven` | `HOST/repos/maven/REPO` | hosted, proxy, group | `PUT` per file (`mvn deploy`) | [maven](maven.md) |
 | Nix | `nix` | `HOST/repos/REPO` (`/nix-cache-info`, `/<hash>.narinfo`, `/nar/`) | hosted, proxy, group | `nix copy --to 'HOST/repos/REPO' /nix/store/...` (netrc token) | [nix](nix.md) |
@@ -85,7 +86,7 @@ Debian and RPM have no upload route under `/repos/REPO/`. Upload them through th
 
 ## Proxy and group repositories
 
-Every format in the matrix can be a proxy or a group repository. Proxy and group repositories are read-only: writes answer `405`. Each format page has a Proxy and a Group section with the format-specific behaviour.
+Every format in the matrix can be a proxy or a group repository; Hugging Face exists only as those two. Proxy and group repositories are read-only: writes answer `405`. Each format page has a Proxy and a Group section with the format-specific behaviour.
 
 ## Authentication
 
