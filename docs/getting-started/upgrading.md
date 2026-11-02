@@ -127,13 +127,28 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
-### Unreleased
+### 0.16.1
 
-- **Failed scans no longer keep the raw scanner error.** Failed vulnerability scans stored earlier have their `scan_error` replaced by `scan failed` when the database is migrated. See [scanning](../security/scanning.md#scanner-failures).
 **What you must do**
 
-- Nothing. No migration and no configuration change.
+- If an OIDC trust policy uses an `http://` issuer, or its issuer's discovery document points `jwks_uri` at `http://`, on a host other than `localhost`, `127.0.0.1` or `::1`, move it to `https://`: new policies are refused and the token exchange fails for such an issuer.
+- Otherwise nothing: the migration that shortens stored scan errors applies on start, and there is no configuration change.
 
+**Security fixes.**
+
+- **OIDC issuer and JWKS over https.** Trust policies and the exchange verifier accept an `http` issuer or `jwks_uri` only for a loopback host (`localhost`, `127.0.0.1`, `::1`); every other host needs `https`. See [Tokenless CI](../integrations/ci.md#tokenless-ci-oidc-token-exchange).
+- **Conan 1 curation.** The Conan 1 paths (snapshot, download URLs, digest and `v1/files` downloads) of a proxy repository are gated by package curation like the Conan 2 paths.
+- **Disabled accounts.** A regression test pins that a token of a disabled account authenticates nothing.
+- **Federation API descriptions.** The federation endpoints require the global manage permission (administrators have it); a repository-scoped permission or a project role is not enough. The API reference and OpenAPI document now say so, and the unused repository-admin fallback is removed.
+
+**Behaviour changes.**
+
+- **Failed scans no longer keep the raw scanner error.** Failed vulnerability scans stored earlier have their `scan_error` replaced by `scan failed` when the database is migrated. See [scanning](../security/scanning.md#scanner-failures).
+
+**Web UI and documentation.**
+
+- The quickstart, first-repository guide, format, repository, operations, integrations and security pages are rewritten task-first (scanner setup and the OSV mirror are separate pages); `make docs-check` also checks links, anchors and the index; the docs site's `latest` is the newest release and `dev` follows main.
+- **Palette and contrast.** The command palette resets when opened; the rail tooltip and upload zone contrast are guarded in both themes.
 - **Cleanup name pattern in the editor.** The cleanup policy editor now has a package name pattern field (the policy's `name_pattern`, a regular expression), so editing a policy that has one keeps it instead of leaving it out of the request, and the live preview takes it into account. A pattern that is not a valid regular expression is flagged before saving.
 - **Live preview for project defaults.** The project cleanup defaults editor shows the same live preview, added up over the repositories the policy would cover, backed by the new `POST /api/v1/projects/{project}/cleanup-policies/dry-run`. See [Cleanup](../repositories/cleanup-and-quotas.md#api).
 - **Empty hosted repositories teach.** The **Packages** tab of an empty hosted repository shows, for its format, the publish and consume commands with the repository's own URL (the same snippets as the connect panel), a link to create an access token (publish with tokens, never your account password) and the **Upload a package** button where the web UI can upload. An empty group explains that it serves its members' packages. No API or configuration change.
