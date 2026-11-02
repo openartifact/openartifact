@@ -6,16 +6,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # CLI (`oa`)
 
-`oa` is a single-binary command-line client for the OpenArtifact REST API: repositories, users, tokens, scans, webhooks, backups, declarative configuration from manifests (`oa apply`) and the Nexus/Artifactory importer.
+Use `oa` to manage OpenArtifact from a terminal or a CI job: repositories, users, tokens, scans, webhooks, backups, declarative configuration from manifests (`oa apply`) and the Nexus/Artifactory importer. It is a single-binary client for the [REST API](api.md).
 
 ## Install
 
 ```sh
-make build-cli          # builds bin/oa (version injected via -ldflags -X main.version)
+make build-cli          # builds bin/oa
 go build -o bin/oa ./cmd/oa
 ```
 
-Release builds (`.goreleaser.yml`) ship `oa_<version>_<os>_<arch>` archives for linux, darwin and windows (amd64, arm64). Source: [`cmd/oa`](../../cmd/oa).
+Release archives are named `oa_<version>_<os>_<arch>` and exist for linux, darwin and windows (amd64, arm64). Source: [`cmd/oa`](../../cmd/oa).
 
 ```sh
 oa version              # prints "oa version <version>" ("dev" for an untagged build)
@@ -51,14 +51,19 @@ Passwords are never accepted on the command line (`--password` is rejected). Non
 printf '%s\n' "$PW" | oa auth login --username alice --password-stdin
 ```
 
-How it works:
+How `oa auth login` works:
 
 1. Leave the username blank to paste an existing API token instead.
 2. Otherwise the CLI signs in with `POST /api/v1/auth/login` on a temporary cookie session. The password is not stored.
 3. If the account must change its password (bootstrap `admin`, reset account), the CLI asks for a new one first (with `--password-stdin`: the second stdin line) and signs in again.
 4. It creates an `access` API token named `oa-cli` (`POST /api/v1/auth/tokens`), and saves server and token to the config file.
 
-`oa auth logout` clears the local token and prints the server-side token id. API tokens cannot revoke tokens, so the `oa-cli` token stays valid unless you pass `--revoke --username U --password-stdin` (which signs in and revokes it) or revoke it in the UI under **Settings > Access tokens**. `--revoke` needs a login saved by this version of `oa`. A corrupt `~/.config/oa/config.json` no longer blocks `oa auth login`, `help` and `version`; `oa auth login` rewrites it.
+`oa auth logout` clears the local token and prints the server-side token id. The `oa-cli` token stays valid on the server unless you revoke it:
+
+- Pass `--revoke --username U --password-stdin`. This needs a login saved by `oa auth login`.
+- Or revoke it in the UI under **Settings > Access tokens**.
+
+API tokens cannot revoke tokens, which is why a password is needed. `oa auth login` rewrites a corrupt `~/.config/oa/config.json`; `help` and `version` ignore it.
 
 Webhook secrets are read from `--secret-file FILE` (`-` for stdin) or `OA_WEBHOOK_SECRET`, never from argv.
 
@@ -77,7 +82,7 @@ Commands marked *admin* need the global `manage` permission. IDs are the values 
 | `search` | `[--repo R] [--fmt F] [--limit N] <query>` (default limit 50; put flags before the query) |
 | `user` *admin* | `list`, `create --username U --email E [--password-stdin] [--full-name N]`, `show <id>`, `update <id> [--email E] [--full-name N] [--disabled[=false]]`, `delete <id>` |
 | `group` *admin* | `list`, `create <name> [--description D]`, `show <id>`, `delete <id>`, `members <id>`, `add-member <id> <user-id>`, `rm-member <id> <user-id>` |
-| `project` (roles: [projects](../security/projects.md)) | `list` (with your role), `create <name> [--display-name N] [--description D] [--owner USERNAME]` (`--owner`: global admins; others need `projects.self_create`), `show <name>` (includes `my_role`), `update <name> [--display-name N] [--description D]` (owner; sends `PATCH`) plus admin-only policy flags `--allowed-formats F,F`, `--allowed-repo-types T,T`, `--repo-name-prefix P`, `--allow-public-repos[=false]`, `--max-repositories N`, `--token-max-ttl-days N`, `delete <name>`, `members <name>`, `add-member <name> (<user-id> \| --username U) [--role viewer\|developer\|maintainer\|owner]` (default `viewer`), `set-role <name> <user-id> <role>` (sends `PATCH`), `rm-member <name> <user-id>`, `groups <name>`, `add-group <name> <group-id\|group-name> [--role viewer\|developer\|maintainer]`, `rm-group <name> <group-id\|group-name>` |
+| `project` | `list`, `create <name>`, `show <name>`, `update <name>`, `delete <name>`, `members <name>`, `add-member`, `set-role`, `rm-member`, `groups <name>`, `add-group`, `rm-group`; flags in [Project commands](#project-commands) |
 | `token` *admin* | `list` (all tokens), `revoke <id>` |
 | `gpg` *admin* | `list`, `import --key <armored-file\|-> [--name N] [--passphrase-stdin] [--activate\|--no-activate]`, `generate [--name N] [--algorithm ed25519\|rsa4096] [--user-name U] [--email E] [--comment C] [--activate\|--no-activate]`, `activate <key> [--repository R]`, `deactivate <key> [--repository R]`, `export <key> [--output FILE]`, `delete <key> [--force]`. `<key>` is an id, fingerprint or name; the passphrase comes from stdin or `OA_GPG_PASSPHRASE`, never a flag. See [signing](../security/signing.md) |
 | `storage` *admin* | `list`, `create --name N [--type filesystem\|s3\|gcs\|azure\|garage\|seaweedfs\|oci] [--config JSON \| --config-file FILE\|-]`, `show <name>`, `update <name> [--config JSON \| --config-file FILE\|-]`, `delete <name>`, `test <name>` (exits 1 when the backend check fails) |
@@ -97,7 +102,7 @@ Commands marked *admin* need the global `manage` permission. IDs are the values 
 | `bundle` | `create <name> <version> [--description D] [--pipeline P]`, `add <name> <version> (--repo R --path P... \| --from-build NAME/NUMBER [--repo R]...)`, `seal <name> <version> [--gpg-key K]`, `show <name> <version>`: [release bundles](../repositories/release-bundles.md) for CI, see [CI commands](#ci-commands) |
 | `promote` | `<name> <version> --stage S [--target-repo R] [--notes T]`: promote a sealed bundle, see [CI commands](#ci-commands) |
 | `delta` | `list <repo> <pkg-id>`, `get <repo> <pkg-id> --from <sha256> <dest>` |
-| `apply`, `diff`, `export` *admin* | `apply -f PATH [-R] [--kind K] [--prune] [--prune-all] [--force-secrets] [--continue-on-error] [--validate-only] [-o json]`, `diff` (same flags; exits 2 when there are changes), `export [--kind K] [--with-members] [-o DIR]`: declarative configuration from YAML manifests, see [declarative configuration](declarative.md) |
+| `apply`, `diff`, `export` *admin* | `apply -f PATH [flags]`, `diff -f PATH [flags]` (exits 2 when there are changes), `export [--kind K] [--with-members] [-o DIR]`: declarative configuration from YAML manifests, flags in [Declarative commands](#declarative-commands) |
 | `import` | `nexus\|artifactory ...`, see [Importing](#importing-from-nexus-or-artifactory) |
 | `system` | `info` (version, status, commit, build time, Go version, OS, arch, uptime, database and storage status; admins get the detailed endpoint, other users only version and status) |
 | `version`, `help` | local only, no server call |
@@ -107,6 +112,33 @@ Boolean flags use Go syntax: `--public`, `--disabled`, and `--active=false` / `-
 `auth passwd`, `auth token create` and `auth token revoke` sign in with your account password on a temporary cookie session (the server refuses these for API-token callers). The password is prompted without echo, or read from stdin with `--password-stdin`; `--username` defaults to the saved token's owner.
 
 `storage create|update --config` is for non-secret settings only: the CLI rejects an inline config containing a key that looks like a credential (`secret`, `password`, `key`, `token`, `cred`, `connstr`, `sas`), because argv is visible in the process list. Put credentials in a file and pass `--config-file FILE`, or `--config-file -` to read the JSON from stdin.
+
+### Project commands
+
+Roles are explained in [projects](../security/projects.md).
+
+- `create <name> [--display-name N] [--description D] [--owner USERNAME]`: `--owner` is for global admins. Other users need `projects.self_create`.
+- `show <name>` includes your role as `my_role`.
+- `update <name> [--display-name N] [--description D]`: the project owner can run it.
+- Admin-only policy flags on `update`: `--allowed-formats F,F`, `--allowed-repo-types T,T`, `--repo-name-prefix P`, `--allow-public-repos[=false]`, `--max-repositories N`, `--token-max-ttl-days N`.
+- `add-member <name> (<user-id> | --username U) [--role viewer|developer|maintainer|owner]`: the default role is `viewer`.
+- `set-role <name> <user-id> <role>` changes a member's role. `rm-member <name> <user-id>` removes a member.
+- `groups <name>` lists project groups. `add-group <name> <group-id|group-name> [--role viewer|developer|maintainer]` adds one. `rm-group <name> <group-id|group-name>` removes one.
+
+### Declarative commands
+
+`apply`, `diff` and `export` need the global `manage` permission. See [declarative configuration](declarative.md).
+
+```sh
+oa apply -f manifests/ -R --prune
+oa diff  -f manifests/ -R          # exits 2 when there are changes
+oa export --kind Repository -o ./out
+```
+
+- Shared by `apply` and `diff`: `-f PATH` (file, directory or `-` for stdin; repeatable), `-R` (descend into subdirectories), `--kind K` (repeatable), `--prune`, `--prune-all`, `--force-secrets`, `-o json`.
+- `apply` only: `--continue-on-error` keeps applying after a failure (the exit status is still 1). `--validate-only` checks the manifests offline and exits.
+- `diff` exits `0` when the server matches the manifests, `2` when it finds a difference and `1` on error.
+- `export [--kind K] [--with-members] [-o DIR]` writes the current configuration as manifests.
 
 ### Deleting a repository
 
@@ -138,17 +170,34 @@ oa trash purge --repo my-repo --all --yes      # empty that repository's trash (
 
 ### Transfers
 
-Uploads and downloads stream through the CLI without buffering whole files:
+Uploads and downloads stream through the CLI without buffering whole files.
 
 | Command | Behavior |
 |---|---|
 | `oa artifact upload <repo> <file>` | multipart upload. `*.deb` goes to `POST /api/v1/repositories/{repo}/debs`; `*.apk` goes to `.../apks` (with `--branch`, `--apk-repo` and `--arch`, see [Alpine](../formats/apk.md#upload)); any other file goes to `.../packages` (the RPM upload endpoint). Other formats are published with their native client (`mvn deploy`, `npm publish`, `curl -T`, ...), see [formats](../formats/README.md) |
-| `oa artifact upload --presigned [--path P] [--content-type T] [--multipart] [--part-size SIZE] [--parallel N] <repo> <file>` | raw repositories on any storage backend with presigned uploads (S3, GCS, Azure, and filesystem/OCI through the server's signed relay URLs): hashes the file, asks `POST /api/v1/repositories/{repo}/uploads` for a presigned PUT, uploads the bytes straight to the object store (the OpenArtifact token is never sent there) and calls `.../uploads/{id}/complete`, which reads the object back from storage, verifies size and sha256 and records the artifact. Files above 5 GiB are uploaded in parts automatically (`--multipart` forces it, `--part-size` such as `128M` sets the part size, `--parallel` the parts in flight, default 4, at most 16); each part is retried with backoff and the upload is aborted on the server if a part fails for good. The complete call has no response-header timeout and is retried while the server answers `409 upload_in_progress`. `--path` defaults to the file name. See [Presigned URLs](../operations/storage.md#presigned-urls) |
+| `oa artifact upload --presigned [flags] <repo> <file>` | direct-to-storage upload for raw repositories, see [Presigned uploads](#presigned-uploads) |
 | `oa backup download <id> <dest>` | writes to a temp file next to `<dest>`, syncs, then renames onto `<dest>` |
 | `oa sbom download <repo> <id> <dest>` | same |
 | `oa delta get <repo> <pkg-id> --from <sha256> <dest>` | same; downloads the delta patch from the given base version |
 
-There are no top-level `oa upload` / `oa download` commands.
+For CI uploads with build properties use [`oa upload`](#oa-upload); there is no `oa download` command.
+
+### Presigned uploads
+
+`oa artifact upload --presigned [--path P] [--content-type T] [--multipart] [--part-size SIZE] [--parallel N] <repo> <file>` uploads a file to a raw repository straight to the storage backend. It works on S3, GCS, Azure, and on filesystem or OCI storage through the server's signed relay URLs. See [Presigned URLs](../operations/storage.md#presigned-urls).
+
+1. The CLI hashes the file and asks the server for a presigned `PUT` (`POST /api/v1/repositories/{repo}/uploads`).
+2. It uploads the bytes to the object store. Your OpenArtifact token is never sent there.
+3. It calls `.../uploads/{id}/complete`. The server reads the object back, verifies size and sha256 and records the artifact.
+
+Flags:
+
+- `--path P` is the remote path. It defaults to the file name.
+- Files above 5 GiB upload in parts automatically. `--multipart` forces parts.
+- `--part-size` sets the part size, for example `128M`.
+- `--parallel N` sets the parts in flight: default 4, at most 16.
+
+A failed part is retried with backoff. If a part fails for good, the server aborts the upload. The complete call is retried while the server answers `409 upload_in_progress`.
 
 ### CI commands
 
@@ -161,7 +210,14 @@ oa --format json upload <repo> <file|glob>... [--target-path P] [--flat] [--vers
    [--property k=v]... [--build-name N] [--build-number M] [--build-url U] [--vcs-revision SHA]
 ```
 
-Uploads to a hosted `ansible`, `composer`, `deb`, `ivy`, `maven`, `pacman`, `raw`, `rpm` or `sbt` repository (ansible: a collection `NAMESPACE-NAME-VERSION.tar.gz` published through the Galaxy API, see [ansible](../formats/ansible.md); composer: a package zip uploaded to `packages/upload/VENDOR/NAME/VERSION`, with `vendor/name` and the version read from the zip's `composer.json`, see [composer](../formats/composer.md); pacman: the package and its `.sig`, stored under `os/<arch>/` by file name, see [pacman](../formats/pacman.md)) and records [properties](../repositories/properties.md) on every uploaded artifact: `build.name`, `build.number`, `build.url`, `vcs.revision` from the flags and any `--property k=v` (a custom property wins over a build flag of the same key). Other formats are refused with a hint to use the native client (`docker push`, `npm publish`, `twine`, ...), and so are proxy and group repositories. Needs `read` and `write` on the repository.
+Uploads to a hosted `ansible`, `composer`, `deb`, `ivy`, `maven`, `pacman`, `raw`, `rpm` or `sbt` repository. The token needs `read` and `write` on the repository.
+
+- **ansible:** a collection `NAMESPACE-NAME-VERSION.tar.gz`, published through the Galaxy API ([ansible](../formats/ansible.md)).
+- **composer:** a package zip, uploaded to `packages/upload/VENDOR/NAME/VERSION`. `vendor/name` and the version come from the zip's `composer.json` ([composer](../formats/composer.md)).
+- **pacman:** the package and its `.sig`, stored under `os/<arch>/` by file name ([pacman](../formats/pacman.md)).
+- **Other formats, proxy and group repositories:** refused with a hint to use the native client (`docker push`, `npm publish`, `twine`, ...).
+
+Every uploaded artifact gets [properties](../repositories/properties.md): `build.name`, `build.number`, `build.url` and `vcs.revision` from the flags, plus any `--property k=v`. A custom property wins over a build flag of the same key.
 
 Arguments are files or globs (`*`, `?`, `[...]`, and `**` for any depth); quote globs to keep the shell out of it. A pattern without a match, a directory or a missing file is an error before anything is uploaded.
 
@@ -255,4 +311,9 @@ None of these commands needs an administrator: a token with `read` and `write` o
 
 ### Importing from Nexus or Artifactory
 
-`oa import nexus|artifactory --source-url URL --repo SRC[:DST]...` copies hosted repositories from a Nexus 3 or Artifactory server: Cargo, Conan, Conda, Debian, Docker/OCI, Go, Helm, Ivy, Maven (also Gradle), npm, NuGet, PyPI, raw, RPM, RubyGems and sbt, with created-at, properties, checksum verification and resume. The source password or token is read from a file, stdin or `OA_IMPORT_SOURCE_TOKEN`, never from the command line. Flags, supported formats, resume and checksum behavior are in [Migrating from Nexus or Artifactory](../migration/nexus-artifactory.md). `oa import openartifact --source-url URL --all` copies every hosted repository of a 0.14 OpenArtifact instance into a fresh 0.15 one (all formats), and `oa import config openartifact --source-url URL --output DIR` writes the configuration as `oa apply` manifests with a mapping report; see [Migrating from OpenArtifact 0.14](../migration/openartifact.md#runbook-014-to-015).
+Use `oa import` to copy repositories from another server.
+
+- **Nexus 3 or Artifactory:** `oa import nexus|artifactory --source-url URL --repo SRC[:DST]...` copies hosted repositories. Formats: Cargo, Conan, Conda, Debian, Docker/OCI, Go, Helm, Ivy, Maven (also Gradle), npm, NuGet, PyPI, raw, RPM, RubyGems and sbt. It keeps created-at and properties, verifies checksums and resumes. Flags and details are in [Migrating from Nexus or Artifactory](../migration/nexus-artifactory.md).
+- **Source credentials:** read from a file, stdin or `OA_IMPORT_SOURCE_TOKEN`, never from the command line.
+- **OpenArtifact 0.14:** `oa import openartifact --source-url URL --all` copies every hosted repository of a 0.14 instance into a fresh 0.15 one, all formats.
+- **Configuration:** `oa import config openartifact --source-url URL --output DIR` writes the configuration as `oa apply` manifests with a mapping report. See [Migrating from OpenArtifact 0.14](../migration/openartifact.md#runbook-014-to-015).

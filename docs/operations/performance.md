@@ -36,7 +36,7 @@ OA_URL=http://127.0.0.1:8080 OA_USER=admin OA_PASS=... OA_PID=<server pid> make 
 4. runs `oabench load` over all scenarios and prints a line each, also saved as `$OA_OUT/result.txt` and `$OA_OUT/result.json`;
 5. prints the top 15 statements from `pg_stat_statements` into `$OA_OUT/pg_stat_statements.txt`, when `PSQL` is set.
 
-Run it against a throwaway instance. Seeding writes thousands of artifacts and always tries to change the password of `OA_USER` from `OA_PASS` to `-new-pass` (default `Bench-Passw0rd-Strong!42`), which is what the forced first-login change requires. If `OA_PASS` is rejected on a later run, the seeder retries with that password. To leave passwords alone, run `oabench seed` directly with `-token <TOKEN>`. The seeder mints an access token named `bench-<unix time>` and stores it in `state.json`, so keep `bench-out/` out of version control.
+Run it against a throwaway instance. Seeding writes thousands of artifacts and always tries to change the password of `OA_USER` from `OA_PASS` to the `-new-pass` value, which is what the forced first-login change requires. The seeder has a fixed default for `-new-pass`; pass `-new-pass` to `oabench seed` to use your own. If `OA_PASS` is rejected on a later run, the seeder retries with that password. To leave passwords alone, run `oabench seed` directly with `-token <TOKEN>`. The seeder mints an access token named `bench-<unix time>` and stores it in `state.json`, so keep `bench-out/` out of version control.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -57,7 +57,7 @@ Run it against a throwaway instance. Seeding writes thousands of artifacts and a
 
 #### Scenarios
 
-27 scenarios, each with a 1 s unmeasured warm-up first:
+Each scenario starts with a 1 s unmeasured warm-up:
 
 | Group | Scenarios |
 |---|---|
@@ -102,7 +102,9 @@ Start the server with the profiler on (off by default; it costs CPU and exposes 
 OPENARTIFACT_PPROF_ENABLED=true     # or server.pprofEnabled: true
 ```
 
-Profiles are served under `/api/v1/admin/pprof/` (`profile`, `heap`, `allocs`, `mutex`, `block`, `goroutine`, `trace`, `cmdline`, `symbol`). The route needs an admin token: deploy tokens and anonymous callers are refused. While enabled, mutex profiling samples 1 in 100 contended events and block profiling samples blocking events of 100 µs or more; the server logs a warning at startup. Switch it off again after diagnosing.
+Profiles are served under `/api/v1/admin/pprof/` (`profile`, `heap`, `allocs`, `mutex`, `block`, `goroutine`, `trace`, `cmdline`, `symbol`). The route needs an admin token: deploy tokens and anonymous callers are refused. A `worker` process has no authenticated API, so it serves the same profiles under `/debug/pprof/` instead. That route needs the `/metrics` bearer token and answers `401` until `METRICS_AUTH_TOKEN` is set.
+
+While enabled, mutex profiling samples 1 in 100 contended events and block profiling samples blocking events of 100 µs or more; the server logs a warning at startup. Switch it off again after diagnosing.
 
 ```sh
 curl -H "Authorization: Bearer <TOKEN>" -o cpu.pb.gz "HOST/api/v1/admin/pprof/profile?seconds=30"
@@ -116,7 +118,7 @@ bench-out/oabench load -state bench-out/state.json \
   -pprof HOST/api/v1/admin/pprof -pprof-token <TOKEN> -profile-dir profiles
 ```
 
-For each scenario this writes `<scenario>.{cpu,heap,allocs,mutex,block,goroutine}.pb.gz` into `profiles/`. The CPU profile covers the measured window minus one second; the others are taken right after it. Both `-pprof` and `-profile-dir` are required. Open a file with `go tool pprof -http=: profiles/<file>.pb.gz`. The `-pprof` help text in `oabench` mentions `/debug/pprof`; the correct base is `/api/v1/admin/pprof`.
+For each scenario this writes `<scenario>.{cpu,heap,allocs,mutex,block,goroutine}.pb.gz` into `profiles/`. The CPU profile covers the measured window minus one second; the others are taken right after it. Both `-pprof` and `-profile-dir` are required. Open a file with `go tool pprof -http=: profiles/<file>.pb.gz`.
 
 ## Tuning
 
@@ -137,13 +139,13 @@ Read and write timeouts default to 0 so large uploads and downloads are never cu
 ### Database indexes and queries
 
 - Package search (`/api/v1/search`, the `name`/`version`/`description` filters) matches with `ILIKE '%term%'` and is served by GIN trigram indexes (`idx_*_trgm`, such as `idx_packages_name_trgm`; extension `pg_trgm`, created by the schema baseline). If you restore a dump into a database without the extension, search falls back to sequential scans (correct, but 16-35x slower on 300k blobs and 250k package rows).
-- The repository half of the search matches `repositories.name` with `ILIKE '%term%'` too, and is served by `idx_repositories_name_trgm` (created by the schema baseline). Results are ranked in the query itself (exact name, prefix, other substring, then newest, then id); the ranking is only computed while the match count is within the 10000-row cap, so a query that is refused as too broad costs what it did before ranking. A package name is lowered once per matching row (and, for a qualified name such as `@scope/pkg` or `group:artifact`, its last segment cut out once, only when the name has a separator) and compared with `=` and `starts_with`, instead of evaluating `ILIKE` up to four times and the segment regular expression up to twice per row; a broad query (a term that matches most rows) spends about a fifth less database CPU.
+- The repository half of the search matches `repositories.name` with `ILIKE '%term%'` too, and is served by `idx_repositories_name_trgm`. The database ranks results in the query itself: exact name, prefix, other substring, then newest, then id. It computes the ranking only while the match count is within the 10000-row cap, so a query refused as too broad costs no extra. Package names are lowered once per matching row and compared with `=` and `starts_with`, which makes a broad query (a term that matches most rows) spend about a fifth less database CPU than repeated `ILIKE` checks.
 - A search is scoped to the repositories the caller can read. Up to 1000 of them are an `= ANY($n::uuid[])` predicate; for a larger set the query joins `unnest($n::uuid[])` instead, because the planner prices a constant list element by element against every table of the search view (about 5 µs per repository: ~11 ms at 2000, ~50 ms at 10000) while it prices the join as one function scan. Both forms select the same rows, in the same order, with the same totals.
 - `group=package` (the command palette) returns each package once, with its latest version, and counts packages.
 - File-name lookups for deb, rpm and PyPI downloads use `(repository_id, filename)` indexes.
 - The proxy cache eviction deletes expired entries in batches of 2000 and skips the table scan entirely when nothing expired more than an hour ago.
 - The repository package listing (`GET /api/v1/repositories/{name}/packages`) counts the matching rows only when the page is full (or past the end); a short page, the common case for small repositories, derives `total` from the page itself. Large repositories still pay one `COUNT` per full page.
-- The npm worker computes the `latest` dist-tag from version numbers and a deprecation flag read in SQL, so a publish no longer loads every manifest of the package.
+- The npm worker computes the `latest` dist-tag from version numbers and a deprecation flag read in SQL, so a publish does not load every manifest of the package.
 - A group request resolves its members with one query instead of one per member.
 
 ### Auth lookup cache
@@ -163,7 +165,13 @@ Two pools talk to PostgreSQL, a pgx pool for the generated queries and a `databa
 
 ### Metadata regeneration
 
-Uploads mark metadata stale; deb indexes, Maven `maven-metadata.xml`, npm packument denormalisation and rpm indexes are rebuilt by a bounded queue (`internal/worker/regen_queue.go`). Per key (deb/rpm repository, Maven artifact, npm package) there is at most one running and one pending regeneration, bursts coalesce after a 500 ms debounce (at most 5 s from the first upload), and `OPENARTIFACT_METADATA_REGEN_CONCURRENCY` caps concurrent runs across all formats. Runs take a Postgres advisory lock on a pinned connection; if another replica holds it the run is retried with backoff. On shutdown pending regenerations are drained for up to 10 s.
+Uploads mark metadata stale; deb indexes, Maven `maven-metadata.xml`, npm packument denormalisation and rpm indexes are rebuilt by a bounded queue.
+
+- Each key (deb/rpm repository, Maven artifact, npm package) has at most one running and one pending regeneration.
+- Bursts coalesce after a 500 ms debounce, at most 5 s from the first upload.
+- `OPENARTIFACT_METADATA_REGEN_CONCURRENCY` caps concurrent runs across all formats.
+- Only one server replica regenerates a key at a time. A replica that finds another one working retries with backoff.
+- On shutdown the server drains pending regenerations for up to 10 s.
 
 ### Storage quota
 
@@ -179,7 +187,7 @@ Large generated documents are not rebuilt per request. The validators (ETags) of
 
 Text metadata (the documents above, Cargo search, npm version manifests, NuGet service index, search and registration pages, PyPI simple pages and JSON) is gzip-encoded when the client sends `Accept-Encoding: gzip`, with `Vary: Accept-Encoding` and a weak ETag on the compressed form. Cached documents are compressed once. Blobs, artifacts and Range requests are never compressed. The RubyGems specs files are already gzip files and are sent as they are.
 
-The NuGet registration index takes its ETag from the IDs and versions of the package's rows, which it lists anyway. It used to read every `.nupkg` of a package to list its dependency groups. They are now stored in the version's `package_versions.metadata` (`dependency_groups`) at push time. A version that has no stored value (the handler could not read it at push) is derived from the package on first use and recorded, so the first registration request for such a version still reads its `.nupkg` once.
+The NuGet registration index takes its ETag from the IDs and versions of the package's rows, which it lists anyway. The dependency groups of each version are stored at push time, so a registration request does not read the `.nupkg` files. A version with no stored value (the handler could not read it at push) is derived from its package on first use and recorded, so the first registration request for such a version reads its `.nupkg` once.
 
 #### What invalidates a cached document
 
@@ -196,7 +204,7 @@ A cached document is served only while its validator is unchanged, so every chan
 | `maven-metadata.xml` and checksums | SHA-256 of the metadata blob | regeneration that produces different bytes |
 | npm group merge | SHA-256 of the member documents it merges | any change of a member's document |
 
-The npm packument validator is bumped by the statements that write the data, not by their callers: creating, editing or deleting a version, setting or deleting a dist-tag, and trashing, restoring or purging a version each update `packages.updated_at` in the same statement or transaction, whichever code path runs them (upload handlers, trash, backup restore). `MarkPackumentStale` only schedules the `latest` denormalisation.
+The npm packument validator is bumped by the statements that write the data, not by their callers: creating, editing or deleting a version, setting or deleting a dist-tag, and trashing, restoring or purging a version each update `packages.updated_at` in the same statement or transaction, whichever code path runs them (upload handlers, trash, backup restore).
 
 Quarantine and repository blocking never change a listing. They are applied when an artifact is downloaded (403) and, for a blocked proxy or group member, when the request is served, so they need no invalidation. A rendering that is missing data because a part of its source could not be read (a NuGet package whose nuspec was unreadable, a group member that failed) is sent once with `Cache-Control: no-store` and no validator and is not kept in the cache, so it cannot outlive the failure.
 

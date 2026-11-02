@@ -6,22 +6,79 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Federation: replicating a repository between instances
 
-A federated repository is a set of *member* repositories, one per OpenArtifact instance, that converge to the same content. Any member accepts writes and changes flow in both directions. Replication survives network partitions and the loss of a whole member, with no coordinator.
+Federation keeps a hosted repository identical on two or more OpenArtifact instances. Use it for sites that must keep working when the link between them is down. Any member accepts writes, and changes flow in both directions.
+
+Each instance holds one *member* repository of the federated set. There is no coordinator, and replication survives network partitions and the loss of a whole member.
 
 Federation **is**:
 
 - Peer-to-peer replication of a hosted repository between two or more instances.
-- Pull-based: each member pulls the change log of its peers by cursor and fetches the content it is missing. A member behind a firewall can pull without being reachable.
+- Pull-based: each member reads the change log of its peers and fetches the content it is missing. A member behind a firewall can pull without being reachable.
 - Topology-free: pairs, chains, stars and full meshes all converge.
 - Asynchronous and eventually consistent: a change shows up on other members after up to one poll interval plus the transfer time.
 
 Federation **is not**:
 
-- Edge-node or release-bundle distribution. Every member is an equal, writable peer; nothing is signed, packaged or pushed to nodes. This is deliberate, see the legal note in the [design](../design/federation.md#legal-constraint).
+- Edge-node or release-bundle distribution. Every member is an equal, writable peer, and nothing is signed, packaged or pushed to nodes. This is deliberate, see the legal note in the [design](../design/federation.md#legal-constraint).
 - Replication of proxy caches, group repositories, users, permissions, repository settings, scan results or quotas. Each member keeps its own.
 - Synchronous or read-your-writes replication.
 
 The full rationale is in the [design document](../design/federation.md).
+
+## Set up two instances
+
+Instance A is `https://a.example.com` with repository `libs`. Instance B is `https://b.example.com` with repository `libs-b`. Both repositories are hosted and have the same format. Names may differ per instance.
+
+`TOKEN_A` and `TOKEN_B` are administrator API tokens of each instance. The global `manage` permission is required (see [security](#security)).
+
+1. Set `federation.enabled: true` (or `OPENARTIFACT_FEDERATION_ENABLED=true`) on **every** instance and restart. This starts the pull workers and mounts the `/federation/v1` peer endpoints. See [configuration](../getting-started/configuration.md#federation-federation).
+2. Set `OPENARTIFACT_SECRET_KEY` on every instance, because outbound tokens are stored encrypted. The instances must reach each other over `https`.
+3. Enable federation for the repository on both sides:
+
+   ```bash
+   curl -sS -X PUT "https://a.example.com/api/v1/repositories/libs/federation" \
+     -H "Authorization: Bearer $TOKEN_A" -H 'Content-Type: application/json' \
+     -d '{"enabled": true}'
+   curl -sS -X PUT "https://b.example.com/api/v1/repositories/libs-b/federation" \
+     -H "Authorization: Bearer $TOKEN_B" -H 'Content-Type: application/json' \
+     -d '{"enabled": true}'
+   ```
+
+4. Create an inbound peer token on A for B. The response contains the plaintext `oafed_...` token once, so store it now:
+
+   ```bash
+   curl -sS -X POST "https://a.example.com/api/v1/repositories/libs/federation/tokens" \
+     -H "Authorization: Bearer $TOKEN_A" -H 'Content-Type: application/json' \
+     -d '{"name": "b-site"}'
+   ```
+
+5. Add A as a peer on B, with A's base URL and the token from step 4:
+
+   ```bash
+   curl -sS -X POST "https://b.example.com/api/v1/repositories/libs-b/federation/peers" \
+     -H "Authorization: Bearer $TOKEN_B" -H 'Content-Type: application/json' \
+     -d '{"name": "site-a", "base_url": "https://a.example.com", "token": "oafed_..."}'
+   ```
+
+6. For two-way replication, repeat in reverse: create a token on B (`POST .../libs-b/federation/tokens`) and add B as a peer of A (`POST .../libs/federation/peers`, `base_url` `https://b.example.com`).
+
+With only steps 1 to 5, B mirrors A one way. B pulls, and A never pulls from B. B's own uploads go into B's log, but nobody reads it.
+
+Check progress and health on either side:
+
+```bash
+curl -sS "https://b.example.com/api/v1/repositories/libs-b/federation" \
+  -H "Authorization: Bearer $TOKEN_B"
+```
+
+The status lists each peer with its cursor, backlog, lag, last success, last error, consecutive failures and deferred units. Upload an artifact to A. It appears on B within about a poll interval, and with two-way replication the reverse holds.
+
+The same data is in the UI:
+
+- **Repository Settings tab** (`/repos/NAME?tab=settings`), section **Federation**: enable or disable federation, create and revoke tokens, add, edit, pause and remove peers, press **Resync** and inspect deferred units. The token plaintext is displayed once.
+- **Settings > Federation** (`/settings/federation`): the server state and every federated repository with how its peers are doing.
+
+You can also create a repository federated from the start: `POST /api/v1/repositories` with `"federated": true`. This works for hosted repositories of a supported format, and only while `federation.enabled` is on. Enabling federation on a repository that already has content records every existing item in the log, so the first pull transfers the whole repository.
 
 ## Supported formats
 
@@ -37,92 +94,52 @@ The full rationale is in the [design document](../design/federation.md).
 | PyPI | file |
 | raw | file path |
 
-Not supported, with the reason:
+Any format not in this table is unsupported, and so are proxy and group repositories (not authoritative content). Only hosted repositories can be federated.
 
 - **Conan, Conda, RubyGems**: their indexes or revision graphs are regenerated whole and need their own unit design.
-- **Debian and RPM**: their metadata is signed with the instance's own key; consistent signed indexes across members need their own design.
-- **Ivy and sbt**: not a technical limit; left out of the first test matrix.
-- **Terraform/OpenTofu**: not designed yet; modules and provider platforms are not replicated.
-- **Proxy and group repositories**: not authoritative content. Only hosted repositories can be federated.
+- **Debian and RPM**: their metadata is signed with the instance's own key, and consistent signed indexes across members need their own design.
+- **Ivy and sbt**: not a technical limit. They are left out of the first test matrix.
+- **Terraform/OpenTofu**: not designed yet. Modules and provider platforms are not replicated.
 
-Derived metadata (Helm `index.yaml`, Maven `maven-metadata.xml`, npm packuments, NuGet and PyPI indexes) is never copied. Each member regenerates it from the replicated units, so members hold the same content but not necessarily byte-identical metadata files.
-
-Member repository names may differ per instance; the formats must match.
-
-## Enable federation
-
-1. Set `federation.enabled: true` (or `OPENARTIFACT_FEDERATION_ENABLED=true`) on **every** instance and restart. It starts the pull workers and mounts the `/federation/v1` peer endpoints. See [configuration](../getting-started/configuration.md#federation-federation).
-2. Make sure `OPENARTIFACT_SECRET_KEY` is set (the outbound tokens are stored encrypted) and that the instances can reach each other over `https`.
-3. On instance A, enable federation for the repository, then create an **inbound peer token** for it. The token is shown once.
-4. On instance B, enable federation for its repository and add A as a **peer**: A's base URL and the token from step 3.
-5. For two-way replication, repeat in reverse: create a token on B and add B as a peer on A.
-
-With only steps 3 and 4, B mirrors A one way: B pulls, A never pulls from B (B's own uploads still go into B's log but nobody reads it).
-
-A new repository can be created federated: `POST /api/v1/repositories` with `"federated": true` (hosted repositories of a supported format only, and only while `federation.enabled` is on). Enabling federation on a repository that already has content records every existing item in the log in one transaction, so the first pull transfers the whole repository.
-
-## Walkthrough: two instances
-
-Instance A is `https://a.example.com` with repository `libs`, instance B is `https://b.example.com` with repository `libs-b`; both are hosted and the same format. `TOKEN_A` and `TOKEN_B` are administrator API tokens of each instance (the `manage` permission is required, see [security](#security)).
-
-Enable on both sides, using the same endpoint on each (`PUT .../federation`):
-
-```bash
-curl -sS -X PUT "https://a.example.com/api/v1/repositories/libs/federation" \
-  -H "Authorization: Bearer $TOKEN_A" -H 'Content-Type: application/json' \
-  -d '{"enabled": true}'
-curl -sS -X PUT "https://b.example.com/api/v1/repositories/libs-b/federation" \
-  -H "Authorization: Bearer $TOKEN_B" -H 'Content-Type: application/json' \
-  -d '{"enabled": true}'
-```
-
-Create an inbound token on A for B. The response contains the plaintext `oafed_...` token once; store it now.
-
-```bash
-curl -sS -X POST "https://a.example.com/api/v1/repositories/libs/federation/tokens" \
-  -H "Authorization: Bearer $TOKEN_A" -H 'Content-Type: application/json' \
-  -d '{"name": "b-site"}'
-```
-
-Add A as a peer on B:
-
-```bash
-curl -sS -X POST "https://b.example.com/api/v1/repositories/libs-b/federation/peers" \
-  -H "Authorization: Bearer $TOKEN_B" -H 'Content-Type: application/json' \
-  -d '{"name": "site-a", "base_url": "https://a.example.com", "token": "oafed_..."}'
-```
-
-For two-way replication, create a token on B (`POST .../libs-b/federation/tokens`) and add B as a peer of A with `POST .../libs/federation/peers`, `base_url` `https://b.example.com`.
-
-Check progress and health on either side:
-
-```bash
-curl -sS "https://b.example.com/api/v1/repositories/libs-b/federation" \
-  -H "Authorization: Bearer $TOKEN_B"
-```
-
-The status lists the peers with their cursor, backlog, lag, last success, last error, consecutive failures and deferred units. The same data is in the **Federation** section of the repository's Settings tab (`/repos/NAME?tab=settings`) where you can enable or disable federation, create and revoke tokens (the plaintext is displayed once), add, edit, pause and remove peers, press **Resync** and inspect deferred units. **Settings > Federation** (`/settings/federation`) gives the overview: the server state and every federated repository with how its peers are doing.
-
-Upload an artifact to A and it appears on B within about a poll interval; with two-way replication the reverse holds.
+Derived metadata (Helm `index.yaml`, Maven `maven-metadata.xml`, npm packuments, NuGet and PyPI indexes) is never copied. Each member regenerates it from the replicated units, so members hold the same content but not necessarily byte-identical metadata files. The formats of the member repositories must match.
 
 ## Conflicts and deletes
 
-Conflicts exist only on unit rows (which blob a path or tag points to, plus its metadata). Blobs are content-addressed and never conflict.
+A *unit* is one replicated item: a package version, a file path, a tag. A unit row records which blob the unit points to, plus its metadata. Blobs are content-addressed, so they never conflict. A *conflict* is two members changing the same unit before either has seen the other's change.
 
-- **Last writer wins per unit.** Every write carries a hybrid logical clock stamp (wall time of the database clock, a counter, and the writer's instance id as tie-break). Every member computes the same winner without talking to the others. A write made after seeing another is always ordered after it; only truly concurrent writes are decided by time, then by instance id.
-- **Tags move deterministically.** Two members moving the same npm dist-tag or Docker tag concurrently converge on one target on all members. The losing write is discarded.
-- **Conflicts are counted, not silent.** When a replicated change replaces a local live unit with different content, or is skipped because a newer different one exists, the peer's conflict counter and `openartifact_federation_conflicts_total` increase and a warning is logged.
-- **Clock skew** can let a physically earlier write win. Keep instance clocks in sync with NTP. A change whose stamp is more than `federation.maxClockSkew` (default 5 minutes) ahead of the receiver's clock, or whose counter is implausible, is not applied: it is parked as `clock_skew` and applied by a later retry once the receiver's clock has caught up. Without this bound a single far-future stamp would be taken over by the repository's clock for good and every later change of any member would lose to it.
-- **Immutable releases.** A concurrent publish of the same version with different content on two members is a conflict; federation converges it by the same rule, even with `immutable_releases` on (which still protects against local overwrite attempts).
-- **Deletes propagate as tombstones.** A delete is an event: it is applied on the other members as a normal delete (to the [trash](trash.md) with the repository's retention, or permanent when retention is `0`; `deleted_by` is `federation:<peer name>`), and an older concurrent upload does not resurrect it. A restore from the trash on one member is a new upload for the others. A trash purge is not replicated.
-- **Tombstone retention.** Tombstones are removed after `federation.tombstoneRetention` (default 30 days). A member offline for longer than that cannot learn the deletes that were collected; it still holds the artifact and the next sync recreates it on the other members. Set the retention above the longest partition you want to survive.
-- **Removing a repository is not a delete of its content.** Deleting a member repository never deletes artifacts on other members; they report the peer as failing (`404`).
+A *tombstone* is the record of a delete in the change log. It tells the other members to delete the unit too.
+
+### How conflicts are decided
+
+- **The latest write wins, per unit.** Every write carries a timestamp from the database clock of the instance that made it, with the instance id as a tie-break. Every member compares the stamps and picks the same winner without talking to the others.
+- **A write made after seeing another always wins over it.** Only truly concurrent writes are decided by time, then by instance id.
+- **Tags move deterministically.** Two members moving the same npm dist-tag or Docker tag at once converge on one target on all members. The losing write is discarded.
+- **Conflicts are counted.** A conflict happens when a replicated change replaces a local live unit with different content, or is skipped because a newer different one exists. The peer's conflict counter and `openartifact_federation_conflicts_total` increase, and a warning is logged.
+- **Immutable releases follow the same rule.** A concurrent publish of the same version with different content on two members is a conflict, and it converges by the latest-write rule even with `immutable_releases` on. That setting still blocks local overwrite attempts.
+
+### Clock skew
+
+A skewed clock can let a physically earlier write win, so keep instance clocks in sync with NTP.
+
+A change stamped more than `federation.maxClockSkew` (default 5 minutes) ahead of the receiver's clock is not applied. The same holds for a change with an implausible counter. It is parked as `clock_skew` and applied by a later retry once the receiver's clock has caught up. Without this bound, one far-future stamp would make every later change of any member lose to it.
+
+### Deletes
+
+- **A delete reaches the other members as a tombstone.** Each member applies it as a normal delete: to the [trash](trash.md) with the repository's retention, or permanently when retention is `0`. `deleted_by` is `federation:<peer name>`.
+- **An older concurrent upload does not bring the unit back.** The tombstone wins over a write that happened before the delete.
+- **A restore from the trash is a new upload** for the other members.
+- **A trash purge is not replicated.**
+- **Removing a member repository does not delete content on other members.** They report the peer as failing (`404`).
+
+### Tombstone retention
+
+Tombstones are removed after `federation.tombstoneRetention` (default 30 days). A member that is offline for longer cannot learn the deletes that were collected. It still holds the artifact, and the next sync recreates it on the other members. Set the retention above the longest partition you want to survive.
 
 ## Fault tolerance
 
 - **Partitions.** The peer position is a cursor kept by the receiver. When the link or either instance comes back, the pull continues from the cursor and catches up, however long the outage was (within tombstone retention).
 - **Backoff.** A failing peer (network, `5xx`, rejected token) is retried with exponential backoff from 5 s up to `federation.maxBackoff` with jitter, and never given up. The first success resets it.
-- **Poison units.** A unit that cannot be applied (quarantined at the origin, quota exceeded, blob missing at the origin, validation error) does not block the feed. A unit that is known to be unappliable for now (quarantined, quota, missing blob) is parked as *deferred* at once with the reason; one that fails for an unknown reason is parked after 3 failed pulls. The cursor moves on and the unit is retried with its own backoff (cap 1 h). List them with `GET .../peers/{id}/deferred` or in the UI.
+- **Poison units.** A unit that cannot be applied (quarantined at the origin, quota exceeded, blob missing at the origin, validation error) does not block the feed. A unit that is known to be unappliable for now (quarantined, quota, missing blob) is parked as *deferred* at once with the reason; one that fails for an unknown reason is parked as `apply_failed` after 3 failed pulls. The cursor moves on and the unit is retried with its own backoff (cap 1 h). List them with `GET .../peers/{id}/deferred` or in the UI.
 - **No dropped events.** The cursor advances only after a unit is committed; a crash replays the entry and the stamp comparison makes it a no-op.
 - **Large blobs.** Blob transfers use an idle timeout, so big files on slow links complete. A transfer that is cut midway is [resumed](#resuming-interrupted-transfers), not restarted.
 - **Several replicas of one instance.** One replica pulls from a given peer at a time.
@@ -131,7 +148,7 @@ Conflicts exist only on unit rows (which blob a path or tag points to, plus its 
 
 Blobs are downloaded into a spool directory as a *partial file* named after the blob's sha256. When the connection drops, the partial stays. The retry asks the peer for the rest with `Range: bytes=<partial size>-` and appends it; a 10 GiB image layer cut at 9 GiB costs 1 GiB more, not 10.
 
-- **Retries.** A dropped body is retried immediately, with backoff from 500 ms to 8 s. After four attempts in a row that move no bytes the unit stops for this pull and the peer backs off as usual (see [fault tolerance](#fault-tolerance)); the partial is kept and the next pull resumes it. Attempts that make progress do not count against the limit.
+- **Retries.** A dropped body is retried immediately, with backoff from 500 ms to 8 s. After five attempts in a row that move no bytes the unit stops for this pull and the peer backs off as usual (see [fault tolerance](#fault-tolerance)); the partial is kept and the next pull resumes it. Attempts that make progress do not count against the limit.
 - **Verification.** The sha256 is computed over the whole blob, the kept prefix included (it is re-read and hashed on every resume, so a damaged partial cannot slip through). Only a blob with the digest the unit declares is stored. A mismatch deletes the partial and defers the unit as `digest_mismatch`.
 - **Declared size.** A unit must declare the size of each blob: positive, or `0` only for the empty blob. The download is held to it (the body is never read past it; a shorter or longer body is `digest_mismatch`), the quota is checked against it before anything is fetched, and the size recorded for the blob is the number of bytes that were received and hashed. A blob larger than `server.maxBodyBytes` is parked as `blob_too_large`.
 - **Digests prove nothing about ownership.** A blob already stored for another repository of the instance (a private one, say) is not linked to the federated repository because a peer names its digest: it is downloaded from the peer and verified, so the peer has to have the bytes. Only a blob the repository itself already references is reused without a download.
@@ -195,7 +212,7 @@ Set the lag alert below `federation.tombstoneRetention`; a peer that stays behin
 
 - **Peer tokens** (`oafed_...`) are a separate credential bound to **one repository**. Only their hash is stored; the plaintext is shown once at creation. They grant read access to the four `/federation/v1` endpoints of that repository and nothing else: no REST API, no format endpoint, no other repository. User tokens, sessions and the legacy key are rejected there. Tokens can be listed (name, created, last used, last cursor) and revoked; issue and revoke show up in the request audit log.
 - **Outbound tokens** (the token you give when adding a peer) are stored encrypted with `OPENARTIFACT_SECRET_KEY` and never returned by the API. The token is sent to the peer's URL, so changing `base_url` with `PATCH` requires the token in the same request (`400 validation_failed` otherwise); the stored token is replaced, never carried over to the new URL.
-- **Errors are classified, not copied.** `last_error` of a peer and of a deferred unit is one of a fixed set of reasons, with the HTTP status when the peer answered one, for example `unreachable`, `timeout`, `tls`, `unauthorized (HTTP 401)`, `not_found (HTTP 404)`, `upstream_error (HTTP 502)`, `protocol_mismatch`, `blocked_address`, `invalid_config`, `invalid_response`, `invalid_unit`, `blob_rejected`, `clock_skew`, `quota_exceeded`, `internal_error`. Text of the peer, the network stack or the database is not stored or returned; the full cause is in the server log (`federation: pull failed`, `federation: unit set aside`).
+- **Errors are classified, not copied.** `last_error` of a peer and of a deferred unit is one of a fixed set of reasons, with the HTTP status when the peer answered one, for example `unreachable`, `timeout`, `tls`, `unauthorized (HTTP 401)`, `not_found (HTTP 404)`, `rate_limited (HTTP 429)`, `upstream_error (HTTP 502)`, `protocol_mismatch`, `blocked_address`, `invalid_config`, `invalid_response`, `invalid_unit`, `blob_rejected`, `clock_skew`, `quota_exceeded`, `internal_error`. Text of the peer, the network stack or the database is not stored or returned; the full cause is in the server log (`federation: pull failed`, `federation: unit set aside`).
 - **Transport.** Peer URLs must be `https`. Plain `http` and private or loopback addresses are accepted only with `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true` (closed networks, development). Outbound calls use the SSRF-safe client: addresses are checked at connection time and redirects to private addresses are refused.
 - **CA pin and client certificate.** A peer entry can carry a CA bundle to trust for that peer (private PKI) and a client certificate and key presented to it; both are stored encrypted. Inbound mTLS is terminated by the reverse proxy in front of the peer; let it restrict who can reach `/federation/`. The token is still required, so mTLS is defence in depth.
 - **RBAC.** Managing peers and tokens, resync and the health view need the global `manage` permission (administrators); the federation routes are not delegated to project owners. Creating a repository with `federated: true` is likewise limited to administrators. Federation never gives read or write access to artifacts on a member; client access stays governed by that member's own permissions.
@@ -257,7 +274,7 @@ Used between instances, authenticated with `Authorization: Bearer oafed_...`. Th
 | TLS error | Private CA: pin it in the peer's CA bundle; check the client certificate if the proxy requires mTLS |
 | Format mismatch error | The two repositories have different formats; federation needs equal formats |
 | Lag grows, `consecutive_failures` rises | Peer unreachable or erroring; read `last_error` (a reason from the list under [security](#security); the detail is in the server log). It retries up to `maxBackoff` and catches up on return |
-| Deferred units | Open the deferred list for the reason: quarantined at the origin (release it there), quota exceeded (raise the quota), blob missing at the origin, `clock_skew` (the peer's clock is ahead: fix its NTP, the unit applies once the local clock catches up or `federation.maxClockSkew` is raised), `blob_too_large` or `invalid_blob` (the peer declares a size that is over `server.maxBodyBytes` or not valid); then Resync |
+| Deferred units | Open the deferred list for the reason: quarantined at the origin (release it there), quota exceeded (raise the quota), blob missing at the origin, `apply_failed` (an unknown failure that repeated: read the server log, `federation: unit set aside`), `clock_skew` (the peer's clock is ahead: fix its NTP, the unit applies once the local clock catches up or `federation.maxClockSkew` is raised), `blob_too_large` or `invalid_blob` (the peer declares a size that is over `server.maxBodyBytes` or not valid); then Resync |
 | Error "head below cursor" or the peer's log was reset | The peer was restored from a backup or rebuilt; press Resync |
 | Deleted artifact came back | The deleting member's tombstone expired before the other member synced; delete again and raise `tombstoneRetention` |
 | Two members disagree on a tag | Concurrent moves are still converging, or clocks are skewed; check `conflicts_total` and NTP |
