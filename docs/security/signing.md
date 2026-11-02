@@ -192,7 +192,7 @@ Vulnerability reporting policy: [../../SECURITY.md](../../SECURITY.md).
 | Distributed | `HOST/repos/REPO/public.key` (and `HOST/repos/REPO/<keyname>`); clients put it in `/etc/apk/keys/` |
 | Managed with | `GET`/`POST /api/v1/repositories/REPO/apk-key` (global manage permission) and the repository **Settings** page |
 
-Rotating or importing a key re-signs every index of the repository, and clients must install the new public key. Without `OPENARTIFACT_SECRET_KEY` the index is served unsigned and the key API answers `409 secret_key_required`. See [Alpine (apk)](../formats/apk.md#signing-key).
+Rotating or importing a key re-signs every index of the repository, and clients must install the new public key. Without `OPENARTIFACT_SECRET_KEY` the index is served unsigned and the key API answers `409 secret_key_required`. See [Alpine (apk)](../formats/apk.md#signing-key-and-rotation).
 
 ## Nix (narinfo) signing key
 
