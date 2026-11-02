@@ -27,7 +27,7 @@ func packumentAt(t *testing.T, explicit string, mutate func(*http.Request)) *htt
 	t.Helper()
 
 	db := &tarballMockDB{
-		repo: &models.Repository{ID: "repo-1", Name: "myrepo", Public: true},
+		repo: &models.Repository{ID: "repo-1", Name: "myrepo", Public: true, Format: "npm"},
 		pkg:  &models.NPMPackage{ID: "pkg-1", FullName: "lodash", UpdatedAt: time.Unix(1700000000, 0)},
 		versions: []*models.NPMVersion{
 			{

@@ -31,6 +31,11 @@ set -euo pipefail
 
 die() { echo "smoke: $*" >&2; exit 1; }
 
+# Podman without a docker alias stands in for docker (same CLI for what the smoke tests use).
+if ! command -v docker >/dev/null && command -v podman >/dev/null; then
+	docker() { podman "$@"; }
+fi
+
 # smoke_init FORMAT IMAGE [URL]: checks the prerequisites and, unless
 # SMOKE_MODE=install, creates the hosted repository smoke-FORMAT-ID (SMOKE_REPO_BODY,
 # a JSON object, is merged over the creation request). The URL wins over OA_URL (default
@@ -49,7 +54,8 @@ smoke_init() {
 	OA_URL="${3:-${OA_URL:-http://127.0.0.1:8080}}"
 	OA_URL="${OA_URL%/}"
 	[ -n "${OA_TOKEN:-}" ] || die "set OA_TOKEN (see scripts/dev-token.sh)"
-	for c in docker curl jq; do command -v "$c" >/dev/null || die "$c is required"; done
+	for c in curl jq; do command -v "$c" >/dev/null || die "$c is required"; done
+	type docker >/dev/null 2>&1 || die "docker (or podman) is required"
 	SMOKE_MODE="${SMOKE_MODE:-both}"
 	case "$SMOKE_MODE" in both | publish | install) ;; *) die "SMOKE_MODE must be both, publish or install (got $SMOKE_MODE)" ;; esac
 	[ "$SMOKE_MODE" != publish ] || KEEP=1

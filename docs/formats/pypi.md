@@ -84,7 +84,7 @@ Endpoints, relative to `HOST/repos/REPO`:
 
 ## Proxy
 
-Create a proxy with `repo_type: "proxy"`. If you omit `upstream_url`, it defaults to `https://pypi.org/simple`. A proxy is not a path mirror: `upstream_url` is the simple index.
+Create a proxy with `repo_type: "proxy"`. If you omit `upstream_url`, it defaults to `https://pypi.org/simple`. A proxy is not a path mirror: `upstream_url` is the simple index. Giving the public index as a bare origin (`https://pypi.org`) is completed to `https://pypi.org/simple`; the URL of any other index (a private mirror) is stored as you give it, so include its index path, or every project answers `404`.
 
 ```sh
 curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \

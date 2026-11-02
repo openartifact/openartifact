@@ -125,6 +125,7 @@ describe('RepoActivityTab', () => {
 
     const admin = await mountTab(() => json(page([])), { admin: true })
     expect(admin.findAll('[data-category]').map((b) => b.attributes('data-category'))).toContain('settings')
+    expect(admin.findAll('[data-category]').map((b) => b.attributes('data-category'))).toContain('curation')
     expect(admin.findAll('[data-category]').map((b) => b.attributes('data-category'))).toContain('federation')
   })
 

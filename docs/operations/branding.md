@@ -83,7 +83,7 @@ The public endpoints are reachable before sign-in because the login page needs t
 
 ## How it reaches the browser without a flash
 
-The server rewrites `index.html` before it is sent: the `<title>`, the favicon links, the iOS home-screen title, the accent colour variables and a small JSON block with the branding. The page therefore never shows the OpenArtifact name or colours first. `/manifest.webmanifest` is also generated per request from the same settings. The service worker never caches either of them or any `/api` response, so a change is visible on the next page load. The offline page keeps a small copy of the name and colour in the browser's local storage, since it cannot ask the server while offline.
+The server rewrites `index.html` before it is sent: the `<title>`, the favicon links, the iOS home-screen title, the accent colour variables and a small JSON block with the branding. The page therefore never shows the OpenArtifact name or colours first. `/manifest.webmanifest` is also generated per request from the same settings; its `short_name` (the label under an installed app's icon) is the product name when it is at most 12 characters, otherwise the leading whole words that fit, so "Zextras Artifact Hub" shows as "Zextras". The service worker never caches either of them or any `/api` response, so a change is visible on the next page load. The offline page keeps a small copy of the name and colour in the browser's local storage, since it cannot ask the server while offline.
 
 ## Attribution (AGPL §13)
 

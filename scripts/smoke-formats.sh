@@ -39,7 +39,7 @@
 #
 # Containers use the host network, so URL may be 127.0.0.1:PORT. The token
 # reaches containers through the environment, never through a command line.
-# Needs docker, curl and jq on the host and Internet access in the containers
+# Needs docker (or podman), curl and jq on the host and Internet access in the containers
 # (the clients install their tools).
 set -euo pipefail
 

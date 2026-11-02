@@ -8762,7 +8762,7 @@ export type GetApiV1RepositoriesByNameActivityData = {
     };
     query?: {
         /**
-         * Event types to keep, comma separated or repeated: `uploads`, `deletions`, `trash`, `promotions`, `quarantine` (any reader) and `cleanup`, `settings`, `federation` (repository admins only).
+         * Event types to keep, comma separated or repeated: `uploads`, `deletions`, `trash`, `promotions`, `quarantine` (any reader) and `cleanup`, `settings`, `curation`, `federation` (repository admins only).
          */
         category?: string;
         /**

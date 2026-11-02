@@ -29,7 +29,7 @@ func (d *quarantinedByKeysDB) IsArtifactQuarantined(ctx context.Context, repoID 
 // package listing shows) blocks the tarball of that version only.
 func TestTarballQuarantinedByRowID(t *testing.T) {
 	db := &quarantinedByKeysDB{tarballMockDB: &tarballMockDB{
-		repo: &models.Repository{ID: "repo-1", Name: "myrepo"},
+		repo: &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"},
 		pkg:  &models.NPMPackage{ID: "pkg-1", FullName: "lodash"},
 		versions: []*models.NPMVersion{
 			{ID: "file-1", PackageID: "pkg-1", Version: "1.0.0", BlobSHA256: "sha-abc", TarballFilename: "lodash-1.0.0.tgz"},

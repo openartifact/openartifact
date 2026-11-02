@@ -286,6 +286,20 @@ func TestCurationRulesCacheInvalidatedByWrites(t *testing.T) {
 	}
 
 	list(0)
+
+	// A write by another replica (here: another connection pool, which does not
+	// invalidate this cache) is seen at once by the management read and, up to
+	// the TTL, not by the enforcement read.
+	otherReplicaRule := &curation.Rule{RepositoryID: repo.ID, Action: curation.ActionBlock, Package: "other-replica"}
+	if _, err := harness.Database.CreateCurationRule(ctx, otherReplicaRule); err != nil {
+		t.Fatalf("CreateCurationRule by the other replica: %v", err)
+	}
+
+	if rules, err := cached.ListCurationRulesUncached(ctx, repo.ID); err != nil || len(rules) != 1 || rules[0].Package != "other-replica" {
+		t.Fatalf("ListCurationRulesUncached = %+v, %v; want the other replica's rule", rules, err)
+	}
+
+	list(0)
 }
 
 // seedVersionWithScan stores one package version with one file and a completed

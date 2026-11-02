@@ -114,14 +114,28 @@ type repoExecer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
+// updateRepositoryRow writes the settings of repo. When the upstream URL,
+// username or password of a proxy repository changes, the same statement drops
+// the repository's proxy cache rows (cached metadata and negative entries
+// included): they describe the old upstream, and a 404 or a document it served
+// must not outlive the change. Cached blobs are reclaimed by the blob cleanup.
 func updateRepositoryRow(ctx context.Context, db repoExecer, repo *models.Repository) error {
 	_, err := db.ExecContext(
 		ctx,
-		`UPDATE repositories SET description = $1, public = $2, repo_type = $3, upstream_url = NULLIF($4,''), upstream_username =
+		`WITH old AS (
+			SELECT upstream_url, upstream_username, upstream_password_enc FROM repositories
+			 WHERE id = $14 AND deleted_at IS NULL
+		), upd AS (
+		UPDATE repositories SET description = $1, public = $2, repo_type = $3, upstream_url = NULLIF($4,''), upstream_username =
 			NULLIF($5,''), upstream_password_enc = NULLIF($6,''), cache_ttl_seconds = $7, negative_cache_ttl_seconds = $8,
 			max_stale_seconds = $9, blocked = $10, project_id = $11, trash_retention_days = $12,
 			immutable_releases = $13, presign_downloads = $15, merge_proxy_versions = $16, sign_packages = $17, updated_at = now(),
-			min_age_hours = $18, curation_mode = $19 WHERE id = $14 AND deleted_at IS NULL`,
+			min_age_hours = $18, curation_mode = $19 WHERE id = $14 AND deleted_at IS NULL
+		) DELETE FROM proxy_cache_entries
+		 WHERE repository_id = $14
+		   AND EXISTS (SELECT 1 FROM old WHERE old.upstream_url IS DISTINCT FROM NULLIF($4,'')
+		                                    OR old.upstream_username IS DISTINCT FROM NULLIF($5,'')
+		                                    OR old.upstream_password_enc IS DISTINCT FROM NULLIF($6,''))`,
 		repo.Description,
 		repo.Public,
 		repo.RepoType,

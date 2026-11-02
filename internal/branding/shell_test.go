@@ -149,3 +149,20 @@ func TestManifest(t *testing.T) {
 		t.Errorf("custom manifest = %+v", got)
 	}
 }
+
+func TestShortName(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"OpenArtifact", "OpenArtifact"},
+		{"Acme Hub", "Acme Hub"},
+		{"Zextras Artifact Hub", "Zextras"},
+		{"Acme Artifact Hub Internal", "Acme"},
+		{"My Art Hub Pro Plus", "My Art Hub"},
+		{"Supercalifragilistic Repo", "Supercalifrag"[:12]},
+		{"  Spaced   Out  ", "Spaced Out"},
+		{"日本語のアーティファクトリポジトリ", "日本語のアーティファクト"},
+	} {
+		if got := shortName(tc.in); got != tc.want {
+			t.Errorf("shortName(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

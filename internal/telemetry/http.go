@@ -143,7 +143,7 @@ func HTTPMiddleware() func(http.Handler) http.Handler {
 // and the frontend telemetry relay.
 func untraced(path string) bool {
 	switch path {
-	case "/health", "/ready", "/metrics", "/api/v1/telemetry/traces", "/api/v1/telemetry/logs":
+	case "/health", "/healthz", "/livez", "/ready", "/readyz", "/metrics", "/api/v1/telemetry/traces", "/api/v1/telemetry/logs":
 		return true
 	}
 

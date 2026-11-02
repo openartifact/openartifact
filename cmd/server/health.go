@@ -29,17 +29,23 @@ type healthResponse struct {
 }
 
 // registerOperationalRoutes mounts /health, /metrics and /ready on the bare
-// router: they sit outside authentication.
+// router: they sit outside authentication. /livez and /healthz are aliases of
+// /health and /readyz of /ready, the names Kubernetes tooling and load
+// balancers probe by default; without them a probe would get the web UI's HTML
+// and a false 200.
 func (a *app) registerOperationalRoutes() {
 	router := a.web.router
 
 	router.Get("/health", a.handleHealth)
+	router.Get("/healthz", a.handleHealth)
+	router.Get("/livez", a.handleHealth)
 
 	auth := a.operationalAuth()
 
 	router.Method("GET", "/metrics", auth(promhttp.Handler()))
 
 	router.Get("/ready", a.handleReady)
+	router.Get("/readyz", a.handleReady)
 
 	// A worker process has no authenticated API to hang the profiler on.
 	if !a.cfg.Server.ServesAPI() && a.cfg.Server.PprofEnabled {

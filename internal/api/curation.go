@@ -46,7 +46,7 @@ const maxAvailabilityParam = 1024
 // CurationStore is the part of the database CurationHandler needs.
 type CurationStore interface {
 	repoAccessStore
-	ListCurationRules(ctx context.Context, repoID string) ([]curation.Rule, error)
+	ListCurationRulesUncached(ctx context.Context, repoID string) ([]curation.Rule, error)
 	GetCurationRule(ctx context.Context, repoID, id string) (*curation.Rule, error)
 	CreateCurationRule(ctx context.Context, rule *curation.Rule) (*curation.Rule, error)
 	UpdateCurationRule(ctx context.Context, rule *curation.Rule) (*curation.Rule, error)
@@ -145,7 +145,7 @@ func (h *CurationHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rules, err := h.db.ListCurationRules(r.Context(), repo.ID)
+	rules, err := h.db.ListCurationRulesUncached(r.Context(), repo.ID)
 	if err != nil {
 		h.dbError(w, "list curation rules: db error", err)
 		return
@@ -505,7 +505,7 @@ func (h *CurationHandler) explainProxy(
 	if repo.CurationMode != "" && repo.CurationMode != curation.ModeOff {
 		var err error
 
-		if rules, err = h.db.ListCurationRules(ctx, repo.ID); err != nil {
+		if rules, err = h.db.ListCurationRulesUncached(ctx, repo.ID); err != nil {
 			return fmt.Errorf("list curation rules: %w", err)
 		}
 	}

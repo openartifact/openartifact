@@ -343,6 +343,30 @@ func validateUpstreamURL(ctx context.Context, raw string) error {
 	return nil
 }
 
+// normalizeUpstreamURL completes an upstream URL the proxy would otherwise
+// misuse. A PyPI proxy's upstream is the simple index, so the public index
+// given as a bare origin (https://pypi.org) becomes https://pypi.org/simple;
+// without it every project would 404. Any other URL is the operator's choice
+// (a private mirror serves its index at a path of its own) and stays as given.
+func normalizeUpstreamURL(format, raw string) string {
+	if format != "pypi" {
+		return raw
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil || (!strings.EqualFold(u.Hostname(), "pypi.org") && !strings.EqualFold(u.Hostname(), "www.pypi.org")) {
+		return raw
+	}
+
+	if strings.Trim(u.Path, "/") != "" {
+		return raw
+	}
+
+	u.Path = "/simple"
+
+	return u.String()
+}
+
 // sameUpstreamOrigin reports whether two upstream URLs share scheme, host and
 // port, i.e. whether credentials valid for one are sent to the same server by
 // the other. Unparsable input counts as a different origin.
@@ -790,7 +814,7 @@ func (h *RepositoriesHandler) createRepository(
 			return
 		}
 
-		repo.UpstreamURL = body.UpstreamURL
+		repo.UpstreamURL = normalizeUpstreamURL(body.Format, body.UpstreamURL)
 		repo.UpstreamUsername = body.UpstreamUsername
 		repo.UpstreamPasswordEnc = encPassword
 		repo.CacheTTLSeconds = ttl
@@ -1085,7 +1109,7 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 			credsRetarget = true
 		}
 
-		repo.UpstreamURL = *body.UpstreamURL
+		repo.UpstreamURL = normalizeUpstreamURL(repo.Format, *body.UpstreamURL)
 	}
 
 	if body.UpstreamUsername != nil {

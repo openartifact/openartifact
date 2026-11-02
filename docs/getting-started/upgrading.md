@@ -142,6 +142,16 @@ Newest first. Each version starts with **What you must do**; the text below it l
 - **Quarantine requests need `quarantined`.** `POST .../vuln|secrets|license/scans/{id}/quarantine` answers `400` when the body has no `quarantined` field instead of treating it as a release, and releasing a scan that is not quarantined no longer writes an `artifact.released` audit event. `oa vuln quarantine` and `oa secret quarantine` now send the field (they always failed with `400` before) and take `--release` to lift a quarantine.
 - **`oa artifact upload` follows the repository format.** It looks the repository up and uploads like `oa upload` does (raw, Maven, Ivy, sbt, deb, rpm, pacman, Ansible, Composer; `*.apk` into Alpine repositories), instead of sending every non-deb file to the RPM endpoint. Other formats are refused with a message.
 
+**Fixes found by a test campaign on a two-replica deployment.**
+
+- **npm routes answer npm repositories only.** `GET /repos/{name}/{package}`, its version, tarball and dist-tags forms return `404` for a repository of another format instead of an npm document.
+- **Curation rules read the database.** `GET /api/v1/repositories/{name}/curation-rules` (and the availability explanation) no longer go through the 2 s auth cache, so a list read right after a write, on any replica, shows the write and `oa diff` after `oa apply` shows no spurious change. Enforcement on proxy requests keeps using the cache.
+- **Proxy cache follows the upstream.** Changing `upstream_url`, `upstream_username` or `upstream_password` of a proxy repository drops its cached upstream responses (metadata and negative entries), so a 404 or a document of the old upstream is not served for the new one. A PyPI proxy created or updated with `https://pypi.org` stores `https://pypi.org/simple`. See [proxy settings](../repositories/hosted-proxy-group.md) and [PyPI](../formats/pypi.md#proxy).
+- **Probe aliases.** `/healthz` and `/livez` answer as `/health`, `/readyz` as `/ready`; they used to return the web UI with `200`. See [monitoring](../operations/monitoring.md).
+- **Curation in the activity filter.** The repository activity endpoint and tab have a `curation` category (admins) for `curation.rule_created`, `curation.rule_updated` and `curation.rule_deleted`.
+- **Installable app name.** The web manifest's `short_name` is cut at a word boundary (`Zextras Artifact Hub` shows as `Zextras`) instead of mid-word. See [branding](../operations/branding.md).
+- **Smoke scripts.** `scripts/smoke-formats.sh` works with podman (including the docker format) and its Terraform TLS proxy forwards to an https server under its own host name.
+
 ### 0.16.1
 
 **What you must do**

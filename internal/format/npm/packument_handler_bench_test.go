@@ -41,7 +41,7 @@ func (w *discardWriter) Write(p []byte) (int, error) {
 func BenchmarkHandlePackument(b *testing.B) {
 	for _, n := range []int{100, 1000} {
 		db := &tarballMockDB{
-			repo:     &models.Repository{ID: "repo-1", Name: "myrepo"},
+			repo:     &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"},
 			pkg:      &models.NPMPackage{ID: "pkg-1", FullName: "example", UpdatedAt: time.Unix(1700000000, 0)},
 			versions: benchNPMVersions(n),
 		}

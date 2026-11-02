@@ -73,3 +73,81 @@ func TestListCachedProxyKeys(t *testing.T) {
 		t.Errorf("limit 1 = %v, %v; want one key", got, err)
 	}
 }
+
+// TestProxyCacheDroppedOnUpstreamChange checks that changing the upstream URL
+// (or credentials) of a proxy repository drops its cached rows, negative ones
+// included, and that an unrelated update keeps them.
+func TestProxyCacheDroppedOnUpstreamChange(t *testing.T) {
+	ctx := t.Context()
+
+	repo := newCurationProxy(t, "cache-upstream-px", curation.ModeOff)
+	other := newCurationProxy(t, "cache-upstream-other", curation.ModeOff)
+
+	blob := strings.Repeat("cb", 32)
+	if _, err := harness.Database.EnsureBlob(ctx, blob, "application/json", 4); err != nil {
+		t.Fatalf("EnsureBlob: %v", err)
+	}
+
+	put := func(r *models.Repository, key string, status int, blobKey string) {
+		t.Helper()
+
+		entry := &models.ProxyCacheEntry{
+			RepositoryID: r.ID, CacheKey: key, BlobKey: blobKey, StatusCode: status, ExpiresAt: time.Now().Add(time.Hour),
+		}
+		if err := harness.Database.UpsertProxyCacheEntry(ctx, entry); err != nil {
+			t.Fatalf("UpsertProxyCacheEntry %s: %v", key, err)
+		}
+	}
+
+	cached := func(r *models.Repository, key string) bool {
+		t.Helper()
+
+		e, err := harness.Database.GetProxyCacheEntry(ctx, r.ID, key)
+		if err != nil {
+			t.Fatalf("GetProxyCacheEntry %s: %v", key, err)
+		}
+
+		return e != nil
+	}
+
+	seed := func() {
+		put(repo, "doc", http.StatusOK, blob)
+		put(repo, "missing", http.StatusNotFound, "")
+		put(other, "doc", http.StatusOK, blob)
+	}
+
+	seed()
+
+	repo.Description = "unrelated change"
+	if err := harness.Database.UpdateRepository(ctx, repo); err != nil {
+		t.Fatalf("UpdateRepository: %v", err)
+	}
+
+	if !cached(repo, "doc") || !cached(repo, "missing") {
+		t.Fatal("an update that leaves the upstream alone dropped the cache")
+	}
+
+	repo.UpstreamURL = "https://mirror.example.com"
+	if err := harness.Database.UpdateRepository(ctx, repo); err != nil {
+		t.Fatalf("UpdateRepository: %v", err)
+	}
+
+	if cached(repo, "doc") || cached(repo, "missing") {
+		t.Error("changing upstream_url kept cached rows of the old upstream")
+	}
+
+	if !cached(other, "doc") {
+		t.Error("changing one repository's upstream dropped another's cache")
+	}
+
+	seed()
+
+	repo.UpstreamUsername = "bot"
+	if err := harness.Database.UpdateRepository(ctx, repo); err != nil {
+		t.Fatalf("UpdateRepository: %v", err)
+	}
+
+	if cached(repo, "doc") || cached(repo, "missing") {
+		t.Error("changing the upstream credentials kept cached rows")
+	}
+}

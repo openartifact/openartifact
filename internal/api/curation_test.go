@@ -63,7 +63,7 @@ func (db *curationMockDB) GetRepositoryByName(_ context.Context, name string) (*
 	return db.repos[name], nil
 }
 
-func (db *curationMockDB) ListCurationRules(_ context.Context, repoID string) ([]curation.Rule, error) {
+func (db *curationMockDB) ListCurationRulesUncached(_ context.Context, repoID string) ([]curation.Rule, error) {
 	if db.listErr != nil {
 		return nil, db.listErr
 	}
@@ -90,7 +90,7 @@ func (db *curationMockDB) GetCurationRule(_ context.Context, repoID, id string) 
 }
 
 func (db *curationMockDB) CreateCurationRule(ctx context.Context, rule *curation.Rule) (*curation.Rule, error) {
-	existing, _ := db.ListCurationRules(ctx, rule.RepositoryID)
+	existing, _ := db.ListCurationRulesUncached(ctx, rule.RepositoryID)
 	if len(existing) >= db.maxRules {
 		return nil, database.ErrCurationRuleLimit
 	}

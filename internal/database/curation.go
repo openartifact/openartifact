@@ -26,7 +26,8 @@ var ErrCurationRuleNotFound = errors.New("curation rule not found")
 // CurationStore owns the curation rules of proxy repositories.
 //
 // Rules are read on the request path of every proxy repository that has
-// curation on, so ListCurationRules goes through the auth cache: a write made
+// curation on, so ListCurationRules (the enforcement path; the management API
+// reads ListCurationRulesUncached) goes through the auth cache: a write made
 // through this PostgresDB invalidates it (never stale for a request that starts
 // after the write on this instance); a write by another replica is seen after at
 // most the cache TTL (DB_AUTH_CACHE_TTL_MS, default 2s).
@@ -45,8 +46,25 @@ func curationRuleFromRow(row dbsqlc.ListCurationRulesRow) curation.Rule {
 	}
 }
 
-// ListCurationRules returns the rules of a repository in creation order. The
-// returned slice is the caller's.
+// ListCurationRulesUncached reads the rules of a repository from the database
+// in creation order, bypassing the auth cache. The management API uses it: a
+// list read after a write must show the write whichever replica served either.
+func (p *CurationStore) ListCurationRulesUncached(ctx context.Context, repoID string) ([]curation.Rule, error) {
+	ptrs, err := p.listCurationRulesUncached(ctx, repoID)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]curation.Rule, len(ptrs))
+	for i, r := range ptrs {
+		out[i] = *r
+	}
+
+	return out, nil
+}
+
+// ListCurationRules returns the rules of a repository in creation order, for
+// the enforcement path (see CurationStore). The returned slice is the caller's.
 func (p *CurationStore) ListCurationRules(ctx context.Context, repoID string) ([]curation.Rule, error) {
 	ptrs, err := cachedList(ctx, &p.authCache, &p.authCache.curation, repoID, cloneShallowSlice, p.listCurationRulesUncached)
 	if err != nil {
