@@ -91,8 +91,11 @@ for (const theme of ['light', 'dark'] as const) {
     it('tooltip of the collapsed rail', async (ui) => {
       await open(ui, '/no-such-page', true)
       await ui.page.hover('[data-testid="nav-repos"]')
-      await expectLoc(ui.locator('[role="tooltip"]')).toBeVisible()
+      // A scan of a page whose tooltip is gone finds nothing and passes: the tooltip must be there before and after it.
+      const tooltip = ui.locator('[role="tooltip"]')
+      await expectLoc(tooltip).toBeVisible()
       const violations = await contrastViolations(ui)
+      await expectLoc(tooltip).toBeVisible()
       expect(violations, violations.join('\n')).toEqual([])
     })
 

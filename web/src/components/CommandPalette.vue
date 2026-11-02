@@ -20,7 +20,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     :label="t('shell.palette.dialogLabel')"
     data-testid="palette"
     @close="close"
-    @after-leave="onAfterLeave"
   >
     <div class="flex items-center gap-2 border-b border-border px-3 py-2">
       <MagnifyingGlassIcon class="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
@@ -217,17 +216,15 @@ watch(
   (open) => {
     if (!open) return
     recent.value = loadRecent(window.localStorage, recentStorageKey(session.user?.id))
+    // Every open starts clean, also one within the close transition of the last (the old query would still be there).
+    query.value = ''
+    search.reset()
     active.value = 0
     // Whether "Create project" is offered depends on the projects list; admins never need it.
     if (!session.isAdmin) search.warm()
   },
   { immediate: true },
 )
-
-function onAfterLeave(): void {
-  query.value = ''
-  search.reset()
-}
 
 function close(): void {
   ui.closeCommandPalette()
