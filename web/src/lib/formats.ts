@@ -106,18 +106,103 @@ export function formatColor(id: string): string {
   return isFormatId(key) ? FORMAT_META[key].color : FALLBACK_COLOR
 }
 
-function hexLuminance(hex: string): number {
+function hexRgb(hex: string): [number, number, number] {
   const n = Number.parseInt(hex.slice(1), 16)
-  return relativeLuminance((n >> 16) & 255, (n >> 8) & 255, n & 255)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
 }
 
-// Dark surface (--color-surface-hover 26 31 48) has luminance ~0.014; a brand
-// color below this threshold falls under 3:1 non-text contrast against it.
-const DARK_SURFACE_MIN_LUMINANCE = 0.143
+function hexLuminance(hex: string): number {
+  const [r, g, b] = hexRgb(hex)
+  return relativeLuminance(r, g, b)
+}
 
-/** True when the brand color is too dark to read on the dark-theme surface. */
-export function formatColorLowOnDark(id: string): boolean {
-  return hexLuminance(formatColor(id)) < DARK_SURFACE_MIN_LUMINANCE
+/** WCAG contrast ratio of two `#rrggbb` colors (1 to 21). */
+export function hexContrast(a: string, b: string): number {
+  const [hi, lo] = [hexLuminance(a), hexLuminance(b)].sort((x, y) => y - x)
+  return (hi! + 0.05) / (lo! + 0.05)
+}
+
+/**
+ * The surface a format badge sits on, per theme (`--color-surface-hover` in
+ * `style.css`; the darker of the surface tokens in light, the lighter in
+ * dark, so the worst case for the icon). Keep in sync with the tokens.
+ */
+export const BADGE_SURFACE = { light: '#f3f4f6', dark: '#1a1f30' } as const
+
+/** Minimum contrast of a format icon against the badge surface (WCAG 1.4.11 non-text contrast). */
+export const ICON_MIN_CONTRAST = 3
+
+// Aim a little above the minimum so rounding in the browser cannot dip below it.
+const ICON_TARGET_CONTRAST = 3.2
+
+function rgbToHsl([r, g, b]: [number, number, number]): [number, number, number] {
+  const [rn, gn, bn] = [r / 255, g / 255, b / 255]
+  const max = Math.max(rn, gn, bn)
+  const min = Math.min(rn, gn, bn)
+  const l = (max + min) / 2
+  if (max === min) return [0, 0, l]
+  const d = max - min
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+  let h: number
+  if (max === rn) h = (gn - bn) / d + (gn < bn ? 6 : 0)
+  else if (max === gn) h = (bn - rn) / d + 2
+  else h = (rn - gn) / d + 4
+
+  return [h * 60, s, l]
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12
+    const a = s * Math.min(l, 1 - l)
+    const c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))
+
+    return Math.round(c * 255)
+      .toString(16)
+      .padStart(2, '0')
+  }
+
+  return `#${f(0)}${f(8)}${f(4)}`
+}
+
+/**
+ * `hex` moved along lightness (hue and saturation kept) until it holds the
+ * target contrast against `surface`: darker on a light surface, lighter on a
+ * dark one. A color that already holds it is returned unchanged.
+ */
+function withContrast(hex: string, surface: string, direction: 'darker' | 'lighter'): string {
+  if (hexContrast(hex, surface) >= ICON_TARGET_CONTRAST) return hex
+  const [h, s, l] = rgbToHsl(hexRgb(hex))
+  let from = l
+  let to = direction === 'darker' ? 0 : 1
+  // Bisect for the lightness closest to the original that still passes.
+  for (let i = 0; i < 20; i++) {
+    const mid = (from + to) / 2
+    if (hexContrast(hslToHex(h, s, mid), surface) >= ICON_TARGET_CONTRAST) to = mid
+    else from = mid
+  }
+
+  return hslToHex(h, s, to)
+}
+
+const themeColors = new Map<string, { light: string; dark: string }>()
+
+/**
+ * Icon color of a format per theme: the brand color, lightened or darkened
+ * only as far as needed to hold 3:1 on the badge surface. Brand navy (Helm,
+ * NuGet) and black (Cargo) turn into a lighter blue and grey on dark instead
+ * of vanishing, and the light brand blues and greens (Go, Docker, Conda,
+ * Conan) get darker on light. Hue is kept, so formats stay recognisable.
+ */
+export function formatThemeColors(id: string): { light: string; dark: string } {
+  const brand = formatColor(id).toLowerCase()
+  let c = themeColors.get(brand)
+  if (!c) {
+    c = { light: withContrast(brand, BADGE_SURFACE.light, 'darker'), dark: withContrast(brand, BADGE_SURFACE.dark, 'lighter') }
+    themeColors.set(brand, c)
+  }
+
+  return c
 }
 
 // Categorical palette for charts: brand colors collide (deb, maven, npm and

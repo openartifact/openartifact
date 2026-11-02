@@ -194,3 +194,56 @@ describe('color-contrast after switching theme in the user menu', () => {
     expect(violations, violations.join('\n')).toEqual([])
   })
 })
+
+/**
+ * Format badges (WCAG 1.4.11 non-text contrast): every one of the 22 formats on the login page is
+ * painted with its icon, holds 3:1 between the icon's computed colour and the badge's own
+ * background in both themes, has its name as text (colour is never the only carrier, 1.4.1), and
+ * every icon has the same box and sits on the label's vertical centre.
+ */
+for (const theme of ['light', 'dark'] as const) {
+  describe(`format badge contrast, ${theme} theme`, () => {
+    const it = testAs('anon', 'chromium')
+
+    it('every format icon holds 3:1 on its badge', async (ui) => {
+      await ui.goto('/login')
+      await ui.page.evaluate((mode) => localStorage.setItem('oa.theme', JSON.stringify(mode)), theme)
+      await ui.reload()
+      await expectLoc(ui.locator('#username')).toBeVisible()
+      await painted(ui)
+      await freeze(ui)
+
+      const rows = await ui.page.evaluate(() => {
+        const rgb = (c: string) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number)
+        const lum = (c: number[]) => {
+          const [r, g, b] = c.map((v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+          return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+        }
+        const badges = [...document.querySelectorAll('span.font-mono')].filter((e) => e.querySelector('svg'))
+        return badges.map((badge) => {
+          const icon = badge.querySelector('svg')!
+          const wrap = icon.parentElement!
+          const [hi, lo] = [lum(rgb(getComputedStyle(wrap).color)), lum(rgb(getComputedStyle(badge).backgroundColor))].sort((x, y) => y - x)
+          const label = badge.lastElementChild as HTMLElement
+          const ir = icon.getBoundingClientRect()
+          const lr = label.getBoundingClientRect()
+          return {
+            name: label.textContent?.trim() ?? '',
+            ratio: (hi! + 0.05) / (lo! + 0.05),
+            w: Math.round(ir.width),
+            h: Math.round(ir.height),
+            drawn: (icon.querySelector('path')?.getAttribute('d') ?? '').length > 20,
+            offCentre: Math.abs(ir.top + ir.height / 2 - (lr.top + lr.height / 2)),
+          }
+        })
+      })
+
+      expect(rows).toHaveLength(22)
+      const weak = rows.filter((r) => r.ratio < 3).map((r) => `${r.name}: ${r.ratio.toFixed(2)}:1`)
+      expect(weak, `icons under 3:1 on the badge in the ${theme} theme`).toEqual([])
+      expect(rows.filter((r) => r.name === '' || !r.drawn).map((r) => r.name || '(no label)')).toEqual([])
+      expect(new Set(rows.map((r) => `${r.w}x${r.h}`)).size, 'icons share one box').toBe(1)
+      expect(rows.filter((r) => r.offCentre > 1).map((r) => r.name), 'icons centred on the label').toEqual([])
+    })
+  })
+}

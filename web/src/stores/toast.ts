@@ -32,6 +32,9 @@ const DEFAULT_TIMEOUT_MS: Record<ToastLevel, number> = {
 
 const MAX_VISIBLE = 5
 
+/** A toast with a button (Undo) stays at least this long: a keyboard user needs time to reach it. */
+const ACTION_MIN_TIMEOUT_MS = 12000
+
 /** A toast that stays until dismissed (the "new version" offer): it is docked in the page, not floated over it. */
 export function isSticky(toast: Toast): boolean {
   return toast.timeoutMs === 0
@@ -46,7 +49,8 @@ export const useToastStore = defineStore('toast', () => {
 
   function push(input: Omit<Toast, 'id' | 'createdAt' | 'timeoutMs'> & { timeoutMs?: number }): number {
     const id = nextId++
-    const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS[input.level]
+    let timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS[input.level]
+    if (input.action && timeoutMs > 0) timeoutMs = Math.max(timeoutMs, ACTION_MIN_TIMEOUT_MS)
     const toast: Toast = {
       id,
       title: input.title,
@@ -57,11 +61,26 @@ export const useToastStore = defineStore('toast', () => {
       createdAt: Date.now(),
     }
     queue.value.push(toast)
-    if (timeoutMs > 0) {
-      const handle = setTimeout(() => dismiss(id), timeoutMs)
-      timers.set(id, handle)
-    }
+    startTimer(toast)
     return id
+  }
+
+  function startTimer(toast: Toast): void {
+    if (toast.timeoutMs <= 0) return
+    timers.set(toast.id, setTimeout(() => dismiss(toast.id), toast.timeoutMs))
+  }
+
+  /** Stops the countdown while the pointer or keyboard focus is on the toast (WCAG 2.2.1, 1.4.13): it restarts in full on `resume`. */
+  function pause(id: number): void {
+    const handle = timers.get(id)
+    if (handle == null) return
+    clearTimeout(handle)
+    timers.delete(id)
+  }
+
+  function resume(id: number): void {
+    const toast = queue.value.find((t) => t.id === id)
+    if (toast && !timers.has(id)) startTimer(toast)
   }
 
   function dismiss(id: number): void {
@@ -94,5 +113,5 @@ export const useToastStore = defineStore('toast', () => {
     return push({ level: 'error', title, description })
   }
 
-  return { queue, visible, push, dismiss, clear, info, success, warning, error, MAX_VISIBLE }
+  return { queue, visible, push, dismiss, pause, resume, clear, info, success, warning, error, MAX_VISIBLE }
 })

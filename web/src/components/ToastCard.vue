@@ -6,7 +6,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <!-- One notification: icon, title, description, an optional action, a close button and, for a timed one, the countdown. -->
 <template>
-  <div class="pointer-events-auto w-full overflow-hidden rounded-lg border bg-surface shadow-lg md:w-80" :class="borderClass(toast.level)">
+  <div
+    class="pointer-events-auto w-full overflow-hidden rounded-lg border bg-surface shadow-lg md:w-80"
+    :class="borderClass(toast.level)"
+    data-testid="toast"
+    @mouseenter="setHeld('pointer', true)"
+    @mouseleave="setHeld('pointer', false)"
+    @focusin="setHeld('focus', true)"
+    @focusout="setHeld('focus', false)"
+  >
     <div class="flex items-start gap-3 px-4 py-3">
       <!-- Icon -->
       <component
@@ -40,7 +48,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div v-if="toast.timeoutMs > 0" class="toast-timer h-0.5 w-full bg-border/30">
       <div
         class="h-full toast-progress"
-        :class="progressClass(toast.level)"
+        :class="[progressClass(toast.level), { 'toast-held': held }]"
         :style="{ '--duration': `${toast.timeoutMs || 4000}ms` }"
       ></div>
     </div>
@@ -55,11 +63,24 @@ import {
   XCircleIcon,
   XMarkIcon,
 } from '@heroicons/vue/24/outline'
+import { computed, reactive } from 'vue'
 import type { Toast } from '../stores/toast'
 import { t } from '../i18n'
 
 defineProps<{ toast: Toast }>()
-const emit = defineEmits<{ run: []; dismiss: [] }>()
+const emit = defineEmits<{ run: []; dismiss: []; hold: []; release: [] }>()
+
+// Pointer and keyboard focus each stop the countdown (WCAG 2.2.1): it resumes when neither is on the toast.
+const holds = reactive({ pointer: false, focus: false })
+const held = computed(() => holds.pointer || holds.focus)
+
+function setHeld(source: 'pointer' | 'focus', on: boolean): void {
+  const before = held.value
+  holds[source] = on
+  if (held.value === before) return
+  if (held.value) emit('hold')
+  else emit('release')
+}
 
 function iconFor(level: string) {
   switch (level) {
@@ -101,6 +122,12 @@ function progressClass(level: string) {
 <style scoped>
 .toast-progress {
   animation: shrink var(--duration) linear forwards;
+}
+
+/* The countdown is stopped while the pointer or focus is on the toast (the store stops its timer too). */
+.toast-held {
+  animation: none;
+  width: 100%;
 }
 
 @keyframes shrink {

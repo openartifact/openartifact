@@ -15,7 +15,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Form card -->
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-5 py-3.5 border-b border-border">
-        <h3 class="text-sm font-semibold tracking-tight">{{ t('auth.changePasswordCta') }}</h3>
+        <h2 class="text-sm font-semibold tracking-tight">{{ t('auth.changePasswordCta') }}</h2>
       </div>
       <form @submit.prevent="handleChangePassword" class="divide-y divide-border">
         <!-- Current password -->

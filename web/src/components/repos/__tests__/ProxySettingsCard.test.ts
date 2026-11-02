@@ -243,3 +243,35 @@ describe('ProxySettingsCard: server errors', () => {
     expect(w.find('[data-testid="proxy-form-error"]').text()).toContain('only an administrator')
   })
 })
+
+// The Edit button and the form replace each other: focus must follow, or a keyboard user falls back to the top of the page.
+describe('ProxySettingsCard: keyboard focus', () => {
+  function mountAttached(): VueWrapper {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useSessionStore().user = { id: 'u', username: 'ada', is_admin: true } as User
+    return mount(ProxySettingsCard, { props: { repo: proxy() }, global: { plugins: [pinia] }, attachTo: document.body })
+  }
+
+  it('moves focus to the first field when the form opens and back to Edit when it is cancelled', async () => {
+    const w = mountAttached()
+    await open(w)
+    await flushPromises()
+    expect(document.activeElement?.id).toBe('ps-upstream-url')
+
+    await w.find('[data-testid="proxy-cancel"]').trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(w.find('[data-testid="edit-proxy-settings"]').element)
+    w.unmount()
+  })
+
+  it('puts focus back on Edit after a save', async () => {
+    serve(() => json(proxy({ cache_ttl_seconds: 120 })))
+    const w = mountAttached()
+    await open(w)
+    await input(w, 'ps-cache-ttl').setValue('120')
+    await submit(w)
+    expect(document.activeElement).toBe(w.find('[data-testid="edit-proxy-settings"]').element)
+    w.unmount()
+  })
+})

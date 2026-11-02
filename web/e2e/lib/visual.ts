@@ -97,7 +97,7 @@ async function keep(name: string, expected: PNG, actual: PNG, diff: PNG | undefi
  * page behind it, the one at rest.
  */
 export async function toastAtRest(ui: Ui): Promise<ElementHandle<Element>> {
-  const toast = await ui.page.waitForSelector('[role="region"][aria-live] > div', { visible: true })
+  const toast = await ui.page.waitForSelector('[data-testid="toast"]', { visible: true })
   if (toast === null) throw new Error('no toast appeared')
   await ui.page.waitForFunction(
     (el) => {

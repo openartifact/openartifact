@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   whoever may PATCH the repository an "Edit proxy settings" form in its place.
 -->
 <template>
-  <ProxySettingsForm v-if="editing" :repo="repo" :can-block="canBlock" @saved="onSaved" @cancel="editing = false" />
+  <ProxySettingsForm v-if="editing" ref="form" :repo="repo" :can-block="canBlock" @saved="onSaved" @cancel="stopEditing" />
   <section v-else class="flex items-start justify-between gap-4 rounded-lg border border-border bg-surface px-4 py-3" :aria-label="t('repoDetail.proxy.title')">
     <dl class="grid min-w-0 grid-cols-[max-content_1fr] gap-x-6 gap-y-1.5 text-xs">
       <dt class="text-muted">{{ t('repoDetail.proxy.url') }}</dt>
@@ -28,12 +28,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <dt class="text-muted">{{ t('repoDetail.proxy.blocked') }}</dt>
       <dd :class="repo.blocked ? 'font-medium text-danger' : 'text-foreground'" data-testid="proxy-blocked">{{ repo.blocked ? t('repoDetail.proxy.blockedYes') : t('repoDetail.proxy.blockedNo') }}</dd>
     </dl>
-    <AppButton v-if="canEdit" variant="secondary" size="sm" class="shrink-0" data-testid="edit-proxy-settings" @click="editing = true">{{ t('repoDetail.proxy.edit') }}</AppButton>
+    <AppButton v-if="canEdit" variant="secondary" size="sm" class="shrink-0" ref="editButton" data-testid="edit-proxy-settings" @click="startEditing">{{ t('repoDetail.proxy.edit') }}</AppButton>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, type ComponentPublicInstance } from 'vue'
 import AppButton from '../AppButton.vue'
 import ProxySettingsForm from './ProxySettingsForm.vue'
 import { t, tp } from '../../i18n'
@@ -48,6 +48,22 @@ const emit = defineEmits<{ saved: [repo: Repository] }>()
 const session = useSessionStore()
 const toasts = useToastStore()
 const editing = ref(false)
+const form = ref<ComponentPublicInstance | null>(null)
+const editButton = ref<ComponentPublicInstance | null>(null)
+
+// The button and the form replace each other, so the focused element disappears with every switch: put focus on
+// the first field when the form opens and back on the button when it closes, or a keyboard user starts over at the top of the page.
+async function startEditing(): Promise<void> {
+  editing.value = true
+  await nextTick()
+  form.value?.$el.querySelector('input, select, textarea')?.focus()
+}
+
+async function stopEditing(): Promise<void> {
+  editing.value = false
+  await nextTick()
+  editButton.value?.$el.focus()
+}
 
 // Global admins and maintainers/owners of the repository's project (repo.permissions.admin) may PATCH it;
 // blocking a repository stays with the global administrators.
@@ -55,7 +71,7 @@ const canEdit = computed(() => session.isAdmin || props.repo.permissions?.admin 
 const canBlock = computed(() => session.isAdmin)
 
 function onSaved(updated: Repository): void {
-  editing.value = false
+  void stopEditing()
   toasts.success(t('repoDetail.proxy.saved'))
   emit('saved', updated)
 }

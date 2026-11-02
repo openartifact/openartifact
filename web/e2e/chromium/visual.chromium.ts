@@ -88,7 +88,7 @@ for (const theme of ['light', 'dark'] as const) {
         if (store === undefined) throw new Error('the toast store is not reachable')
         store.push({ level: 'info', title: 'New version available', description: 'Reload to switch to it. Your current page is left untouched until you do.', action: { label: 'Reload', run: () => undefined }, timeoutMs: 0 })
       })
-      const banner = await ui.page.waitForSelector('[role="region"][aria-live]:not(.fixed)', { visible: true })
+      const banner = await ui.page.waitForSelector('[role="status"] > [role="region"]', { visible: true })
       if (banner === null) throw new Error('the update offer was not docked')
       await painted(ui)
       await ui.page.mouse.move(683, 600)

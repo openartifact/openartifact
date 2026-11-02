@@ -119,6 +119,9 @@ const LOADERS: Readonly<Record<TranslatedTag, (area: string) => Promise<{ defaul
   'pt-BR': (area) => import(`./locales/pt-BR/${area}.json`),
   'zh-Hans': (area) => import(`./locales/zh-Hans/${area}.json`),
   ja: (area) => import(`./locales/ja/${area}.json`),
+  ko: (area) => import(`./locales/ko/${area}.json`),
+  pl: (area) => import(`./locales/pl/${area}.json`),
+  uk: (area) => import(`./locales/uk/${area}.json`),
 }
 
 /** A catalog file a language does not have yet (a language may translate some areas only): the bundler's or the runtime's "no such module" error. */

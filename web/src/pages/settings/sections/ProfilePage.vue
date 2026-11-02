@@ -34,7 +34,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Profile Fields -->
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-5 py-3.5 border-b border-border">
-        <h3 class="text-sm font-semibold tracking-tight">{{ t('settings.profile') }}</h3>
+        <h2 class="text-sm font-semibold tracking-tight">{{ t('settings.profile') }}</h2>
       </div>
       <div class="divide-y divide-border">
         <div class="flex items-center justify-between px-5 py-4">
@@ -76,7 +76,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Credentials -->
     <section class="bg-surface rounded-xl border border-border overflow-hidden" data-testid="profile-credentials" aria-labelledby="profile-credentials-title">
       <div class="px-5 py-3.5 border-b border-border">
-        <h3 id="profile-credentials-title" class="text-sm font-semibold tracking-tight">{{ t('sx.profile.credentials.title') }}</h3>
+        <h2 id="profile-credentials-title" class="text-sm font-semibold tracking-tight">{{ t('sx.profile.credentials.title') }}</h2>
         <p class="text-sm text-muted">{{ t('sx.profile.credentials.desc') }}</p>
       </div>
       <ul class="divide-y divide-border">

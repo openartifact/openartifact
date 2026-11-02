@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Language
 
-The web UI is available in English, Italian, German, French, Spanish, Brazilian Portuguese, Simplified Chinese and Japanese. Where a text is still missing, the UI shows the English one. Package clients, the API, the CLI and the server logs stay in English.
+The web UI is available in English, Italian, German, French, Spanish, Brazilian Portuguese, Simplified Chinese, Japanese, Korean, Polish and Ukrainian. Where a text is still missing, the UI shows the English one. Package clients, the API, the CLI and the server logs stay in English.
 
 ## Choosing the language
 

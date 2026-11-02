@@ -17,6 +17,9 @@ export const SUPPORTED_LOCALES = [
   { tag: 'pt-BR', name: 'Português (Brasil)' },
   { tag: 'zh-Hans', name: '简体中文' },
   { tag: 'ja', name: '日本語' },
+  { tag: 'ko', name: '한국어' },
+  { tag: 'pl', name: 'Polski' },
+  { tag: 'uk', name: 'Українська' },
 ] as const
 
 export type LocaleTag = (typeof SUPPORTED_LOCALES)[number]['tag']
@@ -39,6 +42,9 @@ const BY_LANGUAGE: Readonly<Record<string, LocaleTag>> = {
   es: 'es',
   pt: 'pt-BR',
   ja: 'ja',
+  ko: 'ko',
+  pl: 'pl',
+  uk: 'uk',
 }
 
 /** Scripts of the Chinese variants: only the simplified one is translated. */
