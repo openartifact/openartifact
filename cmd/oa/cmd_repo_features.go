@@ -337,6 +337,14 @@ func handleVuln(args []string, client *Client, outFmt string) {
 			"ecosystem":       *ecosystem,
 			"scanner":         *scanner,
 		}, http.StatusOK)
+		if outFmt != "json" && result["scan_status"] == "scanning" {
+			// The server answers as soon as the scan is queued; the counts are not known yet.
+			fmt.Printf("Vulnerability scan %v started; it is still running. Check the result with: oa vuln show %s %v\n",
+				result["id"], args[1], result["id"])
+
+			return
+		}
+
 		printScanResult(result, outFmt, "Vulnerability scan %v: %v (%v vulnerabilities).", "id", "scan_status", "vuln_count")
 	case "list":
 		listGeneric(client, base+"/scans", "scans",
@@ -559,6 +567,8 @@ func cleanupCreate(client *Client, base string, args []string) {
 	}
 
 	body := f.body()
+	body["enabled"] = *f.enabled // the flag defaults to true: send it, the server default is disabled
+
 	if _, ok := body["keep_last_n"]; !ok {
 		if _, ok := body["keep_since_days"]; !ok {
 			dief("at least one of --keep-count or --keep-days is required")
@@ -800,15 +810,15 @@ func quarantineScan(client *Client, kind, base string, args []string) {
 	usage := "Usage: oa " + kind + " quarantine <repo> <id> [--release]"
 	needArgs(args, 3, usage)
 
-	quarantined := true
+	fs := flag.NewFlagSet("quarantine", flag.ExitOnError)
+	release := fs.Bool("release", false, "Lift the quarantine (--release=false quarantines)")
+	_ = fs.Parse(args[3:])
 
-	for _, a := range args[3:] {
-		if a != "--release" {
-			dief("%s", usage)
-		}
-
-		quarantined = false
+	if fs.NArg() > 0 {
+		dief("%s", usage)
 	}
+
+	quarantined := !*release
 
 	sendJSON(client, http.MethodPost, base+"/scans/"+escape(args[2])+"/quarantine",
 		map[string]bool{"quarantined": quarantined}, http.StatusOK)

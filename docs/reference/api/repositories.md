@@ -97,7 +97,7 @@ Create a new repository (admin only)
 | `member_repos` | array of string | no | For group repos: ordered member repository names (first hit wins). Members must be hosted or proxy repositories of the group's format; groups cannot be nested. |
 | `merge_proxy_versions` | boolean | no | Group repositories only, administrators only (403 otherwise). Default false: hosted members win a package name and proxy versions of the same name are hidden. true merges proxy versions into the group. |
 | `min_age_hours` | integer | no | Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600. |
-| `name` | string | yes | Repository name (1-100 alphanumeric/hyphen/underscore) |
+| `name` | string | yes | Repository name (1-100 letters, digits, hyphen or underscore; starts with a letter or digit) |
 | `negative_cache_ttl_seconds` | integer | no | - |
 | `presign_downloads` | boolean | no | Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected. Nullable. |
 | `project` | string | no | Name of the owning project. Defaults to the built-in system project, whose membership grants nothing. Unknown project: 404. |

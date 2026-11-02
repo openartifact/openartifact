@@ -17,7 +17,7 @@ Start here:
 
 ## URL conventions
 
-Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO` with the repository name (`^[a-zA-Z0-9_-]{1,100}$`).
+Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO` with the repository name (`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$`).
 
 - Every repository is served under `/repos/REPO/...`.
 - Ivy, Maven, raw and sbt are served under a format prefix: `/repos/ivy/REPO`, `/repos/maven/REPO`, `/repos/raw/REPO`, `/repos/sbt/REPO`. Repositories named like these prefixes are not reachable by the generic URL.

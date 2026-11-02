@@ -25,7 +25,7 @@ import (
 )
 
 var (
-	projectNameRe   = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,100}$`)
+	projectNameRe   = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$`)
 	projectPrefixRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{0,100}$`)
 )
 
@@ -434,7 +434,7 @@ type createProjectRequest struct {
 
 func (req *createProjectRequest) validate() string {
 	if !projectNameRe.MatchString(req.Name) {
-		return "project name must be 1-100 alphanumeric characters, hyphens, or underscores"
+		return "project name must be 1-100 characters: letters, digits, hyphen or underscore, starting with a letter or digit"
 	}
 
 	slug := models.ProjectSlug(req.Name)

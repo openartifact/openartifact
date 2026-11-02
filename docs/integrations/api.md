@@ -81,7 +81,7 @@ Token body fields: `name` (required, max 100 characters), `kind` (`access` or `d
 Handler errors share one shape; `details` is only present when a handler adds it:
 
 ```json
-{"error": "name must be 1-100 alphanumeric/hyphen/underscore characters", "code": "validation_failed"}
+{"error": "name must be 1-100 characters: letters, digits, hyphen or underscore, starting with a letter or digit", "code": "validation_failed"}
 ```
 
 | `code` | Status | Meaning |

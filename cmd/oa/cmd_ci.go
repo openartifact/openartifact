@@ -134,7 +134,7 @@ func (r ciRepo) hosted() bool { return r.RepoType == "" || r.RepoType == "hosted
 
 func (a *ciAPI) repo(ctx context.Context, name string) (ciRepo, error) {
 	var r ciRepo
-	if err := a.call(ctx, http.MethodGet, "/api/v1/repository/"+url.PathEscape(name), nil, &r); err != nil {
+	if err := a.call(ctx, http.MethodGet, "/api/v1/repository/"+escape(name), nil, &r); err != nil {
 		return ciRepo{}, err
 	}
 
@@ -195,7 +195,7 @@ func (a *ciAPI) packages(ctx context.Context, repo, q string, fn func(ciPackage)
 		if err := a.call(
 			ctx,
 			http.MethodGet,
-			"/api/v1/repositories/"+url.PathEscape(repo)+"/packages?"+query.Encode(),
+			"/api/v1/repositories/"+escape(repo)+"/packages?"+query.Encode(),
 			nil,
 			&out,
 		); err != nil {
@@ -228,7 +228,7 @@ func (a *ciAPI) searchProperty(ctx context.Context, repo, key, value string) ([]
 	if err := a.call(
 		ctx,
 		http.MethodGet,
-		"/api/v1/repositories/"+url.PathEscape(repo)+"/artifacts/search?"+q.Encode(),
+		"/api/v1/repositories/"+escape(repo)+"/artifacts/search?"+q.Encode(),
 		nil,
 		&out,
 	); err != nil {

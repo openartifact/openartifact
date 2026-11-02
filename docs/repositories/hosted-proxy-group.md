@@ -52,7 +52,7 @@ All other formats need an explicit `upstream_url`. A conda proxy takes a channel
 
 Creating, updating and deleting repositories needs an admin principal (`403 forbidden` otherwise).
 
-Names match `^[a-zA-Z0-9_-]{1,100}$` and must not be one of `new`, `settings`, `trash`, `ivy`, `maven`, `raw`, `sbt` (case-insensitive; `400 validation_failed`).
+Names match `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$` (the first character is a letter or digit; existing repositories keep their names) and must not be one of `new`, `settings`, `trash`, `ivy`, `maven`, `raw`, `sbt` (case-insensitive; `400 validation_failed`).
 
 - `new`, `settings` and `trash` collide with web UI pages under `/repos/`.
 - `ivy`, `maven`, `raw` and `sbt` collide with the `/repos/<format>/{name}/...` URL prefixes.

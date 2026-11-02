@@ -70,6 +70,26 @@ func (t *importTarget) request(
 	return t.c.httpClient.Do(req)
 }
 
+// conflictError is errUploadConflict carrying what the server said, so a 409
+// that is not "different content" (an identical re-upload, a missing signing
+// key) is reported as the server put it.
+type conflictError struct{ msg string }
+
+func (e *conflictError) Error() string { return "upload refused (409): " + e.msg }
+
+func (e *conflictError) Is(target error) bool { return target == errUploadConflict }
+
+func newConflictError(resp *http.Response) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+
+	msg := errorMessage(body)
+	if msg == "" {
+		return errUploadConflict
+	}
+
+	return &conflictError{msg: msg}
+}
+
 // send issues a request and turns an error status into an error: 409 becomes
 // errUploadConflict, anything else outside 2xx a serverError. On success the
 // caller owns (and closes) the response body.
@@ -517,7 +537,7 @@ func (t *importTarget) postPackage(
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusConflict {
-		return uploadResult{}, errUploadConflict
+		return uploadResult{}, newConflictError(resp)
 	}
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {

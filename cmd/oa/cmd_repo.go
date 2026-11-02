@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+
+	"github.com/openartifact/openartifact/internal/repotype"
 )
 
 var errRetention = errors.New("--trash-retention-days must be a non-negative integer or \"default\"")
@@ -34,13 +36,13 @@ func handleRepo(args []string, client *Client, outFmt string) {
 			)
 		}
 
-		repoCreate(client, args[1], args[2:], outFmt)
+		repoCreate(client, operand(args[1]), args[2:], outFmt)
 	case "show":
 		if len(args) < 2 {
 			dief("Usage: oa repo show <name>")
 		}
 
-		repoShow(client, args[1], outFmt)
+		repoShow(client, operand(args[1]), outFmt)
 	case "update":
 		if len(args) < 2 {
 			dief(
@@ -49,25 +51,25 @@ func handleRepo(args []string, client *Client, outFmt string) {
 			)
 		}
 
-		repoUpdate(client, args[1], args[2:])
+		repoUpdate(client, operand(args[1]), args[2:])
 	case "delete":
 		if len(args) < 2 {
 			dief("Usage: oa repo delete <name> [--confirm <name>]")
 		}
 
-		repoDelete(client, args[1], args[2:])
+		repoDelete(client, operand(args[1]), args[2:])
 	case "packages":
 		if len(args) < 2 {
 			dief("Usage: oa repo packages <name>")
 		}
 
-		repoPackages(client, args[1], outFmt)
+		repoPackages(client, operand(args[1]), outFmt)
 	case "members":
 		if len(args) < 2 {
 			dief("Usage: oa repo members <name>")
 		}
 
-		repoMembers(client, args[1], outFmt)
+		repoMembers(client, operand(args[1]), outFmt)
 	default:
 		dief("Unknown repo subcommand: %s", args[0])
 	}
@@ -82,7 +84,7 @@ func repoList(client *Client, outFmt string) {
 
 func repoCreate(client *Client, name string, args []string, outFmt string) {
 	fs := flag.NewFlagSet("repo create", flag.ExitOnError)
-	repoFmt := fs.String("format", "npm", "Repository format")
+	repoFmt := fs.String("format", "", "Repository format (required)")
 	desc := fs.String("description", "", "Description")
 	public := fs.Bool("public", false, "Public repository")
 	retention := fs.String(
@@ -93,6 +95,10 @@ func repoCreate(client *Client, name string, args []string, outFmt string) {
 	immutable := fs.Bool("immutable-releases", false, "Block deleting or overwriting released versions")
 	signPkgs := fs.Bool("sign-packages", false, "Hosted rpm repositories: sign uploaded RPMs with the active GPG key")
 	_ = fs.Parse(args)
+
+	if *repoFmt == "" {
+		dief("--format is required; one of: %s", repotype.HostedFormats())
+	}
 
 	set := setFlags(fs)
 	body := map[string]any{

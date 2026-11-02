@@ -385,3 +385,28 @@ func TestCleanupDraftDryRun(t *testing.T) {
 		}
 	})
 }
+
+// A caller without repository admin rights gets 403 on the cleanup routes
+// whether or not the repository exists, like the other repository-scoped lists.
+func TestCleanupListNonAdminIsForbidden(t *testing.T) {
+	log, err := logger.New("error", "json", "stderr")
+	if err != nil {
+		t.Fatalf("new logger: %v", err)
+	}
+
+	db := &cleanupMockDB{}
+	r := chi.NewRouter()
+	NewCleanupHandler(db, log, auth.NewEvaluator(db, log, false), nil).RegisterAuthed(r)
+
+	for _, repo := range []string{"r", "does-not-exist"} {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/repositories/"+repo+"/cleanup-policies", nil)
+		req = req.WithContext(middleware.WithPrincipal(req.Context(), &auth.Principal{Username: "user"}))
+
+		rw := httptest.NewRecorder()
+		r.ServeHTTP(rw, req)
+
+		if rw.Code != http.StatusForbidden {
+			t.Errorf("repo %q: status = %d, want 403: %s", repo, rw.Code, rw.Body.String())
+		}
+	}
+}

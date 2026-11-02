@@ -83,7 +83,7 @@ export function repoFormFrom(r: Repository): RepoForm {
   })
 }
 
-const NAME_RE = /^[a-zA-Z0-9_-]{1,100}$/
+const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/
 
 /** Why the name is not acceptable ('' when it is, or while still empty). Mirrors the server rule plus the project prefix. */
 export function nameError(name: string, prefix: string): string {

@@ -1333,6 +1333,7 @@ func TestContractRepoFeatures(t *testing.T) {
 					pattern: "/api/v1/repositories/{name}/cleanup-policies",
 					body: m{
 						"name":            "p",
+						"enabled":         true,
 						"keep_last_n":     float64(3),
 						"keep_since_days": float64(30),
 						"name_pattern":    "^a",

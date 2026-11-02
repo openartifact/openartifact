@@ -29,11 +29,8 @@ oa [--server URL] [--token TOKEN] [--format table|json] <command> [args]
 | Variable | Named by |
 |---|---|
 | `OA_GPG_PASSPHRASE` | `oa gpg import` |
-| `OA_IMPORT_SOURCE_TOKEN` | `oa import artifactory`, `oa import nexus`, `oa import openartifact` |
-| `OA_IMPORT_SOURCE_USER` | `oa import artifactory`, `oa import nexus`, `oa import openartifact` |
 | `OA_SERVER` | `--server` |
 | `OA_TOKEN` | `--token` |
-| `OA_WEBHOOK_SECRET` | `oa webhook create` |
 
 ## Auth
 
@@ -51,41 +48,6 @@ auth token revoke <id> [--username U] [--password-stdin]
                                    Revoke a personal API token (signs in with your password)
 ```
 
-### `oa auth login`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-password` | `string` | removed; use --password-stdin |
-| `-password-stdin` | none | Read the password from stdin |
-| `-server` | `string` | Server URL (default "http://localhost:8080") |
-| `-username` | `string` | Username (required with --password-stdin) |
-
-### `oa auth logout`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-password-stdin` | none | Read the password from stdin (with --revoke) |
-| `-revoke` | none | Also revoke the saved token on the server (needs --username and --password-stdin) |
-| `-username` | `string` | Username (with --revoke) |
-
-### `oa auth passwd`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-new-password` | `string` | removed; use --password-stdin |
-| `-old-password` | `string` | removed; use --password-stdin |
-| `-password` | `string` | removed; use --password-stdin |
-| `-password-stdin` | none | Read current then new password from two lines on stdin |
-
-### `oa auth token create`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-kind` | `string` | Token kind: access\|deploy (default "access") |
-| `-name` | `string` | Token name |
-| `-password-stdin` | none | Read the account password from stdin |
-| `-username` | `string` | Account to sign in as (default: the saved token's owner) |
-
 ## Repositories
 
 ```text
@@ -93,7 +55,7 @@ repo list                          List repositories
 repo create <name> --format <fmt> [--description D] [--public] [--trash-retention-days N] [--immutable-releases] [--sign-packages]
                                    Create repository
 repo show <name>                   Show repository details
-repo update <name> [--description D] [--public[=false]] [--trash-retention-days N|default] [--immutable-releases[=false]] [--sign-packages[=false]]
+repo update <name> [--description D] [--public[=false]] [--trash-retention-days N|default] [--immutable-releases[=false]] [--sign-packages[=false]] [--merge-proxy-versions[=false]]
                                    Update repository
 repo delete <name> --confirm <name>  Delete repository (moved to the trash; prompts for the name on a terminal)
 repo packages <name>               List packages in repository
@@ -116,21 +78,6 @@ Usage: oa trash <list|restore|purge>
   oa trash purge --repo NAME --all [--yes]      empty a repository's trash (repository manage permission)
 ```
 
-### `oa trash list`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-kind` | `string` | Only items of this kind (e.g. maven_artifact, docker_tag, repository) |
-| `-repo` | `string` | Only items of this repository |
-
-### `oa trash purge`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-all` | none | Purge every trashed item of --repo |
-| `-repo` | `string` | Repository whose trash to empty |
-| `-yes` | none | Do not ask for confirmation |
-
 ## Artifacts
 
 ```text
@@ -142,33 +89,11 @@ artifact upload --presigned [--path P] [--content-type T] [--multipart] [--part-
 artifact delete <repo> <id>        Delete artifact by ID
 ```
 
-### `oa artifact upload`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-apk-repo` | `string` | Alpine repository directory of an .apk upload (default main) |
-| `-arch` | `string` | Architecture directory of an .apk upload; needed for noarch packages |
-| `-branch` | `string` | Alpine branch directory of an .apk upload (default edge) |
-| `-content-type` | `string` | Content type (--presigned; default: detected by the server) |
-| `-multipart` | none | Upload in parts at any size (--presigned; automatic above 5 GiB) |
-| `-parallel` | `int` | Parts uploaded at the same time, 1 to 16 (--presigned, multipart) (default 4) |
-| `-part-size` | `value` | Part size such as 128M, 1G or a byte count, 5M to 4000M (--presigned; implies --multipart; default: chosen by the server) |
-| `-path` | `string` | Artifact path in the repository (--presigned; default: the file name) |
-| `-presigned` | none | Upload straight to the object store through a presigned URL (raw repositories) |
-
 ## Search
 
 ```text
 search <query> [--repo R] [--fmt F]  Search artifacts
 ```
-
-### `oa search`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-fmt` | `string` | Filter by format |
-| `-limit` | `int` | Max results (default 50) |
-| `-repo` | `string` | Filter by repository |
 
 ## Users (admin)
 
@@ -179,16 +104,6 @@ user show <id>                     Show user
 user update <id> [--email E] [--full-name N] [--disabled[=false]]  Update user
 user delete <id>                   Delete user
 ```
-
-### `oa user create`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-email` | `string` | Email |
-| `-full-name` | `string` | Full name |
-| `-password` | `string` | removed; use --password-stdin |
-| `-password-stdin` | none | Read the password from stdin |
-| `-username` | `string` | Username |
 
 ## Groups (admin)
 
@@ -247,52 +162,6 @@ gpg deactivate <key> [--repository R]  Stop using key for signing
 gpg export <key> [--output FILE]   Export the public key
 ```
 
-### `oa gpg import`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-activate` | none | Make the key the active signing key |
-| `-key` | `string` | Armored private key file, or - for stdin |
-| `-name` | `string` | Key name |
-| `-no-activate` | none | Do not activate the key |
-| `-passphrase-stdin` | none | Read the key passphrase from stdin (env: OA_GPG_PASSPHRASE) |
-
-### `oa gpg generate`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-activate` | none | Make the key the active signing key |
-| `-algorithm` | `string` | Algorithm: ed25519\|rsa4096 (default "ed25519") |
-| `-comment` | `string` | User ID comment |
-| `-email` | `string` | User ID email |
-| `-name` | `string` | Key name |
-| `-no-activate` | none | Do not activate the key |
-| `-user-name` | `string` | User ID name |
-
-### `oa gpg delete`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-force` | none | Delete even if the key is active or assigned |
-
-### `oa gpg activate`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-repository` | `string` | Repository to activate for (default: global) |
-
-### `oa gpg deactivate`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-repository` | `string` | Repository to deactivate for (default: global) |
-
-### `oa gpg export`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-output` | `string` | Write the public key to FILE (default: stdout) |
-
 ## Storage backends (admin)
 
 ```text
@@ -305,15 +174,6 @@ storage delete <name>              Delete storage backend
 storage test <name>                Test storage backend
 ```
 
-### `oa storage create`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-config` | `string` | Inline JSON config (non-secret settings only) |
-| `-config-file` | `string` | File with the JSON config, or - for stdin (use this for credentials) |
-| `-name` | `string` | Backend name |
-| `-type` | `string` | Backend type: filesystem\|s3\|gcs\|azure\|garage\|seaweedfs\|oci (default "filesystem") |
-
 ## Backup & restore (admin)
 
 ```text
@@ -324,12 +184,6 @@ backup download <id> <dest>        Download backup
 backup restore <archive-file>      Restore from a downloaded backup archive
 ```
 
-### `oa backup create`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-type` | `string` | Backup type: full\|metadata-only (default "full") |
-
 ## Audit log (admin)
 
 ```text
@@ -337,26 +191,6 @@ audit list [--limit N] [--action A] [--actor A]  List audit entries
 audit export [--format jsonl|csv] [--since T] [--until T] [--actor A] [--action A] [-o FILE]
                                    Export the audit log (default: jsonl to stdout)
 ```
-
-### `oa audit list`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-action` | `string` | Filter by action |
-| `-actor` | `string` | Filter by actor |
-| `-limit` | `int` | Max entries (default 50) |
-
-### `oa audit export`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-action` | `string` | Filter by action |
-| `-actor` | `string` | Filter by actor |
-| `-format` | `string` | Export format: jsonl\|csv (default "jsonl") |
-| `-o` | `string` | Write to this file instead of stdout |
-| `-output` | `string` | Write to this file instead of stdout |
-| `-since` | `string` | Only entries at or after this time (RFC 3339, YYYY-MM-DD or an age like 24h, 7d) |
-| `-until` | `string` | Only entries before this time (same forms) |
 
 ## Webhooks
 
@@ -371,17 +205,6 @@ webhook deliveries <id>            List webhook deliveries
 webhook repo list <repo>           List repo webhooks
 webhook repo create <repo> --name N --url U --events E,E [--secret-file F]  Create repo webhook
 ```
-
-### `oa webhook create`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-active` | none | Enabled (default true) |
-| `-events` | `string` | Comma-separated event types, e.g. artifact.uploaded (required) |
-| `-name` | `string` | Webhook name |
-| `-secret` | `string` | removed; use --secret-file |
-| `-secret-file` | `string` | file holding the webhook secret, '-' for stdin (or OA_WEBHOOK_SECRET) |
-| `-url` | `string` | Webhook URL |
 
 ## SBOM
 
@@ -477,19 +300,6 @@ promote <name> <version> --stage S [--target-repo R] [--notes T]
                                    Promote a sealed bundle to a pipeline stage
 ```
 
-### `oa upload`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-build-name` | `string` | Build name, recorded as property build.name |
-| `-build-number` | `string` | Build number, recorded as property build.number |
-| `-build-url` | `string` | Build URL, recorded as property build.url |
-| `-flat` | none | Drop the local directories: upload every file by its name |
-| `-property` | `value` | Property k=v set on every uploaded artifact (repeatable) |
-| `-target-path` | `string` | Path in the repository; a trailing / makes it a directory (default: the file's path) |
-| `-vcs-revision` | `string` | Source revision, recorded as property vcs.revision |
-| `-version` | `string` | Package version, for the formats whose file does not say (composer: when composer.json has no "version") |
-
 ### `oa bundle`
 
 ```text
@@ -500,41 +310,6 @@ Usage: oa bundle <create|add|seal|show> <name> <version> [flags]
   oa bundle show <name> <version>
 ```
 
-### `oa bundle create`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-description` | `string` | Bundle description |
-| `-pipeline` | `string` | Promotion pipeline, by name (needed to promote the bundle later) |
-
-### `oa bundle add`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-from-build` | `string` | Add every artifact recorded for build NAME/NUMBER (properties build.name and build.number) |
-| `-path` | `value` | Artifact path in --repo (repeatable) |
-| `-repo` | `value` | Repository of the artifacts (repeatable with --from-build to limit the search) |
-
-### `oa bundle seal`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-gpg-key` | `string` | Sign the manifest with this GPG key (id as the server lists it) |
-
-### `oa bundle show`
-
-```text
-Usage of bundle show:
-```
-
-### `oa promote`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-notes` | `string` | Promotion notes |
-| `-stage` | `string` | Pipeline stage to promote to (required) |
-| `-target-repo` | `string` | Repository to promote into (default: the one the stage fixes) |
-
 ## Migration
 
 ```text
@@ -543,37 +318,6 @@ import nexus|artifactory|openartifact --source-url URL --repo SRC[:DST]... [--dr
 import config openartifact --source-url URL --output DIR [--kind K]...
                                    Write oa apply manifests and a mapping report from a 0.14 OpenArtifact
 ```
-
-### `oa import nexus`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-all` | none | openartifact source: import every hosted repository, under the same name |
-| `-artifactory-listing` | `string` | Artifactory listing mode: aql or storage (default "aql") |
-| `-concurrency` | `int` | parallel transfers (default 4) |
-| `-create-repos` | none | create missing destination repositories (hosted, matching format) |
-| `-deb-component` | `string` | fallback Debian component when the source does not say |
-| `-deb-distribution` | `string` | fallback Debian distribution when the source does not say |
-| `-dry-run` | none | print the plan without writing anything |
-| `-formats` | `string` | with --all: only repositories of these formats (comma-separated) |
-| `-path-prefix` | `string` | only import assets whose repository path starts with this prefix (e.g. com/acme/) |
-| `-properties` | `string` | properties to copy: comma-separated keys or prefix* patterns, 'none' to disable (default "deb.*,rpm.*,build.name,build.number,vcs.*") |
-| `-quiet` | none | only print the summary |
-| `-repo` | `value` | repository to import as SRC or SRC:DST (repeatable) |
-| `-retries` | `int` | retries after a transient failure of a source request or an upload (0 disables) (default 3) |
-| `-retry-max-wait` | `duration` | longest wait between retries; a Retry-After above it is not waited out (default 30s) |
-| `-source-token-file` | `string` | file holding the source token/password, '-' for stdin (or OA_IMPORT_SOURCE_TOKEN) |
-| `-source-url` | `string` | base URL of the source system |
-| `-source-user` | `string` | source user name (or OA_IMPORT_SOURCE_USER) |
-| `-state-file` | `string` | resume file: completed assets are skipped on the next run |
-
-### `oa import artifactory`
-
-Same flags as `oa import nexus`.
-
-### `oa import openartifact`
-
-Same flags as `oa import nexus`.
 
 ## Declarative configuration (admin)
 
@@ -585,40 +329,6 @@ diff  -f FILE|DIR|- [-R] [--kind K] [--prune|--prune-all] [-o json]
 export [--kind K] [--with-members] [-o DIR]
                                    Write the current configuration as manifests
 ```
-
-### `oa apply`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-R` | none | Descend into subdirectories of -f directories |
-| `-continue-on-error` | none | Keep applying after a failure (exit status is still 1) |
-| `-f` | `value` | Manifest file, directory or - for stdin (repeatable) |
-| `-force-secrets` | none | Send every secret even if the server reports it as set |
-| `-kind` | `value` | Only consider this kind (repeatable), e.g. Repository |
-| `-o` | `string` | Output format: json (default: human readable) |
-| `-prune` | none | Delete objects previously applied by oa that are no longer in the manifests |
-| `-prune-all` | none | Delete every object absent from the manifests, managed or not (never seeded objects; Users and ServiceAccounts only with --kind User or --kind ServiceAccount) |
-| `-validate-only` | none | Validate the manifests offline and exit |
-
-### `oa diff`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-R` | none | Descend into subdirectories of -f directories |
-| `-f` | `value` | Manifest file, directory or - for stdin (repeatable) |
-| `-force-secrets` | none | Send every secret even if the server reports it as set |
-| `-kind` | `value` | Only consider this kind (repeatable), e.g. Repository |
-| `-o` | `string` | Output format: json (default: human readable) |
-| `-prune` | none | Delete objects previously applied by oa that are no longer in the manifests |
-| `-prune-all` | none | Delete every object absent from the manifests, managed or not (never seeded objects; Users and ServiceAccounts only with --kind User or --kind ServiceAccount) |
-
-### `oa export`
-
-| Flag | Value | Description |
-|---|---|---|
-| `-kind` | `value` | Only export this kind (repeatable); User is exported only when named |
-| `-o` | `string` | Write one file per object into this directory (default: one YAML stream on stdout) |
-| `-with-members` | none | Include fields normally omitted, such as Group members |
 
 ## Package deltas
 
