@@ -7,12 +7,15 @@ import { t } from '../i18n'
 export class ApiError extends Error {
   status: number
   code?: string
+  /** The parsed JSON error body, for the few endpoints whose refusal carries more than `{error, code}` (a plan, manifest problems). */
+  body?: unknown
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(message: string, status: number, code?: string, body?: unknown) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
+    this.body = body
   }
 }
 
@@ -154,7 +157,7 @@ async function apiError(res: Response): Promise<ApiError> {
 /** The error of a failed response: the JSON `{error, code}` body's text and code, else "HTTP <status>". */
 export function apiErrorFromBody(status: number, body: unknown): ApiError {
   const { error, code } = (body ?? {}) as { error?: string; code?: string }
-  return new ApiError(error || `HTTP ${status}`, status, code || undefined)
+  return new ApiError(error || `HTTP ${status}`, status, code || undefined, body ?? undefined)
 }
 
 /** Headers of a request whose body is `JSON.stringify(...)`. */
@@ -172,6 +175,13 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   const text = await res.text()
   if (!text) return undefined as T
   return JSON.parse(text) as T
+}
+
+/** Like request(), for an endpoint that answers plain text (a YAML export): the body as a string. */
+export async function requestText(path: string, init: RequestInit = {}): Promise<string> {
+  const res = await send(path, init)
+  if (!res.ok) throw await apiError(res)
+  return res.text()
 }
 
 export interface UploadOptions {

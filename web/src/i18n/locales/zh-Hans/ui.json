@@ -102,5 +102,13 @@
   "ui.settings.unknownHint": "不存在使用此名称的设置分区。",
   "ui.settings.hub": "设置",
   "ui.settings.service-accounts.title": "服务账号",
-  "ui.settings.service-accounts.desc": "用于自动化的身份、其令牌和 CI 信任策略。"
+  "ui.settings.service-accounts.desc": "用于自动化的身份、其令牌和 CI 信任策略。",
+  "ui.settings.recovery.title": "恢复",
+  "ui.settings.recovery.desc": "行日志，使重建能够从存储恢复索引。",
+  "ui.settings.attestation.title": "证明",
+  "ui.settings.attestation.desc": "SBOM 和 VEX 证明的签名密钥。",
+  "ui.settings.scan-gate.title": "扫描门禁",
+  "ui.settings.scan-gate.desc": "扫描的利用判定条件，以及被阻止的下载。",
+  "ui.settings.declarative.title": "声明式配置",
+  "ui.settings.declarative.desc": "以 YAML 审查、应用和导出配置。"
 }

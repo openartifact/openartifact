@@ -102,5 +102,13 @@
   "ui.settings.unknownHint": "There is no settings section with this name.",
   "ui.settings.hub": "Settings",
   "ui.settings.service-accounts.title": "Service accounts",
-  "ui.settings.service-accounts.desc": "Identities for automation, their tokens and CI trust policies."
+  "ui.settings.service-accounts.desc": "Identities for automation, their tokens and CI trust policies.",
+  "ui.settings.recovery.title": "Recovery",
+  "ui.settings.recovery.desc": "Row journal that lets a rebuild restore the index from storage.",
+  "ui.settings.attestation.title": "Attestations",
+  "ui.settings.attestation.desc": "Signing key for SBOM and VEX attestations.",
+  "ui.settings.scan-gate.title": "Scan gate",
+  "ui.settings.scan-gate.desc": "Exploitation criteria for scans, and blocked downloads.",
+  "ui.settings.declarative.title": "Declarative config",
+  "ui.settings.declarative.desc": "Review, apply and export configuration as YAML."
 }

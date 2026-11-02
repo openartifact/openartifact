@@ -31,15 +31,19 @@ export type SettingsSectionId =
   | 'cleanup'
   | 'trash'
   | 'backup'
+  | 'recovery'
   | 'scanners'
   | 'policies'
   | 'signing'
   | 'dependency-track'
+  | 'attestation'
+  | 'scan-gate'
   | 'webhooks'
   | 'federation'
   | 'ai'
   | 'branding'
   | 'audit'
+  | 'declarative'
   | 'health'
 
 type Loader = () => Promise<{ default: Component }>
@@ -115,10 +119,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   section('cleanup', 'storage', true, () => import('../pages/settings/sections/CleanupSection.vue'), ['retention', 'keep last', 'age', 'prune', 'dry run']),
   section('trash', 'storage', true, () => import('../pages/settings/sections/TrashSection.vue'), ['restore', 'purge', 'retention', 'deleted', 'recover']),
   section('backup', 'storage', true, () => import('../pages/settings/sections/BackupPage.vue'), ['snapshot', 'restore', 'schedule', 'download']),
+  section('recovery', 'storage', true, () => import('../pages/settings/sections/RecoveryPage.vue'), ['disaster recovery', 'journal', 'sidecar', 'rebuild', 'backlog', 'rpo', 'restore from storage']),
   section('scanners', 'security', true, () => import('../pages/settings/sections/ScannersSection.vue'), ['trivy', 'osv', 'scan schedule', 'severity threshold', 'auto scan']),
   section('policies', 'security', true, () => import('../pages/settings/sections/PoliciesSection.vue'), ['license policy', 'quarantine', 'block', 'deny list', 'allow list', 'copyleft']),
   section('signing', 'security', true, () => import('../pages/settings/sections/GpgKeysPage.vue'), ['gpg', 'key', 'sign packages', 'public key', 'fingerprint']),
   section('dependency-track', 'security', true, () => import('../pages/settings/sections/DependencyTrackPage.vue'), ['dt', 'sbom push', 'api key', 'url', 'project']),
+  section('attestation', 'security', true, () => import('../pages/settings/sections/AttestationPage.vue'), ['sbom', 'vex', 'signed', 'cosign', 'in-toto', 'public key', 'oci referrer', 'verify']),
+  section('scan-gate', 'security', true, () => import('../pages/settings/sections/ScanGatePage.vue'), ['kev', 'epss', 'exploit', 'block', 'quarantine', 'ci gate', 'priority', 'download']),
   section('webhooks', 'integrations', true, () => import('../pages/settings/sections/WebhooksPage.vue'), ['events', 'secret', 'delivery', 'url', 'payload']),
   section('federation', 'integrations', true, () => import('../pages/settings/sections/FederationSection.vue'), ['peers', 'replicate', 'sync', 'inbound token']),
   {
@@ -127,6 +134,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
   section('branding', 'appearance', true, () => import('../pages/settings/sections/BrandingPage.vue'), ['logo', 'colour', 'color', 'accent', 'product name', 'login message', 'favicon', 'white label', 'support url']),
   section('audit', 'system', true, () => import('../pages/settings/sections/AuditLogPage.vue'), ['events', 'export', 'retention', 'actor', 'csv', 'http requests']),
+  section('declarative', 'system', true, () => import('../pages/settings/sections/DeclarativePage.vue'), ['yaml', 'manifest', 'apply', 'diff', 'export', 'gitops', 'config as code', 'oa apply', 'prune']),
   section('health', 'system', true, () => import('../pages/settings/sections/SystemPage.vue'), ['version', 'database', 'uptime', 'status', 'build', 'commit']),
 ]
 

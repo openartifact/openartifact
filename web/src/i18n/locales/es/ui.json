@@ -102,5 +102,13 @@
   "ui.settings.unknownHint": "No existe ninguna sección de ajustes con este nombre.",
   "ui.settings.hub": "Ajustes",
   "ui.settings.service-accounts.title": "Cuentas de servicio",
-  "ui.settings.service-accounts.desc": "Identidades para la automatización, sus tokens y las políticas de confianza de CI."
+  "ui.settings.service-accounts.desc": "Identidades para la automatización, sus tokens y las políticas de confianza de CI.",
+  "ui.settings.recovery.title": "Recuperación",
+  "ui.settings.recovery.desc": "Diario de filas que permite a una reconstrucción restaurar el índice desde el almacenamiento.",
+  "ui.settings.attestation.title": "Atestaciones",
+  "ui.settings.attestation.desc": "Clave de firma de las atestaciones SBOM y VEX.",
+  "ui.settings.scan-gate.title": "Gate de análisis",
+  "ui.settings.scan-gate.desc": "Criterios de explotación para los análisis y descargas bloqueadas.",
+  "ui.settings.declarative.title": "Configuración declarativa",
+  "ui.settings.declarative.desc": "Revisa, aplica y exporta la configuración como YAML."
 }

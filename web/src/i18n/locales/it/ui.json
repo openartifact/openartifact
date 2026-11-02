@@ -102,5 +102,13 @@
   "ui.settings.unknownHint": "Non esiste una sezione delle impostazioni con questo nome.",
   "ui.settings.hub": "Impostazioni",
   "ui.settings.service-accounts.title": "Account di servizio",
-  "ui.settings.service-accounts.desc": "Identità per l'automazione, i loro token e le policy di trust per la CI."
+  "ui.settings.service-accounts.desc": "Identità per l'automazione, i loro token e le policy di trust per la CI.",
+  "ui.settings.recovery.title": "Ripristino",
+  "ui.settings.recovery.desc": "Journal di righe che permette a una ricostruzione di ripristinare l'indice dallo storage.",
+  "ui.settings.attestation.title": "Attestazioni",
+  "ui.settings.attestation.desc": "Chiave di firma per le attestazioni SBOM e VEX.",
+  "ui.settings.scan-gate.title": "Gate delle scansioni",
+  "ui.settings.scan-gate.desc": "Criteri di sfruttamento per le scansioni e download bloccati.",
+  "ui.settings.declarative.title": "Configurazione dichiarativa",
+  "ui.settings.declarative.desc": "Controlla, applica ed esporta la configurazione come YAML."
 }

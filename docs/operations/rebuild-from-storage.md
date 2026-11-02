@@ -40,6 +40,8 @@ Sidecars go through the same blob store stack as every other blob, so they are t
 
 `GET /api/v1/admin/recovery/status` (admin only) returns the journal state: `enabled`, `backlog` (rows waiting for a sidecar, capped at `backlog_cap`), `oldest_dirty_age_seconds` (the current lag), `retrying_rows`, `sidecars_tracked`, `last_error`, `last_drain_at`, `last_reconcile_at`, `tables_reconciled`/`tables_total` and `schema_version`.
 
+The same state is shown under **Settings > Storage > Recovery** (admin only): the journal health (healthy, catching up, failing or off), the waiting rows and the oldest wait, the last error, and the offline rebuild commands. The rebuild itself runs on the command line and the server keeps no history of it, so the page has no "last rebuild".
+
 Metrics (see [monitoring](monitoring.md)):
 
 | Metric | Meaning |

@@ -437,6 +437,53 @@ One curation rule of a proxy repository. Package and version patterns are globs 
 |---|---|---|---|
 | `items` | array of [DeclarativeObject](#declarativeobject) | yes | - |
 
+### DeclarativeRun
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `changes` | boolean | yes | Whether applying would modify the server |
+| `code` | string | no | One of: `manifest_invalid`, `plan_invalid`, `secrets_missing`. |
+| `error` | string | no | Set when the answer is a refusal |
+| `errors` | array of string | no | Plan problems that make the plan unapplicable (immutable field, missing reference, ambiguous name) |
+| `items` | array of [DeclarativeRunItem](#declarativerunitem) | yes | - |
+| `problems` | array of [DeclarativeRunProblem](#declarativerunproblem) | no | Manifest problems, with `manifest_invalid` |
+| `secrets` | array of [DeclarativeRunSecret](#declarativerunsecret) | yes | - |
+| `summary` | map of integer | yes | Number of items per action; an action with none is absent |
+
+### DeclarativeRunItem
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `action` | string | yes | One of: `create`, `update`, `unchanged`, `delete`. |
+| `adopt` | boolean | no | An existing object that will be recorded as managed |
+| `changes` | array of object | no | - |
+| `changes[].new` | any | no | - |
+| `changes[].old` | any | no | - |
+| `changes[].path` | string | yes | - |
+| `changes[].secret` | boolean | no | The value is a secret and is never shown |
+| `error` | string | no | - |
+| `kind` | string | yes | - |
+| `managed` | boolean | no | A delete of an object `oa apply` manages |
+| `name` | string | yes | - |
+| `result` | string | no | Only after an apply. One of: `applied`, `failed`, `skipped`. |
+
+### DeclarativeRunProblem
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `field` | string | no | - |
+| `line` | integer | no | - |
+| `message` | string | yes | - |
+| `object` | string | no | `Kind/name` |
+
+### DeclarativeRunSecret
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `env` | string | no | - |
+| `file` | string | no | - |
+| `provided` | boolean | yes | A value for this env reference was supplied in `secrets` |
+
 ### DependencyTrackEffective
 
 | Field | Type | Required | Description |
