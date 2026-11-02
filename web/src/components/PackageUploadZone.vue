@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: The OpenArtifact Authors
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 <template>
   <div v-if="publishSnippet" class="rounded-lg border border-border bg-surface p-4">
     <p class="text-sm text-foreground">{{ t('upload.nix.body') }}</p>
