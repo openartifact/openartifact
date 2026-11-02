@@ -6,7 +6,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # SBOM and VEX
 
-Per-artifact software bills of materials (CycloneDX, SPDX 2.3 and 3.0) and vulnerability exploitability statements (OpenVEX, CycloneDX VEX), built from the data OpenArtifact already holds: the artifact's stored properties, the package listing, the latest license scan and the latest vulnerability scan. Either can be [signed as an in-toto attestation](#signed-sbom-and-vex-attestations) and [pushed to Dependency-Track](dependency-track.md). All endpoints are **admin only** and generation is **manual**: nothing is stored on upload (the optional Dependency-Track push builds its documents on the fly). See [Scanning](scanning.md) for how the scans themselves run.
+Use this page to generate a software bill of materials (SBOM) or a vulnerability exploitability statement (VEX) for an artifact, sign it, and hand it to other tools. SBOM formats are CycloneDX and SPDX 2.3 and 3.0. VEX formats are OpenVEX and CycloneDX VEX.
+
+The documents are built from data OpenArtifact already holds: the artifact's properties, the package listing, the latest license scan and the latest vulnerability scan. You can [sign them as in-toto attestations](#signed-sbom-and-vex-attestations) and [push them to Dependency-Track](dependency-track.md).
+
+All endpoints are admin only. Generation is manual: nothing is stored on upload. See [Scanning](scanning.md) for how the scans run.
 
 ## SBOM
 
@@ -34,7 +38,7 @@ oa sbom download REPO <ID> sbom.json
 | `spdx3-json` | SPDX 3.0 JSON-LD (`application/ld+json`) | `3.0.1` |
 | `spdx` | SPDX tag-value (`text/spdx`) | `2.3` |
 
-Existing callers that pass `"spec_version":"1.4"` or `"2.3"` keep getting those versions. Documents are stored in the blob store.
+Documents are stored in the blob store.
 
 ### SPDX 3.0
 
@@ -150,34 +154,42 @@ The statement's **subjects** are the described package (named by its purl, with 
 
 ### The signing key
 
-- `attestation.keyPath` / `ATTESTATION_KEY_PATH`: an unencrypted PKCS#8 or SEC1 PEM private key, **ECDSA** (P-256, P-384 or P-521) or **Ed25519**.
-- Unset: OpenArtifact generates an ECDSA P-256 key on first use and stores it **encrypted** in the database. This needs `OPENARTIFACT_SECRET_KEY` (see [configuration](../getting-started/configuration.md)); without it no key is generated and the attestation endpoints answer `409` with code `secret_key_required`, because the private key would otherwise be stored as plaintext. Set the secret key, or point `keyPath` at a key file. A key stored by an earlier version keeps working. Replicas converge on one key, and a restore of the database restores the key.
+- **Unset (default):** OpenArtifact generates a P-256 key on first use and stores it encrypted in the database. This needs `OPENARTIFACT_SECRET_KEY` ([configuration](../getting-started/configuration.md)). Without it, the attestation endpoints return `409` with code `secret_key_required`.
+- **`attestation.keyPath` / `ATTESTATION_KEY_PATH`:** use your own key file instead. It must be an unencrypted PKCS#8 or SEC1 PEM private key, ECDSA (P-256, P-384 or P-521) or Ed25519.
+- Replicas converge on one key, and restoring the database restores the key.
 
-The ECDSA hash follows the curve (SHA-256, SHA-384, SHA-512), as Sigstore requires; Ed25519 signs the DSSE pre-authentication encoding directly. The **public key** is served without authentication at `HOST/.well-known/openartifact/attestation-key.pem` (admins also get its id and algorithm from `GET /api/v1/admin/attestation`). Rotating the key means setting a new `keyPath`, or deleting the `attestation.private_key` system setting to generate a new one; attestations signed earlier keep verifying against the key that signed them, so keep the old public keys.
+The **public key** is served without authentication at `HOST/.well-known/openartifact/attestation-key.pem`. Admins also get its id and algorithm from `GET /api/v1/admin/attestation`.
 
-### Verify with cosign
+To rotate the key, set a new `keyPath`, or delete the `attestation.private_key` system setting to generate a new one. Earlier attestations verify only against the key that signed them, so keep the old public keys.
 
-[cosign](https://github.com/sigstore/cosign) v2.5+ (including v3) verify the bundle against the public key, offline. OpenArtifact does not use Sigstore's transparency log, so tell cosign to skip it:
+### Verify an SBOM with cosign
+
+[cosign](https://github.com/sigstore/cosign) v2.5 or later verifies the bundle against the public key, offline. OpenArtifact does not use Sigstore's transparency log, so tell cosign to skip it.
 
 ```sh
 curl -sS HOST/.well-known/openartifact/attestation-key.pem -o attestation-key.pem
-
-# SBOM: CycloneDX (use --type spdxjson for spdx-json)
 curl -sS -H 'Authorization: Bearer <TOKEN>' -o sbom.cdx.json.sigstore.json \
   'HOST/api/v1/repositories/REPO/sbom/<ID>/download?attest=bundle'
 cosign verify-blob-attestation --bundle sbom.cdx.json.sigstore.json --key attestation-key.pem \
   --type cyclonedx --insecure-ignore-tlog my-lib-1.2.3.tgz
-# when no package hash is known the stored SBOM file is a subject too: verify the plain download instead
-#   curl ... -o sbom.cdx.json 'HOST/api/v1/repositories/REPO/sbom/<ID>/download'  and pass sbom.cdx.json
+```
 
-# VEX
+- Use `--type spdxjson` for an `spdx-json` SBOM. For SPDX 3, use the predicate URI as the type.
+- When no package hash is known, the stored SBOM file is the subject. Download the plain SBOM with `curl ... -o sbom.cdx.json '.../sbom/<ID>/download'` and pass `sbom.cdx.json` instead of the package.
+- `cosign` prints `Verified OK` and exits 0. A modified package fails with `provided artifact digests do not match digests in statement`, and another key fails the signature check.
+
+### Verify a VEX with cosign
+
+```sh
 curl -sS -H 'Authorization: Bearer <TOKEN>' -o vex.openvex.json.sigstore.json \
   'HOST/api/v1/repositories/REPO/vex?artifact_id=my-lib@1.2.3&attest=bundle'
 cosign verify-blob-attestation --bundle vex.openvex.json.sigstore.json --key attestation-key.pem \
   --type openvex --insecure-ignore-tlog my-lib-1.2.3.tgz
 ```
 
-When the VEX speaks about no package whose hash OpenArtifact knows, its subject is the digest of the VEX document itself. Every request generates a new document, so verify it against the predicate carried in the very bundle you downloaded:
+#### VEX bundles with an unknown subject
+
+When the VEX covers no package whose hash OpenArtifact knows, its subject is the digest of the VEX document itself. Every request generates a new document, so verify it against the predicate inside the bundle you downloaded:
 
 ```sh
 python3 - <<'EOF'
@@ -189,44 +201,42 @@ cosign verify-blob-attestation --bundle vex.openvex.json.sigstore.json --key att
   --type openvex --insecure-ignore-tlog vex.predicate.json
 ```
 
-`cosign` prints `Verified OK` and exits 0; a modified package fails with `provided artifact digests do not match digests in statement`, and another key fails the signature check. The same bundle also works with `--type https://cyclonedx.org/bom` (the full predicate URI), and for SPDX 3 use the URI as the type.
-
 ### Verify the DSSE envelope without cosign
 
-`?attest=true` returns the plain DSSE envelope, the format in-toto tooling and any DSSE library read (for example `go-securesystemslib/dsse`). The payload is the Statement:
+`?attest=true` returns the plain DSSE envelope, which in-toto tooling and DSSE libraries read. The payload is the Statement:
 
 ```sh
 jq -r .payload sbom.cdx.json.intoto.json | base64 -d | jq '{_type, predicateType, subject}'
 ```
 
-The signature is over `PAE(payloadType, payload)` = `DSSEv1 <len(type)> <type> <len(payload)> <payload>`, ECDSA over the SHA-2 hash matching the curve (or Ed25519 over the PAE itself); the envelope's `keyid` is empty, so verifiers must be given the public key explicitly.
+The envelope's `keyid` is empty, so give verifiers the public key explicitly.
 
-### Attaching to an OCI image
+### Attach to an image (hosted docker repositories)
 
-For a **hosted docker repository** OpenArtifact can sign the SBOM and VEX document of an image and attach them to it as OCI 1.1 referrers: an image manifest with a `subject` pointing at the image, `artifactType` `application/vnd.dev.sigstore.bundle.v0.3+json`, an empty config and one layer holding the Sigstore bundle (the same bundle `?attest=bundle` returns). `cosign tree`, `cosign verify-attestation` and `oras discover` find it next to the image. The attached manifests go through the registry's own paths: they count against the repository's [storage quota](../repositories/cleanup-and-quotas.md), appear in the referrers API with their `artifactType` and annotations (`dev.sigstore.bundle.predicateType`, `dev.openartifact.attestation.kind` = `sbom` or `vex`), and live and die with the image under [registry GC](../formats/docker.md) (deleting the tag and collecting it removes them).
+OpenArtifact can sign the SBOM or VEX of an image and attach it to the image as an OCI referrer. `cosign tree`, `cosign verify-attestation` and `oras discover` find it next to the image.
 
-The attestation subject is the image manifest digest. The attachment is idempotent per image, kind and predicate type: an image carries at most one SBOM and one VEX referrer per predicate type. Attaching a byte-identical document again changes nothing (`created` is false); the generated documents carry a timestamp and a fresh serial number, so attaching a regenerated one replaces the earlier referrer, whose blobs registry GC reclaims.
+The attachment is idempotent: an image carries at most one SBOM and one VEX referrer per predicate type. Attaching the same document again changes nothing (`created` is `false`). A regenerated document replaces the earlier referrer, and registry GC reclaims the old blobs.
 
-Attach on demand (admin; needs the [attestation key](#the-signing-key)):
+Attach a stored SBOM (`cyclonedx`, `spdx-json` or `spdx3-json`), or the VEX of one image. You need an admin token and the [signing key](#the-signing-key).
 
 ```sh
-# a stored SBOM (cyclonedx, spdx-json or spdx3-json)
 curl -X POST -H "Authorization: Bearer $TOKEN" HOST/api/v1/repositories/REPO/sbom/<report-id>/attach
-# the VEX document of one image (openvex by default, or "format": "cyclonedx")
 curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"artifact_id":"REPO/IMAGE@TAG"}' HOST/api/v1/repositories/REPO/vex/attach
 ```
 
-The answer carries `subject`, `referrer_digest`, `created` (false when it was already attached) and `replaced`. Or attach automatically, per repository (off by default):
+The VEX is OpenVEX by default; send `"format": "cyclonedx"` for CycloneDX. The answer has `subject`, `referrer_digest`, `created` and `replaced`.
+
+To attach automatically, switch it on per repository (off by default):
 
 ```sh
 curl -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"enabled":true}' HOST/api/v1/repositories/REPO/attestation-attach
 ```
 
-With it on, generating an SBOM for an image attaches it, and a finished vulnerability scan attaches a CycloneDX SBOM and the OpenVEX document; a failure is logged and never fails the scan or the generation.
+With it on, generating an SBOM for an image attaches it. A finished vulnerability scan attaches a CycloneDX SBOM and the OpenVEX document. A failure is logged and never fails the scan or the generation.
 
-Discover and verify:
+Then discover and verify:
 
 ```sh
 oras discover HOST/REPO/IMAGE@sha256:<digest>
@@ -236,7 +246,19 @@ cosign verify-attestation --key attestation-key.pem --type cyclonedx \
   --insecure-ignore-tlog HOST/REPO/IMAGE@sha256:<digest>
 ```
 
-Other formats have no referrers; use `?attest=bundle` and verify the package file with `cosign verify-blob-attestation` as above.
+Details:
+
+- The attestation subject is the image manifest digest.
+- The referrer is an OCI 1.1 image manifest with `artifactType` `application/vnd.dev.sigstore.bundle.v0.3+json` and one layer holding the Sigstore bundle.
+- It counts against the repository's [storage quota](../repositories/cleanup-and-quotas.md) and appears in the referrers API with the annotations `dev.sigstore.bundle.predicateType` and `dev.openartifact.attestation.kind` (`sbom` or `vex`).
+- It lives and dies with the image under [registry GC](../formats/docker.md): deleting the tag and collecting removes it.
+
+Other formats have no referrers. Use `?attest=bundle` and verify the package file with `cosign verify-blob-attestation` as above.
+
+### Format details
+
+- The signature is over `PAE(payloadType, payload)`, which is `DSSEv1 <len(type)> <type> <len(payload)> <payload>`.
+- ECDSA signs the SHA-2 hash matching the curve (SHA-256, SHA-384 or SHA-512 for P-256, P-384, P-521), as Sigstore requires. Ed25519 signs the encoded bytes directly.
 
 ## Using the documents
 

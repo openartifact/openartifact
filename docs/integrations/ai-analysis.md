@@ -6,10 +6,30 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # AI analysis
 
-Optional, off by default: send a package's manifest to an LLM and store a summary, search tags, a license verdict, security notes and a quarantine recommendation next to the artifact. The server reads the manifest from the stored package itself (see [Manifest extraction](#manifest-extraction)).
+Use AI analysis to send a package's manifest to an LLM and store a summary, search tags, a license verdict, security notes and a quarantine recommendation next to the artifact. It is off by default. The server reads the manifest from the stored package itself (see [Manifest extraction](#manifest-extraction)).
 
-- The result is advisory. A `quarantine_recommended: true` is recorded and logged for human review; it never quarantines anything by itself, because the manifest is attacker-controlled prompt input.
-- Analysis is **not** started automatically on upload unless you turn on `ai.autoAnalyze` (off by default). Otherwise you trigger it per artifact: UI (Security, AI analysis), REST or [MCP](mcp.md). A trigger needs no manifest: the server extracts it. Supplying `manifest_text` overrides the extraction.
+## Run your first analysis
+
+1. Enable it with `AI_ENABLED=true`, `AI_API_KEY` and, if needed, `AI_PROVIDER` and `AI_MODEL` (see [Settings](#settings)). Admins can also use **Settings > AI analysis**.
+2. Trigger an analysis for one package. You need an admin token. `ARTIFACT_ID` is the package ID from the package list.
+
+   ```sh
+   curl -sS -X POST "HOST/api/v1/repositories/REPO/ai-analysis/ARTIFACT_ID/trigger" \
+     -H "Authorization: Bearer <TOKEN>"
+   ```
+
+3. Read the result.
+
+   ```sh
+   curl -sS -H "Authorization: Bearer <TOKEN>" "HOST/api/v1/repositories/REPO/ai-analysis/ARTIFACT_ID"
+   ```
+
+In the web UI, use **Security > AI analysis**. You can also trigger it through [MCP](mcp.md).
+
+Two rules to know:
+
+- The result is advisory. `quarantine_recommended: true` is recorded for human review and never quarantines anything, because the manifest is attacker-controlled input to the model.
+- Analysis does not start on upload unless you turn on `ai.autoAnalyze` (off by default).
 
 ## Settings
 
@@ -34,21 +54,39 @@ All providers use the OpenAI chat-completions protocol: `POST <base>/chat/comple
 | Provider | Default base URL | Examples |
 |---|---|---|
 | `openai` | `https://api.openai.com/v1` | any OpenAI-compatible endpoint via `AI_BASE_URL` |
-| `ollama` | `http://localhost:11434/v1` | loopback/private endpoints are blocked by the SSRF policy; set `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true` to use a local Ollama |
+| `ollama` | `http://localhost:11434/v1` | private and loopback endpoints are blocked; set `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true` to use a local Ollama |
 | `azure` | none, set `AI_BASE_URL` | `https://<resource>.openai.azure.com/openai/deployments/<deployment>` |
 | `custom` | none, set `AI_BASE_URL` | vLLM, LiteLLM, LM Studio or any other OpenAI-compatible server; the admin API refuses `custom` without a base URL |
 
 No other provider is implemented (`vertex` is not supported and the admin API rejects it).
 
-### Runtime settings (UI / admin API)
+### Change settings at runtime
 
-Admins can also configure AI in **Settings > AI analysis** (`/settings/ai`) or with `PUT /api/v1/admin/ai/config`. Those values are stored in the database (the API key encrypted with `OPENARTIFACT_SECRET_KEY`, and never returned: reads show a mask and `has_api_key`). The stored key only ever goes to the endpoint it was saved for: a `PUT` that changes the provider or base URL (compared as the effective endpoint, so a provider default counts) must also carry a new `api_key` (or `""` to clear it), otherwise it answers `400 api_key_required` and nothing is saved.
+Admins can configure AI in **Settings > AI analysis** (`/settings/ai`) or with `PUT /api/v1/admin/ai/config`. These values are stored in the database. The API key is stored encrypted with `OPENARTIFACT_SECRET_KEY` and is never returned; reads show a mask and `has_api_key`.
 
-- Once `ai.enabled` has been saved there, the database decides `enabled`; every other field uses the stored value when non-empty and falls back to the env/YAML value otherwise. Without a saved setting, env/YAML apply.
-- Saving in the UI/API applies **immediately** in the running server: the model client and the auto-analysis switch are rebuilt, analyses already running finish on the old settings and every later one uses the new. Environment/YAML changes still need a restart. Every other process (replicas of the API, processes with the `worker` [role](../operations/scaling.md)) reads the stored settings every 30 seconds and applies them when they changed, so a switch-off, a model change or a key rotation reaches them within that time, without a restart. A read that fails (database outage) leaves the settings in use as they are.
-- `GET /api/v1/admin/ai/config` returns the effective settings, resolved by the rules above, so AI enabled through env/YAML shows as enabled.
-- `auto_analyze` is stored as `ai.auto_analyze` and takes precedence over `AI_AUTO_ANALYZE` whenever it is saved, independently of `ai.enabled`.
-- Validation: `provider` in `openai|azure|ollama|custom`; `base_url` an absolute http(s) URL; `max_tokens` 0 to 200000; `timeout_secs` 0 to 600; `system_prompt` at most 16 KiB; `model`, `base_url`, `api_key` at most 2048 characters. Omitted fields are left unchanged; an empty string clears one.
+How saved settings combine with env and YAML:
+
+- Once `ai.enabled` has been saved, the database decides `enabled`. Every other field uses the stored value when it is not empty, and the env or YAML value otherwise.
+- Without a saved setting, env and YAML apply.
+- `auto_analyze` is stored as `ai.auto_analyze` and wins over `AI_AUTO_ANALYZE` whenever it is saved, independent of `ai.enabled`.
+- `GET /api/v1/admin/ai/config` returns the effective settings, so AI enabled through env or YAML shows as enabled.
+
+When changes take effect:
+
+- Saving in the UI or API applies immediately. Analyses already running finish on the old settings.
+- Other processes (API replicas, `worker` [role](../operations/scaling.md)) pick up stored settings within 30 seconds, without a restart.
+- A failed read leaves the settings in use unchanged.
+- Env and YAML changes need a restart.
+
+The stored key goes only to the endpoint it was saved for. A `PUT` that changes the provider or base URL must also carry a new `api_key` (or `""` to clear it). Otherwise it answers `400 api_key_required` and saves nothing.
+
+Validation:
+
+- `provider` is `openai`, `azure`, `ollama` or `custom`.
+- `base_url` is an absolute http(s) URL.
+- `max_tokens` is 0 to 200000, and `timeout_secs` is 0 to 600.
+- `system_prompt` is at most 16 KiB. `model`, `base_url` and `api_key` are at most 2048 characters.
+- Omitted fields are left unchanged; an empty string clears one.
 
 ## API
 
@@ -101,16 +139,21 @@ With automatic analysis on, ivy, maven and sbt are analysed only for their `.pom
 
 ### Automatic analysis
 
-`ai.autoAnalyze` hooks the same upload event the webhooks use, so every format and upload path (API, native client protocols, presigned uploads) is covered with no per-format code. Uploads are queued without blocking the client, the package ID is looked up by the worker, and the usual 2 s debounce applies. The upload queue holds 500 entries; a full queue drops notifications with a log warning, and queued work is lost on restart, as for manual triggers. Proxied (cached) packages are not analysed automatically.
+With `ai.autoAnalyze` on, every upload in every format is queued for analysis without blocking the client. Proxied (cached) packages are not analysed automatically.
 
-Related MCP tools (per-repository `read`/`write` permission instead of global `manage`; they take the repository UUID): `list_ai_analyses`, `get_artifact_analysis`, `trigger_ai_analysis` (optional `manifest_text`, max 64 KiB). See [MCP](mcp.md).
+- Repeated uploads of the same package within 2 seconds collapse into one analysis.
+- The queue holds 500 entries. When it is full, new requests are dropped with a log warning.
+- Queued work is lost on restart, as for manual triggers.
+
+Related MCP tools (per-repository `read` or `write` permission instead of global `manage`; they take the repository UUID): `list_ai_analyses`, `get_artifact_analysis` and `trigger_ai_analysis` (optional `manifest_text`, max 64 KiB). See [MCP](mcp.md).
 
 ## Processing
 
-1. A trigger is debounced for 2 s per repository and artifact (repeated triggers collapse into one), then put on an in-memory queue of 500 entries processed by a single worker. A full queue drops the request with a log warning, and queued work is lost on restart.
-2. The record becomes `processing`, then `completed` or `failed`. Each analysis has a 60 s overall limit. A re-analysis that is `processing` or `failed` keeps the summary, tags and other result fields of the last `completed` run (the status and error message are the new ones); a new `completed` run replaces them.
-3. With AI disabled the trigger is refused (`503`); a request that was already queued when AI was switched off stays `pending` and nothing is sent anywhere.
-4. Provider or parse failures store a generic `failed` message (`ai analysis failed; see server logs`); details go to the server log only.
+1. A trigger waits 2 s per repository and artifact, so repeated triggers collapse into one. It then joins a queue of 500 entries processed one at a time. When the queue is full the request is dropped with a log warning, and queued work is lost on restart.
+2. The record becomes `processing`, then `completed` or `failed`. Each analysis has a 60 s limit.
+3. A re-analysis that is `processing` or `failed` keeps the result fields of the last `completed` run. Only the status and error message are new. A new `completed` run replaces them.
+4. With AI disabled the trigger is refused with `503`. A request already queued when AI was switched off stays `pending`, and nothing is sent anywhere.
+5. Provider or parse failures store a generic `failed` message (`ai analysis failed; see server logs`). The details go to the server log only.
 
 ## What is sent to the provider
 

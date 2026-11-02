@@ -4,46 +4,89 @@ SPDX-FileCopyrightText: The OpenArtifact Authors
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# Scanning, SBOM, licenses and quarantine
+# Scanning, licenses and quarantine
 
-On-demand vulnerability, secret and license scans and SBOM generation per repository, plus quarantine to block downloads of flagged artifacts.
+Use this page to scan packages for vulnerabilities, secrets and licenses, export the results, and block downloads of flagged artifacts. Scanners and the local OSV mirror have their own pages: [scanner setup](scanner-setup.md) and [OSV mirror](osv-mirror.md).
 
-Scans are **API-driven and manual**: vulnerability, secret and SBOM scans never run on upload. The one automatic check is a [license policy with action `block`](#blocking-licenses), which rejects an upload whose package metadata declares a blocked license. All scan endpoints are under `/api/v1/repositories/{name}/…`, need an admin ([rbac.md](rbac.md)) and store their results in the database. Scans are keyed by a caller-chosen `artifact_id` (at most 1024 characters, no control characters). Use the identifier the artifact is served under, otherwise [quarantine](#quarantine) cannot match it.
+## Run your first scan
+
+The `osv` scanner needs no setup, only outbound HTTPS to `api.osv.dev`. You need an admin token ([RBAC](rbac.md)).
+
+1. Start a scan. The server answers at once with `scan_status: "scanning"`.
+
+   ```sh
+   curl -sS -X POST HOST/api/v1/repositories/REPO/vuln/scan \
+     -H 'Authorization: Bearer <TOKEN>' -H 'Content-Type: application/json' \
+     -d '{"artifact_id":"lodash@4.17.20","package_name":"lodash","package_version":"4.17.20","ecosystem":"npm","scanner":"osv"}'
+   ```
+
+2. Read the result with the `id` from the response. Repeat until `scan_status` is `completed`, `partial` or `failed`.
+
+   ```sh
+   curl -sS -H 'Authorization: Bearer <TOKEN>' HOST/api/v1/repositories/REPO/vuln/scans/ID
+   ```
+
+3. List the scans that found something.
+
+   ```sh
+   curl -sS -H 'Authorization: Bearer <TOKEN>' 'HOST/api/v1/repositories/REPO/vuln/scans?vulnerable=true'
+   ```
+
+Use the identifier the artifact is served under as `artifact_id` (at most 1024 characters, no control characters). Otherwise [quarantine](#quarantine) cannot match it.
+
+## What can be scanned
+
+Scans are started through the API and never run on upload. The one automatic check is a [license policy with action `block`](#blocking-licenses), which rejects an upload whose package metadata declares a blocked license. All scan endpoints live under `/api/v1/repositories/{name}/…`, need an admin and store results in the database.
 
 | Scan | Input | Source of data |
 |---|---|---|
-| [Vulnerabilities](#vulnerability-scans) | package name, version, ecosystem | OSV API, or the `trivy` / `grype` binary ([installing them](#installing-trivy-and-grype)) |
-| [Secrets](#secret-scans) | text and/or metadata JSON you send | built-in regex rules |
-| [Licenses](#license-scans-and-policies) | `artifact_id` | the stored package file ([how](licenses.md)) plus the artifact's [properties](../repositories/properties.md) |
-| [SBOM](#sbom) | `artifact_id`, format | `artifact_id`; components from the stored package file and the `dependencies` property |
+| [Vulnerabilities](#vulnerability-scans) | package name, version, ecosystem | OSV, or the `trivy` / `grype` programs ([setup](scanner-setup.md)) |
+| [Secrets](#secret-scans) | text or metadata JSON you send | built-in rules |
+| [Licenses](#license-scans-and-policies) | `artifact_id` | the stored package file ([how](licenses.md)) and the artifact's [properties](../repositories/properties.md) |
+| [SBOM](sbom.md) | `artifact_id`, format | the stored package file and the `dependencies` property |
 
-Vulnerability scans look up the name/version you pass, secret scans inspect only the content you pass, and SBOM components come from the stored package file plus the properties you set. License scans also open the stored package file: they read the licenses it declares itself ([License metadata](licenses.md)) and add the ones in the artifact's properties.
+Vulnerability scans look up the name and version you pass. Secret scans inspect only the content you pass.
 
 ## Vulnerability scans
 
-```sh
-curl -sS -X POST HOST/api/v1/repositories/REPO/vuln/scan -H 'Authorization: Bearer <TOKEN>' \
-  -H 'Content-Type: application/json' \
-  -d '{"artifact_id":"lodash@4.17.20","package_name":"lodash","package_version":"4.17.20","ecosystem":"npm","scanner":"osv"}'
-curl -sS -H 'Authorization: Bearer <TOKEN>' 'HOST/api/v1/repositories/REPO/vuln/scans?vulnerable=true'
-```
-
-| Endpoint | |
+| Endpoint | Purpose |
 |---|---|
-| `POST …/vuln/scan` | body `artifact_id`, `package_name`, `package_version`, `ecosystem` (all required), `scanner` (`osv` default, `trivy`, `grype`) and/or `scanners` (a list of those names, to run several at once); an unknown name is `400 validation_failed` |
-| `GET …/vuln/scanners` | which scanners can run now and, if not, why ([readiness](#checking-scanner-readiness)) |
+| `POST …/vuln/scan` | start a scan |
+| `GET …/vuln/scanners` | show which scanners can run now and why not ([readiness](scanner-setup.md#checking-scanner-readiness)) |
 | `GET …/vuln/scans[?vulnerable=true]` | list the results of one repository |
-| `GET /api/v1/vuln/scans` | the [overview](#the-overview-across-repositories): scans of all repositories, worst first |
-| `GET /api/v1/vuln/scans/summary` | counts for the overview's cards |
-| `GET/DELETE …/vuln/scans/{id}` | read / delete one result |
+| `GET /api/v1/vuln/scans` | [overview](#the-overview-across-repositories) of all repositories, worst first |
+| `GET /api/v1/vuln/scans/summary` | counts for the overview cards |
+| `GET`, `DELETE …/vuln/scans/{id}` | read or delete one result |
 | `GET …/vuln/scans/{id}/export` | one scan's findings as [SARIF, CSV or JSON](#exporting-findings-sarif-csv-json) |
-| `GET /api/v1/vuln/scans/export` | the findings of all scans the overview's filters select, same formats |
-| `POST …/vuln/scans/{id}/quarantine` | body `{"quarantined":true\|false}` |
+| `GET /api/v1/vuln/scans/export` | findings of all scans the overview filters select |
+| `POST …/vuln/scans/{id}/quarantine` | body `{"quarantined":true}` or `false` |
 
-- `POST` returns at once with `scan_status: "scanning"`; the scan runs in the background (120 s limit). Poll `GET …/vuln/scans/{id}` until the status is `completed`, `partial` or `failed`. At most 4 scans run at a time per server; further requests get 429 `too_many_scans` with `Retry-After: 10`.
-- A result carries `vulnerabilities` (id, summary, severity, CVSS, fixed-in version, references, published date), the counts `vuln_count`, `critical_count`, `high_count`, `medium_count`, `low_count`, the `scanner` that ran (several are stored sorted and comma-joined, for example `osv,trivy`) and `failed_scanners`.
-- `ecosystem` uses these names: `cargo`, `deb`, `go`, `helm`, `maven`, `npm`, `nuget`, `pypi`, `rpm`, `rubygems` (OSV); the other backends support a subset: Trivy `cargo`, `go`, `maven`, `npm`, `nuget`, `pypi`, `rubygems`, and `deb` and `rpm` for known Debian, Ubuntu, RHEL and Amazon Linux releases; Grype `cargo`, `go`, `maven`, `npm`, `nuget`, `pypi`, `rubygems`, and `deb` and `rpm` once the distribution release is known ([below](#debian-and-rpm-packages)). Both scan the one package you name, not its dependencies: Trivy is given a generated lockfile that pins it (`package-lock.json`, `Cargo.lock`, `Gemfile.lock`, `packages.lock.json`, or `requirements.txt`, `go.mod`, `pom.xml`), Grype a Package URL (`pkg:npm/%40angular/core@8.0.0`). Trivy scans `deb` and `rpm` packages from a generated SBOM once the release is known and is Debian, Ubuntu, RHEL or Amazon Linux ([below](#debian-and-rpm-packages)).
-- `osv` needs outbound HTTPS to `api.osv.dev` and nothing else, unless the [local OSV mirror](#local-osv-mirror) is enabled and populated. `trivy` and `grype` are separate programs that the **release image does not contain**; see [Installing Trivy and Grype](#installing-trivy-and-grype). A scan that selects one that is not installed (or has no vulnerability database yet) is recorded as failed with an actionable `scan_error`.
+The request body of `POST …/vuln/scan` has these fields:
+
+- `artifact_id`, `package_name`, `package_version` and `ecosystem` are required.
+- `scanner` is `osv` (default), `trivy` or `grype`.
+- `scanners` is a list of those names, to run several at once.
+- An unknown scanner name is `400 validation_failed`.
+
+How a scan runs:
+
+- The scan runs in the background with a 120 s limit.
+- At most 4 scans run at a time per server. More requests get `429 too_many_scans` with `Retry-After: 10`.
+- A result has `vulnerabilities` (id, summary, severity, CVSS, fixed-in version, references, published date), the counts `vuln_count`, `critical_count`, `high_count`, `medium_count` and `low_count`, the `scanner` that ran, and `failed_scanners`.
+- When several scanners ran, `scanner` lists them sorted and comma-joined, for example `osv,trivy`.
+
+### Ecosystems and scanners
+
+`osv` accepts `cargo`, `deb`, `go`, `helm`, `maven`, `npm`, `nuget`, `pypi`, `rpm` and `rubygems`. `trivy` and `grype` support fewer:
+
+| Scanner | Ecosystems |
+|---|---|
+| `trivy` | `cargo`, `go`, `maven`, `npm`, `nuget`, `pypi`, `rubygems`; `deb` and `rpm` for Debian, Ubuntu, RHEL and Amazon Linux releases |
+| `grype` | `cargo`, `go`, `maven`, `npm`, `nuget`, `pypi`, `rubygems`; `deb` and `rpm` once the distribution release is known |
+
+See [Debian and RPM packages](#debian-and-rpm-packages) for how the release is found. Both scanners check the one package you name, not its dependencies.
+
+`osv` needs outbound HTTPS to `api.osv.dev` only, unless the [local OSV mirror](osv-mirror.md) is enabled and populated. The release image does not contain `trivy` or `grype`; see [scanner setup](scanner-setup.md). A scan that selects a scanner that is not installed, or has no database yet, is recorded as failed with a `scan_error` that tells you what to do.
 
 ### Exploitation signals
 
@@ -51,22 +94,46 @@ Each vulnerability and each result row also carries CISA KEV and FIRST EPSS sign
 
 ### Debian and RPM packages
 
-A `deb` or `rpm` is only a package of one distribution release. Grype and Trivy match it against that release's advisories and Grype, **without a release, reports no match at all** (it only logs a warning), which would read as a clean package. Measured with Grype 0.121.0 on `openssl 3.0.11-1~deb12u2`: 49 matches with `distro=debian-12`, 0 without it; a codename such as `bookworm` instead of `debian-12` also gives 0. So Grype is given the release as the `distro` qualifier of a Package URL (`pkg:deb/debian/openssl@3.0.11-1~deb12u2?distro=debian-12`, `pkg:rpm/redhat/openssl@3.0.7-24.el9?distro=rhel-9&epoch=1`), and the release is worked out on the server; the request needs no extra field. It comes from, in this order:
+A `deb` or `rpm` package belongs to one distribution release, and `grype` and `trivy` match it against that release's advisories. Without a release, `grype` reports no match at all, which would look like a clean package. For example, `openssl 3.0.11-1~deb12u2` gives 49 matches for `debian-12` and 0 without a release.
 
-| Package | Source of the release |
+The server works the release out; the request needs no extra field. It uses these sources in order.
+
+| Package | Release comes from |
 |---|---|
-| `deb` | the version's release tag: `+deb12u1` or `~deb12u1` (Debian 12), `~bpo12+1` (Debian 12 backports), `ubuntu0.22.04.1` or `~22.04.1` (Ubuntu 22.04); otherwise the name of the repository distribution the package is stored in (`artifact_id` is the package's id), when that is a release codename (`bookworm`, `jammy-security`, ...), see below |
-| `rpm` | the distribution tag of the release: `.el9` or `.el9_2` (RHEL 9, also what CentOS, Rocky and AlmaLinux packages carry), `.fc39` (Fedora 39), `.amzn2` / `.amzn2023` (Amazon Linux). The release and epoch are read from the stored package (`artifact_id` is the package's id); a `package_version` of the form `[epoch:]version-release` works without it |
+| `deb` | the release tag in the version, then the name of the repository distribution |
+| `rpm` | the distribution tag in the release, read from the stored package |
 
-- Debian codenames known: `stretch`, `buster`, `bullseye`, `bookworm`, `trixie`, `forky`; Ubuntu: `trusty`, `xenial`, `bionic`, `focal`, `jammy`, `noble`, `plucky`, `questing`, `resolute`. A distribution with another name (`stable`, which is also the upload default, or one you chose) says nothing about the release, and an `artifact_id` that is not a stored package's id is not looked up.
-- **The rpm epoch matters.** Without it Grype reported 97 matches for `openssl 3.0.7-24.el9` against 76 with `epoch=1`: the extra ones are packages the epoch has already fixed. A `deb` keeps its epoch inside the version (`vim 2:9.0.1378-2`): dropping it gave 247 matches against 80.
-- **When the release is not known, `grype` and `trivy` are replaced by `osv`.** The scan is neither refused nor reported clean: it runs with OSV, which matches a deb or rpm by name and version across the whole ecosystem and needs no release (so it can report more than a scan with the release would). The `scanner` field of the scan, in the `POST` response and in every later read, names the scanners that really ran: asking for `grype` alone gives `scanner: "osv"`, asking for `grype` and `osv` gives `osv`, asking for `grype` and `trivy` gives `osv,trivy`. The reroute is logged at info level. A scan that asked for `osv` alone is unchanged.
-- **Trivy scans a deb or rpm from a generated SBOM.** Trivy reads them only from an SBOM that has an `operating-system` component, so with a known release the server writes a temporary CycloneDX JSON file with the operating system (`debian 12`, `ubuntu 22.04`, `redhat 9` for `rhel-9`, `amazon 2` / `amazon 2023`) and the package (`pkg:deb/debian/openssl@3.0.11-1~deb12u2?distro=debian-12`, `pkg:rpm/redhat/openssl@3.0.7-24.el9?distro=rhel-9&epoch=1`), runs `trivy sbom` on it offline and deletes it. Measured with Trivy 0.76.1: `openssl 3.0.11-1~deb12u2` on `debian-12` 49 findings, `openssl 3.0.2-0ubuntu1.10` on `ubuntu-22.04` 52, `openssl 3.0.7-24.el9` (epoch 1) on `rhel-9` 20, `openssl 1.0.2k-16.amzn2.0.1` on `amzn-2` 53, `openssl 3.0.8-1.amzn2023.0.1` on `amzn-2023` 92; the epoch changed nothing for that rpm (20 findings with epoch 0, 1 and 2). **Fedora is not supported by Trivy**: it logs `Unsupported os` and reports 0 findings (`openssl 3.0.8-1.fc38`), so a scan of a Fedora rpm with `trivy` is replaced by `osv` exactly like one with an unknown release; `grype` still scans it. A scan whose release is unknown is rerouted the same way for `trivy` and `grype` (`trivy` alone gives `scanner: "osv"`, `grype` and `trivy` give `osv`).
-- Reports and exports name a deb or rpm with a generic Package URL (`pkg:generic/openssl@3.0.11-1?ecosystem=deb`): a stored scan does not keep the release it was run against.
+For a `deb`:
+
+- A release tag in the version wins: `+deb12u1` or `~deb12u1` is Debian 12, `~bpo12+1` is Debian 12 backports, `ubuntu0.22.04.1` or `~22.04.1` is Ubuntu 22.04.
+- Otherwise the distribution the package is stored in counts when it is a release codename such as `bookworm` or `jammy-security`. `artifact_id` must be the package's id.
+- A name like `stable` (also the upload default) or one you chose says nothing about the release.
+- Known Debian codenames: `stretch`, `buster`, `bullseye`, `bookworm`, `trixie`, `forky`. Known Ubuntu codenames: `trusty`, `xenial`, `bionic`, `focal`, `jammy`, `noble`, `plucky`, `questing`, `resolute`.
+
+For an `rpm`:
+
+- `.el9` or `.el9_2` is RHEL 9 (CentOS, Rocky and AlmaLinux packages carry it too), `.fc39` is Fedora 39, `.amzn2` and `.amzn2023` are Amazon Linux.
+- The release and epoch come from the stored package when `artifact_id` is its id.
+- Without a stored package, pass `package_version` as `[epoch:]version-release`.
+
+Keep the epoch. For `openssl 3.0.7-24.el9`, `grype` finds 97 matches without `epoch=1` and 76 with it; the extra ones are already fixed. A `deb` carries its epoch inside the version (`2:9.0.1378-2`).
+
+When the release is not known:
+
+- `grype` and `trivy` are replaced by `osv`. The scan is neither refused nor reported clean.
+- `osv` matches by name and version across the whole ecosystem, so it can report more than a scan with a release would.
+- The `scanner` field names the scanners that really ran. Asking for `grype` gives `osv`; asking for `grype` and `trivy` gives `osv,trivy`.
+- A scan that asked for `osv` alone is unchanged.
+
+`trivy` does not support Fedora. A Fedora rpm is replaced by `osv` for `trivy`, while `grype` still scans it.
+
+A stored scan does not keep the release it ran against. Reports and exports name a deb or rpm with a generic Package URL such as `pkg:generic/openssl@3.0.11-1?ecosystem=deb`.
 
 ### The overview across repositories
 
-`GET /api/v1/vuln/scans` (administrators) lists the scans of every repository at once, which is what the **Security** inbox filtered to vulnerabilities (`/security?type=vuln`) is built from. Rows are summaries (the repository's name and format, the package, the counts, the status, the scanners, the quarantine flag) without the findings; read those with `GET …/vuln/scans/{id}`. The order is fixed, worst first: most critical findings, then high, medium and low, then newest, then id.
+`GET /api/v1/vuln/scans` (admin) lists the scans of every repository. The **Security** inbox filtered to vulnerabilities (`/security?type=vuln`) shows the same data.
+
+Rows are summaries without the findings: repository name and format, package, counts, status, scanners and quarantine flag. Read the findings with `GET …/vuln/scans/{id}`. The order is fixed: most critical findings first, then high, medium and low, then newest.
 
 | Query | Meaning |
 |---|---|
@@ -82,19 +149,28 @@ A `deb` or `rpm` is only a package of one distribution release. Grype and Trivy 
 | `limit` | page size, default 25, at most 100 |
 | `cursor` | the `next_cursor` of the previous page; send the same filters (and `sort`) with it |
 
-Rows also carry `kev_count`, `max_epss` and `priority`, see [Exploitation signals](exploit-signals.md#fields). The response is `{scans, has_more, next_cursor}`: keyset paging, so no row is counted and a deep page costs what the first costs. An unknown filter value or a malformed cursor is `400 validation_failed`. `GET /api/v1/vuln/scans/summary[?repo=NAME]` returns `{total, completed, partial, failed, scanning, quarantined, severity_at_least: {critical, high, medium, low}}` in one query; `severity_at_least.high` is the number of scans with a critical or a high finding, matching the `severity` filter. Failed and partial scans, critical findings, quarantined results and a repository filter are each served from an index (migration `041_scan_jobs_vuln_problems.no_tx.sql` adds the one for failed and partial scans, built concurrently).
+Rows also carry `kev_count`, `max_epss` and `priority`; see [Exploitation signals](exploit-signals.md#fields).
+
+The response is `{scans, has_more, next_cursor}`. Pass `next_cursor` as `cursor` with the same filters to get the next page. An unknown filter value or a malformed cursor is `400 validation_failed`.
+
+`GET /api/v1/vuln/scans/summary[?repo=NAME]` returns `{total, completed, partial, failed, scanning, quarantined, severity_at_least: {critical, high, medium, low}}`. `severity_at_least.high` counts scans with a critical or a high finding, the same as the `severity` filter.
 
 ### Scanner failures
 
-A scanner that cannot produce a result is never reported as "no vulnerabilities":
+A scanner that cannot produce a result is never reported as "no vulnerabilities". Check `scan_status` first:
 
 | `scan_status` | Meaning |
 |---|---|
-| `completed` | every requested scanner ran; `vulnerabilities` is its findings, deduplicated: findings that share an id **or an alias** are one (OSV's `GHSA-…` with the `CVE-…` it lists as an alias is the finding `trivy` calls `CVE-…`). The merged finding keeps the first scanner's id, the highest severity and CVSS score, lists the other ids as `aliases` and holds the union of the references and CWEs |
-| `partial` | several scanners were requested and some failed; `vulnerabilities` holds the findings of the ones that ran and `failed_scanners` names the others |
-| `failed` | no scanner produced a result; `vulnerabilities` is empty and the counts are 0, which means *not scanned*, not *clean* |
+| `completed` | every requested scanner ran |
+| `partial` | several scanners were requested and some failed |
+| `failed` | no scanner produced a result |
 
-For `partial` and `failed` results `scan_error` summarizes each failed scanner as `<scanner>: <reason>`, separated by `; `, for example `trivy: scanner is not available on the server (scanner_unavailable), setup guide: <url>; osv: scan timed out`. The reason is one of a fixed set, so the response never contains command lines, paths, stderr or upstream bodies (those are written to the server log only):
+- On `completed`, `vulnerabilities` holds the findings, deduplicated. Findings that share an id or an alias count as one: the OSV `GHSA-…` id and the `CVE-…` it lists as an alias are the same finding.
+- A merged finding keeps the first scanner's id and the highest severity and CVSS score. The other ids go to `aliases`, and references and CWEs are combined.
+- On `partial`, `vulnerabilities` holds the findings of the scanners that ran, and `failed_scanners` names the others.
+- On `failed`, `vulnerabilities` is empty and the counts are 0. That means *not scanned*, not *clean*.
+
+For `partial` and `failed` results, `scan_error` lists each failed scanner as `<scanner>: <reason>`, separated by `; `. For example: `trivy: scanner is not available on the server (scanner_unavailable), setup guide: <url>; osv: scan timed out`. The reason comes from a fixed set. The response never contains command lines, paths, stderr or upstream bodies; those go to the server log only.
 
 | Cause | `scan_error` reason |
 |---|---|
@@ -109,208 +185,9 @@ For `partial` and `failed` results `scan_error` summarizes each failed scanner a
 | OSV unreachable or answering non-200 | `vulnerability database request failed` |
 | anything else | `scan failed` |
 
-Failed vulnerability scans stored before this behavior (which kept the raw scanner error) have their `scan_error` replaced by `scan failed` when the database is migrated. The web UI shows them as *Not scanned* and *Partial* instead of as clean.
+The web UI shows failed scans as *Not scanned* and partial scans as *Partial*, never as clean.
 
 The MCP tool `get_vulnerabilities` summarizes stored results and counts `failed` and `partial` scans in `failed_scans` ([MCP](../integrations/mcp.md)).
-
-## Local OSV mirror
-
-By default the `osv` scanner asks `api.osv.dev` about each package when you scan it. The local mirror keeps the [OSV](https://osv.dev) advisories in your database instead and watches them: when an advisory is published or changed, the package versions you already store are matched again and findings appear without anyone starting a scan. It is off by default.
-
-### How it works
-
-- A background worker downloads the per-ecosystem export `<baseUrl>/<Ecosystem>/all.zip` once per `interval` and imports it into PostgreSQL. With several replicas only one imports at a time (a PostgreSQL advisory lock elects it).
-- The download is a conditional request (`ETag` / `If-Modified-Since`), so an unchanged export costs one request. The archive is spooled to a temporary file (`tempDir`), never held in memory, and a download larger than `maxArchiveBytes` is aborted, and so is an archive whose records add up to more than 32 times `maxArchiveBytes` once decompressed. A single advisory record larger than 16 MiB is skipped. When the export is served by Google Cloud Storage (the default `baseUrl`) its `X-Goog-Hash` CRC32C is checked against the downloaded bytes and a mismatch fails the import; this catches a corrupted transfer only: OSV publishes no signature of its export, so the check does not authenticate it. An export served without that header is imported unchecked.
-- The import is incremental: records not newer than the stored high-water mark (their `modified` time) are skipped, and the mark only advances after the records are applied, so an interrupted import resumes. A re-match cut short by a crash is flagged and redone in full on the next pass.
-- The archive is the full list of the advisories of an ecosystem, so an advisory that is **no longer in it** was removed at the source: the import deletes its rows for that ecosystem (an advisory with no ecosystem left is deleted with its aliases), re-matches the packages it affected and so closes the findings it had caused. This is skipped when the archive lists no record at all, so an empty or wrong export never clears the mirror. An advisory that is withdrawn but still listed stays stored and stops matching. When you add an ecosystem to `ecosystems`, advisories already stored for another ecosystem are applied again for the new one on the next import.
-- After an import, every stored package version of the ecosystem whose package is named by a changed advisory is matched again, together with the versions stored since the last re-match. This covers hosted repositories and the proxy cache. Newly stored versions are also matched against the mirror when they are scanned.
-- The result is stored like a manual `osv` scan (scanner `osv`), so the [security inbox](findings.md), [VEX decisions](sbom.md#vex), [exports](#exporting-findings-sarif-csv-json) and [quarantine policies](#quarantine) work unchanged. The mirror never changes the quarantine flag of a package. When no advisory affects a version any more, the result shows 0 vulnerabilities (closed).
-- The first import of an ecosystem is a silent baseline: findings are created, but no per-finding webhook or audit entry is produced; one summary line is logged. From then on each package version with new advisories gets one [`vulnerability.new` webhook](../operations/webhooks.md) (up to 50 advisories listed) and a `scan.vuln_detected` audit entry; advisories that were withdrawn or stop affecting a version are recorded as `scan.vuln_resolved` (audit only, no webhook). See [audit log](../operations/monitoring.md#audit-log).
-- The `osv` scanner uses the mirror for an ecosystem once that ecosystem has completed an import; before that, and while the mirror is disabled, it queries `api.osv.dev`.
-- Finding ids are OSV ids. CVE aliases are kept in the `osv_advisory_aliases` table; findings carry them as `aliases`, and the [KEV and EPSS signals](exploit-signals.md) use the table to find the CVE of a finding that stored only a GHSA id.
-
-Side effect: the mirror writes its result as the newest `osv` scan of the package, and the inbox shows the newest job per artifact, so a mirror result can supersede an older manual scan of the same package there.
-
-### Enabling it
-
-```yaml
-osvMirror:
-  enabled: true
-```
-
-or `OPENARTIFACT_OSV_MIRROR_ENABLED=true`. The first import downloads every enabled ecosystem; the npm and PyPI archives are the largest, so allow disk space in `tempDir` and some minutes. Watch progress in the card at the top of **Security** in the web UI, with [`GET /api/v1/vuln/osv-mirror`](#status-endpoint) or the [metrics](#osv-mirror-metrics).
-
-| YAML key (`osvMirror`) | Environment variable (`OPENARTIFACT_OSV_MIRROR_`) | Default | |
-|---|---|---|---|
-| `enabled` | `ENABLED` | `false` | turns the mirror on |
-| `baseUrl` | `BASE_URL` | `https://osv-vulnerabilities.storage.googleapis.com` | the archive is fetched from `<baseUrl>/<Ecosystem>/all.zip`. Private hosts are allowed |
-| `ecosystems` | `ECOSYSTEMS` | all supported | comma list of OSV ecosystem names |
-| `interval` | `INTERVAL` | `24h` | Go duration between imports, at least `1h` |
-| `tempDir` | `TEMP_DIR` | OS temp dir | where the archive is spooled while it is imported |
-| `maxArchiveBytes` | `MAX_ARCHIVE_BYTES` | 2 GiB | larger downloads abort; so does an archive that decompresses to more than 32 times this |
-
-### Air-gapped installs
-
-Point `baseUrl` at an internal HTTP(S) server that serves the same layout as the public bucket: one `all.zip` per ecosystem under `<Ecosystem>/`, using the OSV ecosystem names as directory names (`crates.io`, `Go`, `Maven`, `npm`, `NuGet`, `PyPI`, `RubyGems`). Any static file server works; it should send `ETag` or `Last-Modified` so unchanged files are not downloaded again.
-
-Build the copy on a connected host and move it across, then repeat on whatever schedule you want updates:
-
-```sh
-for eco in crates.io Go Maven npm NuGet PyPI RubyGems; do
-  mkdir -p /srv/osv/$eco
-  curl -fsSL -o /srv/osv/$eco/all.zip "https://osv-vulnerabilities.storage.googleapis.com/$eco/all.zip"
-done
-# serve /srv/osv with nginx, Caddy or object storage, then:
-#   OPENARTIFACT_OSV_MIRROR_BASE_URL=https://osv.internal.example
-```
-
-With the mirror populated, the `osv` scanner needs no outbound access for the ecosystems it covers. Ecosystems the mirror does not cover (below) still need `api.osv.dev` for manual scans.
-
-### Supported ecosystems and matching
-
-| OSV ecosystem | Repository formats |
-|---|---|
-| `crates.io` | cargo |
-| `Go` | go |
-| `Maven` | maven |
-| `npm` | npm |
-| `NuGet` | nuget |
-| `PyPI` | pypi |
-| `RubyGems` | rubygems |
-
-Not mirrored: `apk`, `deb`, `rpm` and the other distribution-scoped ecosystems (Alpine, Debian, Rocky, Ubuntu and so on), formats without an OSV ecosystem (conda, Helm), advisories whose affected ranges are `GIT` ranges or `ecosystem_specific` ranges. The online API still serves these through a manual scan.
-
-Matching handles `SEMVER` and `ECOSYSTEM` ranges with the ordering of each ecosystem (semantic versioning for crates.io, Go and npm; the native ordering of Maven, NuGet, PyPI and RubyGems), plus exact `versions` lists. Package names are normalised per ecosystem before comparing (Maven and NuGet case-insensitively; PyPI as in PEP 503; and so on).
-
-### Status endpoint
-
-`GET /api/v1/vuln/osv-mirror` (admin) returns `enabled`, `source_url`, `interval_seconds`, an `ecosystems` list (`ecosystem`, `populated`, `advisories`, `high_water`, `last_checked_at`, `last_imported_at`, `last_import_seconds`, `last_rematch_seconds`, `last_error`, `rematch_pending`) and the `attribution`. It works while the mirror is disabled (`enabled: false`).
-
-### OSV mirror metrics
-
-| Metric | Type | Labels |
-|---|---|---|
-| `openartifact_osv_mirror_last_import_timestamp_seconds` | gauge | `ecosystem` |
-| `openartifact_osv_mirror_advisories` | gauge | `ecosystem` |
-| `openartifact_osv_mirror_imports_total` | counter | `ecosystem`, `result` (`imported`, `unchanged`, `error`) |
-| `openartifact_osv_mirror_rematch_duration_seconds` | histogram | |
-| `openartifact_osv_mirror_findings_total` | counter | `change` (`new`, `updated`, `resolved`) |
-
-Details are in [Monitoring](../operations/monitoring.md#metric-families). A growing gap to `last_import_timestamp_seconds` or `imports_total{result="error"}` means the export is unreachable.
-
-### Attribution and license
-
-The advisory data is from [OSV](https://osv.dev) and is licensed under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/). The web UI shows the attribution next to the mirror status, and findings that come from it should keep it when you republish them. See the [OSV data documentation](https://google.github.io/osv.dev/data/) for the sources and terms of each advisory.
-
-## Installing Trivy and Grype
-
-`osv` works out of the box. `trivy` and `grype` are external programs: the server runs them as subprocesses and keeps their vulnerability databases in a cache directory. Neither is part of the release image (it is shell-less and holds only the server), so enable them with one of:
-
-| Where the server runs | How |
-|---|---|
-| Binary / VM | install `trivy` and/or `grype` so they are on the server's `PATH`, or set [`OPENARTIFACT_TRIVY_PATH` / `OPENARTIFACT_GRYPE_PATH`](../getting-started/configuration.md#vulnerability-scanners-scanners) |
-| Any, no rebuild | `OPENARTIFACT_TRIVY_INSTALL=auto` and/or `OPENARTIFACT_GRYPE_INSTALL=auto`: the server downloads a pinned, checksum-verified release into the cache directory ([details](#runtime-download-install-auto)) |
-| Docker Compose | `OPENARTIFACT_SCANNERS=trivy` (or `grype`, `all`) in `docker/.env`, then `docker compose build openartifact`; the compose file already mounts a `scanner_cache` volume |
-| Your own build | `docker build -f docker/Dockerfile --build-arg SCANNERS=trivy .` (`none` default, `trivy`, `grype`, `all`) |
-| Released image, Kubernetes | build a derived image (below), and give the pod a writable volume for the cache directory |
-
-The server resolves the binaries when it starts and logs, per scanner, the path it found (`vulnerability scanner available`, with `binary`, `cache_dir`, `db_state`) or a warning when it is missing. A binary installed later is found on the next request (no restart), but its database download only starts at server start (or, with `install: auto`, once the installer has put the binary in place).
-
-### Runtime download (`install: auto`)
-
-With `OPENARTIFACT_TRIVY_INSTALL=auto` (`scanners.trivy.install`) and/or `OPENARTIFACT_GRYPE_INSTALL=auto` the server installs the scanner itself, so the released image and a plain binary install work without a derived image. The default is `none`: nothing is downloaded and executed unless you ask for it.
-
-- **Precedence**: a configured path (`OPENARTIFACT_TRIVY_PATH`) always wins, then a binary on `PATH`, then the installed copy. A configured path that does not exist is an error, never replaced by a download.
-- **What is downloaded**: the release compiled into the server (Trivy 0.76.1, Grype 0.121.0 at the time of writing, the same versions the `SCANNERS` image variant bundles; `linux/amd64` and `linux/arm64` only). The URL is `<downloadBaseUrl>/<owner>/<repo>/releases/download/v<version>/<archive>.tar.gz`, for example `https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-64bit.tar.gz`.
-- **How it is verified**: the archive is streamed to a temporary file under a size cap (256 MiB) while its sha256 is computed; a mismatch with the checksum pinned in the server deletes it and nothing is extracted. Only the scanner binary is extracted (cap 512 MiB), and the extracted binary's sha256 must also match its pinned value. An archive containing a symlink, a hard link, an absolute path or a `..` path, or a binary that is not a regular file, is rejected whole. The file is written 0755, fsynced and renamed into `<cacheDir>/bin/<scanner>/<version>/<scanner>`, so a crash never leaves a half-written binary. Nothing is executed before the checks pass.
-- **Restarts**: an installed copy is re-hashed at startup against the pinned checksum and reused without downloading (also in offline mode); a copy that fails the check is discarded and downloaded again. Install the cache directory on a persistent volume to avoid downloading on every start.
-- **The installed file is trusted only while it is private**: `<cacheDir>/bin`, `bin/<scanner>`, `bin/<scanner>/<version>` and the binary must be real directories and a regular file (no symlinks), owned by the user the server runs as, and not writable by group or others. This is checked when the copy is installed or reused and again before every use; if the file changed since it was verified (another inode, size or modification time) it is hashed again and must still match the pinned checksum. A violation is reported as `scanner_install_failed` ("install directory is not private to the server's user") and the binary is not executed. The binary is written non-executable and only given mode 0755 after its checksum matched.
-- **A persistent cache directory is required**: with no `OPENARTIFACT_SCANNER_CACHE_DIR` and no user cache directory (no `$XDG_CACHE_HOME` or `$HOME`) the default falls back to the shared temp directory; `install: auto` is then refused (logged at error level, status `scanner_install_failed` with "set OPENARTIFACT_SCANNER_CACHE_DIR") because a downloaded binary would be executed from a directory every local user can write to.
-- **Several replicas on one volume**: each scanner has a lock file (`<cache directory>/.trivy.lock` and `.grype.lock`; advisory `flock`) held while the binary is installed and while its database is updated, so replicas that share a `ReadWriteMany` cache volume take turns and download once instead of racing; a replica waiting for the lock waits until the holder finishes (or its own shutdown). Interrupted installs leave `.archive-*` and `.bin-*` files that are cleaned up only when older than the install timeout (10 minutes), so another process's running download is never deleted. `flock` is advisory and local to the volume's semantics: on a network filesystem without lock support, give each replica its own cache volume (or an `emptyDir`). On non-Unix platforms there is no cross-process lock.
-- **Retries**: a failed download or checksum is retried with the same backoff as the database updater (1 minute up to 1 hour). Offline mode only adopts an already installed copy.
-- **`noexec` mounts**: after installing, the server runs the binary once (`--version`). If the cache directory is on a `noexec` mount that fails and the scanner reports `scanner_install_noexec`; mount the volume with exec, point `OPENARTIFACT_SCANNER_CACHE_DIR` somewhere executable, or provide the binary yourself.
-- **Mirrors**: `OPENARTIFACT_SCANNER_DOWNLOAD_BASE_URL` (`scanners.downloadBaseUrl`, default `https://github.com`) must be an `https` URL without credentials, query or fragment (a path prefix is allowed). The mirror must serve GitHub's release layout: `<base>/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-64bit.tar.gz`, `…/aquasecurity/trivy/…/trivy_0.76.1_Linux-ARM64.tar.gz`, `<base>/anchore/grype/releases/download/v0.121.0/grype_0.121.0_linux_amd64.tar.gz` and `…_linux_arm64.tar.gz`. The pinned checksums apply, so a mirror cannot substitute other bytes. `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` are honored. The mirror host itself may be on a private network. A redirect is followed only over `https`, at most 3 times, and credentials are never forwarded. Direct connections are refused at connect time (after name resolution, so a name that resolves to an internal address is caught too) when they would reach a private, loopback or link-local address, except the mirror itself. **Behind a proxy** the proxy resolves and connects, so the server can only check the scheme and literal IP addresses in a redirect: the proxy's own egress policy is what keeps a redirect away from internal hosts.
-- **Egress**: `github.com` and `release-assets.githubusercontent.com` (GitHub redirects release assets there; the redirect host can change, so allow-list it by name only if you must, and check the server log if downloads fail behind a firewall), or only your mirror. The databases need further hosts (see [Network access](#network-access)).
-- **Status**: while downloading, the [readiness](#checking-scanner-readiness) endpoint reports `install_state: "installing"` and code `scanner_installing`; after a failure `install_state: "failed"` with `scanner_install_failed` or `scanner_install_noexec`. The Prometheus counter `openartifact_scanner_install_attempts_total{scanner,result}` counts attempts; `result` is one of `installed`, `reused`, `unsupported_platform`, `download_failed`, `checksum_mismatch`, `extract_failed`, `noexec`, `insecure_location`, `failed`.
-- **Bumps**: the pinned versions and checksums are in `internal/vuln/scanners_manifest.json`, compiled into the server. They change only with a new OpenArtifact release: `scripts/update-scanner-manifest.sh` reads the versions from the digest-pinned images in `docker/Dockerfile`, downloads the upstream `*_checksums.txt` and archives, verifies them and rewrites the manifest (`--check` reports a stale one); a unit test fails if the manifest and the Dockerfile disagree. An operator who wants another version installs it and sets `OPENARTIFACT_TRIVY_PATH`.
-
-Security note: `auto` makes the server download and execute third-party code at runtime. The checksums come from the upstream release's own `checksums.txt` files (fetched over TLS when the manifest was generated, not signature-verified), so the guarantee is that the server runs the build that was pinned in its release, not that upstream is trustworthy. If that is not acceptable, bundle the binaries at build time (the `SCANNERS` build arg) or provide them yourself.
-
-### Databases and the cache directory
-
-- **Scans never download.** A scan runs the CLI offline against the databases already in the cache directory (`trivy --skip-db-update --offline-scan`, `GRYPE_DB_AUTO_UPDATE=false`), so a slow or blocked network cannot eat the 120 s scan limit. If the database is not there, the scan fails at once with `scanner_db_unavailable`.
-- **A background updater downloads them.** At startup (and then every `OPENARTIFACT_SCANNER_UPDATE_INTERVAL`, default 6h, at least 1h, `0` = once) the server runs `trivy image --download-db-only` and `grype db update` for each scanner that is installed. A failure is logged and retried with exponential backoff (1 minute up to 1 hour). The first download takes from under a minute (Trivy) to a few minutes (Grype); until it finishes the scanner is `updating` (see [readiness](#checking-scanner-readiness)).
-- **The scanners get a trimmed environment**: Trivy and Grype run with `PATH`, `HOME`, `TMPDIR`/`TMP`/`TEMP`, `USER`, `LANG`/`LC_*`, `TZ`, the proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `ALL_PROXY`, in either case), `SSL_CERT_FILE`, `SSL_CERT_DIR`, `XDG_CACHE_HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `DOCKER_CONFIG` and any `TRIVY_*` / `GRYPE_*` variable of the server; the server's other variables (database password, signing keys, storage credentials) are not passed on. A scanner that needs another variable (for example a private registry token) must be given it as `TRIVY_*` / `GRYPE_*`.
-- **Cache directory**: `OPENARTIFACT_SCANNER_CACHE_DIR` (`scanners.cacheDir`, an absolute path). Trivy uses `<dir>/trivy`, Grype `<dir>/grype`. The default is `<user cache dir>/openartifact/scanners` (`$XDG_CACHE_HOME` or `~/.cache`, else the temp directory, where `install: auto` is refused, see above). The image sets `/var/cache/openartifact/scanners`, owned by uid 10001, and declares it a `VOLUME`; keep it on a volume when the root filesystem is read-only, and persist it so a restart does not download again. In the image the environment variable is already set, so change it with the variable rather than the YAML file.
-- **Disk**: measured with Trivy 0.76.1 and Grype 0.121.0, the Trivy database takes about 1.6 GB on disk and the Grype database about 3.3 GB; a Grype download takes a few minutes on a fast link. Size the cache volume for both plus headroom for a second copy of the database being updated: Trivy refreshes into a staging directory (`<cacheDir>/trivy/.staging`, seeded with hard links so an unchanged database is not downloaded again) and swaps the finished database in atomically (`renameat2` on Linux), so scans keep using the old database for the whole refresh; Grype activates a database by renaming its own download directory, and unfinished `grype-db-download*` directories (up to the database's size) are removed before and after each run. The Java index (`trivy-java-db`, several hundred MB) is **not** downloaded unless `OPENARTIFACT_TRIVY_JAVA_DB_REPOSITORY` is set: OpenArtifact scans package names and versions, not JARs.
-
-### Network access
-
-| Scanner | Needs outbound HTTPS to | Used for |
-|---|---|---|
-| `osv` | `api.osv.dev` | every scan |
-| `trivy` | `mirror.gcr.io` (tried first; serves the database itself) and `ghcr.io` (its blobs come from `pkg-containers.githubusercontent.com`) | database download, by the background updater only |
-| `grype` | `grype.anchore.io` (serves the listing and the archive itself) | database download, by the background updater only |
-| any, with `install: auto` | `github.com` and `release-assets.githubusercontent.com` (or your `downloadBaseUrl`) | the scanner binary, once per version |
-
-The scan itself needs no network for `trivy` and `grype`. In a restricted network, either allow those hosts or point the updater at a mirror: `OPENARTIFACT_TRIVY_DB_REPOSITORY` (an OCI repository holding a copy of `trivy-db`) and `OPENARTIFACT_GRYPE_DB_URL` (the URL of a grype `listing.json`). An HTTP(S) proxy configured in the server's environment (`HTTPS_PROXY`, `NO_PROXY`) is passed to the CLIs.
-
-### Offline (air-gapped) mode
-
-`OPENARTIFACT_SCANNER_OFFLINE=true` stops the updater from ever contacting the network. Fill the cache directory yourself, for example:
-
-```sh
-trivy image --download-db-only --cache-dir /srv/scanners/trivy            # on a connected host
-GRYPE_DB_CACHE_DIR=/srv/scanners/grype grype db update                    # on a connected host
-# copy /srv/scanners to the server's OPENARTIFACT_SCANNER_CACHE_DIR, owned by the server's user
-```
-
-With offline mode on and no database in the directory, the scanner reports `missing` and scans fail with `scanner_db_unavailable`. Refresh the files by hand to update; the server notices new database files on the next request.
-
-### Docker and Kubernetes
-
-Build the image with the scanners bundled (the binaries are copied, digest-pinned, from the upstream `aquasec/trivy` and `anchore/grype` images; the final stage still has no shell):
-
-```sh
-docker build -f docker/Dockerfile --build-arg RUNTIME=distroless --build-arg SCANNERS=trivy -t openartifact:trivy .
-```
-
-To keep using a released image, derive from it:
-
-```dockerfile
-FROM ghcr.io/openartifact/openartifact:X.Y.Z
-COPY --from=docker.io/aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c /usr/local/bin/trivy /usr/local/bin/trivy
-# grype: COPY --from=docker.io/anchore/grype:v0.121.0@sha256:621d56d1d68106b787022c81546f7e0a36202a25d1239f0c20195fab8c16f7ea /grype /usr/local/bin/grype
-```
-
-Kubernetes and Helm: mount a writable volume (an `emptyDir` is enough, a PVC avoids re-downloading after a restart) at the cache directory, writable by uid/gid 10001 (set the pod's `fsGroup: 10001`). Allow egress to the hosts above (or set the mirror variables), and run with a read-only root filesystem as usual. With several replicas on separate volumes (an `emptyDir` or a `ReadWriteOnce` PVC per pod) each pod downloads its own copy; replicas that share one `ReadWriteMany` volume take turns through the [per-scanner lock](#runtime-download-install-auto) and download once.
-
-### Checking scanner readiness
-
-`GET /api/v1/repositories/{name}/vuln/scanners` (admin only) reports each scanner in the order `osv`, `trivy`, `grype`:
-
-```json
-{"scanners":[
-  {"name":"osv","available":true,"ready":true,"db_state":null,"db_updated_at":null,"install_state":null,"code":null,"message":null,"docs_url":null},
-  {"name":"trivy","available":true,"ready":false,"db_state":"updating","db_updated_at":null,"install_state":"ready",
-   "code":"scanner_db_unavailable","message":"The vulnerability database is being downloaded: retry in a few minutes.","docs_url":"…"},
-  {"name":"grype","available":false,"ready":false,"db_state":null,"db_updated_at":null,"install_state":null,
-   "code":"scanner_unavailable","message":"grype was not found on the server's PATH: …","docs_url":"…"}]}
-```
-
-`available` is whether the binary starts; `ready` is whether a scan can run now. `db_state` is `ready`, `updating`, `failed` (the last download failed: see the server log) or `missing`. `install_state` (`installing`, `ready` or `failed`, else `null`) tells the progress of the [runtime download](#runtime-download-install-auto). It is `null` when the binary is on `PATH`, configured, or `install` is `none`. The response never contains filesystem paths or the download host. The web UI uses it to disable scanners that are not ready in the *Scan package* form and to show `message` with a link to this section.
-
-| `code` | Meaning | Fix |
-|---|---|---|
-| `scanner_unavailable` | the binary was not found or is not executable | install it, set `OPENARTIFACT_TRIVY_PATH` / `OPENARTIFACT_GRYPE_PATH`, or set `…_INSTALL=auto` |
-| `scanner_installing` | the pinned release is being downloaded (`install: auto`) | wait a minute or two |
-| `scanner_install_failed` | the download, checksum check or extraction failed; there is no pinned build for this platform (the message names it); the install directory is not private to the server's user; the cache directory is the shared temp directory; or the installed binary disappeared or changed after it was verified (restart the server) | check egress to the download host (or `downloadBaseUrl`), fix the directory ownership and permissions, set `OPENARTIFACT_SCANNER_CACHE_DIR`; the server log has the cause; on other platforms provide the binary |
-| `scanner_install_noexec` | the binary was installed but cannot be executed (a `noexec` mount) | mount the cache directory with exec or provide the binary |
-| `scanner_db_unavailable` | no vulnerability database yet (still downloading, download failing, or offline without one) | wait, allow egress / set a mirror, or fill the cache in offline mode |
-
-### Why external binaries
-
-The design follows [zot](https://zotregistry.dev/)'s CVE scanning: scans run offline against a database that a background task refreshes on an interval with backoff, with a configurable database repository and readiness reporting. zot embeds Trivy as a Go library; OpenArtifact runs the CLIs instead, because that keeps the server binary at its current size and its module graph and vulnerability surface free of Trivy's, lets operators upgrade Trivy independently of the server, and is the only way to offer Grype too. Embedding would be reconsidered if Trivy exposed a stable library API.
 
 ## Exporting findings (SARIF, CSV, JSON)
 
@@ -454,49 +331,36 @@ A license that is only known after the upload (a license scan, or a change of th
 - The quarantine matches on the scan's `artifact_id`, exactly like the other scan types, so scan under the identifier the artifact is served under.
 - Licenses suggested by [AI analysis](../integrations/ai-analysis.md) are advisory and are not evaluated against policies.
 
-## SBOM
+## SBOM and VEX
 
-SBOM generation (CycloneDX 1.4-1.6, SPDX 2.3) and VEX documents are described in [SBOM and VEX](sbom.md).
-
-## Quarantine after upload
-
-A license that is only known after the upload (a license scan, or a change of the artifact's license [properties](../repositories/properties.md) through `PUT`/`PATCH`, which also covers raw, Go, Conan, Terraform and imported artifacts) cannot reject anything any more. Instead, when a `block` policy is violated the artifact is **quarantined**: downloads answer `403 ARTIFACT_QUARANTINED` (see [Quarantine](#quarantine)) until an admin approves it.
-
-- A quarantined artifact stays quarantined across re-scans and edits of its license properties; changing the license to something allowed is not a way around the block. Only `POST …/license/scans/{id}/quarantine` with `{"quarantined":false}` releases it (and `true` quarantines it again by hand). The web UI has the same Approve and Quarantine buttons on license findings in **Security** (`/security?type=license`).
-- An approval is stored with the licenses it was granted for (`quarantine_approved: true`). Re-scanning the same licenses keeps it approved; if the licenses recorded later differ, including a different spelling of the version such as `GPL-3.0-or-later` after approving `GPL-3.0-only`, and a blocking policy is violated, the artifact is quarantined again.
-- If a property change is saved but the policy cannot be evaluated, the request answers `500` ("properties saved, but the license policy could not be evaluated") and the artifact is not quarantined until the next scan.
-- The quarantine matches on the scan's `artifact_id`, exactly like the other scan types, so scan under the identifier the artifact is served under.
-- Licenses suggested by [AI analysis](../integrations/ai-analysis.md) are advisory and are not evaluated against policies.
-
-## SBOM
-
-```sh
-curl -sS -X POST HOST/api/v1/repositories/REPO/sbom/generate -H 'Authorization: Bearer <TOKEN>' \
-  -H 'Content-Type: application/json' \
-  -d '{"artifact_id":"my-lib@1.2.3","format":"cyclonedx","spec_version":"1.4"}'
-curl -sS -OJ -H 'Authorization: Bearer <TOKEN>' HOST/api/v1/repositories/REPO/sbom/<ID>/download
-```
-
-| Endpoint | |
-|---|---|
-| `POST …/sbom/generate` | `artifact_id`, `format` (`cyclonedx` with `spec_version` `1.4`, or `spdx` with `2.3`); returns 201 |
-| `GET …/sbom`, `GET …/sbom/{id}` | list / report (format, spec version, content type, component count, timestamps) |
-| `GET …/sbom/{id}/download` | the document: CycloneDX JSON (`application/json`) or SPDX tag-value text (`text/spdx`), served as attachment `sbom.cyclonedx` / `sbom.spdx` |
-| `DELETE …/sbom/{id}` | delete |
-
-The document names the package from `artifact_id` (split at the last `@` into name and version; version is `unknown` if there is none) with a `pkg:` identifier typed from the repository format, and lists as components the entries of the artifact's `dependencies` property, a JSON array string such as `[{"name":"left-pad","version":"1.3.0"}]`. `metadata` in the request is rejected. Documents are stored in the blob store.
+SBOM generation, formats, downloads and VEX documents are described in [SBOM and VEX](sbom.md).
 
 ## Quarantine
 
-Quarantining a vulnerability, secret or license scan result makes the server refuse downloads of that artifact in every repository format, via the hosted, proxy-cache and API download paths, with:
+Quarantining a vulnerability, secret or license scan result makes the server refuse downloads of that artifact. This applies in every repository format, on the hosted, proxy-cache and API download paths:
 
 ```http
 HTTP/1.1 403 Forbidden
 {"error":"artifact is quarantined","code":"ARTIFACT_QUARANTINED"}
 ```
 
-If the quarantine state cannot be read the request fails closed with 500. Set `quarantined` back to `false` (or delete a vulnerability or secret scan result) to release the artifact. License scan results cannot be deleted: approve them with `POST …/license/scans/{id}/quarantine` (see [Quarantine after upload](#quarantine-after-upload)); a block policy quarantines license results automatically, the other scan types only when you set `quarantined`.
+To release an artifact, set `quarantined` back to `false`. For a vulnerability or secret scan you can also delete the result. License results cannot be deleted; approve them with `POST …/license/scans/{id}/quarantine` (see [Quarantine after upload](#quarantine-after-upload)).
 
-An artifact matches when its scan's `artifact_id` equals one of the identifiers the download handler knows it by (a leading slash is ignored). Every format handler knows a package under the ID the package listing returns (the one the web UI and the OSV worker scan under), so a scan recorded under it blocks that package in every format: for Docker the ID of a tag blocks the manifest it points at, pulled by tag or by digest, and the config and layer blobs that manifest references (blob `GET`/`HEAD`, cross-repository mount and promotion; a layer shared with another image is blocked for both while the quarantined image holds it); for Terraform the download links are minted with a 15-minute ticket and the quarantine is checked again when the ticket is redeemed; for Conan the ID of a recipe revision's listed row blocks every file and binary package of the revision; for Go the ID of a version blocks its `.zip`, `.mod` and `.info`. The handlers also match the file name and the repository path (`com/acme/lib/1.0/lib-1.0.jar` for Maven, `name@version` or `name/-/<tarball>` for npm, the file path for raw). A scan recorded under an identifier the client never requests quarantines nothing.
+- A `block` license policy quarantines license results automatically. The other scan types are quarantined only when you set `quarantined`.
+- If the quarantine state cannot be read, the request fails closed with `500`.
+- AI analysis may recommend quarantine but never applies it. The recommendation is stored for review ([AI analysis](../integrations/ai-analysis.md)).
+- The web UI has the same toggle on the findings of the **Security** inbox and on the **Security** tab of the artifact page.
 
-AI analysis may *recommend* quarantine but never applies it: the recommendation is stored for review ([AI analysis](../integrations/ai-analysis.md)). The web UI exposes the same quarantine toggle on the findings of the **Security** inbox and on the **Security** tab of the artifact page.
+### How an artifact is matched
+
+An artifact matches when its scan's `artifact_id` equals an identifier the download handler knows it by. A leading slash is ignored. Every format knows a package under the ID the package listing returns, the one the web UI and the OSV worker scan under. A scan recorded under an ID the client never requests quarantines nothing.
+
+| Format | What a quarantined ID blocks |
+|---|---|
+| Docker | the manifest the tag points at (by tag or digest) and the config and layer blobs it references |
+| Terraform | the download; the check runs again when the 15-minute download ticket is redeemed |
+| Conan | every file and binary package of the recipe revision |
+| Go | the `.zip`, `.mod` and `.info` of the version |
+| Maven, npm, raw | also the file path, for example `com/acme/lib/1.0/lib-1.0.jar`, `name@version` or `name/-/<tarball>`, or the raw file path |
+
+For Docker, blob `GET` and `HEAD`, cross-repository mount and promotion are blocked. A layer shared with another image is blocked for both while the quarantined image holds it.

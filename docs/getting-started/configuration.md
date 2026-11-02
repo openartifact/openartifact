@@ -249,7 +249,7 @@ An interrupted federation download stays in `federation.spoolDir` and resumes wi
 
 ### Vulnerability scanners (`scanners`)
 
-Settings for the `trivy` and `grype` backends of vulnerability scans; `osv` needs none. The binaries are not in the release image; see [Installing Trivy and Grype](../security/scanning.md#installing-trivy-and-grype) for installation, egress, offline mode and mirrors.
+Settings for the `trivy` and `grype` backends of vulnerability scans; `osv` needs none. The binaries are not in the release image; see [Installing Trivy and Grype](../security/scanner-setup.md) for installation, egress, offline mode and mirrors.
 
 | Environment variable | YAML key | Default | Meaning |
 |---|---|---|---|

@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # RBAC: users, groups and permission targets
 
-Access is decided per request from the caller's permission targets: regex filters on repository and path plus a set of actions. How callers authenticate is in [authentication.md](authentication.md).
+Use this page to decide who can read, write, delete or manage what. Access is decided on every request from the caller's permission targets: regex filters on repository and path, plus a set of actions. How callers sign in is in [authentication.md](authentication.md).
 
 ## Model
 
@@ -44,7 +44,7 @@ Two targets are seeded by the first migration:
 | `POST /api/v1/bundles`, `/api/v1/bundles/{name}/{version}…` (release bundles) | any authenticated principal, then decided per bundle by the handler, see [bundle permissions](../repositories/release-bundles.md#permissions) | the bundle's source and target repositories |
 | `GET /api/v1/bundles` (list), `/api/v1/pipelines…` | `manage` | global |
 | `GET /api/v1/repositories/{name}/trash`, `POST /api/v1/repositories/{name}/trash/{kind}/{id}/restore` | `delete` | `{name}`, empty path |
-| `DELETE /api/v1/repositories/{name}/trash` (empty the repository trash) | `manage` | `{name}`, empty path |
+| `DELETE /api/v1/repositories/{name}/trash` (empty the repository trash) | `manage`, or project maintainer or owner of the repository's project ([projects](projects.md)) | `{name}`, empty path |
 | `GET /api/v1/trash`, `POST /api/v1/trash/{kind}/{id}/restore`, `DELETE /api/v1/trash/{kind}/{id}` | `manage` | global |
 | everything else (package data) | GET/HEAD/OPTIONS `read`, DELETE `delete`, other methods `write` | see below |
 
@@ -57,7 +57,19 @@ Repository and path extraction for data requests:
 - `/repos/{name}/<path>`: repository `name`, path after it. For `ivy`, `maven`, `raw` and `sbt` the marker form `/repos/{ivy|maven|raw|sbt}/{name}/<path>` is also accepted.
 - `/v2/<name>/…` (Docker/OCI): the first segment of `<name>` is the repository and the rest is the image; the RBAC path is `image/<kind>/<ref>` (for example `org/team/app/manifests/1`). A single-segment name addresses the repository's default image.
 
-Trash permissions ([trash](../operations/trash.md)): a principal with `delete` on a repository can list that repository's trash and restore its items, so whoever can delete an artifact can undo it. The global trash list, restoring or purging a whole repository, and purging any item now (`DELETE /api/v1/trash/...`) are admin operations (`manage`). Deleting a repository (`DELETE /api/v1/repository/{name}`) stays an admin operation and now also needs the repository name as confirmation. The `?force=true` override of [immutable releases](../operations/trash.md#immutable-releases) is honoured only for admins; for anyone else it is ignored and the `409` stands. Trashed items and repositories are invisible to every principal on the native protocols and in listings; only the trash endpoints see them.
+Trash permissions ([trash](../operations/trash.md)) depend on the operation:
+
+| Operation | Needs |
+|---|---|
+| List a repository's trash, restore an item from it | `delete` on the repository |
+| Empty a repository's trash | `manage` on the repository, or project maintainer or owner |
+| Purge one item, list the global trash, restore or purge a whole repository | admin (`manage`) |
+
+Whoever can delete an artifact can therefore undo it.
+
+- Deleting a repository (`DELETE /api/v1/repository/{name}`) needs `manage`, or project maintainer or owner of its project. The request must carry the repository name as confirmation.
+- The `?force=true` override of [immutable releases](../operations/trash.md#immutable-releases) is honoured only for admins. For anyone else it is ignored and the `409` stands.
+- Trashed items and repositories are invisible to every principal on the native protocols and in listings. Only the trash endpoints see them.
 
 Rules that apply on top:
 
@@ -81,7 +93,14 @@ curl -sS -X POST HOST/api/v1/permission-targets/<TARGET_ID>/assignments -H 'Auth
 
 ## Service accounts
 
-A **service account** is a non-human principal for automation: it has a name and a description, no password and no email, it cannot sign in to the web UI, and it is not listed with the users. It otherwise behaves like a user: permission targets are assigned to it (`principal_type: "user"` with its id), it can be a member of groups and have [project roles](projects.md), and it owns API tokens (`/api/v1/users/{id}/tokens`, deploy tokens are the useful kind). Administrators manage them under `/api/v1/service-accounts` or **Admin > Service accounts**. Disabling one makes its tokens fail at once; deleting one removes its tokens, assignments, memberships and [trust policies](../integrations/ci.md#tokenless-ci-oidc-token-exchange). Creating, changing and deleting are audited as `service_account.created`, `service_account.updated` and `service_account.deleted`. The usual home of a service account is a [CI OIDC trust policy](../integrations/ci.md#tokenless-ci-oidc-token-exchange), which lets a CI job obtain a short-lived token without any stored secret.
+A **service account** is a non-human principal for automation.
+
+- It has a name and a description, but no password and no email. It cannot sign in to the web UI and is not listed with the users.
+- Otherwise it behaves like a user: you assign permission targets to it (`principal_type: "user"` with its id), it can be a member of groups and hold [project roles](projects.md), and it owns API tokens (`/api/v1/users/{id}/tokens`; deploy tokens are the useful kind).
+- Admins manage service accounts under `/api/v1/service-accounts` or **Admin > Service accounts**. Creating, changing and deleting are audited as `service_account.created`, `service_account.updated` and `service_account.deleted`.
+- Disabling one makes its tokens fail at once. Deleting one removes its tokens, assignments, memberships and [trust policies](../integrations/ci.md#tokenless-ci-oidc-token-exchange).
+
+The usual home of a service account is a [CI OIDC trust policy](../integrations/ci.md#tokenless-ci-oidc-token-exchange), which lets a CI job obtain a short-lived token without a stored secret.
 
 ## Management API
 
@@ -128,7 +147,7 @@ Limits:
 
 ### How repositories get a project
 
-`POST /api/v1/repositories` accepts an optional `project` (project name); without it the repository is created in the `system` project. An unknown name returns 404. A global admin can move a repository with `PATCH /api/v1/repository/{name}` and `{"project":"<name>"}` (use `"system"` to move it back); access changes immediately. Repository responses carry the project name in `project`. Repository names are unique across projects. Maintainers and owners of a project create repositories in it with `POST /api/v1/projects/{project}/repositories`, subject to the project's policy, and administer them (update, delete, cleanup policies, quota, trash emptying) through the delegated `repo.admin` check; owners of two projects can transfer a repository between them. See [projects](projects.md#repository-self-service). `POST /api/v1/repositories` and changing a repository's `project` through `PATCH` stay admin-only. A project that still owns repositories cannot be deleted (409).
+`POST /api/v1/repositories` accepts an optional `project` (project name); without it the repository is created in the `system` project. An unknown name returns 404. A global admin can move a repository with `PATCH /api/v1/repository/{name}` and `{"project":"<name>"}` (use `"system"` to move it back); access changes immediately. Repository responses carry the project name in `project`. Repository names are unique across projects. Maintainers and owners of a project create repositories in it with `POST /api/v1/projects/{project}/repositories`, subject to the project's policy, and administer them (update, delete, cleanup policies, quota, member list and trash emptying) through delegated repository administration; owners of two projects can transfer a repository between them. See [projects](projects.md#repository-self-service). `POST /api/v1/repositories` and changing a repository's `project` through `PATCH` stay admin-only. A project that still owns repositories cannot be deleted (409).
 
 ### Managing projects
 
@@ -147,9 +166,9 @@ Roles, creation rules, audit events and the full route list: [Projects](projects
 | Endpoint | Notes |
 |---|---|
 | `POST/GET /api/v1/projects` | create (admin, or any user with self-create on, who becomes the owner and may send only `name`, `display_name` and `description`; name `^[a-zA-Z0-9_-]{1,100}$`; admins may also send `owner` (username) and policy fields; the response carries a `slug` derived from the name: lowercased, every run of characters other than letters and digits becomes one hyphen, so `Acme_Team` is `acme-team`; a name or slug collision, such as `Acme-Corp` after `acme-corp`, returns 409, and a name with no letter or digit or a slug over 64 characters returns 400) / list the caller's projects with `my_role` (`{"projects":[…],"can_create":bool}`; `?all=true` for admins) |
-| `GET/PATCH/DELETE /api/v1/projects/{project}` | `GET` viewer+; `PATCH` (owner; was `PUT`) is a partial update of `display_name` and `description`, plus the policy fields for admins; `DELETE` (owner) returns 204, or 409 while repositories are still owned and for the `system` project |
+| `GET/PATCH/DELETE /api/v1/projects/{project}` | `GET` viewer+; `PATCH` (owner) is a partial update of `display_name` and `description`, plus the policy fields for admins; `DELETE` (owner) returns 204, or 409 while repositories are still owned and for the `system` project |
 | `GET /api/v1/projects/{project}/repositories` | viewer+; paginated (`page`, `limit`) |
-| `GET/POST /api/v1/projects/{project}/members`, `PATCH/DELETE /api/v1/projects/{project}/members/{user_id}` | list viewer+, changes maintainer+ (see escalation rules); `POST` takes `user_id` or an exact `username`; `PATCH` (was `PUT`) body `{"role"}`; roles `viewer` (default), `developer`, `maintainer`, `owner` |
+| `GET/POST /api/v1/projects/{project}/members`, `PATCH/DELETE /api/v1/projects/{project}/members/{user_id}` | list viewer+, changes maintainer+ (see escalation rules); `POST` takes `user_id` or an exact `username`; `PATCH` body `{"role"}`; roles `viewer` (default), `developer`, `maintainer`, `owner` |
 | `GET /api/v1/projects/{project}/groups`, `PUT/DELETE /api/v1/projects/{project}/groups/{group}` | group grants; `{group}` is a group id or its exact name; `PUT` body `{"role":"viewer\|developer\|maintainer"}`; changes maintainer+ |
 | `GET /api/v1/repositories/{name}/activity` | read on the repository; readers see the artifact events (uploads, deletions, trash, promotions, quarantine), repository admins also settings, cleanup and federation events and the actor filter; anonymous callers get no actor names ([Projects](projects.md#project-activity)) |
 | `GET /api/v1/projects/{project}/activity` | viewer+; audit events of the project and its repositories, keyset paging, no client addresses ([Projects](projects.md#project-activity)) |

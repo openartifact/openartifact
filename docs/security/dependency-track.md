@@ -6,13 +6,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Dependency-Track
 
-OpenArtifact can feed [OWASP Dependency-Track](https://dependencytrack.org) (DT) by itself:
+Use this page to send your artifacts' SBOMs and VEX decisions to [OWASP Dependency-Track](https://dependencytrack.org) (DT) automatically. The integration is off until you configure it, and only admins can manage it. It is tested against DT 4.14 (`dependencytrack/bundled`).
 
-1. the artifact's CycloneDX **BOM** is pushed when the artifact is uploaded and again after each vulnerability scan;
-2. DT analyses it with its own analyzers (internal, NVD, GitHub advisories, OSV, ...);
-3. once DT is done, the **VEX decisions** an admin recorded in OpenArtifact ([VEX](sbom.md#vex)) are pushed, and DT applies them to its findings (`NOT_AFFECTED`, `RESOLVED`, ...).
+How it works:
 
-The integration is **off until configured** and admin only. It is tested against DT 4.14 (`dependencytrack/bundled`).
+1. OpenArtifact pushes the artifact's CycloneDX **BOM** when the artifact is uploaded and again after each vulnerability scan.
+2. DT analyses it with its own analyzers (internal, NVD, GitHub advisories, OSV, ...).
+3. When DT is done, OpenArtifact pushes the **VEX decisions** an admin recorded ([VEX](sbom.md#vex)). DT applies them to its findings (`NOT_AFFECTED`, `RESOLVED`, ...).
+
+To set it up, go to [Configuration](#configuration).
 
 ## The flow
 
@@ -28,11 +30,18 @@ Pushes are queued in the background, de-duplicated per artifact (several uploads
 
 ### How the VEX is matched
 
-DT applies a VEX statement only when the statement's vulnerability **source and id match its own record**, and a CVE can be known to DT as `NVD`, `GITHUB` (a `GHSA-...` id with the CVE as alias) or `INTERNAL`. OpenArtifact therefore does not send the id it has: it looks the decided id up among the DT findings' ids **and aliases**, and sends DT's own id and source for it. Decisions for vulnerabilities DT did not report on the project are left out (the push detail then reads *no VEX decision matches a vulnerability Dependency-Track reports*). Each statement affects the project's own component, which DT applies to every vulnerable component of the project that matches.
+DT applies a VEX statement only when the statement's vulnerability source and id match its own record. A CVE can be known to DT as `NVD`, `GITHUB` (a `GHSA-...` id with the CVE as alias) or `INTERNAL`.
 
-The API key and the uploaded documents only ever go to the configured URL: a redirect from Dependency-Track to another origin (host, port or scheme) is refused and the push fails.
+So OpenArtifact does not send the id it has:
 
-If DT's analyzers find something later (a feed update), the next push (the next scan, or `POST …/push`) applies the decisions to it.
+- It looks the decided id up among the ids and aliases of DT's findings.
+- It sends DT's own id and source for it.
+- Decisions for vulnerabilities DT did not report on the project are left out. The push detail then reads *no VEX decision matches a vulnerability Dependency-Track reports*.
+- Each statement affects the project's own component, and DT applies it to every vulnerable component of the project that matches.
+
+The API key and the documents go only to the configured URL. A redirect to another origin (host, port or scheme) is refused and the push fails.
+
+If DT's analyzers find something later, the next push applies the decisions to it. The next push is the next scan, or `POST …/push`.
 
 ## Configuration
 
@@ -55,7 +64,7 @@ curl -sS -X POST HOST/api/v1/admin/dependency-track/test -H 'Authorization: Bear
 | Field | |
 |---|---|
 | `enabled` | master switch; needs `base_url` and `api_key` |
-| `base_url` | DT's base URL (the API is `…/api/v1`, so the API server, not the frontend). It goes through OpenArtifact's SSRF guard: a DT on a private or loopback address needs `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`; cloud-metadata addresses are always refused |
+| `base_url` | DT's base URL (the API is `…/api/v1`, so the API server, not the frontend). A DT on a private or loopback address needs `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`. Cloud-metadata addresses are always refused |
 | `api_key` | a DT team API key. **Write-only**: stored encrypted (`OPENARTIFACT_SECRET_KEY`, see [configuration](../getting-started/configuration.md)), never returned (`api_key_set` tells whether one exists); omit it on update to keep it, send `""` to remove it |
 | `project_name`, `project_version` | templates, below |
 | `auto_push` | push on upload and after each scan; off still allows manual pushes |
@@ -86,4 +95,15 @@ A failed push is recorded with a sanitized reason and does not affect the upload
 
 ## Pushing by hand
 
-The documents are the ones the API serves, so a script can do the same (DT does not import the `vulnerabilities` section of a BOM; see [SBOM and VEX](sbom.md#dependency-track)).
+A script can push the same documents the API serves. Generate and download the SBOM, then upload it to DT:
+
+```sh
+oa sbom generate REPO --artifact-id my-lib@1.2.3
+oa sbom download REPO <ID> bom.json
+curl -sS -X POST https://dtrack.example.com/api/v1/bom -H "X-Api-Key: $DT_KEY" \
+  -F projectName=my-lib -F projectVersion=1.2.3 -F autoCreate=true -F bom=@bom.json
+```
+
+DT does not import the `vulnerabilities` section of a BOM. See [SBOM and VEX](sbom.md#dependency-track).
+
+To push one artifact through OpenArtifact instead, use `oa dtrack push REPO --artifact-id my-lib@1.2.3`.

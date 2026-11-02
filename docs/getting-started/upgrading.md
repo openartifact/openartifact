@@ -129,6 +129,7 @@ Newest first. Each version starts with **What you must do**; the text below it l
 
 ### Unreleased
 
+- **Failed scans no longer keep the raw scanner error.** Failed vulnerability scans stored earlier have their `scan_error` replaced by `scan failed` when the database is migrated. See [scanning](../security/scanning.md#scanner-failures).
 **What you must do**
 
 - Nothing. No migration and no configuration change.
@@ -374,7 +375,7 @@ No migrations; replaces 0.15.0 in place. Fixes found by the fuzzers (#336):
   - An archive that decompresses to more than 32 times `osvMirror.maxArchiveBytes` aborts the import, and when the export comes from Google Cloud Storage its `X-Goog-Hash` CRC32C is verified (a corrupted transfer fails the import like any other download error and leaves the stored state untouched; OSV publishes no signature, so this is an integrity check, not authentication).
   - The "osv mirror import finished" log line gains a `removed` count.
   - No schema change and no setting to change.
-  - See [Local OSV mirror](../security/scanning.md#local-osv-mirror).
+  - See [Local OSV mirror](../security/osv-mirror.md).
 - **The secret scan runs in linear time and returns at most 1000 findings per text and per metadata object.**
   - Matches beyond the cap are dropped (the rules the scanner tries first win) but still masked in the `line_hint` of the findings that are reported, and the server logs `secret scan findings truncated`.
   - The time of a scan used to grow with the square of the number of matches (measured: a text with 20 000 matches took 5 to 17 seconds, now 0.08 s).
@@ -464,7 +465,7 @@ Highlights: a Nix binary cache (hosted, proxy and group); Ansible collections (h
   - Nothing changes until you set `osvMirror.enabled: true` (`OPENARTIFACT_OSV_MIRROR_ENABLED=true`): a background worker then imports the OSV advisory exports, re-matches stored package versions and records findings like manual `osv` scans.
   - New: the `vulnerability.new` [webhook event](../operations/webhooks.md), the `scan.vuln_resolved` [audit action](../operations/monitoring.md#audit-log), `openartifact_osv_mirror_*` metrics and `GET /api/v1/vuln/osv-mirror` (admin).
   - OSV data is licensed CC-BY 4.0 and is attributed in the web UI.
-  - See [Local OSV mirror](../security/scanning.md#local-osv-mirror).
+  - See [Local OSV mirror](../security/osv-mirror.md).
 
 - **The `storage_backends.is_default` column and its `idx_storage_backends_default` index are dropped.** Nothing has read or written them since 0.13.0 (migration `087`), so 0.13.x replicas keep serving during the rollout. 0.12.x pods still referenced the column: **upgrade from 0.12.x through 0.13.x first**, then to this release. No action required otherwise.
 
@@ -838,7 +839,7 @@ Migrations `054`, `056`–`059`, `061`, `063`, `064` and `065`. Multi-tenant Ent
 - **Signed SBOM and VEX.** `GET …/sbom/{id}/download` and `GET …/vex` accept `?attest=true` (a DSSE envelope, in-toto attestation) or `?attest=bundle` (a Sigstore bundle that `cosign verify-blob-attestation` reads). The key is `attestation.keyPath` (`ATTESTATION_KEY_PATH`) or, when unset, an ECDSA P-256 key generated on first use and stored encrypted in `system_settings`; its public half is at `/.well-known/openartifact/attestation-key.pem`. Nothing changes for existing callers. See [SBOM and VEX](../security/sbom.md#signed-sbom-and-vex-attestations).
 - **SPDX 3.0.1** JSON-LD: `format` `spdx3-json`.
 - **Dependency-Track.** An admin-configured integration (global, with per-repository overrides) pushes the CycloneDX BOM on upload and after each scan, then the VEX decisions after Dependency-Track's analysis. It is off until configured: nothing leaves the server by default. The URL goes through the same outbound-address check as other outbound requests, so a Dependency-Track on a private address needs `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`. See [Dependency-Track](../security/dependency-track.md).
-- **Attestations as OCI referrers.** A hosted docker repository can attach the signed SBOM and VEX of an image to it as OCI referrers (`POST …/sbom/{id}/attach`, `POST …/vex/attach`, or automatically after SBOM generation and scans with `PUT …/attestation-attach`). Off by default. See [Attaching to an OCI image](../security/sbom.md#attaching-to-an-oci-image).
+- **Attestations as OCI referrers.** A hosted docker repository can attach the signed SBOM and VEX of an image to it as OCI referrers (`POST …/sbom/{id}/attach`, `POST …/vex/attach`, or automatically after SBOM generation and scans with `PUT …/attestation-attach`). Off by default. See [Attaching to an OCI image](../security/sbom.md#attach-to-an-image-hosted-docker-repositories).
 - `oa dtrack`, `oa sbom download --attest` and `oa vex get --attest`.
 - Migration `061` makes the storage quota counters exact: reservations and deletes leave a short-lived entry in the new `quota_pending` table, package-row triggers consume it, and the reconcile counts rows plus pending entries instead of overwriting the counter, so a recount no longer drifts by the operations in flight. The triggers add a small cost to package inserts and deletes; the index is built concurrently. See [quotas](../repositories/cleanup-and-quotas.md#keeping-the-counters-correct).
 - `POST /api/v1/repositories/{name}/registry-gc` and the docker GC worker no longer have a `501 not_implemented` path; they run on every deployment.
@@ -955,7 +956,7 @@ Migrations `041` (scan overview index, `CREATE INDEX CONCURRENTLY`), `051` (webh
 #### Trivy and Grype scanner setup
 
 - **Scan behavior.** `trivy` and `grype` scans no longer download their vulnerability database themselves. A background task downloads it at start and every `OPENARTIFACT_SCANNER_UPDATE_INTERVAL` (default `6h`) into `OPENARTIFACT_SCANNER_CACHE_DIR`; a scan whose database is not there yet fails at once with `scanner_db_unavailable`. If you already run `trivy` / `grype` on `PATH`, expect an outbound download of several GB after the upgrade (Trivy about 1.6 GB, Grype about 3.3 GB), or set `OPENARTIFACT_SCANNER_OFFLINE=true` and provide the databases.
-- **Scanner environment.** `trivy` and `grype` subprocesses no longer inherit the server's whole environment (database password, signing keys and the like stay out); they get `PATH`, `HOME`, temp, locale, proxy and CA variables, `DOCKER_CONFIG` and any `TRIVY_*` / `GRYPE_*` variable. A setup that passed other variables through to the scanners must rename them to `TRIVY_*` / `GRYPE_*`; see [scanning](../security/scanning.md#databases-and-the-cache-directory). Trivy now refreshes its database in a staging directory, so keep room for a second copy while it updates.
+- **Scanner environment.** `trivy` and `grype` subprocesses no longer inherit the server's whole environment (database password, signing keys and the like stay out); they get `PATH`, `HOME`, temp, locale, proxy and CA variables, `DOCKER_CONFIG` and any `TRIVY_*` / `GRYPE_*` variable. A setup that passed other variables through to the scanners must rename them to `TRIVY_*` / `GRYPE_*`; see [scanning](../security/scanner-setup.md#databases-and-the-cache-directory). Trivy now refreshes its database in a staging directory, so keep room for a second copy while it updates.
 - **Errors.** A scan that selects a scanner that is not installed now reports `scanner is not available on the server (scanner_unavailable), setup guide: <url>`; the first part is unchanged, so matching on the old prefix still works. New failure kind `database_unavailable`.
 - **API.** New admin endpoint `GET /api/v1/repositories/{name}/vuln/scanners` reporting per-scanner readiness; the web UI disables scanners that are not ready.
 - **Runtime install.**
@@ -963,7 +964,7 @@ Migrations `041` (scan overview index, `CREATE INDEX CONCURRENTLY`), `051` (webh
   - The archives come from `OPENARTIFACT_SCANNER_DOWNLOAD_BASE_URL` (default `https://github.com`; an https mirror serving GitHub's release paths).
   - `GET …/vuln/scanners` gains `install_state` and the codes `scanner_installing`, `scanner_install_failed`, `scanner_install_noexec`; new metric `openartifact_scanner_install_attempts_total`.
   - Nothing changes unless you set it.
-  - See [Runtime download](../security/scanning.md#runtime-download-install-auto).
+  - See [Runtime download](../security/scanner-setup.md#runtime-download-install-auto).
 - **Config.** New `scanners` section (`cacheDir`, `updateInterval`, `offline`, `downloadBaseUrl`, `trivy.{path,install,dbRepository,javaDbRepository}`, `grype.{path,install,dbUrl}`) with `OPENARTIFACT_SCANNER_*`, `OPENARTIFACT_TRIVY_*` and `OPENARTIFACT_GRYPE_*` environment overrides; see [configuration](configuration.md#vulnerability-scanners-scanners).
 - **Docker.** New build argument `SCANNERS` (`none` default, `trivy`, `grype`, `all`) and a `scanner_cache` volume in the compose file. The image now sets `OPENARTIFACT_SCANNER_CACHE_DIR=/var/cache/openartifact/scanners` (owned by uid 10001, declared a `VOLUME`) and `PATH`; the default image otherwise holds the same files.
 
@@ -1136,7 +1137,7 @@ Migrations `017` and `018` run at first start: `017` adds the soft-delete column
 
 - **Image base.** The runtime image is now a shell-less hardened base (`dhi.io/static`, Debian 13): it has no `sh`, `wget`, `nc` or `apk`. It still runs as uid/gid 10001 with the binary at `/app/openartifact`; the health check is `openartifact -healthcheck` (a `GET` on `127.0.0.1:<configured port>/health`, exit 0 on 200).
 - **Debugging and custom CAs.** See [operating the shell-less image](installation.md#operating-the-shell-less-image).
-- **trivy / grype.** The `trivy` and `grype` vulnerability scanner backends need those static binaries; see [Installing Trivy and Grype](../security/scanning.md#installing-trivy-and-grype) (the Docker build argument `SCANNERS` bundles them), or use the default `osv` scanner.
+- **trivy / grype.** The `trivy` and `grype` vulnerability scanner backends need those static binaries; see [Installing Trivy and Grype](../security/scanner-setup.md) (the Docker build argument `SCANNERS` bundles them), or use the default `osv` scanner.
 - **Helm chart.** Chart `<= 0.1.4` runs a wait-for-database init container that needs `sh` and `nc` from this image and fails with the new image. Upgrade the chart, or set `database.waitForDatabase=false`: the server now waits itself, retrying the initial database connection with capped backoff for `DB_CONNECT_TIMEOUT` (`database.connectTimeout`, default `60s`, `0` fails immediately).
 - **Database startup.** New `DB_CONNECT_TIMEOUT` / `database.connectTimeout`: the server retries the first database connection for up to this long (each wait is logged at info level) instead of exiting at once.
 - **Security (Go).** Go module zips are served only when their blob has a real sha256 (`404` otherwise), and every blob upsert (all formats) rejects a sha256 that is not 64 lowercase hex characters. Versions published on 0.4.1 and earlier are repaired automatically at start, or with `openartifact -repair-gomod`; see the security note above.
