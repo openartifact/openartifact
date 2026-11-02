@@ -6,20 +6,31 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Monitoring and logging
 
-Health and readiness endpoints, Prometheus metrics, OpenTelemetry (traces, metrics and log records over OTLP), the audit log and server logs.
+Probe the server's health, scrape Prometheus metrics, export OpenTelemetry data, read the audit log and tune the server logs. Start with the section for the signal you need.
 
 The REST API, OpenAPI spec and interactive API reference are covered in [API](../integrations/api.md).
 
 ## Health and readiness
 
+Point a load balancer or Kubernetes readiness probe at `/ready`, and a liveness probe at `/health`.
+
 `/health`, `/ready` and `/metrics` are on the public router: no login, no RBAC. They still pass through the server-wide middleware, so `OPENARTIFACT_IP_ALLOWLIST` and `OPENARTIFACT_RATE_LIMIT_RPS` apply to probes and scrapers too.
 
-| Endpoint | Success | Failure |
-|---|---|---|
-| `GET /health` | always `200`, JSON | never fails; a broken dependency shows as `"status":"degraded"` |
-| `GET /ready` | `200 {"status":"ready"}` | `503 {"status":"not ready","reason":"database unavailable"}`, `"storage unavailable"`, `"storage tiers not loaded"` or `"shutting down"` (after a shutdown signal, see [graceful shutdown](#graceful-shutdown-and-rolling-updates)) |
+```sh
+curl -fsS HOST/ready
+curl -fsS HOST/health
+```
 
-`/health` body:
+| Endpoint | Status | Body |
+|---|---|---|
+| `GET /health` | `200` | JSON with `"status":"healthy"` or `"status":"degraded"` |
+| `GET /health` | `503` | `{"status":"not ready","reason":"storage tiers not loaded"}` |
+| `GET /ready` | `200` | `{"status":"ready"}` |
+| `GET /ready` | `503` | `{"status":"not ready","reason":"<reason>"}` |
+
+### /health
+
+`/health` is a liveness check, not a readiness check. It answers `200` even when the database or storage is down; the failure shows in the body as `"status":"degraded"`. It answers `503` only while the storage tiers have not been loaded yet, which happens for a short time at startup.
 
 ```json
 {
@@ -33,27 +44,63 @@ The REST API, OpenAPI spec and interactive API reference are covered in [API](..
 }
 ```
 
-A failing component has `"status":"error"` and `"message":"unavailable"` (the cause is in the server log); the overall status is then `degraded`. Use `/ready` for load balancer and Kubernetes readiness checks, since `/health` returns 200 even when degraded.
+A failing component has `"status":"error"` and `"message":"unavailable"`. The cause is in the server log, never in the response. The overall status is then `degraded`.
 
-What is checked: the database is pinged. Storage is probed through the same store stack that serves requests, for every backend: bucket access for `s3`, `garage`, `seaweedfs` and `gcs`, container access for `azure`, `GET /v2/` for `oci`, and for `filesystem` that the blob directory exists and a temporary file can be written and removed in it. The probe is cached for 10 seconds and bounded to 3 seconds, so polling `/health` does not turn into backend requests, and a failure shows up within that window. `/ready` checks the S3-family stores only, on every call. See [storage](storage.md#health).
+The server checks the database with a ping. It checks storage through the same store stack that serves requests:
 
-The compose healthcheck is `wget --spider http://localhost:8080/health`.
+- `s3`, `garage`, `seaweedfs` and `gcs`: access to the bucket.
+- `azure`: access to the container.
+- `oci`: `GET /v2/`.
+- `filesystem`: the blob directory exists, and a temporary file can be written and removed in it.
+
+The storage result is cached for 10 seconds and each probe is limited to 3 seconds. Polling `/health` therefore does not turn into backend requests, and a failure shows up within that window. See [storage](storage.md#health).
+
+### /ready
+
+`/ready` answers `200` once the database and the object store respond. Otherwise it answers `503` with one of these reasons:
+
+- `database unavailable`
+- `storage unavailable`
+- `shutting down`: a shutdown signal arrived, see [graceful shutdown](#graceful-shutdown-and-rolling-updates).
+
+`/ready` checks the object store only for the S3-family backends (`s3`, `garage`, `seaweedfs`), and it does so on every call. Other backends are not probed by `/ready`; `/health` covers them.
+
+### Container healthcheck
+
+The image has no shell and no `wget`. The Dockerfile and the compose file use the binary itself:
+
+```yaml
+healthcheck:
+  test: ["CMD", "/app/openartifact", "-healthcheck"]
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 5s
+```
+
+`-healthcheck` sends `GET /health` to the local server, using the port and TLS settings from the same configuration and environment as the server. It exits `0` on a `200` response and `1` otherwise, including a `503` and a connection failure. Because `/health` is `200` when degraded, this check detects a dead or not-yet-ready process, not a broken database.
 
 ### Graceful shutdown and rolling updates
 
 On `SIGTERM` or `SIGINT` the server shuts down in this order:
 
-1. `/ready` starts answering `503 {"status":"not ready","reason":"shutting down"}`; `/health` (liveness) keeps answering normally. HTTP keep-alives are switched off, so clients reconnect to another replica. The server keeps accepting and serving requests for `server.shutdownDelay` seconds (`SERVER_SHUTDOWN_DELAY`). A second signal skips the rest of the delay.
-2. The listener stops and in-flight requests get up to `server.shutdownTimeout` seconds (`SERVER_SHUTDOWN_TIMEOUT`) to finish.
+1. `/ready` starts answering `503 {"status":"not ready","reason":"shutting down"}`. `/health` keeps answering normally. HTTP keep-alives are switched off, so clients reconnect to another replica. The server keeps serving requests for `server.shutdownDelay` seconds (`SERVER_SHUTDOWN_DELAY`). A second signal skips the rest of the delay.
+2. The listener stops. In-flight requests get up to `server.shutdownTimeout` seconds (`SERVER_SHUTDOWN_TIMEOUT`) to finish.
 3. Background tasks drain (15 s at most), the workers stop and the audit log is flushed (5 s).
 
-The delay exists because a Kubernetes Service removes a terminating pod from its endpoints a few seconds after the `SIGTERM`, so without it a few requests are routed to a pod that no longer accepts connections. The image has no shell, so a `preStop` `sleep` hook is not available; `shutdownDelay` replaces it. Set it to more than the readiness probe needs to fail plus the endpoint propagation time (10 is a good value), and make `terminationGracePeriodSeconds` at least `shutdownDelay + shutdownTimeout` plus about 20 s for the drain. The default is `0` (no delay, no change in behaviour) because outside Kubernetes nothing needs to be waited for; the Helm chart sets it for you.
+On Kubernetes, set the delay so no request reaches a pod that has stopped accepting connections:
+
+- Set `shutdownDelay` to more than the readiness probe needs to fail, plus the time the Service needs to remove the pod from its endpoints. `10` is a good value.
+- Set `terminationGracePeriodSeconds` to at least `shutdownDelay + shutdownTimeout`, plus about 20 s for the drain.
+- Do not use a `preStop` `sleep` hook: the image has no shell. `shutdownDelay` replaces it.
+
+The default is `0`: no delay, because outside Kubernetes nothing needs to be waited for. The Helm chart sets it for you.
 
 ## Metrics
 
-`GET /metrics` serves the Prometheus text format from the default registry, so Go runtime (`go_*`) and process (`process_*`) metrics are included next to the `openartifact_*` families.
+Scrape `GET /metrics` with Prometheus. The endpoint serves the Prometheus text format from the default registry, so Go runtime (`go_*`) and process (`process_*`) metrics appear next to the `openartifact_*` families.
 
-Access is controlled by two environment variables (environment only, not YAML). Metrics fail closed:
+`/metrics` fails closed. Configure access with two environment variables (environment only, not YAML):
 
 | `METRICS_AUTH_TOKEN` | `METRICS_ALLOW_ANONYMOUS` | Result |
 |---|---|---|
@@ -73,86 +120,7 @@ scrape_configs:
       - targets: ["HOST:8080"]
 ```
 
-### Metric families
-
-| Metric | Type | Labels | Notes |
-|---|---|---|---|
-| `openartifact_http_requests_total` | counter | `method`, `path`, `status` | `path` is the route template that served the request (see [the `path` label](#the-path-label)), or `unmatched` for requests that match no route; the raw URL is never used, so cardinality is bounded by the route table |
-| `openartifact_http_request_duration_seconds` | histogram | `method`, `path` | buckets 0.005 to 10 s; same `path` values |
-| `openartifact_uploads_total` | counter | `format`, `result` | hosted upload requests: `format` is one of `apk`, `cargo`, `conan`, `conda`, `deb`, `docker`, `go`, `helm`, `ivy`, `maven`, `npm`, `nuget`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`; `result` is `success` (HTTP status below 400) or `error` (400 and above). See [what counts as an upload](#what-counts-as-an-upload) |
-| `openartifact_blob_bytes_total` | counter | `operation` | bytes written (`put`) and read (`get`) through the blob store |
-| `openartifact_blob_operation_duration_seconds` | histogram | `operation`, `result` | latency of the object store as the server sees it, by `operation` (`put`, `get`, `exists`, `exists_by_sha256`, `delete`, `size`, `metadata`) and `result` (`ok`, `error`). This is the floor under every upload: on a store that syncs to a replicated volume it is tens of milliseconds, which is why every write route has the same p50. `put` includes reading the client's body, so a slow client inflates it; `get` is the time to open the object, not to stream it |
-| `openartifact_blob_downloads_total` | counter | `mode`, `reason` | blob `GET`s by delivery: `mode=redirect` (`reason=presigned`) or `mode=stream` (`disabled`, `unsupported`, `below_min_size`, `sign_failed`, `repo_lookup_failed`, `missing_object`); see [presigned URLs](storage.md#presigned-urls) |
-| `openartifact_metadata_regenerations_total` | counter | `format` | `maven`, `npm`, `rpm` |
-| `openartifact_metadata_regeneration_duration_seconds` | histogram | `format` | same buckets as the request histogram |
-| `openartifact_audit_dropped_total` | counter | | audit events lost to backpressure or after shutdown: never written to `audit_logs`; [streamed](#streaming-over-otlp) unless recorded after shutdown began |
-| `openartifact_osv_mirror_last_import_timestamp_seconds` | gauge | `ecosystem` | Unix time of the last successful [OSV mirror](../security/scanning.md#local-osv-mirror) import of an ecosystem (a check that found the export unchanged counts) |
-| `openartifact_osv_mirror_advisories` | gauge | `ecosystem` | live (not withdrawn) advisories in the local OSV mirror that affect an ecosystem |
-| `openartifact_osv_mirror_imports_total` | counter | `ecosystem`, `result` | OSV mirror imports; `result` is `imported`, `unchanged` or `error` |
-| `openartifact_osv_mirror_rematch_duration_seconds` | histogram | | duration of the re-match of the stored packages against the changed advisories of one ecosystem; buckets 1 s to 1 h |
-| `openartifact_osv_mirror_findings_total` | counter | `change` | findings the OSV re-match changed; `change` is `new`, `updated` or `resolved` |
-| `openartifact_audit_retention_deleted_total` | counter | | audit entries deleted for being older than [`audit.retentionDays`](audit-retention.md) (stays 0 while retention is off) |
-| `openartifact_audit_retention_last_run_timestamp_seconds` | gauge | | Unix time the last audit retention pass finished without error on this replica; 0 until one has |
-| `openartifact_trash_purged_total` | counter | `kind` | trashed items (and repositories, `kind="repository"`) permanently removed by the retention purge; `kind` is the trash kind, e.g. `maven_artifact`, `docker_manifest` |
-| `openartifact_storage_tier_blobs`, `openartifact_storage_tier_bytes` | gauge | `tier` | blobs and bytes placed on each [storage tier](storage-tiering.md#metrics), refreshed after every mover pass |
-| `openartifact_storage_tier_reads_total` | counter | `tier` | blob reads served by each tier |
-| `openartifact_storage_tier_moves_total` | counter | `from`, `to`, `result` | tier moves; `result` is `moved`, `skipped` or `failed` |
-| `openartifact_storage_tier_moved_bytes_total` | counter | `from`, `to` | bytes moved between tiers |
-| `openartifact_storage_tier_moves_pending` | gauge | | interrupted or failing moves awaiting recovery; should return to 0 |
-| `openartifact_blob_deletions_pending` | gauge | | blob copies queued for [deferred deletion](storage.md#deferred-blob-deletion), refreshed after every sweeper pass; grows during the grace period and while a backup runs, should fall back afterwards |
-| `openartifact_scanner_install_attempts_total` | counter | `scanner`, `result` | runtime installs of Trivy / Grype (`scanners.<name>.install: auto`): `installed`, `reused` (a verified copy was already there), `unsupported_platform`, `download_failed`, `checksum_mismatch`, `extract_failed`, `noexec`, `insecure_location`, `failed` |
-| `openartifact_exploit_import_attempts_total` | counter | `feed`, `result` | imports of the [KEV and EPSS feeds](../security/exploit-signals.md#metrics): `feed` is `kev` or `epss`, `result` is `imported`, `unchanged` or `failed` |
-| `openartifact_exploit_feed_last_success_timestamp_seconds` | gauge | `feed` | Unix time of the last successful import (or unchanged check) of each feed; alert when it gets old |
-| `openartifact_scanner_db_update_attempts_total` | counter | `scanner`, `result` | background vulnerability database refreshes of Trivy / Grype: `success` or `failure` (a refresh cut short by shutdown is not counted) |
-| `openartifact_scanner_db_last_success_timestamp_seconds` | gauge | `scanner` | Unix time of the last successful refresh; after a restart it starts from the age of the database on disk, and is absent for a scanner that has no database |
-| `openartifact_db_pool_connections` | gauge | `pool`, `state` | established database connections: `state` is `in_use` (checked out) or `idle`; see [database pools](#database-connection-pools) |
-| `openartifact_db_pool_open_connections` | gauge | `pool` | connections that exist, including (pgx) those being opened |
-| `openartifact_db_pool_max_connections` | gauge | `pool` | configured limit (`database.maxOpenConns`) |
-| `openartifact_db_pool_acquire_waits_total` | counter | `pool` | acquisitions that found every connection busy and had to wait |
-| `openartifact_db_pool_acquire_wait_seconds_total` | counter | `pool` | cumulative time those acquisitions waited |
-| `openartifact_db_pool_connections_closed_total` | counter | `pool`, `reason` | connections the pool closed: `max_lifetime` or `max_idle` (connection churn) |
-| `openartifact_db_pool_acquires_total`, `openartifact_db_pool_acquire_seconds_total`, `openartifact_db_pool_acquire_canceled_total`, `openartifact_db_pool_connections_created_total` | counter | `pool` | `pool="pgx"` only (database/sql keeps no such counters): successful acquisitions, time spent acquiring, acquisitions abandoned by a cancelled caller, connections opened |
-| `openartifact_blob_deletions_swept_total` | counter | `result` | sweeper decisions: `deleted` (bytes removed) or `kept` (the blob was referenced or placed there again, entry dropped) |
-| `openartifact_telemetry_log_records_dropped_total` | counter | `scope` | log records not exported over OTLP because the export queue was full; `scope` is the instrumentation scope (`openartifact.audit` for audit events). See [log records](#log-records-over-otlp) |
-
-#### The `path` label
-
-`path` is the chi route template of the handler that served the request, never the raw URL: repository, package and image names, versions, tags and digests cannot reach a label. Templates keep their parameter names (`/repos/{name}/{pkg}/{version}`) and catch-alls keep their `/*` (`/repos/raw/{name}/*`, `/repos/maven/{name}/*`), so each catch-all is a single series however many files it serves. A request that matches no route is `unmatched`.
-
-The OCI registry is served by one catch-all route, `/v2/*`; it is split by the endpoint the path addresses, using the distribution-spec templates:
-
-| `path` | Request |
-|---|---|
-| `/v2/{name}/manifests/{reference}` | manifest get, head, put, delete |
-| `/v2/{name}/blobs/{digest}` | blob get, head, delete |
-| `/v2/{name}/blobs/uploads` | start a blob upload (also the monolithic `POST ?digest=`) |
-| `/v2/{name}/blobs/uploads/{uuid}` | upload status, chunk, completion, cancel |
-| `/v2/{name}/tags/list` | tag listing |
-| `/v2/{name}/referrers/{digest}` | referrers |
-| `/v2/*` | any other path under `/v2/` |
-| `/v2`, `/v2/_catalog` | version check, catalog |
-
-Other templates worth knowing: `/repos/{name}/*` (a publish to a Go or npm repository, `PUT`), `/repos/{name}/{pkg}` (npm packument), `/repos/{name}/{platform}` (conda), `/*` (the web UI).
-
-#### What counts as an upload
-
-`openartifact_uploads_total` counts one per hosted upload request that reaches an upload handler, whatever the client protocol, so every format has the same series:
-
-- `deb`, `go` (GOPROXY upload), `maven` (`PUT`), `npm` (publish), `raw` (presigned upload completion), and `rpm` (API upload) are counted by their handlers.
-- `apk`, `cargo`, `conan`, `conda`, `helm`, `ivy`, `nuget`, `pypi`, `raw` (direct `PUT`), `rubygems`, `sbt` and `terraform` are counted by the HTTP middleware from the response status of the upload route (`PUT /api/v1/crates/new`, `POST /charts`, `POST /legacy/`, `PUT /_api/modules/...`, ...).
-- `docker` counts the requests that finish pushing an object: a manifest `PUT`, the `PUT` that completes a blob upload, and a monolithic `POST ?digest=`. Starting an upload and chunk `PATCH`es are not counted, and a push of several layers counts one per layer plus one for the manifest.
-- A package made of several files counts one per file request (a Maven deploy issues a `PUT` for the POM, the jar and each checksum; Conan and Ivy/sbt likewise).
-- A request refused by authentication or RBAC (`401`, `403`) never reaches the route and is not counted. Anything the upload route itself answers with `4xx` or `5xx` (unknown repository, validation, quota, immutable release, storage failure) is `result="error"`.
-
-For the presigned raw upload (`POST /api/v1/repositories/{name}/uploads/{id}/complete`), a completion that fails (size or sha256 mismatch, expired upload, quota, storage error) is `error`; a retried completion of an already completed upload and an abort are not counted.
-
-#### Database connection pools
-
-The server keeps two connection pools to PostgreSQL, both capped by `database.maxOpenConns`, and the `pool` label tells them apart: `pgx` is the pgx pool the sqlc queries run on, `sql` is the `database/sql` pool (per-request authentication lookups, migrations, workers). They are read when Prometheus scrapes, not sampled in the background. Each pool opens connections independently, so up to twice `maxOpenConns` can be open at once: size `max_connections` of PostgreSQL accordingly.
-
-Saturation shows as `in_use` close to `max_connections` together with a growing `acquire_waits_total` and `acquire_wait_seconds_total`; a high rate of `connections_closed_total` means the pool is opening and closing connections instead of reusing them.
-
-Useful queries:
+### Queries to start with
 
 ```promql
 # error ratio per route
@@ -191,6 +159,170 @@ increase(openartifact_scanner_db_update_attempts_total{result="failure"}[6h]) > 
 
 For allocation and CPU profiling see [performance](performance.md).
 
+### Metric families
+
+The generated [metrics reference](../reference/metrics.md) lists every family with type, labels and description. The tables below group the families that need explanation. Labelled metrics appear only after their first observation.
+
+#### Requests and uploads
+
+| Metric | Type | Labels |
+|---|---|---|
+| `openartifact_http_requests_total` | counter | `method`, `path`, `status` |
+| `openartifact_http_request_duration_seconds` | histogram | `method`, `path` |
+| `openartifact_uploads_total` | counter | `format`, `result` |
+
+- `path` is the route template that served the request, or `unmatched` when no route matches. See [the `path` label](#the-path-label).
+- The duration histogram has buckets from 0.005 to 10 s.
+- `openartifact_uploads_total` counts hosted upload requests. `format` is one of `apk`, `cargo`, `conan`, `conda`, `deb`, `docker`, `go`, `helm`, `ivy`, `maven`, `npm`, `nuget`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. `result` is `success` (HTTP status below 400) or `error` (400 and above). See [what counts as an upload](#what-counts-as-an-upload).
+
+#### Blob store
+
+| Metric | Type | Labels |
+|---|---|---|
+| `openartifact_blob_bytes_total` | counter | `operation` |
+| `openartifact_blob_operation_duration_seconds` | histogram | `operation`, `result` |
+| `openartifact_blob_downloads_total` | counter | `mode`, `reason` |
+| `openartifact_blob_deletions_pending` | gauge | none |
+| `openartifact_blob_deletions_swept_total` | counter | `result` |
+
+- `blob_bytes_total` counts bytes written (`operation="put"`) and read (`get`).
+- `blob_operation_duration_seconds` is the object store latency as the server sees it. `operation` is `put`, `get`, `exists`, `exists_by_sha256`, `delete`, `size` or `metadata`; `result` is `ok` or `error`. It is the floor under every upload: on a store that syncs to a replicated volume it is tens of milliseconds, so every write route has a similar p50.
+- `put` includes reading the client's body, so a slow client inflates it. `get` is the time to open the object, not to stream it.
+- `blob_downloads_total` counts blob `GET`s by delivery. `mode=redirect` has `reason=presigned`. `mode=stream` has a `reason` of `disabled`, `unsupported`, `below_min_size`, `sign_failed`, `repo_lookup_failed` or `missing_object`. See [presigned URLs](storage.md#presigned-urls).
+- `blob_deletions_pending` is the number of blob copies queued for [deferred deletion](storage.md#deferred-blob-deletion). It grows during the grace period and while a backup runs, and should fall back afterwards.
+- `blob_deletions_swept_total` counts sweeper decisions: `deleted` (bytes removed) or `kept` (the blob was referenced or placed there again, so the entry was dropped).
+
+#### Storage tiers
+
+| Metric | Type | Labels |
+|---|---|---|
+| `openartifact_storage_tier_blobs`, `openartifact_storage_tier_bytes` | gauge | `tier` |
+| `openartifact_storage_tier_reads_total` | counter | `tier` |
+| `openartifact_storage_tier_moves_total` | counter | `from`, `to`, `result` |
+| `openartifact_storage_tier_moved_bytes_total` | counter | `from`, `to` |
+| `openartifact_storage_tier_moves_pending` | gauge | none |
+
+- The `blobs` and `bytes` gauges show what sits on each [storage tier](storage-tiering.md#metrics). They refresh after every mover pass.
+- `moves_total` has `result` `moved`, `skipped` or `failed`.
+- `moves_pending` counts interrupted or failing moves awaiting recovery. It should return to 0.
+
+#### Replication, recovery and federation
+
+These families belong to [blob replication](replication.md), the disaster-recovery journal and [federation](federation.md). Each name starts with `openartifact_replication_`, `openartifact_recovery_` or `openartifact_federation_`; see the [metrics reference](../reference/metrics.md) for the full list.
+
+| Family | What to watch | Documentation |
+|---|---|---|
+| `openartifact_replication_*` | `backlog` and `oldest_pending_age_seconds` (the replication lag) should return to 0; `failures_total` and `verify_mismatched_total` should stay flat | [replication](replication.md) |
+| `openartifact_recovery_*` | `journal_backlog` and `oldest_dirty_age_seconds` should return to 0; `failures_total` should stay flat | [disaster recovery](disaster-recovery.md) |
+| `openartifact_federation_*` | per peer, `lag_seconds` and `backlog_units` should stay low; alert on `pull_errors_total` and an old `last_success_timestamp_seconds` | [federation](federation.md) |
+
+#### Metadata, audit and trash
+
+| Metric | Type | Labels |
+|---|---|---|
+| `openartifact_metadata_regenerations_total` | counter | `format` |
+| `openartifact_metadata_regeneration_duration_seconds` | histogram | `format` |
+| `openartifact_audit_dropped_total` | counter | none |
+| `openartifact_audit_retention_deleted_total` | counter | none |
+| `openartifact_audit_retention_last_run_timestamp_seconds` | gauge | none |
+| `openartifact_trash_purged_total` | counter | `kind` |
+
+- Metadata regeneration is counted for `maven`, `npm` and `rpm`. The histogram uses the same buckets as the request histogram.
+- `audit_dropped_total` counts audit events lost to backpressure or after shutdown: they were never written to `audit_logs`. Events lost to backpressure are still [streamed](#streaming-over-otlp); events recorded after shutdown began are not.
+- `audit_retention_deleted_total` counts entries deleted for being older than [`audit.retentionDays`](audit-retention.md). It stays 0 while retention is off.
+- `audit_retention_last_run_timestamp_seconds` is the Unix time the last retention pass finished without error on this replica. It is 0 until one has.
+- `trash_purged_total` counts trashed items permanently removed by the retention purge, including repositories (`kind="repository"`). `kind` is the trash kind, for example `maven_artifact` or `docker_manifest`.
+
+#### Vulnerability data
+
+| Metric | Type | Labels |
+|---|---|---|
+| `openartifact_osv_mirror_last_import_timestamp_seconds` | gauge | `ecosystem` |
+| `openartifact_osv_mirror_advisories` | gauge | `ecosystem` |
+| `openartifact_osv_mirror_imports_total` | counter | `ecosystem`, `result` |
+| `openartifact_osv_mirror_rematch_duration_seconds` | histogram | none |
+| `openartifact_osv_mirror_findings_total` | counter | `change` |
+| `openartifact_exploit_import_attempts_total` | counter | `feed`, `result` |
+| `openartifact_exploit_feed_last_success_timestamp_seconds` | gauge | `feed` |
+| `openartifact_scanner_install_attempts_total` | counter | `scanner`, `result` |
+| `openartifact_scanner_db_update_attempts_total` | counter | `scanner`, `result` |
+| `openartifact_scanner_db_last_success_timestamp_seconds` | gauge | `scanner` |
+
+- The `osv_mirror_*` families describe the [local OSV mirror](../security/scanning.md#local-osv-mirror). `last_import_timestamp_seconds` is the Unix time of the last successful import of an ecosystem; a check that found the export unchanged counts. `advisories` is the number of live (not withdrawn) advisories that affect an ecosystem.
+- `osv_mirror_imports_total` has `result` `imported`, `unchanged` or `error`. `rematch_duration_seconds` is the time to re-match the stored packages against the changed advisories of one ecosystem, with buckets from 1 s to 1 h. `findings_total` counts findings the re-match changed: `change` is `new`, `updated` or `resolved`.
+- `exploit_import_attempts_total` counts imports of the [KEV and EPSS feeds](../security/exploit-signals.md#metrics). `feed` is `kev` or `epss`; `result` is `imported`, `unchanged` or `failed`. Alert when `exploit_feed_last_success_timestamp_seconds` gets old.
+- `scanner_install_attempts_total` counts runtime installs of Trivy and Grype (`scanners.<name>.install: auto`). `result` is `installed`, `reused` (a verified copy was already there), `unsupported_platform`, `download_failed`, `checksum_mismatch`, `extract_failed`, `noexec`, `insecure_location` or `failed`.
+- `scanner_db_update_attempts_total` counts background vulnerability database refreshes of Trivy and Grype. `result` is `success` or `failure`; a refresh cut short by shutdown is not counted.
+- `scanner_db_last_success_timestamp_seconds` is the Unix time of the last successful refresh. After a restart it starts from the age of the database on disk. It is absent for a scanner that has no database.
+
+#### Database connection pools
+
+| Metric | Type | Labels |
+|---|---|---|
+| `openartifact_db_pool_connections` | gauge | `pool`, `state` |
+| `openartifact_db_pool_open_connections` | gauge | `pool` |
+| `openartifact_db_pool_max_connections` | gauge | `pool` |
+| `openartifact_db_pool_acquire_waits_total` | counter | `pool` |
+| `openartifact_db_pool_acquire_wait_seconds_total` | counter | `pool` |
+| `openartifact_db_pool_connections_closed_total` | counter | `pool`, `reason` |
+| `openartifact_db_pool_acquires_total`, `openartifact_db_pool_acquire_seconds_total`, `openartifact_db_pool_acquire_canceled_total`, `openartifact_db_pool_connections_created_total` | counter | `pool` |
+
+The server keeps two connection pools to PostgreSQL, and the `pool` label tells them apart. `pgx` is the pool most queries run on. `sql` is the second pool, used for per-request authentication lookups, migrations and workers. Both are capped by `database.maxOpenConns` and open connections independently, so up to twice `maxOpenConns` can be open at once. Size PostgreSQL `max_connections` accordingly. The gauges are read when Prometheus scrapes, not sampled in the background.
+
+- `connections` has `state` `in_use` (checked out) or `idle`.
+- `open_connections` counts connections that exist, including (for `pgx`) those being opened.
+- `max_connections` is the configured limit.
+- `acquire_waits_total` counts acquisitions that found every connection busy and had to wait. `acquire_wait_seconds_total` is the cumulative time they waited.
+- `connections_closed_total` has `reason` `max_lifetime` or `max_idle`.
+- The last four families exist for `pool="pgx"` only: successful acquisitions, time spent acquiring, acquisitions abandoned by a cancelled caller, and connections opened.
+
+Saturation shows as `in_use` close to `max_connections` together with growing `acquire_waits_total` and `acquire_wait_seconds_total`. A high rate of `connections_closed_total` means the pool opens and closes connections instead of reusing them.
+
+#### Telemetry
+
+| Metric | Type | Labels |
+|---|---|---|
+| `openartifact_telemetry_log_records_dropped_total` | counter | `scope` |
+| `openartifact_frontend_telemetry_requests_total` | counter | `signal`, `result` |
+
+`telemetry_log_records_dropped_total` counts log records not exported over OTLP because the export queue was full. `scope` is the instrumentation scope (`openartifact.audit` for audit events). See [log records](#log-records-over-otlp). The frontend family is described in [frontend telemetry](#frontend-telemetry-experimental).
+
+#### The `path` label
+
+`path` is the route template of the handler that served the request, never the raw URL. Repository, package and image names, versions, tags and digests cannot reach a label, so cardinality is bounded by the route table.
+
+- Templates keep their parameter names, for example `/repos/{name}/{pkg}/{version}`.
+- Catch-alls keep their `/*`, for example `/repos/raw/{name}/*` and `/repos/maven/{name}/*`. Each catch-all is a single series however many files it serves.
+- A request that matches no route is `unmatched`.
+
+The OCI registry is served by one catch-all route, `/v2/*`. The server splits it by the endpoint the path addresses, using the distribution-spec templates:
+
+| `path` | Request |
+|---|---|
+| `/v2/{name}/manifests/{reference}` | manifest get, head, put, delete |
+| `/v2/{name}/blobs/{digest}` | blob get, head, delete |
+| `/v2/{name}/blobs/uploads` | start a blob upload (also the monolithic `POST ?digest=`) |
+| `/v2/{name}/blobs/uploads/{uuid}` | upload status, chunk, completion, cancel |
+| `/v2/{name}/tags/list` | tag listing |
+| `/v2/{name}/referrers/{digest}` | referrers |
+| `/v2/*` | any other path under `/v2/` |
+| `/v2`, `/v2/_catalog` | version check, catalog |
+
+Other templates worth knowing: `/repos/{name}/*` (a publish to a Go or npm repository, `PUT`), `/repos/{name}/{pkg}` (npm packument), `/repos/{name}/{platform}` (conda), `/*` (the web UI).
+
+#### What counts as an upload
+
+`openartifact_uploads_total` counts one per hosted upload request that reaches an upload handler, whatever the client protocol, so every format has the same series:
+
+- `deb`, `go` (GOPROXY upload), `maven` (`PUT`), `npm` (publish), `raw` (presigned upload completion) and `rpm` (API upload) are counted by their handlers.
+- `apk`, `cargo`, `conan`, `conda`, `helm`, `ivy`, `nuget`, `pypi`, `raw` (direct `PUT`), `rubygems`, `sbt` and `terraform` are counted by the HTTP middleware from the response status of the upload route (`PUT /api/v1/crates/new`, `POST /charts`, `POST /legacy/`, `PUT /_api/modules/...`, ...).
+- `docker` counts the requests that finish pushing an object: a manifest `PUT`, the `PUT` that completes a blob upload, and a monolithic `POST ?digest=`. Starting an upload and chunk `PATCH`es are not counted. A push of several layers counts one per layer plus one for the manifest.
+- A package made of several files counts one per file request. A Maven deploy issues a `PUT` for the POM, the jar and each checksum; Conan and Ivy/sbt work the same way.
+- A request refused by authentication or RBAC (`401`, `403`) never reaches the route and is not counted.
+- Anything the upload route itself answers with `4xx` or `5xx` is `result="error"`: unknown repository, validation, quota, immutable release, storage failure.
+
+For the presigned raw upload (`POST /api/v1/repositories/{name}/uploads/{id}/complete`), a completion that fails is `error`. Failures are a size or sha256 mismatch, an expired upload, quota and storage errors. A retried completion of an already completed upload and an abort are not counted.
+
 ## OpenTelemetry
 
 OpenArtifact can export distributed traces, metrics and log records over OTLP to any collector (OpenTelemetry Collector, Jaeger, Tempo, Honeycomb, ...). It is **off by default**: while disabled no provider is installed, no span is created and no `traceparent` header is sent.
@@ -221,13 +353,21 @@ telemetry:
 | `headers` | `OTEL_EXPORTER_OTLP_HEADERS` | none | `k=v,k2=v2`, values percent-decoded; merged over the YAML map. Treated as secrets and never logged |
 | `insecure` | `OTEL_EXPORTER_OTLP_INSECURE` | `false` | no TLS to the collector; an `http://` endpoint implies it |
 | `serviceName` | `OTEL_SERVICE_NAME` | `openartifact` | `service.name` resource attribute |
-| `sampleRatio` | `OTEL_TRACES_SAMPLER_ARG` | `1` | fraction of **new** traces recorded (0 to 1). Parent based for callers that send credentials (an `Authorization` or `X-Api-Key` header, or the session cookie): such a request arriving with a sampled `traceparent` is always recorded, an unsampled one never. A request **without** credentials is sampled at this ratio whatever its `traceparent` says, so an anonymous client cannot force every request to be recorded and exported. The credentials are not validated at that point (the span starts before authentication), so a client that sends an invalid one is treated as authenticated |
+| `sampleRatio` | `OTEL_TRACES_SAMPLER_ARG` | `1` | fraction of **new** traces recorded (0 to 1); see [sampling](#sampling) |
 | `traces` | `OTEL_TRACES_EXPORTER=otlp` (`none` turns it off) | `true` | distributed traces; the HTTP server middleware, the client and database spans and the log correlation fields exist only with it |
 | `metrics` | `OTEL_METRICS_EXPORTER=otlp` (`none` turns it off) | `false` | also export metrics over OTLP, see below |
 | `logs` | `OTEL_LOGS_EXPORTER=otlp` (`none` turns it off) | `false` | application log records over OTLP as well, the log output is unchanged; see [log records](#log-records-over-otlp) |
 | `audit` | `OPENARTIFACT_OTLP_AUDIT` | `false` | every audit event as an OTLP log event (scope `openartifact.audit`), independent of `traces`; see [streaming the audit log](#streaming-over-otlp) |
 
 Environment variables win over the YAML file. An `OTEL_*_EXPORTER` variable is a comma-separated list: one containing `otlp` turns the signal on, otherwise `none` turns it off, and any other value (`zipkin`) is ignored. Setting only an `OTEL_EXPORTER_OTLP_*` variable does not enable telemetry: set `enabled` too. The SDK also reads the rest of the standard environment where the table says nothing: `OTEL_RESOURCE_ATTRIBUTES` adds resource attributes, `OTEL_METRIC_EXPORT_INTERVAL` sets the metric interval, and the signal-specific `OTEL_EXPORTER_OTLP_TRACES_*`, `OTEL_EXPORTER_OTLP_METRICS_*` and `OTEL_EXPORTER_OTLP_LOGS_*` variables apply while `endpoint` is empty. `service.version` and, when `OPENARTIFACT_INSTANCE_ID` is set, `service.instance.id` are filled in. Export failures are logged as a warning at most once a minute.
+
+### Sampling
+
+`sampleRatio` is the fraction of new traces the server records, from 0 to 1.
+
+- A request that carries credentials follows its `traceparent`: a sampled parent is always recorded, an unsampled one never. Credentials are an `Authorization` or `X-Api-Key` header, or the session cookie.
+- A request without credentials is sampled at `sampleRatio` whatever its `traceparent` says. An anonymous client therefore cannot force every request to be recorded and exported.
+- The server does not validate the credentials at that point, because the span starts before authentication. A client that sends an invalid credential is treated as authenticated.
 
 ### What is traced
 
@@ -300,7 +440,9 @@ Writing a record never waits for the collector. Records are queued for export (`
 
 ### Overhead and binary size
 
-The OpenTelemetry SDK and the OTLP exporters are always compiled in, enabled or not (about 5 MB of the 44 MB stripped `linux/amd64` server binary: OpenTelemetry 1.7 MB, gRPC 1.1 MB, protobuf 1.6 MB and the `telemetry` package 0.3 MB, measured with go-size-analyzer; `go list -m all` grew from 159 to 221 modules). The release builds use the `grpcnotrace` build tag, which drops gRPC's `net/trace` debug pages (`EnableTracing` is never set, so nothing changes at runtime); without it the same dependencies cost about 14 MB, because `net/trace` pulls in `html/template` and the linker then keeps every exported method of every reachable type. With tracing disabled the runtime cost is one atomic load per outbound request and database statement; the HTTP middleware is not installed at all. Lower `sampleRatio` on busy instances: every proxied download is a request.
+The OpenTelemetry SDK and the OTLP exporters are always compiled in, enabled or not. They add about 5 MB to the 44 MB stripped `linux/amd64` server binary. With tracing disabled the cost at runtime is one atomic load per outbound request and database statement, and the HTTP middleware is not installed at all.
+
+Lower `sampleRatio` on busy instances: every proxied download is a request.
 
 ### Trying it locally
 

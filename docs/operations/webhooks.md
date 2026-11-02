@@ -6,33 +6,132 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Webhooks
 
-HTTP callbacks for repository and artifact events, signed with HMAC-SHA256, retried with backoff and logged per delivery.
+Webhooks send an HTTP callback to your own service when a repository or artifact event happens. Use them to trigger CI, notify a chat channel or feed an event bus.
 
-A webhook is either global (fires for events in every repository) or scoped to one repository. All management routes are admin only; they are also in the UI under **Settings > Webhooks** (`/settings/webhooks`).
+Each delivery is signed with HMAC-SHA256, retried with backoff and recorded in a delivery log. A webhook is either global (every repository) or scoped to one repository. Management is admin only, in the UI under **Settings > Webhooks** (`/settings/webhooks`), with the `oa` CLI, or through the API.
+
+## Create a webhook
+
+With the CLI, a global webhook needs `--name`, `--url` and `--events`:
+
+```sh
+printf '%s' "<SECRET>" > webhook-secret.txt
+oa webhook create --name ci --url https://ci.example.com/hook \
+  --events artifact.uploaded,artifact.deleted --secret-file webhook-secret.txt
+```
+
+Flags of `oa webhook create`:
+
+| Flag | Meaning |
+|---|---|
+| `--name` | required |
+| `--url` | required |
+| `--events` | required, comma-separated event names |
+| `--secret-file` | file with the signing secret, or `-` for stdin. The environment variable `OA_WEBHOOK_SECRET` works too |
+| `--active` | defaults to `true`; use `--active=false` to create it disabled |
+
+The CLI has no `--secret` flag, because command-line arguments are visible in the process list.
+
+For a single repository, use `oa webhook repo create REPO` with the same flags except `--active` (the webhook is always created enabled). `oa webhook repo list REPO` lists them.
+
+Other subcommands:
+
+```sh
+oa webhook list
+oa webhook show <ID>
+oa webhook update <ID> --url https://ci.example.com/new --active=false
+oa webhook test <ID>
+oa webhook deliveries <ID>
+oa webhook delete <ID>
+```
+
+`oa webhook update` changes only the flags you pass (`--name`, `--url`, `--events`, `--active`). Payload format, retries, timeout and TLS verification are set through the API or the UI.
+
+The same with the API, including the optional fields:
+
+```sh
+curl -X POST HOST/api/v1/repositories/REPO/webhooks \
+  -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" \
+  -d '{"name":"ci","url":"https://ci.example.com/hook","secret":"<SECRET>","events":["artifact.uploaded","artifact.deleted"]}'
+
+# CloudEvents consumers (Knative, Argo Events, EventBridge pipes, ...)
+curl -X POST HOST/api/v1/webhooks \
+  -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" \
+  -d '{"name":"events","url":"https://broker.example.com/in","events":["artifact.uploaded"],"payload_format":"cloudevents"}'
+```
+
+## Test it and read the delivery log
+
+Queue a test delivery, then read the log:
+
+```sh
+curl -X POST -H "Authorization: Bearer <TOKEN>" HOST/api/v1/webhooks/<ID>/test
+curl -H "Authorization: Bearer <TOKEN>" "HOST/api/v1/webhooks/<ID>/deliveries?limit=20"
+```
+
+The test sends a `webhook.test` event, whatever the subscriptions and the enabled flag. It uses the webhook's payload format.
+
+A log entry has these fields:
+
+- `id`, `webhook_id`, `event_type` and `payload` (always the native payload).
+- `status`: `pending`, `success` or `failed`.
+- `response_status` and `response_body` (up to 64 KiB).
+- `attempt_count`, `next_retry_at`, `delivered_at`, `created_at` and `updated_at`.
+
+For a `pending` entry, `next_retry_at` is the next scheduled attempt. For a delivery just created it is the end of its lease.
+
+The list takes `limit` from 1 to 500 (default 50).
+
+### Delivery log retention
+
+The server deletes finished entries (`success` or `failed`) older than 30 days, once an hour. Pending entries are never deleted. Deleting a webhook deletes its log.
+
+Change the period with `OPENARTIFACT_WEBHOOK_DELIVERY_RETENTION_DAYS`, or `workers.webhookDeliveryRetentionDays` in the YAML configuration. `0` keeps the entries forever and a negative value is rejected at startup.
+
+## Verify the signature
+
+When a webhook has a secret, every delivery carries `X-Hub-Signature-256: sha256=<hex>`. It is the HMAC-SHA256 of the raw request body keyed with the secret, the same scheme GitHub webhooks use. The header is computed over the body actually sent, for every payload format.
+
+Verify it before parsing the body, with a constant-time compare:
+
+```python
+import hashlib, hmac
+
+def valid(body: bytes, header: str, secret: bytes) -> bool:
+    expected = "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, header)
+```
+
+Slack and Discord incoming webhooks ignore the header. It is sent anyway.
 
 ## Events
 
 | Event | Fired when |
 |---|---|
-| `artifact.uploaded` | an artifact is published to a repository, in every format. Proxy cache fills do not fire it |
-| `artifact.deleted` | an artifact is deleted, in every format except Cargo and Go modules, which do not emit it. It fires for both soft deletes (moved to the [trash](trash.md)) and permanent deletes |
-| `artifact.restored` | an artifact is restored from the trash |
-| `artifact.purged` | a trashed artifact is removed for good, by an admin or by the retention purge worker |
+| `artifact.uploaded` | an artifact is published to a repository |
+| `artifact.deleted` | an artifact is deleted, softly or permanently |
+| `artifact.restored` | an artifact is restored from the [trash](trash.md) |
+| `artifact.purged` | a trashed artifact is removed for good |
 | `repository.created` | a repository is created |
-| `repository.deleted` | a repository is deleted (moved to the trash, or permanently when its retention is 0) |
+| `repository.deleted` | a repository is deleted, to the trash or permanently |
 | `repository.restored` | a repository is restored from the trash |
 | `repository.purged` | a trashed repository is removed for good |
-| `bundle.promoted` | a [release bundle](../repositories/release-bundles.md) was promoted: its artifacts were copied into the target repository of a pipeline stage. It goes to the webhooks of the target repository and the global ones |
-| `vulnerability.new` | the [local OSV mirror](../security/scanning.md#local-osv-mirror) found advisories that newly affect a stored package version (hosted repository or proxy cache). One event per package version, not per advisory. The first import of an ecosystem is a silent baseline and sends none. It goes to the webhooks of the repository and the global ones |
-| `webhook.test` | only by the test route; cannot be subscribed to |
+| `bundle.promoted` | a [release bundle](../repositories/release-bundles.md) is promoted into the target repository of a pipeline stage |
+| `webhook.test` | only by the test route; you cannot subscribe to it |
 
-Events are published after the operation succeeds. A failure to record an event never fails the upload or delete that caused it.
+Notes on when events fire:
 
-There is no `artifact.downloaded` event. A download is the highest-volume operation of an artifact manager (every CI job and every package manager resolve, every client retry and range request), and a delivery means one database insert plus one outbound HTTP request, so it is not offered; subscribing to it is rejected with 400. Use the [audit log](monitoring.md) (`artifact.downloaded` action) or the download metrics for that.
+- `artifact.uploaded` fires for every format. Proxy cache fills do not fire it.
+- `artifact.deleted` is not emitted for Go modules and Cargo.
+- `artifact.purged` fires for a purge by an admin and by the retention purge.
+- `bundle.promoted` goes to the webhooks of the target repository and to the global ones.
+- Events are published after the operation succeeds. A failure to record an event never fails the upload or delete that caused it.
+
+There is no `artifact.downloaded` event, because downloads are the highest-volume operation and each delivery costs a database insert and an HTTP request. Subscribing to it is rejected with 400. Use the `artifact.downloaded` action of the [audit log](monitoring.md) or the download metrics instead.
 
 ### Payloads
 
-These are the native (`openartifact`) payloads. Other [formats](#payload-formats) wrap or re-render the same data.
+These are the native (`openartifact`) payloads. Other [formats](#payload-formats) re-render the same data.
 
 Artifact events:
 
@@ -52,52 +151,40 @@ Artifact events:
 }
 ```
 
-`version`, `sha256` and `size` are omitted when the format or the operation does not provide them. Repository events carry `event`, `timestamp`, `repository`, `format` and `type` (`hosted`, `proxy` or `group`). `artifact.restored` and `artifact.purged` use the artifact payload and `repository.restored` and `repository.purged` the repository payload; only the `event` value differs. See [Trash](trash.md#audit-and-webhook-events). `bundle.promoted` carries the target repository's `event`, `timestamp`, `repository`, `format` and `type`, plus `bundle` (`name`, `version`), `from_stage` (empty when the bundle had no stage), `to_stage`, `items` (bundle items promoted), `copied` (artifacts newly written to the target) and `existing` (artifacts the target already held with the same content) and `replaced` (artifacts a forced promotion moved to the target's trash). The test event is `{"event":"webhook.test","message":"This is a test webhook delivery","timestamp":<unix seconds>}`.
+`version`, `sha256` and `size` are omitted when the format or the operation does not provide them.
 
-`vulnerability.new` uses the repository fields plus an `artifact` block, the `type` of the repository (`hosted` or `proxy`), `source` (always `osv-mirror`) and the advisories that are new for that package version (at most 50):
+- Repository events carry `event`, `timestamp`, `repository`, `format` and `type` (`hosted`, `proxy` or `group`).
+- `artifact.restored` and `artifact.purged` use the artifact payload. `repository.restored` and `repository.purged` use the repository payload. Only `event` differs. See [Trash](trash.md#audit-and-webhook-events).
+- `bundle.promoted` carries the target repository's repository payload plus the fields below.
+- The test event is `{"event":"webhook.test","message":"This is a test webhook delivery","timestamp":<unix seconds>}`.
 
-```json
-{
-  "event": "vulnerability.new",
-  "timestamp": "2026-01-02T15:04:05Z",
-  "repository": "REPO",
-  "format": "npm",
-  "type": "hosted",
-  "source": "osv-mirror",
-  "artifact": {
-    "repository": "REPO",
-    "format": "npm",
-    "name": "left-pad",
-    "version": "1.3.0",
-    "path": "left-pad/-/left-pad-1.3.0.tgz"
-  },
-  "vulnerabilities": [
-    {
-      "id": "GHSA-xxxx-xxxx-xxxx",
-      "severity": "high",
-      "cvss": 7.5,
-      "summary": "Short advisory title",
-      "fixed_in": "1.3.1"
-    }
-  ]
-}
-```
+Extra fields of `bundle.promoted`:
 
-Advisories that are later withdrawn or stop affecting the version send no webhook; they are recorded in the audit log as `scan.vuln_resolved`. The data comes from [OSV](https://osv.dev) (CC-BY 4.0).
+| Field | Meaning |
+|---|---|
+| `bundle` | `name` and `version` of the bundle |
+| `from_stage` | the source stage, empty when the bundle had no stage |
+| `to_stage` | the target stage |
+| `items` | bundle items promoted |
+| `copied` | artifacts newly written to the target |
+| `existing` | artifacts the target already held with the same content |
+| `replaced` | artifacts a forced promotion moved to the target's trash |
 
 ## Payload formats
 
-`payload_format` selects the body of every delivery of a webhook (default `openartifact`). The stored delivery log always keeps the native payload; the format is applied when the request is sent, so changing it also applies to pending retries. The test delivery uses the webhook's format. The `X-Hub-Signature-256` header is computed over the body actually sent, for every format.
+`payload_format` selects the body of every delivery of a webhook. The default is `openartifact`.
+
+The delivery log always keeps the native payload. The format is applied when the request is sent, so a change also applies to pending retries.
 
 | `payload_format` | Body | `Content-Type` |
 |---|---|---|
-| `openartifact` | the native payloads above, unchanged | `application/json` |
+| `openartifact` | the native payloads above | `application/json` |
 | `cloudevents` | a [CloudEvents 1.0](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md) event in structured JSON mode | `application/cloudevents+json` |
 | `slack` | a Slack [incoming webhook](https://api.slack.com/messaging/webhooks) message with Block Kit blocks | `application/json` |
-| `teams` | a Teams Workflows ("When a Teams webhook request is received") message carrying an Adaptive Card 1.4 | `application/json` |
+| `teams` | a Teams Workflows ("When a Teams webhook request is received") message with an Adaptive Card 1.4 | `application/json` |
 | `discord` | a Discord [webhook](https://discord.com/developers/docs/resources/webhook#execute-webhook) message with one embed | `application/json` |
 
-The formats are fixed built-in templates; there is no user-supplied template language.
+The formats are fixed built-in templates. There is no user-supplied template language.
 
 ### CloudEvents
 
@@ -114,70 +201,60 @@ The formats are fixed built-in templates; there is no user-supplied template lan
 }
 ```
 
-- `id` is the delivery ID, identical on every retry of that delivery: use it to deduplicate.
-- `source` is the server's public `BASE_URL` (default `http://localhost:8080`), without a trailing slash; `type` is `io.openartifact.` plus the event name, e.g. `io.openartifact.repository.created` or `io.openartifact.webhook.test`.
-- `time` is the event time as RFC 3339 (the test event's unix timestamp is converted).
-- `subject` is `<repository>/<path>` for artifact events and `<repository>` for repository events; it is absent for `webhook.test`.
+- `id` is the delivery ID, identical on every retry. Use it to deduplicate.
+- `source` is the server's public `BASE_URL` (default `http://localhost:8080`) without a trailing slash.
+- `type` is `io.openartifact.` plus the event name, for example `io.openartifact.repository.created`.
+- `time` is the event time in RFC 3339.
+- `subject` is `<repository>/<path>` for artifact events and `<repository>` for repository events. It is absent for `webhook.test`.
 - `data` is the native payload.
-
-The output is validated against the CloudEvents 1.0.2 JSON schema in the unit tests.
 
 ### Slack, Teams and Discord
 
-Each shows a title (`Artifact uploaded`, `Repository deleted`, `Webhook test`, ...) and the event's facts: repository, format, type, and for artifact events the name, version, path, SHA-256 and size. Values are untrusted (an artifact name is chosen by whoever uploads), so they are escaped for the target service:
+Each message has a title (`Artifact uploaded`, `Repository deleted`, `Webhook test`, ...) and the event's facts: repository, format and type. Artifact events add name, version, path, SHA-256 and size.
 
-- **Slack**: `&`, `<` and `>` are entity-escaped (so `<!channel>`, `<@U123>` and `<url|text>` cannot form), and values are shown as inline code.
-- **Discord**: values are inline code spans (markdown and mentions are literal), and `allowed_mentions.parse` is empty, so nothing can ping `@everyone`, a role or a user. A value is cut at 1000 characters (the embed limit is 1024).
-- **Teams**: markdown characters in values are backslash-escaped, so they render literally with no links or emphasis. The Adaptive Card is validated against the official Adaptive Cards 1.5 schema in the unit tests.
+Values are untrusted, because whoever uploads chooses the artifact name. They are escaped for the target service:
 
-Over-long values are truncated to 1000 characters in all three. Slack and Discord incoming webhooks do not verify the signature header; it is sent anyway and ignored. These services answer `2xx` on success and an error status otherwise, which the retry logic above handles as for any receiver.
+- **Slack**: `&`, `<` and `>` are entity-escaped, so `<!channel>`, `<@U123>` and `<url|text>` cannot form. Values are shown as inline code.
+- **Discord**: values are inline code spans, and `allowed_mentions.parse` is empty, so nothing can ping `@everyone`, a role or a user.
+- **Teams**: markdown characters are backslash-escaped, so values render literally, without links or emphasis.
 
-## Request
+Values longer than 1000 characters are truncated in all three.
 
-Each delivery is an HTTP `POST` of the formatted body:
+## Retries
+
+Each delivery is an HTTP `POST` of the formatted body with these headers:
 
 | Header | Value |
 |---|---|
 | `Content-Type` | `application/json`, or `application/cloudevents+json` for the `cloudevents` format |
 | `User-Agent` | `OpenArtifact-Webhook/1.0` |
-| `X-OA-Delivery` | the delivery ID, identical on every retry of that delivery |
-| `X-OA-Event` | the event name, e.g. `artifact.uploaded` |
 | `X-Hub-Signature-256` | `sha256=<hex>`, only when the webhook has a secret |
 
-Delivery is at least once: use `X-OA-Delivery` to drop a delivery you already handled (the `cloudevents` format carries the same value as the body's `id`). The signature is the HMAC-SHA256 of the raw request body keyed with the secret (the header name and format GitHub webhooks use); it covers the body only, so `X-OA-Delivery` and `X-OA-Event` are not signed and an intermediary could alter them. Verify the signature before parsing, with a constant-time compare:
+A `2xx` response is a success. Any other outcome is a failed attempt: another status, a connection error, a timeout or a secret that cannot be decrypted. Redirects are never followed, so a `3xx` response is a failed attempt.
 
-```python
-import hashlib, hmac
+Retry behaviour:
 
-def valid(body: bytes, header: str, secret: bytes) -> bool:
-    expected = "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, header)
-```
+- `max_retries` is the total number of attempts: 3 by default, 0 to 10. Values 0 and 1 both mean one attempt.
+- After failed attempt `n`, the next one runs `30 * 2^(n-1)` seconds later, capped at 1 hour: 30 s, 1 min, 2 min, 4 min and so on.
+- A retry can start up to 30 s after its scheduled time.
+- A delivery ends as `success`, or as `failed` once its attempts are used up.
+- `timeout_seconds` limits one attempt: default 30, clamped to 1 to 30.
 
-A response with a `2xx` status is a success. Everything else (other status, connection error, timeout, a secret that cannot be decrypted) is a failed attempt. The response status and up to 64 KiB of the body are stored in the delivery log. Redirects are never followed (a replayed signed body must not reach a host the owner did not configure): a `3xx` response is a failed attempt.
+Delivery is at least once. A delivery is stored before it is sent. If the server stops or its queue is full, the delivery stays `pending` and is sent later. If an instance crashes mid-delivery, another instance sends it again after 2 minutes. With several replicas, each pending delivery is claimed by one of them. Make receivers idempotent.
 
-## Retries
+## Allowed target addresses
 
-- `max_retries` is the total number of attempts: 3 by default, 0 to 10. Values 0 and 1 both mean a single attempt.
-- After failed attempt `n`, the next one is scheduled `30 * 2^(n-1)` seconds later, capped at 1 hour: 30 s, 1 min, 2 min, 4 min and so on.
-- Pending retries are picked up by a poller that runs every 30 s, so a retry can start up to 30 s after its scheduled time.
-- A delivery ends as `success`, or `failed` once attempts are used up.
-- Deliveries are written to the database before they are sent, handled by 8 workers from a queue of 1000, and leased for 2 minutes. If the queue is full or the server stops, the row stays `pending` and the poller sends it. With several replicas each pending delivery is claimed by exactly one of them.
-- `timeout_seconds` is the per-attempt limit: default 30, clamped to 1 to 30.
-- A worker starts an attempt only while the delivery's lease still outlasts the attempt (`timeout_seconds` plus a 5 s margin). A delivery that waited in the queue past that point, for example behind slow endpoints, is not sent by that instance: it stays `pending` and the poller claims it again once the lease expires, so a slow queue does not make two instances send the same delivery.
-- Delivery is still at least once: a delivery claimed by an instance that crashes is sent again when its 2-minute lease expires, and clock skew between a server and the database can shorten a lease. Receivers should be idempotent on `X-OA-Delivery`.
+The URL must be `http` or `https`, and its host must resolve when the webhook is saved. The server rejects the URL if any resolved address is:
 
-## Address validation (SSRF)
+- unspecified, multicast or link-local, which includes the cloud metadata address `169.254.169.254` and `fd00:ec2::/32`. Always blocked.
+- in a reserved IPv4 range, or an IPv6 form that embeds a blocked IPv4 address (NAT64, 6to4, Teredo). Always blocked.
+- loopback, private (RFC 1918, `fc00::/7`) or carrier-grade NAT (`100.64.0.0/10`). Blocked unless the server runs with `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`.
 
-The URL must be `http` or `https` and its host must resolve (names are resolved when the webhook is saved). It is rejected if any resolved address is:
+Set that variable when the receiver is an internal CI or chat bridge. It also relaxes proxy repository upstreams, see [hosted, proxy, group](../repositories/hosted-proxy-group.md).
 
-- unspecified, multicast or link-local, which includes the cloud metadata address `169.254.169.254` and `fd00:ec2::/32`: always blocked;
-- reserved IPv4 ranges, and IPv6 forms that embed an IPv4 address (NAT64, 6to4, Teredo) pointing at a blocked IPv4 address: always blocked;
-- loopback, private (RFC 1918, `fc00::/7`) or carrier-grade NAT (`100.64.0.0/10`): blocked unless the server runs with `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`. Set it when the receiver is an internal CI or chat bridge. The same switch relaxes proxy repository upstreams, see [hosted, proxy, group](../repositories/hosted-proxy-group.md).
+The check runs again at delivery time on the address actually dialed, so a name that later resolves to a blocked address cannot be reached. Environment proxy settings are ignored. `ssl_verify=false` only disables TLS certificate verification. The address checks still apply.
 
-The check runs again at delivery time on the address actually dialed, so a name that later resolves to a blocked address (DNS rebinding) cannot be reached. Environment proxy settings are ignored. `ssl_verify=false` only disables TLS certificate verification; the address checks still apply.
-
-## Manage
+## API reference
 
 | Route | Purpose |
 |---|---|
@@ -188,18 +265,18 @@ The check runs again at delivery time on the address actually dialed, so a name 
 | `GET /api/v1/webhooks/{id}` | show one |
 | `PUT /api/v1/webhooks/{id}` | update; omitted fields stay unchanged |
 | `DELETE /api/v1/webhooks/{id}` | delete (`204`), including its delivery log |
-| `POST /api/v1/webhooks/{id}/test` | queue a `webhook.test` delivery (`202`), regardless of subscriptions and the `enabled` flag |
-| `GET /api/v1/webhooks/{id}/deliveries` | delivery log; `limit` 1 to 500, default 50. Finished (`success`/`failed`) entries older than `OPENARTIFACT_WEBHOOK_DELIVERY_RETENTION_DAYS` (default 30; `0` keeps them) are deleted hourly |
+| `POST /api/v1/webhooks/{id}/test` | queue a `webhook.test` delivery (`202`) |
+| `GET /api/v1/webhooks/{id}/deliveries` | delivery log |
 
-A repository webhook fires only for events in its repository; a global one fires for all repositories. Bodies are limited to 64 KiB.
+A repository webhook fires only for events in its repository. A global one fires for all repositories. Request bodies are limited to 64 KiB.
 
 Fields:
 
-| Field | Create | Notes |
+| Field | On create | Notes |
 |---|---|---|
 | `name` | required | up to 255 characters |
-| `url` | required | up to 2048 characters, validated as above |
-| `events` | required | 1 to 32 names from the table above (without `webhook.test`); duplicates are dropped |
+| `url` | required | up to 2048 characters |
+| `events` | required | 1 to 32 names from the events table, without `webhook.test`; duplicates are dropped |
 | `secret` | optional | write-only, up to 512 characters |
 | `enabled` | default `true` | |
 | `content_type` | default `application/json` | no other value is accepted; the `cloudevents` format sends `application/cloudevents+json` regardless |
@@ -210,30 +287,10 @@ Fields:
 
 Responses carry `id`, `repository_id` (null for global), `name`, `url`, `enabled`, `events`, `content_type`, `payload_format`, `ssl_verify`, `max_retries`, `timeout_seconds`, `has_secret`, `created_at` and `updated_at`. The secret is never returned.
 
-```sh
-curl -X POST HOST/api/v1/repositories/REPO/webhooks \
-  -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" \
-  -d '{"name":"ci","url":"https://ci.example.com/hook","secret":"<SECRET>","events":["artifact.uploaded","artifact.deleted"]}'
-
-# CloudEvents consumers (Knative, Argo Events, EventBridge pipes, ...)
-curl -X POST HOST/api/v1/webhooks \
-  -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" \
-  -d '{"name":"events","url":"https://broker.example.com/in","events":["artifact.uploaded"],"payload_format":"cloudevents"}'
-
-curl -X POST -H "Authorization: Bearer <TOKEN>" HOST/api/v1/webhooks/<ID>/test
-curl -H "Authorization: Bearer <TOKEN>" "HOST/api/v1/webhooks/<ID>/deliveries?limit=20"
-```
-
 An empty `"secret": ""` in an update removes the signing secret.
-
-## Delivery log
-
-Each entry has `id`, `webhook_id`, `event_type`, `payload`, `status` (`pending`, `success` or `failed`), `response_status`, `response_body`, `attempt_count`, `next_retry_at`, `delivered_at`, `created_at` and `updated_at`. For a `pending` entry `next_retry_at` is the next scheduled attempt (or the lease end for a delivery just created). The log is kept until the webhook is deleted; there is no automatic purge.
 
 ## Secret storage
 
-The secret is encrypted with AES-256-GCM before it is stored, using `OPENARTIFACT_SECRET_KEY`, and decrypted only to sign a delivery. Without that key it is stored as plaintext and the server warns at startup. If the key changes, signing fails and deliveries of secret-protected webhooks fail until the secret is set again. Details in [storage](storage.md#stored-secrets). [Backups](backup.md) drop webhook secrets, so set them again after a restore.
+The secret is encrypted with AES-256-GCM using `OPENARTIFACT_SECRET_KEY` and decrypted only to sign a delivery. Without that key it is stored as plaintext and the server warns at startup.
 
-## Limits
-
-- `oa webhook create` and `oa webhook update` send `active` and no `name` or `events`, and the server requires `name` and `events`, so create fails with 400. Use the routes above or the UI. `oa webhook list` reads an `active` field the server does not return (it is `enabled`).
+If the key changes, signing fails and deliveries of secret-protected webhooks fail until you set the secret again. Details in [storage](storage.md#stored-secrets). [Backups](backup.md) drop webhook secrets, so set them again after a restore.

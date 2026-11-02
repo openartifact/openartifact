@@ -68,7 +68,7 @@ curl -sS -H "Authorization: Bearer <TOKEN>" "$HOST/api/v1/repositories?limit=10"
 
 From a repository checkout, `scripts/dev-token.sh` does steps 1 and 2 and prints only the token: `OA_PASS=<PASSWORD> scripts/dev-token.sh http://localhost:8080` (`--password-stdin` reads the password from stdin; `--change-password` with `OA_NEW_PASS` completes the forced password change of a fresh bootstrap admin; `OA_USER`, `OA_TOKEN_NAME` and `OA_TOKEN_KIND` override the defaults). It needs `curl` and `jq`.
 
-Token body fields: `name` (required, max 100 characters), `kind` (`access` or `deploy`), optional `scopes` (permission target IDs; a scope can only narrow the owner's access) and `expires_at` (RFC 3339, in the future, at most 2 years out). Creating repositories requires an administrator. Valid `format` values: `ansible`, `apk`, `cargo`, `composer`, `conan`, `conda`, `deb`, `docker`, `go`, `helm`, `ivy`, `maven`, `npm`, `nuget`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. The proxy/group options (`repo_type`, ...) are in the spec; see [hosted, proxy and group repositories](../repositories/hosted-proxy-group.md).
+Token body fields: `name` (required, max 100 characters), `kind` (`access` or `deploy`), optional `scopes` (permission target IDs; a scope can only narrow the owner's access) and `expires_at` (RFC 3339, in the future, at most 2 years out). Creating repositories requires an administrator. Valid `format` values: `ansible`, `apk`, `cargo`, `composer`, `conan`, `conda`, `deb`, `docker`, `go`, `helm`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `pacman`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. The proxy/group options (`repo_type`, ...) are in the spec; see [hosted, proxy and group repositories](../repositories/hosted-proxy-group.md).
 
 ## Conventions
 
@@ -196,7 +196,7 @@ Prefix `/api/v1`. Most groups are admin-only (the gate above); see the spec for 
 | `/vuln/scans`, `/vuln/scans/summary`, `/vuln/scans/export` | `GET` (admin): [vulnerability scans of all repositories](../security/scanning.md#the-overview-across-repositories), worst first, keyset paging (`cursor`, `has_more`; no total); `/vuln/scans/export`, `…/vuln/scans/{id}/export` and `…/secrets/scans[/{id}]/export` download [SARIF, CSV or JSON](../security/scanning.md#exporting-findings-sarif-csv-json) |
 | `/security/findings`, `/security/findings/summary`, `/security/findings/export`, `/security/health`, `/repositories/{name}/security/summary` | `GET`: [security findings](../security/findings.md) of all repositories and finding types, scoped to global admins and the projects the caller maintains or owns (keyset paging: `cursor`, `has_more`); export as CSV, JSON or CycloneDX VEX; `/security/health` (admin) for scanner and integration health; the repository summary (repo read permission) returns counts only |
 | `/repositories/{name}/artifacts/...` | [properties](../repositories/properties.md) and property search |
-| `/repositories/{name}/packages/{id}/{delta,deltas}` | binary deltas (deb and rpm), generated on demand with bsdiff and cached. Generation is bounded: two run at a time, up to 8 more wait for a slot, and at most 32 callers share one run; beyond that the answer is `503` with `Retry-After: 10`. A package over 64 MiB is refused with `413`, and so is one over 8 MiB when the caller is not signed in (public repositories); a delta already stored is served at any size |
+| `/repositories/{name}/packages/{id}/{delta,deltas}` | binary deltas for deb and rpm packages, see [Delta limits](#delta-limits) |
 | `/repositories/{name}/ai-analysis` | [AI analysis](ai-analysis.md) |
 | `/packages/recent` | `GET`: the newest package versions of the repositories the caller can read, `{packages:[{repository, format, name, version, created_at}]}`; `limit` (default 10, max 50); `mine=true` keeps the repositories the caller can write to, since the server records no publisher |
 | `/search` | search packages and repositories. Query parameters `q`, `format`, `repo`, `limit` (default 25, max 100), `offset` and `group=package` (one hit per package, its latest version, `total` counts packages). Hits are ranked: exact name, names starting with the query, other matches, then newest first. Returns `{total, packages, repositories}`; `400 query_too_broad` above 10000 matches (the body adds `max_results` and `narrow_by`, the filters the query has not used yet), `400 invalid_group` for another `group`. `group=package` hits carry `repository`, `format`, `name`, `latest_version` and `version_count`; `flagged=true` keeps the packages with a critical or high vulnerability, a secret finding or a quarantined result. `checksum=<hex>` (SHA-256 of 64, SHA-1 of 40 or MD5 of 32 hex characters; case-insensitive) looks up the stored file checksums in the readable repositories and returns `{total, packages:[{repository, format, name, version, filename, checksum, algorithm}]}` (`400 invalid_checksum`; `400 query_too_broad` when too many files match). SHA-256 matches through the blob store, SHA-1 and MD5 only match formats that record one |
@@ -208,6 +208,15 @@ Prefix `/api/v1`. Most groups are admin-only (the gate above); see the spec for 
 | `/admin/{tokens,storage,backup,restore,audit,gpg,sso-providers,ai,license,system}` | token administration, [storage](../operations/storage.md), [backup](../operations/backup.md), audit log (`/admin/audit/export` streams it as a JSONL or CSV [download](../operations/monitoring.md#export)), GPG signing keys (`/admin/gpg/keys`: list, import, generate, activate, delete, export; see [signing](../security/signing.md)), SSO providers, AI settings, global license policies, detailed system info |
 | `/admin/tiering/{tiers,policies,dry-run,run,status}` | [storage tiers](../operations/storage-tiering.md#admin-api): tiers with placement stats, lifecycle policies (CRUD), dry run (`POST /admin/tiering/dry-run`: counts, bytes and a sample of what would move, no changes), mover trigger and status |
 | `/system/info` | version and build information |
+
+### Delta limits
+
+The server generates a delta on demand with bsdiff and caches it. Generation is bounded:
+
+- Two generations run at a time. Up to 8 more requests wait for a slot, and at most 32 callers share one run. Beyond that the server answers `503` with `Retry-After: 10`.
+- A package over 64 MiB is refused with `413`.
+- A package over 8 MiB is also refused with `413` when the caller is not signed in (public repositories).
+- A delta that is already stored is served at any size.
 
 `/admin/pprof/` is also registered when `server.pprofEnabled` is set (admin only; for diagnostics, see [performance](../operations/performance.md)).
 

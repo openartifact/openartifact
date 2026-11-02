@@ -6,9 +6,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # MCP server
 
-OpenArtifact can expose a [Model Context Protocol](https://modelcontextprotocol.io) server so AI agents can browse repositories, inspect packages and vulnerabilities, and look up client setup commands. It is disabled by default.
+Use the MCP server to let AI agents browse repositories, inspect packages and vulnerabilities, and look up client setup commands through the [Model Context Protocol](https://modelcontextprotocol.io). It is disabled by default.
 
-The server implements MCP revision 2026-07-28 with the official [Go SDK](https://github.com/modelcontextprotocol/go-sdk). Older revisions (2025-03-26, 2025-06-18, 2025-11-25) are negotiated by the SDK; legacy clients that call `initialize` are served through an ephemeral session, nothing is stored between requests.
+## Quick start
+
+1. Enable it: set `mcp.enabled: true` (`MCP_ENABLED=true`) and set `BASE_URL` to the address clients reach.
+2. Create an API token, ideally a [read-only one](#read-only-token), under **Settings > Access tokens**.
+3. Point your client at `<BASE_URL>/mcp` with the header `Authorization: Bearer <TOKEN>`. Copy-paste setups for common clients are in [Client configuration](#client-configuration).
+
+```sh
+claude mcp add --transport http openartifact <BASE_URL>/mcp \
+  --header "Authorization: Bearer <TOKEN>"
+```
+
+The server implements MCP revision 2026-07-28 with the official [Go SDK](https://github.com/modelcontextprotocol/go-sdk). It also negotiates the older revisions 2025-03-26, 2025-06-18 and 2025-11-25. Clients that call `initialize` get a temporary session; nothing is stored between requests.
 
 ## Settings
 
@@ -28,7 +39,7 @@ See [`openartifact.example.yaml`](../../openartifact.example.yaml) and [`.env.ex
 
 The endpoint is a stateless Streamable HTTP server at `<BASE_URL>/mcp` (or your `mcp.httpPath`). Only `POST` is served and replies are plain JSON; `GET` and `DELETE` get 405. It is never served as an SPA page. The global IP allowlist and rate limit ([authentication](../security/authentication.md#network-controls)) apply before any MCP check, and `BASE_URL` must be the address clients reach: download URLs (`get_package`) and client-setup URLs (`client_setup`) are built from it.
 
-JSON-RPC batch arrays are refused with HTTP 400 and JSON-RPC error `-32600` when the `MCP-Protocol-Version` header is `2025-06-18` or later (batching was removed in that revision). Without the header (2025-03-26 clients) batches are processed.
+JSON-RPC batch arrays (several calls in one request) are refused with HTTP 400 and JSON-RPC error `-32600` when the `MCP-Protocol-Version` header is `2025-06-18` or later. Without the header, batches are processed.
 
 ## Authentication
 
@@ -60,7 +71,7 @@ Opaque (non-JWT) access tokens are not supported. The ID token minted for web lo
 
 ### Protected resource metadata
 
-For OAuth discovery the server publishes [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728) metadata, public and unauthenticated (CORS `*`, cached for 60 seconds), at `GET /.well-known/oauth-protected-resource` and `GET /.well-known/oauth-protected-resource<mcp.httpPath>`:
+OAuth-capable clients use a standard discovery document ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728), "OAuth protected resource metadata") to learn which login servers the endpoint trusts. The server publishes it without authentication, allows any origin (CORS `*`) and caches it for 60 seconds, at `GET /.well-known/oauth-protected-resource` and `GET /.well-known/oauth-protected-resource<mcp.httpPath>`:
 
 | Field | Value |
 |---|---|
@@ -68,7 +79,7 @@ For OAuth discovery the server publishes [RFC 9728](https://www.rfc-editor.org/r
 | `authorization_servers` | the issuers of the enabled OIDC SSO providers (cached for 30 seconds) |
 | `bearer_methods_supported` | `["header"]` |
 
-With no OIDC provider configured, `authorization_servers` is **omitted**. RFC 9728 makes the field optional, but the 2026-07-28 specification says a server must include it; this is a deliberate deviation. Such clients cannot discover an authorization server and must use API tokens.
+With no OIDC provider configured, `authorization_servers` is omitted. The MCP 2026-07-28 specification asks servers to include it, so a client that insists on it cannot discover a login server. Use API tokens with such clients.
 
 ### Origin validation
 
@@ -121,7 +132,7 @@ Ten tools. Arguments are validated against each tool's JSON schema and unknown a
 | `list_packages(repository, format?, page?, limit?)` | packages of any format, newest first (`limit` default 20, max 100): id, name, version, format, arch, size, sha256, filename, created_at |
 | `get_package(repository, name)` | all versions of an exact package name with filename, sha256, size, created_at and download URL (`<BASE_URL>/api/v1/repositories/{repo}/packages/{id}/download`). Scans at most 5,000 listing entries and returns at most 200 versions; `truncated: true` when a bound was hit |
 | `get_vulnerabilities(repository, package?, version?)` | severity counts (`critical`, `high`, `medium`, `low`, `unknown`), scan counters (`scanned_packages`, `vulnerable_packages`, `pending_scans`, `failed_scans`, which counts `failed` and `partial` scans) and the most severe findings from stored scans, sorted by severity then CVSS, max 100 (`findings_truncated`); summaries cut at 500 bytes, 5 references per finding. Administrators only (global `manage`) |
-| `client_setup(repository)` | `base_url` and configure/publish commands per client; credentials are `<USERNAME>` / `<TOKEN>` placeholders. Same snippets as the UI and `internal/clientsetup` |
+| `client_setup(repository)` | `base_url` and configure/publish commands per client; credentials are `<USERNAME>` / `<TOKEN>` placeholders. Same snippets as the web UI |
 | `search_artifacts(query, repository?, format?)` | case-insensitive substring match on name, version, arch and filename over *recent* packages only: the newest 50 of one repository, or the newest 20 of each readable repository, stopping at 50 hits. Not a full-text index; use `GET /api/v1/search` for that |
 | `list_ai_analyses(repository_id, status?, license_concern?, limit?, offset?)` | stored AI analyses of a repository; `status` is `pending`, `processing`, `completed` or `failed` (anything else is a tool error); `license_concern` is the string `'true'` to keep only artifacts with `REVIEW_REQUIRED` license status; `limit` default 20, max 100 |
 | `get_artifact_analysis(repository_id, artifact_id)` | one stored AI analysis |
@@ -140,7 +151,7 @@ Package names, versions, filenames, descriptions, vulnerability summaries and AI
 ### Errors
 
 - Malformed requests (unknown tool, params that are not a valid `tools/call`) are JSON-RPC errors (`-32602`).
-- Argument problems (missing, ill-typed or unknown argument, bad `status`, over-long manifest) and permission refusals are **tool errors**: `isError: true` with a message the model can read, as the 2026-07-28 tools specification (SEP-1303) prescribes.
+- Argument problems (missing, ill-typed or unknown argument, bad `status`, over-long manifest) and permission refusals are **tool errors**: `isError: true` with a message the model can read, as the MCP 2026-07-28 specification prescribes. This lets the model read the message and correct its call.
 - Transport refusals use HTTP statuses: 401, 403 (origin, project tokens), 405, 413, 429, and 400 for batches.
 
 ## Client configuration
