@@ -235,8 +235,7 @@ Coverage differs by format:
 | Formats | Metadata | Download |
 |---|---|---|
 | npm, pypi, composer, helm, nuget, rubygems, go, cargo, conda, ansible | Blocked versions are left out of what the proxy renders | `403`, also for cached files |
-| maven, ivy, sbt, deb, rpm, apk, pacman, conan 2 | Served as the upstream has them: a client may still list a blocked package | `403`, also for cached files |
-| conan 1 clients | Not gated | Not gated: `v1/...` paths bypass the rules |
+| maven, ivy, sbt, deb, rpm, apk, pacman, conan | Served as the upstream has them: a client may still list a blocked package | `403`, also for cached files |
 | docker | Tag lists pass through | Manifests: `403 DENIED`; blobs addressed by digest are not gated |
 | terraform, raw, nix | Not covered: rules have no effect | Not covered |
 

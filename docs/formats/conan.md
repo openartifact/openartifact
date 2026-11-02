@@ -167,10 +167,8 @@ Rules follow [Package curation](../repositories/hosted-proxy-group.md#package-cu
 
 - **Minimum age.** `min_age_hours` has no effect on a conan proxy. See [Minimum age](../repositories/hosted-proxy-group.md#minimum-age).
 - **Names.** Rules name a recipe by its lower-case name and a version as the reference shows it (`zlib`, `1.3.1`).
-- **Blocked recipe.** The Conan 2 revision, file-list and file requests answer `403` with the reason, even when cached.
-- **Not gated.** Searches are not gated.
-
-> **Warning:** curation on a conan proxy does not stop Conan 1 clients. Conan 1 paths (`v1/...`) are not gated, so a Conan 1 client can still fetch a blocked recipe through the `v1/files/...` URLs.
+- **Blocked recipe.** Conan 2 revision, file-list and file requests answer `403` with the reason, even when cached. Conan 1 requests for the snapshot, `download_urls`, `digest` and `v1/files/...` downloads are refused the same way.
+- **Not gated.** Searches name no recipe and are not gated.
 
 ## Group
 
@@ -182,7 +180,7 @@ A conan group serves several hosted and conan proxy repositories as one remote. 
 - **Conan 1 clients.** The group answers `download_urls` and `digest` from the first member that has the recipe, with file URLs that point at the group.
 - **Hosted members win a recipe name.** If a readable hosted member holds a recipe name, revision lists, `latest`, package searches, file lists and files of that name come only from hosted members. The group search leaves out the proxies' results for that name. A Conan 1 or 2 client never sees the proxy's versions. A hosted member that cannot answer the search fails the group search with `502`. Setting `merge_proxy_versions` to `true` turns this off. See [hosted members win a package name](../repositories/hosted-proxy-group.md#hosted-members-win-a-package-name).
 - **Failing members.** A member that fails while another contributes is ignored. With no contributor the group answers `404`, or `502` if a member failed. The server serves a merged answer that left out a failed member with `Cache-Control: no-store` and no `ETag`.
-- **Minimum age and curation.** A group serves what its proxy members serve. The Conan 1 warning under Proxy applies to groups too.
+- **Minimum age and curation.** A group serves what its proxy members serve.
 
 ## Limits and behaviour
 
@@ -201,5 +199,4 @@ A conan group serves several hosted and conan proxy repositories as one remote. 
 | `409` on upload or delete | The repository has immutable releases. | Use a new version, or ask an admin to pass `?force=true`. |
 | `405` on `conan upload` | The repository is a proxy or group. | Upload to a hosted repository. |
 | A Conan 1 client does not find a binary on a proxy | The upstream has only Conan 2 package ids. | Use a Conan 2 client, or an upstream that serves Conan 1 binaries. |
-| A Conan 1 client still gets a recipe you blocked | Curation does not gate `v1/...` paths. | Do not rely on curation for Conan 1 clients. |
 | `502` from a proxy | The upstream is down, or returned something that is not the Conan API. | Check `upstream_url` and the upstream. |
