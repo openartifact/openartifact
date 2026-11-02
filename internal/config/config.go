@@ -219,11 +219,12 @@ type WorkersConfig struct {
 	// Zero disables the check.
 	ProxyUpstreamStallTimeout time.Duration `yaml:"proxyUpstreamStallTimeout"`
 	// DockerUploadTTL is how long a blob upload session may sit idle before
-	// the sweeper deletes it and its staged file. Zero or negative disables
-	// the sweeper.
+	// the sweeper deletes it and its chunks. Zero or negative disables the
+	// sweeper.
 	DockerUploadTTL time.Duration `yaml:"dockerUploadTtl"`
-	// DockerUploadDir is where in-progress blob uploads are staged. Empty
-	// means /tmp/openartifact/docker-uploads.
+	// DockerUploadDir is where upload chunks are kept when the blob store
+	// cannot hold them (the oci backend); other backends keep them in the
+	// blob store. Empty means /tmp/openartifact/docker-uploads.
 	DockerUploadDir string `yaml:"dockerUploadDir"`
 	// WebhookDeliveryRetentionDays is how many days finished (success or
 	// failed) webhook delivery records are kept before the hourly purge deletes

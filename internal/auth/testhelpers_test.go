@@ -411,7 +411,7 @@ func (m *tokenMockDB) CreateDockerUpload(_ context.Context, _ *models.DockerUplo
 func (m *tokenMockDB) GetDockerUpload(_ context.Context, _, _ string) (*models.DockerUpload, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) UpdateDockerUploadOffset(_ context.Context, _, _ string, _, _ int64) (bool, error) {
+func (m *tokenMockDB) AppendDockerUploadChunk(_ context.Context, _, _, _ string, _, _ int64) (bool, error) {
 	return true, nil
 }
 func (m *tokenMockDB) DeleteDockerUpload(_ context.Context, _, _ string) error { return nil }

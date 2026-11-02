@@ -39,6 +39,7 @@ type regFakeDBStore interface {
 // real ON CONFLICT queries.
 type regFakeDB struct {
 	regFakeDBStore
+	chunkRows
 	formattest.Quarantine
 	fakeBlobHolds
 
@@ -151,19 +152,28 @@ func (d *regFakeDB) GetDockerUpload(_ context.Context, repoID, uploadUUID string
 	return d.uploads[scoped(repoID, uploadUUID)], nil
 }
 
-func (d *regFakeDB) UpdateDockerUploadOffset(_ context.Context, repoID, uploadUUID string, oldOffset, newOffset int64) (bool, error) {
+func (d *regFakeDB) AppendDockerUploadChunk(
+	_ context.Context, repoID, uploadUUID, chunkID string, oldOffset, newOffset int64,
+) (bool, error) {
 	u := d.uploads[scoped(repoID, uploadUUID)]
 	if u == nil || u.Offset != oldOffset {
 		return false, nil
 	}
 
 	u.Offset = newOffset
+	d.append(repoID, uploadUUID, chunkID, newOffset-oldOffset)
 
 	return true, nil
 }
 
+func (d *regFakeDB) ListDockerUploadChunks(_ context.Context, repositoryID, uploadUUID string) ([]models.DockerUploadChunk, error) {
+	return d.list(repositoryID, uploadUUID), nil
+}
+
 func (d *regFakeDB) DeleteDockerUpload(_ context.Context, repoID, uploadUUID string) error {
 	delete(d.uploads, scoped(repoID, uploadUUID))
+	d.drop(repoID, uploadUUID)
+
 	return nil
 }
 

@@ -462,7 +462,7 @@ func (fs *FilesystemStore) List(ctx context.Context, token string, limit int) ([
 		}
 
 		if d.IsDir() {
-			if rel == filesystemStagingDir {
+			if isReservedRootDir(rel) {
 				return filepath.SkipDir
 			}
 

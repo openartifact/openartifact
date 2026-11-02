@@ -10,10 +10,14 @@ import (
 	"time"
 )
 
-// StagingForwarder is the staging and multipart staging capability of a store
-// that fronts another one: every call goes to the store target returns, and a
-// target without the capability answers ErrPresignNotSupported. A wrapper
-// embeds it and overrides the calls it has to intercept.
+// StagingForwarder is the staging, multipart staging and upload chunk
+// capability of a store that fronts another one: every call goes to the store
+// target returns. A target without the staging capability answers
+// ErrPresignNotSupported; one without the chunk capability reports
+// ChunksSupported false and answers ErrChunksNotSupported. Chunks are scratch
+// data of in-flight uploads, so they bypass replication, tiering and metrics
+// of the wrapper. A wrapper embeds it and overrides the calls it has to
+// intercept.
 type StagingForwarder struct {
 	target func() BlobStore
 }
@@ -21,6 +25,7 @@ type StagingForwarder struct {
 var (
 	_ StagingStore          = StagingForwarder{}
 	_ MultipartStagingStore = StagingForwarder{}
+	_ ChunkStore            = StagingForwarder{}
 )
 
 // NewStagingForwarder returns a forwarder to the store target returns; target
@@ -149,4 +154,57 @@ func (f StagingForwarder) CompleteMultipart(ctx context.Context, id, handle stri
 	}
 
 	return m.CompleteMultipart(ctx, id, handle, size, partSize)
+}
+
+func (f StagingForwarder) chunks() (ChunkStore, bool) {
+	c, ok := f.target().(ChunkStore)
+
+	return c, ok
+}
+
+// ChunksSupported implements ChunkStore.
+func (f StagingForwarder) ChunksSupported() bool {
+	c, ok := f.chunks()
+
+	return ok && c.ChunksSupported()
+}
+
+// PutChunk implements ChunkStore.
+func (f StagingForwarder) PutChunk(ctx context.Context, id string, r io.Reader) (int64, error) {
+	c, ok := f.chunks()
+	if !ok {
+		return 0, ErrChunksNotSupported
+	}
+
+	return c.PutChunk(ctx, id, r)
+}
+
+// OpenChunk implements ChunkStore.
+func (f StagingForwarder) OpenChunk(ctx context.Context, id string) (io.ReadCloser, error) {
+	c, ok := f.chunks()
+	if !ok {
+		return nil, ErrChunksNotSupported
+	}
+
+	return c.OpenChunk(ctx, id)
+}
+
+// DeleteChunk implements ChunkStore.
+func (f StagingForwarder) DeleteChunk(ctx context.Context, id string) error {
+	c, ok := f.chunks()
+	if !ok {
+		return ErrChunksNotSupported
+	}
+
+	return c.DeleteChunk(ctx, id)
+}
+
+// WalkChunks implements ChunkStore.
+func (f StagingForwarder) WalkChunks(ctx context.Context, olderThan time.Time, fn func(ids []string) error) error {
+	c, ok := f.chunks()
+	if !ok {
+		return ErrChunksNotSupported
+	}
+
+	return c.WalkChunks(ctx, olderThan, fn)
 }

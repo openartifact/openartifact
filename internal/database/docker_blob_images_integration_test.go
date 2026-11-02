@@ -152,27 +152,101 @@ func TestUpsertBlobKeepsFirstMediaTypeAndFixesZeroSize(t *testing.T) {
 	}
 }
 
-func TestUpdateDockerUploadOffsetIsCompareAndSet(t *testing.T) {
+const (
+	chunkA     = "22222222-2222-4222-8222-222222222222"
+	chunkB     = "33333333-3333-4333-8333-333333333333"
+	chunkOther = "44444444-4444-4444-8444-444444444444"
+	noRepo     = "00000000-0000-4000-8000-000000000000"
+)
+
+// chunkedUpload opens an upload session in a seeded docker repository.
+func chunkedUpload(t *testing.T, name string) (*PostgresDB, *models.DockerUpload) {
+	t.Helper()
+
 	pg := newQuotaTestDB(t, 8)
-	ctx := context.Background()
-	s := newQuotaSeeder(t, pg, "docker-cas", "docker")
+	s := newQuotaSeeder(t, pg, name, "docker")
 
 	up := &models.DockerUpload{RepositoryID: s.repo, UploadUUID: "11111111-1111-4111-8111-111111111111"}
-	if err := pg.CreateDockerUpload(ctx, up); err != nil {
+	if err := pg.CreateDockerUpload(context.Background(), up); err != nil {
 		t.Fatal(err)
 	}
 
-	if ok, err := pg.UpdateDockerUploadOffset(ctx, s.repo, up.UploadUUID, 0, 10); err != nil || !ok {
-		t.Fatalf("first advance = %v, %v, want true", ok, err)
+	return pg, up
+}
+
+func TestAppendDockerUploadChunkIsCompareAndSet(t *testing.T) {
+	pg, up := chunkedUpload(t, "docker-cas")
+	ctx := context.Background()
+
+	if ok, err := pg.AppendDockerUploadChunk(ctx, up.RepositoryID, up.UploadUUID, chunkA, 0, 10); err != nil || !ok {
+		t.Fatalf("first append = %v, %v, want true", ok, err)
 	}
 
-	// A second request that also started from offset 0 loses.
-	if ok, err := pg.UpdateDockerUploadOffset(ctx, s.repo, up.UploadUUID, 0, 99); err != nil || ok {
-		t.Fatalf("stale advance = %v, %v, want false", ok, err)
+	// A second request that also started from offset 0 loses and records nothing.
+	if ok, err := pg.AppendDockerUploadChunk(ctx, up.RepositoryID, up.UploadUUID, chunkB, 0, 99); err != nil || ok {
+		t.Fatalf("stale append = %v, %v, want false", ok, err)
 	}
 
-	got, err := pg.GetDockerUpload(ctx, s.repo, up.UploadUUID)
+	got, err := pg.GetDockerUpload(ctx, up.RepositoryID, up.UploadUUID)
 	if err != nil || got.Offset != 10 {
 		t.Fatalf("offset = %+v, %v, want 10", got, err)
+	}
+
+	// Another repository cannot append to the session.
+	if ok, err := pg.AppendDockerUploadChunk(ctx, noRepo, up.UploadUUID, chunkB, 10, 30); err != nil || ok {
+		t.Fatalf("foreign append = %v, %v, want false", ok, err)
+	}
+}
+
+func TestListDockerUploadChunksInAppendOrder(t *testing.T) {
+	pg, up := chunkedUpload(t, "docker-chunks")
+	ctx := context.Background()
+
+	for _, step := range []struct {
+		id       string
+		from, to int64
+	}{{chunkA, 0, 10}, {chunkB, 10, 25}} {
+		if ok, err := pg.AppendDockerUploadChunk(ctx, up.RepositoryID, up.UploadUUID, step.id, step.from, step.to); err != nil || !ok {
+			t.Fatalf("append %s = %v, %v", step.id, ok, err)
+		}
+	}
+
+	chunks, err := pg.ListDockerUploadChunks(ctx, up.RepositoryID, up.UploadUUID)
+	if err != nil || len(chunks) != 2 ||
+		chunks[0].ChunkID != chunkA || chunks[0].Size != 10 || chunks[1].ChunkID != chunkB || chunks[1].Size != 15 {
+		t.Fatalf("chunks = %+v, %v, want [%s 10] [%s 15] in order", chunks, err, chunkA, chunkB)
+	}
+
+	if chunks, err := pg.ListDockerUploadChunks(ctx, noRepo, up.UploadUUID); err != nil || len(chunks) != 0 {
+		t.Fatalf("foreign list = %+v, %v, want none", chunks, err)
+	}
+}
+
+// The sweeper asks which chunk ids still have a row; deleting the session takes
+// its rows with it.
+func TestExistingDockerUploadChunkIDsFollowTheSession(t *testing.T) {
+	pg, up := chunkedUpload(t, "docker-existing")
+	ctx := context.Background()
+
+	for _, step := range []struct {
+		id       string
+		from, to int64
+	}{{chunkA, 0, 10}, {chunkB, 10, 25}} {
+		if ok, err := pg.AppendDockerUploadChunk(ctx, up.RepositoryID, up.UploadUUID, step.id, step.from, step.to); err != nil || !ok {
+			t.Fatalf("append %s = %v, %v", step.id, ok, err)
+		}
+	}
+
+	ids, err := pg.ExistingDockerUploadChunkIDs(ctx, []string{chunkA, chunkB, chunkOther, "not-a-uuid"})
+	if err != nil || len(ids) != 2 {
+		t.Fatalf("existing ids = %v, %v, want the two with rows", ids, err)
+	}
+
+	if err := pg.DeleteDockerUpload(ctx, up.RepositoryID, up.UploadUUID); err != nil {
+		t.Fatal(err)
+	}
+
+	if ids, err := pg.ExistingDockerUploadChunkIDs(ctx, []string{chunkA, chunkB}); err != nil || len(ids) != 0 {
+		t.Fatalf("existing ids after delete = %v, %v, want none", ids, err)
 	}
 }

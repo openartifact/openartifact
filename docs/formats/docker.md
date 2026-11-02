@@ -60,7 +60,9 @@ The first path segment after `/v2/` is the OpenArtifact repository. The rest is 
 
 ### Push behaviour
 
-- **Blob upload.** Chunks are staged in `workers.dockerUploadDir` (default `/tmp/openartifact/docker-uploads`) and moved into the blob store on completion. Sessions idle longer than `workers.dockerUploadTtl` (default `24h`) are removed with their files. Requests on one session run one at a time. Completing an upload for a blob the repository already has succeeds with `201`. The stored object is always the one whose digest was verified.
+- **Blob upload.** Each `PATCH` stores its chunk in the blob store (under `uploads/`, never listed as a blob) and records it in the database. Any replica can take the next request of a session, so a push works behind a round-robin load balancer without a shared volume. The `PUT` reads the chunks back, hashes them with its own body, verifies the digest and stores the blob. Sessions idle longer than `workers.dockerUploadTtl` (default `24h`) are removed with their chunks. Completing an upload for a blob the repository already has succeeds with `201`. The stored object is always the one whose digest was verified. See the next item for several replicas.
+- **Several replicas.** Chunks live in the blob store, which every replica shares, except on the `oci` storage backend, which cannot hold them. With `oci` the chunks are kept in `workers.dockerUploadDir` (default `/tmp/openartifact/docker-uploads`) on the replica that took the `PATCH`: run one replica, or mount that directory on a volume all replicas share. Requests of one session handled by one replica run one at a time. Requests on different replicas are ordered by the session's offset in the database: a `PATCH` that loses the race gets `409 BLOB_UPLOAD_INVALID` and its chunk is dropped.
+- **Cost.** A chunked push moves each layer through the server three times with an object store backend: the client's `PATCH` requests upload it, the `PUT` downloads it, and the blob store write uploads it. The server needs local disk for one layer while it completes, as before.
 - **Manifest push.** Manifests are stored by content. The answer is `201` with `Location` and `Docker-Content-Digest`. Pushing by tag moves the tag if it exists. The default media type is `application/vnd.docker.distribution.manifest.v2+json`. An OCI `subject` is recorded and echoed in `Oci-Subject`.
 - **Mount.** A mount succeeds when the blob is already available to the target image, or when the caller may read the source repository and the blob is not quarantined. Otherwise the registry opens a normal upload session.
 - **Limits.** The manifest body is limited to 4 MiB (`413 SIZE_INVALID`). Every referenced config and layer blob must be available to the image.
@@ -68,9 +70,11 @@ The first path segment after `/v2/` is the OpenArtifact repository. The rest is 
 | Situation during upload or push | Response |
 |---|---|
 | `Content-Range` does not start at the current offset | `416 RANGE_INVALID` |
-| Staged file is shorter than the recorded offset | `404 BLOB_UPLOAD_UNKNOWN`; stray bytes beyond the offset are discarded |
+| Another `PATCH` of the same session was accepted first (two clients, or a retry racing the original) | `409 BLOB_UPLOAD_INVALID`; the losing chunk is dropped |
+| The session's chunks are gone from the blob store, or the session was opened before chunks moved into it | `404 BLOB_UPLOAD_UNKNOWN`; start the push again |
 | Digest of the upload does not match | `400 DIGEST_INVALID`; the upload is discarded |
-| `PATCH` while a `PUT` completes the same session | waits, then `404 BLOB_UPLOAD_UNKNOWN` |
+| `PATCH` while a `PUT` completes the same session on the same replica | waits, then `404 BLOB_UPLOAD_UNKNOWN` |
+| `PATCH` while a `PUT` completes the same session on another replica | the `PATCH` is answered `202` or `404 BLOB_UPLOAD_UNKNOWN`; its chunk is never part of the blob the `PUT` verified, and the sweeper deletes it |
 | Manifest pushed by digest does not match its body's SHA-256 | `400 MANIFEST_INVALID` |
 | Push over the repository quota | `507` with the OCI `DENIED` error |
 

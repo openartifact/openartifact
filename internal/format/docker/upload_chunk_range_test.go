@@ -8,7 +8,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -19,7 +18,7 @@ import (
 // TestHandleUploadChunk_RejectsNonContiguousRange exercises the HTTP wiring
 // around parseContentRange/validateChunkOffset: a PATCH whose declared
 // Content-Range start does not match the upload's current offset must be
-// rejected with 416 before anything is written to the temp file.
+// rejected with 416 before anything is stored.
 func TestHandleUploadChunk_RejectsNonContiguousRange(t *testing.T) {
 	uid := uuid.New().String()
 
@@ -51,13 +50,13 @@ func TestHandleUploadChunk_RejectsNonContiguousRange(t *testing.T) {
 		t.Fatalf("Range header = %q, want %q", got, want)
 	}
 
-	// The offset must be untouched and nothing written to the temp file.
+	// The offset must be untouched and no chunk stored.
 	if db.offset != 0 {
-		t.Fatalf("offset = %d, want 0 (UpdateDockerUploadOffset must not be called)", db.offset)
+		t.Fatalf("offset = %d, want 0 (AppendDockerUploadChunk must not be called)", db.offset)
 	}
 
-	if _, err := os.Stat(tempUploadPath(t, uid)); !os.IsNotExist(err) {
-		t.Fatalf("expected no temp file to be written on a rejected chunk, stat err = %v", err)
+	if ids := chunkObjects(t, h); len(ids) != 0 {
+		t.Fatalf("expected no chunk to be stored on a rejected range, found %v", ids)
 	}
 }
 

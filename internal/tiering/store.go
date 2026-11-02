@@ -81,6 +81,7 @@ var (
 	_ storage.Presigner             = (*Store)(nil)
 	_ storage.StagingStore          = (*Store)(nil)
 	_ storage.MultipartStagingStore = (*Store)(nil)
+	_ storage.ChunkStore            = (*Store)(nil)
 )
 
 // NewStore creates the tiered store. tracker and reg may be nil.

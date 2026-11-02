@@ -1493,9 +1493,9 @@ func (m *MockDatabase) GetDockerUpload(ctx context.Context, repositoryID, upload
 	return nil, nil
 }
 
-func (m *MockDatabase) UpdateDockerUploadOffset(
+func (m *MockDatabase) AppendDockerUploadChunk(
 	ctx context.Context,
-	repositoryID, uploadUUID string,
+	repositoryID, uploadUUID, chunkID string,
 	oldOffset, newOffset int64,
 ) (bool, error) {
 	return true, nil

@@ -201,25 +201,51 @@ func dockerUploadFromRow(row dbsqlc.DockerUpload) *models.DockerUpload {
 	}
 }
 
-// UpdateDockerUploadOffset moves the session's offset from oldOffset to
-// newOffset and reports whether it did: false means the offset no longer
-// equals oldOffset (another request advanced or completed the session).
-func (p *DockerStore) UpdateDockerUploadOffset(
+// AppendDockerUploadChunk records chunkID as the next chunk of the session and
+// moves its offset from oldOffset to newOffset, atomically. It reports whether
+// it did: false means the offset no longer equals oldOffset (another request
+// advanced or completed the session) and nothing was recorded.
+func (p *DockerStore) AppendDockerUploadChunk(
 	ctx context.Context,
-	repositoryID, uploadUUID string,
+	repositoryID, uploadUUID, chunkID string,
 	oldOffset, newOffset int64,
 ) (bool, error) {
-	n, err := p.q.UpdateDockerUploadOffset(ctx, dbsqlc.UpdateDockerUploadOffsetParams{
+	n, err := p.q.AppendDockerUploadChunk(ctx, dbsqlc.AppendDockerUploadChunkParams{
+		ChunkID:      chunkID,
+		NewOffset:    newOffset,
+		OldOffset:    oldOffset,
 		RepositoryID: repositoryID,
 		UploadUuid:   uploadUUID,
-		OldOffset:    oldOffset,
-		NewOffset:    newOffset,
 	})
 	if err != nil {
-		return false, fmt.Errorf("failed to update docker upload offset: %w", err)
+		return false, fmt.Errorf("failed to append docker upload chunk: %w", err)
 	}
 
 	return n == 1, nil
+}
+
+// ListDockerUploadChunks returns the chunks of the session in upload order.
+func (p *DockerStore) ListDockerUploadChunks(ctx context.Context, repositoryID, uploadUUID string) ([]models.DockerUploadChunk, error) {
+	rows, err := p.q.ListDockerUploadChunks(ctx, dbsqlc.ListDockerUploadChunksParams{
+		RepositoryID: repositoryID,
+		UploadUuid:   uploadUUID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list docker upload chunks: %w", err)
+	}
+
+	chunks := make([]models.DockerUploadChunk, len(rows))
+	for i, row := range rows {
+		chunks[i] = models.DockerUploadChunk{ChunkID: row.ChunkID, Size: row.SizeBytes}
+	}
+
+	return chunks, nil
+}
+
+// ExistingDockerUploadChunkIDs returns the ids among ids that belong to a live
+// upload session.
+func (p *DockerStore) ExistingDockerUploadChunkIDs(ctx context.Context, ids []string) ([]string, error) {
+	return existingUUIDs(ctx, ids, p.q.ExistingDockerUploadChunkIDs, "docker upload chunks")
 }
 
 func (p *DockerStore) DeleteDockerUpload(ctx context.Context, repositoryID, uploadUUID string) error {
@@ -248,6 +274,7 @@ func (p *DockerStore) DeleteStaleDockerUploads(ctx context.Context, cutoff time.
 // reports itself unsupported for databases that do not.
 type DockerUploadSweepStore interface {
 	DeleteStaleDockerUploads(ctx context.Context, cutoff time.Time) ([]string, error)
+	ExistingDockerUploadChunkIDs(ctx context.Context, ids []string) ([]string, error)
 }
 
 var _ DockerUploadSweepStore = (*PostgresDB)(nil)

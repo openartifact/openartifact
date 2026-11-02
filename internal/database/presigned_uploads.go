@@ -193,6 +193,17 @@ func (p *PresignedUploadStore) CreatePresignedUploadCapped(ctx context.Context, 
 // ExistingPresignedUploadIDs returns the subset of ids that have a row. Ids
 // that are not UUIDs cannot have one and are dropped.
 func (p *PresignedUploadStore) ExistingPresignedUploadIDs(ctx context.Context, ids []string) ([]string, error) {
+	return existingUUIDs(ctx, ids, p.q.ExistingPresignedUploadIDs, "presigned uploads")
+}
+
+// existingUUIDs runs lookup over the ids that are UUIDs (the others cannot have
+// a row, and the uuid column would reject them) and returns the ones found.
+func existingUUIDs(
+	ctx context.Context,
+	ids []string,
+	lookup func(context.Context, []string) ([]string, error),
+	what string,
+) ([]string, error) {
 	valid := make([]string, 0, len(ids))
 
 	for _, id := range ids {
@@ -205,9 +216,9 @@ func (p *PresignedUploadStore) ExistingPresignedUploadIDs(ctx context.Context, i
 		return nil, nil
 	}
 
-	found, err := p.q.ExistingPresignedUploadIDs(ctx, valid)
+	found, err := lookup(ctx, valid)
 	if err != nil {
-		return nil, fmt.Errorf("failed to look up presigned uploads: %w", err)
+		return nil, fmt.Errorf("failed to look up %s: %w", what, err)
 	}
 
 	return found, nil

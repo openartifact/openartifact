@@ -168,7 +168,7 @@ The workers, all in `internal/worker` unless noted:
 | Blob deletion sweeper | Removes the bytes of deleted blobs after a delay, see [storage](../operations/storage.md#deferred-blob-deletion) |
 | Trash purge | Permanently removes soft-deleted items whose retention window has passed |
 | Docker registry GC | Deletes untagged Docker manifests past a grace period, and the blobs only they referenced ([details](../formats/docker.md#garbage-collection)) |
-| Docker upload sweeper | Deletes abandoned Docker blob upload sessions and their staged files |
+| Docker upload sweeper | Deletes abandoned Docker blob upload sessions and the chunks of uploads that no session lists |
 | Presigned upload | Expires presigned uploads that were never completed |
 | Tier mover | Moves blobs between storage tiers on a schedule, see [storage tiering](../operations/storage-tiering.md) |
 | Auth purge | Deletes expired sessions and long-expired or revoked API tokens |
