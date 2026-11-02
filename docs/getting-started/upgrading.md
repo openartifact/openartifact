@@ -127,11 +127,15 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
-### Unreleased
+### 0.17.0
 
 **What you must do**
 
-- Nothing. The migration that adds the `huggingface` format to the allowed repository formats applies on start; there is no configuration change.
+- Migrations 008 (adds the `huggingface` format to the allowed repository formats) and 009 (the `docker_upload_chunks` table) apply on start; there is no configuration change.
+- Docker uploads are now staged in the blob store, so a shared upload volume is no longer needed. With the `oci` storage backend, `workers.dockerUploadDir` must still be shared by the replicas (or run one replica).
+- If you probe `/healthz`, `/livez` or `/readyz`, they are now real probes (aliases of `/health` and `/ready`) and may report unhealthy where the web UI used to answer `200`.
+- If a script calls the quarantine endpoints directly, send the `quarantined` field in the body: requests without it now fail with `400`.
+- A PyPI proxy created or updated with `https://pypi.org` stores `https://pypi.org/simple`.
 
 **New features.**
 
