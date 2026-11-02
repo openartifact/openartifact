@@ -96,7 +96,7 @@ Generated indexes (Debian `Packages`, Helm `index.yaml`, Maven metadata, npm pac
 |---|---|---|
 | Trash restore | 0 | Seconds |
 
-**Tested by:** `TestTrashPolicies_RepositoryDeleteConfirmationAndTrash` (`tests/integration/trash_policies_test.go`) deletes a repository through the API, shows that it is hidden and its name reserved, restores it as an admin, and downloads its files again; `TestTrashRepositoryHidesAndRestores` (`internal/database/trash_integration_test.go`) covers the database layer, and `TestTrashProtocols_Maven`, `TestTrashProtocols_NPMUnpublishVersion` and `TestTrashProtocols_Deb` (`tests/integration/trash_protocols_test.go`) delete and restore items and check the files and generated metadata the protocol serves.
+**Tested by:** integration tests that delete a repository through the API, show that it is hidden and its name reserved, restore it as an admin and download its files again, and that delete and restore Maven, npm and Debian items and check the files and generated metadata the protocol serves.
 
 **The trash does not have it** when the retention ran out, when the repository had `trash_retention_days: 0`, or when someone purged it (`artifact.purged` or `repository.purged` in the [audit log](monitoring.md#audit-log)). A purge removes the record and the bytes that nothing else references, so recovering needs both back:
 

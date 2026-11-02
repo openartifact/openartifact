@@ -43,7 +43,7 @@ const (
 const DefaultScannerDownloadBaseURL = "https://github.com"
 
 // ScannersConfig configures the external vulnerability scanners (trivy, grype)
-// used by on-demand scans (see docs/security/scanning.md). OSV needs none of it.
+// used by on-demand scans (see docs/security/scanner-setup.md). OSV needs none of it.
 type ScannersConfig struct {
 	// CacheDir is where the scanners keep their vulnerability databases
 	// (<cacheDir>/trivy, <cacheDir>/grype). It must be writable unless offline

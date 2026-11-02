@@ -73,3 +73,7 @@ That is 10 checklist items over 21 files. `make generate` also rewrites `dbsqlc/
 Nothing in `internal/search`, `internal/trash`, `internal/backup`, `internal/promote`, `internal/federation`, `internal/recovery`, `internal/worker` or the catalog and listing queries changes. Adding swift to them is the descriptor in item 5.
 
 For proxy and group support, write the format's grammar in `pkg/<format>`, then its proxy hooks (`internal/proxy/<format>.go`) and merge hook (`internal/group/<format>.go`). Do not copy the resolve, revalidate and read sequence; see [proxy and group pipeline](architecture.md#proxy-and-group-pipeline).
+
+## The row journal
+
+A format that stores its files in the generic package tables needs no journal entry of its own: its descriptor's `SideTables` are added to the registry automatically (`NewRegistry().Tables()`), and `packages`, `package_versions`, `package_files` and `package_tags` are already journaled. Any other table with a foreign key to `blobs` or `repositories` needs an entry in `internal/recovery/tables.go` (`Tables`, parents first) and a `recovery_journal` trigger in a new forward-only migration, or an entry with a reason in `NotJournaled`. `TestRegistryCoversSchema` fails otherwise. See `.agents/rules/recovery-journal.md` and [Rebuild from storage](../operations/rebuild-from-storage.md).

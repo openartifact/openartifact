@@ -60,7 +60,7 @@ help:
 	@echo "  check           - Run fmt + vet + vet-tags + lint (pre-commit gate)"
 	@echo "  generate        - Run sqlc generate (DB codegen) and regenerate the web/src/lib/*.generated.ts files"
 	@echo "  docs-gen        - Regenerate docs/reference (config, metrics, CLI, REST API)"
-	@echo "  docs-check      - Fail when docs/reference is out of date"
+	@echo "  docs-check      - Fail when docs/reference is out of date or a docs link, anchor or index entry is broken"
 	@echo "  dup             - Fail when Go duplication (dupl -t 75) grows past .github/dup-baseline.json"
 	@echo "  dup-baseline    - Rewrite .github/dup-baseline.json from the current tree"
 	@echo "  deadcode        - Fail on Go code that no main package reaches (deadcode)"

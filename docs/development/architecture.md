@@ -105,7 +105,7 @@ Every repo-scoped format handler registers **relative** routes on the single `/r
 - For a proxy repository the ticket route stays in the hosted handler. A ticket whose repository is a proxy goes to `proxy.Service.ServeTerraformDownload` (`terraform.ProxyServer`), which fetches the file from its upstream host on first use. `terraform.Minter` mints the tickets with the same HMAC key.
 - The Ansible Galaxy API v3 is served by `internal/format/ansible` on the `/repos/{name}` subrouter under `/api/` (hosted); proxy and group repositories are `internal/proxy/ansible.go` and `internal/group/ansible.go`.
 - The Composer repository (`packages.json`, `p2/`, `list.json`, `search.json`, upload and dist download) is served by `internal/format/composer` on the `/repos/{name}` subrouter (hosted); proxy and group repositories are `internal/proxy/composer.go` and `internal/group/composer.go`.
-- Group repositories read hosted members through in-memory routers of the same cargo, Conan, conda, Go, Helm, Maven, npm, NuGet, PyPI, raw, RubyGems and Terraform handlers.
+- Group repositories read hosted members through in-memory routers of the hosted handlers (`plugin.ReadRouters`), one per format that registers a hosted router. Every format supports proxy and group repositories; Docker/OCI groups read their members through the `/v2` path instead.
 - `cmd/server/routes_test.go` guards the registration order against chi `Mount()` panics.
 
 ## Proxy and group pipeline

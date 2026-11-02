@@ -194,7 +194,7 @@ The same [graceful shutdown](monitoring.md#graceful-shutdown-and-rolling-updates
 
 ### Several workers
 
-Several `worker` replicas may run. Singleton schedulers already use PostgreSQL advisory locks, and request claims use `FOR UPDATE SKIP LOCKED`. Several `web` replicas are stateless. Mixed fleets work, for example `web` replicas plus one `all`.
+Several `worker` replicas may run. Scheduled jobs run on one replica at a time, and no two replicas pick up the same queued item. Several `web` replicas are stateless. Mixed fleets work, for example `web` replicas plus one `all`.
 
 ## Limits
 
