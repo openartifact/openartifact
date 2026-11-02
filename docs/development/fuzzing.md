@@ -63,6 +63,7 @@ Three jobs run in sequence on `main`. One concurrency group serializes them, so 
 - `batch` builds every target, fuzzes for 1 hour and adds what it finds to the stored corpus.
 - `prune` minimizes the corpus. Its 1 hour budget is shared by the targets and caps each merge; a budget that is too small fails the job with `Merging new testcases timed out`.
 - `coverage` builds the coverage report that the pull request job uses to pick the affected targets.
+- `report` runs after the others on scheduled runs. When any of them failed it opens the issue `Nightly fuzz failure: ClusterFuzzLite batch`, or comments on it while it is open, with the crashing target, the failing input (the `Base64:` line) and the run link. The next passing run comments and closes it. A cancelled run changes nothing. The job is the only one with `issues: write`; the logic is in `scripts/fuzz-issue.sh`. The nightly `api-fuzz` workflow does the same with the issue `Nightly fuzz failure: api-fuzz`, showing the seed and the `curl` reproducer.
 
 ### The build
 

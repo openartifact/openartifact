@@ -100,3 +100,36 @@ jobs:
             ${{ runner.temp }}/oa-testenv/server.log
           retention-days: 14
           if-no-files-found: ignore
+
+  # One tracking issue per failing nightly: opened (or commented) with the
+  # crashing target, input and run link, closed by the next passing run.
+  # Only this job may write issues. Scheduled runs only: a manual or pull
+  # request run must not close the nightly's issue. scripts/fuzz-issue.sh.
+  report:
+    name: tracking issue
+    needs: [api-fuzz]
+    if: ${{ always() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read # read the failed log
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          result=success
+          if jq -e 'any(.[]; .result == "cancelled")' <<< "$NEEDS" > /dev/null; then
+            result=cancelled
+          fi
+          if jq -e 'any(.[]; .result == "failure")' <<< "$NEEDS" > /dev/null; then
+            result=failure
+          fi
+          scripts/fuzz-issue.sh "api-fuzz" "$result"
