@@ -32,9 +32,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
-OpenArtifact stores and serves npm, PyPI, Maven, Docker/OCI, Helm, Debian, RPM,
-Arch Linux (pacman), Nix, Go, Cargo, Composer (PHP), NuGet, RubyGems, Conda, Conan, Alpine (apk), Terraform/OpenTofu, Ansible collections, Ivy, sbt and raw files (plus Hugging Face models and datasets through a proxy) behind one URL
-scheme and one permission model, on your own infrastructure. Free software under
+OpenArtifact stores and serves Alpine (apk), Ansible collections, Arch Linux (pacman),
+Cargo, Composer (PHP), Conan, Conda, Debian, Docker/OCI, Go, Helm, Hugging Face (proxy),
+Ivy, Maven, Nix, npm, NuGet, PyPI, raw files, RPM, RubyGems, sbt and Terraform/OpenTofu
+behind one URL scheme and one permission model, on your own infrastructure. Free software under
 the AGPL.
 
 <p align="center">
