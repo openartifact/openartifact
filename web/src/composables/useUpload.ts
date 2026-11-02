@@ -17,14 +17,17 @@ export interface UploadEntry {
   abort?: AbortController
 }
 
-interface UploadStartOptions {
+export interface UploadStartOptions {
   url: string
   field?: string
   /** Extra multipart text fields sent next to the file. */
   fields?: Record<string, string>
   headers?: Record<string, string>
-  /** `PUT` sends the file itself as the request body (native format routes) instead of a multipart form. */
   method?: 'POST' | 'PUT'
+  /** `raw` sends the body itself (native format routes); the default is a multipart form with the file in `field`. */
+  mode?: 'form' | 'raw'
+  /** Raw body sent instead of the picked file, for formats whose request body is built from it (npm). */
+  payload?: Blob
 }
 
 let nextId = 1
@@ -52,8 +55,8 @@ export function useUpload() {
     entry.abort = abort
     entry.status = 'uploading'
     let body: XMLHttpRequestBodyInit
-    if (opts.method === 'PUT') {
-      body = entry.file
+    if (opts.mode === 'raw') {
+      body = opts.payload ?? entry.file
     } else {
       const form = new FormData()
       form.append(opts.field ?? 'file', entry.file, entry.file.name)

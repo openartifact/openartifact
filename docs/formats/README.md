@@ -46,6 +46,25 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | sbt | `sbt` | `HOST/repos/sbt/REPO` | hosted, proxy, group | `PUT` per file (`sbt publish`) | [ivy-sbt](ivy-sbt.md) |
 | Terraform / OpenTofu | `terraform` | registry host `HOST`, source `HOST/REPO/...` (discovery at `/.well-known/terraform.json`) | hosted, proxy, group | `PUT /_api/modules/MODULE/SYSTEM/VERSION`, `PUT /_api/providers/TYPE/VERSION/OS/ARCH` (relative to `HOST/repos/REPO`) | [terraform](terraform.md) |
 
+## Upload from the web UI
+
+The *Upload* button on a hosted repository (users with write permission) sends the files with the browser session, using the same routes as the clients above. Where a file carries the coordinates, the form reads them from it; otherwise it asks.
+
+| Format | What the form asks | What it reads from the file |
+| --- | --- | --- |
+| raw | optional directory | file name |
+| npm | dist-tag (default `latest`) | name and version from `package.json` in the tarball; the browser builds the publish document |
+| PyPI | none | name, version and type from the wheel or sdist file name |
+| Maven | group ID, artifact ID, version | nothing; file names must start with `artifactId-version` and checksums and `maven-metadata.xml` are generated |
+| Helm, RubyGems, NuGet, Ansible | none | everything is in the package |
+| Conda | platform (default `noarch`) | file name |
+| Composer | `vendor/name` and version | nothing |
+| Terraform | module or provider; module name, system and version | provider type, version, OS and arch from `terraform-provider-TYPE_VERSION_OS_ARCH.zip` |
+| Go | none | module path and version from the first entry of the module zip |
+| APK, Debian, RPM, pacman | branch/repo/arch (apk), architecture (pacman) | the package |
+
+Not available in the browser: Cargo (`cargo publish` computes the dependency metadata the registry stores), Conan, Docker, Ivy and sbt (many files in a client-specific layout), and Nix (`nix copy` pushes the NAR and `.narinfo`; the page shows the command). Use the clients above for those. Several files can be dropped at once; each shows progress and can be cancelled.
+
 Arch Linux (pacman) is uploaded with a `PUT` of the package file to `HOST/repos/REPO/os/<arch>/<file>`; its `.db`/`.files` databases are generated. A pacman proxy mirrors an Arch mirror root ([details](pacman.md#proxy)).
 
 Nix is published with `nix copy --to`, which uploads the NAR and then its `.narinfo`; `.narinfo` files are signed when served with the repository's ed25519 key ([details](nix.md)). A Nix proxy mirrors a binary cache (default `https://cache.nixos.org`) and a Nix group serves hosted members first ([proxy](nix.md#proxy), [group](nix.md#group)).

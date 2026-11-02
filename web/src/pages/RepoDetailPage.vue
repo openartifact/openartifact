@@ -59,6 +59,7 @@ import { ArrowUpTrayIcon } from '@heroicons/vue/24/outline'
 import AppButton from '../components/AppButton.vue'
 import ConnectClientPanel from '../components/ConnectClientPanel.vue'
 import PackageUploadZone from '../components/PackageUploadZone.vue'
+import { canUpload as canUploadFormat } from '../lib/uploadPlans'
 import PageHeader from '../components/PageHeader.vue'
 import RepoMeta from '../components/RepoMeta.vue'
 import ProxySettingsCard from '../components/repos/ProxySettingsCard.vue'
@@ -93,13 +94,13 @@ const uploads = ref(0)
 
 // Global admins and maintainers/owners of the repository's project (repo.permissions.admin).
 const repoAdmin = computed(() => session.isAdmin || repo.value?.permissions?.admin === true)
-// Web upload is implemented by the apk, deb and rpm handlers only (nix shows its `nix copy` instructions); other formats are published with their
-// native client tooling. Proxy and group repositories are read-only.
+// The browser uploads the formats that have a plan in lib/uploadPlans.ts (nix shows its `nix copy` instructions); the others
+// are published with their native client tooling. Proxy and group repositories are read-only.
 const canUpload = computed(
   () =>
-    session.isAdmin &&
+    (session.isAdmin || repo.value?.permissions?.write === true) &&
     (repo.value?.repo_type ?? 'hosted') === 'hosted' &&
-    (repo.value?.format === 'apk' || repo.value?.format === 'deb' || repo.value?.format === 'nix' || repo.value?.format === 'rpm'),
+    canUploadFormat(repo.value?.format),
 )
 
 const tabs = computed<TabDef[]>(() => {
