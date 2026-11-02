@@ -16,7 +16,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   >
     <div class="space-y-5">
       <CleanupPolicyForm v-model="form" />
-      <CleanupLivePreview v-if="previewRepo" :status="preview.status.value" :result="preview.result.value" :error="preview.error.value" />
+      <CleanupLivePreview v-if="previewTarget" :status="preview.status.value" :result="preview.result.value" :error="preview.error.value" />
     </div>
     <template #footer>
       <AppButton variant="ghost" @click="emit('close')">{{ t('common.cancel') }}</AppButton>
@@ -34,7 +34,7 @@ import AppButton from './AppButton.vue'
 import CleanupLivePreview from './CleanupLivePreview.vue'
 import CleanupPolicyForm from './CleanupPolicyForm.vue'
 import { cleanupFormValid, type CleanupPolicyForm as FormState } from '../lib/cleanupPolicy'
-import { useCleanupLivePreview } from '../composables/useCleanupLivePreview'
+import { useCleanupLivePreview, type PreviewTarget } from '../composables/useCleanupLivePreview'
 import { t } from '../i18n'
 
 const props = defineProps<{
@@ -42,16 +42,16 @@ const props = defineProps<{
   /** Name of the policy being edited; `null` when creating. */
   editingName: string | null
   saving: boolean
-  /** Repository the policy belongs to; when set the editor shows a live preview of the policy. */
-  previewRepo?: string
+  /** Repository or project the policy belongs to; when set the editor shows a live preview of the policy. */
+  previewTarget?: PreviewTarget
 }>()
 
 const form = defineModel<FormState>({ required: true })
 
 const preview = useCleanupLivePreview(
-  computed(() => props.previewRepo ?? ''),
+  computed(() => props.previewTarget ?? null),
   form,
-  computed(() => props.open && !!props.previewRepo),
+  computed(() => props.open && !!props.previewTarget),
 )
 
 const emit = defineEmits<{ close: []; save: [] }>()

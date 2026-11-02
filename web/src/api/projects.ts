@@ -183,6 +183,18 @@ interface ProjectCleanupPolicyRequest {
   schedule_cron?: string
 }
 
+/**
+ * Previews a default policy that is not saved yet (the editor's form), per repository it would cover; the same
+ * answer as {@link dryRunProjectCleanupPolicy}, nothing is stored. `signal` cancels the request when the form changes again.
+ */
+export const previewProjectCleanupDraft = (project: string, body: ProjectCleanupPolicyRequest, signal?: AbortSignal) =>
+  request<ProjectCleanupPreview>(`${base(project)}/cleanup-policies/dry-run`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+    signal,
+  })
+
 /** Default policies of the project, applied to hosted repositories without an enabled policy of their own. */
 export async function listProjectCleanupPolicies(project: string): Promise<ApiCleanupPolicy[]> {
   const res = await request<{ policies?: ApiCleanupPolicy[] }>(`${base(project)}/cleanup-policies`)

@@ -5,13 +5,10 @@
 import { describe, it, expect } from 'bun:test'
 import { mount } from '@vue/test-utils'
 import CleanupLivePreview from '../CleanupLivePreview.vue'
-import type { CleanupPreview } from '../../api/cleanup'
+import type { LivePreviewResult } from '../../composables/useCleanupLivePreview'
 
 const items = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `i${i}`, name: `pkg-${i}`, version: `1.0.${i}` }))
-const result = (over: Partial<CleanupPreview>): CleanupPreview => ({
-  repository: 'r',
-  format: 'raw',
-  dry_run: true,
+const result = (over: Partial<LivePreviewResult>): LivePreviewResult => ({
   rows: 0,
   bytes: 0,
   items: [],
@@ -19,7 +16,7 @@ const result = (over: Partial<CleanupPreview>): CleanupPreview => ({
   ...over,
 })
 
-const mountPreview = (props: { status: 'idle' | 'loading' | 'ready' | 'error'; result: CleanupPreview | null; error?: string }) =>
+const mountPreview = (props: { status: 'idle' | 'loading' | 'ready' | 'error'; result: LivePreviewResult | null; error?: string }) =>
   mount(CleanupLivePreview, { props: { error: '', ...props } })
 
 describe('CleanupLivePreview', () => {
@@ -67,5 +64,19 @@ describe('CleanupLivePreview', () => {
     expect(err.attributes('data-state')).toBe('error')
     expect(err.attributes('role')).toBe('alert')
     expect(err.text()).toContain('name_pattern is invalid')
+  })
+
+  it('names the repository of each sampled row and how many repositories a project default covers', () => {
+    const w = mountPreview({
+      status: 'ready',
+      result: result({ rows: 2, repositories: 2, items: [{ id: '1', name: 'a', version: '1', repository: 'raw-a' }, { id: '2', name: 'b', version: '2', repository: 'raw-b' }] }),
+    })
+    expect(w.get('[data-testid="cleanup-preview-repos"]').text()).toBe('Across 2 repositories.')
+    expect(w.findAll('[data-testid="cleanup-preview-item-repo"]').map((e) => e.text())).toEqual(['raw-a', 'raw-b'])
+  })
+
+  it('shows no repository line for a single repository', () => {
+    const w = mountPreview({ status: 'ready', result: result({ rows: 1, items: items(1) }) })
+    expect(w.find('[data-testid="cleanup-preview-repos"]').exists()).toBe(false)
   })
 })

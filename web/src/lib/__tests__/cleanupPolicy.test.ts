@@ -9,6 +9,7 @@ import {
   cleanupPayload,
   cleanupPolicyFromApi,
   emptyCleanupForm,
+  cleanupPatternValid,
 } from '../cleanupPolicy'
 
 describe('cleanup policy helpers', () => {
@@ -35,12 +36,29 @@ describe('cleanup policy helpers', () => {
 
   it('sends only the rule of the selected type', () => {
     const f = { ...emptyCleanupForm(), name: 'n', keep_count: 4, keep_days: 9 }
-    expect(cleanupPayload(f)).toEqual({ name: 'n', enabled: true, keep_last_n: 4 })
-    expect(cleanupPayload({ ...f, type: 'keep-by-age', enabled: false })).toEqual({ name: 'n', enabled: false, keep_since_days: 9 })
+    expect(cleanupPayload(f)).toEqual({ name: 'n', enabled: true, name_pattern: '', keep_last_n: 4 })
+    expect(cleanupPayload({ ...f, type: 'keep-by-age', enabled: false })).toEqual({ name: 'n', enabled: false, name_pattern: '', keep_since_days: 9 })
   })
 
   it('round-trips a policy into a form', () => {
     const view = cleanupPolicyFromApi({ id: '1', name: 'a', enabled: true, keep_last_n: 5, created_at: 't' })
-    expect(cleanupFormFrom(view)).toEqual({ name: 'a', type: 'keep-last-n', keep_count: 5, keep_days: undefined, enabled: true })
+    expect(cleanupFormFrom(view)).toEqual({ name: 'a', type: 'keep-last-n', keep_count: 5, keep_days: undefined, name_pattern: '', enabled: true })
+  })
+
+  it('keeps the name pattern of a stored policy through an edit', () => {
+    const view = cleanupPolicyFromApi({ id: '1', name: 'a', enabled: true, keep_last_n: 5, name_pattern: '^app-', created_at: 't' })
+    const form = cleanupFormFrom(view)
+    expect(form.name_pattern).toBe('^app-')
+    expect(cleanupPayload(form)).toMatchObject({ name_pattern: '^app-' })
+  })
+
+  it('validates the pattern like the server (RE2): compiles, no lookaround or backreference', () => {
+    for (const ok of ['', '^app-', '(?i)^App', '(?P<n>a+)', '[[:alpha:]]+', '^a\\.b$', '\\Aabc\\z', 'a\\\\1']) {
+      expect(cleanupPatternValid(ok)).toBe(true)
+    }
+    for (const bad of ['(unclosed', '[a-', '*a', 'a(?=b)', '(?<!x)y', '(a)\\1']) {
+      expect(cleanupPatternValid(bad)).toBe(false)
+    }
+    expect(cleanupFormValid({ ...emptyCleanupForm(), name: 'x', name_pattern: '(' })).toBe(false)
   })
 })

@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <!--
   Live preview in the cleanup policy editor: what the policy being edited would
-  delete right now (rows, size, a sample). The server only evaluates it; nothing
+  delete right now (rows, size, a sample; for a project default, over its repositories). The server only evaluates it; nothing
   is deleted or saved.
 -->
 <template>
@@ -46,6 +46,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </dd>
             </div>
           </dl>
+          <p v-if="result.repositories !== undefined" class="mt-2 text-caption text-muted" data-testid="cleanup-preview-repos">
+            {{ tpn('cleanup.preview.repos', result.repositories) }}
+          </p>
           <ul class="mt-3 divide-y divide-border rounded-lg border border-border" data-testid="cleanup-preview-sample">
             <li
               v-for="it in sample"
@@ -54,6 +57,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               data-testid="cleanup-preview-item"
             >
               <span class="min-w-0 grow truncate text-foreground" :title="it.name">{{ it.name }}</span>
+              <span v-if="it.repository" class="shrink-0 text-caption" data-testid="cleanup-preview-item-repo">{{ it.repository }}</span>
               <span class="shrink-0">{{ it.version }}</span>
             </li>
           </ul>
@@ -69,16 +73,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { computed } from 'vue'
 import StateBlock from './ui/StateBlock.vue'
-import type { CleanupPreview } from '../api/cleanup'
-import type { LivePreviewStatus } from '../composables/useCleanupLivePreview'
-import { t, tp } from '../i18n'
+import type { LivePreviewResult, LivePreviewStatus } from '../composables/useCleanupLivePreview'
+import { t, tp, tpn } from '../i18n'
 import { formatNumber } from '../lib/intl'
 import { formatBytes } from '../lib/quota'
 
 /** Rows listed in the sample; the count above is the whole result. */
 const SAMPLE_ROWS = 8
 
-const props = defineProps<{ status: LivePreviewStatus; result: CleanupPreview | null; error: string }>()
+const props = defineProps<{ status: LivePreviewStatus; result: LivePreviewResult | null; error: string }>()
 
 const sample = computed(() => props.result?.items.slice(0, SAMPLE_ROWS) ?? [])
 </script>

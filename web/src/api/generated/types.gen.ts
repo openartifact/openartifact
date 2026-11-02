@@ -11168,6 +11168,42 @@ export type PostApiV1ProjectsByProjectCleanupPoliciesResponses = {
 
 export type PostApiV1ProjectsByProjectCleanupPoliciesResponse = PostApiV1ProjectsByProjectCleanupPoliciesResponses[keyof PostApiV1ProjectsByProjectCleanupPoliciesResponses];
 
+export type PostApiV1ProjectsByProjectCleanupPoliciesDryRunData = {
+    body: {
+        name?: string;
+        keep_last_n?: number;
+        keep_since_days?: number;
+        name_pattern?: string;
+    };
+    path: {
+        project: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{project}/cleanup-policies/dry-run';
+};
+
+export type PostApiV1ProjectsByProjectCleanupPoliciesDryRunErrors = {
+    /**
+     * Invalid policy
+     */
+    400: Error;
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1ProjectsByProjectCleanupPoliciesDryRunError = PostApiV1ProjectsByProjectCleanupPoliciesDryRunErrors[keyof PostApiV1ProjectsByProjectCleanupPoliciesDryRunErrors];
+
+export type PostApiV1ProjectsByProjectCleanupPoliciesDryRunResponses = {
+    /**
+     * What a run of this policy would remove
+     */
+    200: ProjectCleanupPreview;
+};
+
+export type PostApiV1ProjectsByProjectCleanupPoliciesDryRunResponse = PostApiV1ProjectsByProjectCleanupPoliciesDryRunResponses[keyof PostApiV1ProjectsByProjectCleanupPoliciesDryRunResponses];
+
 export type PostApiV1ProjectsByProjectCleanupPoliciesByIdDryRunData = {
     body?: never;
     path: {

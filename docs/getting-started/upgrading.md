@@ -85,6 +85,11 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Unreleased
+
+- **Cleanup name pattern in the editor.** The cleanup policy editor now has a package name pattern field (the policy's `name_pattern`, a regular expression), so editing a policy that has one keeps it instead of leaving it out of the request, and the live preview takes it into account. A pattern that is not a valid regular expression is flagged before saving.
+- **Live preview for project defaults.** The project cleanup defaults editor shows the same live preview, added up over the repositories the policy would cover, backed by the new `POST /api/v1/projects/{project}/cleanup-policies/dry-run`. See [Cleanup](../repositories/cleanup-and-quotas.md#api).
+
 ### 0.16.0
 
 Migrations `004` to `007` apply automatically on start; none changes behavior for an existing installation (new columns default to off, new tables start empty). The `*_validate` migrations and the `CONCURRENTLY` index build run without long locks.

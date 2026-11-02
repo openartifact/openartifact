@@ -73,6 +73,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :open="drawerOpen"
       :editing-name="editing?.name ?? null"
       :saving="saving"
+      :preview-target="{ scope: 'project', name: project }"
       @close="closeDrawer"
       @save="save"
     />

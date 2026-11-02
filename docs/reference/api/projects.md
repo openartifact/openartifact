@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Projects API
 
-30 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+31 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -270,6 +270,37 @@ Owners and global admins. Same fields and validation as a repository cleanup pol
 | `400` | Invalid policy | - |
 | `403` | Not an owner | - |
 | `404` | Project not found or the caller is not a member | - |
+
+### `POST /api/v1/projects/{project}/cleanup-policies/dry-run`
+
+Preview what an unsaved project default cleanup policy would remove
+
+Owners and global admins. Takes the body of a new project cleanup policy (the name may be left out), validates it like create and evaluates it, per repository it would cover, with the same code as the dry run of a stored policy. Nothing is stored or changed. Used by the policy editor for a live preview. Each list is capped at 500 rows.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `project` | path | string | yes | - |
+
+**Request body** (required)
+
+`application/json`: object
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `keep_last_n` | integer | no | Minimum: 1. |
+| `keep_since_days` | integer | no | Minimum: 1. |
+| `name` | string | no | - |
+| `name_pattern` | string | no | - |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | What a run of this policy would remove | `application/json`: [ProjectCleanupPreview](schemas.md#projectcleanuppreview) |
+| `400` | Invalid policy | `application/json`: [Error](schemas.md#error) |
+| `default` | Error | `application/json`: [Error](schemas.md#error) |
 
 ### `PUT /api/v1/projects/{project}/cleanup-policies/{id}`
 

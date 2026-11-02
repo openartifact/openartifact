@@ -395,7 +395,16 @@ func TestProjectCleanupPolicies_MalformedIDIsNotFound(t *testing.T) {
 	}
 }
 
-type fakeProjectPreviewer struct{ ids []string }
+type fakeProjectPreviewer struct {
+	ids    []string
+	drafts []*models.CleanupPolicy
+}
+
+func (f *fakeProjectPreviewer) PreviewProjectDraftPolicy(_ context.Context, p *models.CleanupPolicy) ([]*worker.CleanupPreview, error) {
+	f.drafts = append(f.drafts, p)
+
+	return []*worker.CleanupPreview{{Repository: "a", Format: "raw", Rows: 4}}, nil
+}
 
 func (f *fakeProjectPreviewer) PreviewProjectPolicy(_ context.Context, id string) ([]*worker.CleanupPreview, error) {
 	f.ids = append(f.ids, id)
@@ -451,5 +460,44 @@ func TestProjectCleanupPolicies_DryRun(t *testing.T) {
 		"",
 	); code != http.StatusNotFound {
 		t.Errorf("unknown policy dry-run = %d, want 404", code)
+	}
+}
+
+// The draft dry run takes the body of a new project policy, validates it like
+// create, scopes it to the project and evaluates it without storing anything.
+func TestProjectCleanupPolicies_DraftDryRun(t *testing.T) {
+	db := newQuotaMock()
+	prev := &fakeProjectPreviewer{}
+
+	log := newFixTestLogger(t)
+	h := NewProjectsHandler(db, log, auth.NewEvaluator(db, log, false), auth.NewProjectSettings(db, false))
+	h.SetCleanupPreviewer(prev)
+
+	router := chi.NewRouter()
+	h.RegisterRoutes(router)
+
+	path := "/api/v1/projects/acme/cleanup-policies/dry-run"
+
+	code, body := projectJSON(t, router, uOwner1, http.MethodPost, path, `{"keep_last_n":2,"name_pattern":"^app-"}`)
+	if code != http.StatusOK || body["rows"] != float64(4) || len(prev.drafts) != 1 {
+		t.Fatalf("draft dry-run = %d %v, want 200 with 4 rows", code, body)
+	}
+
+	if d := prev.drafts[0]; d.ProjectID == "" || d.RepositoryID != "" || d.NamePattern != "^app-" || d.Name != "preview" {
+		t.Errorf("draft policy = %+v, want a project-scoped policy carrying the pattern", d)
+	}
+
+	for name, in := range map[string]string{"bad pattern": `{"keep_last_n":2,"name_pattern":"("}`, "no rule": `{}`} {
+		if code, _ := projectJSON(t, router, uOwner1, http.MethodPost, path, in); code != http.StatusBadRequest {
+			t.Errorf("%s = %d, want 400", name, code)
+		}
+	}
+
+	if code, _ := projectJSON(t, router, uMaint1, http.MethodPost, path, `{"keep_last_n":2}`); code != http.StatusForbidden {
+		t.Errorf("maintainer draft dry-run = %d, want 403", code)
+	}
+
+	if len(prev.drafts) != 1 {
+		t.Errorf("rejected requests evaluated a policy: %d calls", len(prev.drafts))
 	}
 }

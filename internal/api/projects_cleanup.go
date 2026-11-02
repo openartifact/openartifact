@@ -180,6 +180,8 @@ func (h *ProjectsHandler) handleDeleteCleanupPolicy(w http.ResponseWriter, r *ht
 // running it. It is satisfied by *worker.CleanupWorker.
 type ProjectCleanupPreviewer interface {
 	PreviewProjectPolicy(ctx context.Context, policyID string) ([]*worker.CleanupPreview, error)
+	// PreviewProjectDraftPolicy is PreviewProjectPolicy for a policy that is not stored.
+	PreviewProjectDraftPolicy(ctx context.Context, policy *models.CleanupPolicy) ([]*worker.CleanupPreview, error)
 }
 
 // SetCleanupPreviewer wires the dry run of project default cleanup policies.
@@ -214,6 +216,50 @@ func (h *ProjectsHandler) handleDryRunCleanupPolicy(w http.ResponseWriter, r *ht
 	}
 
 	previews, err := h.previewer.PreviewProjectPolicy(r.Context(), policy.ID)
+
+	h.writeProjectPreview(w, previews, err)
+}
+
+// handleDraftDryRunCleanupPolicy is handleDryRunCleanupPolicy for a policy that
+// is not stored: the body is a new policy as create takes it (the name may be
+// left out), validated the same way and evaluated by the same code.
+//
+//	POST /api/v1/projects/{project}/cleanup-policies/dry-run
+func (h *ProjectsHandler) handleDraftDryRunCleanupPolicy(w http.ResponseWriter, r *http.Request) {
+	access, ok := h.loadAccess(w, r, auth.ProjectActionUpdate)
+	if !ok {
+		return
+	}
+
+	var body cleanupPolicyBody
+	if err := decodeJSON(r, &body); err != nil {
+		writeBadJSON(w, err)
+		return
+	}
+
+	if strings.TrimSpace(body.Name) == "" {
+		body.Name = "preview"
+	}
+
+	policy := body.policy("")
+	policy.ProjectID = access.project.ID
+
+	if err := policy.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+		return
+	}
+
+	if h.previewer == nil {
+		writeError(w, http.StatusNotImplemented, "not_implemented", "cleanup worker is not available")
+		return
+	}
+
+	previews, err := h.previewer.PreviewProjectDraftPolicy(r.Context(), policy)
+
+	h.writeProjectPreview(w, previews, err)
+}
+
+func (h *ProjectsHandler) writeProjectPreview(w http.ResponseWriter, previews []*worker.CleanupPreview, err error) {
 	if err != nil {
 		writePolicyPreviewError(w, h.log, err)
 		return
