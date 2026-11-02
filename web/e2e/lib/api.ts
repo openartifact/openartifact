@@ -110,6 +110,13 @@ export async function mintToken(username: string, password: string, name: string
   return body.token
 }
 
+/** One repository as the server reports it (GET /api/v1/repository/{name}), for specs to compare the UI against. */
+export async function repositoryOf(name: string): Promise<Record<string, unknown>> {
+  const res = await adminApi().get(`/api/v1/repository/${encodeURIComponent(name)}`)
+  if (!res.ok) throw new Error(`GET repository ${name}: HTTP ${res.status} ${res.text()}`)
+  return res.json<Record<string, unknown>>()
+}
+
 /** A name that is unique per run, so reruns against one server never collide. */
 export function uniqueName(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
