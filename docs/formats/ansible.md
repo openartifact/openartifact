@@ -60,7 +60,7 @@ collections:
     source: https://HOST/repos/REPO/api/
 ```
 
-The CLI publishes through the same endpoint: `oa upload REPO NAMESPACE-NAME-VERSION.tar.gz` ([CLI](../integrations/cli.md)). The web UI's upload zone shows the publish command instead of a file picker, because publishing is a token-authenticated multipart request driven by `ansible-galaxy`.
+The CLI publishes through the same endpoint: `oa upload REPO NAMESPACE-NAME-VERSION.tar.gz` ([CLI](../integrations/cli.md)). The web UI's upload zone takes the built `.tar.gz` and posts it to the same endpoint with your session; the namespace, name and version are read from the tarball's `MANIFEST.json` by the server.
 
 ## Tokens and RBAC
 

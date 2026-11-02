@@ -75,7 +75,7 @@ curl -X DELETE -H "Authorization: Bearer TOKEN" \
   https://HOST/repos/REPO/packages/upload/VENDOR/NAME/1.0.0
 ```
 
-The CLI publishes through the same endpoint: `oa upload REPO vendor-name-1.0.0.zip --version 1.0.0` ([CLI](../integrations/cli.md)). `vendor/name` is read from the zip's `composer.json`; the version from its `version` field, or from `--version` (which wins) when there is none, as is usual for a package that is versioned by its VCS tags. The web UI's upload zone shows the publish command instead of a file picker. Only the raw `PUT` is supported, not a multipart form.
+The CLI publishes through the same endpoint: `oa upload REPO vendor-name-1.0.0.zip --version 1.0.0` ([CLI](../integrations/cli.md)). `vendor/name` is read from the zip's `composer.json`; the version from its `version` field, or from `--version` (which wins) when there is none, as is usual for a package that is versioned by its VCS tags. The web UI's upload zone asks for `vendor/name` and the version and sends the zip with the same raw `PUT`. Only the raw `PUT` is supported, not a multipart form.
 
 ## Tokens and RBAC
 
