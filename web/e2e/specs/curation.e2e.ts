@@ -96,10 +96,10 @@ describe('curation of a proxy repository', () => {
     const verdict = await api.get(`/api/v1/repositories/${repo}/availability`, { params: { package: PKG, version: VERSION } })
     expect(verdict.json<{ available: boolean; reasons: Array<{ source: string }> }>()).toMatchObject({ available: false, reasons: [{ source: 'curation' }] })
 
-    // The package page explains it: the version is listed as held back, with the rule's reason.
+    // The package page explains it: the version is listed as held, with the rule's reason.
     await ui.goto(`/repos/${repo}/packages/${PKG}`)
-    const held = ui.getByTestId('held-back-list')
-    await expectLoc(held).toBeVisible()
+    const held = ui.getByTestId('proxy-versions')
+    await expectLoc(held.getByTestId('badge-held')).toBeVisible()
     await expectLoc(held).toContainText(VERSION)
     await expectLoc(held).toContainText(tp('artifact.versions.blocked', { reason: RULE_REASON }))
   })
@@ -118,8 +118,9 @@ describe('curation of a proxy repository', () => {
 
     expect(await rules()).toMatchObject([{ version_pattern: '9.*' }])
     await ui.goto(`/repos/${repo}/packages/${PKG}`)
-    await expectLoc(ui.getByTestId('metadata-only')).toBeVisible()
-    await expectLoc(ui.getByTestId('held-back-list')).toHaveCount(0)
+    // The version is still listed, now as available.
+    await expectLoc(ui.getByTestId('badge-available')).toBeVisible()
+    await expectLoc(ui.getByTestId('badge-held')).toHaveCount(0)
   })
 
   it('deleting the rule empties the list again', async (ui) => {
