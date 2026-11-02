@@ -362,7 +362,14 @@ func TestCurationDownload_ConanRecipe(t *testing.T) {
 
 	f.svc.WithCuration(&dlRules{rules: []curation.Rule{dlRule(curation.ActionBlock, "zlib", "1.3.1")}})
 
-	for _, p := range []string{conanBase + "/latest", conanRRoot + "/files", conanPRoot + "/files/conan_package.tgz"} {
+	v1Base := "v1/conans/zlib/1.3.1/_/_"
+	v1Files := "v1/files/zlib/1.3.1/_/_/" + conanRRev
+
+	for _, p := range []string{
+		conanBase + "/latest", conanRRoot + "/files", conanPRoot + "/files/conan_package.tgz",
+		v1Base, v1Base + "/download_urls", v1Base + "/digest",
+		v1Files + "/export/conanfile.py", v1Files + "/package/" + conanPID + "/" + conanPRev + "/conan_package.tgz",
+	} {
 		if w := f.do(http.MethodGet, p); w.Code != http.StatusForbidden {
 			t.Errorf("GET %s = %d, want 403", p, w.Code)
 		}
@@ -412,6 +419,9 @@ func TestDownloadCoordinates(t *testing.T) {
 		{"pacman database", pacmanCoordinates, "extra/os/x86_64/extra.db.tar.gz", nil},
 		{"conan files", conanCoordinates, conanRRoot + "/files", &coord{"zlib", "1.3.1"}},
 		{"conan search", conanCoordinates, "v2/conans/search", nil},
+		{"conan 1 file", conanCoordinates, "v1/files/zlib/1.3.1/_/_/" + conanRRev + "/export/conanfile.py", &coord{"zlib", "1.3.1"}},
+		{"conan 1 download urls", conanCoordinates, "v1/conans/zlib/1.3.1/_/_/download_urls", &coord{"zlib", "1.3.1"}},
+		{"conan 1 search", conanCoordinates, "v1/conans/search", nil},
 	}
 
 	for _, c := range cases {

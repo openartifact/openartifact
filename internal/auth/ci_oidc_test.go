@@ -35,7 +35,17 @@ type ciTestIssuer struct {
 
 	discoveryHits atomic.Int32
 	jwksHits      atomic.Int32
+	jwksURI       string
 	discoveryDown atomic.Bool
+}
+
+// jwksLocation is the advertised jwks_uri: the issuer's own unless overridden.
+func (i *ciTestIssuer) jwksLocation() string {
+	if i.jwksURI != "" {
+		return i.jwksURI
+	}
+
+	return i.srv.URL + "/jwks"
 }
 
 func newCITestIssuer(t *testing.T) *ciTestIssuer {
@@ -54,7 +64,7 @@ func newCITestIssuer(t *testing.T) *ciTestIssuer {
 
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"issuer":                                iss.srv.URL,
-			"jwks_uri":                              iss.srv.URL + "/jwks",
+			"jwks_uri":                              iss.jwksLocation(),
 			"response_types_supported":              []string{"id_token"},
 			"subject_types_supported":               []string{"public"},
 			"id_token_signing_alg_values_supported": []string{"RS256", "HS256"},
@@ -703,6 +713,18 @@ func TestValidateOIDCPolicy(t *testing.T) {
 		{"issuer not a url", func(p *models.OIDCTrustPolicy) { p.Issuer = "token.actions" }, true},
 		{"issuer with a query", func(p *models.OIDCTrustPolicy) { p.Issuer = "https://token.actions.githubusercontent.com?x=1" }, true},
 		{"issuer with credentials", func(p *models.OIDCTrustPolicy) { p.Issuer = "https://u:p@token.actions.githubusercontent.com" }, true},
+		{
+			"issuer over http on a public host",
+			func(p *models.OIDCTrustPolicy) { p.Issuer = "http://token.actions.githubusercontent.com" },
+			true,
+		},
+		{"issuer over http on a private host", func(p *models.OIDCTrustPolicy) { p.Issuer = "http://10.0.0.5" }, true},
+		{"issuer over http on localhost", func(p *models.OIDCTrustPolicy) {
+			p.Issuer = "http://localhost:8080"
+			p.Conditions = []models.OIDCCondition{{Claim: "repository", Patterns: []string{"acme/*"}}}
+		}, false},
+		{"issuer over http on 127.0.0.1", func(p *models.OIDCTrustPolicy) { p.Issuer = "http://127.0.0.1:8080" }, false},
+		{"issuer over http on ::1", func(p *models.OIDCTrustPolicy) { p.Issuer = "http://[::1]:8080" }, false},
 		{"issuer over ftp", func(p *models.OIDCTrustPolicy) { p.Issuer = "ftp://token.actions.githubusercontent.com" }, true},
 		{"shared issuer needs an identity condition", func(p *models.OIDCTrustPolicy) {
 			p.Conditions = []models.OIDCCondition{{Claim: "ref", Patterns: []string{"refs/heads/main"}}}
@@ -750,5 +772,19 @@ func TestValidateOIDCPolicy(t *testing.T) {
 
 	if err := ValidateOIDCPolicy(p); err != nil || p.TokenTTLSeconds != OIDCPolicyDefaultTTL {
 		t.Fatalf("default ttl: err %v, ttl %d", err, p.TokenTTLSeconds)
+	}
+}
+
+func TestCIOIDCAuthenticate_RefusesPlainHTTPJWKS(t *testing.T) {
+	rig := newCITestRig(t, func(issuer string) []*models.OIDCTrustPolicy {
+		return []*models.OIDCTrustPolicy{ciPolicy(issuer, "publish", repoIs("acme/*"))}
+	})
+	rig.iss.jwksURI = "http://keys.example.com/jwks"
+
+	_, err := rig.x.Authenticate(context.Background(), rig.token(t, nil), "")
+	requireDenial(t, err, CIOIDCIssuerUnreachable, false)
+
+	if rig.iss.jwksHits.Load() != 0 {
+		t.Fatal("the key set was fetched")
 	}
 }

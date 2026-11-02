@@ -76,6 +76,20 @@ func TestClassifyAPIRoute(t *testing.T) {
 			"package detail needs repo read",
 		},
 		{http.MethodPost, "/api/v1/repositories", routeScope{action: "manage"}, "creating a repo is administrative"},
+		{
+			http.MethodGet,
+			"/api/v1/repositories/app/federation",
+			routeScope{action: "manage"},
+			"federation status needs global manage, not a project role",
+		},
+		{http.MethodPut, "/api/v1/repositories/app/federation", routeScope{action: "manage"}, "federation enable needs global manage"},
+		{http.MethodPost, "/api/v1/repositories/app/federation/peers", routeScope{action: "manage"}, "federation peers need global manage"},
+		{
+			http.MethodDelete,
+			"/api/v1/repositories/app/federation/tokens/1",
+			routeScope{action: "manage"},
+			"federation tokens need global manage",
+		},
 		{http.MethodGet, "/api/v1/repository/app", routeScope{action: "read", repoName: "app"}, "get repo"},
 		{
 			http.MethodPatch,

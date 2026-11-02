@@ -16,7 +16,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 Get a repository's federation status
 
-Federation health of one repository: whether it is enabled, the log position, and every peer (with its state, lag and backlog) and inbound token. Requires the repository-scoped manage permission (global administrators have it) or the maintainer or owner role in the repository's project. `supported` is false for proxy and group repositories and for formats without federation.
+Federation health of one repository: whether it is enabled, the log position, and every peer (with its state, lag and backlog) and inbound token. Requires the global manage permission (administrators have it); a repository-scoped permission or a project role is not enough. `supported` is false for proxy and group repositories and for formats without federation.
 
 **Parameters**
 
@@ -63,7 +63,7 @@ Enabling backfills the change log from the repository's existing content. Disabl
 
 Add a federation peer
 
-Registers a remote instance to pull this repository's changes from. The base URL is validated against the outbound (SSRF) policy. Requires federation to be enabled (409 otherwise) and the repository-scoped manage permission.
+Registers a remote instance to pull this repository's changes from. The base URL is validated against the outbound (SSRF) policy. Requires federation to be enabled (409 otherwise) and the global manage permission.
 
 **Parameters**
 
@@ -185,7 +185,7 @@ Resets the peer's cursor so the next pass re-reads its whole log and merges it i
 
 Create an inbound federation token
 
-Mints a token a peer presents to pull this repository's log. The clear-text token is returned only in this response. Requires federation to be enabled (409 otherwise) and the repository-scoped manage permission.
+Mints a token a peer presents to pull this repository's log. The clear-text token is returned only in this response. Requires federation to be enabled (409 otherwise) and the global manage permission.
 
 **Parameters**
 

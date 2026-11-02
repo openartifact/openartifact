@@ -367,3 +367,26 @@ func SafeHTTPClientWithStallTimeout(timeout, responseHeaderTimeout, stallTimeout
 		},
 	}
 }
+
+// IsLoopbackHost reports whether host (no port) is "localhost" or a loopback
+// IP literal. Used to allow plain http only for local development endpoints.
+func IsLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+
+	ip, err := netip.ParseAddr(host)
+
+	return err == nil && ip.IsLoopback()
+}
+
+// IsHTTPSOrLoopbackURL reports whether raw is an https URL, or an http URL
+// whose host is loopback.
+func IsHTTPSOrLoopbackURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+
+	return u.Scheme == "https" || u.Scheme == "http" && IsLoopbackHost(u.Hostname())
+}

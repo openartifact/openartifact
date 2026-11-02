@@ -153,11 +153,11 @@ func (h *FederationHandler) internalError(w http.ResponseWriter, what string, er
 	h.dbError(w, "federation: "+what, err)
 }
 
-// enabledRepo authorizes the caller (repository `manage`, or project
-// maintainer), loads the repository and requires it to be federated: 409
+// enabledRepo authorizes the caller (the middleware already requires the global
+// `manage` permission; project roles do not apply), loads the repository and requires it to be federated: 409
 // otherwise.
 func (h *FederationHandler) enabledRepo(w http.ResponseWriter, r *http.Request) (*models.Repository, bool) {
-	repo, ok := h.permittedRepo(w, r, "federation", "manage", true)
+	repo, ok := h.permittedRepo(w, r, "federation", "manage", false)
 	if !ok {
 		return nil, false
 	}
@@ -271,7 +271,7 @@ func (h *FederationHandler) writeStatus(ctx context.Context, w http.ResponseWrit
 }
 
 func (h *FederationHandler) handleStatus(w http.ResponseWriter, r *http.Request) {
-	repo, ok := h.permittedRepo(w, r, "federation", "manage", true)
+	repo, ok := h.permittedRepo(w, r, "federation", "manage", false)
 	if !ok {
 		return
 	}
@@ -280,7 +280,7 @@ func (h *FederationHandler) handleStatus(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *FederationHandler) handleSetEnabled(w http.ResponseWriter, r *http.Request) {
-	repo, ok := h.permittedRepo(w, r, "federation", "manage", true)
+	repo, ok := h.permittedRepo(w, r, "federation", "manage", false)
 	if !ok {
 		return
 	}

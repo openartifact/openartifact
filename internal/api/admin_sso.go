@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"regexp"
 	"strings"
@@ -92,19 +91,12 @@ var errIdentityURLNotHTTPS = errors.New("URL must use https (http is only allowe
 // attacker able to alter them could forge identities. http is tolerated only
 // for loopback hosts (local development IdPs).
 func requireHTTPSIdentityURL(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil {
+	if _, err := url.Parse(raw); err != nil {
 		return fmt.Errorf("invalid URL: %w", err)
 	}
 
-	switch u.Scheme {
-	case "https":
+	if netutil.IsHTTPSOrLoopbackURL(raw) {
 		return nil
-	case "http":
-		host := u.Hostname()
-		if ip, perr := netip.ParseAddr(host); perr == nil && ip.IsLoopback() || host == "localhost" {
-			return nil
-		}
 	}
 
 	return errIdentityURLNotHTTPS

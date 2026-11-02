@@ -23,3 +23,14 @@ func TestValidateOutboundURL(t *testing.T) {
 		t.Error("metadata must stay blocked")
 	}
 }
+
+func TestIsHTTPSOrLoopbackURL(t *testing.T) {
+	for raw, want := range map[string]bool{
+		"https://example.com": true, "http://localhost:1": true, "http://127.0.0.1": true, "http://[::1]:9": true,
+		"http://example.com": false, "http://10.0.0.1": false, "http://localhost.evil.com": false, "ftp://localhost": false,
+	} {
+		if got := IsHTTPSOrLoopbackURL(raw); got != want {
+			t.Errorf("%s = %v, want %v", raw, got, want)
+		}
+	}
+}
