@@ -99,5 +99,5 @@ The version lives in the `VERSION` file; a release is a unique SemVer tag
 GoReleaser binaries, container image, signatures, provenance). Release notes
 are generated from Conventional Commits and list user-visible fixes, naming
 the CVE/GHSA id of any fixed publicly known vulnerability. Details:
-[docs/development](docs/development/README.md#releases-releaseyml) and
+[docs/development](docs/development/ci-and-releases.md#releases) and
 [signing](docs/security/signing.md#verifying-openartifact-releases).

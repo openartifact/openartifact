@@ -22,7 +22,7 @@
 # first coverage report exists the import graph alone selects. A crash fails the
 # check and is uploaded as an artifact; SARIF goes to code scanning. Batch
 # fuzzing, pruning and coverage: clusterfuzzlite-batch.yml. Local runs:
-# docs/development/README.md.
+# docs/development/fuzzing.md.
 name: ClusterFuzzLite PR
 
 on:

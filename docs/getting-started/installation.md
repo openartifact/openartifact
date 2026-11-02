@@ -6,84 +6,141 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Installation
 
-Run OpenArtifact with Docker Compose, on Kubernetes with Helm, or as a single binary against your own PostgreSQL.
+Install OpenArtifact with Docker Compose, on Kubernetes with Helm, or as a single binary against your own PostgreSQL. Start with Compose to try it on one machine.
 
-OpenArtifact is one Go binary with the web UI embedded. It needs PostgreSQL (the compose file and CI use `postgres:18-alpine`) and a blob store (local filesystem by default; see [storage](../operations/storage.md)).
+OpenArtifact is one Go binary with the web UI embedded. It needs PostgreSQL (the compose file and CI use `postgres:18-alpine`) and a blob store. The blob store is the local filesystem by default; see [storage](../operations/storage.md) for the others.
 
 | Method | Use it for |
 |---|---|
-| [Docker Compose](#docker-compose) | Evaluation, small single-host installs; builds the image from the checkout and bundles PostgreSQL |
-| [Helm](#helm) | Kubernetes; optional CloudNativePG database, HA, Ingress/Gateway API |
-| [Release binary or source build](#binary-and-build-from-source) | Bare metal / VMs / systemd, with your own PostgreSQL |
+| [Docker Compose](#docker-compose) | Trying it out and small single-host installs. Builds the image from the checkout and bundles PostgreSQL. |
+| [Helm](#helm) | Kubernetes, with an optional CloudNativePG database, high availability and Ingress or Gateway API. |
+| [Release binary or source build](#binary-and-build-from-source) | Bare metal, VMs and systemd, with your own PostgreSQL. |
 
 ## Docker Compose
 
-```sh
-docker login dhi.io                     # default runtime is Docker Hardened Images (a free Docker ID is enough)
-cp docker/.env.example docker/.env      # set POSTGRES_PASSWORD
-make docker-up                          # build and start; stamps version, commit and build time
-```
+Use this to run OpenArtifact on one machine. It needs Docker with Compose, `make`, `openssl` and a checkout of this repository.
 
-To skip the login, build on the anonymous distroless base instead: `OPENARTIFACT_RUNTIME=distroless make docker-up`.
+1. Create the settings file and fill in the three required secrets:
 
-`make docker-up` runs `docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build` with the build metadata exported (see the table below). Running that `docker compose` command directly works too, but compose cannot read the `VERSION` file or run `git`, so the image then reports version `dev` and commit/build time `unknown` (the System page labels them "Not recorded").
+   ```sh
+   cp docker/.env.example docker/.env
+   for k in POSTGRES_PASSWORD OPENARTIFACT_SECRET_KEY AUTH_HMAC_KEY; do
+     sed -i "s|^$k=.*|$k=$(openssl rand -hex 32)|" docker/.env
+   done
+   ```
 
-The UI and API are on <http://localhost:8080> (host port: `OPENARTIFACT_PORT`). The port is bound to `127.0.0.1` (change with `OPENARTIFACT_BIND`, e.g. `0.0.0.0`; put a TLS reverse proxy in front for anything else). PostgreSQL is not published to the host. Compose refuses to start while `POSTGRES_PASSWORD` is unset.
+   On macOS use `sed -i ''` instead of `sed -i`. Compose refuses to start while any of the three is empty.
 
-Which `.env.example`:
+2. Pick the base image of the runtime container. The default is Docker Hardened Images and needs a free Docker ID:
 
-| File | Used by |
+   ```sh
+   docker login dhi.io
+   ```
+
+   Without a Docker ID, use the anonymous distroless base instead:
+
+   ```sh
+   export OPENARTIFACT_RUNTIME=distroless
+   ```
+
+3. Build and start:
+
+   ```sh
+   make docker-up
+   ```
+
+4. Open <http://localhost:8080> and sign in as `admin`. The first password is printed once in the server log; see [First login](#first-login).
+
+Keep `OPENARTIFACT_SECRET_KEY` and `AUTH_HMAC_KEY`. They must stay the same when you upgrade or restore a backup, so keep `docker/.env` in your backup.
+
+The port is bound to `127.0.0.1`. To publish it, set `OPENARTIFACT_BIND=0.0.0.0` and put a TLS reverse proxy in front ([reverse proxy and TLS](#behind-a-reverse-proxy-and-tls)). PostgreSQL is not published to the host.
+
+Next: [create your first repository](first-repository.md).
+
+`make docker-up` runs `docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build` and stamps the version, commit and build time into the image. Running that `docker compose` command yourself works too, but then the System page shows version `dev` and "Not recorded" for commit and build time.
+
+### Compose settings reference
+
+These variables go in `docker/.env`. Compose reads `docker/.env` only. The repository-root [`.env.example`](../../.env.example) is for the bare binary, and [configuration](configuration.md) explains every setting.
+
+Required:
+
+| Variable | Meaning |
 |---|---|
-| `docker/.env.example` → `docker/.env` | Compose (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`) and `make docker-run` (`DB_*`, via `--env-file`) |
-| [`.env.example`](../../.env.example) (repo root) | Full environment-variable reference for the binary; Compose does not read it. See [configuration](configuration.md) |
+| `POSTGRES_PASSWORD` | Password of the bundled PostgreSQL. `POSTGRES_USER` (`postgres`) and `POSTGRES_DB` (`artifact_repo`) are optional. |
+| `OPENARTIFACT_SECRET_KEY` | Encrypts upstream passwords, webhook secrets and signing keys at rest. Never change it afterwards. |
+| `AUTH_HMAC_KEY` | Signs OIDC and SAML login state. |
 
-Compose also substitutes these variables from `docker/.env` (they are not listed in `docker/.env.example`):
+Generate each with `openssl rand -hex 32`.
+
+Optional runtime settings:
 
 | Variable | Default | Effect |
 |---|---|---|
-| `AUTH_HMAC_KEY` | none, required | Signs OIDC/SAML login state; compose refuses to start without it (`openssl rand -hex 32`). `docker/.env.example` lists it, together with the equally required `OPENARTIFACT_SECRET_KEY` |
-| `OPENARTIFACT_ROLE` | `all` | Process role of the `openartifact` service: `all`, `web` or `worker` ([scaling](../operations/scaling.md)) |
-| `OPENARTIFACT_BIND` | `127.0.0.1` | Host address the port mapping binds to |
-| `OPENARTIFACT_PORT` | `8080` | Host port mapped to the container's 8080. Containers carry no fixed names, so several projects can run side by side: `OPENARTIFACT_PORT=18080 docker compose -p oa-test -f docker/docker-compose.yml --env-file docker/.env up -d --build` (add `-v` to `down` to drop that project's volumes) |
-| `OPENARTIFACT_VERSION` | `dev` | Build argument and image tag (`openartifact:<version>`); the version reported by `/health`, the log, `-version` and the System page. `make docker-up` sets it from the `VERSION` file |
-| `OPENARTIFACT_COMMIT` | `unknown` | Build argument; commit reported by the System page. `make docker-up` sets the 7-character short SHA |
-| `OPENARTIFACT_BUILD_TIME` | `unknown` | Build argument; build time, RFC 3339 in UTC. `make docker-up` sets it |
-| `OPENARTIFACT_RUNTIME` | `dhi` | Build argument `RUNTIME`: runtime base image. `dhi` is Docker Hardened Images (`dhi.io/static`) and needs `docker login dhi.io` with a Docker ID; set `OPENARTIFACT_RUNTIME=distroless` to use the anonymous `gcr.io/distroless/static-debian13` instead (same layout, also shell-less) |
-| `OPENARTIFACT_SCANNERS` | `none` | Build argument `SCANNERS`: vulnerability scanners to bundle into the image (`none`, `trivy`, `grype`, `all`), copied from digest-pinned upstream images. The default image contains none, so `trivy` / `grype` scans fail until you enable them; see [Installing Trivy and Grype](../security/scanning.md#installing-trivy-and-grype). Without rebuilding, `OPENARTIFACT_TRIVY_INSTALL=auto` / `OPENARTIFACT_GRYPE_INSTALL=auto` make the server download the pinned, checksum-verified release into the `scanner_cache` volume at runtime (`OPENARTIFACT_SCANNER_DOWNLOAD_BASE_URL` selects a mirror). Related passthroughs: `OPENARTIFACT_SCANNER_OFFLINE`, `OPENARTIFACT_SCANNER_UPDATE_INTERVAL`, `OPENARTIFACT_TRIVY_DB_REPOSITORY`, `OPENARTIFACT_GRYPE_DB_URL`. The `scanner_cache` volume holds the downloaded databases (several GB with both scanners) |
+| `OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD` | empty | Password of the first admin. Empty generates one; see [First login](#first-login). |
+| `BASE_URL` | empty | Public URL, for SSO and webhooks. |
+| `OPENARTIFACT_TRUSTED_PROXIES` | empty | CIDRs of reverse proxies whose forwarded headers are believed. |
+| `OPENARTIFACT_ROLE` | `all` | Process role: `all`, `web` or `worker`. See [scaling](../operations/scaling.md). |
+| `OPENARTIFACT_BIND` | `127.0.0.1` | Host address of the published port. |
+| `OPENARTIFACT_PORT` | `8080` | Host port mapped to the container's 8080. |
 
-The `openartifact` service passes only the variables listed in its `environment:` block. Anything else (`BASE_URL`, `OPENARTIFACT_SECRET_KEY`, `METRICS_AUTH_TOKEN`, `OPENARTIFACT_TRUSTED_PROXIES`, ...) must be added there, or via a compose override file, before it reaches the server. The service runs as uid 10001 with a read-only root filesystem; data lives in the named volumes `postgres_data`, `artifacts_data` (`/var/lib/artifacts`), `backups_data` (`/var/lib/openartifact/backups`) and `scanner_cache` (`/var/cache/openartifact/scanners`: Trivy / Grype binaries installed at runtime and their vulnerability databases).
+Build options:
 
-The image has no shell, `wget` or `nc`; its health check is `openartifact-server -healthcheck`, and the server waits for PostgreSQL itself (`DB_CONNECT_TIMEOUT`, default 60s). See the [0.5.0 upgrade notes](upgrading.md#050-unreleased) for debugging and custom CAs.
+| Variable | Default | Effect |
+|---|---|---|
+| `OPENARTIFACT_RUNTIME` | `dhi` | Runtime base image: `dhi` or `distroless`. |
+| `OPENARTIFACT_SCANNERS` | `none` | Scanners to bundle into the image: `none`, `trivy`, `grype` or `all`. |
+| `OPENARTIFACT_VERSION` | `dev` | Image tag and reported version. `make docker-up` sets it from the `VERSION` file. |
+| `OPENARTIFACT_COMMIT` | `unknown` | Reported commit. `make docker-up` sets the 7-character short SHA. |
+| `OPENARTIFACT_BUILD_TIME` | `unknown` | Reported build time, RFC 3339 in UTC. `make docker-up` sets it. |
 
-Released images are published to `ghcr.io/openartifact/openartifact` (`linux/amd64`, `linux/arm64`; tags in [upgrading](upgrading.md#versions-and-image-tags)). To run one instead of building, replace the `build:` and `image:` lines of the `openartifact` service (and of `openartifact-worker`, if you use it) with `image: ghcr.io/openartifact/openartifact:<version>`. Verify signatures as described in [signing](../security/signing.md).
+- `dhi` is Docker Hardened Images (`dhi.io/static`) and needs `docker login dhi.io`. `distroless` is `gcr.io/distroless/static-debian13`, pulled anonymously. Both images have the same layout and no shell.
+- The default image bundles no scanner, so Trivy and Grype scans fail until you enable one. Rebuild with `OPENARTIFACT_SCANNERS=trivy` (or `grype`, `all`), or set `OPENARTIFACT_TRIVY_INSTALL=auto` and `OPENARTIFACT_GRYPE_INSTALL=auto` to let the server download the pinned, checksum-verified release into the `scanner_cache` volume. See [installing Trivy and Grype](../security/scanning.md#installing-trivy-and-grype).
+- Other scanner settings pass through from `docker/.env`: `OPENARTIFACT_SCANNER_OFFLINE`, `OPENARTIFACT_SCANNER_UPDATE_INTERVAL`, `OPENARTIFACT_SCANNER_DOWNLOAD_BASE_URL`, `OPENARTIFACT_TRIVY_DB_REPOSITORY` and `OPENARTIFACT_GRYPE_DB_URL`. The `scanner_cache` volume holds the databases, which take several GB with both scanners.
+- The OpenTelemetry variables (`OPENARTIFACT_OTLP_ENABLED`, `OTEL_*`) also pass through; see [monitoring](../operations/monitoring.md#opentelemetry).
 
-To run the web part and the background work as two processes, set `OPENARTIFACT_ROLE=web` in `docker/.env` and add `--profile worker` to the `docker compose` command; the optional `openartifact-worker` service shares the image, database and volumes. See [scaling and roles](../operations/scaling.md#docker-compose).
+The compose file passes only the variables it lists. Others, such as `METRICS_AUTH_TOKEN`, `METRICS_ALLOW_ANONYMOUS` and the `*_PASSWORD_FILE` variables, reach the server only if you add them to the `environment:` block of the `openartifact` service or to a compose override file.
+
+To run several projects side by side, give each its own project name and port. Add `-v` to `down` to drop that project's volumes:
+
+```sh
+OPENARTIFACT_PORT=18080 docker compose -p oa-test -f docker/docker-compose.yml --env-file docker/.env up -d --build
+docker compose -p oa-test -f docker/docker-compose.yml --env-file docker/.env down -v
+```
+
+The service runs as uid 10001 with a read-only root filesystem. Data lives in four named volumes:
+
+| Volume | Mounted at | Holds |
+|---|---|---|
+| `postgres_data` | `/var/lib/postgresql` | The database. |
+| `artifacts_data` | `/var/lib/artifacts` | Package blobs. |
+| `backups_data` | `/var/lib/openartifact/backups` | Backups. |
+| `scanner_cache` | `/var/cache/openartifact/scanners` | Trivy and Grype binaries and databases. |
+
+### Run a released image
+
+Released images are published to `ghcr.io/openartifact/openartifact` for `linux/amd64` and `linux/arm64`; tags are listed in [upgrading](upgrading.md#versions-and-image-tags). To run one instead of building, replace the `build:` and `image:` lines of the `openartifact` service (and of `openartifact-worker`, if you use it) with `image: ghcr.io/openartifact/openartifact:<version>`. Verify signatures as described in [signing](../security/signing.md).
+
+### Run web and worker as two processes
+
+Set `OPENARTIFACT_ROLE=web` in `docker/.env` and add `--profile worker` to the `docker compose` command. The optional `openartifact-worker` service shares the image, database and volumes. See [scaling and roles](../operations/scaling.md#docker-compose).
+
+### Operating the shell-less image
+
+The runtime image has no shell, `wget` or `nc`, so `exec` into the container does not work.
+
+- **Health check.** The container runs `/app/openartifact -healthcheck`. The server waits for PostgreSQL itself (`DB_CONNECT_TIMEOUT`, default 60s).
+- **Debugging.** Attach a throwaway container to the server's network namespace: `docker run --rm -it --network container:<container> busybox`. On Kubernetes use `kubectl debug -it <pod> --image=busybox --target=openartifact`.
+- **Custom CAs.** Mount the CA bundle into the container and set `SSL_CERT_FILE` (one file) or `SSL_CERT_DIR` (a directory) to it. `update-ca-certificates` cannot run in the image.
+- **CLI.** The `oa` command is in the image at `/usr/local/bin/oa`.
 
 ### First login
 
-On first start with an empty user table, OpenArtifact creates the user `admin`. There are two ways to choose its credentials; without either, it generates a password.
+On the first start with an empty database, OpenArtifact creates the user `admin`. By default it generates the password and prints it once.
 
-**Supplied credentials (recommended for automation).** Provide the password and, optionally, an admin API token before the first start. Nothing is printed and no password change is forced (set `OPENARTIFACT_BOOTSTRAP_FORCE_PASSWORD_CHANGE=true` to force one):
+#### Read the generated password
 
-| Environment variable | YAML key | Meaning |
-|---|---|---|
-| `OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE` | `bootstrap.adminPasswordFile` | File holding the admin password (a trailing newline is trimmed). **Preferred**: a secret mounted as a file never shows up in `docker inspect`, process environments or compose files |
-| `OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD` | `bootstrap.adminPassword` | The password itself, a convenience for compose and local trials. The file wins when both are set |
-| `OPENARTIFACT_BOOTSTRAP_ADMIN_TOKEN_FILE` | `bootstrap.adminTokenFile` | File holding an admin API token secret; created as the access token `bootstrap` of `admin`, so `oa apply` works on the first sync |
-| `OPENARTIFACT_BOOTSTRAP_ADMIN_TOKEN_TTL` | `bootstrap.adminTokenTtl` | Lifetime of that token (for example `720h`); `0` (default) means no expiry |
-| `OPENARTIFACT_BOOTSTRAP_FORCE_PASSWORD_CHANGE` | `bootstrap.forcePasswordChange` | Force a change at the first login of a supplied password (default `false`; a generated password always forces it) |
-
-```sh
-umask 077
-openssl rand -base64 24 > admin-password
-echo "oa_pat_$(openssl rand -hex 32)" > admin-token
-```
-
-- The password must satisfy the normal policy (12 to 1024 characters). An invalid password, an unreadable file or an invalid token makes the server **refuse to start** with an error naming the setting; the value itself is never logged.
-- The token secret must be `oa_pat_` followed by 32 to 128 characters from `A-Za-z0-9_-` with at least 12 distinct characters (the shape of a token the server generates; `oa_pat_$(openssl rand -hex 32)` always qualifies). Only its SHA-256 is stored, like every other token. It carries the global `manage` permission of the admin user and can be revoked in the UI.
-- The settings apply **only to an empty instance**. They never reset an existing admin or add a token later; on a non-empty database the server logs an info line and ignores them (they are not even read). With several replicas starting at once, the admin, its password and its token are created in one transaction, so exactly one admin and one token exist. Use [`resetpw`](#reset-the-admin-password) to change an existing password.
-
-**Generated password.** Without these settings the server generates a random 32-character password and prints it once to **stderr** (not through the structured logger, so it is not in a `LOG_OUTPUT` file):
+The server prints the password to stderr, not to the structured log:
 
 ```text
 ===== OPENARTIFACT BOOTSTRAP =====
@@ -101,33 +158,80 @@ Read it from the container output:
 docker compose -f docker/docker-compose.yml logs openartifact | grep -A6 'OPENARTIFACT BOOTSTRAP'
 ```
 
-A generated password stops working for login after `OPENARTIFACT_BOOTSTRAP_GENERATED_PASSWORD_TTL` (`bootstrap.generatedPasswordTtl`, default `24h`, `0` = never), so a banner that ended up in a log aggregator does not stay a credential. Changing the password, or running `resetpw`, removes the expiry. An expired password is rejected exactly like a wrong one (`401 invalid_credentials`); the server log then says `login rejected: the generated bootstrap password has expired; reset it with cmd/resetpw`, and only after the correct password was presented. Run [`resetpw`](#reset-the-admin-password) to get back in.
+- On Kubernetes, find the same block with `kubectl -n openartifact logs <pod>`.
+- The generated account must change its password. The UI redirects you to the change-password page, and the API rejects everything else until you change it. New passwords need at least 12 characters.
+- The generated password stops working after 24 hours, set by `OPENARTIFACT_BOOTSTRAP_GENERATED_PASSWORD_TTL` (`0` means never). Changing the password removes the limit.
+- With several replicas starting at once, only the replica that creates the user prints a password.
 
-The generated account is flagged `must_change_password`: until the password is changed, every API call except `POST /api/v1/auth/change-password` and `POST /api/v1/auth/logout` is rejected, and the UI redirects to the change-password page. New passwords must be at least 12 characters. With several replicas starting on an empty database, only the replica that creates the user prints a password.
+An expired password is rejected like a wrong one (`401 invalid_credentials`). Reset it as described in [Reset the admin password](#reset-the-admin-password).
 
-Next: create a repository, then an API token for clients ([authentication](../security/authentication.md), [RBAC](../security/rbac.md)).
+#### Choose the password yourself
+
+Set the password, and optionally an admin API token, before the first start. Nothing is printed and no password change is forced. This is the right choice for automation.
+
+| Environment variable | YAML key | Meaning |
+|---|---|---|
+| `OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE` | `bootstrap.adminPasswordFile` | File holding the admin password. Preferred: a mounted file never shows up in `docker inspect`. |
+| `OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD` | `bootstrap.adminPassword` | The password itself, for compose and local trials. The file wins when both are set. |
+| `OPENARTIFACT_BOOTSTRAP_ADMIN_TOKEN_FILE` | `bootstrap.adminTokenFile` | File holding an admin API token. It becomes the access token `bootstrap` of `admin`, so `oa apply` works on the first run. |
+| `OPENARTIFACT_BOOTSTRAP_ADMIN_TOKEN_TTL` | `bootstrap.adminTokenTtl` | Lifetime of that token, for example `720h`. `0` (default) means no expiry. |
+| `OPENARTIFACT_BOOTSTRAP_FORCE_PASSWORD_CHANGE` | `bootstrap.forcePasswordChange` | Force a change at the first login. Default `false`. |
+
+Create the files:
+
+```sh
+umask 077
+openssl rand -base64 24 > admin-password
+echo "oa_pat_$(openssl rand -hex 32)" > admin-token
+```
+
+- The password must be 12 to 1024 characters. A trailing newline in the file is trimmed.
+- The token must be `oa_pat_` followed by 32 to 128 characters from `A-Za-z0-9_-`, with at least 12 distinct characters. The command above always qualifies.
+- The server stores only the token's SHA-256. The token carries the `manage` permission of `admin` and can be revoked in the UI.
+- An invalid password, an unreadable file or an invalid token stops the server with an error naming the setting. The value is never logged.
+- These settings apply only to an empty instance. They never reset an existing admin or add a token later.
+
+Next: [create your first repository](first-repository.md).
 
 ### Reset the admin password
 
-`resetpw` is a break-glass tool that writes directly to the database. It is built from `./cmd/resetpw` and shipped next to `openartifact` in the release archives. It never takes the password as an argument.
+Use this when the generated password expired or the admin password is lost. `resetpw` writes directly to the database and never takes the password as an argument. It ships next to `openartifact` in the [release archives](#release-archives); the container image does not contain it.
 
 | Input | Meaning |
 |---|---|
-| `OPENARTIFACT_RESET_PASSWORD` | New password. If unset, one line is read from stdin; an interactive terminal is refused (input would echo) |
-| `-username NAME` / `OPENARTIFACT_RESET_USERNAME` | User to reset (default `admin`) |
-| `-sslmode MODE` / `DB_SSLMODE` | `disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full` (default `require`, like the server) |
-| `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Connection settings; defaults `localhost`, `5432`, `postgres`, empty, `artifact_repo`. Read from the environment only, not from the YAML file |
+| `OPENARTIFACT_RESET_PASSWORD` | New password. If unset, one line is read from stdin; an interactive terminal is refused. |
+| `-username NAME` or `OPENARTIFACT_RESET_USERNAME` | User to reset. Default `admin`. |
+| `-sslmode MODE` or `DB_SSLMODE` | `disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`. Default `require`. |
+| `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Connection settings. Defaults `localhost`, `5432`, `postgres`, empty, `artifact_repo`. Read from the environment only. |
+
+#### With Docker Compose
+
+Extract `resetpw` from the release archive that matches your version (it must be a Linux binary), then run it once inside the compose network. The service already carries the database settings:
 
 ```sh
-OPENARTIFACT_RESET_PASSWORD='<new-password>' go run ./cmd/resetpw
-# or: printf '%s\n' '<new-password>' | go run ./cmd/resetpw -username admin
-# or, from a release archive: ./resetpw -username admin < password-file
+tar -xzf openartifact_<version>_linux_amd64.tar.gz resetpw
+printf '%s\n' '<new-password>' | OPENARTIFACT_VERSION=$(cat VERSION) \
+  docker compose -f docker/docker-compose.yml --env-file docker/.env \
+  run --rm -T --no-deps -v "$PWD/resetpw:/tmp/resetpw:ro" --entrypoint /tmp/resetpw openartifact
 ```
 
-- The password must be 12 to 1024 characters; the tool fails if the user does not exist.
-- In one transaction it sets the new Argon2id hash, **clears** `must_change_password` and any generated-password expiry (you chose the password, so no forced change follows) and deletes all of the user's sessions.
-- A running server may take up to `DB_AUTH_CACHE_TTL_MS` (default 2000 ms) to see the change, because `resetpw` bypasses its auth cache.
-- With the default compose file PostgreSQL is only on the compose network. To reach it from the host, add `ports: ["127.0.0.1:5432:5432"]` to the `postgres` service, then use `DB_HOST=127.0.0.1 DB_USER=… DB_PASSWORD=… DB_NAME=… DB_SSLMODE=disable` (the bundled database has no TLS).
+- `OPENARTIFACT_VERSION` makes compose find the image you started with `make docker-up`. Without it compose looks for `openartifact:dev` and builds it.
+- Drop `--no-deps` if the database is not running.
+
+#### With the binary
+
+```sh
+OPENARTIFACT_RESET_PASSWORD='<new-password>' DB_HOST=… DB_USER=… DB_PASSWORD=… DB_NAME=… ./resetpw
+# or: printf '%s\n' '<new-password>' | ./resetpw -username admin
+```
+
+From a source checkout, `go run ./cmd/resetpw` works the same way.
+
+What it does:
+
+- The password must be 12 to 1024 characters. The tool fails if the user does not exist.
+- It sets the new password, removes the forced change and any expiry (you chose the password), and ends all of the user's sessions.
+- A running server may take up to `DB_AUTH_CACHE_TTL_MS` (default 2000 ms) to notice.
 
 ## Helm
 
@@ -152,7 +256,7 @@ Key points from the [chart README](https://github.com/openartifact/helm-charts/b
 - The chart-managed Secret holds `AUTH_HMAC_KEY` and `OPENARTIFACT_SECRET_KEY`, generated on first install and reused on upgrade. Back it up; see [upgrading](upgrading.md#secrets-to-preserve).
 - Set `baseUrl` to the public URL and `config.trustedProxies` to your ingress controller's CIDR.
 - Any server variable can be set through `env` or `secrets.extra`.
-- First-login password: find the `OPENARTIFACT BOOTSTRAP` block in the pod logs (`kubectl -n openartifact logs <pod>`), as above.
+- First-login password: find the `OPENARTIFACT BOOTSTRAP` block in the pod logs (`kubectl -n openartifact logs <pod>`), see [Read the generated password](#read-the-generated-password).
 
 ## Binary and build from source
 
@@ -188,7 +292,21 @@ make run          # build, then run ./bin/openartifact
 make help         # list all targets
 ```
 
-The version comes from the `VERSION` file and is injected with `-ldflags "-X main.version=… -X main.commit=… -X main.buildTime=…"`. Override with `make build CI_VERSION=1.2.3 CI_COMMIT=abc1234`. A plain `go build ./cmd/server` reports version `dev`. The commit is always the 7-character short SHA and the build time RFC 3339 in UTC, in the Makefile, the Dockerfile and GoReleaser alike. `openartifact-server -version` prints `<version> <commit> <build time> <go>/<os>/<arch>`. Useful targets: `make migrate` (runs `go run ./cmd/server -migrate`), `make docker-build` (image `openartifact:latest`), `make docker-run` (that image against an external PostgreSQL from `docker/.env`). Development targets are in [development](../development/README.md).
+The version comes from the `VERSION` file. Override it with `make build CI_VERSION=1.2.3 CI_COMMIT=abc1234`. A plain `go build ./cmd/server` reports version `dev`.
+
+Check what a binary reports:
+
+```sh
+openartifact -version    # <version> <commit> <build time> <go>/<os>/<arch>
+```
+
+Other useful targets:
+
+- `make migrate` runs the database migrations and exits.
+- `make docker-build` builds the image `openartifact:latest`.
+- `make docker-run` runs that image against an external PostgreSQL from `docker/.env`.
+
+Development targets are in the [development guide](../development/README.md).
 
 ## Behind a reverse proxy and TLS
 
@@ -197,7 +315,9 @@ The version comes from the `VERSION` file and is injected with `-ldflags "-X mai
 - Session and login-issued CSRF cookies get `Secure` when the request arrived over TLS or carries `X-Forwarded-Proto: https`, so have the proxy set that header. The CSRF cookie the server seeds on API reads, and the origin check that guards Basic-token requests from browsers, believe `X-Forwarded-Proto` and `X-Forwarded-Host` only from `OPENARTIFACT_TRUSTED_PROXIES` (or follow an `https://` `BASE_URL`), so list the proxy there.
 - To terminate TLS in OpenArtifact: `SERVER_TLS_ENABLED=true` with `SERVER_TLS_CERT` and `SERVER_TLS_KEY` (PEM files; both required, minimum TLS 1.2). Only in this mode does the server send `Strict-Transport-Security`; behind a TLS-terminating proxy, set HSTS on the proxy.
 - Uploads can be large, and read/write timeouts default to `0` (unlimited). Raise or disable any body-size and timeout limit on the proxy as well.
-- `GET /health` (always 200, JSON with version and component status) and `GET /ready` (503 when the database is down) are the probe endpoints; the compose healthcheck uses `/health`.
+- `GET /health` returns JSON with the version and the status of each component. It answers 200 even when a component is degraded, and 503 only while the server is still starting.
+- `GET /ready` answers 503 when the database is down. Use it as the readiness probe.
+- The compose healthcheck runs `/app/openartifact -healthcheck`, which calls `/health`.
 
 ### The public URL and BASE_URL
 

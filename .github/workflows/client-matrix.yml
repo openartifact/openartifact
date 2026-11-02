@@ -9,7 +9,7 @@
 # not hide the others); the client logic is scripts/smoke/<format>.sh and the
 # matrix is whatever scripts exist there. A failing night opens (or updates) one
 # issue labelled client-matrix; the next green night comments and closes it.
-# See docs/development/README.md#client-compatibility-matrix.
+# See docs/development/ci-and-releases.md#client-compatibility-matrix.
 
 name: client-matrix
 
