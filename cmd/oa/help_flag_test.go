@@ -68,25 +68,37 @@ func countingServer(t *testing.T) (*httptest.Server, *atomic.Int64) {
 func TestEveryCommandHelpMakesNoRequest(t *testing.T) {
 	srv, requests := countingServer(t)
 
-	for _, words := range usageCommands(t) {
-		name := strings.Join(words, " ")
+	// Help is decided before any command code runs, so one flag spelling and
+	// position per command (alternating) covers every command without
+	// spawning hundreds of processes under -race.
+	t.Run("commands", func(t *testing.T) {
+		for i, words := range usageCommands(t) {
+			name := strings.Join(words, " ")
+			h := []string{"--help", "-h"}[i%2]
 
-		for _, h := range []string{"--help", "-h"} {
-			variants := map[string][]string{
-				"trailing": append(append([]string{}, words...), h),
-				"operand":  append(append([]string{}, words...), h, "x"),
-				"after":    append(append([]string{}, words...), "x", "y", h),
+			variants := [][]string{
+				append(append([]string{}, words...), h),
+				append(append([]string{}, words...), h, "x"),
+				append(append([]string{}, words...), "x", "y", h),
 			}
+			args := variants[i%3]
 
-			for pos, args := range variants {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+
 				res := runOA(t, srv, "", args...)
-				if res.code != 0 {
-					t.Errorf("oa %s (%s %s): exit %d, stderr %q", name, h, pos, res.code, res.stderr)
+				if res.code != 0 || !strings.Contains(res.stdout, words[0]) {
+					t.Errorf("oa %v: exit %d, stdout %q, stderr %q", args, res.code, res.stdout, res.stderr)
 				}
+			})
+		}
+	})
 
-				if !strings.Contains(res.stdout, words[0]) {
-					t.Errorf("oa %s (%s %s): no help on stdout: %q", name, h, pos, res.stdout)
-				}
+	// Every spelling and position, on the command that once misbehaved.
+	for _, h := range []string{"--help", "-h", "-help"} {
+		for _, args := range [][]string{{"repo", "create", h}, {"repo", "create", h, "x"}, {"repo", "create", "x", h}, {"repo", h}, {h}} {
+			if res := runOA(t, srv, "", args...); res.code != 0 {
+				t.Errorf("oa %v: exit %d, stderr %q", args, res.code, res.stderr)
 			}
 		}
 	}
@@ -158,16 +170,18 @@ func TestRepoCreateRequiresFormat(t *testing.T) {
 // Flags may follow the query: `oa search q --fmt rpm` filters like
 // `oa search --fmt rpm q`, instead of searching for "q --fmt rpm".
 func TestSearchFlagsAfterQuery(t *testing.T) {
-	var got string
+	var last atomic.Value
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got = r.URL.RawQuery
+		last.Store(r.URL.RawQuery)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"results":[]}`))
 	}))
 	t.Cleanup(srv.Close)
 
 	runOA(t, srv, "", "search", "zzcheck", "--fmt", "rpm", "--limit", "3")
+
+	got, _ := last.Load().(string)
 
 	for _, want := range []string{"q=zzcheck&", "format=rpm", "limit=3"} {
 		if !strings.Contains(got+"&", want) {
@@ -210,22 +224,24 @@ func TestGlobalFormatAfterCommand(t *testing.T) {
 }
 
 func TestQuarantineReleaseBoolForm(t *testing.T) {
-	var body string
+	var last atomic.Value
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
-		body = string(b)
+		last.Store(string(b))
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	t.Cleanup(srv.Close)
 
 	res := runOA(t, srv, "", "vuln", "quarantine", "r", "id", "--release=false")
+	body, _ := last.Load().(string)
 	if res.code != 0 || !strings.Contains(body, `"quarantined":true`) {
 		t.Errorf("--release=false: exit %d, body %q, stderr %q", res.code, body, res.stderr)
 	}
 
 	res = runOA(t, srv, "", "vuln", "quarantine", "r", "id", "--release")
+	body, _ = last.Load().(string)
 	if res.code != 0 || !strings.Contains(body, `"quarantined":false`) {
 		t.Errorf("--release: exit %d, body %q, stderr %q", res.code, body, res.stderr)
 	}
