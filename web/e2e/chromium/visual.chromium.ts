@@ -77,5 +77,22 @@ for (const theme of ['light', 'dark'] as const) {
       const toast = await toastAtRest(ui)
       await expectMatchesBaseline(`toast-${theme}`, { target: toast })
     })
+
+    it('docked update offer', async (ui) => {
+      await openShell(ui, '/no-such-page', theme, false)
+      // The offer comes from a newer service worker, which a test cannot stage: push the same sticky toast
+      // (timeoutMs 0) the registration pushes, through the app's own store and its own strings.
+      await ui.page.evaluate(() => {
+        const root = document.querySelector('#app') as (Element & { __vue_app__?: { config: { globalProperties: { $pinia: { _s: Map<string, { push(t: unknown): number }> } } } } }) | null
+        const store = root?.__vue_app__?.config.globalProperties.$pinia._s.get('toast')
+        if (store === undefined) throw new Error('the toast store is not reachable')
+        store.push({ level: 'info', title: 'New version available', description: 'Reload to switch to it. Your current page is left untouched until you do.', action: { label: 'Reload', run: () => undefined }, timeoutMs: 0 })
+      })
+      const banner = await ui.page.waitForSelector('[role="region"][aria-live]:not(.fixed)', { visible: true })
+      if (banner === null) throw new Error('the update offer was not docked')
+      await painted(ui)
+      await ui.page.mouse.move(683, 600)
+      await expectMatchesBaseline(`update-banner-${theme}`, { target: banner })
+    })
   })
 }

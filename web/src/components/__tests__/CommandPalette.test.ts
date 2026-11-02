@@ -4,6 +4,7 @@
 
 import { afterEach, describe, it, expect, beforeEach, spyOn } from 'bun:test'
 import { mount, flushPromises } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createPinia, setActivePinia, type StoreGeneric } from 'pinia'
 import * as searchApi from '../../api/search'
@@ -106,6 +107,18 @@ describe('CommandPalette', () => {
     await new Promise((r) => setTimeout(r, 400))
     await flushPromises()
     expect(document.querySelector('[data-testid="palette-status"]')!.textContent).toMatch(/\d+ results?/)
+  })
+
+  it('starts every open clean, also one that interrupts the close transition', async () => {
+    await open()
+    await type('seed')
+    ui.closeCommandPalette()
+    await nextTick()
+    // The dialog is still leaving (its transition has not ended) when it opens again.
+    ui.openCommandPalette()
+    await flushPromises()
+    expect(input().value).toBe('')
+    expect(activeTitle()).not.toBe('')
   })
 
   it('navigates to the active result on Enter and closes', async () => {
