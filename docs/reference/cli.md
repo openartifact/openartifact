@@ -135,7 +135,7 @@ Usage: oa trash <list|restore|purge>
 
 ```text
 artifact list <repo>               List packages in repository
-artifact upload <repo> <file>      Upload artifact (auto-detects deb/rpm; files over 5 GiB switch to a multipart presigned upload)
+artifact upload <repo> <file>      Upload a file; the repository format picks the endpoint, as for `oa upload` (files over 5 GiB switch to a multipart presigned upload)
 artifact upload --presigned [--path P] [--content-type T] [--multipart] [--part-size SIZE] [--parallel N] <repo> <file>
                                    Upload a raw artifact straight to the object store (presigned PUT; files over 5 GiB,
                                    --multipart or --part-size (128M, 1G or bytes) upload in parts, --parallel 1-16, default 4)
@@ -409,7 +409,8 @@ vuln scan <repo> --artifact-id ID --package P --version V --ecosystem E [--scann
                                    Scan one package for vulnerabilities
 vuln list <repo>                   List vulnerability scans
 vuln show <repo> <id>              Show vulnerability scan
-vuln quarantine <repo> <id>        Quarantine vulnerable package
+vuln quarantine <repo> <id> [--release]
+                                   Quarantine the vulnerable package (--release lifts it)
 vuln delete <repo> <id>            Delete vulnerability scan
 ```
 
@@ -427,7 +428,8 @@ license show <repo> <id>           Show license scan
 secret scan <repo> --artifact-id ID [--content-file F|-]  Scan one artifact (and optional content) for secrets
 secret list <repo>                 List secret scans
 secret show <repo> <id>            Show secret scan
-secret quarantine <repo> <id>      Quarantine secret
+secret quarantine <repo> <id> [--release]
+                                   Quarantine the package (--release lifts it)
 secret delete <repo> <id>          Delete secret scan
 ```
 

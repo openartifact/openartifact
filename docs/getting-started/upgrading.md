@@ -127,6 +127,13 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
+### Unreleased
+
+**Behaviour changes.**
+
+- **Quarantine requests need `quarantined`.** `POST .../vuln|secrets|license/scans/{id}/quarantine` answers `400` when the body has no `quarantined` field instead of treating it as a release, and releasing a scan that is not quarantined no longer writes an `artifact.released` audit event. `oa vuln quarantine` and `oa secret quarantine` now send the field (they always failed with `400` before) and take `--release` to lift a quarantine.
+- **`oa artifact upload` follows the repository format.** It looks the repository up and uploads like `oa upload` does (raw, Maven, Ivy, sbt, deb, rpm, pacman, Ansible, Composer; `*.apk` into Alpine repositories), instead of sending every non-deb file to the RPM endpoint. Other formats are refused with a message.
+
 ### 0.16.1
 
 **What you must do**

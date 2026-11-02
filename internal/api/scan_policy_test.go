@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/bgtask"
 	"github.com/openartifact/openartifact/internal/database"
@@ -564,6 +565,7 @@ func TestLicenseQuarantine_Rejections(t *testing.T) {
 			http.StatusForbidden,
 		},
 		{"bad JSON", &auth.Principal{Username: "admin", IsLegacy: true}, quarantineScanID, `{`, nil, http.StatusBadRequest},
+		{"quarantined missing", &auth.Principal{Username: "admin", IsLegacy: true}, quarantineScanID, `{}`, nil, http.StatusBadRequest},
 		{"id is not a UUID", &auth.Principal{Username: "admin", IsLegacy: true}, "nope", `{"quarantined":false}`, nil, http.StatusNotFound},
 		{
 			"unknown scan",
@@ -758,4 +760,26 @@ func TestVulnScan_ShutdownCancelsScanAndStoresFailure(t *testing.T) {
 	if stored.ScanStatus != "failed" {
 		t.Errorf("an interrupted scan must be stored as failed, got %q", stored.ScanStatus)
 	}
+}
+
+// Releasing a scan that is not quarantined changes nothing, so it leaves no
+// artifact.released event; a real release and a quarantine do.
+func TestLicenseQuarantine_AuditsOnlyRealChanges(t *testing.T) {
+	rows := recordAudit(t)
+
+	db := newScanPolicyDB()
+	db.props["license"] = "GPL-3.0"
+	db.policies = []*models.LicensePolicy{policytest.Policy("block", nil, []string{"GPL-3.0"})}
+	h := newLicenseHandlerFor(t, db)
+	runLicenseScan(t, h)
+
+	path := "/api/v1/repositories/repo/license/scans/" + quarantineScanID + "/quarantine"
+
+	for _, body := range []string{`{"quarantined":false}`, `{"quarantined":false}`, `{"quarantined":true}`} {
+		if rw := serveAs(h.RegisterRoutes, http.MethodPost, path, body); rw.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d (%s)", body, rw.Code, rw.Body.String())
+		}
+	}
+
+	wantAudit(t, rows(), audit.ActionArtifactReleased, audit.ActionArtifactQuarantined)
 }

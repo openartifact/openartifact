@@ -5,11 +5,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 func handleArtifact(args []string, client *Client, outFmt string) {
@@ -37,7 +37,38 @@ func handleArtifact(args []string, client *Client, outFmt string) {
 	}
 }
 
+// artifactUpload stores one file in a hosted repository. The repository's
+// format picks the upload endpoint: Alpine takes a multipart POST with the
+// branch/repo/arch directory, every other uploadable format goes through the
+// same code as `oa upload` (so both commands accept the same formats).
 func artifactUpload(client *Client, opts uploadOptions) {
+	api := newCIAPI(client)
+
+	repo, err := api.repo(context.Background(), opts.repo)
+	if err != nil {
+		dief("%v", err)
+	}
+
+	if importFormat(repo.Format) == formatAPK {
+		artifactUploadAPK(client, opts)
+		return
+	}
+
+	if len(opts.branch)+len(opts.apkRepo)+len(opts.arch) > 0 {
+		dief("--branch, --apk-repo and --arch only apply to Alpine (apk) repositories; %q is %s", opts.repo, repo.Format)
+	}
+
+	res, err := uploadToRepo(context.Background(), api, repo, ciUploadOptions{
+		repo: opts.repo, patterns: []string{opts.filePath}, flat: true,
+	})
+	if err != nil {
+		dief("%v", err)
+	}
+
+	fmt.Printf("Uploaded '%s' to '%s'.\n", filepath.Base(opts.filePath), res.Uploaded[0].Repo)
+}
+
+func artifactUploadAPK(client *Client, opts uploadOptions) {
 	repo, filePath := opts.repo, opts.filePath
 
 	file, err := os.Open(filePath)
@@ -46,18 +77,8 @@ func artifactUpload(client *Client, opts uploadOptions) {
 	}
 	defer func() { _ = file.Close() }()
 
-	// Choose endpoint based on file extension
-	endpoint := "/api/v1/repositories/" + escape(repo) + "/packages"
-
-	var fields [][2]string
-
-	switch strings.ToLower(filepath.Ext(filePath)) {
-	case ".deb":
-		endpoint = "/api/v1/repositories/" + escape(repo) + "/debs"
-	case ".apk":
-		endpoint = "/api/v1/repositories/" + escape(repo) + "/apks"
-		fields = [][2]string{{"branch", opts.branch}, {"repo", opts.apkRepo}, {"arch", opts.arch}}
-	}
+	endpoint := "/api/v1/repositories/" + escape(repo) + "/apks"
+	fields := [][2]string{{"branch", opts.branch}, {"repo", opts.apkRepo}, {"arch", opts.arch}}
 
 	body, contentType := multipartStreamFields(fields, file, "file", filepath.Base(filePath))
 	defer func() { _ = body.Close() }()

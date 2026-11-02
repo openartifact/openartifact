@@ -346,8 +346,7 @@ func handleVuln(args []string, client *Client, outFmt string) {
 		needArgs(args, 3, "Usage: oa vuln show <repo> <id>")
 		showGeneric(client, base+"/scans/"+escape(args[2]), outFmt)
 	case "quarantine":
-		needArgs(args, 3, "Usage: oa vuln quarantine <repo> <id>")
-		postEmpty(client, base+"/scans/"+escape(args[2])+"/quarantine", "Package quarantined.", http.StatusOK)
+		quarantineScan(client, "vuln", base, args)
 	case "delete":
 		needArgs(args, 3, "Usage: oa vuln delete <repo> <id>")
 		deleteResource(client, base+"/scans/"+escape(args[2]), "Scan deleted.")
@@ -429,8 +428,7 @@ func handleSecret(args []string, client *Client, outFmt string) {
 		needArgs(args, 3, "Usage: oa secret show <repo> <id>")
 		showGeneric(client, base+"/scans/"+escape(args[2]), outFmt)
 	case "quarantine":
-		needArgs(args, 3, "Usage: oa secret quarantine <repo> <id>")
-		postEmpty(client, base+"/scans/"+escape(args[2])+"/quarantine", "Package quarantined.", http.StatusOK)
+		quarantineScan(client, "secret", base, args)
 	case "delete":
 		needArgs(args, 3, "Usage: oa secret delete <repo> <id>")
 		deleteResource(client, base+"/scans/"+escape(args[2]), "Scan deleted.")
@@ -794,4 +792,30 @@ func handleSystem(args []string, client *Client, outFmt string) {
 	}
 
 	_ = w.Flush()
+}
+
+// quarantineScan quarantines the package of a scan result, or with --release
+// lifts the quarantine. The server needs the wanted state in the body.
+func quarantineScan(client *Client, kind, base string, args []string) {
+	usage := "Usage: oa " + kind + " quarantine <repo> <id> [--release]"
+	needArgs(args, 3, usage)
+
+	quarantined := true
+
+	for _, a := range args[3:] {
+		if a != "--release" {
+			dief("%s", usage)
+		}
+
+		quarantined = false
+	}
+
+	sendJSON(client, http.MethodPost, base+"/scans/"+escape(args[2])+"/quarantine",
+		map[string]bool{"quarantined": quarantined}, http.StatusOK)
+
+	if quarantined {
+		fmt.Println("Package quarantined.")
+	} else {
+		fmt.Println("Package released from quarantine.")
+	}
 }

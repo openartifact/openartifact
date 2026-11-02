@@ -427,8 +427,9 @@ func TestContractArtifact(t *testing.T) {
 	tgz := filepath.Join(dir, "a.tgz")
 	deb := filepath.Join(dir, "a.deb")
 	apk := filepath.Join(dir, "a.apk")
+	rpm := filepath.Join(dir, "a.rpm")
 
-	for _, p := range []string{tgz, deb, apk} {
+	for _, p := range []string{tgz, deb, apk, rpm} {
 		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -436,22 +437,58 @@ func TestContractArtifact(t *testing.T) {
 
 	runCases(t, []contractCase{
 		{
-			name:    "upload package",
+			name: "upload to an rpm repository",
+			args: []string{"artifact", "upload", "r", rpm},
+			replies: map[string]reply{
+				"GET /api/v1/repository/{name}":             ok(`{"name":"r","format":"rpm","repo_type":"hosted"}`),
+				"POST /api/v1/repositories/{name}/packages": {status: 201, body: `{}`},
+			},
+			calls: []call{
+				{method: "GET", pattern: "/api/v1/repository/{name}"},
+				{method: "POST", pattern: "/api/v1/repositories/{name}/packages"},
+			},
+		},
+		{
+			name: "upload to a raw repository goes to the raw path",
+			args: []string{"artifact", "upload", "r", tgz},
+			replies: map[string]reply{
+				"GET /api/v1/repository/{name}": ok(`{"name":"r","format":"raw","repo_type":"hosted"}`),
+				"PUT /repos/raw/{name}/*":       {status: 201, body: `{}`},
+			},
+			calls: []call{{method: "GET", pattern: "/api/v1/repository/{name}"}, {method: "PUT", pattern: "/repos/raw/{name}/*"}},
+		},
+		{
+			name:    "upload to an npm repository is refused",
 			args:    []string{"artifact", "upload", "r", tgz},
-			replies: map[string]reply{"POST /api/v1/repositories/{name}/packages": {status: 201, body: `{}`}},
-			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/packages", bodyHas: `name="file"`}},
+			replies: map[string]reply{"GET /api/v1/repository/{name}": ok(`{"name":"r","format":"npm","repo_type":"hosted"}`)},
+			calls:   []call{{method: "GET", pattern: "/api/v1/repository/{name}"}},
+			fail:    "format not supported by oa upload",
 		},
 		{
-			name:    "upload deb",
-			args:    []string{"artifact", "upload", "r", deb},
-			replies: map[string]reply{"POST /api/v1/repositories/{name}/debs": {status: 201, body: `{}`}},
-			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/debs"}},
+			name: "upload deb",
+			args: []string{"artifact", "upload", "r", deb},
+			replies: map[string]reply{
+				"GET /api/v1/repository/{name}":          ok(`{"name":"r","format":"deb","repo_type":"hosted"}`),
+				"POST /api/v1/repositories/{name}/debs":  {status: 201, body: `{}`},
+				"PUT /api/v1/repositories/{name}/debs/*": {status: 201, body: `{}`},
+				"PUT /api/v1/repositories/{name}/debs":   {status: 201, body: `{}`},
+			},
+			calls: []call{
+				{method: "GET", pattern: "/api/v1/repository/{name}"},
+				{method: "POST", pattern: "/api/v1/repositories/{name}/debs"},
+			},
 		},
 		{
-			name:    "upload apk into an Alpine directory",
-			args:    []string{"artifact", "upload", "--branch", "v3.20", "--apk-repo", "community", "--arch", "x86_64", "r", apk},
-			replies: map[string]reply{"POST /api/v1/repositories/{name}/apks": {status: 200, body: `{}`}},
-			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/apks", bodyHas: `name="branch"`}},
+			name: "upload apk into an Alpine directory",
+			args: []string{"artifact", "upload", "--branch", "v3.20", "--apk-repo", "community", "--arch", "x86_64", "r", apk},
+			replies: map[string]reply{
+				"GET /api/v1/repository/{name}":         ok(`{"format":"apk","repo_type":"hosted"}`),
+				"POST /api/v1/repositories/{name}/apks": {status: 200, body: `{}`},
+			},
+			calls: []call{
+				{method: "GET", pattern: "/api/v1/repository/{name}"},
+				{method: "POST", pattern: "/api/v1/repositories/{name}/apks", bodyHas: `name="branch"`},
+			},
 		},
 		{
 			name: "delete package",
@@ -1204,6 +1241,40 @@ func TestContractScans(t *testing.T) {
 			},
 			calls: []call{{method: "GET", pattern: "/api/v1/repositories/{name}/vuln/scans"}},
 			out:   "completed",
+		},
+		{
+			name:    "vuln quarantine sends the state",
+			args:    []string{"vuln", "quarantine", "r", "v1"},
+			replies: map[string]reply{"POST /api/v1/repositories/{name}/vuln/scans/{id}/quarantine": ok(`{}`)},
+			calls: []call{
+				{method: "POST", pattern: "/api/v1/repositories/{name}/vuln/scans/{id}/quarantine", body: m{"quarantined": true}},
+			},
+			out: "quarantined",
+		},
+		{
+			name:    "vuln quarantine --release",
+			args:    []string{"vuln", "quarantine", "r", "v1", "--release"},
+			replies: map[string]reply{"POST /api/v1/repositories/{name}/vuln/scans/{id}/quarantine": ok(`{}`)},
+			calls: []call{
+				{method: "POST", pattern: "/api/v1/repositories/{name}/vuln/scans/{id}/quarantine", body: m{"quarantined": false}},
+			},
+			out: "released",
+		},
+		{
+			name:    "secret quarantine sends the state",
+			args:    []string{"secret", "quarantine", "r", "x1"},
+			replies: map[string]reply{"POST /api/v1/repositories/{name}/secrets/scans/{id}/quarantine": ok(`{}`)},
+			calls: []call{
+				{method: "POST", pattern: "/api/v1/repositories/{name}/secrets/scans/{id}/quarantine", body: m{"quarantined": true}},
+			},
+		},
+		{
+			name:    "secret quarantine --release",
+			args:    []string{"secret", "quarantine", "r", "x1", "--release"},
+			replies: map[string]reply{"POST /api/v1/repositories/{name}/secrets/scans/{id}/quarantine": ok(`{}`)},
+			calls: []call{
+				{method: "POST", pattern: "/api/v1/repositories/{name}/secrets/scans/{id}/quarantine", body: m{"quarantined": false}},
+			},
 		},
 		{
 			name:    "license scan",
