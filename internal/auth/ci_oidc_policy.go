@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/netutil"
 )
 
 // Limits of a CI OIDC trust policy.
@@ -94,8 +95,8 @@ func validateIssuer(issuer string) error {
 		return policyErrorf("issuer must be a URL such as https://token.actions.githubusercontent.com")
 	}
 
-	if u.Scheme != "https" && u.Scheme != "http" {
-		return policyErrorf("issuer must be an https URL")
+	if !netutil.IsHTTPSOrLoopbackURL(issuer) {
+		return policyErrorf("issuer must be an https URL (http is only allowed for a loopback host)")
 	}
 
 	return nil

@@ -19,6 +19,7 @@ import (
 	"github.com/go-jose/go-jose/v4"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/netutil"
 )
 
 // Reasons an ID token is refused (CIOIDCDenialError.Reason). They go to the log and
@@ -280,6 +281,10 @@ func discoverCIIssuer(ctx context.Context, issuer string, now func() time.Time) 
 
 	if err := provider.Claims(&doc); err != nil || doc.JWKSURI == "" {
 		return nil, fmt.Errorf("%w: no jwks_uri in the discovery document", ErrOIDCDiscoveryFailed)
+	}
+
+	if !netutil.IsHTTPSOrLoopbackURL(doc.JWKSURI) {
+		return nil, fmt.Errorf("%w: jwks_uri must be https", ErrOIDCDiscoveryFailed)
 	}
 
 	algs := make([]string, 0, len(doc.Algs))

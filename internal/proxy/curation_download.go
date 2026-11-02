@@ -253,15 +253,23 @@ func pacmanCoordinates(key string) (string, string, bool) {
 }
 
 // conanCoordinates names the recipe of a Conan 2 path (its revisions, file
-// lists and files): package = recipe name, version = recipe version. Searches
-// and the Conan 1 endpoints are not gated.
+// lists and files) or of a Conan 1 path (snapshot, download URLs, digest and
+// the v1/files URLs the client downloads from): package = recipe name, version
+// = recipe version. Searches name no recipe and are not gated.
 func conanCoordinates(key string) (string, string, bool) {
-	p, ok := pkgconan.ParsePath(key)
-	if !ok || p.Ref.Name == "" || p.Ref.Version == "" {
+	ref := pkgconan.Ref{}
+
+	if p, ok := pkgconan.ParsePath(key); ok {
+		ref = p.Ref
+	} else if p, ok := pkgconan.ParseV1Path(key); ok {
+		ref = p.Ref
+	}
+
+	if ref.Name == "" || ref.Version == "" {
 		return "", "", false
 	}
 
-	return p.Ref.Name, p.Ref.Version, true
+	return ref.Name, ref.Version, true
 }
 
 // cutLastDash splits s around its last "-".

@@ -144,3 +144,20 @@ func TestValidateToken_UnknownPrefix(t *testing.T) {
 		t.Error("expected nil for unknown prefix")
 	}
 }
+
+// A token of a disabled account (a service account's exchanged token included)
+// authenticates nothing, even though the token itself is valid.
+func TestValidateToken_DisabledAccount(t *testing.T) {
+	db := newTokenMockDB()
+	body := "disabledbody"
+	h := sha256ForString(body)
+	token := &models.Token{ID: "tok-4", UserID: "sa-1", TokenHash: h}
+	db.tokens[h] = token
+	db.tokensByID["tok-4"] = token
+	db.users["sa-1"] = &models.User{ID: "sa-1", Disabled: true}
+
+	got, user, err := ValidateToken(context.Background(), db, TokenPrefixAccess+body)
+	if err != nil || got != nil || user != nil {
+		t.Fatalf("ValidateToken = %v, %v, %v; want nothing", got, user, err)
+	}
+}
