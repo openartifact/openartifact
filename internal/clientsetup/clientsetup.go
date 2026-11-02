@@ -494,7 +494,7 @@ func GoBuilder(c target) []Snippet {
 		// A read-only repository stands in for the public proxy: no ",direct"
 		// fallback that would bypass it, and GOSUMDB keeps verifying what the
 		// client receives.
-		return []Snippet{{Client: "go", Configure: fmt.Sprintf("go env -w GOPROXY=%s", c.base)}}
+		return []Snippet{{Client: "go", Configure: "go env -w GOPROXY=" + c.base}}
 	}
 
 	return []Snippet{{

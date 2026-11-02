@@ -75,7 +75,7 @@ Add a dependency with `registry = "REPO"`, or use the repository in place of cra
 | `GET /index/config.json` (also `GET /config.json`) | Registry configuration with `dl` and `api` |
 | `GET /index/<crate>`, `/index/<p1>/<crate>`, `/index/<p1>/<p2>/<crate>` | Sparse index entry, newline-delimited JSON |
 | `GET /api/v1/crates/<crate>/<version>/download` | `.crate` file; yanked versions are served too |
-| `PUT /api/v1/crates/new` | Publish |
+| `PUT /api/v1/crates/new` | publish |
 | `DELETE /api/v1/crates/<crate>/<version>/yank` | Yank |
 | `PUT /api/v1/crates/<crate>/<version>/unyank` | Unyank |
 | `GET /api/v1/crates?q=&per_page=` | Search, one entry per crate |

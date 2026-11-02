@@ -38,7 +38,13 @@ conda create -n demo --override-channels -c http://<USERNAME>:<TOKEN>@HOST/repos
 
 <a id="upload"></a>
 
-Upload a package to a hosted repository with `POST /<platform>`, where `<platform>` is a path segment such as `linux-64`, `osx-arm64` or `noarch`.
+Upload a package to a hosted repository, relative to `HOST/repos/REPO`:
+
+| Request | Behaviour |
+|---|---|
+| `POST /<platform>` | upload; `<platform>` is a path segment such as `linux-64`, `osx-arm64` or `noarch` |
+
+Send the file name in the `X-Filename` header:
 
 ```sh
 curl -u <USERNAME>:<TOKEN> -H "X-Filename: scikit-learn-1.0-py39_0.tar.bz2" \
