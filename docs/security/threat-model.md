@@ -6,6 +6,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Threat model and secure design
 
+Use this page to see what OpenArtifact protects, where the trust boundaries are, and which controls address each threat.
+
 ## Assets and trust boundaries
 
 | Asset | Where | Boundary |

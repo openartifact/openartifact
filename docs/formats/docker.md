@@ -245,7 +245,7 @@ Images built for bootc or `rpm-ostree` are ordinary OCI images with `ostree.*` a
 
 The registry does not verify image signatures. Signature artifacts (for example cosign signatures stored as tags) are stored like any other manifest and are listed through `referrers` when they carry a `subject`. The client verifies them.
 
-OpenArtifact can also attach the signed SBOM and VEX of an image itself, as referrers: see [Attaching to an OCI image](../security/sbom.md#attaching-to-an-oci-image). GPG signing covers only Debian and RPM ([signing](../security/signing.md)).
+OpenArtifact can also attach the signed SBOM and VEX of an image itself, as referrers: see [Attaching to an OCI image](../security/sbom.md#attach-to-an-image-hosted-docker-repositories). GPG signing covers only Debian and RPM ([signing](../security/signing.md)).
 
 ## Troubleshooting
 

@@ -177,7 +177,9 @@ SAML:
 
 - Enterprise application, SAML SSO: Identifier (Entity ID) and Reply URL as above. Attribute claim URIs are Entra's defaults (the metadata URL pattern and URIs are from memory of the portal defaults; check them in your tenant: unverified).
 - SAML groups also hold GUIDs and overage starts at 150 groups; there is no Graph fallback for SAML, so an overage assertion has no groups attribute and memberships are kept. Assign groups to the application to stay below the limit.
-- Entra does not send `email_verified`; add a constant claim `email_verified` = `true` only if your tenant controls the mail attribute and you want `link_by_email`.
+- Entra does not send `email_verified`. Leave it that way unless you need `link_by_email`.
+- **Warning:** a constant claim `email_verified` = `true` makes every email count as verified. With `link_by_email` on, anyone who can set the mail attribute of an Entra account to another person's address then signs in as that person's local account.
+- Add the constant claim only when users cannot edit their own mail attribute, and the tenant is single-tenant and trusted. Otherwise keep `link_by_email` off.
 - Signing certificate rollover: use the metadata URL (an app-specific `?appid=` URL).
 
 ### Okta
@@ -420,7 +422,7 @@ OpenArtifact provider (`POST /api/v1/admin/sso-providers`):
 }
 ```
 
-Add `"scopes": ["openid", "email", "profile", "groups"]` to `oidc_config` (the default scopes no longer include `groups`); the default claims (`preferred_username`, `email`, `name`, `groups`) match what Dex issues; Dex marks LDAP emails as verified, so `link_by_email` works. The issuer is SSRF-checked: if Dex is only reachable on a private network (for example an in-cluster Service), set `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`.
+Add `"scopes": ["openid", "email", "profile", "groups"]` to `oidc_config` (the default scopes no longer include `groups`); the default claims (`preferred_username`, `email`, `name`, `groups`) match what Dex issues; Dex sets `email_verified` for LDAP users according to its own connector settings, so check them before you turn on `link_by_email`. The issuer is SSRF-checked: if Dex is only reachable on a private network (for example an in-cluster Service), set `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`.
 
 ## Provisioning rules
 
@@ -430,7 +432,11 @@ Add `"scopes": ["openid", "email", "profile", "groups"]` to `oidc_config` (the d
 4. Unknown user and `auto_provision_users` off: `user_not_provisioned`. Disabled account: `account_disabled`.
 5. Otherwise a user is created (username from the username claim, else the email local part, else the subject; reduced to `[a-zA-Z0-9_-]`, 3 to 64 characters, so it cannot contain `/` or control characters; a hash of the subject is used when nothing usable remains. An email without `@`, with whitespace or over 254 characters is ignored) with no password and SSO-managed groups.
 
-Email verification: for OIDC `email_verified` must be `true`, and a custom `email_claim` counts as never verified; for SAML the email counts as verified only when the assertion carries an `email_verified` attribute equal to `true`; without it the email is never used to link or overwrite an account. Configure the IdP to release `email_verified=true` for a SAML provider that should use `link_by_email`, and only when the IdP controls the mail attribute.
+Email verification decides whether an email can link or overwrite an account:
+
+- **OIDC:** `email_verified` must be `true`. A custom `email_claim` counts as never verified.
+- **SAML:** the email counts as verified only when the assertion carries an `email_verified` attribute equal to `true`. Without it, the email is never used to link or overwrite an account.
+- For a SAML provider that should use `link_by_email`, configure the IdP to release `email_verified=true`, and only when the IdP controls the mail attribute.
 
 ### Sign-in failures
 

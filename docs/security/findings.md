@@ -6,7 +6,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Security findings
 
-One list of what the [scans](scanning.md) found, across all repositories and all four finding types (vulnerabilities, licenses, secrets, AI analysis), plus a security health summary for administrators and a counts-only summary per repository or package. They read the stored scan results: nothing here starts a scan.
+Use this page to see what your [scans](scanning.md) found in one list, across all repositories and all four finding types: vulnerabilities, licenses, secrets and AI analysis. It also covers a health summary for admins and a counts-only summary per repository. These routes read stored scan results and never start a scan.
+
+```sh
+curl -sS -H 'Authorization: Bearer <TOKEN>' \
+  'HOST/api/v1/security/findings?type=vuln&severity=critical&limit=20'
+```
 
 | Route | Who | Returns |
 |---|---|---|
@@ -48,7 +53,20 @@ The row's `severity` is its worst non-zero count (`critical`, `high`, `medium`, 
 
 ## The findings list
 
-`GET /api/v1/security/findings` returns `{findings, has_more, next_cursor}`. A finding has `id`, `type`, `repository`, `format`, `package_name`, `package_version`, `artifact_id`, `severity`, `counts` (`critical`, `high`, `medium`, `low`), `title`, `scanner`, `status`, `quarantined`, `vex_status` (when set) and `scanned_at`. `package_name` and `package_version` are the scanned package's name and version; a scan started from a package page, which records the package row id as `artifact_id`, resolves to the package's name and version, and a package that no longer exists leaves both empty (an id is never returned as a name). The `title` names what was found: the id of the worst vulnerability of a vulnerability finding, the unresolved licenses (else the licenses) of a license finding, the description of the worst secret of a secret finding and the first line of the notes (at most 160 characters) of an AI finding.
+`GET /api/v1/security/findings` returns `{findings, has_more, next_cursor}`.
+
+A finding has these fields:
+
+- `id`, `type`, `repository`, `format`, `artifact_id`
+- `package_name` and `package_version`
+- `severity` and `counts` (`critical`, `high`, `medium`, `low`)
+- `title`, `scanner`, `status`, `quarantined`, `scanned_at`
+- `vex_status`, when set
+
+Notes on the fields:
+
+- A scan started from a package page records the package row id as `artifact_id`. The list resolves it to the package's name and version. If the package no longer exists, both are empty. An id is never returned as a name.
+- `title` names what was found: the id of the worst vulnerability, the unresolved licenses (else the licenses), the description of the worst secret, or the first line of the AI notes (at most 160 characters).
 
 | Query | Meaning |
 |---|---|
@@ -67,7 +85,7 @@ The row's `severity` is its worst non-zero count (`critical`, `high`, `medium`, 
 
 Findings also carry `kev_count`, `max_epss` and `priority` ([Exploitation signals](exploit-signals.md#fields)); they are `0`, `null` and the severity for findings that are not vulnerabilities. `GET /api/v1/security/exploit-feeds` reports the [feed status](exploit-signals.md#feed-status).
 
-By default the order is fixed: worst severity first, then newest scan, then id. Paging is keyset: no row is counted and a deep page costs what the first costs. An unknown type, severity or status, an over-long value or a malformed cursor is `400 validation_failed`.
+The default order is worst severity first, then newest scan, then id. Pass `next_cursor` as `cursor` with the same filters to get the next page. An unknown type, severity or status, an over-long value or a malformed cursor is `400 validation_failed`.
 
 The `severity` filter is an exact match, unlike the `severity` filter of the [vulnerability overview](scanning.md#the-overview-across-repositories), which means "at least".
 
@@ -122,7 +140,7 @@ At most 10000 findings are read for csv and json and at most 500 artifacts for v
 }
 ```
 
-- `scanners` has one entry per vulnerability scanner (`osv`, `trivy`, `grype`; see [checking scanner readiness](scanning.md#checking-scanner-readiness)); `message` and `docs_url` are present when it is not ready.
+- `scanners` has one entry per vulnerability scanner (`osv`, `trivy`, `grype`; see [checking scanner readiness](scanner-setup.md#checking-scanner-readiness)); `message` and `docs_url` are present when it is not ready.
 - `scans_pending` counts vulnerability, license, secret and AI scans that are pending or running; `scans_failed_24h` those that failed in the last 24 hours.
 - `last_scan_at` is when the last scan finished (`null` before the first), `unscanned_repositories` how many repositories have no completed scan, as [defined above](#the-summary).
 - `dependency_track.enabled` is the global [Dependency-Track](dependency-track.md) switch. `last_push_ok` and `last_push_at` describe the latest push that finished (`done` or `failed`) and are absent until there is one.

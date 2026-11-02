@@ -20,7 +20,7 @@ import (
 
 // DocsURL is where the scanner installation guide lives; failure messages and
 // the scanner list point operators there.
-const DocsURL = "https://github.com/openartifact/openartifact/blob/main/docs/security/scanning.md#installing-trivy-and-grype"
+const DocsURL = "https://github.com/openartifact/openartifact/blob/main/docs/security/scanner-setup.md"
 
 // Codes that identify an unusable scanner to API clients.
 const (

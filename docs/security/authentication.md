@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Authentication
 
-How clients and users prove who they are: local login, sessions, API tokens, anonymous access and the network controls in front of them. What an identity may do is covered in [rbac.md](rbac.md); OIDC and SAML are in [sso.md](sso.md).
+Use this page to sign in, create API tokens for scripts and package clients, and set the network controls in front of the server. What an identity may do is covered in [rbac.md](rbac.md); OIDC and SAML are in [sso.md](sso.md).
 
 ## Credentials
 
@@ -21,7 +21,7 @@ Precedence when several are present: session cookie, then token, then legacy key
 
 ## First start and admin password
 
-With an empty user table the server creates the user `admin` with a random password and prints it **once** to stderr in an `OPENARTIFACT BOOTSTRAP` block. The account must change its password at first login: until then every request except `POST /api/v1/auth/change-password` and `POST /api/v1/auth/logout` returns 403 `password_change_required`. Bootstrap is safe with concurrent replicas (advisory lock) and re-grants the `admin-all` permission target if it is missing.
+With an empty user table the server creates the user `admin` with a random password and prints it **once** to stderr in an `OPENARTIFACT BOOTSTRAP` block. The account must change its password at first login: until then every request except `POST /api/v1/auth/change-password` and `POST /api/v1/auth/logout` returns 403 `password_change_required`. Bootstrap is safe with several replicas starting together. It also re-grants the `admin-all` permission target if it is missing.
 
 Reset a password later (reads `DB_*` env vars; at least 12 characters; revokes the user's sessions; the password is never taken from argv):
 
@@ -32,7 +32,7 @@ OPENARTIFACT_RESET_PASSWORD='<new-password>' go run ./cmd/resetpw
 
 ## Passwords
 
-Stored as argon2id (m=65536 KiB, t=1, p=4). Length 12–1024 characters. A failed login still costs one password verification, so unknown usernames are not distinguishable by timing. Users auto-provisioned by SSO have no password.
+Stored as argon2id (m=65536 KiB, t=1, p=4). 12 to 1024 characters (the maximum counts bytes). A failed login still costs one password verification, so unknown usernames are not distinguishable by timing. Users auto-provisioned by SSO have no password.
 
 ## Login and sessions
 
@@ -48,22 +48,48 @@ curl -sS -c jar -X POST HOST/api/v1/auth/login \
 | `GET /api/v1/auth/me` | current user, `is_admin`, `groups`; works with any credential |
 | `POST /api/v1/auth/change-password` | `{current_password,new_password}`; session only (tokens get 403); revokes the user's other sessions; wrong guesses count against the login failure budget |
 
-- Login sets `oa_session` (HttpOnly, SameSite=Lax, `Secure` over TLS, when `X-Forwarded-Proto: https`, or when `BASE_URL` is `https://`; HSTS is sent under the same condition as `server.tls.enabled` or an `https://` `BASE_URL`) and `oa_csrf` (readable by JS).
+- Login sets two cookies: `oa_session` (HttpOnly, SameSite=Lax) and `oa_csrf` (readable by JS).
+- Both are `Secure` over TLS, when `X-Forwarded-Proto: https` arrives from a trusted proxy, or when `BASE_URL` is `https://`. HSTS is sent under the same condition as `server.tls.enabled` or an `https://` `BASE_URL`.
 - The server stores only the SHA-256 of the 32-byte random session id.
-- Expiry is sliding: `auth.sessionDurationHours` / `SESSION_DURATION_HOURS` (default 24), extended at most once a minute. A session also ends 30 days after login regardless of activity (fixed, not configurable).
-- Throttling: 10 login requests per minute per client IP and 10 failures per 15 minutes per username and client IP (that pair is refused until the oldest failure ages out; other addresses are unaffected); both answer 429 with `Retry-After`. A username with 100 failures in 15 minutes across all addresses is treated as under a distributed attack: addresses that logged in as that user within the last 30 days (kept in memory) carry on as usual, every other address shares 3 attempts per minute for that username. Nobody can lock an account out for its real users by guessing. IPv6 clients are counted per /64 network, and a limiter at capacity never evicts an entry that is currently locked out.
-- Bootstrap: on an empty instance the first admin can get an operator-chosen password (`bootstrap.adminPasswordFile`) and an admin API token (`bootstrap.adminTokenFile`), so no secret is ever printed; both are ignored once any user exists. A generated, printed password expires after `bootstrap.generatedPasswordTtl` (default 24 h) and the expiry is cleared by any password change or `cmd/resetpw`; login with an expired password fails with the generic `invalid_credentials`. See [first login](../getting-started/installation.md#first-login).
-- Disabling a user (`PATCH /api/v1/users/{id}` with `disabled: true`) keeps the account and revokes the user's sessions; disabled users are rejected on every credential type. `DELETE /api/v1/users/{id}` permanently removes the account together with its tokens, sessions, memberships and SSO link; use disable to keep it.
+- Expiry is sliding: `auth.sessionDurationHours` / `SESSION_DURATION_HOURS` (default 24), extended at most once a minute. A session also ends 30 days after login regardless of activity. That limit is fixed.
+- Disabling a user (`PATCH /api/v1/users/{id}` with `disabled: true`) keeps the account, revokes the user's sessions and rejects the user on every credential type.
+- `DELETE /api/v1/users/{id}` permanently removes the account with its tokens, sessions, memberships and SSO link. Use disable to keep it.
+
+#### Login rate limits
+
+Login is limited in four ways. Each limit answers `429` with `Retry-After`, except the last, which only slows unknown addresses.
+
+- **Per IP:** 10 login requests per minute.
+- **Per username and IP:** after 10 failures in 15 minutes, that pair is refused until the oldest failure ages out. Other addresses are unaffected.
+- **Distributed guessing:** a username with 100 failures in 15 minutes across all addresses is treated as under attack. Addresses that logged in as that user within the last 30 days carry on as usual. Every other address shares 3 attempts per minute for that username.
+- **IPv6:** clients are counted per /64 network.
+
+Nobody can lock an account out for its real users by guessing.
+
+#### First admin without a printed password
+
+On an empty instance you can choose the first admin's password and an admin API token yourself, so no secret is printed. Both settings are ignored once any user exists.
+
+- `bootstrap.adminPasswordFile`: file holding the admin password.
+- `bootstrap.adminTokenFile`: file for the admin API token.
+- A generated, printed password expires after `bootstrap.generatedPasswordTtl` (default 24 h). A password change or `cmd/resetpw` clears the expiry. Login with an expired password fails with the generic `invalid_credentials`.
+
+See [first login](../getting-started/installation.md#first-login).
 
 Session cookies (`oa_session`, `oa_csrf`) carry `Max-Age` equal to the absolute session lifetime; the sliding idle expiry is enforced server-side, so an active user is no longer logged out by the browser after the idle window.
 
 ### CSRF
 
-Every state-changing request (anything but GET, HEAD and OPTIONS) authenticated by the session cookie must send `X-CSRF-Token`, on every path: `/api/v1/*`, `/repos/**` and `/v2/**` alike. Otherwise it gets 403 `csrf_protection`. The token is bound to the session: it is an HMAC of the `oa_session` value, so the `oa_csrf` cookie of another session, or one planted from a sibling subdomain, never validates. Login and SSO login issue the bound `oa_csrf` cookie; a safe `/api/v1/*` request replaces a cookie that holds anything else. The web UI reads the cookie and echoes it, so it needs no change.
+Session-cookie requests that change state need a CSRF token. Token, Basic-token and legacy-key requests do not.
 
-Bearer, Basic-token and legacy-key requests, and the SAML `/acs` POST, are exempt: package clients (`curl`, `mvn`, `npm`, `docker`, `pip`, ...) authenticate with a token and are unaffected. The one exception, on `/api/v1/*` only: a Basic-token request that carries browser signals of a cross-site origin (`Sec-Fetch-Site: cross-site` or `same-site`, or an `Origin` that is neither the origin the client reached nor the `BASE_URL` origin) is not exempt and needs a double-submit CSRF token, because browsers cache Basic credentials and attach them to cross-site requests. The origin the client reached follows the [trusted-proxy rules](../getting-started/installation.md#the-public-url-and-base_url): `X-Forwarded-Host` and `X-Forwarded-Proto` count only from a peer in `OPENARTIFACT_TRUSTED_PROXIES`.
+**Rule.** Every request other than GET, HEAD and OPTIONS that is authenticated by the session cookie must send `X-CSRF-Token`, on every path (`/api/v1/*`, `/repos/**`, `/v2/**`). Otherwise it gets `403 csrf_protection`.
 
-The `oa_csrf` cookie issued by the server on a safe request carries `Secure` when `BASE_URL` is `https://` or the request arrived over TLS directly or through a trusted proxy that sends `X-Forwarded-Proto: https`.
+- The token is an HMAC of the `oa_session` value. The `oa_csrf` cookie of another session, or one planted from a sibling subdomain, never validates.
+- Login and SSO login issue the matching `oa_csrf` cookie. The web UI echoes it for you.
+
+**Exemptions.** Bearer, Basic-token and legacy-key requests, and the SAML `/acs` POST, are exempt. Package clients (`curl`, `mvn`, `npm`, `docker`, `pip`) authenticate with a token and are unaffected.
+
+**Exception.** On `/api/v1/*` only, a Basic-token request that looks cross-site is not exempt and needs a CSRF token. This is the case when it carries `Sec-Fetch-Site: cross-site` or `same-site`, or an `Origin` that is neither the origin the client reached nor the `BASE_URL` origin. Browsers cache Basic credentials and attach them to cross-site requests. The origin the client reached follows the [trusted-proxy rules](../getting-started/installation.md#the-public-url-and-base_url): `X-Forwarded-Host` and `X-Forwarded-Proto` count only from a peer in `OPENARTIFACT_TRUSTED_PROXIES`.
 
 ## API tokens
 
@@ -135,10 +161,19 @@ A denied anonymous request gets 401 with `WWW-Authenticate` (`Bearer realm="open
 
 | Setting | Env | Behaviour |
 |---|---|---|
-| `server.ipAllowlist` | `OPENARTIFACT_IP_ALLOWLIST` (comma-separated CIDRs) | other client IPs get 403 `IP not allowed`. Empty = allow all. Entries may be CIDRs or bare IPs; an entry that parses as neither stops startup (it never silently disables the allowlist) |
-| `server.rateLimitRps` | `OPENARTIFACT_RATE_LIMIT_RPS` | per-client-IP token bucket per second, 0 = off; 429 `rate limit exceeded` with `Retry-After: 1`. In-process, so each replica counts separately |
-| `server.trustedProxies` | `OPENARTIFACT_TRUSTED_PROXIES` (comma-separated CIDRs) | only a peer inside these CIDRs may set `X-Forwarded-For` (the rightmost entry that is not itself a trusted proxy, reading every `X-Forwarded-For` header line from the last to the first; an unparseable entry falls back to the peer) or `X-Real-IP` |
+| `server.ipAllowlist` | `OPENARTIFACT_IP_ALLOWLIST` | other client IPs get 403 `IP not allowed`; empty allows all |
+| `server.rateLimitRps` | `OPENARTIFACT_RATE_LIMIT_RPS` | per-client-IP requests per second; 0 turns it off |
+| `server.trustedProxies` | `OPENARTIFACT_TRUSTED_PROXIES` | proxies whose forwarding headers are believed |
 
-The resolved client IP feeds the allowlist, rate limit, login throttle, audit log and sessions. Behind a reverse proxy set `trustedProxies`, otherwise every client appears as the proxy (a warning is logged once when forwarding headers arrive from an untrusted peer). Entries must be CIDRs (`10.0.0.1/32`, not `10.0.0.1`); invalid entries are skipped silently, and an allowlist with no valid entry allows everyone.
+**IP allowlist.** `OPENARTIFACT_IP_ALLOWLIST` is a comma-separated list of CIDRs or bare IPs. A bare IP counts as a /32. An entry that parses as neither stops startup, so a typo never silently disables the allowlist. Empty means no restriction.
+
+**Rate limit.** Over the limit, a client gets `429 rate limit exceeded` with `Retry-After: 1`. Each replica counts separately.
+
+**Trusted proxies.** `OPENARTIFACT_TRUSTED_PROXIES` is a comma-separated list of CIDRs only. A bare IP such as `10.0.0.1` is not accepted; write `10.0.0.1/32`. Invalid entries are skipped silently, so check the list in effect.
+
+- Only a peer inside these CIDRs may set `X-Forwarded-For` or `X-Real-IP`.
+- The client IP is the rightmost `X-Forwarded-For` entry that is not itself a trusted proxy, reading every header line from last to first. An unparseable entry falls back to the peer.
+
+The resolved client IP feeds the allowlist, rate limit, login throttle, audit log and sessions. Behind a reverse proxy, set `trustedProxies`; otherwise every client appears as the proxy. A warning is logged once when forwarding headers arrive from an untrusted peer.
 
 Other related settings: `BASE_URL` (used for SSO callbacks), `AUTH_HMAC_KEY`, `OPENARTIFACT_SECRET_KEY` (encrypts stored secrets), `METRICS_AUTH_TOKEN`. See [../../.env.example](../../.env.example), [../../openartifact.example.yaml](../../openartifact.example.yaml) and [configuration](../getting-started/configuration.md).

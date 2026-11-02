@@ -6,11 +6,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Signing and release verification
 
-Two separate topics: the GPG key the server uses to sign APT and RPM repository metadata, and how to verify the signatures on OpenArtifact's own release binaries and container image.
+Use this page to set up the keys that sign your repositories' metadata, and to verify the signatures on OpenArtifact's own release binaries and container image.
 
 ## Repository metadata signing (GPG)
 
-GPG keys sign the metadata of Debian and RPM repositories and the manifest of sealed [release bundles](../repositories/release-bundles.md). Uploaded packages are stored as-is: OpenArtifact does not sign or re-sign `.deb`/`.rpm` files, only the index files that list them. Alpine (apk) repositories use a separate per-repository RSA key ([below](#alpine-apk-index-signing-key)). Other formats are not signed. Deb and RPM group repositories publish their own merged index and sign it with the key resolved for the group itself (its own, else the global active, else the file / environment key); upstream signatures of proxy members are not passed through ([groups](../repositories/hosted-proxy-group.md#deb-rpm-and-pacman-groups)).
+GPG keys sign the metadata of Debian and RPM repositories and the manifest of sealed [release bundles](../repositories/release-bundles.md). Uploaded packages are stored as-is: OpenArtifact does not sign or re-sign `.deb`/`.rpm` files, only the index files that list them. Alpine (apk) repositories use a separate per-repository RSA key ([below](#alpine-apk-index-signing-key)), and Nix repositories a per-repository ed25519 key that signs every `.narinfo` ([below](#nix-narinfo-signing-key)). Other formats are not signed. See [What gets signed](#what-gets-signed) for the full list. Deb and RPM group repositories publish their own merged index and sign it with the key resolved for the group itself (its own, else the global active, else the file / environment key); upstream signatures of proxy members are not passed through ([groups](../repositories/hosted-proxy-group.md#deb-rpm-and-pacman-groups)).
 
 There are two ways to provide a key, and they combine:
 
@@ -192,7 +192,7 @@ Vulnerability reporting policy: [../../SECURITY.md](../../SECURITY.md).
 | Distributed | `HOST/repos/REPO/public.key` (and `HOST/repos/REPO/<keyname>`); clients put it in `/etc/apk/keys/` |
 | Managed with | `GET`/`POST /api/v1/repositories/REPO/apk-key` (global manage permission) and the repository **Settings** page |
 
-Rotating or importing a key re-signs every index of the repository, and clients must install the new public key. Without `OPENARTIFACT_SECRET_KEY` the index is served unsigned and the key API answers `409 secret_key_required`. See [Alpine (apk)](../formats/apk.md#signing-key).
+Rotating or importing a key re-signs every index of the repository, and clients must install the new public key. Without `OPENARTIFACT_SECRET_KEY` the index is served unsigned and the key API answers `409 secret_key_required`. See [Alpine (apk)](../formats/apk.md#signing-key-and-rotation).
 
 ## Nix (narinfo) signing key
 
