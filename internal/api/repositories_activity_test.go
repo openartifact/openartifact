@@ -180,7 +180,7 @@ func TestRepoActivityProjectMaintainerIsAdmin(t *testing.T) {
 }
 
 func TestRepoActivityAdminOnlyCategoriesAreRefusedToReaders(t *testing.T) {
-	for _, cat := range []string{"settings", "cleanup", "federation", "uploads,settings"} {
+	for _, cat := range []string{"settings", "cleanup", "curation", "federation", "uploads,settings"} {
 		db := newRepoActivityDB()
 
 		code, _ := serveRepoActivity(t, db, raReader(), "/api/v1/repositories/libs/activity?category="+cat)
@@ -207,6 +207,14 @@ func TestRepoActivityCategoryFilter(t *testing.T) {
 	if code, _ := serveRepoActivity(t, db, raAdmin(), "/api/v1/repositories/libs/activity?category=cleanup"); code != http.StatusOK ||
 		!slices.Contains(db.params.Actions, audit.ActionCleanupRunCompleted) {
 		t.Errorf("admin cleanup: status = %d, actions = %v", code, db.params.Actions)
+	}
+
+	db = newRepoActivityDB()
+	wantCuration := []string{audit.ActionCurationRuleCreated, audit.ActionCurationRuleDeleted, audit.ActionCurationRuleUpdated}
+
+	if code, _ := serveRepoActivity(t, db, raAdmin(), "/api/v1/repositories/libs/activity?category=curation"); code != http.StatusOK ||
+		!slices.Equal(db.params.Actions, wantCuration) {
+		t.Errorf("admin curation: status = %d, actions = %v", code, db.params.Actions)
 	}
 
 	if code, _ := serveRepoActivity(

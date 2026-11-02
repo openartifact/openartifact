@@ -74,3 +74,36 @@ func TestShadowGuard_NPMPackageNamedCharts(t *testing.T) {
 		}
 	}
 }
+
+// A repository of another format must not answer npm documents: the npm routes
+// share /repos/{name} with every format, so the handlers check the format.
+func TestNPMRoutes_OtherFormatNotFound(t *testing.T) {
+	for _, path := range []string{
+		"/repos/r/zzcheck",
+		"/repos/r/zzcheck/1.0.0",
+		"/repos/r/zzcheck/-/zzcheck-1.0.0.tgz",
+		"/repos/r/@s/zzcheck/-/zzcheck-1.0.0.tgz",
+		"/repos/r/-/package/zzcheck/dist-tags",
+	} {
+		db := &shadowMockDB{
+			repo: &models.Repository{ID: "repo-1", Name: "r", Format: "deb"},
+			pkg:  &models.NPMPackage{ID: "pkg-1", FullName: "zzcheck", UpdatedAt: time.Unix(1700000000, 0)},
+		}
+
+		log, err := logger.New("error", "json", "stdout")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		h := NewHTTPHandler(log, db, &tarballMockBlobStore{}, "http://localhost:8080")
+		router := chi.NewRouter()
+		router.Route("/repos/{name}", h.RegisterRepoRoutes)
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil))
+
+		if w.Code != http.StatusNotFound {
+			t.Errorf("deb repo %s: got %d %q, want 404", path, w.Code, w.Body.String())
+		}
+	}
+}

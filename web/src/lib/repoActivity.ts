@@ -32,12 +32,13 @@ export const REPO_ACTIVITY_CATEGORIES = [
   'quarantine',
   'cleanup',
   'settings',
+  'curation',
   'federation',
 ] as const
 export type RepoActivityCategory = (typeof REPO_ACTIVITY_CATEGORIES)[number]
 
 /** Categories only a repository's admins may read (the server refuses them to anyone else). */
-const ADMIN_ONLY: ReadonlySet<RepoActivityCategory> = new Set(['cleanup', 'settings', 'federation'])
+const ADMIN_ONLY: ReadonlySet<RepoActivityCategory> = new Set(['cleanup', 'settings', 'curation', 'federation'])
 
 /** The categories the caller may filter by: readers get the artifact events, admins also the operational ones. */
 export function visibleCategories(admin: boolean): RepoActivityCategory[] {
@@ -68,6 +69,9 @@ const VISUALS: Record<string, ActionVisual> = {
   'cleanup.policy_changed': { icon: AdjustmentsHorizontalIcon, tone: 'neutral' },
   'cleanup.run_started': { icon: SparklesIcon, tone: 'neutral' },
   'cleanup.run_completed': { icon: SparklesIcon, tone: 'info' },
+  'curation.rule_created': { icon: PlusCircleIcon, tone: 'success' },
+  'curation.rule_updated': { icon: AdjustmentsHorizontalIcon, tone: 'neutral' },
+  'curation.rule_deleted': { icon: TrashIcon, tone: 'danger' },
 }
 
 /** Icon and colour of an audit action; the federation family shares one, anything else is neutral. */

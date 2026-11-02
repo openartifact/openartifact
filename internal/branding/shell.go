@@ -165,10 +165,35 @@ func Manifest(s *Snapshot) []byte {
 	return append(b, '\n')
 }
 
+// shortName is the name a home screen shows under the icon: the product name
+// when it fits, otherwise as many whole leading words as fit in
+// maxShortNameRunes, so a long name is never cut mid-word ("Zextras Artifact
+// Hub" becomes "Zextras", not "Zextras Arti"). Only a first word longer than
+// the limit is cut.
 func shortName(name string) string {
+	name = strings.Join(strings.Fields(name), " ")
 	if utf8.RuneCountInString(name) <= maxShortNameRunes {
 		return name
 	}
 
-	return strings.TrimSpace(string([]rune(name)[:maxShortNameRunes]))
+	short := ""
+
+	for w := range strings.FieldsSeq(name) {
+		next := w
+		if short != "" {
+			next = short + " " + w
+		}
+
+		if utf8.RuneCountInString(next) > maxShortNameRunes {
+			break
+		}
+
+		short = next
+	}
+
+	if short == "" {
+		short = string([]rune(name)[:maxShortNameRunes])
+	}
+
+	return short
 }

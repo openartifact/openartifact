@@ -7,11 +7,14 @@ package main
 import (
 	"context"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/prometheus/client_golang/prometheus"
@@ -81,5 +84,20 @@ func TestStorageComponentIsCached(t *testing.T) {
 
 	if store.calls != 1 {
 		t.Errorf("backend probed %d times for 20 requests, want 1", store.calls)
+	}
+}
+
+// /livez and /healthz are probe aliases of /health, /readyz of /ready: a probe
+// by the conventional name must reach a handler, not the web UI's fallback
+// (which answers 200 with HTML).
+func TestProbeAliasesAreRegistered(t *testing.T) {
+	a := roleApp(t, config.RoleAll)
+	a.web.router = chi.NewRouter()
+	a.registerOperationalRoutes()
+
+	for _, path := range []string{"/health", "/healthz", "/livez", "/ready", "/readyz"} {
+		if !a.web.router.Match(chi.NewRouteContext(), http.MethodGet, path) {
+			t.Errorf("GET %s has no route", path)
+		}
 	}
 }

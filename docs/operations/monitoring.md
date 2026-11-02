@@ -12,7 +12,7 @@ The REST API, OpenAPI spec and interactive API reference are covered in [API](..
 
 ## Health and readiness
 
-Point a load balancer or Kubernetes readiness probe at `/ready`, and a liveness probe at `/health`.
+Point a load balancer or Kubernetes readiness probe at `/ready`, and a liveness probe at `/health`. The conventional names are aliases: `/healthz` and `/livez` answer exactly as `/health`, and `/readyz` as `/ready`. A path that is none of these never answers a probe: it falls through to the web UI.
 
 `/health`, `/ready` and `/metrics` are on the public router: no login, no RBAC. They still pass through the server-wide middleware, so `OPENARTIFACT_IP_ALLOWLIST` and `OPENARTIFACT_RATE_LIMIT_RPS` apply to probes and scrapers too.
 

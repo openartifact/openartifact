@@ -100,7 +100,7 @@ curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
 - `upstream_*`, TTL fields, `min_age_hours`, `curation_mode` and `member_repos` on a repository of another type are `400 validation_failed`. A name that already exists is `409 conflict`, including the name of a repository that is still in the [trash](../operations/trash.md#repositories) (names stay reserved until the repository is purged or restored).
 - The response shows `upstream_url`, `upstream_username`, the three TTL fields, `min_age_hours` and `curation_mode` for proxies only; the password is never included. `upstream_password_set` is `true` when a password is stored, so a client can show that without ever seeing the secret.
 
-Update with `PATCH /api/v1/repository/{repo}` (note the singular `repository`; admin only). Accepted fields: `description`, `public`, `blocked`, `trash_retention_days`, `immutable_releases`, the proxy fields above (`upstream_url` may not be emptied), `merge_proxy_versions` for groups (global admins only), and `member_repos` for groups (replaces the list; `[]` clears it, an absent field leaves it unchanged). Name, format and type cannot change. A blocked repository answers `403` on proxy requests and is skipped as a group member. `GET /api/v1/repository/{repo}` returns one repository; `GET /api/v1/repositories` lists the ones the caller may read.
+Update with `PATCH /api/v1/repository/{repo}` (note the singular `repository`; admin only). Accepted fields: `description`, `public`, `blocked`, `trash_retention_days`, `immutable_releases`, the proxy fields above (`upstream_url` may not be emptied; changing `upstream_url`, `upstream_username` or `upstream_password` drops the repository's cached upstream responses, 404s included, so nothing of the old upstream is served), `merge_proxy_versions` for groups (global admins only), and `member_repos` for groups (replaces the list; `[]` clears it, an absent field leaves it unchanged). Name, format and type cannot change. A blocked repository answers `403` on proxy requests and is skipped as a group member. `GET /api/v1/repository/{repo}` returns one repository; `GET /api/v1/repositories` lists the ones the caller may read.
 
 Every repository type also accepts `presign_downloads` on create and `PATCH`: `true` redirects blob downloads to presigned object-store URLs, `false` always streams, `null` inherits the global `storage.presignDownloads` (in a `PATCH`, omit it to leave it unchanged). It only has an effect on S3 and GCS storage; see [Presigned URLs](../operations/storage.md#presigned-urls).
 
@@ -330,7 +330,7 @@ Like the held-back list it reads the cache only (the upstream is never asked), i
 
 ### Upstream URL and credentials
 
-`upstream_url` is a plain `http(s)` base URL without credentials, query or fragment. Put credentials in `upstream_username` and `upstream_password`.
+`upstream_url` is a plain `http(s)` base URL without credentials, query or fragment. Put credentials in `upstream_username` and `upstream_password`. A PyPI proxy's upstream is the simple index: `https://pypi.org` (a bare public-index origin) is stored as `https://pypi.org/simple`; any other URL is kept as given, so a private mirror must include its index path.
 
 - OpenArtifact refuses upstreams on loopback, private, link-local and reserved addresses. This is checked when you save the repository and on every fetch and redirect.
 - Set `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true` only for upstreams on your internal network. The cloud metadata range (169.254.x) stays blocked.

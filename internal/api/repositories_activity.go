@@ -51,7 +51,7 @@ type activityCategory struct {
 // Whoever may read the repository sees the events of the artifacts it holds:
 // uploads, deletions, trash restores and purges, promotions in and out,
 // quarantine and release. The operational events - who changed which setting,
-// what the cleanup policies removed and the federation traffic - name
+// what the cleanup policies removed, the curation rules and the federation traffic - name
 // administrators' decisions and the infrastructure around the repository and
 // stay with its admins.
 //
@@ -71,6 +71,10 @@ var activityCategories = map[string]activityCategory{
 			audit.ActionRepositoryCreated, audit.ActionRepositoryUpdated,
 			audit.ActionRepositoryBlocked, audit.ActionRepositoryUnblocked,
 		},
+		adminOnly: true,
+	},
+	"curation": {
+		actions:   []string{audit.ActionCurationRuleCreated, audit.ActionCurationRuleUpdated, audit.ActionCurationRuleDeleted},
 		adminOnly: true,
 	},
 	"federation": {

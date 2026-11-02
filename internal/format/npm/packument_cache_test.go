@@ -41,7 +41,7 @@ func newPackumentRouter(t *testing.T, db *tarballMockDB, bs *tarballMockBlobStor
 
 func newPackumentDB(updated time.Time, versions ...string) *tarballMockDB {
 	db := &tarballMockDB{
-		repo: &models.Repository{ID: "repo-1", Name: "myrepo"},
+		repo: &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"},
 		pkg:  &models.NPMPackage{ID: "pkg-1", FullName: "lodash", UpdatedAt: updated},
 	}
 

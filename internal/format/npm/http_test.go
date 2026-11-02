@@ -143,7 +143,7 @@ func TestHandleTarball_ContentLengthMatchesBody(t *testing.T) {
 
 	bs := &tarballMockBlobStore{blobs: map[string][]byte{"sha-abc": payload}}
 	db := &tarballMockDB{
-		repo: &models.Repository{ID: "repo-1", Name: "myrepo"},
+		repo: &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"},
 		pkg:  &models.NPMPackage{ID: "pkg-1", FullName: "lodash"},
 		versions: []*models.NPMVersion{
 			{ID: "v1", PackageID: "pkg-1", Version: "1.0.0", BlobID: "uuid-1", BlobSHA256: "sha-abc", TarballFilename: "lodash-1.0.0.tgz"},
@@ -205,7 +205,7 @@ func TestHandleTarball_Quarantine(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			bs := &tarballMockBlobStore{blobs: map[string][]byte{"sha-abc": []byte("payload")}}
 			db := &tarballMockDB{
-				repo: &models.Repository{ID: "repo-1", Name: "myrepo"},
+				repo: &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"},
 				pkg:  &models.NPMPackage{ID: "pkg-1", FullName: "lodash"},
 				versions: []*models.NPMVersion{
 					{ID: "v1", PackageID: "pkg-1", Version: "1.0.0", BlobSHA256: "sha-abc", TarballFilename: "lodash-1.0.0.tgz"},
@@ -285,7 +285,7 @@ func TestHandleTarball_Resolution(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			bs := &tarballMockBlobStore{blobs: map[string][]byte{"sha-abc": []byte("data")}}
 			db := &tarballMockDB{
-				repo: &models.Repository{ID: "repo-1", Name: "myrepo"},
+				repo: &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"},
 				pkg:  &models.NPMPackage{ID: "pkg-1", FullName: tc.pkg},
 				versions: []*models.NPMVersion{
 					{ID: "v1", PackageID: "pkg-1", Version: "1.0.0", BlobSHA256: "sha-abc", TarballFilename: tc.stored},
@@ -320,7 +320,7 @@ func TestHandleTarball_Resolution(t *testing.T) {
 func TestHandlePackument_ConditionalSkipsVersionLoad(t *testing.T) {
 	updated := time.Unix(1700000000, 0)
 	db := &tarballMockDB{
-		repo:     &models.Repository{ID: "repo-1", Name: "myrepo"},
+		repo:     &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"},
 		pkg:      &models.NPMPackage{ID: "pkg-1", FullName: "lodash", UpdatedAt: updated},
 		versions: []*models.NPMVersion{{ID: "v1", PackageID: "pkg-1", Version: "1.0.0", TarballFilename: "lodash-1.0.0.tgz"}},
 	}

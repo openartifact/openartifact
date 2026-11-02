@@ -42,7 +42,7 @@ describe('groupByDay', () => {
 describe('categories and visuals', () => {
   it('offers the operational categories only to admins', () => {
     expect(visibleCategories(false)).toEqual(['uploads', 'deletions', 'trash', 'promotions', 'quarantine'])
-    expect(visibleCategories(true)).toEqual(['uploads', 'deletions', 'trash', 'promotions', 'quarantine', 'cleanup', 'settings', 'federation'])
+    expect(visibleCategories(true)).toEqual(['uploads', 'deletions', 'trash', 'promotions', 'quarantine', 'cleanup', 'settings', 'curation', 'federation'])
   })
 
   it('gives every action a design-token tone, and unknown ones a neutral icon', () => {

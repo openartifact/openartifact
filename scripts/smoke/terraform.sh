@@ -4,7 +4,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # terraform: publish a module and a provider with the publish API, then terraform init
-# installs both (a TLS proxy gives the registry the https dotted host terraform requires).
+# installs both (a TLS proxy gives the registry the https dotted host terraform requires; it
+# forwards over https, with the real Host, when the URL is https).
 # Image: TERRAFORM_IMAGE (default docker.io/hashicorp/terraform:latest).
 # Usage: OA_TOKEN=... scripts/smoke/terraform.sh [URL]
 # shellcheck source=lib.sh
@@ -39,7 +40,21 @@ hp="$host:$port"
 echo "127.0.0.1 $host" >> /etc/hosts
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=$host" -addext "subjectAltName=DNS:$host" \
   -keyout /tmp/key.pem -out /tmp/cert.pem 2>/dev/null
-export SSL_CERT_FILE=/tmp/cert.pem
+# The proxy's certificate is trusted next to the system roots: the proxy and terraform may also
+# have to verify the real server's certificate (an https OA_URL).
+cat /etc/ssl/certs/ca-certificates.crt /tmp/cert.pem > /tmp/ca-bundle.pem
+export SSL_CERT_FILE=/tmp/ca-bundle.pem
+case "$OA_URL" in
+https://*)
+  # An https server sits behind a virtual host (ingress): reach it over TLS and under its own name.
+  upstream="$OA_URL"
+  upstream_opts='header_up Host {upstream_hostport}'
+  ;;
+*)
+  upstream="${OA_URL#*://}"
+  upstream_opts=''
+  ;;
+esac
 cat > /tmp/Caddyfile <<EOF
 {
 	admin off
@@ -47,7 +62,9 @@ cat > /tmp/Caddyfile <<EOF
 }
 https://$hp {
 	tls /tmp/cert.pem /tmp/key.pem
-	reverse_proxy ${OA_URL#*://}
+	reverse_proxy $upstream {
+		$upstream_opts
+	}
 }
 EOF
 caddy run --config /tmp/Caddyfile --adapter caddyfile >/tmp/caddy.log 2>&1 &
