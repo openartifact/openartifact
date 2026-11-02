@@ -254,6 +254,28 @@ curl 'HOST/api/v1/repositories/npm-proxy/held-back-versions?package=left-pad' \
 
 The list is newest first and is computed with the same gate as downloads, from the upstream metadata already cached (the upstream is never asked), so it is empty with `"supported": false` when nothing of the package is cached yet or the format cannot list versions with their times. Every format the gate filters can: npm, cargo, composer, helm, rubygems, ansible and conda from their cached metadata; a PyPI proxy only when its cached project page is JSON (an HTML page states no upload times); a NuGet proxy for the pages inline in the cached registration index; a Go proxy from the cached `@v/list`, where a version whose `.info` was never fetched has no time (the minimum age cannot hold it back, curation still can); a conda version is dated by its earliest build. It needs read access to the repository; a repository that is not a proxy is `400`. The package page of the web UI shows these versions greyed out in the Versions tab, with "available in X" or the reason for the block.
 
+To list every version of a package the repository knows of, not only the held ones, with which are already cached:
+
+```sh
+curl 'HOST/api/v1/repositories/npm-proxy/proxy-versions?package=left-pad' \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
+```json
+{
+  "supported": true,
+  "cache_known": true,
+  "versions": [
+    {"version": "1.3.1", "status": "held", "published_at": "2026-10-31T08:00:00Z", "cached": false,
+     "reasons": [{"source": "min_age", "detail": "version is younger than the repository's minimum age", "until": "2026-11-01T08:00:00Z"}]},
+    {"version": "1.3.0", "status": "available", "published_at": "2026-09-02T10:00:00Z", "cached": true, "reasons": []},
+    {"version": "1.2.0", "status": "available", "published_at": "2026-05-12T09:30:00Z", "cached": false, "reasons": []}
+  ]
+}
+```
+
+Like the held-back list it reads the cache only (the upstream is never asked), is newest first and has the same `supported` rule and format coverage. `status` is `available` (clients can install it) or `held` (the gate keeps it from them; `reasons` says why, empty for an available version). `cached` is `true` when a file of the version is already stored in the proxy cache, so installing it needs no download from the upstream; it is read from the cache keys, which name the version for npm, PyPI, cargo, Go, Helm, NuGet and RubyGems. For the other formats `cache_known` is `false` and `cached` is `false` for every version. The package page of a proxy shows this list with Available, Cached and Held badges and an install command for each version that can be installed.
+
 ### Behavior notes
 
 - Concurrent requests for the same uncached path share one upstream fetch. Clients get the first byte once the whole file is cached.

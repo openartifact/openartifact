@@ -19,6 +19,7 @@ const PACKAGES = [
 ]
 
 let repoType: string
+/** The held versions, served as the proxy-versions list of the repository. */
 let held: { supported: boolean; versions: unknown[] }
 let fetchSpy: Mock<typeof fetch>
 
@@ -29,7 +30,9 @@ beforeEach(() => {
     const url = String(input)
     if (url === '/api/v1/repository/px') return json({ name: 'px', format: 'npm', repo_type: repoType })
     if (url.startsWith('/api/v1/repositories/px/packages?')) return json({ packages: PACKAGES, total: PACKAGES.length })
-    if (url.startsWith('/api/v1/repositories/px/held-back-versions?')) return json(held)
+    if (url.startsWith('/api/v1/repositories/px/proxy-versions?')) {
+      return json({ supported: held.supported, cache_known: true, versions: held.versions.map((v) => ({ status: 'held', cached: false, ...(v as object) })) })
+    }
     return json({})
   })
 })
@@ -51,7 +54,7 @@ async function mountTab(): Promise<VueWrapper> {
   return w
 }
 
-const heldUrls = (): string[] => fetchSpy.mock.calls.map((c) => String(c[0])).filter((u) => u.includes('held-back-versions'))
+const heldUrls = (): string[] => fetchSpy.mock.calls.map((c) => String(c[0])).filter((u) => u.includes('proxy-versions'))
 const inHours = (h: number): string => new Date(Date.now() + h * 3_600_000 - 1000).toISOString()
 
 describe('ArtifactVersionsTab with held-back versions', () => {
@@ -64,7 +67,7 @@ describe('ArtifactVersionsTab with held-back versions', () => {
       ],
     }
     const w = await mountTab()
-    expect(heldUrls()).toEqual(['/api/v1/repositories/px/held-back-versions?package=lib'])
+    expect(heldUrls()).toEqual(['/api/v1/repositories/px/proxy-versions?package=lib'])
     const greyed = w.findAll('[data-testid="held-version"]')
     expect(greyed.map((g) => g.text())).toEqual(['2.0.0', '1.5.0'])
     // Not served, so not a link to a page that would be empty.

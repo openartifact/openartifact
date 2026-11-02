@@ -8,7 +8,7 @@
   "artifact.notFound.search": "Pakete suchen",
   "artifact.notFound.repo": "Repository öffnen",
   "artifact.metadataOnly.title": "Proxy-Paket",
-  "artifact.metadataOnly.hint": "{repo} liefert {name} bei Bedarf aus dem Upstream, daher sind seine Versionen hier nicht als eigene Pakete gespeichert. Vom Repository zurückgehaltene Versionen stehen oben.",
+  "artifact.metadataOnly.hint": "{repo} liefert {name} bei Bedarf aus dem Upstream, daher sind seine Versionen hier nicht als eigene Pakete gespeichert.",
   "artifact.versionNotFound.title": "Version nicht gefunden",
   "artifact.versionNotFound.hint": "{name} hat keine Version {version}.",
   "artifact.versionNotFound.latest": "Neueste Version öffnen",
@@ -215,6 +215,12 @@
   "artifact.versions.column.availability": "Verfügbarkeit",
   "artifact.versions.availableAt": "Verfügbar {when}",
   "artifact.versions.blocked": "Gesperrt: {reason}",
-  "artifact.heldBack.title": "Von diesem Repository zurückgehalten",
-  "artifact.heldBack.hint": "Diese Versionen von {name} existieren upstream, werden aber noch nicht ausgeliefert."
+  "artifact.proxyVersions.hint": "Die Versionen, die die von diesem Repository zwischengespeicherten Upstream-Metadaten auflisten. Zwischengespeicherte Versionen sind bereits hier gespeichert; zurückgehaltene Versionen hält das Repository von Clients fern.",
+  "artifact.proxyVersions.column.status": "Status",
+  "artifact.proxyVersions.available": "Verfügbar",
+  "artifact.proxyVersions.held": "Zurückgehalten",
+  "artifact.proxyVersions.cached": "Im Cache",
+  "artifact.proxyVersions.cachedHint": "Eine Datei dieser Version ist bereits in diesem Repository gespeichert",
+  "artifact.proxyVersions.showInstall": "Installationsbefehl anzeigen",
+  "artifact.proxyVersions.copyInstall": "Installationsbefehl kopieren: {version}"
 }

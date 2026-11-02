@@ -115,6 +115,45 @@ func (q *Queries) GetProxyCacheEntry(ctx context.Context, arg GetProxyCacheEntry
 	return i, err
 }
 
+const listCachedProxyKeys = `-- name: ListCachedProxyKeys :many
+SELECT cache_key
+FROM proxy_cache_entries
+WHERE repository_id = $1::uuid
+  AND status_code = 200
+  AND blob_key IS NOT NULL
+  AND starts_with(cache_key, $2::text)
+ORDER BY cache_key
+LIMIT $3::int
+`
+
+type ListCachedProxyKeysParams struct {
+	RepoID  string `db:"repo_id" json:"repo_id"`
+	Prefix  string `db:"prefix" json:"prefix"`
+	MaxKeys int32  `db:"max_keys" json:"max_keys"`
+}
+
+// The cache keys of a repository's live cached files (a body in the blob store)
+// that start with a prefix: which versions of one package are cached.
+func (q *Queries) ListCachedProxyKeys(ctx context.Context, arg ListCachedProxyKeysParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listCachedProxyKeys, arg.RepoID, arg.Prefix, arg.MaxKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var cache_key string
+		if err := rows.Scan(&cache_key); err != nil {
+			return nil, err
+		}
+		items = append(items, cache_key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listGroupMembers = `-- name: ListGroupMembers :many
 SELECT m.group_repo_id, m.member_repo_id, m.priority, m.created_at
 FROM repository_group_members m

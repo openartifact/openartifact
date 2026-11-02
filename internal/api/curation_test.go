@@ -145,12 +145,21 @@ func (fakePublished) HeldBackVersions(context.Context, *models.Repository, strin
 	return nil, false, nil
 }
 
-// fakeHeld lists a fixed set of held-back versions.
+func (fakePublished) ListProxyVersions(context.Context, *models.Repository, string) (proxy.ProxyVersions, error) {
+	return proxy.ProxyVersions{}, nil
+}
+
+// fakeHeld lists a fixed set of held-back versions and of proxy versions.
 type fakeHeld struct {
 	fakePublished
 
 	held      []proxy.HeldBack
 	supported bool
+	versions  proxy.ProxyVersions
+}
+
+func (f fakeHeld) ListProxyVersions(context.Context, *models.Repository, string) (proxy.ProxyVersions, error) {
+	return f.versions, nil
 }
 
 func (f fakeHeld) HeldBackVersions(context.Context, *models.Repository, string) ([]proxy.HeldBack, bool, error) {
@@ -565,6 +574,70 @@ func TestCurationHeldBack(t *testing.T) {
 		"group":        {"/api/v1/repositories/grp/held-back-versions?package=lib", src},
 		"no source":    {path, nil},
 		"unknown repo": {"/api/v1/repositories/nope/held-back-versions?package=lib", src},
+	} {
+		want := http.StatusBadRequest
+		if name == "unknown repo" {
+			want = http.StatusNotFound
+		}
+
+		if rw := curationRequest(t, newCurationDB(), tc.src, http.MethodGet, tc.path, ""); rw.Code != want {
+			t.Errorf("%s: status %d, want %d", name, rw.Code, want)
+		}
+	}
+}
+
+func TestCurationProxyVersions(t *testing.T) {
+	published := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
+	until := published.Add(24 * time.Hour)
+	src := fakeHeld{versions: proxy.ProxyVersions{Supported: true, CacheKnown: true, Versions: []proxy.ProxyVersion{
+		{
+			Version:   "3.0.0",
+			Published: published,
+			Held:      true,
+			Hold:      curation.Hold{Source: curation.SourceMinAge, Detail: "too young", Until: until},
+		},
+		{Version: "2.0.0", Published: published.Add(-time.Hour), Cached: true},
+		{Version: "1.0.0"},
+	}}}
+	path := "/api/v1/repositories/px/proxy-versions?package=lib"
+
+	got := decodeResp[responses.ProxyVersionsResponse](t, curationRequest(t, newCurationDB(), src, http.MethodGet, path, ""))
+	if !got.Supported || !got.CacheKnown || len(got.Versions) != 3 {
+		t.Fatalf("response = %+v, want three supported versions with a known cache", got)
+	}
+
+	if v := got.Versions[0]; v.Status != "held" || v.Cached || v.PublishedAt != published.Format(time.RFC3339) ||
+		len(v.Reasons) != 1 || v.Reasons[0].Source != curation.SourceMinAge || v.Reasons[0].Until != until.Format(time.RFC3339) {
+		t.Errorf("held version = %+v", v)
+	}
+
+	if v := got.Versions[1]; v.Status != "available" || !v.Cached || v.Reasons == nil || len(v.Reasons) != 0 {
+		t.Errorf("cached version = %+v, want available, cached and an empty (non-null) reasons list", v)
+	}
+
+	if v := got.Versions[2]; v.Status != "available" || v.Cached || v.PublishedAt != "" {
+		t.Errorf("undated version = %+v", v)
+	}
+
+	empty := decodeResp[responses.ProxyVersionsResponse](t, curationRequest(t, newCurationDB(), fakeHeld{}, http.MethodGet, path, ""))
+	if empty.Supported || empty.Versions == nil || len(empty.Versions) != 0 {
+		t.Errorf("unsupported = %+v, want supported false and an empty (non-null) list", empty)
+	}
+}
+
+func TestCurationProxyVersions_Rejects(t *testing.T) {
+	src := fakeHeld{versions: proxy.ProxyVersions{Supported: true}}
+	path := "/api/v1/repositories/px/proxy-versions?package=lib"
+
+	for name, tc := range map[string]struct {
+		path string
+		src  PublishTimeSource
+	}{
+		"no package":   {"/api/v1/repositories/px/proxy-versions", src},
+		"hosted":       {"/api/v1/repositories/hosted/proxy-versions?package=lib", src},
+		"group":        {"/api/v1/repositories/grp/proxy-versions?package=lib", src},
+		"no source":    {path, nil},
+		"unknown repo": {"/api/v1/repositories/nope/proxy-versions?package=lib", src},
 	} {
 		want := http.StatusBadRequest
 		if name == "unknown repo" {

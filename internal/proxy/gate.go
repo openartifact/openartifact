@@ -181,13 +181,35 @@ type HeldBack struct {
 	Hold      curation.Hold
 }
 
-// HeldBackVersions lists the versions of pkg the gate of proxy repository repo
-// holds back (by the minimum age or the curation rules), newest first, computed
-// from the metadata already cached: it never fetches. supported is false when
-// the format cannot list versions or the metadata is not cached; the list is
-// then empty. A gate that holds nothing back answers an empty list without
-// reading the metadata.
-func (s *Service) HeldBackVersions(ctx context.Context, repo *models.Repository, pkg string) ([]HeldBack, bool, error) {
+// ProxyVersion is a version of an upstream package named by the cached metadata,
+// with what the repository's gate says about it and whether its files are cached.
+type ProxyVersion struct {
+	Version string
+	// Published is the zero time when the upstream states none.
+	Published time.Time
+	// Held is true when the gate keeps the version from clients; Hold says why.
+	Held bool
+	Hold curation.Hold
+	// Cached is true when a file of the version is in the proxy cache; only
+	// meaningful when ProxyVersions.CacheKnown.
+	Cached bool
+}
+
+// ProxyVersions is the version listing of one upstream package.
+type ProxyVersions struct {
+	// Supported is false when the format cannot list versions or the metadata is
+	// not cached; Versions is then empty.
+	Supported bool
+	// CacheKnown is true when the format's cache keys name the version of a file,
+	// so Cached of each version is real; false leaves every Cached false.
+	CacheKnown bool
+	// Versions is newest first (by publish time, then by version).
+	Versions []ProxyVersion
+}
+
+// gatedVersions lists the versions of pkg the CACHED metadata of repo names,
+// each marked with the gate's verdict, newest first. It never fetches.
+func (s *Service) gatedVersions(ctx context.Context, repo *models.Repository, pkg string) ([]ProxyVersion, bool, error) {
 	h, found := hooks.Lookup(repo.Format)
 	if !found || h.Versions == nil {
 		return nil, false, nil
@@ -203,21 +225,67 @@ func (s *Service) HeldBackVersions(ctx context.Context, repo *models.Repository,
 		return nil, false, nil
 	}
 
+	out := make([]ProxyVersion, len(versions))
+	for i, v := range versions {
+		hidden, hold := g.Hidden(pkg, v.Version, v.Published)
+		out[i] = ProxyVersion{Version: v.Version, Published: v.Published, Held: hidden, Hold: hold}
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].Published.Equal(out[j].Published) {
+			return out[i].Published.After(out[j].Published)
+		}
+
+		return out[i].Version > out[j].Version
+	})
+
+	return out, true, nil
+}
+
+// HeldBackVersions lists the versions of pkg the gate of proxy repository repo
+// holds back (by the minimum age or the curation rules), newest first, computed
+// from the metadata already cached: it never fetches. supported is false when
+// the format cannot list versions or the metadata is not cached; the list is
+// then empty.
+func (s *Service) HeldBackVersions(ctx context.Context, repo *models.Repository, pkg string) ([]HeldBack, bool, error) {
+	versions, ok, err := s.gatedVersions(ctx, repo, pkg)
+	if err != nil || !ok {
+		return nil, false, err
+	}
+
 	var held []HeldBack
 
 	for _, v := range versions {
-		if hidden, hold := g.Hidden(pkg, v.Version, v.Published); hidden {
-			held = append(held, HeldBack{Version: v.Version, Published: v.Published, Hold: hold})
+		if v.Held {
+			held = append(held, HeldBack{Version: v.Version, Published: v.Published, Hold: v.Hold})
 		}
 	}
 
-	sort.Slice(held, func(i, j int) bool {
-		if !held[i].Published.Equal(held[j].Published) {
-			return held[i].Published.After(held[j].Published)
-		}
-
-		return held[i].Version > held[j].Version
-	})
-
 	return held, true, nil
+}
+
+// ListProxyVersions lists every version of pkg the cached metadata of proxy
+// repository repo names, newest first, each with the gate's verdict and whether
+// a file of it is already cached. Only the cache is read: it never fetches from
+// the upstream.
+func (s *Service) ListProxyVersions(ctx context.Context, repo *models.Repository, pkg string) (ProxyVersions, error) {
+	versions, ok, err := s.gatedVersions(ctx, repo, pkg)
+	if err != nil || !ok {
+		return ProxyVersions{}, err
+	}
+
+	out := ProxyVersions{Supported: true, Versions: versions}
+
+	cached, known, err := s.cachedVersions(ctx, repo, pkg)
+	if err != nil {
+		return ProxyVersions{}, err
+	}
+
+	out.CacheKnown = known
+
+	for i := range out.Versions {
+		_, out.Versions[i].Cached = cached[versionID(repo.Format, out.Versions[i].Version)]
+	}
+
+	return out, nil
 }

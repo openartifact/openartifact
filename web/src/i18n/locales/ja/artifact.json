@@ -8,7 +8,7 @@
   "artifact.notFound.search": "パッケージを検索",
   "artifact.notFound.repo": "リポジトリを開く",
   "artifact.metadataOnly.title": "プロキシされたパッケージ",
-  "artifact.metadataOnly.hint": "{repo} は {name} を必要に応じて上流から提供するため、そのバージョンは個別のパッケージとしてここに保存されません。リポジトリが保留しているバージョンを上に示します。",
+  "artifact.metadataOnly.hint": "{repo} は {name} を必要に応じて上流から提供するため、そのバージョンは個別のパッケージとしてここに保存されません。",
   "artifact.versionNotFound.title": "バージョンが見つかりません",
   "artifact.versionNotFound.hint": "{name} にバージョン {version} はありません。",
   "artifact.versionNotFound.latest": "最新バージョンを開く",
@@ -213,6 +213,12 @@
   "artifact.versions.column.availability": "可用性",
   "artifact.versions.availableAt": "{when}に利用可能",
   "artifact.versions.blocked": "ブロック済み: {reason}",
-  "artifact.heldBack.title": "このリポジトリで保留中",
-  "artifact.heldBack.hint": "{name} のこれらのバージョンは上流に存在しますが、まだ配信されていません。"
+  "artifact.proxyVersions.hint": "このリポジトリがキャッシュした上流メタデータに載っているバージョンです。キャッシュ済みのバージョンはすでにここに保存されており、保留中のバージョンはリポジトリがクライアントから遠ざけています。",
+  "artifact.proxyVersions.column.status": "状態",
+  "artifact.proxyVersions.available": "利用可能",
+  "artifact.proxyVersions.held": "保留中",
+  "artifact.proxyVersions.cached": "キャッシュ済み",
+  "artifact.proxyVersions.cachedHint": "このバージョンのファイルはすでにこのリポジトリに保存されています",
+  "artifact.proxyVersions.showInstall": "インストールコマンドを表示",
+  "artifact.proxyVersions.copyInstall": "インストールコマンドをコピー: {version}"
 }

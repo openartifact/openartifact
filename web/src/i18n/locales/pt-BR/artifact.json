@@ -8,7 +8,7 @@
   "artifact.notFound.search": "Buscar pacotes",
   "artifact.notFound.repo": "Abrir repositório",
   "artifact.metadataOnly.title": "Pacote em proxy",
-  "artifact.metadataOnly.hint": "{repo} serve {name} do seu upstream sob demanda, então suas versões não são armazenadas aqui como pacotes separados. As versões retidas pelo repositório estão listadas acima.",
+  "artifact.metadataOnly.hint": "{repo} serve {name} do seu upstream sob demanda, então suas versões não são armazenadas aqui como pacotes separados.",
   "artifact.versionNotFound.title": "Versão não encontrada",
   "artifact.versionNotFound.hint": "{name} não tem a versão {version}.",
   "artifact.versionNotFound.latest": "Abrir a versão mais recente",
@@ -215,6 +215,12 @@
   "artifact.versions.column.availability": "Disponibilidade",
   "artifact.versions.availableAt": "Disponível {when}",
   "artifact.versions.blocked": "Bloqueada: {reason}",
-  "artifact.heldBack.title": "Retidas por este repositório",
-  "artifact.heldBack.hint": "Estas versões de {name} existem upstream, mas ainda não são servidas."
+  "artifact.proxyVersions.hint": "As versões listadas pelos metadados upstream em cache deste repositório. As versões em cache já estão armazenadas aqui; as retidas são mantidas longe dos clientes pelo repositório.",
+  "artifact.proxyVersions.column.status": "Status",
+  "artifact.proxyVersions.available": "Disponível",
+  "artifact.proxyVersions.held": "Retida",
+  "artifact.proxyVersions.cached": "Em cache",
+  "artifact.proxyVersions.cachedHint": "Um arquivo desta versão já está armazenado neste repositório",
+  "artifact.proxyVersions.showInstall": "Mostrar o comando de instalação",
+  "artifact.proxyVersions.copyInstall": "Copiar o comando de instalação: {version}"
 }

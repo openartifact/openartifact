@@ -1743,6 +1743,69 @@
           "versions"
         ]
       },
+      "ProxyVersion": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "held"
+            ],
+            "description": "available: the gate lets clients install it; held: the minimum age or a curation rule keeps it from them (see reasons)."
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The publish time the upstream states, when known."
+          },
+          "cached": {
+            "type": "boolean",
+            "description": "True when a file of the version is already in the proxy cache (installing it needs no upstream download). Always false when the response's cache_known is false."
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AvailabilityReason"
+            },
+            "description": "Why the version is held; empty when it is available."
+          }
+        },
+        "required": [
+          "version",
+          "status",
+          "cached",
+          "reasons"
+        ]
+      },
+      "ProxyVersionsResponse": {
+        "type": "object",
+        "properties": {
+          "supported": {
+            "type": "boolean",
+            "description": "False when the repository's format cannot list the versions of a package or the metadata is not cached yet; versions is then empty."
+          },
+          "cache_known": {
+            "type": "boolean",
+            "description": "True when the format's cache keys name the version of a file, so cached of each version is real; false when the cache cannot be told apart per version (cached is then false everywhere)."
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProxyVersion"
+            },
+            "description": "Newest first."
+          }
+        },
+        "required": [
+          "supported",
+          "cache_known",
+          "versions"
+        ]
+      },
       "AvailabilityResponse": {
         "type": "object",
         "properties": {
@@ -23133,6 +23196,85 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HeldBackResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or oversized `package`, or the repository is not a proxy (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No read access to the repository",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          },
+          {}
+        ]
+      }
+    },
+    "/api/v1/repositories/{name}/proxy-versions": {
+      "get": {
+        "summary": "List the versions of a proxy package known from cached metadata",
+        "description": "Lists every version of one package of a proxy repository that the upstream metadata already in the cache names, newest first, each `available` (clients can install it) or `held` (the repository's gate keeps it from them: the minimum age or a curation rule, with the reasons), with its publish time and whether a file of it is already cached locally. Nothing is fetched from the upstream: `supported` is `false` (and the list empty) when the format cannot list the versions of a package or nothing is cached yet, and `cache_known` is `false` when the format's cache keys do not name versions. Only proxy repositories have such a list: any other repository type is a 400.",
+        "tags": [
+          "Curation"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "package",
+            "in": "query",
+            "required": true,
+            "description": "Package name, at most 1024 bytes.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The versions of the package",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyVersionsResponse"
                 }
               }
             }

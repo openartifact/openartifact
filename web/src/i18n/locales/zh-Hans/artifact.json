@@ -8,7 +8,7 @@
   "artifact.notFound.search": "搜索软件包",
   "artifact.notFound.repo": "打开仓库",
   "artifact.metadataOnly.title": "代理包",
-  "artifact.metadataOnly.hint": "{repo} 按需从上游提供 {name},因此其版本不会作为单独的包存储在此处。仓库扣留的版本列在上方。",
+  "artifact.metadataOnly.hint": "{repo} 按需从上游提供 {name},因此其版本不会作为单独的包存储在此处。",
   "artifact.versionNotFound.title": "未找到版本",
   "artifact.versionNotFound.hint": "{name} 没有版本 {version}。",
   "artifact.versionNotFound.latest": "打开最新版本",
@@ -213,6 +213,12 @@
   "artifact.versions.column.availability": "可用性",
   "artifact.versions.availableAt": "可用时间:{when}",
   "artifact.versions.blocked": "已阻止:{reason}",
-  "artifact.heldBack.title": "被此仓库扣留",
-  "artifact.heldBack.hint": "{name} 的这些版本在上游存在,但尚未提供服务。"
+  "artifact.proxyVersions.hint": "此仓库缓存的上游元数据所列出的版本。已缓存的版本已存储在此处;被扣留的版本由仓库阻止客户端获取。",
+  "artifact.proxyVersions.column.status": "状态",
+  "artifact.proxyVersions.available": "可用",
+  "artifact.proxyVersions.held": "已扣留",
+  "artifact.proxyVersions.cached": "已缓存",
+  "artifact.proxyVersions.cachedHint": "此版本的文件已存储在此仓库中",
+  "artifact.proxyVersions.showInstall": "显示安装命令",
+  "artifact.proxyVersions.copyInstall": "复制安装命令:{version}"
 }

@@ -258,6 +258,18 @@ func TestClassifyAPIRoute(t *testing.T) {
 		},
 		{
 			http.MethodGet,
+			"/api/v1/repositories/app/proxy-versions",
+			routeScope{action: "read", repoName: "app"},
+			"the proxy version list needs repo read",
+		},
+		{
+			http.MethodPost,
+			"/api/v1/repositories/app/proxy-versions",
+			routeScope{action: "manage"},
+			"the proxy version list is read-only",
+		},
+		{
+			http.MethodGet,
 			"/api/v1/repositories/a%2Fb/availability",
 			routeScope{action: "manage"},
 			"escaped name never read scoped for availability",

@@ -780,6 +780,41 @@ export type HeldBackResponse = {
     versions: Array<HeldBackVersion>;
 };
 
+export type ProxyVersion = {
+    version: string;
+    /**
+     * available: the gate lets clients install it; held: the minimum age or a curation rule keeps it from them (see reasons).
+     */
+    status: 'available' | 'held';
+    /**
+     * The publish time the upstream states, when known.
+     */
+    published_at?: string;
+    /**
+     * True when a file of the version is already in the proxy cache (installing it needs no upstream download). Always false when the response's cache_known is false.
+     */
+    cached: boolean;
+    /**
+     * Why the version is held; empty when it is available.
+     */
+    reasons: Array<AvailabilityReason>;
+};
+
+export type ProxyVersionsResponse = {
+    /**
+     * False when the repository's format cannot list the versions of a package or the metadata is not cached yet; versions is then empty.
+     */
+    supported: boolean;
+    /**
+     * True when the format's cache keys name the version of a file, so cached of each version is real; false when the cache cannot be told apart per version (cached is then false everywhere).
+     */
+    cache_known: boolean;
+    /**
+     * Newest first.
+     */
+    versions: Array<ProxyVersion>;
+};
+
 export type AvailabilityResponse = {
     /**
      * True when no hold applies.
@@ -12831,6 +12866,46 @@ export type GetApiV1RepositoriesByNameHeldBackVersionsResponses = {
 };
 
 export type GetApiV1RepositoriesByNameHeldBackVersionsResponse = GetApiV1RepositoriesByNameHeldBackVersionsResponses[keyof GetApiV1RepositoriesByNameHeldBackVersionsResponses];
+
+export type GetApiV1RepositoriesByNameProxyVersionsData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query: {
+        /**
+         * Package name, at most 1024 bytes.
+         */
+        package: string;
+    };
+    url: '/api/v1/repositories/{name}/proxy-versions';
+};
+
+export type GetApiV1RepositoriesByNameProxyVersionsErrors = {
+    /**
+     * Missing or oversized `package`, or the repository is not a proxy (`validation_failed`)
+     */
+    400: Error;
+    /**
+     * No read access to the repository
+     */
+    403: Error;
+    /**
+     * Repository not found
+     */
+    404: Error;
+};
+
+export type GetApiV1RepositoriesByNameProxyVersionsError = GetApiV1RepositoriesByNameProxyVersionsErrors[keyof GetApiV1RepositoriesByNameProxyVersionsErrors];
+
+export type GetApiV1RepositoriesByNameProxyVersionsResponses = {
+    /**
+     * The versions of the package
+     */
+    200: ProxyVersionsResponse;
+};
+
+export type GetApiV1RepositoriesByNameProxyVersionsResponse = GetApiV1RepositoriesByNameProxyVersionsResponses[keyof GetApiV1RepositoriesByNameProxyVersionsResponses];
 
 export type DeleteApiV1RepositoriesByNameCleanupPoliciesByIdData = {
     body?: never;
