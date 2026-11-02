@@ -29,8 +29,16 @@ describe('RepoPackagesTab: empty proxy', () => {
     expect(w.find('[data-testid="state-command"]').text()).toContain(`${window.location.origin}/repos/npm-proxy`)
   })
 
-  it('shows no client command for an empty hosted repository', async () => {
+  it('shows no cached-proxy command for an empty hosted repository', async () => {
     const w = await mountTab({ repo_type: 'hosted' })
     expect(w.find('[data-testid="state-command"]').exists()).toBe(false)
+  })
+})
+
+describe('RepoPackagesTab: empty hosted', () => {
+  it('shows the publish and consume guide for the format', async () => {
+    const w = await mountTab({ repo_type: 'hosted', name: 'web', format: 'npm' })
+    expect(w.find('[data-testid="empty-publish"]').text()).toContain(`${window.location.origin}/repos/web/`)
+    expect(w.find('[data-testid="empty-consume"]').exists()).toBe(true)
   })
 })

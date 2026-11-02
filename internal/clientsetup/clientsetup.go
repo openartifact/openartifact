@@ -485,10 +485,20 @@ func CargoBuilder(c target) []Snippet {
 }
 
 // GoBuilder is the snippet builder of the go format.
+// Go has no publish command: a hosted repository takes the module zip by PUT,
+// the version being the last path element without a .zip suffix. Proxy and
+// group repositories are read-only, so they carry no publish hint.
 func GoBuilder(c target) []Snippet {
+	publish := fmt.Sprintf(
+		"curl -X PUT -H \"Authorization: Bearer <TOKEN>\" --data-binary @v1.0.0.zip %s/example.com/mymod/@v/v1.0.0", c.base)
+	if c.repoType == "proxy" || c.repoType == "group" {
+		publish = ""
+	}
+
 	return []Snippet{{
 		Client:    "go",
 		Configure: fmt.Sprintf("go env -w GOPROXY=%s,direct\ngo env -w GONOSUMDB=*", c.base),
+		Publish:   publish,
 	}}
 }
 

@@ -89,6 +89,8 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 - **Cleanup name pattern in the editor.** The cleanup policy editor now has a package name pattern field (the policy's `name_pattern`, a regular expression), so editing a policy that has one keeps it instead of leaving it out of the request, and the live preview takes it into account. A pattern that is not a valid regular expression is flagged before saving.
 - **Live preview for project defaults.** The project cleanup defaults editor shows the same live preview, added up over the repositories the policy would cover, backed by the new `POST /api/v1/projects/{project}/cleanup-policies/dry-run`. See [Cleanup](../repositories/cleanup-and-quotas.md#api).
+- **Empty hosted repositories teach.** The **Packages** tab of an empty hosted repository shows, for its format, the publish and consume commands with the repository's own URL (the same snippets as the connect panel), a link to create an access token (publish with tokens, never your account password) and the **Upload a package** button where the web UI can upload. An empty group explains that it serves its members' packages. No API or configuration change.
+- **Go publish snippet.** The connect panel of a hosted Go repository now shows the `curl -X PUT` module upload (documented in [Go](../formats/go.md#publish)).
 
 ### 0.16.0
 

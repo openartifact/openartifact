@@ -39,6 +39,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :empty-hint="proxy ? tp('repoDetail.proxy.emptyFetch', { upstream: repo.upstream_url ?? '' }) : t('rl.packages.emptyHint')"
       :empty-command="proxy ? emptyCommand : undefined"
     >
+      <template v-if="!proxy" #empty>
+        <RepoEmptyGuide :format="repo.format" :repo="repo.name" :can-upload="canUpload" @upload="emit('upload')" />
+      </template>
       <template #cell-name="{ row }">
         <router-link :to="artifactPath(repo.name, row.name)" class="block truncate font-mono text-sm font-semibold text-foreground hover:text-primary" :title="row.name">{{ row.name }}</router-link>
       </template>
@@ -68,6 +71,7 @@ import { CheckCircleIcon } from '@heroicons/vue/20/solid'
 import FilterBar from '../ui/FilterBar.vue'
 import ListTable, { type ListColumn } from '../ui/ListTable.vue'
 import RelativeTime from '../ui/RelativeTime.vue'
+import RepoEmptyGuide from './RepoEmptyGuide.vue'
 import SeverityBadge from '../ui/SeverityBadge.vue'
 import { listPackageGroups, type PackageGroup, type Repository } from '../../api/repositories'
 import { useListQuery } from '../../composables/useListQuery'
@@ -77,7 +81,8 @@ import { clientSetup } from '../../lib/installCommands'
 import { formatBytesOrDash } from '../../lib/quota'
 import { t, tp } from '../../i18n'
 
-const props = defineProps<{ repo: Repository }>()
+const props = defineProps<{ repo: Repository; canUpload?: boolean }>()
+const emit = defineEmits<{ upload: [] }>()
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low'] as const
 const proxy = computed(() => props.repo.repo_type === 'proxy')

@@ -39,6 +39,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <AppButton variant="secondary" @click="clearFilters">{{ t('ui.state.clearFilters') }}</AppButton>
         </template>
       </StateBlock>
+      <slot v-else-if="$slots.empty" name="empty" />
       <StateBlock v-else variant="empty" :title="emptyTitle" :hint="emptyHint" :command="emptyCommand">
         <template v-if="$slots['empty-action']" #action><slot name="empty-action" /></template>
       </StateBlock>

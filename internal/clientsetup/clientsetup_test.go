@@ -269,3 +269,50 @@ func TestComposerSecureHTTPOnlyForPlainHTTP(t *testing.T) {
 		t.Errorf("https origin carries the secure-http line: %s", got)
 	}
 }
+
+// A hosted repository teaches publishing in its empty state: every format has a
+// publish command that carries the repository's own URL or name, and no
+// credential other than the <TOKEN> placeholder. Proxy and group repositories
+// are read-only and carry none.
+func TestEveryFormatHasHostedPublishSnippet(t *testing.T) {
+	for _, format := range allFormats() {
+		published := false
+
+		for _, s := range Snippets(format, origin, "my-repo", "hosted") {
+			if s.Publish == "" {
+				continue
+			}
+
+			published = true
+
+			// A client may publish to what its configure snippet registered (yarn npm publish).
+			both := s.Configure + "\n" + s.Publish
+			if !strings.Contains(both, "my-repo") && !strings.Contains(both, "artifacts.example.com") {
+				t.Errorf("%s/%s does not name the repository: %q", format, s.Client, both)
+			}
+
+			if strings.Contains(strings.ToLower(s.Publish), "password") {
+				t.Errorf("%s/%s publish asks for a password: %q", format, s.Client, s.Publish)
+			}
+		}
+
+		if !published {
+			t.Errorf("%s has no hosted publish snippet", format)
+		}
+	}
+}
+
+func TestGoPublishUploadsModuleZipByPut(t *testing.T) {
+	hosted := Snippets("go", origin, "mods", "hosted")[0].Publish
+	want := "curl -X PUT -H \"Authorization: Bearer <TOKEN>\" --data-binary @v1.0.0.zip " + origin + "/repos/mods/example.com/mymod/@v/v1.0.0"
+
+	if hosted != want {
+		t.Errorf("hosted go publish = %q, want %q", hosted, want)
+	}
+
+	for _, typ := range []string{"proxy", "group"} {
+		if p := Snippets("go", origin, "mods", typ)[0].Publish; p != "" {
+			t.Errorf("%s go repository is read-only but publishes %q", typ, p)
+		}
+	}
+}
