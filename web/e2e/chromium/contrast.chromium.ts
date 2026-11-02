@@ -3,10 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect } from 'bun:test'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { contrastViolations } from '../lib/a11y'
 import { testAs, type Role } from '../lib/browser'
 import { freeze, painted, toastAtRest } from '../lib/visual'
-import { chooseTheme, expectLoc, shellReady, type Ui } from '../lib/ui'
+import { chooseTheme, expectLoc, shellReady, t, type Ui } from '../lib/ui'
 
 /**
  * axe-core `color-contrast` (WCAG 1.4.3) on the shell and the key pages, in the
@@ -117,6 +120,62 @@ for (const theme of ['light', 'dark'] as const) {
       await toastAtRest(ui)
       const violations = await contrastViolations(ui)
       expect(violations, violations.join('\n')).toEqual([])
+    })
+  })
+}
+
+/** The upload zone of a hosted repository: its inputs, a field error, and a file that fails on its row. */
+for (const theme of ['light', 'dark'] as const) {
+  describe(`color-contrast of the upload zone, ${theme} theme`, () => {
+    const it = testAs('admin', 'chromium')
+
+    it('inputs, a field error and a failed file', async (ui) => {
+      await ui.goto('/repos/seed-maven')
+      await ui.page.evaluate((mode) => localStorage.setItem('oa.theme', JSON.stringify(mode)), theme)
+      await ui.reload()
+      await shellReady(ui)
+      await ui.getByRole('button', { name: t('repoDetail.upload'), exact: true }).click()
+      const zone = ui.getByTestId('upload-fields')
+      await expectLoc(zone).toBeVisible()
+      // Browse is disabled until the coordinates are filled in.
+      await ui.locator('#upload-version').fill('not a version')
+      await expectLoc(ui.locator('#upload-version[aria-invalid="true"]')).toBeVisible()
+      await painted(ui)
+      await freeze(ui)
+      // axe skips disabled controls (WCAG 1.4.3 exempts them), so the disabled Browse button is held to 3:1 here:
+      // its label blended by the button's opacity over the dropzone, which must stay readable as "unavailable".
+      const disabledRatio = await ui.page.evaluate(() => {
+        const button = [...document.querySelectorAll('button')].find((b) => b.disabled && b.closest('[class*="border-dashed"]'))
+        if (!button) return 0
+        const rgb = (c: string) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number)
+        const lum = (c: number[]) => {
+          const [r, g, b] = c.map((v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+          return 0.2126 * r + 0.7152 * g + 0.0722 * b
+        }
+        const bg = rgb(getComputedStyle(button.closest('[class*="border-dashed"]')!).backgroundColor)
+        const fg = rgb(getComputedStyle(button).color)
+        const a = Number(getComputedStyle(button).opacity)
+        const shown = fg.map((v, i) => v * a + bg[i] * (1 - a))
+        const [hi, lo] = [lum(shown), lum(bg)].sort((x, y) => y - x)
+        return (hi + 0.05) / (lo + 0.05)
+      })
+      expect(disabledRatio).toBeGreaterThanOrEqual(3)
+      const withError = await contrastViolations(ui)
+      expect(withError, withError.join('\n')).toEqual([])
+
+      await ui.locator('#upload-group').fill('com.example')
+      await ui.locator('#upload-artifact').fill('lib')
+      await ui.locator('#upload-version').fill('1.0.0')
+      const file = join(mkdtempSync(join(tmpdir(), 'oa-upload-')), 'other-1.0.0.jar')
+      writeFileSync(file, 'x')
+      const input = await ui.page.$('input[type="file"]')
+      await input!.uploadFile(file)
+      await expectLoc(ui.getByText('other-1.0.0.jar')).toBeVisible()
+      await expectLoc(ui.getByText(t('upload.error.mavenName'))).toBeVisible()
+      await painted(ui)
+      await freeze(ui)
+      const withRow = await contrastViolations(ui)
+      expect(withRow, withRow.join('\n')).toEqual([])
     })
   })
 }
