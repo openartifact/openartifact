@@ -48,7 +48,7 @@ scripts/api-fuzz.sh nightly                                                     
 OA_FUZZ_SEED=123 scripts/api-fuzz.sh nightly                                       # replay a nightly failure
 ```
 
-A failure prints the seed and a curl reproduction; the CI artifact `api-fuzz-report` has the reports and the server log. A finding is either a server bug (fix it with a Go regression test) or a spec mismatch (fix `openapi.json`, then `cd web && bun run generate-api` and `make docs-gen`).
+A failing nightly run opens or updates the issue `Nightly fuzz failure: api-fuzz` and the next passing run closes it. A failure prints the seed and a curl reproduction; the CI artifact `api-fuzz-report` has the reports and the server log. A finding is either a server bug (fix it with a Go regression test) or a spec mismatch (fix `openapi.json`, then `cd web && bun run generate-api` and `make docs-gen`).
 
 ## End to end and monkey walk
 

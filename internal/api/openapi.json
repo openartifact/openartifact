@@ -16741,6 +16741,15 @@
         "tags": [
           "Repositories"
         ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          },
+          {}
+        ],
         "parameters": [
           {
             "name": "name",

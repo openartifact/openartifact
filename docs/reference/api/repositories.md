@@ -125,6 +125,8 @@ Repository activity
 
 Audit events recorded against one repository, newest first, with actor and subject names resolved: uploads, deletions, trash restores and purges, promotions in and out, quarantine and release (readable by anyone who can read the repository), and its creation and settings changes, cleanup runs with their counts and federation events (repository admins only: global admins, the project's maintainers and owners, delegated repository admins). `category` keeps one or more event types; without it a reader gets every reader category and an admin every event. The server applies the restriction whatever is asked. `package_name` and `version` keep only the events that record that package version. Keyset paging only: follow `next_cursor` while `has_more` is true; no row is counted. Client addresses are never returned; an anonymous caller (public repository) gets no actor names and cannot filter by actor.
 
+**Security:** `bearerAuth` or `cookieAuth` or .
+
 **Parameters**
 
 | Name | In | Type | Required | Description |

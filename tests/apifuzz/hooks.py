@@ -21,6 +21,7 @@ import schemathesis
 PUBLIC_REPO_READS = frozenset(
     {
         ("GET", "/api/v1/repository/{name}"),
+        ("GET", "/api/v1/repositories/{name}/activity"),
         ("GET", "/api/v1/repositories/{name}/packages"),
         ("GET", "/api/v1/repositories/{name}/security/summary"),
         ("GET", "/api/v1/repositories/{name}/artifacts/{artifact_id}/properties"),

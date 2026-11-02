@@ -12,6 +12,9 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -20,10 +23,41 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// Image is the collector image, the one docker/docker-compose.yml runs.
-// Dependabot bumps the compose file only: keep the two in step.
-const Image = "docker.io/otel/opentelemetry-collector-contrib:0.163.2" +
-	"@sha256:7f22d2a6748110ffb6a59bc0df448bccbf501cdb667d610ede4c61d3863d5849"
+// composeFile is docker/docker-compose.yml, found from this source file so it
+// does not depend on the directory of the test binary.
+func composeFile(t *testing.T) string {
+	t.Helper()
+
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate the otelcoltest source")
+	}
+
+	return filepath.Join(filepath.Dir(file), "..", "..", "..", "docker", "docker-compose.yml")
+}
+
+// imageLine matches the collector image of the compose file, tag and digest.
+var imageLine = regexp.MustCompile(`(?m)^\s*image:\s*(docker\.io/otel/opentelemetry-collector-contrib:\S+)\s*$`)
+
+// image is the collector image the test runs: the one docker/docker-compose.yml
+// runs, read from the file so the one pin Dependabot bumps is the only one.
+func image(t *testing.T) string {
+	t.Helper()
+
+	path := composeFile(t)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+
+	m := imageLine.FindSubmatch(data)
+	if m == nil {
+		t.Fatalf("no otel/opentelemetry-collector-contrib image in %s", path)
+	}
+
+	return string(m[1])
+}
 
 const (
 	grpcPort   = "4317/tcp"
@@ -77,7 +111,9 @@ func Start(t *testing.T) *Collector {
 	ctx := t.Context()
 	requireRuntime(t)
 
-	ctr, err := testcontainers.Run(ctx, Image,
+	img := image(t)
+
+	ctr, err := testcontainers.Run(ctx, img,
 		testcontainers.WithFiles(
 			testcontainers.ContainerFile{
 				Reader:            strings.NewReader(config),
@@ -100,7 +136,7 @@ func Start(t *testing.T) *Collector {
 	testcontainers.CleanupContainer(t, ctr)
 
 	if err != nil {
-		t.Fatalf("start collector %s: %v", Image, err)
+		t.Fatalf("start collector %s: %v", img, err)
 	}
 
 	grpcEP, err := ctr.PortEndpoint(ctx, grpcPort, "")
