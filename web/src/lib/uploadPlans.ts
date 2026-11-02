@@ -53,8 +53,8 @@ const encPath = (path: string) => path.split('/').map(enc).join('/')
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const NAME = /^[A-Za-z0-9]([A-Za-z0-9_-]{0,62}[A-Za-z0-9])?$/
 const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/
-// Mirrors pkg/composer nameRe.
-const COMPOSER_NAME = /^[a-z0-9]([_.-]?[a-z0-9]+)*\/[a-z0-9](([_.]|-{1,2})?[a-z0-9]+)*$/
+// Accepts what pkg/composer nameRe accepts, written without nested optional separators so it cannot backtrack.
+const COMPOSER_NAME = /^[a-z0-9]+(?:[_.-][a-z0-9]+)*\/[a-z0-9]+(?:(?:[_.]|-{1,2})[a-z0-9]+)*$/
 
 /** The message key of a field's value, '' when it is acceptable (or the field does not apply). */
 export function fieldError(field: UploadField, values: UploadValues): TranslationKey | '' {
