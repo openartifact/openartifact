@@ -25,7 +25,7 @@ var (
 	errOSVEcosystem = errors.New("osvMirror.ecosystems is empty or names an unsupported ecosystem")
 )
 
-// OSVMirrorConfig configures the local OSV mirror (see docs/security/scanning.md):
+// OSVMirrorConfig configures the local OSV mirror (see docs/security/osv-mirror.md):
 // a background worker imports the OSV export of each ecosystem into the
 // database, the osv scanner matches against it, and every import re-matches the
 // stored packages. OSV data is licensed CC-BY 4.0 (https://osv.dev).
@@ -38,7 +38,7 @@ type OSVMirrorConfig struct {
 	// the host may be on a private network. http or https, no credentials.
 	BaseURL string `yaml:"baseUrl"`
 	// Ecosystems are the OSV ecosystems to mirror. The supported ones are
-	// listed in docs/security/scanning.md; the others keep using api.osv.dev.
+	// listed in docs/security/osv-mirror.md; the others keep using api.osv.dev.
 	Ecosystems []string `yaml:"ecosystems"`
 	// Interval is the pause between imports, at least 1h.
 	Interval time.Duration `yaml:"interval"`

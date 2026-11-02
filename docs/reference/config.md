@@ -402,7 +402,7 @@ This page lists every configuration key with its type, built-in default and the 
 
 ## scanners
 
-`scanners` configures the external vulnerability scanners (trivy, grype) used by on-demand scans (see [security/scanning.md](../security/scanning.md)). OSV needs none of it.
+`scanners` configures the external vulnerability scanners (trivy, grype) used by on-demand scans (see [security/scanner-setup.md](../security/scanner-setup.md)). OSV needs none of it.
 
 | YAML key | Env | Type | Default | Description |
 |---|---|---|---|---|
@@ -446,13 +446,13 @@ This page lists every configuration key with its type, built-in default and the 
 
 ## osvMirror
 
-`osvMirror` configures the local OSV vulnerability mirror (see [security/scanning.md](../security/scanning.md)).
+`osvMirror` configures the local OSV vulnerability mirror (see [security/osv-mirror.md](../security/osv-mirror.md)).
 
 | YAML key | Env | Type | Default | Description |
 |---|---|---|---|---|
 | `osvMirror.enabled` | `OPENARTIFACT_OSV_MIRROR_ENABLED` | bool | `false` | `enabled` turns the mirror, its worker and the local matching on. Off by default: the osv scanner then queries api.osv.dev. |
 | `osvMirror.baseUrl` | `OPENARTIFACT_OSV_MIRROR_BASE_URL` | string | `https://osv-vulnerabilities.storage.googleapis.com` | `baseUrl` is where the exports are fetched from ("\<baseUrl>/\<Ecosystem>/all.zip"). Point it at an internal mirror of the OSV bucket for air-gapped installs; the host may be on a private network. http or https, no credentials. |
-| `osvMirror.ecosystems` | `OPENARTIFACT_OSV_MIRROR_ECOSYSTEMS` | list | `npm,PyPI,Maven,crates.io,RubyGems,NuGet,Go` | `ecosystems` are the OSV ecosystems to mirror. The supported ones are listed in [security/scanning.md](../security/scanning.md); the others keep using api.osv.dev. |
+| `osvMirror.ecosystems` | `OPENARTIFACT_OSV_MIRROR_ECOSYSTEMS` | list | `npm,PyPI,Maven,crates.io,RubyGems,NuGet,Go` | `ecosystems` are the OSV ecosystems to mirror. The supported ones are listed in [security/osv-mirror.md](../security/osv-mirror.md); the others keep using api.osv.dev. |
 | `osvMirror.interval` | `OPENARTIFACT_OSV_MIRROR_INTERVAL` | duration | `24h` | `interval` is the pause between imports, at least 1h. |
 | `osvMirror.tempDir` | `OPENARTIFACT_OSV_MIRROR_TEMP_DIR` | string | `empty` | `tempDir` holds the downloaded archive while it is imported (absolute). Empty means the system temporary directory. |
 | `osvMirror.maxArchiveBytes` | `OPENARTIFACT_OSV_MIRROR_MAX_ARCHIVE_BYTES` | int | `2147483648` | `maxArchiveBytes` caps the size of one downloaded archive. |

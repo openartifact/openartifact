@@ -102,7 +102,7 @@ Procedure for a new instance:
 - **SSO-managed memberships** are not restored. The next SSO login derives them.
 - **Storage quotas**: the limits (size, artifact count, warning threshold) are restored per repository, and the usage counters are recounted from the restored packages. See [quotas](../repositories/cleanup-and-quotas.md#keeping-the-counters-correct).
 - **Unknown entries** that a newer version wrote are ignored.
-- **Archives from before 0.15** (archive version below 2.0), including those with `organizations` and `organization_members`, are refused with a pointer to `oa import`. See [upgrading](../getting-started/upgrading.md#0150).
+- **Archives with a version below 2.0**, including those with `organizations` and `organization_members`, are refused with a pointer to `oa import`. See [upgrading](../getting-started/upgrading.md#0150).
 
 Only one restore runs at a time, and a backup cannot run during a restore. A second upload gets `409`, and a backup job started during a restore ends as `failed`.
 

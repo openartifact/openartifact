@@ -616,7 +616,9 @@ jobs:
 
       # docs/reference is generated from the code (config keys, metrics, CLI, OpenAPI);
       # the same run checks .env.example and openartifact.example.yaml list every config key.
-      - name: Generated reference is up to date
+      # The same check fails on a broken relative link, a heading anchor that does not exist
+      # and a docs page the index (docs/README.md) does not link.
+      - name: Generated reference is up to date, links and anchors resolve
         run: go run ./cmd/docgen -check
 
       # The site (VitePress theme, navigation, landing page) lives in its own repository

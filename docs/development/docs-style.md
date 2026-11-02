@@ -15,7 +15,7 @@ Read this before you write or change a page in `docs/`. It keeps the pages reada
 - Outside code spans and code blocks, do not write `{{ }}` or bare tags such as `<token>`. The site renders the pages as Vue-flavoured markdown and fails the build on them. Write `<TOKEN>` inside backticks.
 - `docs/reference/` is generated. Change the source (config struct, metric, CLI help, `internal/api/openapi.json`), run `make docs-gen` and commit the result. Never edit it by hand.
 - A new feature, format, config key, CLI command or API area gets or updates a page in the same change, and the page is listed in the [documentation index](../README.md).
-- Run `make docs-check` before you push.
+- Run `make docs-check` before you push. It fails on a stale generated page, a relative link whose file does not exist, a `#anchor` that matches no heading, and a page under `docs/` (outside `docs/reference/`) that the index does not link.
 
 ## Writing rules
 

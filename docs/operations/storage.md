@@ -320,7 +320,7 @@ Add `"PUT"` to `AllowedMethods` only for browser-based uploads. The CLI does not
 
 Hosted raw repositories accept uploads that bypass the API path of the server. The client uploads the bytes straight to the backend. The server then reads the object back (internal traffic) to verify it, and records it. Other formats are not covered.
 
-Files up to 5 GiB use one `PUT`. Larger files, up to 5 TiB, use a [multipart upload](#multipart-uploads). Every backend supports both:
+Files up to 5 GiB use one `PUT`. Larger files, up to 5 TiB, use a [multipart upload](#multipart-uploads). Every backend in this table supports both. If the configured store cannot stage uploads (for example a tiered store whose primary tier is not one of them), the calls answer `501` with the code `presign_unsupported` and record nothing; upload through the normal `PUT` instead.
 
 | Backend | Upload URL | Notes |
 |---|---|---|

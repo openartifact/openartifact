@@ -368,7 +368,7 @@ A group uses the same client URL as a hosted repository of its format. Replace t
 
 ### Alpine (apk) groups
 
-An apk group publishes an `APKINDEX.tar.gz` per `<branch>/<repo>/<arch>` directory, merged from its members and signed with the group's own key (`HOST/repos/GROUP/public.key`, to be installed into `/etc/apk/keys`). A hosted member's packages win a name over a proxy member's unless `merge_proxy_versions` is `true`; downloads come from the member whose entry the index lists. The rules, the regeneration and what is not served: [Alpine group repositories](../formats/apk.md#group-repositories).
+An apk group publishes an `APKINDEX.tar.gz` per `<branch>/<repo>/<arch>` directory, merged from its members and signed with the group's own key (`HOST/repos/GROUP/public.key`, to be installed into `/etc/apk/keys`). A hosted member's packages win a name over a proxy member's unless `merge_proxy_versions` is `true`; downloads come from the member whose entry the index lists. The rules, the regeneration and what is not served: [Alpine group repositories](../formats/apk.md#group).
 
 ### Deb, RPM and pacman groups
 

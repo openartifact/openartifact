@@ -174,7 +174,7 @@ Uploads and downloads stream through the CLI without buffering whole files.
 
 | Command | Behavior |
 |---|---|
-| `oa artifact upload <repo> <file>` | multipart upload. `*.deb` goes to `POST /api/v1/repositories/{repo}/debs`; `*.apk` goes to `.../apks` (with `--branch`, `--apk-repo` and `--arch`, see [Alpine](../formats/apk.md#upload)); any other file goes to `.../packages` (the RPM upload endpoint). Other formats are published with their native client (`mvn deploy`, `npm publish`, `curl -T`, ...), see [formats](../formats/README.md) |
+| `oa artifact upload <repo> <file>` | multipart upload. `*.deb` goes to `POST /api/v1/repositories/{repo}/debs`; `*.apk` goes to `.../apks` (with `--branch`, `--apk-repo` and `--arch`, see [Alpine](../formats/apk.md#publish)); any other file goes to `.../packages` (the RPM upload endpoint). Other formats are published with their native client (`mvn deploy`, `npm publish`, `curl -T`, ...), see [formats](../formats/README.md) |
 | `oa artifact upload --presigned [flags] <repo> <file>` | direct-to-storage upload for raw repositories, see [Presigned uploads](#presigned-uploads) |
 | `oa backup download <id> <dest>` | writes to a temp file next to `<dest>`, syncs, then renames onto `<dest>` |
 | `oa sbom download <repo> <id> <dest>` | same |

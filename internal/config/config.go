@@ -140,7 +140,7 @@ type Config struct {
 	// Exploit configures the KEV and EPSS feeds behind the exploitation
 	// signals of vulnerability findings.
 	Exploit ExploitConfig `yaml:"exploit"`
-	// OSVMirror configures the local OSV vulnerability mirror (see docs/security/scanning.md).
+	// OSVMirror configures the local OSV vulnerability mirror (see docs/security/osv-mirror.md).
 	OSVMirror OSVMirrorConfig `yaml:"osvMirror"`
 	// BaseURL is the public URL of the server. SSO callbacks, SAML metadata,
 	// webhook sources and anything else sent outside a client's own request

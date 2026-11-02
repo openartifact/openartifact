@@ -5,7 +5,8 @@
 // Command docgen writes the generated reference pages under docs/reference
 // (configuration, metrics, CLI, REST API). The pages are committed so they stay
 // readable on GitHub; CI runs `docgen -check` and fails when they drift from the
-// code. Run it from the repository root (`make docs-gen`).
+// code. With -check it also verifies every link, heading anchor and index entry
+// in docs/. Run it from the repository root (`make docs-gen`).
 package main
 
 import (
@@ -91,6 +92,10 @@ func run(root string, check bool) error {
 	slices.Sort(drift)
 
 	if check {
+		if err := checkLinks(root); err != nil {
+			return err
+		}
+
 		if len(drift) > 0 {
 			return fmt.Errorf(
 				"generated pages are out of date: %s; run `make docs-gen` and commit docs/reference",

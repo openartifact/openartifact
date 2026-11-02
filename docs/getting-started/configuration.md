@@ -249,7 +249,7 @@ An interrupted federation download stays in `federation.spoolDir` and resumes wi
 
 ### Vulnerability scanners (`scanners`)
 
-Settings for the `trivy` and `grype` backends of vulnerability scans; `osv` needs none. The binaries are not in the release image; see [Installing Trivy and Grype](../security/scanner-setup.md) for installation, egress, offline mode and mirrors.
+Settings for the `trivy` and `grype` backends of vulnerability scans; `osv` needs none. The binaries are not in the release image; see [Scanner setup](../security/scanner-setup.md) for installation, egress, offline mode and mirrors.
 
 | Environment variable | YAML key | Default | Meaning |
 |---|---|---|---|
@@ -352,7 +352,7 @@ Operational tunables. The defaults suit most installations; change them when the
 | `OPENARTIFACT_DOCKER_UPLOAD_DIR` | `workers.dockerUploadDir` | `/tmp/openartifact/docker-uploads` | Directory where in-progress Docker blob uploads are staged; use a persistent volume that all replicas handling one upload share |
 | `OPENARTIFACT_WEBHOOK_DELIVERY_RETENTION_DAYS` | `workers.webhookDeliveryRetentionDays` | `30` | Days finished (success or failed) webhook delivery records are kept; the hourly purge deletes older ones. `0` keeps them forever. Must not be negative |
 
-- `proxyDockerDigestTtl`: after this time the proxy cache worker evicts the manifest or blob (the blob once no other entry references it), and the next pull fetches it from the upstream again. A pull in the second half of the period renews it. `0` keeps them until an admin purge or the repository's removal. Must not be negative. See [Docker proxy caching](../formats/docker.md#proxy-and-group-repositories).
+- `proxyDockerDigestTtl`: after this time the proxy cache worker evicts the manifest or blob (the blob once no other entry references it), and the next pull fetches it from the upstream again. A pull in the second half of the period renews it. `0` keeps them until an admin purge or the repository's removal. Must not be negative. See [Docker proxy caching](../formats/docker.md#proxy).
 - `proxyUpstreamStallTimeout`: the timer resets on every read, so slow but steady downloads are unaffected. Must not be negative. See [upstream failures](../repositories/hosted-proxy-group.md#upstream-failures-and-serve-stale).
 
 ### Documentation links (`docs`)

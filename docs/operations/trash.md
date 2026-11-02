@@ -237,7 +237,7 @@ What counts as a release:
 The rule covers both directions:
 
 - **Delete** of a released version (including a Docker tag or manifest) is refused.
-- **Overwrite** of an existing release is refused where the format allows overwriting at all: Maven re-deploys, raw `PUT` over an existing path, Helm and others that replace content, and Docker re-tagging a tag to a different digest. Formats that already answer `409` for a duplicate keep doing so; pushing the same Docker digest again is not a change.
+- **Overwrite** of an existing release is refused where the format allows overwriting at all, for example a raw `PUT` over an existing path, an Ivy or sbt release file, and Docker re-tagging a tag to a different digest. `?force=true` lets an admin do these. Formats that already answer `409` for a duplicate keep doing so whatever the setting and `?force=true` does not change that: this includes a Maven release file re-deployed with different content, where `?force=true` only applies to deleting. Pushing the same Docker digest again is not a change.
 - [Cleanup policies](../repositories/cleanup-and-quotas.md#cleanup-policies) skip released versions of such repositories.
 
 ```sh

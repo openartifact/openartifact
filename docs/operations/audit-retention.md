@@ -39,7 +39,7 @@ See [audit export](monitoring.md#export) for the formats, the filters and shippi
 - Each delete statement removes at most `audit.purgeBatchSize` entries and commits on its own, so no transaction grows large, locks stay short and WAL is produced in small steps. Between full batches the pass waits on a 200 ms ticker, which bounds the load on the database; a pass ends when a batch comes back short, so a backlog of millions of rows is worked off over minutes without any single heavy statement.
 - Rows another transaction is touching are skipped for that batch (`SKIP LOCKED`) instead of making the pass wait.
 - A pass is bounded to 30 minutes; the next one continues with the oldest remaining entries. Stopping the server mid-pass loses nothing, every committed batch stays deleted.
-- With several replicas, **one** runs the pass: it holds a Postgres advisory lock on a pinned connection for the whole pass, and a replica that finds the lock taken skips the pass and tries again at its next interval.
+- With several replicas, **one** runs the pass. The others see that a pass is running, skip it and try again at their next interval.
 - Entries without a `created_at` are never deleted.
 - Deleting audit entries is not itself recorded in the audit log (the table only accepts the named actions); the server log carries an `audit retention finished` line with the number of deleted entries and batches whenever a pass deleted something, and the metrics below count them.
 

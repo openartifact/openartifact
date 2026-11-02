@@ -37,7 +37,7 @@ No match means the repository is unsigned. Activating, deactivating or deleting 
 | `gpg.autoGenerate` | `GPG_AUTO_GENERATE` | at startup, when no key exists at all (no managed key, no file key), generate an RSA-4096 key and make it the global active key (default `false`) |
 | (env only) | `OPENARTIFACT_SECRET_KEY` | required to **store** managed keys: importing, generating and `autoGenerate` are refused (or skipped with a warning) without it. Keep it stable: losing it makes the stored private keys unreadable |
 
-`autoGenerate` is safe with several replicas: the "is there a key?" check and the insert run under a PostgreSQL advisory lock, so replicas starting together create exactly one key. The key is named `auto-generated`; export its public key afterwards and distribute it to clients.
+`autoGenerate` is safe with several replicas: the "is there a key?" check and the insert run as one step that only one replica can take at a time, so replicas starting together create exactly one key. The key is named `auto-generated`; export its public key afterwards and distribute it to clients.
 
 If the file key cannot be read or decrypted the server logs `Failed to initialize the configured GPG signer` and keeps running, so check the startup log for `GPG signer initialized` (it prints the fingerprint). Keep the key file readable by the server only. See [../../.env.example](../../.env.example) and [../../openartifact.example.yaml](../../openartifact.example.yaml).
 

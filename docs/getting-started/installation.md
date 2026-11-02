@@ -95,7 +95,7 @@ Build options:
 | `OPENARTIFACT_BUILD_TIME` | `unknown` | Reported build time, RFC 3339 in UTC. `make docker-up` sets it. |
 
 - `dhi` is Docker Hardened Images (`dhi.io/static`) and needs `docker login dhi.io`. `distroless` is `gcr.io/distroless/static-debian13`, pulled anonymously. Both images have the same layout and no shell.
-- The default image bundles no scanner, so Trivy and Grype scans fail until you enable one. Rebuild with `OPENARTIFACT_SCANNERS=trivy` (or `grype`, `all`), or set `OPENARTIFACT_TRIVY_INSTALL=auto` and `OPENARTIFACT_GRYPE_INSTALL=auto` to let the server download the pinned, checksum-verified release into the `scanner_cache` volume. See [installing Trivy and Grype](../security/scanner-setup.md).
+- The default image bundles no scanner, so Trivy and Grype scans fail until you enable one. Rebuild with `OPENARTIFACT_SCANNERS=trivy` (or `grype`, `all`), or set `OPENARTIFACT_TRIVY_INSTALL=auto` and `OPENARTIFACT_GRYPE_INSTALL=auto` to let the server download the pinned, checksum-verified release into the `scanner_cache` volume. See [scanner setup](../security/scanner-setup.md).
 - Other scanner settings pass through from `docker/.env`: `OPENARTIFACT_SCANNER_OFFLINE`, `OPENARTIFACT_SCANNER_UPDATE_INTERVAL`, `OPENARTIFACT_SCANNER_DOWNLOAD_BASE_URL`, `OPENARTIFACT_TRIVY_DB_REPOSITORY` and `OPENARTIFACT_GRYPE_DB_URL`. The `scanner_cache` volume holds the databases, which take several GB with both scanners.
 - The OpenTelemetry variables (`OPENARTIFACT_OTLP_ENABLED`, `OTEL_*`) also pass through; see [monitoring](../operations/monitoring.md#opentelemetry).
 
