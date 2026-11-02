@@ -931,7 +931,7 @@
           },
           "name": {
             "type": "string",
-            "description": "Repository name (1-100 alphanumeric/hyphen/underscore)"
+            "description": "Repository name (1-100 letters, digits, hyphen or underscore; starts with a letter or digit)"
           },
           "format": {
             "type": "string",
@@ -8561,7 +8561,7 @@
                 "properties": {
                   "name": {
                     "type": "string",
-                    "description": "Repository name (1-100 alphanumeric/hyphen/underscore)"
+                    "description": "Repository name (1-100 letters, digits, hyphen or underscore; starts with a letter or digit)"
                   },
                   "format": {
                     "type": "string",

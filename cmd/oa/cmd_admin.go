@@ -171,7 +171,7 @@ func handleGroup(args []string, client *Client, outFmt string) {
 		desc := fs.String("description", "", "Description")
 		_ = fs.Parse(args[2:])
 
-		body := map[string]any{"name": args[1]}
+		body := map[string]any{"name": operand(args[1])}
 		if *desc != "" {
 			body["description"] = *desc
 		}
@@ -316,7 +316,7 @@ func projectCreate(client *Client, args []string) {
 	_ = fs.Parse(args[1:])
 
 	body := map[string]any{
-		"name":         args[0],
+		"name":         operand(args[0]),
 		"display_name": *displayName,
 		"description":  *desc,
 	}

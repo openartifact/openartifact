@@ -1699,7 +1699,7 @@ Counts only; no finding ids, titles or other details.
 | `member_repos` | array of string | no | Member repositories (for group repos) |
 | `merge_proxy_versions` | boolean | no | Group repositories only. false (default): for a package name held by a readable hosted member, proxy members' versions of that name are hidden (hosted members win, dependency-confusion protection). true: merge proxy versions with the hosted ones. Only administrators can set it. |
 | `min_age_hours` | integer | no | Proxy repositories only. A version the upstream published less than this many hours ago is hidden from the rendered metadata and its files are refused on download (403). Versions with an unknown publish time are not hidden. 0 disables the gate (default); max 87600. |
-| `name` | string | yes | Repository name (1-100 alphanumeric/hyphen/underscore) |
+| `name` | string | yes | Repository name (1-100 letters, digits, hyphen or underscore; starts with a letter or digit) |
 | `negative_cache_ttl_seconds` | integer | no | Negative cache TTL in seconds |
 | `permissions` | object | no | The caller's effective repository-scoped permissions. Only present in the single-repository GET (`/api/v1/repository/{name}`); global administrators have every flag set. |
 | `permissions.admin` | boolean | yes | Allows configuring and deleting the repository and managing its cleanup policies and quota: global administrators and maintainers or owners of the repository's project. |

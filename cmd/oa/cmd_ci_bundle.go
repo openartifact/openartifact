@@ -106,7 +106,7 @@ func (a *ciAPI) bundleOut(d bundleDoc) bundleOut {
 }
 
 func bundleAPIPath(name, version string) string {
-	return "/api/v1/bundles/" + url.PathEscape(name) + "/" + url.PathEscape(version)
+	return "/api/v1/bundles/" + escape(name) + "/" + escape(version)
 }
 
 func (o bundleOut) text() string {

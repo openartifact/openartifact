@@ -25,9 +25,12 @@ func handleSearch(args []string, client *Client, outFmt string) {
 	repoFilter := fs.String("repo", "", "Filter by repository")
 	fmtFilter := fs.String("fmt", "", "Filter by format")
 	limit := fs.Int("limit", 50, "Max results")
-	_ = fs.Parse(args)
+	words, err := parseInterspersed(fs, args) // flags may follow the query
+	if err != nil {
+		dief("%v", err)
+	}
 
-	query := strings.Join(fs.Args(), " ")
+	query := strings.Join(words, " ")
 	if query == "" {
 		dief("query is required")
 	}

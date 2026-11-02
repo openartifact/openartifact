@@ -44,7 +44,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-var repoNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,100}$`)
+var repoNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$`)
 
 const (
 	// maxListPage bounds the page number so (page-1)*limit cannot overflow.
@@ -687,7 +687,10 @@ func (h *RepositoriesHandler) createRepository(
 	}
 
 	if !repoNameRe.MatchString(body.Name) {
-		writeError(w, http.StatusBadRequest, "validation_failed", "name must be 1-100 alphanumeric/hyphen/underscore characters")
+		writeError(
+			w, http.StatusBadRequest, "validation_failed",
+			"name must be 1-100 characters: letters, digits, hyphen or underscore, starting with a letter or digit",
+		)
 		return
 	}
 

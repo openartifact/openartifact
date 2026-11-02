@@ -378,7 +378,7 @@ export type Repository = {
      */
     id: string;
     /**
-     * Repository name (1-100 alphanumeric/hyphen/underscore)
+     * Repository name (1-100 letters, digits, hyphen or underscore; starts with a letter or digit)
      */
     name: string;
     /**
@@ -4113,7 +4113,7 @@ export type GetApiV1RepositoriesResponse = GetApiV1RepositoriesResponses[keyof G
 export type PostApiV1RepositoriesData = {
     body: {
         /**
-         * Repository name (1-100 alphanumeric/hyphen/underscore)
+         * Repository name (1-100 letters, digits, hyphen or underscore; starts with a letter or digit)
          */
         name: string;
         format: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
