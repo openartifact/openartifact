@@ -71,7 +71,9 @@ describe('toasts', () => {
   it('has its live regions before the first toast, and files an error under alert and a success under status', async () => {
     const toasts = useToastStore()
     const host = mount(ToastHost, live)
-    expect(host.find('[role="alert"]').exists()).toBe(true)
+    expect(host.find('[data-testid="toast-urgent"]').attributes('aria-live')).toBe('assertive')
+    // A permanent role=alert would collide with the inline alerts of forms (the sign-in error).
+    expect(host.find('[role="alert"]').exists()).toBe(false)
     expect(host.find('[role="status"]').exists()).toBe(true)
     expect(host.get('[role="region"]').attributes('aria-label')).toBe('Notifications')
 
@@ -81,8 +83,8 @@ describe('toasts', () => {
     await host.vm.$nextTick()
     expect(host.get('[role="status"]').text()).toContain('Copied to clipboard')
     expect(host.get('[role="status"]').text()).not.toContain('Could not save')
-    expect(host.get('[role="alert"]').text()).toContain('Could not save')
-    expect(host.get('[role="alert"]').text()).toContain('Quota almost full')
+    expect(host.get('[data-testid="toast-urgent"]').text()).toContain('Could not save')
+    expect(host.get('[data-testid="toast-urgent"]').text()).toContain('Quota almost full')
   })
 
   it('docks the sticky toast inside a status region that is always in the page', () => {

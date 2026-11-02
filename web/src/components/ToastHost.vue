@@ -17,8 +17,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     :aria-label="t('shell.notifications')"
   >
     <!-- Two live regions that exist before any toast does (a region added together with its text is not announced):
-         errors and warnings interrupt (`alert`), the rest wait for the screen reader to finish (`status`). -->
-    <div class="flex flex-col-reverse gap-2 md:items-end" role="alert">
+         errors and warnings interrupt (assertive; not `role="alert"`, which would be a second alert on every page), the rest wait for the screen reader to finish (`status`). -->
+    <div class="flex flex-col-reverse gap-2 md:items-end" aria-live="assertive" aria-atomic="false" data-testid="toast-urgent">
       <TransitionGroup v-bind="transition">
         <ToastCard v-for="toast in urgent" :key="toast.id" :toast="toast" @run="run(toast)" @dismiss="toastStore.dismiss(toast.id)" @hold="toastStore.pause(toast.id)" @release="toastStore.resume(toast.id)" />
       </TransitionGroup>
