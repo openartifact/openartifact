@@ -128,6 +128,8 @@ Decisions are stored per repository, are part of the [backup](../operations/back
 
 ## Signed SBOM and VEX attestations
 
+**Settings > Security > Attestations** (admin only) shows the signing key: its id, algorithm, whether it comes from a key file or was generated, the public key to copy or download and the URL it is served from, and a `cosign` command to verify a bundle. It also switches the attachment of signed attestations to the images of each hosted docker repository on or off. When attestations are not enabled, or the server has no `OPENARTIFACT_SECRET_KEY` to protect a generated key, the page says so.
+
 Add `?attest=true` or `?attest=bundle` to an SBOM download or a VEX request to get the document wrapped in an [in-toto attestation](https://github.com/in-toto/attestation) (a Statement v1) signed as a [DSSE](https://github.com/secure-systems-lab/dsse) envelope. The document itself is the predicate:
 
 | Document | `predicateType` | `cosign --type` |

@@ -102,5 +102,13 @@
   "ui.settings.unknownHint": "この名前の設定セクションはありません。",
   "ui.settings.hub": "設定",
   "ui.settings.service-accounts.title": "サービスアカウント",
-  "ui.settings.service-accounts.desc": "自動化のための ID、そのトークン、CI の信頼ポリシー。"
+  "ui.settings.service-accounts.desc": "自動化のための ID、そのトークン、CI の信頼ポリシー。",
+  "ui.settings.recovery.title": "リカバリー",
+  "ui.settings.recovery.desc": "再構築でストレージからインデックスを復元できるようにする行ジャーナル。",
+  "ui.settings.attestation.title": "アテステーション",
+  "ui.settings.attestation.desc": "SBOM と VEX のアテステーション用の署名鍵。",
+  "ui.settings.scan-gate.title": "スキャンゲート",
+  "ui.settings.scan-gate.desc": "スキャンの悪用判定基準と、ブロックされたダウンロード。",
+  "ui.settings.declarative.title": "宣言的設定",
+  "ui.settings.declarative.desc": "設定を YAML で確認、適用、エクスポートします。"
 }

@@ -189,6 +189,22 @@ oa export --with-members               # include Group members
 
 Export writes the same manifest format as `apply` reads, so `oa export -o exported/ && oa diff -f exported/ -R` exits 0 (files are written into one subdirectory per kind, hence `-R`). Secrets are replaced with placeholders that name an environment variable, for example `secretRef: {env: OA_WEBHOOK_AUDIT_SINK_SECRET}`. Set the variable before applying the export to a different server. The server does not say whether a proxy repository has an `upstream_password`, so export omits it; add a `secretRef` for it yourself. Repositories are exported with `metadata.project` set to the project they live in (`system` for the default one). Applying an export to a server on which some of these objects already exist adopts them. `User` objects are exported only when you name `--kind User`; service accounts and trust policies are exported by default, so an export that names a service account in a group, project or permission target also holds the account. Tokens are not exported.
 
+## Web UI
+
+Administrators can do the same from the web UI under **Settings > System > Declarative config**: paste YAML or load files, review the change list (what would be created, updated or deleted, field by field), apply it after a confirmation, and download the live configuration as a manifest. The page runs the same engine as `oa` inside the server and sends every change with your own credentials, so it needs the same permissions as the CLI, applies the same authorization, and is audited as you.
+
+The page uses three endpoints, all admin only:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/v1/admin/declarative/diff` | The plan for a manifest. Changes nothing. |
+| `POST /api/v1/admin/declarative/apply` | Applies a manifest and answers the plan with the outcome of each item. One apply runs at a time (`409 apply_in_progress` otherwise). |
+| `GET /api/v1/admin/declarative/export` | The live state as a YAML attachment (`kind` repeats, `with_members=true`). |
+
+The body of `diff` and `apply` is `{"manifest": "<YAML stream>", "kinds": [], "prune": false, "prune_all": false, "force_secrets": false, "continue_on_error": false, "secrets": {"NAME": "value"}}`. A manifest with problems answers `422 manifest_invalid` with each problem and its line; a plan that cannot be applied answers `422 plan_invalid`.
+
+Secrets work differently from the CLI: the server never reads its own environment or files for a manifest. An `env` secretRef is filled from the `secrets` map of the request (the page asks for each value, sends it once and does not keep it), a missing value answers `422 secrets_missing`, and a `file` secretRef is refused.
+
 ## Known limits
 
 - A `User` manifest has no password field, and a user cannot be hard-deleted: `--prune` disables the account.

@@ -17,6 +17,7 @@ import type {
   SecurityFindingCounts,
   SecurityHealth,
   SecuritySummary,
+  VulnGateResponse,
   VulnScanSummary,
   VulnScanner as VulnScannerInfo,
   VulnScanRequest,
@@ -150,6 +151,22 @@ export function setVulnQuarantine(repo: string, scanId: string, quarantined: boo
     `${repoBase(repo)}/vuln/scans/${encodeURIComponent(scanId)}/quarantine`,
     jsonPost({ quarantined }),
   )
+}
+
+export type { VulnGateResponse }
+
+/** Conditions of the exploitation gate; a scan fails it when any one holds for a finding. */
+export interface GateCriteria {
+  /** A finding in the CISA KEV catalog fails. */
+  kev?: boolean
+  /** A finding whose EPSS score is at least this (0..1) fails. */
+  epss_min?: number
+}
+
+/** Evaluates one scan against exploitation criteria (the verdict a CI job uses to fail a pipeline). Admin only; nothing is changed. */
+export function getVulnGate(repo: string, scanId: string, criteria: GateCriteria): Promise<VulnGateResponse> {
+  const query = queryString({ kev: criteria.kev ? true : undefined, epss_min: criteria.epss_min })
+  return request<VulnGateResponse>(`${repoBase(repo)}/vuln/scans/${encodeURIComponent(scanId)}/gate${query}`)
 }
 
 /** `quarantined` blocks downloads (403 ARTIFACT_QUARANTINED) until an admin approves the artifact. */

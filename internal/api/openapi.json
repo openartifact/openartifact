@@ -84,6 +84,170 @@
           }
         }
       },
+      "DeclarativeRun": {
+        "type": "object",
+        "required": [
+          "summary",
+          "items",
+          "changes",
+          "secrets"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Set when the answer is a refusal"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "manifest_invalid",
+              "plan_invalid",
+              "secrets_missing"
+            ]
+          },
+          "summary": {
+            "type": "object",
+            "description": "Number of items per action; an action with none is absent",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "changes": {
+            "type": "boolean",
+            "description": "Whether applying would modify the server"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeclarativeRunItem"
+            }
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Plan problems that make the plan unapplicable (immutable field, missing reference, ambiguous name)"
+          },
+          "secrets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeclarativeRunSecret"
+            }
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeclarativeRunProblem"
+            },
+            "description": "Manifest problems, with `manifest_invalid`"
+          }
+        }
+      },
+      "DeclarativeRunItem": {
+        "type": "object",
+        "required": [
+          "action",
+          "kind",
+          "name"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "unchanged",
+              "delete"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "old": {},
+                "new": {},
+                "secret": {
+                  "type": "boolean",
+                  "description": "The value is a secret and is never shown"
+                }
+              }
+            }
+          },
+          "adopt": {
+            "type": "boolean",
+            "description": "An existing object that will be recorded as managed"
+          },
+          "managed": {
+            "type": "boolean",
+            "description": "A delete of an object `oa apply` manages"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "applied",
+              "failed",
+              "skipped"
+            ],
+            "description": "Only after an apply"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "DeclarativeRunSecret": {
+        "type": "object",
+        "required": [
+          "provided"
+        ],
+        "properties": {
+          "env": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "provided": {
+            "type": "boolean",
+            "description": "A value for this env reference was supplied in `secrets`"
+          }
+        }
+      },
+      "DeclarativeRunProblem": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "line": {
+            "type": "integer"
+          },
+          "object": {
+            "type": "string",
+            "description": "`Kind/name`"
+          },
+          "field": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
       "PermissionAssignment": {
         "type": "object",
         "required": [
@@ -15526,6 +15690,242 @@
           },
           "404": {
             "description": "No such marker"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/declarative/diff": {
+      "post": {
+        "summary": "Plan declarative manifests",
+        "description": "Run `oa diff` for a manifest: validate it, read the live state and answer the field-level plan. Changes nothing (admin only)",
+        "tags": [
+          "Declarative"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "manifest"
+                ],
+                "properties": {
+                  "manifest": {
+                    "type": "string",
+                    "description": "YAML stream of manifests (documents separated by `---`), as `oa apply -f -` reads it; at most 8 MiB"
+                  },
+                  "kinds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Only consider these kinds (case-insensitive), like `--kind`"
+                  },
+                  "prune": {
+                    "type": "boolean",
+                    "description": "Delete managed objects (those `oa apply` created or adopted) that the manifest no longer lists"
+                  },
+                  "prune_all": {
+                    "type": "boolean",
+                    "description": "Delete every object of the kinds in scope that the manifest does not list, managed or not (never seeded objects)"
+                  },
+                  "force_secrets": {
+                    "type": "boolean",
+                    "description": "Send every secret even when the server reports it as set"
+                  },
+                  "continue_on_error": {
+                    "type": "boolean",
+                    "description": "Keep applying after a failed change (apply only)"
+                  },
+                  "secrets": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "Values of the `secretRef: {env: NAME}` references, keyed by NAME. The server never reads its own environment or files for a manifest; a `file` reference is refused"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The plan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeclarativeRun"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed (no manifest, unknown field or kind)"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "422": {
+            "description": "The manifest is invalid (`manifest_invalid`, with `problems`), the plan cannot be applied (`plan_invalid`) or a secret is missing (`secrets_missing`); nothing was changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeclarativeRun"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The server state could not be read (`plan_failed`)"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/declarative/apply": {
+      "post": {
+        "summary": "Apply declarative manifests",
+        "description": "Run `oa apply` for a manifest. Every change goes through the REST API with the caller's credentials, so it is authorized and audited as the caller's own request. One apply runs at a time (admin only)",
+        "tags": [
+          "Declarative"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "manifest"
+                ],
+                "properties": {
+                  "manifest": {
+                    "type": "string",
+                    "description": "YAML stream of manifests (documents separated by `---`), as `oa apply -f -` reads it; at most 8 MiB"
+                  },
+                  "kinds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Only consider these kinds (case-insensitive), like `--kind`"
+                  },
+                  "prune": {
+                    "type": "boolean",
+                    "description": "Delete managed objects (those `oa apply` created or adopted) that the manifest no longer lists"
+                  },
+                  "prune_all": {
+                    "type": "boolean",
+                    "description": "Delete every object of the kinds in scope that the manifest does not list, managed or not (never seeded objects)"
+                  },
+                  "force_secrets": {
+                    "type": "boolean",
+                    "description": "Send every secret even when the server reports it as set"
+                  },
+                  "continue_on_error": {
+                    "type": "boolean",
+                    "description": "Keep applying after a failed change (apply only)"
+                  },
+                  "secrets": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "Values of the `secretRef: {env: NAME}` references, keyed by NAME. The server never reads its own environment or files for a manifest; a `file` reference is refused"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The plan with the outcome of every item (`result`: applied, failed or skipped)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeclarativeRun"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed (no manifest, unknown field or kind)"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "422": {
+            "description": "The manifest is invalid (`manifest_invalid`, with `problems`), the plan cannot be applied (`plan_invalid`) or a secret is missing (`secrets_missing`); nothing was changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeclarativeRun"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The server state could not be read (`plan_failed`)"
+          },
+          "409": {
+            "description": "Another apply is running (`apply_in_progress`)"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/declarative/export": {
+      "get": {
+        "summary": "Export the server state as manifests",
+        "description": "Run `oa export`: the live state as a YAML stream that apply reads back. Secrets are replaced by `secretRef` placeholders (admin only)",
+        "tags": [
+          "Declarative"
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "Only export this kind (repeatable); `User` is exported only when named",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "with_members",
+            "in": "query",
+            "required": false,
+            "description": "Include Group members",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The manifests, as an attachment",
+            "content": {
+              "application/yaml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown kind"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "502": {
+            "description": "The server state could not be read (`export_failed`)"
           }
         }
       }

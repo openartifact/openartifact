@@ -102,5 +102,13 @@
   "ui.settings.unknownHint": "Es gibt keinen Einstellungsbereich mit diesem Namen.",
   "ui.settings.hub": "Einstellungen",
   "ui.settings.service-accounts.title": "Servicekonten",
-  "ui.settings.service-accounts.desc": "Identitäten für die Automatisierung, ihre Token und CI-Vertrauensrichtlinien."
+  "ui.settings.service-accounts.desc": "Identitäten für die Automatisierung, ihre Token und CI-Vertrauensrichtlinien.",
+  "ui.settings.recovery.title": "Wiederherstellung",
+  "ui.settings.recovery.desc": "Zeilenjournal, mit dem ein Rebuild den Index aus dem Speicher wiederherstellen kann.",
+  "ui.settings.attestation.title": "Attestierungen",
+  "ui.settings.attestation.desc": "Signaturschlüssel für SBOM- und VEX-Attestierungen.",
+  "ui.settings.scan-gate.title": "Scan-Gate",
+  "ui.settings.scan-gate.desc": "Ausnutzungskriterien für Scans und blockierte Downloads.",
+  "ui.settings.declarative.title": "Deklarative Konfiguration",
+  "ui.settings.declarative.desc": "Konfiguration als YAML prüfen, anwenden und exportieren."
 }

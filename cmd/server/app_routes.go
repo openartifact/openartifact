@@ -111,6 +111,8 @@ func (a *app) registerAdminRoutes() {
 	api.NewAdminGroupsHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminPermissionsHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminDeclarativeHandler(db, log, evaluator).Register(authedAPI)
+	// The engine of `oa apply` for the web UI dispatches its requests to the same router, with the caller's credentials.
+	api.NewAdminDeclarativeRunHandler(w.router, log, evaluator).Register(authedAPI)
 	api.NewAdminTokensHandler(db, log, evaluator).Register(authedAPI)
 	api.NewSelfTokensHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminAuditHandler(db, log, evaluator).Register(authedAPI)

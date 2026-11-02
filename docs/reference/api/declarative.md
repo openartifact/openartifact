@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Declarative API
 
-3 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+6 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -72,4 +72,87 @@ Remove one marker (admin only); the managed object itself is untouched
 | `400` | Validation failed | - |
 | `403` | Admin access required | - |
 | `404` | No such marker | - |
+
+### `POST /api/v1/admin/declarative/apply`
+
+Apply declarative manifests
+
+Run `oa apply` for a manifest. Every change goes through the REST API with the caller's credentials, so it is authorized and audited as the caller's own request. One apply runs at a time (admin only)
+
+**Request body** (required)
+
+`application/json`: object
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `continue_on_error` | boolean | no | Keep applying after a failed change (apply only) |
+| `force_secrets` | boolean | no | Send every secret even when the server reports it as set |
+| `kinds` | array of string | no | Only consider these kinds (case-insensitive), like `--kind` |
+| `manifest` | string | yes | YAML stream of manifests (documents separated by `---`), as `oa apply -f -` reads it; at most 8 MiB |
+| `prune` | boolean | no | Delete managed objects (those `oa apply` created or adopted) that the manifest no longer lists |
+| `prune_all` | boolean | no | Delete every object of the kinds in scope that the manifest does not list, managed or not (never seeded objects) |
+| `secrets` | map of string | no | Values of the `secretRef: {env: NAME}` references, keyed by NAME. The server never reads its own environment or files for a manifest; a `file` reference is refused |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The plan with the outcome of every item (`result`: applied, failed or skipped) | `application/json`: [DeclarativeRun](schemas.md#declarativerun) |
+| `400` | Validation failed (no manifest, unknown field or kind) | - |
+| `403` | Admin access required | - |
+| `409` | Another apply is running (`apply_in_progress`) | - |
+| `422` | The manifest is invalid (`manifest_invalid`, with `problems`), the plan cannot be applied (`plan_invalid`) or a secret is missing (`secrets_missing`); nothing was changed | `application/json`: [DeclarativeRun](schemas.md#declarativerun) |
+| `502` | The server state could not be read (`plan_failed`) | - |
+
+### `POST /api/v1/admin/declarative/diff`
+
+Plan declarative manifests
+
+Run `oa diff` for a manifest: validate it, read the live state and answer the field-level plan. Changes nothing (admin only)
+
+**Request body** (required)
+
+`application/json`: object
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `continue_on_error` | boolean | no | Keep applying after a failed change (apply only) |
+| `force_secrets` | boolean | no | Send every secret even when the server reports it as set |
+| `kinds` | array of string | no | Only consider these kinds (case-insensitive), like `--kind` |
+| `manifest` | string | yes | YAML stream of manifests (documents separated by `---`), as `oa apply -f -` reads it; at most 8 MiB |
+| `prune` | boolean | no | Delete managed objects (those `oa apply` created or adopted) that the manifest no longer lists |
+| `prune_all` | boolean | no | Delete every object of the kinds in scope that the manifest does not list, managed or not (never seeded objects) |
+| `secrets` | map of string | no | Values of the `secretRef: {env: NAME}` references, keyed by NAME. The server never reads its own environment or files for a manifest; a `file` reference is refused |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The plan | `application/json`: [DeclarativeRun](schemas.md#declarativerun) |
+| `400` | Validation failed (no manifest, unknown field or kind) | - |
+| `403` | Admin access required | - |
+| `422` | The manifest is invalid (`manifest_invalid`, with `problems`), the plan cannot be applied (`plan_invalid`) or a secret is missing (`secrets_missing`); nothing was changed | `application/json`: [DeclarativeRun](schemas.md#declarativerun) |
+| `502` | The server state could not be read (`plan_failed`) | - |
+
+### `GET /api/v1/admin/declarative/export`
+
+Export the server state as manifests
+
+Run `oa export`: the live state as a YAML stream that apply reads back. Secrets are replaced by `secretRef` placeholders (admin only)
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `kind` | query | array of string | no | Only export this kind (repeatable); `User` is exported only when named |
+| `with_members` | query | boolean | no | Include Group members |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The manifests, as an attachment | `application/yaml`: string |
+| `400` | Unknown kind | - |
+| `403` | Admin access required | - |
+| `502` | The server state could not be read (`export_failed`) | - |
 

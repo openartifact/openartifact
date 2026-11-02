@@ -102,5 +102,13 @@
   "ui.settings.unknownHint": "Aucune section de paramètres ne porte ce nom.",
   "ui.settings.hub": "Paramètres",
   "ui.settings.service-accounts.title": "Comptes de service",
-  "ui.settings.service-accounts.desc": "Identités pour l'automatisation, leurs jetons et leurs politiques de confiance CI."
+  "ui.settings.service-accounts.desc": "Identités pour l'automatisation, leurs jetons et leurs politiques de confiance CI.",
+  "ui.settings.recovery.title": "Reprise",
+  "ui.settings.recovery.desc": "Journal de lignes qui permet à une reconstruction de restaurer l'index depuis le stockage.",
+  "ui.settings.attestation.title": "Attestations",
+  "ui.settings.attestation.desc": "Clé de signature des attestations SBOM et VEX.",
+  "ui.settings.scan-gate.title": "Gate d'analyse",
+  "ui.settings.scan-gate.desc": "Critères d'exploitation des analyses, et téléchargements bloqués.",
+  "ui.settings.declarative.title": "Configuration déclarative",
+  "ui.settings.declarative.desc": "Vérifier, appliquer et exporter la configuration en YAML."
 }

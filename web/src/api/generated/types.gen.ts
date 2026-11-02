@@ -16,6 +16,81 @@ export type DeclarativeObjectList = {
     items: Array<DeclarativeObject>;
 };
 
+export type DeclarativeRun = {
+    /**
+     * Set when the answer is a refusal
+     */
+    error?: string;
+    code?: 'manifest_invalid' | 'plan_invalid' | 'secrets_missing';
+    /**
+     * Number of items per action; an action with none is absent
+     */
+    summary: {
+        [key: string]: number;
+    };
+    /**
+     * Whether applying would modify the server
+     */
+    changes: boolean;
+    items: Array<DeclarativeRunItem>;
+    /**
+     * Plan problems that make the plan unapplicable (immutable field, missing reference, ambiguous name)
+     */
+    errors?: Array<string>;
+    secrets: Array<DeclarativeRunSecret>;
+    /**
+     * Manifest problems, with `manifest_invalid`
+     */
+    problems?: Array<DeclarativeRunProblem>;
+};
+
+export type DeclarativeRunItem = {
+    action: 'create' | 'update' | 'unchanged' | 'delete';
+    kind: string;
+    name: string;
+    changes?: Array<{
+        path: string;
+        old?: unknown;
+        new?: unknown;
+        /**
+         * The value is a secret and is never shown
+         */
+        secret?: boolean;
+    }>;
+    /**
+     * An existing object that will be recorded as managed
+     */
+    adopt?: boolean;
+    /**
+     * A delete of an object `oa apply` manages
+     */
+    managed?: boolean;
+    /**
+     * Only after an apply
+     */
+    result?: 'applied' | 'failed' | 'skipped';
+    error?: string;
+};
+
+export type DeclarativeRunSecret = {
+    env?: string;
+    file?: string;
+    /**
+     * A value for this env reference was supplied in `secrets`
+     */
+    provided: boolean;
+};
+
+export type DeclarativeRunProblem = {
+    line?: number;
+    /**
+     * `Kind/name`
+     */
+    object?: string;
+    field?: string;
+    message: string;
+};
+
 export type PermissionAssignment = {
     principal_type: 'user' | 'group';
     principal_id: string;
@@ -8053,6 +8128,186 @@ export type PutApiV1AdminDeclarativeResponses = {
 };
 
 export type PutApiV1AdminDeclarativeResponse = PutApiV1AdminDeclarativeResponses[keyof PutApiV1AdminDeclarativeResponses];
+
+export type PostApiV1AdminDeclarativeDiffData = {
+    body: {
+        /**
+         * YAML stream of manifests (documents separated by `---`), as `oa apply -f -` reads it; at most 8 MiB
+         */
+        manifest: string;
+        /**
+         * Only consider these kinds (case-insensitive), like `--kind`
+         */
+        kinds?: Array<string>;
+        /**
+         * Delete managed objects (those `oa apply` created or adopted) that the manifest no longer lists
+         */
+        prune?: boolean;
+        /**
+         * Delete every object of the kinds in scope that the manifest does not list, managed or not (never seeded objects)
+         */
+        prune_all?: boolean;
+        /**
+         * Send every secret even when the server reports it as set
+         */
+        force_secrets?: boolean;
+        /**
+         * Keep applying after a failed change (apply only)
+         */
+        continue_on_error?: boolean;
+        /**
+         * Values of the `secretRef: {env: NAME}` references, keyed by NAME. The server never reads its own environment or files for a manifest; a `file` reference is refused
+         */
+        secrets?: {
+            [key: string]: string;
+        };
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/declarative/diff';
+};
+
+export type PostApiV1AdminDeclarativeDiffErrors = {
+    /**
+     * Validation failed (no manifest, unknown field or kind)
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * The manifest is invalid (`manifest_invalid`, with `problems`), the plan cannot be applied (`plan_invalid`) or a secret is missing (`secrets_missing`); nothing was changed
+     */
+    422: DeclarativeRun;
+    /**
+     * The server state could not be read (`plan_failed`)
+     */
+    502: unknown;
+};
+
+export type PostApiV1AdminDeclarativeDiffError = PostApiV1AdminDeclarativeDiffErrors[keyof PostApiV1AdminDeclarativeDiffErrors];
+
+export type PostApiV1AdminDeclarativeDiffResponses = {
+    /**
+     * The plan
+     */
+    200: DeclarativeRun;
+};
+
+export type PostApiV1AdminDeclarativeDiffResponse = PostApiV1AdminDeclarativeDiffResponses[keyof PostApiV1AdminDeclarativeDiffResponses];
+
+export type PostApiV1AdminDeclarativeApplyData = {
+    body: {
+        /**
+         * YAML stream of manifests (documents separated by `---`), as `oa apply -f -` reads it; at most 8 MiB
+         */
+        manifest: string;
+        /**
+         * Only consider these kinds (case-insensitive), like `--kind`
+         */
+        kinds?: Array<string>;
+        /**
+         * Delete managed objects (those `oa apply` created or adopted) that the manifest no longer lists
+         */
+        prune?: boolean;
+        /**
+         * Delete every object of the kinds in scope that the manifest does not list, managed or not (never seeded objects)
+         */
+        prune_all?: boolean;
+        /**
+         * Send every secret even when the server reports it as set
+         */
+        force_secrets?: boolean;
+        /**
+         * Keep applying after a failed change (apply only)
+         */
+        continue_on_error?: boolean;
+        /**
+         * Values of the `secretRef: {env: NAME}` references, keyed by NAME. The server never reads its own environment or files for a manifest; a `file` reference is refused
+         */
+        secrets?: {
+            [key: string]: string;
+        };
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/declarative/apply';
+};
+
+export type PostApiV1AdminDeclarativeApplyErrors = {
+    /**
+     * Validation failed (no manifest, unknown field or kind)
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Another apply is running (`apply_in_progress`)
+     */
+    409: unknown;
+    /**
+     * The manifest is invalid (`manifest_invalid`, with `problems`), the plan cannot be applied (`plan_invalid`) or a secret is missing (`secrets_missing`); nothing was changed
+     */
+    422: DeclarativeRun;
+    /**
+     * The server state could not be read (`plan_failed`)
+     */
+    502: unknown;
+};
+
+export type PostApiV1AdminDeclarativeApplyError = PostApiV1AdminDeclarativeApplyErrors[keyof PostApiV1AdminDeclarativeApplyErrors];
+
+export type PostApiV1AdminDeclarativeApplyResponses = {
+    /**
+     * The plan with the outcome of every item (`result`: applied, failed or skipped)
+     */
+    200: DeclarativeRun;
+};
+
+export type PostApiV1AdminDeclarativeApplyResponse = PostApiV1AdminDeclarativeApplyResponses[keyof PostApiV1AdminDeclarativeApplyResponses];
+
+export type GetApiV1AdminDeclarativeExportData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only export this kind (repeatable); `User` is exported only when named
+         */
+        kind?: Array<string>;
+        /**
+         * Include Group members
+         */
+        with_members?: boolean;
+    };
+    url: '/api/v1/admin/declarative/export';
+};
+
+export type GetApiV1AdminDeclarativeExportErrors = {
+    /**
+     * Unknown kind
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * The server state could not be read (`export_failed`)
+     */
+    502: unknown;
+};
+
+export type GetApiV1AdminDeclarativeExportResponses = {
+    /**
+     * The manifests, as an attachment
+     */
+    200: string;
+};
+
+export type GetApiV1AdminDeclarativeExportResponse = GetApiV1AdminDeclarativeExportResponses[keyof GetApiV1AdminDeclarativeExportResponses];
 
 export type GetApiV1PermissionTargetsData = {
     body?: never;

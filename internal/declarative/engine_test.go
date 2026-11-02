@@ -1082,3 +1082,25 @@ func TestKindFilterRejectsUnknown(t *testing.T) {
 		t.Error("expected error for unknown kind")
 	}
 }
+
+func TestPlanSecretRefsListsWhatThePlanSends(t *testing.T) {
+	var calls []string
+
+	a := newFake("Alpha", 10, &calls)
+	a.seed("old", nil, false).Secrets = map[string]bool{"token": false}
+	a.seed("set", nil, false).Secrets = map[string]bool{"token": true}
+
+	objs := []*Object{
+		desired("Alpha", "new", map[string]any{"token": SecretRef{Env: "B_TOKEN"}}),
+		desired("Alpha", "old", map[string]any{"token": SecretRef{Env: "A_TOKEN"}}),
+		desired("Alpha", "set", map[string]any{"token": SecretRef{Env: "NOT_SENT"}}),
+		desired("Alpha", "twin", map[string]any{"nested": map[string]any{"x": 1}, "token": SecretRef{Env: "B_TOKEN"}}),
+	}
+
+	plan := planFor(NewRegistry(a), PlanInput{Live: liveOf(a), Desired: objs})
+
+	got := PlanSecretRefs(plan)
+	if len(got) != 2 || got[0] != (SecretRef{Env: "A_TOKEN"}) || got[1] != (SecretRef{Env: "B_TOKEN"}) {
+		t.Fatalf("PlanSecretRefs = %v, want the refs of the created and updated objects only, once each", got)
+	}
+}

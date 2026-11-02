@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -160,4 +161,51 @@ func (r SecretResolver) resolveChanges(ident string, changes []Change) ([]Change
 	}
 
 	return out, nil
+}
+
+// PlanSecretRefs lists the distinct secret references the plan is going to
+// send (creates and updates), sorted by their String form. A caller that
+// cannot read the environment or files itself uses it to ask for the values.
+func PlanSecretRefs(plan *Plan) []SecretRef {
+	seen := map[SecretRef]bool{}
+
+	for _, it := range plan.Items {
+		switch it.Action {
+		case ActionCreate:
+			if it.Desired != nil {
+				collectSecretRefs(it.Desired.Spec, seen)
+			}
+		case ActionUpdate:
+			for _, c := range it.Changes {
+				if ref, ok := c.New.(SecretRef); ok && c.Secret {
+					seen[ref] = true
+				}
+			}
+		case ActionUnchanged, ActionDelete:
+		}
+	}
+
+	out := make([]SecretRef, 0, len(seen))
+	for ref := range seen {
+		out = append(out, ref)
+	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i].String() < out[j].String() })
+
+	return out
+}
+
+func collectSecretRefs(v any, seen map[SecretRef]bool) {
+	switch t := v.(type) {
+	case SecretRef:
+		seen[t] = true
+	case map[string]any:
+		for _, e := range t {
+			collectSecretRefs(e, seen)
+		}
+	case []any:
+		for _, e := range t {
+			collectSecretRefs(e, seen)
+		}
+	}
 }
