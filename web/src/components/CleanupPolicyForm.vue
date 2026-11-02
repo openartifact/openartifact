@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <!--
-  Fields of a cleanup policy (name, rule type and value, enabled). Shared by
+  Fields of a cleanup policy (name, rule type and value, name pattern, enabled). Shared by
   the repository cleanup tab and the project cleanup defaults; the parent owns
   the form object (see lib/cleanupPolicy.ts) and the surrounding dialog.
 -->
@@ -88,6 +88,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
     </div>
 
+    <div>
+      <label for="cleanup-name-pattern" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('cleanup.pattern') }}</label>
+      <input
+        id="cleanup-name-pattern"
+        v-model="form.name_pattern"
+        type="text"
+        spellcheck="false"
+        autocomplete="off"
+        :placeholder="t('cleanup.patternPlaceholder')"
+        :aria-invalid="!patternOk"
+        aria-describedby="cleanup-name-pattern-hint"
+        class="w-full px-3 py-2 rounded-lg border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 transition-colors"
+        :class="patternOk ? 'border-border-strong focus:ring-primary' : 'border-danger focus:ring-danger'"
+      />
+      <p v-if="!patternOk" id="cleanup-name-pattern-hint" class="text-caption text-danger mt-1" role="alert" data-testid="cleanup-pattern-error">
+        {{ t('cleanup.patternInvalid') }}
+      </p>
+      <p v-else id="cleanup-name-pattern-hint" class="text-caption text-muted mt-1">{{ t('cleanup.patternHint') }}</p>
+    </div>
+
     <div class="flex items-start gap-3 p-3.5 rounded-lg border border-border bg-surface-hover/30">
       <AppToggle v-model="form.enabled" size="sm" labelledby="cleanup-enable-label" class="mt-0.5" />
       <div>
@@ -101,10 +121,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { CalendarIcon, QueueListIcon } from '@heroicons/vue/24/outline'
 import AppToggle from './AppToggle.vue'
-import type { CleanupPolicyForm } from '../lib/cleanupPolicy'
+import { computed } from 'vue'
+import { cleanupPatternValid, type CleanupPolicyForm } from '../lib/cleanupPolicy'
 import { t } from '../i18n'
 
 const form = defineModel<CleanupPolicyForm>({ required: true })
+
+const patternOk = computed(() => cleanupPatternValid(form.value.name_pattern))
 
 const POLICY_TYPES = [
   {

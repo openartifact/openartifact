@@ -135,6 +135,7 @@ func (h *ProjectsHandler) RegisterRoutes(r chi.Router) {
 	r.Put("/api/v1/projects/{project}/quota", h.handlePutQuota)
 	r.Get("/api/v1/projects/{project}/cleanup-policies", h.handleListCleanupPolicies)
 	r.Post("/api/v1/projects/{project}/cleanup-policies", h.handleCreateCleanupPolicy)
+	r.Post("/api/v1/projects/{project}/cleanup-policies/dry-run", h.handleDraftDryRunCleanupPolicy)
 	r.With(requireUUIDParams("id")).Put("/api/v1/projects/{project}/cleanup-policies/{id}", h.handleUpdateCleanupPolicy)
 	r.With(requireUUIDParams("id")).Delete("/api/v1/projects/{project}/cleanup-policies/{id}", h.handleDeleteCleanupPolicy)
 	r.With(requireUUIDParams("id")).Post("/api/v1/projects/{project}/cleanup-policies/{id}/dry-run", h.handleDryRunCleanupPolicy)

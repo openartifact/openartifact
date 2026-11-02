@@ -5,7 +5,7 @@
 import { describe, it, expect, spyOn, jest, beforeEach, afterEach } from 'bun:test'
 import { effectScope, nextTick, ref } from 'vue'
 import { flushPromises } from '@vue/test-utils'
-import { PREVIEW_DEBOUNCE_MS, useCleanupLivePreview } from '../useCleanupLivePreview'
+import { PREVIEW_DEBOUNCE_MS, useCleanupLivePreview, type PreviewTarget } from '../useCleanupLivePreview'
 import { emptyCleanupForm } from '../../lib/cleanupPolicy'
 
 const json = (body: unknown, status = 200): Response =>
@@ -18,11 +18,13 @@ async function advance(ms: number): Promise<void> {
   await flushPromises()
 }
 
-function setup(active = true) {
+const REPO: PreviewTarget = { scope: 'repository', name: 'my repo' }
+
+function setup(active = true, target: PreviewTarget = REPO) {
   const form = ref(emptyCleanupForm())
   const open = ref(active)
   const scope = effectScope()
-  const p = scope.run(() => useCleanupLivePreview(ref('my repo'), form, open))!
+  const p = scope.run(() => useCleanupLivePreview(ref(target), form, open))!
   return { form, open, p, scope }
 }
 
@@ -51,7 +53,7 @@ describe('useCleanupLivePreview', () => {
     const [url, init] = fetchSpy.mock.calls[0]!
     expect(String(url)).toBe('/api/v1/repositories/my%20repo/cleanup-policies/dry-run')
     expect((init as RequestInit).method).toBe('POST')
-    expect(JSON.parse(String((init as RequestInit).body))).toEqual({ keep_last_n: 3 })
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({ keep_last_n: 3, name_pattern: '' })
     expect(p.status.value).toBe('ready')
     expect(p.result.value?.rows).toBe(3)
     scope.stop()
@@ -115,6 +117,56 @@ describe('useCleanupLivePreview', () => {
     await nextTick()
     await advance(PREVIEW_DEBOUNCE_MS * 2)
     expect(fetchSpy).not.toHaveBeenCalled()
+    expect(p.status.value).toBe('idle')
+    scope.stop()
+  })
+
+  it('previews a pattern edit, and not an invalid one', async () => {
+    const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((async () => json(preview(1))) as never)
+    const { form, p, scope } = setup()
+    await advance(PREVIEW_DEBOUNCE_MS)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    form.value.name_pattern = '^app-'
+    await nextTick()
+    await advance(PREVIEW_DEBOUNCE_MS)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(String((fetchSpy.mock.calls[1]![1] as RequestInit).body))).toEqual({ keep_last_n: 10, name_pattern: '^app-' })
+
+    form.value.name_pattern = '(unclosed'
+    await nextTick()
+    await advance(PREVIEW_DEBOUNCE_MS)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    expect(p.status.value).toBe('idle')
+    scope.stop()
+  })
+
+  it('adds up the repositories a project default covers', async () => {
+    const repo = (name: string, rows: number) => ({ ...preview(rows), repository: name, items: [{ id: name, name: 'pkg', version: '1.0.0' }] })
+    const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((async () =>
+      json({ dry_run: true, rows: 5, repositories: [repo('a', 2), { ...repo('b', 3), truncated: true }] })) as never)
+    const { p, scope } = setup(true, { scope: 'project', name: 'acme' })
+
+    await advance(PREVIEW_DEBOUNCE_MS)
+    expect(String(fetchSpy.mock.calls[0]![0])).toBe('/api/v1/projects/acme/cleanup-policies/dry-run')
+    expect(p.result.value).toMatchObject({ rows: 5, bytes: 50, truncated: true, repositories: 2 })
+    expect(p.result.value?.items.map((i) => i.repository)).toEqual(['a', 'b'])
+    scope.stop()
+  })
+
+  it('aborts the request in flight when the editor closes', async () => {
+    const signals: AbortSignal[] = []
+    spyOn(globalThis, 'fetch').mockImplementation(((_u: unknown, init?: RequestInit) => {
+      signals.push(init!.signal!)
+      return new Promise<Response>(() => {})
+    }) as never)
+    const { open, p, scope } = setup()
+    await advance(PREVIEW_DEBOUNCE_MS)
+    expect(signals).toHaveLength(1)
+
+    open.value = false
+    await nextTick()
+    expect(signals[0]!.aborted).toBe(true)
     expect(p.status.value).toBe('idle')
     scope.stop()
   })

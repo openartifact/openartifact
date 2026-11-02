@@ -20328,6 +20328,83 @@
         }
       }
     },
+    "/api/v1/projects/{project}/cleanup-policies/dry-run": {
+      "post": {
+        "summary": "Preview what an unsaved project default cleanup policy would remove",
+        "description": "Owners and global admins. Takes the body of a new project cleanup policy (the name may be left out), validates it like create and evaluates it, per repository it would cover, with the same code as the dry run of a stored policy. Nothing is stored or changed. Used by the policy editor for a live preview. Each list is capped at 500 rows.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "keep_last_n": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "keep_since_days": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "name_pattern": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What a run of this policy would remove",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectCleanupPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid policy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project}/cleanup-policies/{id}/dry-run": {
       "post": {
         "summary": "Preview what a project default cleanup policy would remove",

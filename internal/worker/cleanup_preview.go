@@ -83,6 +83,13 @@ func (w *CleanupWorker) PreviewProjectPolicy(ctx context.Context, policyID strin
 		return nil, ErrPolicyNotFound
 	}
 
+	return w.PreviewProjectDraftPolicy(ctx, policy)
+}
+
+// PreviewProjectDraftPolicy is PreviewProjectPolicy for a policy that is not
+// stored (the one being edited): policy.ProjectID names the project and the
+// caller has validated the policy.
+func (w *CleanupWorker) PreviewProjectDraftPolicy(ctx context.Context, policy *models.CleanupPolicy) ([]*CleanupPreview, error) {
 	repoIDs, err := w.db.ListProjectCleanupRepositories(ctx, policy.ProjectID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list project repositories: %w", err)
