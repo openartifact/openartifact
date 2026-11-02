@@ -583,7 +583,7 @@ Highlights: new formats (Terraform and OpenTofu registry, Alpine apk, Arch Linux
   - Proxy and group repositories are read-only (`conan upload` answers `405`).
   - `ping` of a proxy or group advertises `revisions` only.
   - No migration and no action required.
-  - See [Conan proxies](../repositories/hosted-proxy-group.md#conan-proxies).
+  - See [Conan proxies](../formats/conan.md#proxy).
 - **`/health` reports the real storage status.**
   - The public `/health` (and the `status` of `/api/v1/system/info`, `storage_status` of `/api/v1/admin/system/info`) always said `ok` for storage, or only probed S3-family stores, because the metrics wrapper around the store did not expose a health check.
   - Every wrapping layer (metrics, tiers, replication, presigned redirects) now forwards the check to the primary backend, so a lost filesystem directory, Azure container or OCI registry shows as `degraded` too (`"status":"error"`, `"message":"unavailable"`, no detail; the cause is logged).
