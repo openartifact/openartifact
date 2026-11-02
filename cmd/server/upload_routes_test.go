@@ -17,6 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/repodispatch"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"github.com/prometheus/client_golang/prometheus"
@@ -189,6 +190,14 @@ func TestFormatMatrixUploadColumnMatchesDocumentedUploads(t *testing.T) {
 	rows := formatMatrix(t)
 
 	for id := range rows {
+		if !repotype.HostedSupported(id) {
+			if _, ok := documentedUploads[id]; ok {
+				t.Errorf("format %q has no hosted repositories and must have no entry in documentedUploads", id)
+			}
+
+			continue
+		}
+
 		if _, ok := documentedUploads[id]; !ok {
 			t.Errorf("format %q is in docs/formats/README.md but has no entry in documentedUploads", id)
 		}

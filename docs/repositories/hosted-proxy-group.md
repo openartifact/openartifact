@@ -26,7 +26,7 @@ Proxy and group repositories use the same client URLs as hosted ones.
 
 ## Type and format support
 
-Every format can be hosted, proxy or group. Proxy and group repositories are read-only: uploads and deletes answer `405`.
+Every format can be a proxy or a group, and every format except huggingface can be hosted (a hosted huggingface repository is refused with `400 validation_failed`). Proxy and group repositories are read-only: uploads and deletes answer `405`.
 
 A proxy needs an `upstream_url`. These formats have a default, so you may leave it out:
 
@@ -38,6 +38,7 @@ A proxy needs an `upstream_url`. These formats have a default, so you may leave 
 | conan | `https://center2.conan.io` |
 | docker | `https://registry-1.docker.io` |
 | go | `https://proxy.golang.org` |
+| huggingface | `https://huggingface.co` |
 | nix | `https://cache.nixos.org` |
 | nuget | `https://api.nuget.org/v3/index.json` |
 | pacman | `https://geo.mirror.pkgbuild.com` |
@@ -123,7 +124,7 @@ A proxy repository mirrors an upstream registry. A file is fetched on the first 
 - Paths with empty segments, `.`, `..`, backslashes, control characters or a trailing `/` answer `404`.
 - Requests to the upstream ask for `Accept-Encoding: identity`, so bytes are mirrored unchanged.
 
-Format-specific proxy behaviour is on the format pages: [Ansible](../formats/ansible.md#proxy), [apk](../formats/apk.md#proxy), [Cargo](../formats/cargo.md#proxy), [Composer](../formats/composer.md#proxy), [Conan](../formats/conan.md#proxy), [Conda](../formats/conda.md#proxy), [Debian](../formats/debian.md#proxy), [Docker](../formats/docker.md#proxy), [Go](../formats/go.md#proxy), [Helm](../formats/helm.md#proxy), [Ivy and sbt](../formats/ivy-sbt.md#proxy), [Maven](../formats/maven.md#proxy), [Nix](../formats/nix.md#proxy), [npm](../formats/npm.md#proxy), [NuGet](../formats/nuget.md#proxy), [pacman](../formats/pacman.md#proxy), [PyPI](../formats/pypi.md#proxy), [raw](../formats/raw.md#proxy), [RPM](../formats/rpm.md#proxy), [RubyGems](../formats/rubygems.md#proxy) and [Terraform](../formats/terraform.md#proxy-repositories).
+Format-specific proxy behaviour is on the format pages: [Ansible](../formats/ansible.md#proxy), [apk](../formats/apk.md#proxy), [Cargo](../formats/cargo.md#proxy), [Composer](../formats/composer.md#proxy), [Conan](../formats/conan.md#proxy), [Conda](../formats/conda.md#proxy), [Debian](../formats/debian.md#proxy), [Docker](../formats/docker.md#proxy), [Go](../formats/go.md#proxy), [Helm](../formats/helm.md#proxy), [Hugging Face](../formats/huggingface.md#caching-and-revision-pinning), [Ivy and sbt](../formats/ivy-sbt.md#proxy), [Maven](../formats/maven.md#proxy), [Nix](../formats/nix.md#proxy), [npm](../formats/npm.md#proxy), [NuGet](../formats/nuget.md#proxy), [pacman](../formats/pacman.md#proxy), [PyPI](../formats/pypi.md#proxy), [raw](../formats/raw.md#proxy), [RPM](../formats/rpm.md#proxy), [RubyGems](../formats/rubygems.md#proxy) and [Terraform](../formats/terraform.md#proxy-repositories).
 
 ### Editing proxy settings in the web UI
 
@@ -186,7 +187,7 @@ The proxy cache worker runs every 5 minutes and deletes entries expired by more 
 
 A version whose publish time the upstream does not state is not hidden. Files already in the cache stay served. A version becomes visible by itself once it is old enough (rendered documents are revalidated at most every few minutes). Groups containing the proxy inherit the filter.
 
-The gate applies to the formats whose upstream metadata dates each version: npm, pypi, composer, helm, nuget, rubygems, go, cargo, conda, ansible. A conda proxy rebuilds `repodata.json` and `.zst` when the gate is on (`.bz2` answers `404`). Other proxy formats (for example deb, rpm, apk, pacman, maven, docker, nix, terraform, raw) ignore the setting because their upstream metadata dates no version.
+The gate applies to the formats whose upstream metadata dates each version: npm, pypi, composer, helm, nuget, rubygems, go, cargo, conda, ansible, huggingface (by commit date; a branch or tag moves to the newest old-enough commit, see [Hugging Face](../formats/huggingface.md#minimum-age-and-curation)). A conda proxy rebuilds `repodata.json` and `.zst` when the gate is on (`.bz2` answers `404`). Other proxy formats (for example deb, rpm, apk, pacman, maven, docker, nix, terraform, raw) ignore the setting because their upstream metadata dates no version.
 
 ### Package curation
 
@@ -214,6 +215,7 @@ Rules are matched against the package name in the form below and against the ver
 | cargo | lower case, `_` as `-` | as the index shows it |
 | conda | `name` of the repodata entry, lower case | `version` of the entry |
 | ansible | `namespace.name`, lower case | as Galaxy shows it |
+| huggingface | repository id as on the Hub, lower case: `org/model`, `datasets/org/name`, `spaces/org/name` | the full commit hash |
 | maven, ivy, sbt | `group:artifact` | as the version directory shows it |
 | docker | image name as written below the repository (`library/alpine`) | tag or digest as requested |
 | conan | recipe name, lower case | as the reference shows it |
@@ -237,6 +239,7 @@ Coverage differs by format:
 | npm, pypi, composer, helm, nuget, rubygems, go, cargo, conda, ansible | Blocked versions are left out of what the proxy renders | `403`, also for cached files |
 | maven, ivy, sbt, deb, rpm, apk, pacman, conan | Served as the upstream has them: a client may still list a blocked package | `403`, also for cached files |
 | docker | Tag lists pass through | Manifests: `403 DENIED`; blobs addressed by digest are not gated |
+| huggingface | A blocked revision answers `403` | `403` |
 | terraform, raw, nix | Not covered: rules have no effect | Not covered |
 
 Each format page says what is gated and how its names are spelled, for example [npm](../formats/npm.md#minimum-age-and-curation) and [PyPI](../formats/pypi.md#minimum-age-and-curation).

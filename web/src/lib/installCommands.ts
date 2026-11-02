@@ -89,6 +89,18 @@ function terraformUsage(host: string, repo: string, pkg: string, version: string
   return `${host}/${repo}`
 }
 
+/**
+ * `hf download` arguments for a Hugging Face package name: models are the bare
+ * repo id, datasets and spaces carry a `datasets/` or `spaces/` prefix that the
+ * CLI takes as `--repo-type` instead.
+ */
+function huggingfaceRepoArgs(pkg: string): { id: string; type: string } {
+  for (const [prefix, type] of [['datasets/', 'dataset'], ['spaces/', 'space']] as const) {
+    if (pkg.startsWith(prefix)) return { id: pkg.slice(prefix.length), type }
+  }
+  return { id: pkg, type: 'model' }
+}
+
 /** Install/pull command for a package version, built from the real server origin. */
 export function pullCommand(
   format: string,
@@ -124,6 +136,11 @@ export function pullCommand(
       return `GOPROXY=${q(base)} go get ${q(`${pkg}@${version}`)}`
     case 'helm':
       return `helm pull ${q(pkg)} --repo ${q(base)} --version ${q(version)}`
+    case 'huggingface': {
+      const { id, type } = huggingfaceRepoArgs(pkg)
+      const kind = type === 'model' ? '' : ` --repo-type ${type}`
+      return `HF_ENDPOINT=${q(base)} hf download ${q(id)}${kind} --revision ${q(version)}`
+    }
     case 'ivy':
       return `<ibiblio name="${repo}" m2compatible="true" root="${base}"/>`
     case 'maven':

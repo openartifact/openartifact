@@ -187,6 +187,23 @@ func (repositoryKind) Validate(o *Object) []error {
 	return errs
 }
 
+// unsupportedRepoType explains why a repository of format cannot have repoType,
+// or returns "" when it can (or the format is not known yet).
+func unsupportedRepoType(repoType, format string) string {
+	switch {
+	case format == "":
+		return ""
+	case repoType == repoTypeHosted && repotype.Valid(format) && !repotype.HostedSupported(format):
+		return fmt.Sprintf("hosted repositories are not supported for format %q (supported: %s)", format, repotype.HostedFormats())
+	case repoType == repoTypeProxy && !repotype.ProxySupported(format):
+		return fmt.Sprintf("proxy repositories are not supported for format %q (supported: %s)", format, repotype.ProxyFormats())
+	case repoType == repoTypeGroup && !repotype.GroupSupported(format):
+		return fmt.Sprintf("group repositories are not supported for format %q (supported: %s)", format, repotype.GroupFormats())
+	}
+
+	return ""
+}
+
 func repoValidateType(o *Object, repoType, format string) []error {
 	var errs []error
 
@@ -214,11 +231,8 @@ func repoValidateType(o *Object, repoType, format string) []error {
 		add("sign_packages is only valid for hosted rpm repositories")
 	}
 
-	switch {
-	case repoType == repoTypeProxy && format != "" && !repotype.ProxySupported(format):
-		add("proxy repositories are not supported for format %q (supported: %s)", format, repotype.ProxyFormats())
-	case repoType == repoTypeGroup && format != "" && !repotype.GroupSupported(format):
-		add("group repositories are not supported for format %q (supported: %s)", format, repotype.GroupFormats())
+	if msg := unsupportedRepoType(repoType, format); msg != "" {
+		add("%s", msg)
 	}
 
 	if raw := Str(o.Spec, "upstream_url"); raw != "" && !plainBaseURL(raw) {

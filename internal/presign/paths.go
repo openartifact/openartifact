@@ -44,6 +44,10 @@ func AnsibleBlobPath(rel string) bool {
 	return strings.HasPrefix(rel, "api/v3/artifacts/collections/")
 }
 
+// HuggingFaceBlobPath accepts the cached files of the Hugging Face Hub proxy
+// (keys under f/); repository info, listings and file metadata are streamed.
+func HuggingFaceBlobPath(rel string) bool { return strings.HasPrefix(rel, "f/") }
+
 // CargoBlobPath accepts the crate download endpoint.
 func CargoBlobPath(rel string) bool {
 	return strings.HasPrefix(rel, "api/v1/crates/") && path.Base(rel) == "download"

@@ -36,7 +36,7 @@ import (
 func registrations() []plugin.Format {
 	return []plugin.Format{
 		rpmFormat(), debFormat(), helmFormat(), pypiFormat(), nugetFormat(), npmFormat(), cargoFormat(),
-		rubygemsFormat(), condaFormat(), pacmanFormat(), ansibleFormat(), conanFormat(), goFormat(), terraformFormat(),
+		rubygemsFormat(), condaFormat(), pacmanFormat(), ansibleFormat(), conanFormat(), goFormat(), terraformFormat(), huggingFaceFormat(),
 		// Not on the shared subrouter, or guarded.
 		apkFormat(), composerFormat(), dockerFormat(), ivyFormat(), mavenFormat(), nixFormat(), rawFormat(), sbtFormat(),
 	}

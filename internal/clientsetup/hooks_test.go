@@ -20,7 +20,7 @@ func TestMain(m *testing.M) {
 		"nix": NixBuilder, "cargo": CargoBuilder, "composer": ComposerBuilder, "go": GoBuilder,
 		"nuget": NuGetBuilder, "rubygems": RubyGemsBuilder, "raw": RawBuilder, "conda": CondaBuilder,
 		"conan": ConanBuilder, "apk": APKBuilder, "terraform": TerraformBuilder,
-		"ansible": AnsibleBuilder, "sbt": SBTBuilder, "ivy": IvyBuilder,
+		"ansible": AnsibleBuilder, "sbt": SBTBuilder, "ivy": IvyBuilder, "huggingface": HuggingFaceBuilder,
 	} {
 		Register(format, b)
 	}

@@ -72,6 +72,11 @@ function expectedArgv(format: string, o: { url: string; host: string }, repo: st
     case 'docker': return ['docker', 'pull', `${o.host}/${pkg}:${version}`]
     case 'go': return [`GOPROXY=${base}`, 'go', 'get', `${pkg}@${version}`]
     case 'helm': return ['helm', 'pull', pkg, '--repo', base, '--version', version]
+    case 'huggingface': {
+      const m = /^(datasets|spaces)\/(.*)$/s.exec(pkg)
+      const kind = m ? ['--repo-type', m[1] === 'datasets' ? 'dataset' : 'space'] : []
+      return [`HF_ENDPOINT=${base}`, 'hf', 'download', m ? m[2]! : pkg, ...kind, '--revision', version]
+    }
     case 'maven': return ['mvn', 'dependency:get', `-Dartifact=${pkg}:${version}`, `-DremoteRepositories=${base}`]
     case 'nix': return ['nix', 'copy', '--from', base, `/nix/store/${version}-${pkg}`]
     case 'npm': return ['npm', 'install', `${pkg}@${version}`, `--registry=${base}/`]

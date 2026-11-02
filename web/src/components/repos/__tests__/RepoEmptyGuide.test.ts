@@ -7,7 +7,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import RepoEmptyGuide from '../RepoEmptyGuide.vue'
-import { FORMAT_IDS } from '../../../lib/formats.generated'
+import { HOSTED_FORMATS } from '../../../lib/formats.generated'
 import { clientSetup } from '../../../lib/installCommands'
 
 async function mountGuide(format: string, canUpload = false) {
@@ -19,7 +19,7 @@ async function mountGuide(format: string, canUpload = false) {
 }
 
 describe('RepoEmptyGuide', () => {
-  for (const format of FORMAT_IDS) {
+  for (const format of HOSTED_FORMATS) {
     it(`teaches publish and consume for ${format} with this repository's URL`, async () => {
       const w = await mountGuide(format)
       const shown = w.findAll('[data-testid="snippet"]').map((s) => s.text())

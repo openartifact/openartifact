@@ -43,8 +43,8 @@ func TestGroupMetadataCoversEveryFormat(t *testing.T) {
 
 	generated := []string{"apk", "deb", "pacman", "rpm"}
 	others := []string{
-		"ansible", "cargo", "composer", "conan", "conda", "docker", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
-		"pypi", "raw", "rubygems", "sbt", "terraform",
+		"ansible", "cargo", "composer", "conan", "conda", "docker", "go", "helm", "huggingface", "ivy", "maven", "nix", "npm",
+		"nuget", "pypi", "raw", "rubygems", "sbt", "terraform",
 	}
 
 	// run dispatches to buildDeb/buildRPM/buildPacman/buildApk: it needs a database and storage, so it is classified only.

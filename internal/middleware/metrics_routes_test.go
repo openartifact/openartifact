@@ -187,7 +187,8 @@ func TestEveryFormatHasUploadLabel(t *testing.T) {
 	}
 
 	for _, f := range repotype.Names() {
-		if !labelled[f] {
+		// A format without hosted repositories has no uploads to count.
+		if !labelled[f] && repotype.HostedSupported(f) {
 			t.Errorf("repotype has format %q but no internal/format directory maps to it", f)
 		}
 	}

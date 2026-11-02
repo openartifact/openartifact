@@ -122,7 +122,7 @@ func NormalizePackage(format, name string) string {
 		return strings.ToLower(separatorRuns.ReplaceAllString(name, "-"))
 	case "cargo":
 		return strings.ToLower(strings.ReplaceAll(name, "_", "-"))
-	case "npm", "composer", "nuget", "conda", "ansible", "conan":
+	case "npm", "composer", "nuget", "conda", "ansible", "conan", "huggingface":
 		return strings.ToLower(name)
 	default:
 		return name

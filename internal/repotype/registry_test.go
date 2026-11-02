@@ -63,6 +63,10 @@ func TestRegistryShape(t *testing.T) {
 			t.Errorf("%s: has a default upstream but cannot be proxied", s.Name)
 		}
 
+		if s.NoHosted && !s.Proxy {
+			t.Errorf("%s: has no hosted repositories and cannot be proxied", s.Name)
+		}
+
 		if s.GeneratedGroupMetadata && !s.Group {
 			t.Errorf("%s: generates group metadata but cannot be grouped", s.Name)
 		}
@@ -79,7 +83,7 @@ func TestRegistryShape(t *testing.T) {
 func TestPolicy(t *testing.T) {
 	t.Parallel()
 
-	all := "ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform"
+	all := "ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform"
 
 	if got := repotype.ProxyFormats(); got != all {
 		t.Errorf("ProxyFormats() = %q, want %q", got, all)
@@ -94,18 +98,19 @@ func TestPolicy(t *testing.T) {
 	}
 
 	upstreams := map[string]string{
-		"docker":    "https://registry-1.docker.io",
-		"pypi":      "https://pypi.org/simple",
-		"cargo":     "https://index.crates.io",
-		"go":        "https://proxy.golang.org",
-		"nuget":     "https://api.nuget.org/v3/index.json",
-		"conan":     "https://center2.conan.io",
-		"rubygems":  "https://rubygems.org",
-		"pacman":    "https://geo.mirror.pkgbuild.com",
-		"nix":       "https://cache.nixos.org",
-		"terraform": "https://registry.terraform.io",
-		"ansible":   "https://galaxy.ansible.com",
-		"composer":  "https://repo.packagist.org",
+		"docker":      "https://registry-1.docker.io",
+		"pypi":        "https://pypi.org/simple",
+		"cargo":       "https://index.crates.io",
+		"go":          "https://proxy.golang.org",
+		"nuget":       "https://api.nuget.org/v3/index.json",
+		"conan":       "https://center2.conan.io",
+		"rubygems":    "https://rubygems.org",
+		"pacman":      "https://geo.mirror.pkgbuild.com",
+		"nix":         "https://cache.nixos.org",
+		"terraform":   "https://registry.terraform.io",
+		"ansible":     "https://galaxy.ansible.com",
+		"composer":    "https://repo.packagist.org",
+		"huggingface": "https://huggingface.co",
 	}
 
 	for _, name := range repotype.Names() {
