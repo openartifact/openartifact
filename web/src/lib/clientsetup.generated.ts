@@ -164,13 +164,13 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
     proxy: [
       {
         client: 'go',
-        configure: 'go env -w GOPROXY={{base}},direct\ngo env -w GONOSUMDB=*',
+        configure: 'go env -w GOPROXY={{base}}',
       },
     ],
     group: [
       {
         client: 'go',
-        configure: 'go env -w GOPROXY={{base}},direct\ngo env -w GONOSUMDB=*',
+        configure: 'go env -w GOPROXY={{base}}',
       },
     ],
   },

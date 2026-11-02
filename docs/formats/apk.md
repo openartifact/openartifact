@@ -6,18 +6,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Alpine (apk)
 
-Alpine Linux package repository laid out like an Alpine mirror, with a generated and signed `APKINDEX.tar.gz` per directory.
+Use an apk repository to host Alpine Linux packages, or to cache or merge Alpine mirrors, and install them with `apk`. The repository is laid out like an Alpine mirror, with a generated and signed `APKINDEX.tar.gz` per directory.
 
-| | |
+| Item | Value |
 |---|---|
+| Repo URL | `HOST/repos/REPO/<branch>/<repo>` |
+| Index | `<arch>/APKINDEX.tar.gz` |
+| Packages | `<arch>/<name>-<version>.apk` |
 | Format id | `apk` |
-| Repo URL | `HOST/repos/REPO/<branch>/<repo>` (index `<arch>/APKINDEX.tar.gz`, packages `<arch>/<name>-<version>.apk`) |
-| Repository types | hosted, [proxy](#proxy-repositories), [group](#group-repositories) |
-| Minimum client | apk-tools from Alpine 3.6 (SHA-256 index signatures) |
+| Repository types | hosted, proxy, group |
+| Default upstream (proxy) | none; for example `https://dl-cdn.alpinelinux.org/alpine` |
+
+`<branch>` is for example `v3.20` or `edge`, `<repo>` for example `main` or `community`, and `<arch>` for example `x86_64` or `aarch64`.
 
 ## Client setup
 
-`apk` appends `/<arch>/APKINDEX.tar.gz` to every line of `/etc/apk/repositories`, so the line is the repository URL up to the `<repo>` directory. The index is signed, so install the repository's public key first:
+`apk` appends `/<arch>/APKINDEX.tar.gz` to every line of `/etc/apk/repositories`. The line is therefore the repository URL up to the `<repo>` directory. The index is signed, so install the repository's public key first:
 
 ```sh
 curl -fsSL -o /etc/apk/keys/openartifact-REPO.rsa.pub HOST/repos/REPO/public.key
@@ -35,27 +39,17 @@ RUN wget -O /etc/apk/keys/openartifact-REPO.rsa.pub HOST/repos/REPO/public.key \
  && apk add --no-cache PACKAGE
 ```
 
-- The key file name must be the key name inside the index signature (default `openartifact-REPO.rsa.pub`); the key is also served as `HOST/repos/REPO/<keyname>`. [Signing key](#signing-key) shows how to read the name.
-- A private repository (not public, no anonymous read) needs credentials for the key and for the repository: put them in the URL (`https://USERNAME:<TOKEN>@HOST/repos/REPO/v3.20/main`) and download the key with `wget --header "Authorization: Bearer <TOKEN>"` (BusyBox `wget`, the one Alpine ships, has no `--user`/`--password`).
-- Alpine 3.5 and older reject SHA-256 signatures and cannot use these repositories. Verified with apk-tools 2.14 (Alpine 3.20), apk-tools 3.x on edge (which still reads the v2 index) and Alpine 3.6 to 3.16.
+- The key file name must equal the key name inside the index signature. The default is `openartifact-REPO.rsa.pub`. The server also serves the key as `HOST/repos/REPO/<keyname>`. [Signing key and rotation](#signing-key-and-rotation) shows how to read the name.
+- A private repository needs credentials for the key and for the repository. Put them in the repository URL: `https://<USERNAME>:<TOKEN>@HOST/repos/REPO/v3.20/main`. Download the key with `wget --header "Authorization: Bearer <TOKEN>"`, because the BusyBox `wget` in Alpine has no `--user` or `--password`.
+- Packages are signed by the repository index, not individually. SHA-256 index signatures need an apk-tools version that supports them. This is not verified against specific Alpine releases here.
 
-The web UI and the MCP server show the same snippets on the repository page.
+The web UI connect panel shows the same commands with your own URL.
 
-## Layout
+<a id="upload"></a>
 
-Served relative to `HOST/repos/REPO`; the directories are whatever you upload to:
+## Publish
 
-| Path | Notes |
-|---|---|
-| `<branch>/<repo>/<arch>/APKINDEX.tar.gz` | generated, signed index of that directory |
-| `<branch>/<repo>/<arch>/<name>-<version>.apk` | package download |
-| `public.key`, `<keyname>` | public key of the repository, see [signing key](#signing-key) |
-
-`<branch>` is for example `v3.20` or `edge`, `<repo>` for example `main` or `community`, `<arch>` for example `x86_64` or `aarch64`.
-
-## Upload
-
-Needs write permission on `REPO` ([RBAC](../security/rbac.md)). Packages do not need to be signed; the index is.
+You need write permission on `REPO` ([RBAC](../security/rbac.md)). Packages do not need to be signed; the index is.
 
 ```sh
 # curl: the path decides branch, repository and architecture
@@ -70,6 +64,8 @@ curl -H "Authorization: Bearer <TOKEN>" -F file=@my-pkg-1.0-r0.apk -F branch=v3.
 oa artifact upload --branch v3.20 --apk-repo main --arch x86_64 REPO my-pkg-1.0-r0.apk
 ```
 
+The web UI upload form asks for branch, repository and architecture.
+
 | Form field (`POST /api/v1/repositories/REPO/apks`) | Default | Notes |
 |---|---|---|
 | `file` | required | the `.apk` |
@@ -77,29 +73,51 @@ oa artifact upload --branch v3.20 --apk-repo main --arch x86_64 REPO my-pkg-1.0-
 | `repo` | `main` | second directory |
 | `arch` | package architecture | required for `noarch` packages only |
 
-- `DELETE <branch>/<repo>/<arch>/<name>-<version>.apk` (`curl -X DELETE`) deletes one package; it goes to the [trash](../operations/trash.md).
-- The file name must be the canonical `<name>-<version>.apk`.
-- The arch directory must equal the architecture in `.PKGINFO`. A `noarch` package is stored in the arch directory you name (the path of the `PUT`, or the `arch` field / `--arch` of the REST upload, which is required for `noarch`); upload it to every architecture directory that should offer it. As in Alpine's own mirrors, the directory's index lists it with the architecture of the directory (`apk index --rewrite-arch`), so `apk` downloads it from `<arch>/` and not from a `noarch/` directory; the `.apk` file itself stays `noarch`.
-- The package is validated: the gzip segments, `.PKGINFO`, the `datahash` of the data segment and the tar layout. A malformed package is `400`.
-- The same name and version in the same directory is `409 CONFLICT`: packages are immutable.
-- Quotas, license policy (the `license` of `.PKGINFO`), quarantine, scanning, webhooks and the [immutable releases](../operations/trash.md#immutable-releases) guard apply as for other hosted formats; downloads are counted. Every version counts as a release.
-- Only the Alpine v2 package format (a concatenation of gzip segments) is supported. apk v3 (ADB) `.apk` files cannot be uploaded; apk-tools 3 still reads the v2 index and the packages Alpine publishes today.
+Rules for an upload:
 
-## Index
+- The file name is the canonical `<name>-<version>.apk`.
+- The arch directory equals the architecture in `.PKGINFO`.
+- A `noarch` package is stored in the arch directory you name: the path of the `PUT`, or the `arch` field or `--arch` of the REST upload. Upload it to every architecture directory that should offer it.
+- The directory's index lists a `noarch` package with the architecture of the directory, as Alpine's own mirrors do. `apk` downloads it from `<arch>/`. The `.apk` file itself stays `noarch`.
+- The server validates the package: the gzip segments, `.PKGINFO`, the `datahash` of the data segment and the tar layout. A malformed package is `400`.
+- The same name and version in the same directory is `409 CONFLICT`. Packages are immutable.
+- Only the Alpine v2 package format (a concatenation of gzip segments) is accepted. apk v3 (ADB) `.apk` files cannot be uploaded.
 
-- `APKINDEX.tar.gz` is generated per `<branch>/<repo>/<arch>` directory by a background worker that coalesces requests, shortly after an upload, delete or restore. A directory has no index until the worker has run, so `APKINDEX.tar.gz` can answer `404` for a moment after the first upload.
-- Entries are verified by identity: the `C:` checksum is `Q1` plus the base64 SHA-1 of the package's control segment, and the data segment's SHA-256 is checked against `datahash` at upload.
+Delete one package with `curl -X DELETE HOST/repos/REPO/<branch>/<repo>/<arch>/<name>-<version>.apk`. It goes to the [trash](../operations/trash.md).
+
+Quotas, license policy (the `license` of `.PKGINFO`), quarantine, scanning, webhooks and the [immutable releases](../operations/trash.md#immutable-releases) guard apply as for other hosted formats. Downloads are counted. Every version counts as a release.
+
+## Install and consume
+
+Paths are relative to `HOST/repos/REPO`. The directories are whatever you uploaded to.
+
+| Path | Notes |
+|---|---|
+| `<branch>/<repo>/<arch>/APKINDEX.tar.gz` | generated, signed index of that directory |
+| `<branch>/<repo>/<arch>/<name>-<version>.apk` | package download |
+| `public.key`, `<keyname>` | public key of the repository |
+
+How the index works:
+
+- A background job generates `APKINDEX.tar.gz` per `<branch>/<repo>/<arch>` directory shortly after an upload, delete or restore. A directory has no index until that job has run, so the index can answer `404` for a moment after the first upload.
+- The `C:` checksum of an entry is `Q1` plus the base64 SHA-1 of the package's control segment. The server checks the SHA-256 of the data segment against `datahash` at upload.
 - The index is signed with the repository's RSA key as `.SIGN.RSA256.<keyname>` (SHA-256).
 
-## Signing key
+<a id="signing-key"></a>
 
-| | |
+## Signing key and rotation
+
+This section is for administrators.
+
+| Item | Value |
 |---|---|
-| Generated | lazily on first use: RSA-4096, default name `openartifact-REPO.rsa.pub` (shortened with a digest suffix if the name would exceed 87 bytes) |
-| Stored | private key sealed with `OPENARTIFACT_SECRET_KEY` (AES-GCM) in the database; never returned |
-| Public key | `GET HOST/repos/REPO/public.key` or `HOST/repos/REPO/<keyname>`; authentication is needed unless the repository is public or anonymous read is on |
+| Generated | on first use: RSA-4096, default name `openartifact-REPO.rsa.pub` (shortened with a digest suffix if the name would exceed 87 bytes) |
+| Stored | the private key is sealed with `OPENARTIFACT_SECRET_KEY` (AES-GCM) in the database and never returned |
+| Public key | `GET HOST/repos/REPO/public.key` or `HOST/repos/REPO/<keyname>` |
 
-Admin API (global manage permission; [REST reference](../reference/api/repositories.md)):
+Reading the public key needs authentication unless the repository is public or anonymous read is on.
+
+The admin API needs the global manage permission ([REST reference](../reference/api/repositories.md)):
 
 ```sh
 # key name, fingerprint, public key
@@ -114,36 +132,27 @@ curl -X POST -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/js
   HOST/api/v1/repositories/REPO/apk-key
 ```
 
-- Response: `{key_name, fingerprint, public_key, created_at, updated_at}`.
-- Import takes a PKCS#8 or PKCS#1 RSA private key of 2048 to 16384 bits. `key_name` is optional, must match `^[A-Za-z0-9._@+-]+\.rsa\.pub$` and be at most 87 bytes.
-- Rotating or importing re-signs every index of the repository, and **clients must install the new public key** (`apk update` fails with `UNTRUSTED signature` until they do). Rotation is audited as `repository.updated`.
+- The response is `{key_name, fingerprint, public_key, created_at, updated_at}`.
+- Import takes a PKCS#8 or PKCS#1 RSA private key of 2048 to 16384 bits. `key_name` is optional, at most 87 bytes, and matches `^[A-Za-z0-9._@+-]+\.rsa\.pub$`.
+- Rotating or importing re-signs every index of the repository. Clients must install the new public key. Until they do, `apk update` fails with `UNTRUSTED signature`.
+- Rotation is audited as `repository.updated`.
 - The repository **Settings** page has an apk key panel for the same operations.
 
 ### Without OPENARTIFACT_SECRET_KEY
 
-The private key cannot be sealed, so no key is created: the index is served unsigned, `public.key` answers `404` and the admin API answers `409 secret_key_required`. Clients then need `apk --allow-untrusted`, which is not recommended. Set the secret and the next index regeneration signs.
+The server cannot seal a private key, so it creates no key. The index is served unsigned, `public.key` answers `404` and the admin API answers `409 secret_key_required`. Clients then need `apk --allow-untrusted`, which is not recommended. Set the secret, and the next index generation signs.
 
-## Backup and rebuild
+<a id="backup-and-rebuild"></a>
 
-The signing key is not part of [backups](../operations/backup.md) or declarative export, and it cannot be derived from stored packages. After a restore or a [rebuild from storage](../operations/rebuild-from-storage.md) a new key is generated on first use, and every client must install the new public key. To keep the same key across rebuilds, import it again with the admin API afterwards.
+### Backup and rebuild
 
-## Troubleshooting
+The signing key is not part of [backups](../operations/backup.md) or declarative export, and it cannot be derived from stored packages. After a restore or a [rebuild from storage](../operations/rebuild-from-storage.md) the server generates a new key on first use, and every client must install it. To keep the same key, import it again with the admin API afterwards.
 
-| Symptom | Cause and fix |
-|---|---|
-| `UNTRUSTED signature` | the public key is not in `/etc/apk/keys`, or its file name differs from the key name in the index: install `public.key` under the name in `apk-key`'s `key_name`; reinstall it after a rotation, import or rebuild |
-| `BAD signature` | the key file does not match the signer (an old key after rotation), or a proxy or cache altered the index: reinstall the current public key and clear intermediate caches |
-| `APKINDEX.tar.gz` is `404` right after the first upload | the index is still being generated; retry in a moment |
-| `404` for `public.key` | the repository has no key because `OPENARTIFACT_SECRET_KEY` is not set |
-| `401`/`403` from `apk update` | private repository: credentials in the URL, token with read permission |
-| upload `400` | not a valid v2 `.apk`, arch directory differs from the package architecture, or the file name is not `<name>-<version>.apk` |
-| upload `409` | that name and version already exist in the directory |
+<a id="proxy-repositories"></a>
 
-## Proxy repositories
+## Proxy
 
-An apk proxy is a pull-through cache of an Alpine mirror. Set `upstream_url` to the mirror root, for example `https://dl-cdn.alpinelinux.org/alpine` (there is no default; the web form suggests this one), and create it with `repo_type: proxy`:
-
-[Package curation](../repositories/hosted-proxy-group.md#package-curation) refuses the download of a blocked package file (`403` with the reason, even when cached): rules name the package and a version as `<version>-r<N>` from the file name `<name>-<version>-r<N>.apk`. `APKINDEX.tar.gz` is served as the upstream has it, so apk still lists a blocked package.
+An apk proxy is a pull-through cache of an Alpine mirror. There is no default upstream. Set `upstream_url` to the mirror root; the web form suggests `https://dl-cdn.alpinelinux.org/alpine`.
 
 ```sh
 curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
@@ -151,7 +160,7 @@ curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
   -d '{"name":"alpine-mirror","format":"apk","repo_type":"proxy","upstream_url":"https://dl-cdn.alpinelinux.org/alpine"}'
 ```
 
-The mirror tree is mirrored by path, so the repositories lines are the mirror's with `HOST/repos/REPO` in place of the mirror root:
+The proxy mirrors the tree by path. Your repositories lines are the mirror's, with `HOST/repos/REPO` in place of the mirror root:
 
 ```sh
 echo "HOST/repos/alpine-mirror/v3.20/main" >> /etc/apk/repositories
@@ -160,17 +169,30 @@ apk update
 apk add PACKAGE
 ```
 
-- **No key to install.** `public.key` answers `404`: the proxy has no key of its own. Official Alpine images already trust the keys of the `alpine-keys` package (`/etc/apk/keys`), which is what signed the upstream index.
-- **Index.** `<branch>/<repo>/<arch>/APKINDEX.tar.gz` is passed through byte for byte, signature included, and cached for `cache_ttl_seconds` (default 1 hour) before it is fetched again. A client therefore sees exactly the upstream index; a change upstream shows up after the TTL.
-- **Packages.** A `.apk` is downloaded on first request, checked, and then cached for good (a file name is not reused by an Alpine mirror). The check: the package is parsed (its data hash is checked against the control segment) and its checksum must equal the `C:` entry that the cached upstream index of the same directory lists for that file name. A package the index does not list answers `404` (also right after a new upstream build, until the index is refetched after the TTL), a package that fails the check or is not a valid `.apk` answers `502` and is not cached.
-- **Other paths** (anything but an index or a package in a `<branch>/<repo>/<arch>/` directory) answer `404` without contacting the upstream.
-- **Trust model.** The proxy does not verify the upstream index signature: it has no Alpine trust keys configured. Clients verify it with the keys they already have; a client without them (a bare image, or a repository signed by another key) gets `UNTRUSTED signature` as it would from the mirror itself. A package is bound to the index by its checksum, so a tampered package fails at the proxy, but a tampered index is only caught by the client.
-- **Offline behaviour, negative caching, size limits, `max_stale_seconds` and credentials for a private mirror** work as for every proxy: see [hosted, proxy, group](../repositories/hosted-proxy-group.md). With the upstream down an expired index or package is served stale within `max_stale_seconds`; a package never fetched cannot be served.
-- Proxy repositories are read-only: uploads answer `405`. Quarantine applies to cached packages like to any proxy.
+- **No key to install.** `public.key` answers `404` because the proxy has no key of its own. Official Alpine images already trust the keys of the `alpine-keys` package in `/etc/apk/keys`. Those keys signed the upstream index.
+- **Index.** `<branch>/<repo>/<arch>/APKINDEX.tar.gz` is passed through byte for byte, signature included. It is cached for `cache_ttl_seconds` (default 1 hour). A change upstream shows up after the TTL.
+- **Packages.** A `.apk` is downloaded on first request, checked and cached for good, because an Alpine mirror does not reuse a file name.
+- **Package check.** The server parses the package and checks its data hash against the control segment. Its checksum must equal the `C:` entry of the cached upstream index for that file name.
+- **Package answers.** A package the index does not list is `404`. This includes a new upstream build until the index is fetched again. A package that fails the check, or is not a valid `.apk`, is `502` and is not cached.
+- **Other paths.** Anything but an index or a package in a `<branch>/<repo>/<arch>/` directory answers `404` without contacting the upstream.
+- **Trust.** The proxy does not verify the upstream index signature, because it has no Alpine trust keys. Clients verify it with the keys they have. A client without them gets `UNTRUSTED signature`, as it would from the mirror. A tampered package fails at the proxy; a tampered index is caught only by the client.
+- **Offline, negative caching, size limits, `max_stale_seconds` and credentials for a private mirror** work as for every proxy; see [hosted, proxy, group](../repositories/hosted-proxy-group.md). With the upstream down, an expired index or package is served stale within `max_stale_seconds`. A package never fetched cannot be served.
+- Quarantine applies to cached packages. A proxy is read-only: uploads answer `405`.
 
-## Group repositories
+### Minimum age and curation
 
-An apk group serves several hosted and proxy apk repositories as one, at `HOST/repos/GROUP/<branch>/<repo>`. Clients read an index per directory, so the group cannot forward a request to one member: it publishes an `APKINDEX.tar.gz` of its own for every `<branch>/<repo>/<arch>` directory, merged from the members and signed with the group's own key. Create it with `repo_type: group` and `members` in priority order, as in [hosted, proxy, group](../repositories/hosted-proxy-group.md#creating-repositories).
+Rules follow [Package curation](../repositories/hosted-proxy-group.md#package-curation). The format-specific parts:
+
+- **Minimum age.** `min_age_hours` has no effect on an apk proxy: its upstream metadata does not date each version. See [Minimum age](../repositories/hosted-proxy-group.md#minimum-age).
+- **Names.** Rules name the package and a version as `<version>-r<N>`, taken from the file name `<name>-<version>-r<N>.apk`.
+- **Blocked package.** The download answers `403` with the reason, even when the file is cached.
+- **Not gated.** `APKINDEX.tar.gz` is served as the upstream has it, so `apk` still lists a blocked package.
+
+<a id="group-repositories"></a>
+
+## Group
+
+An apk group serves several hosted and proxy apk repositories as one, at `HOST/repos/GROUP/<branch>/<repo>`. Clients read an index per directory, so the group cannot forward a request to one member. It publishes its own `APKINDEX.tar.gz` for every `<branch>/<repo>/<arch>` directory, merged from the members and signed with the group's own key. Create the group with `repo_type: group` and `members` in priority order, as in [hosted, proxy, group](../repositories/hosted-proxy-group.md#creating-repositories).
 
 ```sh
 wget -O /etc/apk/keys/openartifact-GROUP.rsa.pub HOST/repos/GROUP/public.key
@@ -179,15 +201,42 @@ apk update
 apk add PACKAGE
 ```
 
-The key to install is the group's, not its members': `HOST/repos/GROUP/public.key` (also `/<keyname>.rsa.pub`). It is generated on first use like a hosted repository's, shown, rotated and imported with the same admin API and web panel ([signing key](#signing-key)), and needs `OPENARTIFACT_SECRET_KEY` as well: without it the group's indexes are unsigned and `public.key` answers `404`. After a rotation or import the group's indexes are signed again in the background; clients must install the new public key. The key is not part of backups.
+Install the group's key, not its members' keys: `HOST/repos/GROUP/public.key` (also `/<keyname>.rsa.pub`). The group generates, shows, rotates and imports its key with the same admin API and web panel as a hosted repository ([signing key](#signing-key-and-rotation)). It also needs `OPENARTIFACT_SECRET_KEY`: without it the group's indexes are unsigned and `public.key` answers `404`. After a rotation or import the server signs the group's indexes again in the background, and clients must install the new key. The key is not part of backups.
 
-- **Merge rule.** Per directory, the entries of the members are taken in member order.
-  1. Unless `merge_proxy_versions` is `true`, an entry of a proxy member is dropped when any readable hosted member of the group holds a package of that name in any directory ([hosted members win a package name](../repositories/hosted-proxy-group.md#hosted-members-win-a-package-name)).
-  2. Of the entries with the same file name (`<name>-<version>.apk`) the earliest member's is kept, so the checksum the index lists is the winner's.
-  3. Everything else is kept: the other versions of a name from other members are all listed, and `apk` picks by version. An entry is copied as the member lists it, in the directory it is listed in (a `noarch` package is in the directories it was uploaded to or the upstream lists it in; nothing is copied across directories).
-- **Hosted members** contribute what is in their database for the directory, proxy members what their upstream index for the directory lists (read through the proxy cache). The index signature of an upstream is not checked by the group: the group's key vouches for its own index, and a package taken from a proxy is checked against the upstream index by the proxy when it is cached.
-- **Directories.** A group publishes every directory a hosted member has a package in, and the directories that were requested and that some member has (for a proxy member, its upstream's). A proxy cannot be listed, so the first request of `v3.21/main/x86_64/APKINDEX.tar.gz` for a directory only a proxy has waits for the generation; a directory no member has is `404`. A directory every member lost its packages from keeps serving an empty, signed index.
-- **Downloads** come from the member whose entry the index lists (`HOST/repos/GROUP/<branch>/<repo>/<arch>/<name>-<version>.apk`), so the file is always the one whose checksum the index carries. A package the index does not list is `404`, even if a member has it. Other paths are `404`.
-- **Access control.** A caller is served an index that lists only the members they can read, and downloads are authorized against the owning member, as in [Deb and RPM groups](../repositories/hosted-proxy-group.md#deb-and-rpm-groups): callers who read every member share one index, the others get one generated and signed for exactly their set of members on their first request (with the group's key), and a caller who can read no member gets `404`, `public.key` included.
-- **Regeneration.** The indexes are regenerated in the background when a hosted member changes (upload, delete, trash, restore, cleanup), when the group's members or settings change, when a member is deleted or blocked, and at startup for groups that have no index yet. A proxy member has no change signal: a request that finds the indexes older than the shortest `cache_ttl_seconds` among the proxies (at least one minute) serves them and refreshes them in the background. A proxy that cannot be reached (or whose index is over 128 MiB) is left out of that run, the run is marked partial and retried after a minute; a directory that then only the unreachable proxy had keeps the index it had. A proxy that does not have a directory is a complete answer.
-- Group repositories are read-only: uploads answer `405`.
+Merge rule, per directory, with the members in order:
+
+1. Unless `merge_proxy_versions` is `true`, an entry of a proxy member is dropped when any readable hosted member holds a package of that name in any directory. See [hosted members win a package name](../repositories/hosted-proxy-group.md#hosted-members-win-a-package-name).
+2. Of the entries with the same file name, the earliest member's is kept. The checksum in the index is the winner's.
+3. Everything else is kept. The other versions of a name from other members are all listed, and `apk` picks by version.
+
+An entry is copied as the member lists it, in the directory it is listed in. Nothing is copied across directories.
+
+- **Hosted members** contribute what is in their database for the directory. **Proxy members** contribute what their upstream index lists, read through the proxy cache.
+- **Upstream signatures** are not checked by the group. The group's key vouches for its own index. The proxy checks a package it takes from a proxy member when it caches it.
+- **Directories.** A group publishes every directory a hosted member has a package in. It also publishes directories that were requested and that some member has. A proxy cannot be listed, so the first request for a directory only a proxy has waits for the generation. A directory no member has is `404`. A directory whose members all lost their packages keeps serving an empty, signed index.
+- **Downloads** come from the member whose entry the index lists, at `HOST/repos/GROUP/<branch>/<repo>/<arch>/<name>-<version>.apk`. A package the index does not list is `404`, even if a member has it. Other paths are `404`.
+- **Access control.** A caller gets an index that lists only the members they can read. Downloads are authorized against the owning member. Callers who read every member share one index. Other callers get one signed with the group's key for exactly their set of members, generated on their first request. A caller who can read no member gets `404`, `public.key` included. See [Deb, RPM and pacman groups](../repositories/hosted-proxy-group.md#deb-rpm-and-pacman-groups).
+- **Regeneration.** The server regenerates the indexes in the background when a hosted member changes (upload, delete, trash, restore, cleanup), when the group's members or settings change, when a member is deleted or blocked, and at startup for groups that have no index yet.
+- **Proxy members** have no change signal. A request that finds the indexes older than the shortest `cache_ttl_seconds` among the proxies (at least one minute) serves them and refreshes them in the background.
+- **Unreachable proxy.** The server leaves a proxy that cannot be reached, or whose index is over 128 MiB, out of that run. It retries after a minute. A directory that only that proxy had keeps its old index. A proxy that does not have a directory is a complete answer.
+- **Minimum age and curation** of a proxy member apply as described under Proxy.
+- A group is read-only: uploads answer `405`.
+
+## Limits and behaviour
+
+- **Upload size:** 1 GiB per package; larger uploads answer `413`.
+- **Index caching:** `public, max-age=60` for anonymous reads of a public repository, `private, no-cache` otherwise.
+- **Delete:** moves the package to the [trash](../operations/trash.md).
+- **Status codes:** `400` invalid package or path, `409` existing name and version, `404` unknown file or missing index.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `UNTRUSTED signature` | The public key is not in `/etc/apk/keys`, or its file name differs from the key name in the index. | Install `public.key` under the `key_name` from the `apk-key` API. Reinstall it after a rotation, import or rebuild. |
+| `BAD signature` | The key file does not match the signer (an old key after rotation), or a proxy or cache altered the index. | Reinstall the current public key and clear intermediate caches. |
+| `APKINDEX.tar.gz` is `404` right after the first upload | The index is still being generated. | Retry in a moment. |
+| `404` for `public.key` | The repository has no key because `OPENARTIFACT_SECRET_KEY` is not set, or it is a proxy. | Set the secret on a hosted repository or group. A proxy needs no key. |
+| `401` or `403` from `apk update` | Private repository without credentials. | Put credentials in the URL; the token needs read permission. |
+| Upload `400` | Not a valid v2 `.apk`, arch directory differs from the package architecture, or the file name is not `<name>-<version>.apk`. | Fix the package or the path. |
+| Upload `409` | That name and version already exist in the directory. | Delete the old one or bump the release. |

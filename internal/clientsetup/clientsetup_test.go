@@ -316,3 +316,18 @@ func TestGoPublishUploadsModuleZipByPut(t *testing.T) {
 		}
 	}
 }
+
+func TestGoSnippetPerRepoType(t *testing.T) {
+	hosted := Snippets("go", "https://oa.example", "mods", "hosted")
+	if len(hosted) != 1 || !strings.Contains(hosted[0].Configure, "GOPROXY=https://oa.example/repos/mods,direct") ||
+		!strings.Contains(hosted[0].Configure, "GONOSUMDB=*") || hosted[0].Publish == "" {
+		t.Fatalf("hosted go snippet: %+v", hosted)
+	}
+
+	for _, repoType := range []string{"proxy", "group"} {
+		got := Snippets("go", "https://oa.example", "mods", repoType)
+		if len(got) != 1 || got[0].Configure != "go env -w GOPROXY=https://oa.example/repos/mods" || got[0].Publish != "" {
+			t.Fatalf("%s go snippet: %+v", repoType, got)
+		}
+	}
+}

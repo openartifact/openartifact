@@ -6,15 +6,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Cleanup policies and storage quotas
 
-Cleanup policies remove old package versions on a schedule (into the [trash](../operations/trash.md) by default); storage quotas cap the size and artifact count of a repository, and of a [project](../security/projects.md) as a whole. Both are set per repository (admins, or maintainers and owners of its project) through `/api/v1/repositories/{repo}/...`; a project adds [default cleanup policies](#project-default-cleanup-policies) and a [project quota](#project-quotas) through `/api/v1/projects/{project}/...`.
+Use cleanup policies to delete old package versions on a schedule, and quotas to cap how much a repository or project may store.
+
+- A cleanup policy moves old versions to the [trash](../operations/trash.md) by default.
+- A storage quota caps the size and artifact count of a repository, and of a [project](../security/projects.md) as a whole.
+- Admins, and maintainers and owners of the repository's project, set both per repository through `/api/v1/repositories/{repo}/...`.
+- A project adds [default cleanup policies](#project-default-cleanup-policies) and a [project quota](#project-quotas) through `/api/v1/projects/{project}/...`.
 
 ## Cleanup policies
 
-A background worker checks every minute which enabled policies are due (their cron schedule has fired since the last run, or since creation if never run) and executes them. Each policy run takes a Postgres advisory lock, so a policy never runs twice at once, and times out after 30 minutes. The same worker also reclaims unreferenced blobs every 15 minutes.
+A background worker checks every minute which enabled policies are due (their cron schedule has fired since the last run, or since creation if never run) and executes them. A policy never runs twice at once, even with several server replicas, and a run times out after 30 minutes. The same worker also reclaims unreferenced blobs every 15 minutes.
 
 ### Supported formats
 
-Policies run on **every hosted format**: apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, rubygems, sbt and terraform. Proxy and group repositories are never touched (a proxy cache has its own expiry). Creating or updating a policy for a format outside this set answers `400 UNSUPPORTED_FORMAT`. What a "version" is, and what a run does besides deleting rows, depends on the format:
+Policies run on **every hosted format**: ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform. Proxy and group repositories are never touched (a proxy cache has its own expiry). Creating or updating a policy for a format outside this set answers `400 UNSUPPORTED_FORMAT`. What a "version" is, and what a run does besides deleting rows, depends on the format:
 
 | Format | What is ranked and removed | After a run |
 |---|---|---|
@@ -22,7 +27,7 @@ Policies run on **every hosted format**: apk, cargo, conan, conda, deb, docker, 
 | cargo | Versions per crate. Cleanup **deletes** a version (to hide a version without deleting it, [yank](../formats/cargo.md) it instead). | The sparse index is computed live. |
 | conan | Recipe versions (`version@user/channel`) per package; all revisions of a version count together. | Computed live. |
 | conda | Builds per package and platform (`version-build_string`); the `.tar.bz2` and `.conda` files of one build count together. | `repodata.json` is computed live. |
-| deb, go, helm, nuget, pypi, rpm | Versions per package (see below). | deb and rpm indexes are regenerated. |
+| ansible, composer, deb, go, helm, nix, nuget, pacman, pypi, rpm | Versions per package (see below). | deb, rpm and pacman indexes are regenerated. |
 | docker | **Tags** per image, aged by their last update (re-tagging counts as activity). | When tags were removed permanently, [registry garbage collection](#docker-registry-garbage-collection) reclaims the manifests and layers they left unreferenced (subject to its grace period). Tags moved to the trash keep their manifests until the purge. |
 | ivy, sbt | Revisions per `organisation:module` (sbt: per group, artifact and Scala version). | Indexes are computed live. |
 | maven | Releases are ranked per `groupId:artifactId`; the timestamped builds of each `-SNAPSHOT` version are ranked against each other. The **newest build of a snapshot is always kept**, so `-SNAPSHOT` keeps resolving. All files of a version (jar, pom, checksums, classifiers) count as one version. | `maven-metadata.xml` of the artifact (and of its snapshot versions) is regenerated. |
@@ -59,7 +64,7 @@ At least one of `keep_last_n` or `keep_since_days` is required; zero or negative
 
 ### API
 
-All routes need an admin principal.
+The policy routes need a global admin, or the maintainer or owner role in the repository's project. The project policy routes need a project owner or an admin.
 
 | Method and path | Purpose |
 |---|---|
@@ -136,12 +141,12 @@ Usage is the sum, over the repository's packages, of each package's blob size, p
 
 ### What counts
 
-Quotas are enforced on the upload paths of every **hosted** format: Alpine (apk), Cargo, Conan, Conda, Debian, Docker, Go, Helm, Ivy, Maven, npm, NuGet, PyPI, raw, RPM, RubyGems, sbt and Terraform. The unit is one stored row and the size of its blob:
+Quotas are enforced on the upload paths of every **hosted** format. The unit is one stored row and the size of its blob:
 
 | Format | Counted as |
 |---|---|
 | Alpine (apk) | one artifact per `.apk` file, with its file size. |
-| Cargo, Conda, deb, Helm, Ivy, Maven, npm, NuGet, PyPI, raw, rpm, RubyGems, sbt | one artifact per file/version row, with its file size. Replacing a Conan file, a Maven snapshot or a raw file releases the previous content. |
+| Ansible, Cargo, Composer, Conda, deb, Helm, Ivy, Maven, Nix, npm, NuGet, pacman, PyPI, raw, rpm, RubyGems, sbt | one artifact per file/version row, with its file size. Replacing a Conan file, a Maven snapshot or a raw file releases the previous content. |
 | Conan | one artifact per stored file (recipe files and package files each count). |
 | Docker | the bytes of every blob (layer or config) the repository holds, **without** an artifact slot, plus one artifact with the manifest's size per manifest. An image with many layers is therefore one artifact, and a layer shared by several images of the repository, or pushed or mounted again into it, counts once. A blob mounted from another repository counts in the destination repository. Tags are free. |
 | Go | one artifact per module version, with the size of its zip plus its `go.mod`. |
@@ -159,7 +164,7 @@ Soft-deleted bytes keep counting against the quota until purge: moving a package
 
 The counters are updated incrementally with `synchronous_commit=off` (see [performance](../operations/performance.md#storage-quota)), so a PostgreSQL crash can lose the last few hundred milliseconds of changes, and backups do not include quota rows. Usage is therefore **reconciled**: recomputed from the package rows themselves (trashed rows included) and written over the counters, limits untouched.
 
-- The cleanup worker reconciles every repository on its first tick after the server starts and then every 6 hours. A pass that finds drift logs `corrected drifted quota usage counters` with the number of repositories. Replicas take a database advisory lock, so only one recounts at a time.
+- The cleanup worker reconciles every repository on its first tick after the server starts and then every 6 hours. A pass that finds drift logs `corrected drifted quota usage counters` with the number of repositories. With several replicas, only one recounts at a time.
 - A restore from a [backup](../operations/backup.md) reconciles when it finishes, because restored packages were not reserved against any quota.
 - An admin can reconcile one repository on demand with `POST /api/v1/repositories/{repo}/quota/reconcile`. The response is the quota, as for `GET`, with the recomputed `current_size_bytes` and `current_artifact_count`. A repository without a quota row gets an unlimited one.
 

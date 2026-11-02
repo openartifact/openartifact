@@ -46,7 +46,7 @@ Promotion adds metadata rows that point at the same blobs. It costs the same for
 - `oa upload` publishes to hosted `deb`, `ivy`, `maven`, `raw`, `rpm` and `sbt` repositories.
 - `bundle add` resolves artifacts of the same six formats. Add items of other formats through the [bundles API](../repositories/release-bundles.md#bundles-api).
 - For every other format, publish with the native client in the job: `cargo publish`, `docker push`, `helm push`, `npm publish`, `twine upload`.
-- Terraform and OpenTofu have no publish command. Use `curl` against the [publish API](../formats/terraform.md#publish-api).
+- Terraform and OpenTofu have no publish command. Use `curl` against the [publish API](../formats/terraform.md#publish).
 
 ## Install `oa` in the job
 

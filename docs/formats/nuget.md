@@ -6,27 +6,64 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # NuGet
 
-NuGet v3 feed: service index, registration, package download, search, autocomplete, push and delete; also as a proxy of an upstream feed (nuget.org) and as a group.
+Use a NuGet v3 feed to push, restore, search and delete packages with `dotnet` and `nuget`. It can be hosted, a proxy of an upstream feed such as nuget.org, or a group of both.
 
-| | |
+| Item | Value |
 |---|---|
 | Repo URL | `HOST/repos/REPO/v3/index.json` |
-| Repository types | hosted, proxy, group. See [hosted, proxy, group](../repositories/hosted-proxy-group.md) |
+| Format id | `nuget` |
+| Repository types | hosted, proxy, group |
+| Default upstream (proxy) | `https://api.nuget.org/v3/index.json` |
 
 ## Client setup
 
-`internal/clientsetup` produces:
+The web UI connect panel shows the same commands with your own URL.
 
 ```sh
 dotnet nuget add source HOST/repos/REPO/v3/index.json --name REPO --username <USERNAME> --password <TOKEN> --store-password-in-clear-text
 dotnet nuget push my-package.1.0.0.nupkg --source REPO --api-key <TOKEN>
 ```
 
-Source credentials carry the token as the Basic password. The server does not read `X-NuGet-ApiKey` (the `--api-key` value); the source credentials authenticate the push. See [authentication](../security/authentication.md).
+Source credentials carry the token as the Basic password. The server does not read `X-NuGet-ApiKey` (the `--api-key` value). The source credentials authenticate the push. See [authentication](../security/authentication.md).
 
-## Service index
+Over plain `http://`, NuGet needs `allowInsecureConnections="true"` on the source, or `--allow-insecure-connections`.
 
-`GET /v3/index.json` returns version `3.0.0` with these resources (under `HOST/repos/REPO`):
+## Publish
+
+Push with `dotnet nuget push`, or send `PUT /v3/package` with a multipart form whose `package` field is the `.nupkg`. Success is `201`.
+
+- The package is at most 100 MiB (`413` above it). The whole request is capped at that plus 1 MiB of form overhead.
+- The `.nupkg` must be a zip with exactly one root-level `.nuspec` (at most 4 MiB). Nested `.nuspec` files are package content and are ignored.
+- The `.nuspec` needs an `id` of 1 to 100 characters from `A-Z a-z 0-9 . _ -` and a valid `version`. Otherwise `400 invalid package`.
+- The package id is lower-cased and the version normalized, see [Versions](#versions).
+- A version that already exists is `409 package version already exists` and nothing changes. Delete the version first to publish it again. `dotnet nuget push --skip-duplicate` treats the `409` as a skip.
+- The [storage quota](../repositories/cleanup-and-quotas.md#what-counts) is enforced (`507` over quota) and released when the version is deleted for good.
+
+Delete a version with `DELETE /v3/package/<id>/<version>`.
+
+## Versions
+
+Versions are stored, listed and matched in NuGet's normalized lower-case form:
+
+- Leading zeros are dropped.
+- The fourth part is dropped when it is `0`.
+- `+build` metadata is dropped.
+- Release labels are lower-cased.
+
+```text
+1.0.0.0, 1.0, 01.0.0  ->  1.0.0
+2.0-Beta+abc          ->  2.0.0-beta
+```
+
+Pushing a version that normalizes to an existing one is a duplicate. URLs accept any spelling of a version. A `.nuspec` with an invalid version is `400 invalid package`.
+
+Version lists, registration pages and search results use SemVer 2.0 precedence, extended with NuGet's fourth part: `1.0.0-beta` < `1.0.0` < `1.0.0.1` < `1.10.0`.
+
+## Install and consume
+
+### Service index
+
+`GET /v3/index.json` returns the service index (version `3.0.0`). Paths are relative to `HOST/repos/REPO`:
 
 | `@type` | Path |
 |---|---|
@@ -36,60 +73,104 @@ Source credentials carry the token as the Basic password. The server does not re
 | `SearchAutocompleteService` | `/v3/autocomplete` |
 | `PackagePublish/2.0.0` | `/v3/package` |
 
-Other routes (all relative to `HOST/repos/REPO`):
-
 | Method and path | Purpose |
 |---|---|
-| `GET /v3/package/<id>/index.json` | version list, `{"versions": ["1.0.0", "1.2.0-beta"]}`, oldest first (what `dotnet restore` requests first); `404` for an unknown id |
+| `GET /v3/package/<id>/index.json` | version list `{"versions": [...]}`, oldest first; `404` for an unknown id |
 | `GET /v3/package/<id>/<version>/<id>.<version>.nupkg` | package download |
-| `GET /v3/package/<id>/<version>/<id>.nuspec` | the package's nuspec (`application/xml`) |
-| `DELETE /v3/package/<id>/<version>` | delete a version |
+| `GET /v3/package/<id>/<version>/<id>.nuspec` | the nuspec (`application/xml`) |
 | `GET /v3/registration/<id>/index.json` | registration index |
 | `GET /v3/registration/<id>/<version>.json` | registration leaf of one version |
-| `GET /v3/query` | search (`q`, `skip`, `take`; default 20, clamped to 1–100) |
+| `GET /v3/query` | search: `q`, `skip`, `take` (default 20, clamped to 1 to 100) |
 | `GET /v3/autocomplete` | package id completion |
 
 Ids are matched case-insensitively. Any other file name under `/v3/package/<id>/<version>/` is `404`.
 
-## Versions
+### Registration documents
 
-Versions are stored, listed and matched in NuGet's normalized form, which is also lower case: leading zeros are dropped, the fourth part is dropped when it is `0`, `+build` metadata is dropped, and release labels are lower-cased. `1.0.0.0`, `1.0` and `01.0.0` are all `1.0.0`; `2.0-Beta+abc` is `2.0.0-beta`. Pushing a version that normalizes to an existing one is a duplicate. URLs accept any spelling of a version and normalize it. A `.nuspec` whose version is not a valid NuGet version is rejected with `400 invalid package`.
+The registration index lists versions in ascending order, in pages of at most 64.
 
-Version lists, registration pages and search results order versions by SemVer 2.0 precedence (extended with NuGet's fourth part): `1.0.0-beta` < `1.0.0` < `1.0.0.1` < `1.10.0`.
+- Each page has `@id`, `lower`, `upper`, `count`, `parent` and `items`.
+- Each item has its leaf URL as `@id`, `packageContent`, `registration` and a `catalogEntry`.
+- The `catalogEntry` holds id, version, description, authors, title, summary, tags, `projectUrl`, `licenseUrl`, `iconUrl`, `listed` (always `true`), `published` (push time) and dependency groups per target framework.
+- Dependency groups are read from the stored package on first use and then kept in memory.
+- The leaf document has `@id`, `catalogEntry`, `listed`, `packageContent`, `published` and `registration`.
 
-## Push
+### Search
 
-`PUT /v3/package` with a multipart form whose `package` field is the `.nupkg`; success is `201`.
+- Search returns one entry per package. `totalHits`, `skip` and `take` count packages.
+- Each entry carries the metadata of the latest version: the highest stable version, or the highest prerelease when there is no stable one.
+- Each entry also has `totalDownloads` over all versions and a `versions` array of `{"@id", "version", "downloads"}`.
+- Autocomplete lists each package id once.
 
-- The package is limited to 100 MiB (`413` above it); the whole request body is capped at that plus 1 MiB of form overhead.
-- The `.nupkg` must be a zip with exactly one root-level `.nuspec` (max 4 MiB; nested `.nuspec` files are package content and ignored) carrying an `id` of 1–100 characters from `A-Z a-z 0-9 . _ -` and a valid `version`; otherwise `400 invalid package`.
-- The package id is lower-cased and the version normalized (see [Versions](#versions)); a SHA-512 of the package is computed.
-- Pushing an id and version that already exist answers `409 package version already exists` and changes nothing: the stored package and its blob stay as they were. Delete the version first to publish it again (`dotnet nuget push --skip-duplicate` treats the `409` as a skip).
-- The [storage quota](../repositories/cleanup-and-quotas.md#what-counts) is enforced on push (`507` over quota) and released when the version is deleted for good.
+## Proxy
 
-## Metadata served
+Create a proxy with `repo_type: "proxy"` and the upstream **service index** as `upstream_url`. If you omit it, the default is `https://api.nuget.org/v3/index.json`.
 
-The registration index (`@id`, `count`, `items`) holds pages of at most 64 versions in ascending order. Each page has `@id`, `lower`, `upper`, `count`, `parent` and `items`; each item has an `@id` (its leaf URL, `.../v3/registration/<id>/<version>.json`), `packageContent`, `registration` and a `catalogEntry` with `@id`, id, version, description, authors, title, summary, tags, projectUrl, licenseUrl, iconUrl, `listed` (always `true`), `published` (push time), dependency groups (per target framework, read from the stored package on first use and then cached in memory by package digest) and the `packageContent` download URL. The leaf document returned by the leaf URL has `@id`, `catalogEntry` (the entry URL), `listed`, `packageContent`, `published` and `registration`.
+```sh
+curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"nuget-org","format":"nuget","repo_type":"proxy"}'
+```
 
-Search returns one entry per package: `totalHits` counts packages, and each entry carries the latest version's metadata (the highest stable version, or the highest prerelease when there is no stable one), `totalDownloads` over all versions and a `versions` array of `{"@id", "version", "downloads"}`. `skip` and `take` count packages. Autocomplete lists each package id once.
-
-## Proxy and group repositories
-
-A proxy (`repo_type: proxy`, `upstream_url` the upstream **service index**, default `https://api.nuget.org/v3/index.json`) and a group (`repo_type: group`) use the same source URL as a hosted repository, `HOST/repos/REPO/v3/index.json`, and the same `/v3/...` routes (read-only; `dotnet nuget push` is `405`):
+Clients use `HOST/repos/REPO/v3/index.json` as the source, like a hosted feed. A proxy is read-only: `dotnet nuget push` and delete answer `405` (`Allow: GET, HEAD`).
 
 ```sh
 dotnet nuget add source HOST/repos/REPO/v3/index.json --name REPO
 dotnet restore
 ```
 
-Over plain `http://` NuGet needs `allowInsecureConnections="true"` on the source (or `--allow-insecure-connections`).
+- **Service index:** fetched from `upstream_url`, cached for the repository TTL and rewritten. It advertises only what the proxy serves: registrations, the flat container (`PackageBaseAddress`) and, when the upstream has them, search and autocomplete. Every URL points at the proxy, on the request origin or on `BASE_URL` when set.
+- **Registrations:** inline or paged, gzip decoded, and rewritten so `@id`, `parent`, `registration` and `packageContent` point at the proxy. Paged registrations are served under `/v3/registration/<id>/page/<lower>/<upper>.json`. A page the index does not list is `404` and never fetched. Catalog URLs are left unchanged.
+- **Flat container:** version lists, `.nupkg` and `.nuspec` come from the upstream's `PackageBaseAddress`. Ids and versions are matched in normalized form, so all spellings share one cache entry.
+- **Packages:** a `.nupkg` is checked before it is cached. With a catalog entry, it must match `packageHash` (SHA-512 or SHA-256) and `packageSize`. Without one, it must be a zip with a root `.nuspec`. A mismatch is `502` and nothing is stored.
+- **Immutable once cached:** `.nupkg` and `.nuspec` files. A `.nupkg` with no `packageHash` is cached for the repository TTL only.
+- **Search and autocomplete:** passed through uncached with rewritten URLs. `404` when the upstream has none.
+- **Credentials:** sent only to the origin of `upstream_url`. Resources on another origin are reachable, but those requests are anonymous.
+- **Upstream down:** cached packages are always served. The service index, version lists and registrations are served stale for up to `max_stale_seconds` past expiry (`Warning: 110`). A package never requested before answers `502`.
+- The upstream's Catalog resource and publishing resources are not proxied.
 
-- **Proxy.** The service index, flat container (version list, `.nupkg`, `.nuspec`) and registrations (inline or paged, gzip decoded) are fetched from the upstream's own service index and rewritten so that every resource and `packageContent` URL points at the proxy (absolute URLs on the request origin, or `BASE_URL` when set; the registration `ETag` and render-cache key include the origin). `.nupkg` files are verified against the catalog `packageHash`/`packageSize` when the upstream publishes them, else against being a zip with a root `.nuspec`, then cached forever; metadata follows `cache_ttl_seconds` and is served stale when the upstream is down, so a restore of anything already fetched works offline. Search and autocomplete pass through uncached.
-- **Group.** The service index is the group's (registrations and flat container, no search). Version lists are united, registrations merged per version (earliest member wins) into inline pages, and package files come from the first member that has them. Members are hosted nuget and nuget proxy repositories.
+### Minimum age and curation
 
-Details and limits: [NuGet proxies and groups](../repositories/hosted-proxy-group.md#nuget-proxies).
+The general rules are in [minimum age](../repositories/hosted-proxy-group.md#minimum-age) and [package curation](../repositories/hosted-proxy-group.md#package-curation). The NuGet specifics:
 
-- **Minimum age.** With `min_age_hours` set on the proxy, a version whose `published` time (the `catalogEntry.published` of its registration item; the leaf's own `published`, else its catalog entry's, for the files) is younger than that is hidden. A registration index leaves it out of its inline pages (a page left empty goes, the others keep their `lower`/`upper` and get their `count` corrected; pages the upstream does not inline are served as they are and gated when fetched), a registration page leaves it out, and its leaf is `404`. The flat container version list carries no times, so it is filtered with the dates of the package's registration (index and every page, read through the same cache); a version the registration does not list yet is treated as too new, since the flat container is updated first, unless the feed offers only the semver 1 registrations (which lack semver 2 versions) or no registration at all, in which case the list is served unfiltered. A package with no version left is `404`. `.nupkg` and `.nuspec` files of a hidden version answer `403` unless already cached. Unlisted packages state the year 1900 instead of a time: that is no date, so they are not held back. Search and autocomplete are passed through unfiltered (they carry no publish times) and may still name a hidden version, whose files are refused. NuGet has no "latest" pointer in the registration, so nothing else moves. The `ETag` of these documents changes with the threshold and, every 5 minutes, with the clock, so a version that has aged enough appears without a stale `304`. A group with the proxy as a member lists, merges and serves only what the proxy does (its members are read through the proxy's own routes; a hidden file is `403` and the group does not try the next member). See [Minimum age](../repositories/hosted-proxy-group.md#minimum-age).
-- **Curation.** [package curation](../repositories/hosted-proxy-group.md#package-curation) rules name a package id (matched lower-cased, so `Newtonsoft.Json` and `newtonsoft.json` are the same rule) and a version in its normalized form (`1.0` is `1.0.0`, pre-release labels lower-case). A version the rules make unavailable is left out of the registration index, pages and flat container version list like a too-young one, its registration leaf answers `404`, and its `.nupkg` and `.nuspec` answer `403` even when already cached. No `published` time is needed: nothing is fetched just for curation.
+- **Spelling:** rules name the package id (matched lower-cased) and the normalized version (`1.0` is `1.0.0`).
+- **Age source:** the `published` time of the registration entry. Unlisted packages state the year 1900, which is no date, so they are not held back.
+- **Hidden version:** it is removed from the registration index, its pages and the flat-container version list. Its registration leaf is `404`.
+- **Files:** its `.nupkg` and `.nuspec` answer `403`. Under minimum age they are served if already cached. Curation blocks cached files too.
+- **No version left:** the package is `404`.
+- **Pages the upstream does not inline** are served as they are and gated when fetched.
+- **Flat-container version list:** it has no times, so it is filtered with the dates from the package's registration. A version the registration does not list yet is treated as too new. If the feed offers only semver 1 registrations, or none, the list is not filtered.
+- **Search and autocomplete** are not filtered and may still name a hidden version. Its files are refused.
+- **Freshness:** the `ETag` of these documents changes with the threshold and every 5 minutes, so a version that has aged enough appears without a stale `304`.
 
-Limits: the catalog (`Catalog/3.0.0`) and publishing resources are not proxied. Credentials are sent only to the origin of `upstream_url`, so a feed whose resources are on another origin than its service index is read anonymously there. Search on a group is not offered.
+## Group
+
+A group has hosted and NuGet proxy members. It uses the same source URL as a hosted feed and is read-only.
+
+- The service index is the group's own and has registrations and the flat container, but no search. `/v3/query` and `/v3/autocomplete` are `404`.
+- Version lists are united across members.
+- Registrations are merged per version into inline pages of 64. For a version held by several members, the first member in member order wins.
+- Pages a member does not inline are fetched from it. A member that cannot deliver its registration whole is left out.
+- Registration leaves, pages, `.nupkg` and `.nuspec` come from the first member that has them. Every URL points at the group.
+- Hosted members win a package id first, see [hosted members win a package name](../repositories/hosted-proxy-group.md#hosted-members-win-a-package-name).
+- A proxy member's gate applies through the group. A hidden file is `403` and the group does not try the next member.
+- A failing member is ignored while another contributes. With no contributor the group answers `404`, or `502` if a member failed. A merge that left out a failed member is served with `Cache-Control: no-store` and no `ETag`.
+
+## Limits and behaviour
+
+- Package size is at most 100 MiB. Quota over the limit is `507`.
+- Registration documents carry an `ETag` and revalidate with `If-None-Match`.
+- NuGet has no repository signature. GPG signing covers only Debian and RPM ([signing](../security/signing.md)).
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `400 invalid package` on push | no single root `.nuspec`, bad `id`, or bad `version` | fix the nuspec |
+| `409 package version already exists` | the id and normalized version exist | bump the version, or delete the old one |
+| `405` on push | the repository is a proxy or a group | push to a hosted repository |
+| `401` on push | the source has no credentials | add the source with `--username` and `--password <TOKEN>` |
+| NuGet refuses an `http://` source | insecure sources are off | set `allowInsecureConnections="true"` |
+| `502` for a package through a proxy | the download did not match its hash | retry, then check the upstream |
+| `403` on a `.nupkg` | minimum age or curation holds it back | see [Minimum age and curation](#minimum-age-and-curation) |
+| a restore from a group finds no search | groups have no search | search a member repository |

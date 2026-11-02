@@ -6,17 +6,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # npm
 
-Hosted npm registry for `npm`, `pnpm` and `yarn`: publish, install, dist-tags, scoped packages and unpublish.
+Use an npm registry to publish, install, tag and unpublish packages with `npm`, `pnpm` and `yarn`, including scoped packages. It can be hosted, a proxy of an upstream registry, or a group of both.
 
-| | |
+| Item | Value |
 |---|---|
-| Format id | `npm` |
 | Registry URL | `HOST/repos/REPO/` |
-| Repository types | hosted, proxy, group ([details](../repositories/hosted-proxy-group.md)) |
+| Format id | `npm` |
+| Repository types | hosted, proxy, group |
+| Default upstream (proxy) | none: set `upstream_url`, for example `https://registry.npmjs.org` |
 
 ## Client setup
 
-`internal/clientsetup` produces these commands. `HOSTPORT` is the host (with port) of `HOST`, for example `localhost:8080`.
+The web UI connect panel shows the same commands with your own URL. `HOSTPORT` is the host with port of `HOST`, for example `localhost:8080`.
 
 ```sh
 # npm
@@ -35,61 +36,134 @@ yarn config set npmAuthToken <TOKEN>
 yarn npm publish
 ```
 
-Scope a single namespace to this registry instead of replacing the default: `npm config set @myscope:registry HOST/repos/REPO/`.
+To send only one namespace to this registry, keep the default registry and scope it:
 
-## Publish and unpublish
+```sh
+npm config set @myscope:registry HOST/repos/REPO/
+```
 
-Publishing uses the npm wire protocol: `PUT /repos/REPO/<package>` with the packument JSON and a base64 `_attachments` tarball. Scoped names may be sent as `@scope%2Fname`.
+There is no login endpoint. Configure the token as shown instead of running `npm login`.
 
-- Publishing requires an authenticated principal; anonymous callers get `401` even on a public repository.
-- Checked before anything is stored: valid package name (max 214 characters), `name` in the body equals the URL, each version is valid semver, manifest `name` and `version` match, the tarball attachment is present (key `<name>-<version>.tgz` or the bare file name), the optional `dist.integrity` matches the tarball, every `dist-tags` entry points at a version in the request or an existing one, and tag names are not valid semver versions. Failures are `400`.
+## Publish
+
+Publishing uses the npm wire protocol: `PUT /repos/REPO/<package>` with the package metadata JSON and a base64 `_attachments` tarball. Scoped names may be sent as `@scope%2Fname`. The metadata JSON is called a packument.
+
+- Publishing needs an authenticated principal. Anonymous callers get `401`, even on a public repository.
 - A version that already exists is `409 {"error": "version already exists"}`. Versions are immutable.
-- Request body limit 200 MiB (`413 payload too large`); the whole body is held in memory. Quota is enforced ([quotas](../repositories/cleanup-and-quotas.md)).
 - A failed publish rolls back the versions and package it created.
 
-Unpublish:
+Checks before anything is stored (failures are `400`):
 
-- `npm unpublish pkg@ver` sends `PUT /<package>/-rev/<rev>` with the reduced packument (versions missing from it are removed; the package is deleted if none remain), then `DELETE /<package>/-/<file>.tgz/-rev/<rev>`, which is a no-op once the version is gone.
-- `npm unpublish pkg` sends `DELETE /<package>/-rev/<rev>`, removing every version and the package.
-- Versions older than 72 hours cannot be unpublished: `403 cannot unpublish after 72h, use npm deprecate instead`. The per-repository override is the `repositories.allow_full_unpublish` database column; no API or UI field sets it.
-- `npm deprecate` works: a `PUT` that carries existing versions without `_attachments` updates only their `deprecated` field (an empty message un-deprecates). New versions still need their attachment.
-- Package names that collide with other formats' routes (`charts`, `index.yaml`, `config.json`, `public.key`) are served as npm packages in an npm repository.
+- The package name is valid and at most 214 characters.
+- `name` in the body equals the URL.
+- Each version is valid semver, and the manifest `name` and `version` match.
+- The tarball attachment is present, keyed `<name>-<version>.tgz` or by the bare file name.
+- `dist.integrity`, when sent, matches the tarball.
+- Every `dist-tags` entry points at a version in the request or an existing one.
+- Tag names are not valid semver versions.
 
-Dist-tags (`npm dist-tag`):
+Limits: the request body is at most 200 MiB (`413 payload too large`) and is held in memory. The [storage quota](../repositories/cleanup-and-quotas.md) is enforced.
+
+### Unpublish and deprecate
+
+- `npm unpublish pkg@ver` removes that version. The package is deleted if no version remains.
+- `npm unpublish pkg` removes every version and the package.
+- Versions older than 72 hours cannot be unpublished: `403 cannot unpublish after 72h, use npm deprecate instead`. An operator can lift this per repository, but no API or UI setting for it exists yet.
+- `npm deprecate` works. A `PUT` that carries existing versions without `_attachments` only updates their `deprecated` field. An empty message removes the deprecation.
+
+### Dist-tags
 
 | Request | Behaviour |
 |---|---|
-| `GET /-/package/<pkg>/dist-tags` | `{tag: version}` |
-| `PUT /-/package/<pkg>/dist-tags/<tag>` | body is the version as a JSON string (max 1 KiB); `404` if the version does not exist; the packument ETag changes immediately |
+| `GET /-/package/<pkg>/dist-tags` | returns `{tag: version}` |
+| `PUT /-/package/<pkg>/dist-tags/<tag>` | body is the version as a JSON string (max 1 KiB); `404` if the version does not exist |
 | `DELETE /-/package/<pkg>/dist-tags/<tag>` | removes the tag; `latest` cannot be deleted (`400`) |
 
-## Read and generated metadata
+## Install and consume
 
 | Request | Response |
 |---|---|
-| `GET /<pkg>` | packument, built from the stored versions and dist-tags |
-| `GET /<pkg>` with `Accept: application/vnd.npm.install-v1+json` | abbreviated packument |
+| `GET /<pkg>` | the packument, built from the stored versions and dist-tags |
+| `GET /<pkg>` with `Accept: application/vnd.npm.install-v1+json` | the abbreviated packument |
 | `GET /<pkg>/<version-or-tag>` | the stored manifest of one version |
-| `GET /<pkg>/-/<file>.tgz`, `GET /@scope/<pkg>/-/<file>.tgz` | tarball |
+| `GET /<pkg>/-/<file>.tgz`, `GET /@scope/<pkg>/-/<file>.tgz` | the tarball |
 
-- The packument carries `ETag` (`If-None-Match` answers `304`), `Vary: Accept` and `Cache-Control: public, max-age=60`.
-- `dist.tarball` is an absolute URL `ORIGIN/repos/REPO/<pkg>/-/<tarball>`, because npm stores it verbatim as `resolved`. `ORIGIN` is derived from the request (`X-Forwarded-Host` and `X-Forwarded-Proto` are believed only from a peer in `OPENARTIFACT_TRUSTED_PROXIES`, and the proxy must forward a non-default port in the host); an explicit `BASE_URL` always wins. The packument sends `Vary: Host, X-Forwarded-Host, X-Forwarded-Proto` and its `ETag` carries an origin tag (`"<nanos>-<origin tag>"`, abbreviated `"abbr-<nanos>-<origin tag>"`), so a `304` for one host never serves another.
 - Tarball names are `<unscoped-name>-<version>.tgz`.
-- There is no search or login endpoint; configure the token as shown above rather than `npm login`.
+- `dist.tarball` is an absolute URL `ORIGIN/repos/REPO/<pkg>/-/<tarball>`, because npm stores it as `resolved`.
+- `ORIGIN` comes from the request. `X-Forwarded-Host` and `X-Forwarded-Proto` are trusted only from a peer in `OPENARTIFACT_TRUSTED_PROXIES`. A reverse proxy must forward a non-default port in the host.
+- An explicit `BASE_URL` always wins over the request origin.
+- Package names that collide with other formats' routes (`charts`, `index.yaml`, `config.json`, `public.key`) are served as npm packages in an npm repository.
+- There is no search endpoint.
 
-## Proxy and group repositories
+## Proxy
 
-- **Proxy:** mirrors an upstream registry (for example `https://registry.npmjs.org`): `npm install` against `HOST/repos/PROXY/` fetches and caches packuments (with the repository TTL, served stale when the upstream is down) and immutable, integrity-verified tarballs; `dist.tarball` is rewritten to the proxy. Publishing to a proxy is `405`. See [npm proxies](../repositories/hosted-proxy-group.md#npm-proxies).
-- **Minimum age:** with `min_age_hours` set on a proxy, a version whose `time[version]` in the upstream packument is younger than that is left out of what the proxy serves: its `versions` and `time` entries are removed (`created` and `modified` stay), a `latest` dist-tag that pointed at it moves to the highest remaining version that is not a prerelease (the highest remaining one when only prereleases are left), any other dist-tag that pointed at it is dropped, and `GET /<pkg>/<version>` for it is `404`. A package whose versions are all too new is `404`. Its tarball is refused with `403` unless it is already cached. A version the packument gives no `time` for is not held back. The abbreviated packument (`application/vnd.npm.install-v1+json`) carries no publish times, so while the gate is on an abbreviated request is answered from the full packument (`application/json`) and the abbreviated document is not used. A group member that is a proxy contributes the already filtered packument.
-- **Curation:** a proxy repository can also hold back packages and versions by administrator rules, see [package curation](../repositories/hosted-proxy-group.md#package-curation). Rules name the package as the registry does, lower-cased with its scope (`@scope/name`), and the version as the packument shows it. A matching version is left out of the packument like a too-young one (with no `time` needed; dist-tags move the same way), and its tarball answers `403` with the reason even when it is already cached. A matching allow rule also exempts a version from the minimum age. The abbreviated packument is answered from the full one while curation is on.
-- **Group:** an ordered list of hosted and proxy npm members behind one registry URL. Packuments are merged (versions united, first member wins on a version conflict, each dist-tag from the first member that has it), tarball URLs point at the group, tarballs come from the first member that has them. Publishing to a group is `405`: publish to a hosted member and read through the group. See [group repositories](../repositories/hosted-proxy-group.md#group-repositories).
+Create a proxy with `repo_type: "proxy"` and the upstream registry as `upstream_url`:
 
 ```sh
-npm config set registry HOST/repos/PROXY_OR_GROUP/
-npm config set //HOSTPORT/repos/PROXY_OR_GROUP/:_authToken <TOKEN>
+curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"npmjs","format":"npm","repo_type":"proxy","upstream_url":"https://registry.npmjs.org"}'
+```
+
+Point clients at `HOST/repos/PROXY/` as shown in [Client setup](#client-setup). A proxy is a registry, not a path mirror.
+
+- **Packuments** are fetched from the upstream and cached with `cache_ttl_seconds`. They are served stale when the upstream is down, for up to `max_stale_seconds` past expiry (`Warning: 110`).
+- The abbreviated and the full packument are cached separately. Every `dist.tarball` is rewritten at serve time to the proxy. All other fields, including `dist.integrity` and `dist.shasum`, are untouched.
+- **Tarballs** are fetched from the URL the packument names for that file. A file no version lists is `404` and never fetched.
+- A tarball is checked against `dist.integrity` (the strongest algorithm present) or else `dist.shasum`, then cached. A mismatch is `502` and nothing is stored.
+- A verified tarball is immutable. A version that advertises no digest is accepted but cached for the repository TTL only.
+- Upstream credentials go only to the configured upstream host, never to another host a packument points at.
+- With the upstream down, cached tarballs are still served. A package never requested before answers `502`.
+- `npm publish`, `unpublish`, `deprecate` and `dist-tag` against a proxy answer `405` (`Allow: GET, HEAD`). Search, audit and login are not proxied.
+
+### Minimum age and curation
+
+The general rules are in [minimum age](../repositories/hosted-proxy-group.md#minimum-age) and [package curation](../repositories/hosted-proxy-group.md#package-curation). The npm specifics:
+
+- **Spelling:** rules name the package lower-cased with its scope (`@scope/name`) and the version as the packument shows it.
+- **Age source:** the version's `time[version]` in the upstream packument. A version with no `time` is not held back.
+- **Hidden version:** it is removed from `versions` and `time` (`created` and `modified` stay), and `GET /<pkg>/<version>` is `404`. Its tarball answers `403` with the reason, unless it is already cached and only the minimum age holds it back. Curation blocks cached tarballs too.
+- **Dist-tags:** a `latest` tag that pointed at it moves to the highest remaining non-prerelease version, or the highest remaining version if only prereleases are left. Other tags that pointed at it are dropped.
+- **No version left:** the package is `404`.
+- **Abbreviated requests:** the abbreviated packument has no publish times. While minimum age or curation is active, the server answers an abbreviated request from the full packument. Clients read it the same way.
+
+## Group
+
+A group is an ordered list of hosted and proxy npm members behind one registry URL.
+
+- Hosted members win a package name first. Among the remaining members the first one wins a version. See [hosted members win a package name](../repositories/hosted-proxy-group.md#hosted-members-win-a-package-name).
+- With `merge_proxy_versions` set to `true`, versions of a name held by a hosted member are also merged in from proxy members.
+- Packuments are merged: versions are united, and each dist-tag comes from the first member that has it.
+- Tarball URLs point at the group. Tarballs come from the first member that has them.
+- A proxy member contributes its already filtered packument, so minimum age and curation apply through the group.
+- Publishing to a group is `405`. Publish to a hosted member and read through the group.
+
+Clients use `HOST/repos/GROUP/` like any other npm registry:
+
+```sh
+npm config set registry HOST/repos/GROUP/
+npm config set //HOSTPORT/repos/GROUP/:_authToken <TOKEN>
 npm install lodash @babel/core
 ```
 
-## Signing
+A merge that left out a failed member is served with `Cache-Control: no-store` and no `ETag`.
 
-npm has no repository signature; integrity is the SHA-512 `dist.integrity` plus SHA-1 `shasum` computed at publish. GPG signing covers only Debian and RPM ([signing](../security/signing.md)).
+## Limits and behaviour
+
+- The packument carries an `ETag`; `If-None-Match` answers `304`. It also sends `Vary: Accept`, and `Vary: Host, X-Forwarded-Host, X-Forwarded-Proto` because tarball URLs depend on the origin. A `304` for one host never serves another.
+- `Cache-Control` on a packument is `public, max-age=60` for anonymous reads of a public repository and `private, no-cache` otherwise.
+- npm has no repository signature. Integrity is the SHA-512 `dist.integrity` plus the SHA-1 `shasum` computed at publish. GPG signing covers only Debian and RPM ([signing](../security/signing.md)).
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `401` on publish | anonymous call, or no token configured | set `_authToken` for the registry host and path |
+| `409 version already exists` | versions are immutable | bump the version |
+| `400` on publish | name, version, tag or integrity check failed | compare the body with the checks under [Publish](#publish) |
+| `413 payload too large` | body over 200 MiB | publish a smaller package |
+| `403 cannot unpublish after 72h` | the version is older than 72 hours | use `npm deprecate` |
+| `405` on publish | the repository is a proxy or a group | publish to a hosted repository |
+| `502` on a tarball through a proxy | the download did not match its digest | retry, then check the upstream |
+| `403` on a tarball | a minimum age or curation rule holds it back | see [Minimum age and curation](#minimum-age-and-curation) |
+| `dist.tarball` points at the wrong host | the reverse proxy headers are not trusted | add the proxy to `OPENARTIFACT_TRUSTED_PROXIES` or set `BASE_URL` |
