@@ -41,6 +41,13 @@ type DockerUpload struct {
 	UpdatedAt    time.Time `db:"updated_at"`
 }
 
+// DockerUploadChunk is one chunk (an object of the blob store) of an upload
+// session.
+type DockerUploadChunk struct {
+	ChunkID string `db:"chunk_id"`
+	Size    int64  `db:"size_bytes"`
+}
+
 // DockerManifest stores an OCI or Docker v2 image manifest.
 type DockerManifest struct {
 	ID            string `db:"id"`

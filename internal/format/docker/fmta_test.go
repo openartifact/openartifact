@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 
@@ -129,17 +128,23 @@ func TestRegistry_ManifestBodyIsCapped(t *testing.T) {
 	}
 }
 
-// FMTA-11: bytes a failed PATCH wrote past the accepted offset are discarded
-// before the next chunk is appended.
-func TestHandleUploadChunk_TruncatesStrayBytes(t *testing.T) {
+// FMTA-11, across replicas: a PATCH that lost the race for the session's offset
+// (another replica appended first) does not join the upload and leaves no chunk
+// behind, so the blob is exactly the bytes the winning requests sent.
+func TestHandleUploadChunk_LosingTheOffsetRaceDropsTheChunk(t *testing.T) {
 	uid := uuid.New().String()
 
-	// Accepted: "hello" (5 bytes). A dropped PATCH left "JUNK" behind.
-	if err := os.WriteFile(tempUploadPath(t, uid), []byte("helloJUNK"), 0o600); err != nil {
-		t.Fatal(err)
+	inner := &fakeDB{
+		repo:   &models.Repository{ID: "repo-1", Format: "docker"},
+		upload: &models.DockerUpload{RepositoryID: "repo-1", UploadUUID: uid, Offset: 5},
 	}
+	inner.append("repo-1", uid, "winner-0", 5)
 
-	db := &fakeDB{repo: &models.Repository{ID: "repo-1", Format: "docker"}, upload: &models.DockerUpload{Offset: 5}}
+	// Another replica appends between this request's read of the offset and its
+	// own append.
+	db := &racingDB{fakeDB: inner, rival: func() {
+		_, _ = inner.AppendDockerUploadChunk(context.Background(), "repo-1", uid, "winner-1", 5, 8)
+	}}
 	h, _ := newTestHandler(t, db)
 
 	req := withChiVars(
@@ -149,18 +154,35 @@ func TestHandleUploadChunk_TruncatesStrayBytes(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.handleUploadChunk(rec, req)
 
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("status = %d; %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "BLOB_UPLOAD_INVALID") {
+		t.Fatalf("status = %d %s, want 409 BLOB_UPLOAD_INVALID", rec.Code, rec.Body.String())
 	}
 
-	got, _ := os.ReadFile(tempUploadPath(t, uid))
-	if string(got) != "helloworld" {
-		t.Fatalf("file = %q, want helloworld", got)
+	if got := len(inner.list("repo-1", uid)); got != 2 {
+		t.Fatalf("chunk rows = %d, want the two winners only", got)
 	}
 
-	if rec.Header().Get("Range") != "0-9" {
-		t.Fatalf("Range = %q", rec.Header().Get("Range"))
+	if ids := chunkObjects(t, h); len(ids) != 0 {
+		t.Fatalf("chunk objects left behind: %v", ids)
 	}
+}
+
+// racingDB runs rival right before the first append of a PATCH.
+type racingDB struct {
+	*fakeDB
+
+	rival func()
+}
+
+func (d *racingDB) AppendDockerUploadChunk(
+	ctx context.Context, repositoryID, uploadUUID, chunkID string, oldOffset, newOffset int64,
+) (bool, error) {
+	if d.rival != nil {
+		d.rival()
+		d.rival = nil
+	}
+
+	return d.fakeDB.AppendDockerUploadChunk(ctx, repositoryID, uploadUUID, chunkID, oldOffset, newOffset)
 }
 
 // FMTA-16: an empty upload reports 0-0, never 0--1.

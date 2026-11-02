@@ -10,6 +10,47 @@ import (
 	"time"
 )
 
+const appendDockerUploadChunk = `-- name: AppendDockerUploadChunk :execrows
+WITH moved AS (
+    UPDATE docker_uploads SET "offset" = $2::bigint, updated_at = now()
+    WHERE repository_id = $4 AND upload_uuid = $5 AND "offset" = $3::bigint
+    RETURNING id
+)
+INSERT INTO docker_upload_chunks (chunk_id, upload_id, seq, size_bytes)
+SELECT $1::uuid, moved.id,
+       (SELECT COALESCE(max(c.seq) + 1, 0) FROM docker_upload_chunks c WHERE c.upload_id = moved.id),
+       $2::bigint - $3::bigint
+FROM moved
+`
+
+type AppendDockerUploadChunkParams struct {
+	ChunkID      string `db:"chunk_id" json:"chunk_id"`
+	NewOffset    int64  `db:"new_offset" json:"new_offset"`
+	OldOffset    int64  `db:"old_offset" json:"old_offset"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	UploadUuid   string `db:"upload_uuid" json:"upload_uuid"`
+}
+
+// Compare-and-set append: moves the session's offset from old_offset to
+// new_offset and records the chunk object that holds those bytes, in one
+// statement. Zero rows means the offset moved (another request advanced or
+// completed the session) and nothing was recorded; the caller discards the
+// chunk object it wrote. The row lock of the UPDATE serialises concurrent
+// appends, so the next sequence number cannot repeat.
+func (q *Queries) AppendDockerUploadChunk(ctx context.Context, arg AppendDockerUploadChunkParams) (int64, error) {
+	result, err := q.db.Exec(ctx, appendDockerUploadChunk,
+		arg.ChunkID,
+		arg.NewOffset,
+		arg.OldOffset,
+		arg.RepositoryID,
+		arg.UploadUuid,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const blobRowExists = `-- name: BlobRowExists :one
 SELECT EXISTS (SELECT 1 FROM blobs WHERE sha256 = $1)
 `
@@ -537,6 +578,30 @@ func (q *Queries) DockerImageExists(ctx context.Context, arg DockerImageExistsPa
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const existingDockerUploadChunkIDs = `-- name: ExistingDockerUploadChunkIDs :many
+SELECT chunk_id FROM docker_upload_chunks WHERE chunk_id = ANY($1::uuid[])
+`
+
+func (q *Queries) ExistingDockerUploadChunkIDs(ctx context.Context, ids []string) ([]string, error) {
+	rows, err := q.db.Query(ctx, existingDockerUploadChunkIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var chunk_id string
+		if err := rows.Scan(&chunk_id); err != nil {
+			return nil, err
+		}
+		items = append(items, chunk_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getDockerBlob = `-- name: GetDockerBlob :one
@@ -1269,6 +1334,45 @@ func (q *Queries) ListDockerTagsByRepo(ctx context.Context, arg ListDockerTagsBy
 	return items, nil
 }
 
+const listDockerUploadChunks = `-- name: ListDockerUploadChunks :many
+SELECT c.chunk_id, c.size_bytes
+FROM docker_upload_chunks c
+JOIN docker_uploads u ON u.id = c.upload_id
+WHERE u.repository_id = $1 AND u.upload_uuid = $2
+ORDER BY c.seq
+`
+
+type ListDockerUploadChunksParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	UploadUuid   string `db:"upload_uuid" json:"upload_uuid"`
+}
+
+type ListDockerUploadChunksRow struct {
+	ChunkID   string `db:"chunk_id" json:"chunk_id"`
+	SizeBytes int64  `db:"size_bytes" json:"size_bytes"`
+}
+
+// The chunk objects of a session in upload order.
+func (q *Queries) ListDockerUploadChunks(ctx context.Context, arg ListDockerUploadChunksParams) ([]ListDockerUploadChunksRow, error) {
+	rows, err := q.db.Query(ctx, listDockerUploadChunks, arg.RepositoryID, arg.UploadUuid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDockerUploadChunksRow{}
+	for rows.Next() {
+		var i ListDockerUploadChunksRow
+		if err := rows.Scan(&i.ChunkID, &i.SizeBytes); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUnindexedDockerManifests = `-- name: ListUnindexedDockerManifests :many
 SELECT dm.id, dm.image, dm.digest, b.sha256 AS blob_sha256
 FROM docker_manifests dm
@@ -1338,34 +1442,6 @@ func (q *Queries) TouchDockerBlob(ctx context.Context, arg TouchDockerBlobParams
 	var id string
 	err := row.Scan(&id)
 	return id, err
-}
-
-const updateDockerUploadOffset = `-- name: UpdateDockerUploadOffset :execrows
-UPDATE docker_uploads SET "offset" = $1, updated_at = now()
-WHERE repository_id = $2 AND upload_uuid = $3 AND "offset" = $4
-`
-
-type UpdateDockerUploadOffsetParams struct {
-	NewOffset    int64  `db:"new_offset" json:"new_offset"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	UploadUuid   string `db:"upload_uuid" json:"upload_uuid"`
-	OldOffset    int64  `db:"old_offset" json:"old_offset"`
-}
-
-// Compare-and-set: advances the offset only while it still equals the value the
-// caller based its write on, so two requests on one session cannot both claim
-// the same byte range.
-func (q *Queries) UpdateDockerUploadOffset(ctx context.Context, arg UpdateDockerUploadOffsetParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateDockerUploadOffset,
-		arg.NewOffset,
-		arg.RepositoryID,
-		arg.UploadUuid,
-		arg.OldOffset,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
 }
 
 const upsertDockerTag = `-- name: UpsertDockerTag :one

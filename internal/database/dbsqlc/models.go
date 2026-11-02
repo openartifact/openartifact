@@ -462,6 +462,15 @@ type DockerUpload struct {
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// Chunks (blob store objects) of an in-progress blob upload session, in upload order
+type DockerUploadChunk struct {
+	ChunkID   string    `db:"chunk_id" json:"chunk_id"`
+	UploadID  string    `db:"upload_id" json:"upload_id"`
+	Seq       int32     `db:"seq" json:"seq"`
+	SizeBytes int64     `db:"size_bytes" json:"size_bytes"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+}
+
 // FIRST EPSS scores (probability and percentile) keyed by upper-case CVE id; generation is the import that last saw the row.
 type EpssScore struct {
 	CveID      string  `db:"cve_id" json:"cve_id"`

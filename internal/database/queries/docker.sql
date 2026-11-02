@@ -34,12 +34,34 @@ SELECT id, repository_id, upload_uuid, "offset", created_at, updated_at
 FROM docker_uploads
 WHERE repository_id = $1 AND upload_uuid = $2;
 
--- name: UpdateDockerUploadOffset :execrows
--- Compare-and-set: advances the offset only while it still equals the value the
--- caller based its write on, so two requests on one session cannot both claim
--- the same byte range.
-UPDATE docker_uploads SET "offset" = sqlc.arg(new_offset), updated_at = now()
-WHERE repository_id = sqlc.arg(repository_id) AND upload_uuid = sqlc.arg(upload_uuid) AND "offset" = sqlc.arg(old_offset);
+-- name: AppendDockerUploadChunk :execrows
+-- Compare-and-set append: moves the session's offset from old_offset to
+-- new_offset and records the chunk object that holds those bytes, in one
+-- statement. Zero rows means the offset moved (another request advanced or
+-- completed the session) and nothing was recorded; the caller discards the
+-- chunk object it wrote. The row lock of the UPDATE serialises concurrent
+-- appends, so the next sequence number cannot repeat.
+WITH moved AS (
+    UPDATE docker_uploads SET "offset" = sqlc.arg(new_offset)::bigint, updated_at = now()
+    WHERE repository_id = sqlc.arg(repository_id) AND upload_uuid = sqlc.arg(upload_uuid) AND "offset" = sqlc.arg(old_offset)::bigint
+    RETURNING id
+)
+INSERT INTO docker_upload_chunks (chunk_id, upload_id, seq, size_bytes)
+SELECT sqlc.arg(chunk_id)::uuid, moved.id,
+       (SELECT COALESCE(max(c.seq) + 1, 0) FROM docker_upload_chunks c WHERE c.upload_id = moved.id),
+       sqlc.arg(new_offset)::bigint - sqlc.arg(old_offset)::bigint
+FROM moved;
+
+-- name: ListDockerUploadChunks :many
+-- The chunk objects of a session in upload order.
+SELECT c.chunk_id, c.size_bytes
+FROM docker_upload_chunks c
+JOIN docker_uploads u ON u.id = c.upload_id
+WHERE u.repository_id = $1 AND u.upload_uuid = $2
+ORDER BY c.seq;
+
+-- name: ExistingDockerUploadChunkIDs :many
+SELECT chunk_id FROM docker_upload_chunks WHERE chunk_id = ANY(sqlc.arg(ids)::uuid[]);
 
 -- name: DeleteDockerUpload :exec
 DELETE FROM docker_uploads WHERE repository_id = $1 AND upload_uuid = $2;

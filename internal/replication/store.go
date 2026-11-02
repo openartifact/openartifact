@@ -31,6 +31,7 @@ var (
 	_ storage.Presigner             = (*Store)(nil)
 	_ storage.StagingStore          = (*Store)(nil)
 	_ storage.MultipartStagingStore = (*Store)(nil)
+	_ storage.ChunkStore            = (*Store)(nil)
 )
 
 func newStore(c *core, repairs *repairer) *Store {

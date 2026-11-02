@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -54,6 +53,14 @@ type HTTPStore interface {
 	ChargeStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	CreateDockerBlob(ctx context.Context, blob *models.DockerBlob) error
 	CreateDockerManifest(ctx context.Context, m *models.DockerManifest) error
+	AppendDockerUploadChunk(
+		ctx context.Context,
+		repositoryID string,
+		uploadUUID string,
+		chunkID string,
+		oldOffset int64,
+		newOffset int64,
+	) (bool, error)
 	CreateDockerUpload(ctx context.Context, upload *models.DockerUpload) error
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	DeleteDockerBlob(ctx context.Context, repoID string, digest string) error
@@ -70,12 +77,12 @@ type HTTPStore interface {
 	GetDockerUpload(ctx context.Context, repositoryID string, uploadUUID string) (*models.DockerUpload, error)
 	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListDockerUploadChunks(ctx context.Context, repositoryID string, uploadUUID string) ([]models.DockerUploadChunk, error)
 	ListDockerManifestsBySubject(ctx context.Context, repoID string, image string, subjectDigest string) ([]*models.DockerManifest, error)
 	ListDockerTagIDsByDigest(ctx context.Context, repoID string, image string, digest string) ([]string, error)
 	ListDockerTags(ctx context.Context, repoID string, image string, last string, n int) ([]*models.DockerTag, error)
 	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
-	UpdateDockerUploadOffset(ctx context.Context, repositoryID string, uploadUUID string, oldOffset int64, newOffset int64) (bool, error)
 	UpsertDockerTag(ctx context.Context, tag *models.DockerTag) error
 }
 
@@ -85,12 +92,16 @@ type HTTPHandler struct {
 	blobStore storage.BlobStore
 	publisher webhook.Publisher
 	authz     Authorizer
-	uploadDir string
-	uploads   uploadLocks
+	// chunks holds the chunks of in-progress blob uploads: the blob store when
+	// it can (every replica sharing the store sees them), else a directory on
+	// this host.
+	chunks  storage.ChunkStore
+	uploads uploadLocks
 }
 
-// DefaultUploadDir is where in-progress blob uploads are staged unless
-// SetUploadDir overrides it.
+// DefaultUploadDir is where chunks of in-progress blob uploads are kept on
+// this host when the blob store cannot hold them (the oci backend), unless the
+// operator configures workers.dockerUploadDir.
 const DefaultUploadDir = "/tmp/openartifact/docker-uploads"
 
 const (
@@ -105,16 +116,15 @@ const (
 )
 
 func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore) *HTTPHandler {
-	return &HTTPHandler{log: log, db: db, blobStore: blobStore, uploadDir: DefaultUploadDir}
+	return &HTTPHandler{log: log, db: db, blobStore: blobStore, chunks: storage.ChunksFor(blobStore, DefaultUploadDir)}
 }
 
-// SetUploadDir sets the directory blob uploads are staged in. It must be
-// called before the handler serves requests.
-func (h *HTTPHandler) SetUploadDir(dir string) {
-	if dir != "" {
-		h.uploadDir = dir
-	}
-}
+// SetChunkStore sets where the chunks of in-progress blob uploads are kept;
+// storage.ChunksFor picks the store. It must be called before the handler
+// serves requests. The default is chunks in blobStore when it can hold them,
+// else in DefaultUploadDir, which is right when blobStore is the store itself
+// and wrong when it hides the capability behind a wrapper.
+func (h *HTTPHandler) SetChunkStore(c storage.ChunkStore) { h.chunks = c }
 
 // SetPublisher sets the webhook publisher used for artifact events. It must be
 // called before the handler serves requests.
@@ -1219,15 +1229,6 @@ func (h *HTTPHandler) handleInitiateBlobUpload(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Create temp directory if needed
-	uploadDir := h.uploadDir
-	if err := os.MkdirAll(uploadDir, 0755); err != nil {
-		h.log.Errorw("failed to create upload directory", "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
 	w.Header().Set("Location", fmt.Sprintf("/v2/%s/blobs/uploads/%s", name, uploadUUID))
 	w.Header().Set("Range", "0-0")
 	w.Header().Set("Docker-Upload-Uuid", uploadUUID)
@@ -1587,45 +1588,15 @@ func uploadRange(offset int64) string {
 	return fmt.Sprintf("0-%d", offset-1)
 }
 
-// openUploadFile opens the staging file for appending after truncating it to
-// the offset the database accepted. Bytes a previous, failed request wrote
-// past that offset are discarded, so a client resuming at the reported offset
-// never appends after stray data.
-func openUploadFile(path string, offset int64) (*os.File, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("open upload file: %w", err)
-	}
+// errUploadDataLost means the chunks the database lists for a session do not
+// add up to its recorded offset, or one of them is gone from the chunk store: a
+// session opened by a server that kept chunks on its own disk (before chunks
+// moved into the blob store), or one whose chunks were deleted underneath it.
+var errUploadDataLost = errors.New("upload data is missing")
 
-	info, err := f.Stat()
-	if err != nil {
-		_ = f.Close()
-
-		return nil, fmt.Errorf("stat upload file: %w", err)
-	}
-
-	if info.Size() < offset {
-		_ = f.Close()
-
-		return nil, errUploadFileShort
-	}
-
-	if info.Size() > offset {
-		if err := f.Truncate(offset); err != nil {
-			_ = f.Close()
-
-			return nil, fmt.Errorf("truncate upload file: %w", err)
-		}
-	}
-
-	return f, nil
-}
-
-// errUploadFileShort means the staging file holds fewer bytes than the
-// database recorded (it was lost), so the upload cannot continue.
-var errUploadFileShort = errors.New("upload file is shorter than the recorded offset")
-
-// handleUploadChunk appends data to an in-progress upload.
+// handleUploadChunk appends data to an in-progress upload. The body becomes one
+// new chunk object in the chunk store and one row of the session; no replica
+// keeps any state of the session, so the next request may land on another one.
 func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	name := vars["name"]
@@ -1636,9 +1607,9 @@ func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// One request at a time per session, and the offset is read under the
-	// lock: the bytes this chunk appends start exactly where the previous
-	// request on the session ended.
+	// Requests on one session that reach this replica run one at a time, and
+	// the offset is read under the lock. Requests on other replicas are
+	// ordered by the compare-and-set of the offset below instead.
 	unlock, ok := h.lockUpload(w, r, repo.ID, uploadUUID)
 	if !ok {
 		return
@@ -1679,63 +1650,52 @@ func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) 
 
 	defer func() { _ = r.Body.Close() }()
 
-	// Stream chunk data straight to the temp file to avoid buffering the whole
-	// chunk (up to GBs for large layers) in memory.
-	uploadDir := h.uploadDir
-	tempFile := filepath.Join(uploadDir, uploadUUID)
-
-	f, err := openUploadFile(tempFile, upload.Offset)
-	if err != nil {
-		h.uploadFileError(w, uploadUUID, err)
-
-		return
-	}
-
 	body, room := h.quotaBoundedBody(w, r, repo.ID, upload.Offset, "")
 	if !room {
-		_ = f.Close()
-		h.refuseOverQuota(w, r, repo.ID, uploadUUID, tempFile)
-
+		h.refuseOverQuota(w, r, repo.ID, uploadUUID)
 		return
 	}
 
-	written, err := iocopy.Copy(f, body)
-	if err != nil {
-		_ = f.Close()
+	// Stream the chunk straight into the chunk store: a layer can be many GiB,
+	// so it is never buffered in memory.
+	chunkID := uuid.New().String()
 
+	written, err := h.chunks.PutChunk(r.Context(), chunkID, body)
+	if err != nil {
 		if _, over := errors.AsType[*http.MaxBytesError](err); over {
-			h.refuseOverQuota(w, r, repo.ID, uploadUUID, tempFile)
+			h.refuseOverQuota(w, r, repo.ID, uploadUUID)
 			return
 		}
 
-		h.log.Errorw("failed to write chunk", "error", err)
+		h.log.Errorw("failed to store chunk", "uuid", uploadUUID, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 
 		return
 	}
 
-	if err := f.Close(); err != nil {
-		h.log.Errorw("failed to close temp file", "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	// Advance the offset only if it is still where this chunk started; the
-	// bytes written past it are truncated by whichever request opens the file next.
 	newOffset := upload.Offset + written
 
-	moved, err := h.db.UpdateDockerUploadOffset(r.Context(), repo.ID, uploadUUID, upload.Offset, newOffset)
-	if err != nil {
-		h.log.Errorw("failed to update upload offset", "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+	if written > 0 {
+		// Advance the offset only if it is still where this chunk started. A
+		// chunk another request or replica got there first stays out of the
+		// session, and so does this one.
+		moved, err := h.db.AppendDockerUploadChunk(r.Context(), repo.ID, uploadUUID, chunkID, upload.Offset, newOffset)
+		if err != nil || !moved {
+			h.dropChunk(r.Context(), chunkID)
 
-		return
-	}
+			if err != nil {
+				h.log.Errorw("failed to record upload chunk", "uuid", uploadUUID, "error", err)
+				h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 
-	if !moved {
-		h.errorResponse(w, http.StatusConflict, "BLOB_UPLOAD_INVALID", "upload changed concurrently; query its status and resume")
-		return
+				return
+			}
+
+			h.errorResponse(w, http.StatusConflict, "BLOB_UPLOAD_INVALID", "upload changed concurrently; query its status and resume")
+
+			return
+		}
+	} else {
+		h.dropChunk(r.Context(), chunkID)
 	}
 
 	w.Header().Set("Location", fmt.Sprintf("/v2/%s/blobs/uploads/%s", name, uploadUUID))
@@ -1744,11 +1704,49 @@ func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// dropChunk best-effort deletes a chunk object, surviving a cancelled request.
+// A failure leaves the object for the sweep of chunks no session lists.
+func (h *HTTPHandler) dropChunk(ctx context.Context, chunkID string) {
+	if err := h.chunks.DeleteChunk(context.WithoutCancel(ctx), chunkID); err != nil {
+		h.log.Warnw("failed to delete upload chunk", "chunk", chunkID, "error", err)
+	}
+}
+
+// deleteUpload deletes an upload session and the chunk objects it lists. The
+// session row is deleted first, so a failure to delete an object only leaves
+// the object for the sweep of chunks no session lists.
+func (h *HTTPHandler) deleteUpload(ctx context.Context, repoID, uploadUUID string) error {
+	ctx = context.WithoutCancel(ctx)
+
+	chunks, err := h.db.ListDockerUploadChunks(ctx, repoID, uploadUUID)
+	if err != nil {
+		return fmt.Errorf("list upload chunks: %w", err)
+	}
+
+	if err := h.db.DeleteDockerUpload(ctx, repoID, uploadUUID); err != nil {
+		return fmt.Errorf("delete upload record: %w", err)
+	}
+
+	for _, c := range chunks {
+		h.dropChunk(ctx, c.ChunkID)
+	}
+
+	return nil
+}
+
+// discardUpload is deleteUpload for a request that has already decided its
+// answer: a failure is logged, not reported.
+func (h *HTTPHandler) discardUpload(ctx context.Context, repoID, uploadUUID string) {
+	if err := h.deleteUpload(ctx, repoID, uploadUUID); err != nil {
+		h.log.Warnw("failed to discard upload", "uuid", uploadUUID, "error", err)
+	}
+}
+
 // quotaBoundedBody returns the request body capped at the bytes the repository
-// quota still has room for (the session's staged offset already counts), so a
-// writer on a full repository cannot stage data the reservation at completion
+// quota still has room for (the session's recorded offset already counts), so a
+// writer on a full repository cannot upload data the reservation at completion
 // would refuse. ok=false means the declared Content-Length alone cannot fit and
-// nothing may be staged. A completion whose digest is already stored in the
+// nothing may be uploaded. A completion whose digest is already stored in the
 // repository (an idempotent re-push, which reserves nothing) is not capped.
 func (h *HTTPHandler) quotaBoundedBody(
 	w http.ResponseWriter,
@@ -1783,28 +1781,75 @@ func (h *HTTPHandler) quotaBoundedBody(
 }
 
 // refuseOverQuota answers a push the quota has no room for with 507 and
-// discards the staged upload, like a completion the reservation refused.
-func (h *HTTPHandler) refuseOverQuota(w http.ResponseWriter, r *http.Request, repoID, uploadUUID, tempFile string) {
-	_ = os.Remove(tempFile)
-	_ = h.db.DeleteDockerUpload(r.Context(), repoID, uploadUUID)
-
+// discards the upload, like a completion the reservation refused.
+func (h *HTTPHandler) refuseOverQuota(w http.ResponseWriter, r *http.Request, repoID, uploadUUID string) {
+	h.discardUpload(r.Context(), repoID, uploadUUID)
 	h.quotaExceeded(w)
 }
 
-// uploadFileError answers a failure to open an upload's staging file.
-func (h *HTTPHandler) uploadFileError(w http.ResponseWriter, uploadUUID string, err error) {
-	h.log.Errorw("failed to open upload file", "uuid", uploadUUID, "error", err)
-
-	if errors.Is(err, errUploadFileShort) {
-		h.errorResponse(w, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload data lost; restart the upload")
-
-		return
-	}
-
-	h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+// uploadDataLost answers a completion whose chunks are gone.
+func (h *HTTPHandler) uploadDataLost(w http.ResponseWriter, uploadUUID string, err error) {
+	h.log.Errorw("upload data lost", "uuid", uploadUUID, "error", err)
+	h.errorResponse(w, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload data lost; restart the upload")
 }
 
-// handleCompleteBlobUpload finalizes a blob upload.
+// sessionChunks returns the chunks that make up the first offset bytes of the
+// session, in order. Rows past the offset belong to a request that advanced the
+// session after the offset was read and are ignored. errUploadDataLost means
+// the rows do not add up to the offset.
+func (h *HTTPHandler) sessionChunks(ctx context.Context, repoID, uploadUUID string, offset int64) ([]models.DockerUploadChunk, error) {
+	all, err := h.db.ListDockerUploadChunks(ctx, repoID, uploadUUID)
+	if err != nil {
+		return nil, fmt.Errorf("list upload chunks: %w", err)
+	}
+
+	var sum int64
+
+	for i, c := range all {
+		if sum == offset {
+			return all[:i], nil
+		}
+
+		sum += c.Size
+	}
+
+	if sum != offset {
+		return nil, fmt.Errorf("%w: chunks hold %d of %d bytes", errUploadDataLost, sum, offset)
+	}
+
+	return all, nil
+}
+
+// assembleChunks copies the chunks in order into dst.
+func (h *HTTPHandler) assembleChunks(ctx context.Context, dst io.Writer, chunks []models.DockerUploadChunk) error {
+	for _, c := range chunks {
+		rc, err := h.chunks.OpenChunk(ctx, c.ChunkID)
+		if err != nil {
+			if errors.Is(err, storage.ErrChunkNotFound) {
+				return fmt.Errorf("%w: chunk %s", errUploadDataLost, c.ChunkID)
+			}
+
+			return fmt.Errorf("open chunk %s: %w", c.ChunkID, err)
+		}
+
+		n, err := iocopy.Copy(dst, rc)
+		_ = rc.Close()
+
+		if err != nil {
+			return fmt.Errorf("read chunk %s: %w", c.ChunkID, err)
+		}
+
+		if n != c.Size {
+			return fmt.Errorf("%w: chunk %s holds %d of %d bytes", errUploadDataLost, c.ChunkID, n, c.Size)
+		}
+	}
+
+	return nil
+}
+
+// handleCompleteBlobUpload finalizes a blob upload: the chunks of the session
+// (and any final bytes in the request body) are assembled into a private spool
+// on this replica, hashed, checked against the digest and stored.
 func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	name := vars["name"]
@@ -1821,8 +1866,10 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// The session is locked from here to the end of the request: nothing can
-	// append to or truncate the staged file while it is hashed and stored.
+	// Requests on this session that reach this replica are serialised from here
+	// to the end of the request. A chunk appended through another replica while
+	// this one assembles is not part of what is verified and stored, so it can
+	// never end up in the blob.
 	unlock, ok := h.lockUpload(w, r, repo.ID, uploadUUID)
 	if !ok {
 		return
@@ -1862,55 +1909,23 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 
 	defer func() { _ = r.Body.Close() }()
 
-	uploadDir := h.uploadDir
-	tempFile := filepath.Join(uploadDir, uploadUUID)
-
-	// Stream any final bytes from the request body directly to the temp file.
-	// For monolithic uploads (single PUT carrying the whole blob) this avoids
-	// buffering the entire layer in memory.
-	if !h.appendFinalChunk(w, r, repo.ID, tempFile, uploadUUID, digest, upload.Offset) {
+	spool, size, computedDigestHex, ok := h.assembleUpload(w, r, repo.ID, uploadUUID, digest, upload.Offset)
+	if !ok {
 		return
 	}
 
-	// Compute the SHA256 (and size) of the temp file in a single pass.
-	f, err := os.Open(tempFile)
-	if err != nil {
-		h.log.Errorw("failed to open temp file for hashing", "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+	defer func() {
+		_ = spool.Close()
+		_ = os.Remove(spool.Name())
+	}()
 
-		return
-	}
-	defer func() { _ = f.Close() }()
-
-	hash := sha256.New()
-
-	size, err := iocopy.Copy(hash, f)
-	if err != nil {
-		h.log.Errorw("failed to hash temp file", "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	computedDigestHex := hex.EncodeToString(hash.Sum(nil))
 	computedDigest := "sha256:" + computedDigestHex
 
 	// Verify digest matches
 	if computedDigest != digest {
 		h.log.Warnw("digest mismatch", "expected", digest, "computed", computedDigest)
 		h.errorResponse(w, http.StatusBadRequest, "DIGEST_INVALID", "computed digest does not match")
-		// Clean up temp file
-		_ = os.Remove(tempFile)
-		_ = h.db.DeleteDockerUpload(r.Context(), repo.ID, uploadUUID)
-
-		return
-	}
-
-	// Rewind and stream the verified blob into storage using the same handle,
-	// avoiding a second open (and the fd it would leak alongside this defer).
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		h.log.Errorw("failed to rewind temp file for storage", "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+		h.discardUpload(r.Context(), repo.ID, uploadUUID)
 
 		return
 	}
@@ -1931,7 +1946,7 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 	// in between. Content-addressed by sha256: every BlobStore backend keys
 	// (and some, like S3/Azure/OCI, require) storage on the "sha256" metadata
 	// entry — not the OCI-prefixed "digest" string.
-	spooled := storage.SeekerBlob(computedDigestHex, f, map[string]string{
+	spooled := storage.SeekerBlob(computedDigestHex, spool, map[string]string{
 		"sha256": computedDigestHex,
 		"digest": digest,
 	})
@@ -1951,20 +1966,18 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 		return h.storeNewBlob(ctx, blob, computedDigestHex)
 	}); err != nil {
 		if errors.Is(err, storage.ErrDigestMismatch) {
-			h.digestChanged(w, r, repo.ID, uploadUUID, tempFile, err)
+			h.digestChanged(w, r, repo.ID, uploadUUID, err)
 			return
 		}
 
 		if errors.Is(err, quota.ErrExceeded) {
 			// No row was recorded; the object stored ahead of the commit is
-			// unreferenced and the staged bytes would only wait for the
-			// stale-session sweep, so drop both and discard the session as a
-			// digest mismatch does.
+			// unreferenced and the chunks would only wait for the stale-session
+			// sweep, so drop both and discard the session as a digest mismatch
+			// does.
 			h.discardOrphan(r.Context(), computedDigestHex)
 			h.quotaExceeded(w)
-
-			_ = os.Remove(tempFile)
-			_ = h.db.DeleteDockerUpload(r.Context(), repo.ID, uploadUUID)
+			h.discardUpload(r.Context(), repo.ID, uploadUUID)
 
 			return
 		}
@@ -1976,14 +1989,93 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Clean up temp file and upload record
-	_ = os.Remove(tempFile)
-	_ = h.db.DeleteDockerUpload(r.Context(), repo.ID, uploadUUID)
+	// Clean up the chunks and the upload record
+	h.discardUpload(r.Context(), repo.ID, uploadUUID)
 
 	w.Header().Set("Location", fmt.Sprintf("/v2/%s/blobs/%s", name, digest))
 	w.Header().Set("Docker-Content-Digest", digest)
 	w.Header().Set("Content-Length", "0")
 	w.WriteHeader(http.StatusCreated)
+}
+
+// assembleUpload writes the session's chunks, then the request body, into a
+// private temporary file on this replica, hashing as it goes. It returns the
+// file (rewound by the blob commit, owned by the caller), its size and its
+// sha256 in hex. On failure it has written the error response and removed the
+// file.
+func (h *HTTPHandler) assembleUpload(
+	w http.ResponseWriter,
+	r *http.Request,
+	repoID, uploadUUID, digest string,
+	offset int64,
+) (*os.File, int64, string, bool) {
+	chunks, err := h.sessionChunks(r.Context(), repoID, uploadUUID, offset)
+	if err != nil {
+		h.assembleFailed(w, uploadUUID, err)
+		return nil, 0, "", false
+	}
+
+	spool, err := os.CreateTemp("", "openartifact-docker-upload-*.tmp")
+	if err != nil {
+		h.log.Errorw("failed to create upload spool", "error", err)
+		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+		return nil, 0, "", false
+	}
+
+	drop := func() {
+		_ = spool.Close()
+		_ = os.Remove(spool.Name())
+	}
+
+	hash := sha256.New()
+	dst := io.MultiWriter(spool, hash)
+
+	if err := h.assembleChunks(r.Context(), dst, chunks); err != nil {
+		drop()
+		h.assembleFailed(w, uploadUUID, err)
+
+		return nil, 0, "", false
+	}
+
+	// Stream any final bytes from the request body into the same spool. For a
+	// monolithic upload (a single PUT carrying the whole blob) the body is all
+	// there is, and it is never buffered in memory.
+	body, room := h.quotaBoundedBody(w, r, repoID, offset, digest)
+	if !room {
+		drop()
+		h.refuseOverQuota(w, r, repoID, uploadUUID)
+
+		return nil, 0, "", false
+	}
+
+	final, err := iocopy.Copy(dst, body)
+	if err != nil {
+		drop()
+
+		if _, over := errors.AsType[*http.MaxBytesError](err); over {
+			h.refuseOverQuota(w, r, repoID, uploadUUID)
+			return nil, 0, "", false
+		}
+
+		h.log.Errorw("failed to write final chunk", "error", err)
+		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+		return nil, 0, "", false
+	}
+
+	return spool, offset + final, hex.EncodeToString(hash.Sum(nil)), true
+}
+
+// assembleFailed answers a failure to read a session's chunks back.
+func (h *HTTPHandler) assembleFailed(w http.ResponseWriter, uploadUUID string, err error) {
+	if errors.Is(err, errUploadDataLost) {
+		h.uploadDataLost(w, uploadUUID, err)
+		return
+	}
+
+	h.log.Errorw("failed to read upload chunks", "uuid", uploadUUID, "error", err)
+	h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 }
 
 // storeNewBlob records the row of a verified blob the repository does not hold,
@@ -2019,62 +2111,13 @@ func (h *HTTPHandler) discardOrphan(ctx context.Context, shaHex string) {
 	}
 }
 
-// appendFinalChunk appends the request body to the staged file (after
-// truncating it to offset). On failure it has written the error response.
-func (h *HTTPHandler) appendFinalChunk(
-	w http.ResponseWriter,
-	r *http.Request,
-	repoID, tempFile, uploadUUID, digest string,
-	offset int64,
-) bool {
-	f, err := openUploadFile(tempFile, offset)
-	if err != nil {
-		h.uploadFileError(w, uploadUUID, err)
-
-		return false
-	}
-
-	body, room := h.quotaBoundedBody(w, r, repoID, offset, digest)
-	if !room {
-		_ = f.Close()
-		h.refuseOverQuota(w, r, repoID, uploadUUID, tempFile)
-
-		return false
-	}
-
-	if _, err := iocopy.Copy(f, body); err != nil {
-		_ = f.Close()
-
-		if _, over := errors.AsType[*http.MaxBytesError](err); over {
-			h.refuseOverQuota(w, r, repoID, uploadUUID, tempFile)
-			return false
-		}
-
-		h.log.Errorw("failed to write final chunk", "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return false
-	}
-
-	if err := f.Close(); err != nil {
-		h.log.Errorw("failed to close temp file", "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return false
-	}
-
-	return true
-}
-
-// digestChanged answers a completion whose staged bytes no longer match the
+// digestChanged answers a completion whose assembled bytes no longer match the
 // digest verified a moment earlier: the blob store re-hashes what it is given
 // and refuses a mismatch, so nothing was stored; the upload is discarded.
-func (h *HTTPHandler) digestChanged(w http.ResponseWriter, r *http.Request, repoID, uploadUUID, tempFile string, err error) {
-	h.log.Warnw("staged upload changed while completing", "uuid", uploadUUID, "error", err)
+func (h *HTTPHandler) digestChanged(w http.ResponseWriter, r *http.Request, repoID, uploadUUID string, err error) {
+	h.log.Warnw("assembled upload changed while completing", "uuid", uploadUUID, "error", err)
 	h.errorResponse(w, http.StatusBadRequest, "DIGEST_INVALID", "computed digest does not match")
-
-	_ = os.Remove(tempFile)
-	_ = h.db.DeleteDockerUpload(r.Context(), repoID, uploadUUID)
+	h.discardUpload(r.Context(), repoID, uploadUUID)
 }
 
 // handleCancelBlobUpload cancels an in-progress upload.
@@ -2107,14 +2150,8 @@ func (h *HTTPHandler) handleCancelBlobUpload(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Delete temp file
-	uploadDir := h.uploadDir
-	tempFile := filepath.Join(uploadDir, uploadUUID)
-	_ = os.Remove(tempFile)
-
-	// Delete upload record
-	if err := h.db.DeleteDockerUpload(r.Context(), repo.ID, uploadUUID); err != nil {
-		h.log.Errorw("failed to delete upload record", "error", err)
+	if err := h.deleteUpload(r.Context(), repo.ID, uploadUUID); err != nil {
+		h.log.Errorw("failed to cancel upload", "uuid", uploadUUID, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 
 		return

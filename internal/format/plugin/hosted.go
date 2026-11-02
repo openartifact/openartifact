@@ -43,7 +43,8 @@ type Deps struct {
 	// HMACKey signs the Terraform download tickets.
 	HMACKey []byte
 
-	// DockerUploadDir is where docker blob uploads are staged.
+	// DockerUploadDir is the host directory docker upload chunks are kept in when
+	// Blobs cannot hold them itself (the oci backend).
 	DockerUploadDir string
 	// DockerAuthorizer checks read access to a cross-repository mount source.
 	DockerAuthorizer formatdocker.Authorizer

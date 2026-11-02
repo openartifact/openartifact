@@ -9,10 +9,13 @@ import (
 	"sync"
 )
 
-// uploadLocks serialises requests on one upload session. The staged file is
-// local to this process, so a process-wide lock per session is exactly the
-// scope of what it protects: PATCH, PUT (complete) and DELETE (cancel) on a
-// session never interleave, whichever order they arrive in.
+// uploadLocks serialises the requests one process serves on one upload
+// session: PATCH, PUT (complete) and DELETE (cancel) never interleave, whichever
+// order they arrive in, so a completion hashes and stores exactly the chunks it
+// read. Requests on different replicas are not serialised by it; the session's
+// offset is compare-and-set in the database, so a chunk that loses the race is
+// refused, and a chunk appended after a completion read the session's chunks is
+// not part of the blob the completion verified.
 type uploadLocks struct {
 	mu sync.Mutex
 	m  map[string]*uploadLock

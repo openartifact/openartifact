@@ -11,10 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -29,6 +26,7 @@ import (
 // call panics, which keeps the fake honest about what the handlers touch.
 type fakeDB struct {
 	testHandlerStore
+	chunkRows
 
 	repo   *models.Repository
 	upload *models.DockerUpload
@@ -75,13 +73,16 @@ func (f *fakeDB) GetDockerUpload(_ context.Context, repositoryID, uploadUUID str
 	return f.upload, nil
 }
 
-func (f *fakeDB) UpdateDockerUploadOffset(_ context.Context, repositoryID, uploadUUID string, oldOffset, newOffset int64) (bool, error) {
+func (f *fakeDB) AppendDockerUploadChunk(
+	_ context.Context, repositoryID, uploadUUID, chunkID string, oldOffset, newOffset int64,
+) (bool, error) {
 	if !f.uploadMatches(repositoryID, uploadUUID) || f.upload.Offset != oldOffset {
 		return false, nil
 	}
 
 	f.offset = newOffset
 	f.upload.Offset = newOffset
+	f.append(repositoryID, uploadUUID, chunkID, newOffset-oldOffset)
 
 	return true, nil
 }
@@ -108,12 +109,18 @@ func (f *fakeDB) CreateDockerBlob(_ context.Context, blob *models.DockerBlob) er
 	return nil
 }
 
+func (f *fakeDB) ListDockerUploadChunks(_ context.Context, repositoryID, uploadUUID string) ([]models.DockerUploadChunk, error) {
+	return f.list(repositoryID, uploadUUID), nil
+}
+
 func (f *fakeDB) DeleteDockerUpload(_ context.Context, repositoryID, uploadUUID string) error {
 	if !f.uploadMatches(repositoryID, uploadUUID) {
 		return nil
 	}
 
 	f.deletedUpload = true
+	f.drop(repositoryID, uploadUUID)
+
 	return nil
 }
 
@@ -136,7 +143,6 @@ func newTestHandler(t *testing.T, db testHandlerStore) (*HTTPHandler, storage.Bl
 	}
 
 	h := NewHTTPHandler(log, db, store)
-	h.SetUploadDir(testUploadDir(t))
 	return h, store
 }
 
@@ -148,26 +154,6 @@ func withChiVars(r *http.Request, kv map[string]string) *http.Request {
 	}
 
 	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
-}
-
-// testUploadDirs maps each test to its private staging directory so a handler
-// built by newTestHandler and a path built by tempUploadPath agree.
-var testUploadDirs sync.Map //nolint:gochecknoglobals // per-test registry shared by newTestHandler and tempUploadPath
-
-func testUploadDir(t *testing.T) string {
-	t.Helper()
-	if d, ok := testUploadDirs.Load(t); ok {
-		return d.(string)
-	}
-	d := t.TempDir()
-	testUploadDirs.Store(t, d)
-	t.Cleanup(func() { testUploadDirs.Delete(t) })
-	return d
-}
-
-func tempUploadPath(t *testing.T, uuid string) string {
-	t.Helper()
-	return filepath.Join(testUploadDir(t), uuid)
 }
 
 func TestHandleUploadChunk_StreamsAndAccumulatesOffset(t *testing.T) {
@@ -214,14 +200,33 @@ func TestHandleUploadChunk_StreamsAndAccumulatesOffset(t *testing.T) {
 		}
 	}
 
-	// The temp file must contain exactly the streamed bytes, in order.
-	data, err := os.ReadFile(tempUploadPath(t, uid))
-	if err != nil {
-		t.Fatalf("read temp file: %v", err)
+	// The chunk rows must list one chunk object per PATCH, in order, holding
+	// exactly the streamed bytes.
+	rows := db.list("repo-1", uid)
+	if len(rows) != len(chunks) {
+		t.Fatalf("chunk rows = %d, want %d", len(rows), len(chunks))
 	}
 
-	if string(data) != assembled.String() {
-		t.Fatalf("temp file = %q, want %q", string(data), assembled.String())
+	var stored strings.Builder
+
+	for i, row := range rows {
+		rc, err := h.chunks.OpenChunk(context.Background(), row.ChunkID)
+		if err != nil {
+			t.Fatalf("open chunk %d: %v", i, err)
+		}
+
+		data, err := io.ReadAll(rc)
+		_ = rc.Close()
+
+		if err != nil || int64(len(data)) != row.Size || string(data) != chunks[i] {
+			t.Fatalf("chunk %d = %q (%v), row size %d, want %q", i, data, err, row.Size, chunks[i])
+		}
+
+		stored.Write(data)
+	}
+
+	if stored.String() != assembled.String() {
+		t.Fatalf("chunks = %q, want %q", stored.String(), assembled.String())
 	}
 }
 

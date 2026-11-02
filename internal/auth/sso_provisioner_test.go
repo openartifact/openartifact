@@ -513,7 +513,7 @@ func (m *provMockDB) CreateDockerUpload(_ context.Context, _ *models.DockerUploa
 func (m *provMockDB) GetDockerUpload(_ context.Context, _, _ string) (*models.DockerUpload, error) {
 	return nil, nil
 }
-func (m *provMockDB) UpdateDockerUploadOffset(_ context.Context, _, _ string, _, _ int64) (bool, error) {
+func (m *provMockDB) AppendDockerUploadChunk(_ context.Context, _, _, _ string, _, _ int64) (bool, error) {
 	return true, nil
 }
 func (m *provMockDB) DeleteDockerUpload(_ context.Context, _, _ string) error { return nil }

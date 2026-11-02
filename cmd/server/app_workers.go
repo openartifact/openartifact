@@ -25,6 +25,7 @@ import (
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/recovery"
 	"github.com/openartifact/openartifact/internal/repotype"
+	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/tiering"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/worker"
@@ -209,8 +210,9 @@ func (a *app) startHousekeepingWorkers() {
 	a.start(w.cleanup.Start)
 	a.start(w.dockerGC.Start)
 
-	// Abandoned docker blob uploads: idle sessions and their staged files.
-	w.dockerUploadSweeper = worker.NewDockerUploadSweeper(db, dockerUploadDir(cfg), cfg.Workers.DockerUploadTTL, log)
+	// Abandoned docker blob uploads: idle sessions and their chunks.
+	w.dockerUploadSweeper = worker.NewDockerUploadSweeper(
+		db, storage.ChunksFor(a.store.blobs, dockerUploadDir(cfg)), cfg.Workers.DockerUploadTTL, log)
 	a.start(w.dockerUploadSweeper.Start)
 
 	// Initialize webhook dispatcher
@@ -320,7 +322,8 @@ func applyJournalSwitch(ctx context.Context, cfg *config.Config, j journalSwitch
 	return true, nil
 }
 
-// dockerUploadDir is where docker blob uploads are staged.
+// dockerUploadDir is where docker blob upload chunks are kept on this host when
+// the blob store cannot hold them itself (the oci backend).
 func dockerUploadDir(cfg *config.Config) string {
 	if cfg.Workers.DockerUploadDir != "" {
 		return cfg.Workers.DockerUploadDir

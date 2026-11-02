@@ -10,6 +10,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/plugin"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/sbom"
+	"github.com/openartifact/openartifact/internal/storage"
 )
 
 // dockerFormat is the registration of the docker format.
@@ -18,7 +19,7 @@ func dockerFormat() plugin.Format {
 		ID: "docker",
 		NewHosted: func(d *plugin.Deps) (plugin.Hosted, error) {
 			h := formatdocker.NewHTTPHandler(d.Log, d.DB, d.Served)
-			h.SetUploadDir(d.DockerUploadDir)
+			h.SetChunkStore(storage.ChunksFor(d.Blobs, d.DockerUploadDir))
 
 			if d.DockerAuthorizer != nil {
 				h.SetAuthorizer(d.DockerAuthorizer)

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -27,7 +28,7 @@ func TestWorkerStopWithoutStartAndTwice(t *testing.T) {
 		"cleanup":   NewCleanupWorker(nil, nil, log).Stop,
 		"dockergc":  NewDockerGCWorker(&gcDB{}, nil, log, time.Hour, time.Hour).Stop,
 		"presigned": NewPresignedUploadWorker(nil, nil, time.Hour, log).Stop,
-		"dockerup":  NewDockerUploadSweeper(nil, t.TempDir(), time.Hour, log).Stop,
+		"dockerup":  NewDockerUploadSweeper(nil, storage.NewDirChunkStore(t.TempDir()), time.Hour, log).Stop,
 	}
 
 	for name, stop := range stoppers {

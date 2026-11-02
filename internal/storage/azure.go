@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -44,7 +45,9 @@ var (
 // AzureBlobStore implements BlobStore for Azure Blob Storage using the REST API.
 type AzureBlobStore struct {
 	// spoolDir holds Put spool files (os.TempDir when empty).
-	spoolDir      string
+	spoolDir string
+	// chunkBuffers recycles the block buffers of PutChunk (*[]byte).
+	chunkBuffers  *sync.Pool
 	accountName   string
 	accountKey    []byte // decoded
 	containerName string
@@ -104,6 +107,7 @@ func NewAzureBlobStore(cfg StorageConfig) (*AzureBlobStore, error) {
 
 	return &AzureBlobStore{
 		spoolDir:         spool,
+		chunkBuffers:     &sync.Pool{},
 		accountName:      cfg.AzureAccountName,
 		accountKey:       key,
 		containerName:    cfg.AzureContainerName,
