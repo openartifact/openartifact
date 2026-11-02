@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 Self-hosted artifact repository for many package formats. The [project README](../README.md) is the short overview; the details are here.
 
-These pages are also published, one version per release, at <https://openartifact.github.io/> with search and a version switcher; the markdown stays readable on GitHub. `latest` follows `main`.
+These pages are also published, one version per release, at <https://openartifact.github.io/> with search and a version switcher; the markdown stays readable on GitHub. `latest` is the newest release; `dev` follows `main` and may describe unreleased features.
 
 ## Getting started
 
