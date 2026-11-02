@@ -201,12 +201,17 @@ func pathAddressed(f importFormat) bool {
 // runCIUpload uploads the files of o and records their properties. It stops at
 // the first failure and returns what was stored up to then with the error.
 func runCIUpload(ctx context.Context, api *ciAPI, o ciUploadOptions) (ciUploadResult, error) {
-	res := ciUploadResult{Uploaded: []ciUploadedFile{}}
-
 	repo, err := api.repo(ctx, o.repo)
 	if err != nil {
-		return res, err
+		return ciUploadResult{Uploaded: []ciUploadedFile{}}, err
 	}
+
+	return uploadToRepo(ctx, api, repo, o)
+}
+
+// uploadToRepo is runCIUpload for a repository that was already looked up.
+func uploadToRepo(ctx context.Context, api *ciAPI, repo ciRepo, o ciUploadOptions) (ciUploadResult, error) {
+	res := ciUploadResult{Uploaded: []ciUploadedFile{}}
 
 	f := importFormat(repo.Format)
 	if !uploadable(f) {

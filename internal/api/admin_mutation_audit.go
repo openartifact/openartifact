@@ -61,6 +61,26 @@ func auditQuarantine(r *http.Request, repo *models.Repository, quarantined bool,
 	})
 }
 
+// decodeQuarantineBody reads the {"quarantined": bool} body of a quarantine
+// request. The field is required: a missing one is a 400, never a release.
+func decodeQuarantineBody(w http.ResponseWriter, r *http.Request) (bool, bool) {
+	var body struct {
+		Quarantined *bool `json:"quarantined"`
+	}
+
+	if err := decodeJSON(r, &body); err != nil {
+		writeBadJSON(w, err)
+		return false, false
+	}
+
+	if body.Quarantined == nil {
+		writeError(w, http.StatusBadRequest, "bad_request", `"quarantined" is required (true to quarantine, false to release)`)
+		return false, false
+	}
+
+	return *body.Quarantined, true
+}
+
 // adminAuditEvent is one audit event of a request's principal. pkg, version and
 // subject are optional: the package version the event concerns and the display
 // name of what it acted on (see audit.AuditEvent).

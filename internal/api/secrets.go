@@ -164,11 +164,8 @@ func (h *SecretsHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var body struct {
-		Quarantined bool `json:"quarantined"`
-	}
-	if err := decodeJSON(r, &body); err != nil {
-		writeBadJSON(w, err)
+	quarantined, ok := decodeQuarantineBody(w, r)
+	if !ok {
 		return
 	}
 
@@ -177,8 +174,10 @@ func (h *SecretsHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	wasQuarantined := result.Quarantined
+
 	// Update quarantine status
-	if err := h.db.QuarantineArtifact(ctx, repo.ID, result.ArtifactID, body.Quarantined); err != nil {
+	if err := h.db.QuarantineArtifact(ctx, repo.ID, result.ArtifactID, quarantined); err != nil {
 		h.log.Errorw("quarantine artifact: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
@@ -194,7 +193,9 @@ func (h *SecretsHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	auditQuarantine(r, repo, body.Quarantined, "secret", result.ArtifactID, "", "")
+	if quarantined || wasQuarantined {
+		auditQuarantine(r, repo, quarantined, "secret", result.ArtifactID, "", "")
+	}
 
 	writeJSON(w, http.StatusOK, secretScanResultToMap(updated))
 }

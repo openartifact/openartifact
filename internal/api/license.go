@@ -171,11 +171,8 @@ func (h *LicenseHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var body struct {
-		Quarantined bool `json:"quarantined"`
-	}
-	if err := decodeJSON(r, &body); err != nil {
-		writeBadJSON(w, err)
+	quarantined, ok := decodeQuarantineBody(w, r)
+	if !ok {
 		return
 	}
 
@@ -183,7 +180,18 @@ func (h *LicenseHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.db.SetLicenseScanQuarantine(ctx, repo.ID, id, body.Quarantined); err != nil {
+	before, err := h.db.GetLicenseScanResultByID(ctx, repo.ID, id)
+	if err != nil {
+		h.dbError(w, "quarantine license scan: db error fetching result", err)
+		return
+	}
+
+	if before == nil {
+		writeError(w, http.StatusNotFound, "not_found", "license scan not found")
+		return
+	}
+
+	if err := h.db.SetLicenseScanQuarantine(ctx, repo.ID, id, quarantined); err != nil {
 		if errors.Is(err, database.ErrLicenseScanNotFound) {
 			writeError(w, http.StatusNotFound, "not_found", "license scan not found")
 			return
@@ -204,7 +212,9 @@ func (h *LicenseHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	auditQuarantine(r, repo, body.Quarantined, "license", updated.ArtifactID, "", "")
+	if quarantined || before.Quarantined {
+		auditQuarantine(r, repo, quarantined, "license", updated.ArtifactID, "", "")
+	}
 
 	writeJSON(w, http.StatusOK, scanResultToMap(updated))
 }

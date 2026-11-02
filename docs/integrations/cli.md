@@ -92,9 +92,9 @@ Commands marked *admin* need the global `manage` permission. IDs are the values 
 | `sbom` | `list <repo>`, `generate <repo> --artifact-id ID [--format cyclonedx\|spdx\|spdx-json\|spdx3-json] [--spec-version V]`, `show <repo> <id>`, `download <repo> <id> <dest> [--attest true\|bundle]`, `delete <repo> <id>` |
 | `vex` | `get <repo> [--artifact-id ID] [--format openvex\|cyclonedx] [--spec-version V] [--output FILE] [--attest true\|bundle]`, `list <repo> [--artifact-id ID]`, `set <repo> --artifact-id ID --vuln CVE --status S [--justification J] [--impact T] [--action T]`, `delete <repo> <id>` |
 | `dtrack` *admin* | `show <repo>`, `test <repo>`, `push <repo> --artifact-id ID`, `pushes <repo>`: the repository's [Dependency-Track](../security/dependency-track.md) integration (the global settings and API keys are set in **Settings > Dependency-Track** or the API) |
-| `vuln` | `scan <repo> --artifact-id ID --package P --version V --ecosystem E [--scanner osv\|trivy\|grype]`, `list <repo>`, `show <repo> <id>`, `quarantine <repo> <id>`, `delete <repo> <id>` |
+| `vuln` | `scan <repo> --artifact-id ID --package P --version V --ecosystem E [--scanner osv\|trivy\|grype]`, `list <repo>`, `show <repo> <id>`, `quarantine <repo> <id> [--release]`, `delete <repo> <id>` |
 | `license` | `scan <repo> --artifact-id ID`, `list <repo>`, `show <repo> <id>` |
-| `secret` | `scan <repo> --artifact-id ID [--content-file FILE\|-]`, `list <repo>`, `show <repo> <id>`, `quarantine <repo> <id>`, `delete <repo> <id>` |
+| `secret` | `scan <repo> --artifact-id ID [--content-file FILE\|-]`, `list <repo>`, `show <repo> <id>`, `quarantine <repo> <id> [--release]`, `delete <repo> <id>` |
 | `cleanup` | `list <repo>`, `create <repo> --name N (--keep-count N \| --keep-days N) [--name-pattern REGEX] [--schedule CRON] [--enabled=false]`, `show <repo> <id>`, `update <repo> <id> [same flags]` (only the flags you pass are sent), `delete <repo> <id>`, `run <repo> <id>` |
 | `quota` | `show <repo>`, `set <repo> [--limit N [--unit MB\|GB\|TB]] [--max-artifacts N] [--warn-percent P]` (default unit `GB`; at least one flag), `delete <repo>` |
 | `props` | `list <repo> <artifact-id>`, `set <repo> <artifact-id> <key> <value>`, `delete <repo> <artifact-id> <key>`, `search <repo> <key> <value>` |
@@ -174,7 +174,7 @@ Uploads and downloads stream through the CLI without buffering whole files.
 
 | Command | Behavior |
 |---|---|
-| `oa artifact upload <repo> <file>` | multipart upload. `*.deb` goes to `POST /api/v1/repositories/{repo}/debs`; `*.apk` goes to `.../apks` (with `--branch`, `--apk-repo` and `--arch`, see [Alpine](../formats/apk.md#publish)); any other file goes to `.../packages` (the RPM upload endpoint). Other formats are published with their native client (`mvn deploy`, `npm publish`, `curl -T`, ...), see [formats](../formats/README.md) |
+| `oa artifact upload <repo> <file>` | uploads one file to a hosted repository. The repository's format picks the endpoint, and the formats are those of [`oa upload`](#oa-upload) (raw, Maven, Ivy, sbt, deb, rpm, pacman, Ansible, Composer); an Alpine repository takes `*.apk` files with `--branch`, `--apk-repo` and `--arch` (see [Alpine](../formats/apk.md#publish)). Any other format is refused with a message naming the native client to use (`npm publish`, `docker push`, ...), see [formats](../formats/README.md) |
 | `oa artifact upload --presigned [flags] <repo> <file>` | direct-to-storage upload for raw repositories, see [Presigned uploads](#presigned-uploads) |
 | `oa backup download <id> <dest>` | writes to a temp file next to `<dest>`, syncs, then renames onto `<dest>` |
 | `oa sbom download <repo> <id> <dest>` | same |

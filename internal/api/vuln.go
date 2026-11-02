@@ -491,11 +491,8 @@ func (h *VulnHandler) handleQuarantine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body struct {
-		Quarantined bool `json:"quarantined"`
-	}
-	if err := decodeJSON(r, &body); err != nil {
-		writeBadJSON(w, err)
+	quarantined, ok := decodeQuarantineBody(w, r)
+	if !ok {
 		return
 	}
 
@@ -503,9 +500,22 @@ func (h *VulnHandler) handleQuarantine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	before, err := h.db.GetVulnScanResultByID(ctx, repo.ID, id)
+	if err != nil {
+		h.log.Errorw("quarantine vuln artifact: db error fetching result", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	if before == nil {
+		writeError(w, http.StatusNotFound, "not_found", "vuln scan not found")
+		return
+	}
+
 	// Quarantine exactly the addressed scan result; the artifact-wide helper
 	// would fail (multiple rows) when several scanners scanned the artifact.
-	if err := h.db.SetVulnScanQuarantine(ctx, repo.ID, id, body.Quarantined); err != nil {
+	if err := h.db.SetVulnScanQuarantine(ctx, repo.ID, id, quarantined); err != nil {
 		if errors.Is(err, database.ErrVulnScanNotFound) {
 			writeError(w, http.StatusNotFound, "not_found", "vuln scan not found")
 			return
@@ -531,7 +541,10 @@ func (h *VulnHandler) handleQuarantine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auditQuarantine(r, repo, body.Quarantined, "vulnerability", updated.ArtifactID, updated.PackageName, updated.PackageVersion)
+	// Releasing what was not quarantined changes nothing and leaves no event.
+	if quarantined || before.Quarantined {
+		auditQuarantine(r, repo, quarantined, "vulnerability", updated.ArtifactID, updated.PackageName, updated.PackageVersion)
+	}
 
 	resp, err := h.scanResponse(ctx, updated)
 	if err != nil {
