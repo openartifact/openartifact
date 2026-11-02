@@ -245,24 +245,7 @@ func (p *DockerStore) ListDockerUploadChunks(ctx context.Context, repositoryID, 
 // ExistingDockerUploadChunkIDs returns the ids among ids that belong to a live
 // upload session.
 func (p *DockerStore) ExistingDockerUploadChunkIDs(ctx context.Context, ids []string) ([]string, error) {
-	valid := make([]string, 0, len(ids))
-
-	for _, id := range ids {
-		if isUUID(id) {
-			valid = append(valid, id)
-		}
-	}
-
-	if len(valid) == 0 {
-		return nil, nil
-	}
-
-	found, err := p.q.ExistingDockerUploadChunkIDs(ctx, valid)
-	if err != nil {
-		return nil, fmt.Errorf("failed to look up docker upload chunks: %w", err)
-	}
-
-	return found, nil
+	return existingUUIDs(ctx, ids, p.q.ExistingDockerUploadChunkIDs, "docker upload chunks")
 }
 
 func (p *DockerStore) DeleteDockerUpload(ctx context.Context, repositoryID, uploadUUID string) error {
