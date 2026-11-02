@@ -47,6 +47,21 @@ func (p *ProxyCacheStore) GetProxyCacheEntry(ctx context.Context, repoID, cacheK
 	}, nil
 }
 
+// ListCachedProxyKeys lists the cache keys of the cached files of a repository
+// that start with prefix, at most limit of them.
+func (p *ProxyCacheStore) ListCachedProxyKeys(ctx context.Context, repoID, prefix string, limit int) ([]string, error) {
+	keys, err := p.q.ListCachedProxyKeys(ctx, dbsqlc.ListCachedProxyKeysParams{
+		RepoID:  repoID,
+		Prefix:  prefix,
+		MaxKeys: int32(limit), //nolint:gosec // G115: the callers' limits are small constants
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list cached proxy keys: %w", err)
+	}
+
+	return keys, nil
+}
+
 // maxNegativeProxyEntriesPerRepo bounds the live 404 rows one proxy repository
 // may hold; beyond it new missing paths are simply not negative-cached.
 const maxNegativeProxyEntriesPerRepo = 10000

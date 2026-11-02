@@ -1470,6 +1470,24 @@ Partial update: omitted fields stay unchanged.
 | `stages` | array of [PipelineStage](#pipelinestage) | yes | - |
 | `updated_at` | string (date-time) | yes | - |
 
+### ProxyVersion
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `cached` | boolean | yes | True when a file of the version is already in the proxy cache (installing it needs no upstream download). Always false when the response's cache_known is false. |
+| `published_at` | string (date-time) | no | The publish time the upstream states, when known. |
+| `reasons` | array of [AvailabilityReason](#availabilityreason) | yes | Why the version is held; empty when it is available. |
+| `status` | string | yes | available: the gate lets clients install it; held: the minimum age or a curation rule keeps it from them (see reasons). One of: `available`, `held`. |
+| `version` | string | yes | - |
+
+### ProxyVersionsResponse
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `cache_known` | boolean | yes | True when the format's cache keys name the version of a file, so cached of each version is real; false when the cache cannot be told apart per version (cached is then false everywhere). |
+| `supported` | boolean | yes | False when the repository's format cannot list the versions of a package or the metadata is not cached yet; versions is then empty. |
+| `versions` | array of [ProxyVersion](#proxyversion) | yes | Newest first. |
+
 ### PublicSystemInfo
 
 | Field | Type | Required | Description |

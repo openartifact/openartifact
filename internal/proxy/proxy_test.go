@@ -15,6 +15,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -69,6 +71,24 @@ func (d *memDB) GetProxyCacheEntry(_ context.Context, repoID, key string) (*mode
 	cp := *e
 
 	return &cp, nil
+}
+
+// ListCachedProxyKeys lists the live cached files of a repository under prefix, in key order.
+func (d *memDB) ListCachedProxyKeys(_ context.Context, repoID, prefix string, limit int) ([]string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	var keys []string
+
+	for _, e := range d.entries {
+		if e.RepositoryID == repoID && e.StatusCode == http.StatusOK && e.BlobKey != "" && strings.HasPrefix(e.CacheKey, prefix) {
+			keys = append(keys, e.CacheKey)
+		}
+	}
+
+	sort.Strings(keys)
+
+	return keys[:min(limit, len(keys))], nil
 }
 
 func (d *memDB) UpsertProxyCacheEntry(_ context.Context, e *models.ProxyCacheEntry) error {

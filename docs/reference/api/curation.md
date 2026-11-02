@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Curation API
 
-6 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+7 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -166,6 +166,30 @@ Lists the versions of one package of a proxy repository that the repository's ga
 | Status | Description | Body |
 |---|---|---|
 | `200` | The held-back versions | `application/json`: [HeldBackResponse](schemas.md#heldbackresponse) |
+| `400` | Missing or oversized `package`, or the repository is not a proxy (`validation_failed`) | `application/json`: [Error](schemas.md#error) |
+| `403` | No read access to the repository | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
+
+### `GET /api/v1/repositories/{name}/proxy-versions`
+
+List the versions of a proxy package known from cached metadata
+
+Lists every version of one package of a proxy repository that the upstream metadata already in the cache names, newest first, each `available` (clients can install it) or `held` (the repository's gate keeps it from them: the minimum age or a curation rule, with the reasons), with its publish time and whether a file of it is already cached locally. Nothing is fetched from the upstream: `supported` is `false` (and the list empty) when the format cannot list the versions of a package or nothing is cached yet, and `cache_known` is `false` when the format's cache keys do not name versions. Only proxy repositories have such a list: any other repository type is a 400.
+
+**Security:** `bearerAuth` or `cookieAuth` or .
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+| `package` | query | string | yes | Package name, at most 1024 bytes. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The versions of the package | `application/json`: [ProxyVersionsResponse](schemas.md#proxyversionsresponse) |
 | `400` | Missing or oversized `package`, or the repository is not a proxy (`validation_failed`) | `application/json`: [Error](schemas.md#error) |
 | `403` | No read access to the repository | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | `application/json`: [Error](schemas.md#error) |

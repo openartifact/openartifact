@@ -18,6 +18,18 @@ SELECT id, repository_id, cache_key,
 FROM proxy_cache_entries
 WHERE repository_id = $1 AND cache_key = $2;
 
+-- name: ListCachedProxyKeys :many
+-- The cache keys of a repository's live cached files (a body in the blob store)
+-- that start with a prefix: which versions of one package are cached.
+SELECT cache_key
+FROM proxy_cache_entries
+WHERE repository_id = sqlc.arg(repo_id)::uuid
+  AND status_code = 200
+  AND blob_key IS NOT NULL
+  AND starts_with(cache_key, sqlc.arg(prefix)::text)
+ORDER BY cache_key
+LIMIT sqlc.arg(max_keys)::int;
+
 -- name: UpsertProxyCacheEntry :one
 INSERT INTO proxy_cache_entries (repository_id, cache_key, blob_key, content_type, status_code, size_bytes, hit_count, last_hit_at, expires_at)
 VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), $5, $6, $7, $8, $9)

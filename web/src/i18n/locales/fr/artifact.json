@@ -8,7 +8,7 @@
   "artifact.notFound.search": "Rechercher des paquets",
   "artifact.notFound.repo": "Ouvrir le dépôt",
   "artifact.metadataOnly.title": "Paquet en proxy",
-  "artifact.metadataOnly.hint": "{repo} sert {name} depuis son amont à la demande ; ses versions ne sont donc pas stockées ici comme des paquets distincts. Les versions retenues par le dépôt sont listées ci-dessus.",
+  "artifact.metadataOnly.hint": "{repo} sert {name} depuis son amont à la demande ; ses versions ne sont donc pas stockées ici comme des paquets distincts.",
   "artifact.versionNotFound.title": "Version introuvable",
   "artifact.versionNotFound.hint": "{name} n'a pas de version {version}.",
   "artifact.versionNotFound.latest": "Ouvrir la dernière version",
@@ -215,6 +215,12 @@
   "artifact.versions.column.availability": "Disponibilité",
   "artifact.versions.availableAt": "Disponible {when}",
   "artifact.versions.blocked": "Bloquée : {reason}",
-  "artifact.heldBack.title": "Retenues par ce dépôt",
-  "artifact.heldBack.hint": "Ces versions de {name} existent en amont mais ne sont pas encore servies."
+  "artifact.proxyVersions.hint": "Les versions que listent les métadonnées amont mises en cache par ce dépôt. Les versions en cache sont déjà stockées ici ; les versions retenues sont tenues à l'écart des clients par le dépôt.",
+  "artifact.proxyVersions.column.status": "Statut",
+  "artifact.proxyVersions.available": "Disponible",
+  "artifact.proxyVersions.held": "Retenue",
+  "artifact.proxyVersions.cached": "En cache",
+  "artifact.proxyVersions.cachedHint": "Un fichier de cette version est déjà stocké dans ce dépôt",
+  "artifact.proxyVersions.showInstall": "Afficher la commande d'installation",
+  "artifact.proxyVersions.copyInstall": "Copier la commande d'installation : {version}"
 }

@@ -1078,6 +1078,33 @@ type HeldBackVersion struct {
 	Reasons []AvailabilityReason `json:"reasons"`
 }
 
+// ProxyVersion is a version of a proxy package named by the cached upstream
+// metadata, with what the repository's gate says about it.
+type ProxyVersion struct {
+	Version string `json:"version"`
+	// Status is "available" or "held" (the gate keeps it from clients).
+	Status string `json:"status"`
+	// PublishedAt is the publish time the upstream states (RFC 3339), when known.
+	PublishedAt string `json:"published_at,omitempty"`
+	// Cached is true when a file of the version is already in the proxy cache.
+	Cached bool `json:"cached"`
+	// Reasons is empty for an available version; a reason has the shape of an
+	// availability reason.
+	Reasons []AvailabilityReason `json:"reasons"`
+}
+
+// ProxyVersionsResponse lists every version of a proxy package its cached
+// upstream metadata names, newest first.
+type ProxyVersionsResponse struct {
+	// Supported is false when the repository's format cannot list the versions
+	// of a package or the metadata is not cached yet; Versions is then empty.
+	Supported bool `json:"supported"`
+	// CacheKnown is false when the format's cache keys name no versions: Cached
+	// is then false for every version.
+	CacheKnown bool           `json:"cache_known"`
+	Versions   []ProxyVersion `json:"versions"`
+}
+
 // HeldBackResponse lists the versions of a proxy package its repository holds
 // back, computed from the upstream metadata already cached.
 type HeldBackResponse struct {

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { computed, inject, provide, ref, shallowRef, watch, type ComputedRef, type InjectionKey, type Ref } from 'vue'
-import { listHeldBackVersions, type HeldBackVersion } from '../api/curation'
+import { listProxyVersions, type HeldBackVersion, type ProxyVersion } from '../api/curation'
 import { getPackageDetail, getSecuritySummary, type PackageDetail, type SecuritySummary } from '../api/artifact'
 import { getRepository, listPackageVersions, type PackageItem, type Repository } from '../api/repositories'
 import { artifactCapabilities, type ArtifactCapabilities } from '../lib/artifactSecurity'
@@ -22,8 +22,12 @@ export interface ArtifactContext {
   detail: Ref<PackageDetail | null>
   /** Why the shown version's detail could not load; empty otherwise. */
   detailError: Ref<string>
-  /** Versions of a proxy package its gate holds back (minimum age, curation), from cached metadata; empty otherwise. */
-  heldBack: Ref<HeldBackVersion[]>
+  /** Every version of a proxy package its cached upstream metadata names (newest first); empty for anything else or when nothing is cached. */
+  proxyVersions: Ref<ProxyVersion[]>
+  /** True when the proxy's format tells which of its versions are cached, so `cached` of a proxy version is real. */
+  cacheKnown: Ref<boolean>
+  /** The versions of a proxy package its gate holds back (minimum age, curation), a view of `proxyVersions`. */
+  heldBack: ComputedRef<HeldBackVersion[]>
   /** Counts of the shown version's scans; null while loading, when it failed or for a never-scanned version. */
   summary: Ref<SecuritySummary | null>
   caps: ComputedRef<ArtifactCapabilities>
@@ -62,19 +66,23 @@ export function useArtifact(source: ArtifactSource) {
   const detail = ref<PackageDetail | null>(null)
   const detailError = ref('')
   const summary = ref<SecuritySummary | null>(null)
-  const heldBack = ref<HeldBackVersion[]>([])
+  const proxyVersions = ref<ProxyVersion[]>([])
+  const cacheKnown = ref(false)
+  const heldBack = computed<HeldBackVersion[]>(() =>
+    proxyVersions.value.filter((v) => v.status === 'held').map((v) => ({ version: v.version, published_at: v.published_at, reasons: v.reasons })),
+  )
 
   const repoName = computed(source.repo)
   const pkgName = computed(source.pkg)
   const format = computed(() => repository.value?.format ?? rows.value[0]?.format ?? '')
   // A proxy package is also backed by the cached upstream metadata (its row has an empty version): that is not a
   // version a client can install, so the page never shows it as one. Only a proxy whose format lists versions
-  // (held-back endpoint `supported`) has such a row; other formats keep versionless rows (raw files).
-  const heldBackSupported = ref(false)
-  const realRows = computed(() => (heldBackSupported.value ? rows.value.filter((r) => r.version !== '') : rows.value))
+  // (proxy-versions endpoint `supported`) has such a row; other formats keep versionless rows (raw files).
+  const proxyVersionsSupported = ref(false)
+  const realRows = computed(() => (proxyVersionsSupported.value ? rows.value.filter((r) => r.version !== '') : rows.value))
   // Some proxies (pypi) list no row for the cached metadata at all: what the gate holds back then proves the package exists.
   const metadataOnly = computed(
-    () => realRows.value.length === 0 && (rows.value.length > 0 || (repository.value?.repo_type === 'proxy' && heldBack.value.length > 0)),
+    () => realRows.value.length === 0 && (rows.value.length > 0 || (repository.value?.repo_type === 'proxy' && proxyVersions.value.length > 0)),
   )
   const versions = computed(() => groupVersions(realRows.value))
   const entry = computed(() => selectVersion(versions.value, source.version()))
@@ -90,28 +98,30 @@ export function useArtifact(source: ArtifactSource) {
       if (mine !== listGeneration) return
       repository.value = repo
       rows.value = list.filter((p) => p.name === pkgName.value)
-      await loadHeldBack()
+      await loadProxyVersions()
     } catch (err) {
       if (mine !== listGeneration) return
       rows.value = []
-      heldBack.value = []
+      proxyVersions.value = []
       error.value = err instanceof Error ? err.message : String(err)
     } finally {
       if (mine === listGeneration) loading.value = false
     }
   }
 
-  // Versions the gate holds back are not stored, so they are not in the list: ask which they are.
-  async function loadHeldBack(): Promise<void> {
+  // What the proxy's cached metadata knows of the package is not stored as versions, so it is not in the list: ask.
+  async function loadProxyVersions(): Promise<void> {
     const mine = listGeneration
-    heldBack.value = []
-    heldBackSupported.value = false
+    proxyVersions.value = []
+    cacheKnown.value = false
+    proxyVersionsSupported.value = false
     if (repository.value?.repo_type !== 'proxy') return
     try {
-      const res = await listHeldBackVersions(repoName.value, pkgName.value)
+      const res = await listProxyVersions(repoName.value, pkgName.value)
       if (mine !== listGeneration) return
-      heldBack.value = res.versions
-      heldBackSupported.value = res.supported
+      proxyVersions.value = res.versions
+      cacheKnown.value = res.cache_known
+      proxyVersionsSupported.value = res.supported
     } catch {
       // An extra: the page shows the versions it has.
     }
@@ -181,6 +191,8 @@ export function useArtifact(source: ArtifactSource) {
     detail,
     detailError,
     summary,
+    proxyVersions,
+    cacheKnown,
     heldBack,
     caps,
     reload: async () => {

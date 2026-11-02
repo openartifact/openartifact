@@ -19,8 +19,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <template v-else-if="versions.length === 0">
       <PageHeader :title="pkgName" :crumbs="crumbs" />
-      <HeldBackList v-if="heldBack.length > 0" class="mb-6" :pkg="pkgName" :held="heldBack" />
-      <StateBlock v-if="metadataOnly" variant="empty" :title="t('artifact.metadataOnly.title')" :hint="tp('artifact.metadataOnly.hint', { name: pkgName, repo: repoName })" data-testid="metadata-only">
+      <ProxyVersionsList v-if="proxyVersions.length > 0" class="mb-6" :format="format" :repo="repoName" :pkg="pkgName" :versions="proxyVersions" />
+      <StateBlock v-else-if="metadataOnly" variant="empty" :title="t('artifact.metadataOnly.title')" :hint="tp('artifact.metadataOnly.hint', { name: pkgName, repo: repoName })" data-testid="metadata-only">
         <template #action>
           <AppButton variant="secondary" :to="`/repos/${encodeURIComponent(repoName)}`">{{ t('artifact.notFound.repo') }}</AppButton>
         </template>
@@ -106,7 +106,7 @@ import ArtifactAside from '../components/artifact/ArtifactAside.vue'
 import ArtifactInstall from '../components/artifact/ArtifactInstall.vue'
 import ArtifactOverviewTab from '../components/artifact/ArtifactOverviewTab.vue'
 import AvailabilityPanel from '../components/artifact/AvailabilityPanel.vue'
-import HeldBackList from '../components/artifact/HeldBackList.vue'
+import ProxyVersionsList from '../components/artifact/ProxyVersionsList.vue'
 import AppTabs from '../components/ui/AppTabs.vue'
 import SeverityBadge from '../components/ui/SeverityBadge.vue'
 import StateBlock from '../components/ui/StateBlock.vue'
@@ -135,7 +135,7 @@ const param = (name: string): string | undefined => {
 }
 const requestedVersion = computed(() => param('v'))
 
-const { repoName, pkgName, versions, entry, detail, summary, heldBack, format, repository, caps, loading, error, reload, metadataOnly } = useArtifact({
+const { repoName, pkgName, versions, entry, detail, summary, proxyVersions, format, repository, caps, loading, error, reload, metadataOnly } = useArtifact({
   repo: () => param('repo') ?? '',
   pkg: () => param('pkg') ?? '',
   version: () => requestedVersion.value,

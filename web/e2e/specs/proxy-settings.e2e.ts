@@ -66,7 +66,7 @@ describe('proxy settings of a proxy repository', () => {
 
     // The gate now holds the release back until a day has passed since its publication.
     await ui.goto(`/repos/${repo}/packages/${PKG}`)
-    await expectLoc(ui.getByTestId('held-back-list')).toContainText(tp('artifact.versions.availableAt', { when: '@@' }).split('@@')[0]!)
+    await expectLoc(ui.getByTestId('proxy-versions')).toContainText(tp('artifact.versions.availableAt', { when: '@@' }).split('@@')[0]!)
   })
 
   it('a value that is not a whole number is explained and cannot be saved', async (ui) => {

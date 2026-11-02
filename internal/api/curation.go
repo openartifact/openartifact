@@ -60,6 +60,7 @@ type CurationStore interface {
 type PublishTimeSource interface {
 	PublishTime(ctx context.Context, repo *models.Repository, pkg, version string) (time.Time, bool)
 	HeldBackVersions(ctx context.Context, repo *models.Repository, pkg string) ([]proxy.HeldBack, bool, error)
+	ListProxyVersions(ctx context.Context, repo *models.Repository, pkg string) (proxy.ProxyVersions, error)
 }
 
 // CurationHandler serves the curation rules of proxy repositories and the
@@ -86,6 +87,7 @@ func (h *CurationHandler) RegisterAuthed(r chi.Router) {
 	r.With(requireUUIDParams("id")).Delete("/api/v1/repositories/{name}/curation-rules/{id}", h.handleDelete)
 	r.Get("/api/v1/repositories/{name}/availability", h.handleAvailability)
 	r.Get("/api/v1/repositories/{name}/held-back-versions", h.handleHeldBack)
+	r.Get("/api/v1/repositories/{name}/proxy-versions", h.handleProxyVersions)
 }
 
 func curationRuleToResponse(r *curation.Rule) responses.CurationRuleResponse {
@@ -365,6 +367,55 @@ func (h *CurationHandler) handleAvailability(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// proxyPackageRequest resolves the repository and package of a request for the
+// versions of a proxy package: the caller must be able to read the repository,
+// package is required and the repository must be a proxy. ok is false after the
+// error was written.
+func (h *CurationHandler) proxyPackageRequest(w http.ResponseWriter, r *http.Request, what string) (*models.Repository, string, bool) {
+	repo, ok := h.loadRepo(w, r, what)
+	if !ok {
+		return nil, "", false
+	}
+
+	if p := currentPrincipal(r); p != nil && !p.IsAnonymous {
+		allowed, err := h.evaluator.Evaluate(r.Context(), *p, repo.Name, "", "read")
+		if err != nil || !allowed {
+			writeError(w, http.StatusForbidden, "forbidden", "access denied")
+			return nil, "", false
+		}
+	}
+
+	pkg := r.URL.Query().Get("package")
+	if pkg == "" || len(pkg) > maxAvailabilityParam {
+		writeError(w, http.StatusBadRequest, "validation_failed",
+			fmt.Sprintf("package is required (at most %d bytes)", maxAvailabilityParam))
+
+		return nil, "", false
+	}
+
+	if repo.RepoType != repotype.Proxy || h.published == nil {
+		writeError(w, http.StatusBadRequest, "validation_failed", "only a proxy repository has upstream versions")
+
+		return nil, "", false
+	}
+
+	return repo, pkg, true
+}
+
+// holdReason is a gate hold as the API states it.
+func holdReason(hold curation.Hold) responses.AvailabilityReason {
+	reason := responses.AvailabilityReason{Source: hold.Source, Detail: hold.Detail}
+	if !hold.Until.IsZero() {
+		reason.Until = hold.Until.UTC().Format(time.RFC3339)
+	}
+
+	if hold.Rule != nil {
+		reason.RuleID = hold.Rule.ID
+	}
+
+	return reason
+}
+
 // handleHeldBack lists the versions of a proxy package the repository's gate
 // (minimum age and curation rules) keeps from its clients, so that a client can
 // tell them from versions that do not exist.
@@ -376,30 +427,8 @@ func (h *CurationHandler) handleAvailability(w http.ResponseWriter, r *http.Requ
 // nothing is cached yet. Only proxy repositories have such a list: anything
 // else is a 400.
 func (h *CurationHandler) handleHeldBack(w http.ResponseWriter, r *http.Request) {
-	repo, ok := h.loadRepo(w, r, "list held-back versions")
+	repo, pkg, ok := h.proxyPackageRequest(w, r, "list held-back versions")
 	if !ok {
-		return
-	}
-
-	if p := currentPrincipal(r); p != nil && !p.IsAnonymous {
-		allowed, err := h.evaluator.Evaluate(r.Context(), *p, repo.Name, "", "read")
-		if err != nil || !allowed {
-			writeError(w, http.StatusForbidden, "forbidden", "access denied")
-			return
-		}
-	}
-
-	pkg := r.URL.Query().Get("package")
-	if pkg == "" || len(pkg) > maxAvailabilityParam {
-		writeError(w, http.StatusBadRequest, "validation_failed",
-			fmt.Sprintf("package is required (at most %d bytes)", maxAvailabilityParam))
-
-		return
-	}
-
-	if repo.RepoType != repotype.Proxy || h.published == nil {
-		writeError(w, http.StatusBadRequest, "validation_failed", "only a proxy repository holds versions back")
-
 		return
 	}
 
@@ -412,16 +441,51 @@ func (h *CurationHandler) handleHeldBack(w http.ResponseWriter, r *http.Request)
 	resp := responses.HeldBackResponse{Supported: supported, Versions: make([]responses.HeldBackVersion, 0, len(held))}
 
 	for _, v := range held {
-		reason := responses.AvailabilityReason{Source: v.Hold.Source, Detail: v.Hold.Detail}
-		if !v.Hold.Until.IsZero() {
-			reason.Until = v.Hold.Until.UTC().Format(time.RFC3339)
+		item := responses.HeldBackVersion{Version: v.Version, Reasons: []responses.AvailabilityReason{holdReason(v.Hold)}}
+		if !v.Published.IsZero() {
+			item.PublishedAt = v.Published.UTC().Format(time.RFC3339)
 		}
 
-		if v.Hold.Rule != nil {
-			reason.RuleID = v.Hold.Rule.ID
+		resp.Versions = append(resp.Versions, item)
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleProxyVersions lists every version of a proxy package the cached
+// upstream metadata names, newest first, each available or held by the gate,
+// with its publish time and whether a file of it is already in the proxy cache.
+//
+//	GET /api/v1/repositories/{name}/proxy-versions?package=P
+//
+// Like the held-back list it reads the cache only and never asks the upstream:
+// "supported" is false when the format cannot list versions or nothing is cached
+// yet, and "cache_known" is false when the format's cache keys name no version.
+func (h *CurationHandler) handleProxyVersions(w http.ResponseWriter, r *http.Request) {
+	repo, pkg, ok := h.proxyPackageRequest(w, r, "list proxy versions")
+	if !ok {
+		return
+	}
+
+	list, err := h.published.ListProxyVersions(r.Context(), repo, pkg)
+	if err != nil {
+		h.dbError(w, "list proxy versions: db error", err)
+		return
+	}
+
+	resp := responses.ProxyVersionsResponse{
+		Supported:  list.Supported,
+		CacheKnown: list.CacheKnown,
+		Versions:   make([]responses.ProxyVersion, 0, len(list.Versions)),
+	}
+
+	for _, v := range list.Versions {
+		item := responses.ProxyVersion{Version: v.Version, Status: "available", Cached: v.Cached, Reasons: []responses.AvailabilityReason{}}
+		if v.Held {
+			item.Status = "held"
+			item.Reasons = []responses.AvailabilityReason{holdReason(v.Hold)}
 		}
 
-		item := responses.HeldBackVersion{Version: v.Version, Reasons: []responses.AvailabilityReason{reason}}
 		if !v.Published.IsZero() {
 			item.PublishedAt = v.Published.UTC().Format(time.RFC3339)
 		}

@@ -121,6 +121,9 @@ type ServiceStore interface {
 	DeleteProxyCacheEntry(ctx context.Context, repoID string, cacheKey string) error
 	EnsureBlob(ctx context.Context, sha256 string, mediaType string, size int64) (string, error)
 	GetProxyCacheEntry(ctx context.Context, repoID string, cacheKey string) (*models.ProxyCacheEntry, error)
+	// ListCachedProxyKeys lists the cache keys of the cached files of repoID that
+	// start with prefix (at most limit).
+	ListCachedProxyKeys(ctx context.Context, repoID, prefix string, limit int) ([]string, error)
 	UpsertProxyCacheEntry(ctx context.Context, entry *models.ProxyCacheEntry) error
 }
 

@@ -48,13 +48,13 @@ function serve(permissions: Record<string, boolean>, packages: unknown[] = PACKA
   })
 }
 
-/** A proxy npm repository whose cached packument row has an empty version, with `packages` listed and nothing held back. */
+/** A proxy npm repository whose cached packument row has an empty version, with `packages` listed and nothing listed from cached metadata. */
 function serveProxy(packages: unknown[]): void {
   fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
     const url = String(input)
     if (url === '/api/v1/repository/web') return json({ name: 'web', format: 'npm', repo_type: 'proxy', permissions: {} })
     if (url.startsWith('/api/v1/repositories/web/packages?')) return json({ packages, total: packages.length })
-    if (url.startsWith('/api/v1/repositories/web/held-back-versions')) return json({ supported: true, versions: [] })
+    if (url.startsWith('/api/v1/repositories/web/proxy-versions')) return json({ supported: true, cache_known: true, versions: [] })
     if (url.includes('/packages/f-')) return json({ id: 'f-new-amd64', filename: 'w.tgz', sha256: SHA, files: [], metadata: [], dependencies: [], version_count: 2, latest_version: '2.0.0' })
     if (url.startsWith('/api/v1/repositories/web/security/summary')) return json(SUMMARY)
     return json({}, 404)
@@ -121,19 +121,29 @@ describe('ArtifactPage', () => {
     wrapper.unmount()
   })
 
-  it('shows a proxy package with no row at all as proxied when the gate holds versions back', async () => {
+  it('lists the versions of a proxy package with no stored row from its cached metadata', async () => {
     fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input)
       if (url === '/api/v1/repository/web') return json({ name: 'web', format: 'pypi', repo_type: 'proxy', permissions: {} })
       if (url.startsWith('/api/v1/repositories/web/packages?')) return json({ packages: [], total: 0 })
-      if (url.startsWith('/api/v1/repositories/web/held-back-versions')) {
-        return json({ supported: true, versions: [{ version: '2.0.0', reasons: [{ source: 'min_age', detail: 'too new', until: '2099-01-01T00:00:00Z' }] }] })
+      if (url.startsWith('/api/v1/repositories/web/proxy-versions')) {
+        return json({
+          supported: true,
+          cache_known: true,
+          versions: [
+            { version: '2.0.0', status: 'held', cached: false, reasons: [{ source: 'min_age', detail: 'too new', until: '2099-01-01T00:00:00Z' }] },
+            { version: '1.5.0', status: 'available', cached: true, reasons: [] },
+            { version: '1.0.0', status: 'available', cached: false, reasons: [] },
+          ],
+        })
       }
       return json({}, 404)
     })
     const { wrapper } = await mountAt('/repos/web/packages/widget')
-    expect(wrapper.get('[data-testid=metadata-only]').text()).toContain('Proxied package')
-    expect(wrapper.get('[data-testid=held-back-list]').text()).toContain('2.0.0')
+    expect(wrapper.find('[data-testid=metadata-only]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid=proxy-versions]').text()).toContain('2.0.0')
+    // The install command is the newest version a client can install, not the held one.
+    expect(wrapper.get('[data-testid=install-command]').text()).toContain('widget==1.5.0')
     expect(wrapper.text()).not.toContain('Package not found')
     wrapper.unmount()
   })

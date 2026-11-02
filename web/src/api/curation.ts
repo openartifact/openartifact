@@ -5,9 +5,9 @@
 import { request, JSON_HEADERS } from './client'
 import { updateRepository, type Repository } from './repositories'
 
-import type { AvailabilityReason, AvailabilityResponse, CurationRule, HeldBackResponse, HeldBackVersion } from './generated/types.gen'
+import type { AvailabilityReason, AvailabilityResponse, CurationRule, HeldBackVersion, ProxyVersion, ProxyVersionsResponse } from './generated/types.gen'
 
-export type { AvailabilityReason, AvailabilityResponse, CurationRule, HeldBackResponse, HeldBackVersion }
+export type { AvailabilityReason, AvailabilityResponse, CurationRule, HeldBackVersion, ProxyVersion, ProxyVersionsResponse }
 export type CurationAction = CurationRule['action']
 /** How a proxy repository's curation rules apply: not at all, everything but the blocked versions, or only the allowed versions. */
 export type CurationMode = NonNullable<Repository['curation_mode']>
@@ -54,8 +54,11 @@ export function getAvailability(repo: string, pkg: string, version: string): Pro
   return request<AvailabilityResponse>(`/api/v1/repositories/${encodeURIComponent(repo)}/availability?${qs}`)
 }
 
-/** The versions of a proxy package its gate holds back, from the metadata already cached. */
-export function listHeldBackVersions(repo: string, pkg: string): Promise<HeldBackResponse> {
+/**
+ * Every version of a proxy package its cached upstream metadata names, each available or held by the gate and
+ * cached or not, newest first. The server reads the cache only: it never asks the upstream.
+ */
+export function listProxyVersions(repo: string, pkg: string): Promise<ProxyVersionsResponse> {
   const qs = new URLSearchParams({ package: pkg })
-  return request<HeldBackResponse>(`/api/v1/repositories/${encodeURIComponent(repo)}/held-back-versions?${qs}`)
+  return request<ProxyVersionsResponse>(`/api/v1/repositories/${encodeURIComponent(repo)}/proxy-versions?${qs}`)
 }
