@@ -107,3 +107,89 @@ func operand(s string) string {
 
 	return s
 }
+
+// commandsWithOwnFlag lists the commands that define a flag of the same name
+// as a global one; for them the flag after the command belongs to the command.
+//
+//nolint:gochecknoglobals // immutable lookup table
+var commandsWithOwnFlag = map[string]map[string]bool{
+	"repo create":   {"format": true},
+	"sbom generate": {"format": true},
+	"vex get":       {"format": true},
+	"audit export":  {"format": true},
+	"auth login":    {"server": true},
+}
+
+// globalFlag reports whether arg is --server, --token or --format (one or two
+// leading dashes) and whether its value is attached with "=".
+func globalFlag(arg string) (string, bool, bool) {
+	if !strings.HasPrefix(arg, "-") {
+		return "", false, false
+	}
+
+	n, _, attached := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+	switch n {
+	case "server", "token", "format":
+		return n, attached, true
+	}
+
+	return "", false, false
+}
+
+// hoistGlobals moves the global flags (--server, --token, --format, as
+// "--flag value" or "--flag=value") from anywhere on the command line, up to a
+// bare "--", to the front, so `oa repo list --format json` works like
+// `oa --format json repo list`. A flag the command defines itself stays where
+// it is. Order among the global flags is kept, so the last one still wins.
+func hoistGlobals(args []string) []string {
+	// Index of the command word and of the subcommand word.
+	var words []int
+
+	for i := 0; i < len(args) && len(words) < 2; i++ {
+		switch {
+		case args[i] == "--":
+			i = len(args)
+		case strings.HasPrefix(args[i], "-"):
+			if _, attached, ok := globalFlag(args[i]); ok && !attached {
+				i++
+			}
+		default:
+			words = append(words, i)
+		}
+	}
+
+	var key []string
+	for _, w := range words {
+		key = append(key, args[w])
+	}
+
+	own := commandsWithOwnFlag[strings.Join(key, " ")]
+
+	var globals, rest []string
+
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			rest = append(rest, args[i:]...)
+
+			break
+		}
+
+		name, attached, ok := globalFlag(a)
+		if !ok || (own[name] && len(words) > 0 && i > words[0]) {
+			rest = append(rest, a)
+
+			continue
+		}
+
+		globals = append(globals, a)
+
+		if !attached && i+1 < len(args) {
+			i++
+
+			globals = append(globals, args[i])
+		}
+	}
+
+	return append(globals, rest...)
+}

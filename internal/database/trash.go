@@ -308,6 +308,10 @@ func scanTrashItem(sc interface{ Scan(...any) error }) (*models.TrashItem, error
 
 // ListTrash implements TrashOps.
 func (p *TrashStore) ListTrash(ctx context.Context, f models.TrashFilter) ([]*models.TrashItem, int, error) {
+	if !knownTrashKind(f.Kind) {
+		return nil, 0, fmt.Errorf("%w: %s", ErrTrashUnknownKind, f.Kind)
+	}
+
 	limit := f.Limit
 	if limit <= 0 {
 		limit = defaultTrashPageLimit
@@ -754,4 +758,15 @@ func (p *TrashStore) ListExpiredTrash(ctx context.Context, limit int) ([]models.
 	}
 
 	return refs, nil
+}
+
+// knownTrashKind reports whether kind is empty (all kinds) or a registered kind.
+func knownTrashKind(kind models.TrashKind) bool {
+	if kind == "" || kind == models.TrashKindRepository || len(genericFormats(kind)) > 0 {
+		return true
+	}
+
+	_, ok := dockerSpecByKind(kind)
+
+	return ok
 }

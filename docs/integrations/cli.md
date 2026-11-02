@@ -34,7 +34,9 @@ Precedence: flag, then environment variable, then the config file. Global flags 
 
 The config file is `~/.config/oa/config.json` on every OS (it does not follow `XDG_CONFIG_HOME` or the platform config dir). It holds `{"server": "...", "token": "..."}`. The directory is created with mode `0700` and the file is written atomically with mode `0600`.
 
-Help: `-h` or `--help` anywhere after the command (`oa repo create --help`) prints the usage of that command and exits 0 without contacting the server. A name, id or path argument that starts with `-` is refused as a probable misplaced flag, before any request.
+Help: `-h` or `--help` anywhere after the command (`oa repo create --help`) prints the usage of that command and exits 0 without contacting the server. A name, id or path argument that starts with `-` is refused as a probable misplaced flag, before any request. The global flags `--server`, `--token` and `--format` are accepted anywhere on the line (`oa repo list --format json`), except where the command has a flag of that name itself (`repo create`, `sbom generate`, `vex get`, `audit export` take `--format`; `auth login` takes `--server`). `oa search` takes its flags before or after the query.
+
+`oa upload` reports the server's own text for a `409` (for example `artifact already exists`); `oa cleanup create` always sends `enabled` (default true); `oa vuln|secret quarantine ... --release[=false]` takes the bool form; `oa trash list --kind` with an unknown kind is an error (`400`); `oa audit export -o /dev/null` (or any device/pipe) writes directly; `oa vuln scan` prints `started; still running` when the server has only queued the scan.
 
 Output: `--format json` prints indented JSON; anything else prints aligned tables. Errors go to stderr as `Error (<status>): <message>` and the exit code is 1. HTTP redirects that downgrade https to http are refused, and credentials are stripped when a redirect leaves the original host.
 

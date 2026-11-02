@@ -5,8 +5,10 @@
 package main
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -171,5 +173,84 @@ func TestSearchFlagsAfterQuery(t *testing.T) {
 		if !strings.Contains(got+"&", want) {
 			t.Errorf("query %q lacks %q", got, want)
 		}
+	}
+}
+
+func TestHoistGlobals(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"repo list --format json", "--format json repo list"},
+		{"repo --server http://x list", "--server http://x repo list"},
+		{"--format json repo list --token=abc", "--format json --token=abc repo list"},
+		{"repo create r --format npm", "repo create r --format npm"},
+		{"audit export --format csv", "audit export --format csv"},
+		{"sbom generate r --format spdx --server s", "--server s sbom generate r --format spdx"},
+		{"auth login --server http://x", "auth login --server http://x"},
+		{"search q -- --format", "search q -- --format"},
+	}
+
+	for _, c := range cases {
+		got := strings.Join(hoistGlobals(strings.Fields(c.in)), " ")
+		if got != c.want {
+			t.Errorf("%q: got %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestGlobalFormatAfterCommand(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"repositories":[{"name":"r","format":"npm"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	res := runOA(t, srv, "", "repo", "list", "--format", "json")
+	if res.code != 0 || !strings.Contains(res.stdout, `"name": "r"`) {
+		t.Errorf("exit %d, stdout %q, stderr %q", res.code, res.stdout, res.stderr)
+	}
+}
+
+func TestQuarantineReleaseBoolForm(t *testing.T) {
+	var body string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		body = string(b)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	res := runOA(t, srv, "", "vuln", "quarantine", "r", "id", "--release=false")
+	if res.code != 0 || !strings.Contains(body, `"quarantined":true`) {
+		t.Errorf("--release=false: exit %d, body %q, stderr %q", res.code, body, res.stderr)
+	}
+
+	res = runOA(t, srv, "", "vuln", "quarantine", "r", "id", "--release")
+	if res.code != 0 || !strings.Contains(body, `"quarantined":false`) {
+		t.Errorf("--release: exit %d, body %q, stderr %q", res.code, body, res.stderr)
+	}
+}
+
+func TestAuditExportToDevNull(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("{}\n"))
+	}))
+	t.Cleanup(srv.Close)
+
+	if res := runOA(t, srv, "", "audit", "export", "-o", os.DevNull); res.code != 0 {
+		t.Errorf("exit %d, stderr %q", res.code, res.stderr)
+	}
+}
+
+func TestVulnScanStillScanningMessage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"s1","scan_status":"scanning","vuln_count":0}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	res := runOA(t, srv, "", "vuln", "scan", "r", "--artifact-id", "a@1", "--package", "p", "--version", "1", "--ecosystem", "npm")
+	if res.code != 0 || !strings.Contains(res.stdout, "still running") || strings.Contains(res.stdout, "0 vulnerabilities") {
+		t.Errorf("exit %d, stdout %q", res.code, res.stdout)
 	}
 }

@@ -218,7 +218,7 @@ func trashFilterFromQuery(r *http.Request) models.TrashFilter {
 func (h *TrashHandler) writeList(ctx context.Context, w http.ResponseWriter, store database.TrashOps, filter models.TrashFilter) {
 	items, total, err := store.ListTrash(ctx, filter)
 	if err != nil {
-		h.dbError(w, "list trash: db error", err)
+		h.writeTrashError(w, "list", err)
 		return
 	}
 

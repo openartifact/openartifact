@@ -84,7 +84,7 @@ func (h *CleanupHandler) policyInRepo(
 }
 
 func (h *CleanupHandler) handleList(w http.ResponseWriter, r *http.Request) {
-	repo, ok := h.repoThenRepoAdmin(w, r, "list cleanup policies")
+	repo, ok := h.repoAdminFirst(w, r, "list cleanup policies")
 	if !ok {
 		return
 	}
@@ -95,7 +95,7 @@ func (h *CleanupHandler) handleList(w http.ResponseWriter, r *http.Request) {
 func (h *CleanupHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	repo, ok := h.repoThenRepoAdmin(w, r, "create cleanup policy")
+	repo, ok := h.repoAdminFirst(w, r, "create cleanup policy")
 	if !ok {
 		return
 	}
@@ -132,7 +132,7 @@ func (h *CleanupHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 func (h *CleanupHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	id := urlparams.Vars(r)["id"]
 
-	repo, ok := h.repoThenRepoAdmin(w, r, "get cleanup policy")
+	repo, ok := h.repoAdminFirst(w, r, "get cleanup policy")
 	if !ok {
 		return
 	}
@@ -250,7 +250,7 @@ func (h *CleanupHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
-	repo, ok := h.repoThenRepoAdmin(w, r, "update cleanup policy")
+	repo, ok := h.repoAdminFirst(w, r, "update cleanup policy")
 	if !ok {
 		return
 	}
@@ -297,7 +297,7 @@ func (h *CleanupHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
-	repo, ok := h.repoThenRepoAdmin(w, r, "delete cleanup policy")
+	repo, ok := h.repoAdminFirst(w, r, "delete cleanup policy")
 	if !ok {
 		return
 	}
@@ -323,7 +323,7 @@ func (h *CleanupHandler) handleRun(w http.ResponseWriter, r *http.Request) {
 	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
-	repo, ok := h.repoThenRepoAdmin(w, r, "run cleanup policy")
+	repo, ok := h.repoAdminFirst(w, r, "run cleanup policy")
 	if !ok {
 		return
 	}
@@ -393,7 +393,7 @@ func (h *CleanupHandler) handleDryRun(w http.ResponseWriter, r *http.Request) {
 	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
-	repo, ok := h.repoThenRepoAdmin(w, r, "dry-run cleanup policy")
+	repo, ok := h.repoAdminFirst(w, r, "dry-run cleanup policy")
 	if !ok {
 		return
 	}
@@ -421,7 +421,7 @@ func (h *CleanupHandler) handleDryRun(w http.ResponseWriter, r *http.Request) {
 // is a new policy as create takes it (the name may be left out), validated the
 // same way, and evaluated by the same code. Nothing is saved or changed.
 func (h *CleanupHandler) handleDraftDryRun(w http.ResponseWriter, r *http.Request) {
-	repo, ok := h.repoThenRepoAdmin(w, r, "dry-run draft cleanup policy")
+	repo, ok := h.repoAdminFirst(w, r, "dry-run draft cleanup policy")
 	if !ok {
 		return
 	}

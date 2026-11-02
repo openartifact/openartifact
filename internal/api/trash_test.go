@@ -60,6 +60,7 @@ type fakeTrashDB struct {
 	listItems      []*models.TrashItem
 	listTotal      int
 	purgeCalls     int
+	listErr        error
 	statefulList   bool // ListTrash hides the items PurgeTrash already removed
 	regenA, regenB string
 
@@ -146,6 +147,10 @@ func (db *fakeTrashDB) TrashRepository(_ context.Context, _, by string) (bool, e
 
 func (db *fakeTrashDB) ListTrash(_ context.Context, f models.TrashFilter) ([]*models.TrashItem, int, error) {
 	db.listFilter = f
+
+	if db.listErr != nil {
+		return nil, 0, db.listErr
+	}
 
 	if db.statefulList {
 		left := db.listItems[min(db.purgeCalls, len(db.listItems)):]
@@ -1018,4 +1023,15 @@ func TestTrashEmptyRepo(t *testing.T) {
 			t.Fatalf("status = %d", rw.Code)
 		}
 	})
+}
+
+// An unknown kind filter is a 400, not an empty list.
+func TestTrashListUnknownKindIs400(t *testing.T) {
+	db, _, _, r := newTrashFixture(t, adminOnlyTargets())
+	db.listErr = database.ErrTrashUnknownKind
+
+	rw := serve(r, trashRequest(http.MethodGet, "/api/v1/trash?kind=bogus", ""))
+	if rw.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body = %s", rw.Code, rw.Body.String())
+	}
 }

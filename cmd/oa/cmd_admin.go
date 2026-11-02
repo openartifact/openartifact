@@ -916,6 +916,26 @@ func handleAuditExport(args []string, client *Client) {
 		return
 	}
 
+	if fi, err := os.Stat(*output); err == nil && !fi.Mode().IsRegular() {
+		// A device or pipe (/dev/null, /dev/stdout, a FIFO): no temp file and rename.
+		f, err := os.OpenFile(*output, os.O_WRONLY, 0)
+		if err != nil {
+			dief("%v", err)
+		}
+
+		if _, err := io.Copy(f, resp.Body); err != nil {
+			_ = f.Close()
+
+			dief("writing export: %v", err)
+		}
+
+		if err := f.Close(); err != nil {
+			dief("writing export: %v", err)
+		}
+
+		return
+	}
+
 	n, err := downloadTo(resp, *output)
 	if err != nil {
 		dief("%v", err)

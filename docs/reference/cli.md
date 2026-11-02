@@ -55,7 +55,7 @@ repo list                          List repositories
 repo create <name> --format <fmt> [--description D] [--public] [--trash-retention-days N] [--immutable-releases] [--sign-packages]
                                    Create repository
 repo show <name>                   Show repository details
-repo update <name> [--description D] [--public[=false]] [--trash-retention-days N|default] [--immutable-releases[=false]] [--sign-packages[=false]]
+repo update <name> [--description D] [--public[=false]] [--trash-retention-days N|default] [--immutable-releases[=false]] [--sign-packages[=false]] [--merge-proxy-versions[=false]]
                                    Update repository
 repo delete <name> --confirm <name>  Delete repository (moved to the trash; prompts for the name on a terminal)
 repo packages <name>               List packages in repository
