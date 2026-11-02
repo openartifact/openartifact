@@ -129,6 +129,8 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: postgres
           DB_NAME: openartifact_e2e
+          # The cache specs point proxy repositories at a stand-in upstream on loopback.
+          OA_EXTRA_ENV: OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true
         run: |
           scripts/testenv.sh start
           # Hand the seeded credentials to the next steps, masked in the log.
