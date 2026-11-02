@@ -25,7 +25,9 @@ func TestSlug(t *testing.T) {
 func TestParseMarkdown(t *testing.T) {
 	t.Parallel()
 
-	f := parseMarkdown([]byte("# A\n\n## Dup\n\n## Dup\n\n```\n# not a heading\n[x](gone.md)\n```\n\nSee [a](b.md#c) and `[x](nope.md)`.\n"))
+	src := "# A\n\n## Dup\n\n## Dup\n\n```\n# not a heading\n[x](gone.md)\n```\n\n" +
+		"See [a](b.md#c) and `[x](nope.md)`.\n"
+	f := parseMarkdown([]byte(src))
 	for _, a := range []string{"a", "dup", "dup-1"} {
 		if !f.anchors[a] {
 			t.Errorf("missing anchor %q in %v", a, f.anchors)

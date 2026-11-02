@@ -189,7 +189,7 @@ func checkLink(root, from, target string, load func(string) (mdFile, error)) str
 
 	info, err := os.Stat(filepath.Join(root, filepath.FromSlash(dest)))
 	if err != nil {
-		return fmt.Sprintf("%s does not exist", target)
+		return target + " does not exist"
 	}
 
 	if frag == "" || info.IsDir() || !strings.HasSuffix(dest, ".md") {
