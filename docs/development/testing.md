@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Black-box and property tests
 
-Besides the Go unit and integration tests (see the [development guide](README.md)), four suites exercise a running server or pure frontend functions. All of them are cheap to run locally except where noted; CI is the reference run.
+Besides the Go unit and integration tests (see the [development guide](README.md)), five suites exercise a running server or pure frontend functions. All of them are cheap to run locally except where noted; CI is the reference run. This page owns the description of these suites and their CI jobs; the other CI jobs are in [CI and releases](ci-and-releases.md).
 
 | Suite | CI job (workflow) | When | Local entry point |
 |---|---|---|---|
@@ -33,7 +33,13 @@ The script wipes `$OA_TESTENV_DIR` but not the database: drop and recreate it be
 
 ## API fuzzing
 
-`scripts/api-fuzz.sh [pr|nightly]` runs Schemathesis (version pinned, container image by digest) against `internal/api/openapi.json` in three passes: admin (Bearer token), developer (no admin route may answer 2xx) and anonymous (only operations the spec marks `security: []` and public-repository reads may answer 2xx). Checks: `not_a_server_error`, `response_schema_conformance`, `status_code_conformance`, plus the authentication checks in `tests/apifuzz/hooks.py`. Operations that would break the run (restore, logout, password change) or call out to the network (webhook, storage, SSO and AI tests) are disabled in `tests/apifuzz/schemathesis.toml`, each with a reason; known deferred issues live in the same file.
+`scripts/api-fuzz.sh [pr|nightly]` runs Schemathesis (version pinned, container image by digest) against `internal/api/openapi.json` in three passes:
+
+- **Admin** with a Bearer token.
+- **Developer**: no admin route may answer 2xx.
+- **Anonymous**: only operations the spec marks `security: []` and public-repository reads may answer 2xx.
+
+Checks are `not_a_server_error`, `response_schema_conformance`, `status_code_conformance` and the authentication checks in `tests/apifuzz/hooks.py`. Operations that would break the run (restore, logout, password change) or call out to the network (webhook, storage, SSO and AI tests) are disabled in `tests/apifuzz/schemathesis.toml`, each with a reason. Known deferred issues live in the same file.
 
 ```sh
 . "$OA_TESTENV_DIR/env"
@@ -57,11 +63,27 @@ bun run e2e                                      # specs in web/e2e/specs, about
 MONKEY_SEED=3 MONKEY_STEPS=300 bun run monkey    # seeded random walk; seed is printed and written to web/monkey-seed.txt
 ```
 
-`LIGHTPANDA_CDP_URL` overrides `http://127.0.0.1:9222`. A failing test writes `web/test-results/<test>/` (`failure.txt` with the error, URL, page errors and `LP.getPageStatus`, `console.log`, `page.html`); CI uploads it as `e2e-failure` or `monkey-failure`. The e2e specs cover login, repository creation, a real `npm publish` with an API token, the install command, quarantine blocking downloads, proxy-repository curation (mode, rules, the held-back explanation), proxy settings (TTLs, minimum age, a server-side field error), service accounts and OIDC trust policies, the repository activity tab (by role), the cleanup policy live preview, command palette actions, legacy URL redirects, role visibility (admin, developer, anonymous), breadcrumbs, and an axe-core scan of every visited page in light and dark theme (serious and critical impacts fail). The monkey walk picks links and safe controls with a seeded PRNG as admin and as developer and fails on uncaught exceptions, console errors, 5xx responses, or reaching the not-found page through an in-app link; destructive controls are on a deny-list (`web/e2e/monkey.e2e.ts`). The replay is exact only when the data and timing match the original run.
+`LIGHTPANDA_CDP_URL` overrides `http://127.0.0.1:9222`. A failing test writes `web/test-results/<test>/` with `failure.txt` (the error, URL, page errors and `LP.getPageStatus`), `console.log` and `page.html`. CI uploads it as `e2e-failure` or `monkey-failure`.
+
+The e2e specs cover:
+
+- login, repository creation, a real `npm publish` with an API token, the install command and quarantine blocking downloads;
+- proxy-repository curation (mode, rules, the held-back explanation) and proxy settings (TTLs, minimum age, a server-side field error);
+- service accounts and OIDC trust policies, the repository activity tab (by role) and the cleanup policy live preview;
+- command palette actions, legacy URL redirects, role visibility (admin, developer, anonymous) and breadcrumbs;
+- an axe-core scan of every visited page in light and dark theme; serious and critical impacts fail.
+
+The monkey walk picks links and safe controls with a seeded PRNG, as admin and as developer. It fails on uncaught exceptions, console errors, 5xx responses, or reaching the not-found page through an in-app link. Destructive controls are on a deny-list (`web/e2e/monkey.e2e.ts`). The replay is exact only when the data and timing match the original run.
 
 The curation and proxy-settings specs create proxy repositories whose upstream is a small npm registry the spec process serves on loopback (`web/e2e/lib/upstream.ts`), so no test touches the network. The server must therefore allow private upstreams: CI passes `OA_EXTRA_ENV: OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true` to `scripts/testenv.sh start`, and a local run needs `OA_EXTRA_ENV=OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true scripts/testenv.sh start`. Without it the helper fails with that hint.
 
-Writing specs: use `testAs(role)` for a signed-in page, the locator helpers in `web/e2e/lib/` (`getByRole`, `getByTestId`, `expectLoc`, `eventually`); wait on selectors, URLs or conditions, never fixed sleeps; assert the expected URL after each navigation (Lightpanda can fall back to `about:blank`, [#3395](https://github.com/lightpanda-io/browser/issues/3395)), and wait for the whole expected location in one `expectUrl` call (path, query and hash): `shellReady` does not wait for the router, the header mounts before a legacy redirect or a lazy page has settled, and the old URL can already satisfy a partial check such as the hash; avoid drag and drop, contenteditable and `scrollIntoView` in nested scroll containers.
+Writing specs:
+
+- Use `testAs(role)` for a signed-in page and the locator helpers in `web/e2e/lib/` (`getByRole`, `getByTestId`, `expectLoc`, `eventually`).
+- Wait on selectors, URLs or conditions, never on fixed sleeps.
+- Assert the expected URL after each navigation. Lightpanda can fall back to `about:blank` ([#3395](https://github.com/lightpanda-io/browser/issues/3395)).
+- Wait for the whole expected location in one `expectUrl` call (path, query and hash). `shellReady` does not wait for the router: the header mounts before a legacy redirect or a lazy page has settled, and the old URL can already satisfy a partial check such as the hash.
+- Avoid drag and drop, contenteditable and `scrollIntoView` in nested scroll containers.
 
 ### Visual regression and colour contrast (Chromium)
 
@@ -76,7 +98,10 @@ bun run e2e:visual:update            # rewrite the baselines after an intended c
 scripts/e2e-chromium.sh stop
 ```
 
-- **Snapshots** cover the expanded sidebar, the collapsed rail, a rail tooltip, the header, a toast and the docked update offer, each in the light and the dark theme, at 1366x768. Baselines are the PNGs in `web/e2e/chromium/__screenshots__`; review the changed images in the pull request like any other diff. The comparison (pixelmatch, `TOLERANCE` in `web/e2e/lib/visual.ts`) allows a per-pixel colour distance of 0.1 and 0.1 % of the pixels to differ: a stray glyph edge passes, a moved icon or a changed token does not. A failure writes `expected`, `actual` and `diff` PNGs to `web/test-results/visual/`, which CI uploads as `e2e-failure`. Animations and transitions are switched off and the web fonts awaited before a shot, and the pointer is parked away from every control. `expectMatchesBaseline` takes the shot itself, with `captureBeyondViewport: false`: puppeteer's default for a clipped or element shot makes Chromium resize the view to 1x1 for a moment, and a frame that lands in that window moves the pointer out of the page, so the open tooltip closes before the pixels are read (rare, and only on a loaded machine: it made `shell-rail-tooltip-*` fail in CI). Do not call `screenshot()` directly in a snapshot spec.
+- **Snapshots** cover the expanded sidebar, the collapsed rail, a rail tooltip, the header, a toast and the docked update offer, each in the light and the dark theme, at 1366x768. Baselines are the PNGs in `web/e2e/chromium/__screenshots__`; review the changed images in the pull request like any other diff.
+- **Tolerance.** The comparison (pixelmatch, `TOLERANCE` in `web/e2e/lib/visual.ts`) allows a per-pixel colour distance of 0.1 and 0.1 % of the pixels to differ. A stray glyph edge passes; a moved icon or a changed token does not.
+- **Failures.** A failure writes `expected`, `actual` and `diff` PNGs to `web/test-results/visual/`, which CI uploads as `e2e-failure`.
+- **Stable shots.** Animations and transitions are switched off, the web fonts are awaited, and the pointer is parked away from every control. `expectMatchesBaseline` takes the shot itself with `captureBeyondViewport: false`, because puppeteer's default for a clipped or element shot makes Chromium resize the view to 1x1 for a moment. A frame in that window moves the pointer out of the page and closes the open tooltip before the pixels are read; this is rare, only on a loaded machine, and made `shell-rail-tooltip-*` fail in CI. Do not call `screenshot()` directly in a snapshot spec.
 - **Contrast** scans the login page, the shell (expanded and collapsed rail), the dashboard, the repository list and detail, an artifact, the security page and the developer dashboard in both themes, plus three overlays while open (rail tooltip, user menu, toast). A failure names the element, the measured ratio, the ratio required and both colours. Fix the colour in the tokens of `web/src/style.css`, not in a component. A rule that needs layout (`target-size`, `scrollable-region-focusable`, `link-in-text-block`) is still skipped; only `color-contrast` moved to Chromium.
 - After bumping the headless-shell tag, refresh the baselines (`bun run e2e:visual:update`) and commit them.
 

@@ -15,8 +15,9 @@ These pages are also published, one version per release, at <https://openartifac
 | Page | Contents |
 |---|---|
 | [Installation](getting-started/installation.md) | Docker Compose, Helm, release binaries and source builds; first login and password reset; installing the web UI as an app (PWA) |
+| [Your first repository](getting-started/first-repository.md) | Create a hosted repository, make an access token, publish and install one package |
 | [Web UI](getting-started/web-ui.md) | The seven areas, the Ctrl/Cmd+K command palette, the settings hub, the artifact page and where the old URLs went |
-| [Configuration](getting-started/configuration.md) | Load order, env-only variables, and every setting with env var, YAML key and default |
+| [Configuration](getting-started/configuration.md) | How settings load, the common settings with env var, YAML key and default; the complete list is the generated [configuration reference](reference/config.md) |
 | [Language](getting-started/language.md) | Choosing the UI language: browser default, the picker in the user menu and on the sign-in page, where the choice is stored, what follows it |
 | [Upgrading](getting-started/upgrading.md) | Forward-only migrations, image tags, per-method upgrade steps, secrets to keep, rollback |
 
@@ -37,17 +38,21 @@ These pages are also published, one version per release, at <https://openartifac
 |---|---|
 | [Hosted, proxy and group](repositories/hosted-proxy-group.md) | Repository types, proxy cache and serve-stale, groups, the public flag |
 | [Cleanup and quotas](repositories/cleanup-and-quotas.md) | Cleanup policies, per-repository and per-project storage quotas, project default cleanup policies |
-| [Trash](operations/trash.md) | Deleted artifacts and repositories stay restorable for a retention period; immutable releases |
 | [Properties](repositories/properties.md) | Artifact key/value properties: API, limits, search |
 | [Release bundles](repositories/release-bundles.md) | Release bundles and promotion pipelines |
+
+## Migration
+
+| Page | Contents |
+|---|---|
 | [Migrating from Nexus / Artifactory](migration/nexus-artifactory.md) | `oa import`: flags, retries, what is preserved |
-| [Migrating from OpenArtifact 0.14](migration/openartifact.md) | `oa import openartifact` and `oa import config`: the 0.14 to 0.15 runbook |
+| [Upgrading from OpenArtifact 0.14](migration/openartifact.md) | `oa import openartifact` and `oa import config`: the 0.14 to 0.15 runbook, only if you still run 0.14 |
 
 ## Security
 
 | Page | Contents |
 |---|---|
-| [Authentication](security/authentication.md) | Local login, sessions, CSRF, API tokens, legacy key, anonymous access, IP and rate limits |
+| [Authentication](security/authentication.md) | Local login, sessions, CSRF, API tokens, service accounts and OIDC token exchange, legacy key, anonymous access, IP and rate limits |
 | [Single sign-on](security/sso.md) | OIDC and SAML providers, provisioning, group mapping |
 | [RBAC](security/rbac.md) | Users, groups, permission targets, request-to-action mapping, projects (repository ownership, member and group access) |
 | [Projects](security/projects.md) | Project roles, member and group self-service, who may create projects, audit events, API |
@@ -57,6 +62,7 @@ These pages are also published, one version per release, at <https://openartifac
 | [SBOM and VEX](security/sbom.md) | CycloneDX / SPDX 2.3 and 3.0 SBOMs, OpenVEX / CycloneDX VEX, signed attestations (cosign), Trivy, Grype |
 | [Dependency-Track](security/dependency-track.md) | Pushing the BOM on upload and scan and the VEX after analysis; project naming, permissions, per-repository overrides |
 | [License metadata](security/licenses.md) | How licenses are read from package files: precedence per format, unresolved licenses, limits and limitations |
+| [Threat model](security/threat-model.md) | What OpenArtifact protects, who it assumes to be hostile and the controls in place |
 | [Signing](security/signing.md) | GPG key management and signing of APT/RPM metadata and release bundles; verifying release archives and images |
 
 ## Operations
@@ -107,9 +113,15 @@ Generated from the code (`make docs-gen`), never hand-edited.
 
 | Page | Contents |
 |---|---|
-| [Development guide](development/README.md) | Toolchain, build, test, lint, generate, CI and release pipeline |
+| [Development guide](development/README.md) | Toolchain, build, test, lint and generate commands, conventions |
+| [Adding a package format](development/adding-a-format.md) | The steps and a worked example for a new format plugin |
+| [Testing](development/testing.md) | Test suites, e2e, visual and monkey tests, how to run them |
+| [Fuzzing](development/fuzzing.md) | Fuzz targets, seeds and corpus, running them locally |
+| [CI and releases](development/ci-and-releases.md) | CI jobs, the client matrix and the release pipeline |
+| [Documentation style](development/docs-style.md) | Writing rules every docs change follows |
 | [Translating the web UI](development/translations.md) | Catalog layout, adding UI text, the `i18n:check` rules, adding a language, correcting a translation by pull request |
 | [Architecture](development/architecture.md) | Code layout, request flow, routing invariant, storage and database split |
+| [Design: format plugins](design/format-plugins.md) | The format plugin registry and what a format declares |
 | [Design: federated repositories](design/federation.md) | Multi-site replication: unit log, pull protocol, conflict rules, tombstones, peer authentication, supported formats |
 
 Contributor rules: [CONTRIBUTING.md](../CONTRIBUTING.md) and [AGENTS.md](../AGENTS.md). Security reports: [SECURITY.md](../SECURITY.md).

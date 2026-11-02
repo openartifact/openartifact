@@ -271,4 +271,4 @@ Payloads keep the existing shapes: the artifact events carry the artifact payloa
 
 - [Cleanup policies and quotas](../repositories/cleanup-and-quotas.md): policies move versions to the trash; quota accounting.
 - [Docker garbage collection](../formats/docker.md#garbage-collection): trashed manifests and their layers are not collected.
-- [Upgrading](../getting-started/upgrading.md#050-unreleased): behavior changes and migrations `017`/`018` (locking, index builds).
+- [Upgrading](../getting-started/upgrading.md#050): behavior changes and migrations `017`/`018` (locking, index builds).

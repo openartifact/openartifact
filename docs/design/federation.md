@@ -6,7 +6,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Design: federated repositories
 
-Status: implemented (issue [#33](https://github.com/openartifact/openartifact/issues/33)). Hosted repositories of the formats listed below federate with pull replication, last-writer-wins conflicts, tombstones, resync and rebuild, peer tokens, health views, metrics and resumable blob transfers. The operator guide is [Federation](../operations/federation.md). What is still open is listed under [Future work](#future-work-not-v1); where the shipped behaviour differs from the first proposal the text below says so.
+> **Developer-internal design record.** This page records why federation works the way it does. It is not an operator guide; for that see [Federation](../operations/federation.md).
+
+Status: implemented (issue [#33](https://github.com/openartifact/openartifact/issues/33)). Hosted repositories of the formats listed below federate with pull replication, last-writer-wins conflicts, tombstones, resync and rebuild, peer tokens, health views, metrics and resumable blob transfers. What is still open is listed under [Future work](#future-work); where the shipped behaviour differs from the first proposal the text below says so.
 
 Shipped:
 
@@ -14,7 +16,7 @@ Shipped:
 - Resumable blob pulls, see [Resumable blob transfers](#resumable-blob-transfers).
 - Integration tests with two real server instances and, in CI, with three instances federated in a triangle (Docker, npm and raw) with a fault-injection proxy that cuts a 64 MiB blob mid-transfer, see [Test plan](#test-plan).
 
-Still open: Conan, Conda, Debian, Ivy, RPM, RubyGems, sbt and Terraform; push-assisted wakeups and scheduled anti-entropy; a designated signing member for Debian/RPM; per-member read-only mode; native inbound mTLS; edge distribution (legal review first).
+Still open: every format outside the [supported list](#formats) (the `Federation: true` entries in `internal/repotype`); push-assisted wakeups and scheduled anti-entropy; a designated signing member for Debian/RPM; per-member read-only mode; native inbound mTLS; edge distribution (legal review first).
 
 A **federated repository** is a set of *member* repositories, one per OpenArtifact instance, that converge to the same content. Any member accepts writes; changes flow in both directions. The goal is multi-site replication that survives network partitions and the loss of a whole member, without a coordinator and without a single point of failure.
 
@@ -29,13 +31,13 @@ Goals:
 - Visibility: lag, backlog, last error per peer; manual and full resync; rebuild of a lost member.
 - Authentication between instances with scoped tokens (optional extra transport protection), SSRF rules for every outbound call, RBAC that cannot be bypassed through the federation endpoints.
 
-Non-goals (v1):
+Non-goals:
 
 - Synchronous replication or read-your-writes across members. Replication is asynchronous and eventually consistent.
 - Strong consistency on mutable references. Concurrent moves of one tag converge to one winner; the other write is discarded and counted as a conflict.
 - Replicating proxy caches, group repositories, users, permissions, repository settings, scan results, or quotas. Each member keeps its own.
 - Edge-node / signed release-bundle distribution, see [Legal constraint](#legal-constraint).
-- Conan, Conda, Debian, Ivy, RPM, RubyGems, sbt and Terraform repositories, see [Formats](#formats).
+- Federation of formats outside the supported list, see [Formats](#formats).
 
 ## Legal constraint
 
@@ -131,7 +133,11 @@ federation_peer_tokens (id, repo_id, name, token_hash, created_at, last_used_at,
 
 ### Capture: written in the same transaction as the change
 
-Events are captured by **row triggers** (`AFTER INSERT OR UPDATE OR DELETE`) on `package_files`, `package_tags` and (updates only, to see a version going to or from the trash) `package_versions`, and on the docker tables `docker_manifests` and `docker_tags`. The trigger functions are generic: they read the unit key from the row's `unit_key` column (written by the format's store at publish time), so a new format needs no new trigger. A trigger fires inside the transaction of the statement that changed the row, so a change and its log entry commit or roll back together, for **every** code path: the upload handlers, the API, trash delete and restore, cleanup policies, the declarative apply, the docker garbage collector. No handler has to remember to emit an event, and a crash cannot leave a change without its event. (A Go-level emitter after the DB call, or the webhook publisher, is not transactional and would need a repair job.)
+Events are captured by **row triggers** (`AFTER INSERT OR UPDATE OR DELETE`) on `package_files`, `package_tags` and `package_versions` (updates only, to see a version going to or from the trash), and on the docker tables `docker_manifests` and `docker_tags`.
+
+- The trigger functions are generic. They read the unit key from the row's `unit_key` column, which the format's store writes at publish time, so a new format needs no new trigger.
+- A trigger fires inside the transaction of the statement that changed the row. A change and its log entry commit or roll back together, for **every** code path: the upload handlers, the API, trash delete and restore, cleanup policies, the declarative apply and the docker garbage collector.
+- No handler has to remember to emit an event, and a crash cannot leave a change without its event. A Go-level emitter after the DB call, or the webhook publisher, is not transactional and would need a repair job.
 
 Each trigger first checks whether the row's repository has a `federation_repos` row (one primary-key lookup, done for every row change of every repository; the cost on non-federated repositories is that lookup). When it does, and the change is replicated state:
 
@@ -143,7 +149,9 @@ Each trigger first checks whether the row's repository has a `federation_repos` 
 
 The trigger upserts the unit row, assigning:
 
-- `seq`: `UPDATE federation_repos SET head_seq = head_seq + 1 … RETURNING head_seq`. The row lock is held until the transaction ends, so sequence numbers are allocated in **commit order**: a reader that sees seq *n* has seen every seq below *n*. The price is that concurrent writers to the same federated repository serialise on that row for the duration of their transaction (uploads are short, autocommit transactions; heavy parallel ingestion into a federated repo gets less parallelism than into a plain one). A multi-statement transaction touching units of one repo in different orders can deadlock like any row-lock cycle; Postgres aborts one of them and the client retries.
+- `seq`: `UPDATE federation_repos SET head_seq = head_seq + 1 … RETURNING head_seq`. The row lock is held until the transaction ends, so sequence numbers are allocated in **commit order**: a reader that sees seq *n* has seen every seq below *n*.
+  - Price: concurrent writers to the same federated repository serialise on that row for the duration of their transaction. Uploads are short autocommit transactions, but heavy parallel ingestion into a federated repository gets less parallelism than into a plain one.
+  - A multi-statement transaction that touches units of one repository in different orders can deadlock like any row-lock cycle. Postgres aborts one of them and the client retries.
 - the **stamp** (hybrid logical clock value, see [Conflicts](#conflicts)).
 
 Enabling federation on an existing repository runs a backfill in one transaction (it takes `SHARE` locks on `package_files`, `package_versions` and, for npm, `package_tags` for its duration, so package writers of **all** repositories and formats wait for it): it creates the `federation_repos` row and one unit per live row, stamped with the row's `updated_at`. Disabling federation deletes the `federation_repos` row (units and peers cascade); triggers become no-ops again. The other members are not affected.
@@ -152,7 +160,7 @@ Enabling federation on an existing repository runs a backfill in one transaction
 
 ### Pull, not push
 
-Each member **pulls** from its peers by cursor. Push (the origin posting each change to every peer) is rejected for v1 because:
+Each member **pulls** from its peers by cursor. Push (the origin posting each change to every peer) is rejected because:
 
 - a partitioned or slow peer would require the origin to maintain per-peer outbound queues, retries and dead-letter handling in addition to the log;
 - the receiver's position is the receiver's state: with a cursor there is nothing to lose if either side is down, restarted, restored or rebuilt;
@@ -163,7 +171,11 @@ The price is latency of up to one poll interval (default 30 s). An `If-None-Matc
 
 ### Protocol
 
-**Protocol 2 (0.15).** The generic package tables changed the `data` payload of every unit (see below) and the unit-key columns, so 0.15 speaks protocol 2 and has no protocol-1 compatibility: `/info` reports `protocol: 2`, the puller refuses any other value, and a mixed 0.14/0.15 federation is not possible. Upgrade every member (stop, import, switch; see [upgrading](../getting-started/upgrading.md#0150)) and re-enable federation; units are rebuilt from the imported content. Unit keys are unchanged. The path of the `artifact.uploaded`/`artifact.deleted` webhook for an applied unit is the keyed file's repository path.
+**Protocol 2 (0.15).** The generic package tables changed the `data` payload of every unit (see below) and the unit-key columns, so 0.15 speaks protocol 2 and has no protocol-1 compatibility.
+
+- `/info` reports `protocol: 2`, and the puller refuses any other value. A mixed 0.14 and 0.15 federation is not possible.
+- Upgrade every member (stop, import, switch; see [upgrading](../getting-started/upgrading.md#0150)) and re-enable federation. Units are rebuilt from the imported content. Unit keys are unchanged.
+- The path of the `artifact.uploaded` and `artifact.deleted` webhook for an applied unit is the keyed file's repository path.
 
 All endpoints live under `/federation/v1/` and authenticate with a **peer token** that is bound to one repository (see [Security](#security)); the repository is therefore implied by the token and never appears in the URL.
 
@@ -176,7 +188,14 @@ All endpoints live under `/federation/v1/` and authenticate with a **peer token*
 
 `/blob` honours a single `Range: bytes=N-` (or `bytes=N-M`) request: `206` with `Content-Range`, `416` with `Content-Range: bytes */size` for anything else (start at or past the end, suffix or multiple ranges, a unit other than `bytes`), and `Accept-Ranges: bytes` on every answer. The blob is streamed from the BlobStore at the offset, so a resume does not re-read the prefix. The membership check below runs before any range is looked at.
 
-`data` is the Codec's JSON for the unit: the row's replicated columns with local ids and blob ids replaced by sha256 values. For the generic codec it is `{package, version, files[], tag}`: the package identity (`name`, `name_key`, `attrs`), the version (`version`, `version_key`, `metadata`, `created_at`), each live file of the unit (path, filename, blob as sha256, size, role, listed, arch, part, `attrs`, `checksums`, `keyed`, `created_at` and the rows of the format's side tables with every column but `id`) and, for a ref unit, the tag. Never replicated: ids, repository id, trash state, local timestamps, `download_count`, and the descriptor's `LocalPackageAttrs` (npm `latest_version` and `packument_stale`, recomputed locally after apply). The server never serves a blob that is not part of a live unit of the token's repository, so the token cannot be used to read other repositories or arbitrary storage keys.
+`data` is the Codec's JSON for the unit: the row's replicated columns with local ids and blob ids replaced by sha256 values. For the generic codec it is `{package, version, files[], tag}`:
+
+- the package identity (`name`, `name_key`, `attrs`);
+- the version (`version`, `version_key`, `metadata`, `created_at`);
+- each live file of the unit: path, filename, blob as sha256, size, role, listed, arch, part, `attrs`, `checksums`, `keyed`, `created_at`, and the rows of the format's side tables with every column but `id`;
+- for a ref unit, the tag.
+
+Never replicated: ids, repository id, trash state, local timestamps, `download_count`, and the descriptor's `LocalPackageAttrs` (npm `latest_version` and `packument_stale`, recomputed locally after apply). The server never serves a blob that is not part of a live unit of the token's repository, so the token cannot be used to read other repositories or arbitrary storage keys.
 
 ### Pull loop (per peer)
 
@@ -193,7 +212,11 @@ All endpoints live under `/federation/v1/` and authenticate with a **peer token*
 
 Apply is **one local database transaction per unit**, run by the same Codec code paths that define the unit:
 
-1. Fetch the blobs that are missing locally (`blobs` row *and* object in the store) into a spool file while hashing; the sha256 must match the unit's declared hash, else the unit fails. The staged blobs are `Put` (with the mandatory `sha256` metadata) before any lock is taken, by `storage.CommitBlobs`; the per-blob locks are then taken only for the database work, and under them the presence of every blob of the unit is checked again (a staged blob a concurrent delete removed is stored again from its spool file; a blob that was already local and has vanished since fails the unit with `storage.ErrBlobGone`, which is deferred as `blob_gone` and retried on the unit's backoff). So a concurrent `SafeDeleteBlob` cannot remove a blob before the rows referencing it exist, and an object-store `PUT` never holds a lock slot.
+1. Fetch the blobs that are missing locally (`blobs` row *and* object in the store) into a spool file while hashing. The sha256 must match the unit's declared hash, else the unit fails.
+   - `storage.CommitBlobs` `Put`s the staged blobs, with the mandatory `sha256` metadata, before any lock is taken.
+   - The per-blob locks are then taken only for the database work. Under them the presence of every blob of the unit is checked again.
+   - A staged blob that a concurrent delete removed is stored again from its spool file. A blob that was already local and has vanished since fails the unit with `storage.ErrBlobGone`; the unit is deferred as `blob_gone` and retried on its backoff.
+   - So a concurrent `SafeDeleteBlob` cannot remove a blob before the rows referencing it exist, and an object-store `PUT` never holds a lock slot.
 2. Apply `deps` first (a dist-tag needs its version, a docker tag needs its manifest, an OCI index needs its child manifests; such units are fetched by key from the same peer and applied recursively).
 3. In one transaction with `SET LOCAL oa.federation_apply = 'on'` (which makes the capture triggers return immediately): ensure `blobs` rows, write or soft-delete the unit rows, and write the unit's log row with the **remote stamp** and a fresh local `seq` (so this member's own feed now contains the unit and other peers can pull it from here), observing the remote stamp into the local clock.
 4. After commit: reserve/release quota (`internal/quota`; an exceeded quota fails the unit), release replaced blobs with `storage.SafeDeleteBlob`, notify `RegenQueue` consumers (Maven metadata, npm packuments) and publish `artifact.uploaded` / `artifact.deleted` webhooks so scans, SBOM and AI analysis see the new content exactly as for a local upload.
@@ -242,7 +265,9 @@ Why not the alternatives:
 
 Properties and limits, stated plainly:
 
-- Clock skew between instances can make a physically earlier write win. The HLC bounds the damage (a member that learns of a far-future stamp does not keep issuing lower ones) but not eliminates it. Keep instance clocks in sync (NTP). Because the clock of a repository only moves forward, a stamp is validated before it is applied: a wall time more than `federation.maxClockSkew` (default 5 minutes) ahead of the local clock, a negative wall time, or a counter outside `0..2^24` defers the unit (`clock_skew`) instead of moving the clock; the retry applies it once the local clock has caught up. The check is in the engine (`validateStamp`), not in `federation_apply_unit`, so it needs no migration.
+- Clock skew between instances can make a physically earlier write win. The HLC bounds the damage, because a member that learns of a far-future stamp does not keep issuing lower ones, but does not eliminate it. Keep instance clocks in sync (NTP).
+  - The clock of a repository only moves forward, so a stamp is validated before it is applied. A wall time more than `federation.maxClockSkew` (default 5 minutes) ahead of the local clock, a negative wall time, or a counter outside `0..2^24` defers the unit (`clock_skew`) instead of moving the clock. The retry applies it once the local clock has caught up.
+  - The check is in the engine (`validateStamp`), not in `federation_apply_unit`, so it needs no migration.
 - One of two concurrent writes is discarded. The losing write is **not** lost silently: when applying a remote stamp replaces a *local* live unit with a different `content_ref`, or when a local unit is skipped because a newer remote one exists with a different `content_ref`, the peer's `conflicts_total` is incremented, a warning is logged and `openartifact_federation_conflicts_total` is bumped. The superseded blob is released by normal refcounting (it remains in the member's trash if the supersede was a soft replace).
 - "Immutable release" repositories: a concurrent publish of the same version on two members with different content is exactly a conflict. Federation converges it by the same rule rather than leaving the members permanently divergent; `immutable_releases` continues to protect against local overwrite attempts, but a replicated overwrite decided by the rule is applied and recorded as a conflict.
 
@@ -266,7 +291,10 @@ Tombstones are garbage-collected after `federation.tombstoneRetention` (default 
 ### Resync and rebuild
 
 - **Resync** (manual button/API, or automatic on a `log_id` change): reset the peer's cursor to 0 and run a full pass over the peer's feed. It is a merge, idempotent and safe to run any time: units already up to date cost one comparison; for units that compare equal it also verifies the blobs exist in the local store and refetches missing ones; it retries every deferred unit. It never deletes a local unit merely because the peer lacks it (the peer may simply not have it yet, and tombstones, not absence, express deletion).
-- **Rebuilding a deleted member**: create the repository on the replacement instance with `federated`, add the surviving member as a peer, issue a token on the survivor for it, and start the pull. The new member has a new `instance_id`/`log_id`; its cursor starts at 0, the feed contains every unit and tombstone, and the new member ends up with the full content. The survivors see a changed `log_id` on the replacement and reset their cursor for it (nothing to import yet). A member **restored from a backup** keeps its `log_id` but its sequence may be behind what peers already passed; after a restore run *Resync* on every peer (the health view shows `head_seq < cursor` as an error until then).
+- **Rebuilding a deleted member**: create the repository on the replacement instance with `federated`, add the surviving member as a peer, issue a token on the survivor for it, and start the pull.
+  - The new member has a new `instance_id` and `log_id`. Its cursor starts at 0, the feed contains every unit and tombstone, and the new member ends up with the full content.
+  - The survivors see a changed `log_id` on the replacement and reset their cursor for it; there is nothing to import yet.
+  - A member **restored from a backup** keeps its `log_id`, but its sequence may be behind what peers already passed. After a restore run *Resync* on every peer; the health view shows `head_seq < cursor` as an error until then.
 
 ## Security
 
@@ -310,12 +338,13 @@ The supported formats are those whose state is *immutable blobs plus simple, row
 | pypi | file `name/version/filename` | simple index rendered on read |
 | raw | `path` → blob | none |
 
-Excluded in v1, with reasons:
+The supported list is the set of formats with `Federation: true` in `internal/repotype`: cargo, docker, go, helm, maven, npm, nuget, pypi and raw. Every other format is excluded, for these reasons:
 
 - **Conan, Conda, RubyGems**: Conda's `repodata` and RubyGems' marshalled specs are regenerated whole; Conan's recipe/package revisions and checksums form a graph with its own concurrency model. Each needs its own unit design and tests.
 - **Debian and RPM**: repository metadata is *signed* and generated per distribution/component with the instance's own GPG key, merged with group state and tied to per-repo regeneration; replicating packages is easy but replicating or recomputing consistent signed indexes across members is a design of its own (which member signs, key distribution, `InRelease` freshness).
 - **Ivy and sbt**: path files like maven; deferred only to keep the first test matrix small, not for a technical reason.
 - **Terraform/OpenTofu**: module versions and per-platform provider zips are plain content-addressed rows, but provider `SHA256SUMS` signing is computed per request from the repository's signing key, so it needs a decision on which member signs. Not designed yet.
+- **Ansible, apk, Composer, Nix and Pacman**: their units and derived metadata have not been designed or tested for federation.
 - **Proxy and group repositories**: not authoritative content.
 
 ## Interaction with other features
@@ -366,6 +395,6 @@ In CI the integration job also starts three real server binaries, each with its 
 
 A smoke test with two real binaries and real clients is recorded in the implementation PRs.
 
-## Future work (not v1)
+## Future work
 
-Not implemented yet: Push-assisted wakeups (a peer nudges the other when its head moves, reducing latency while keeping pull as the source of truth), scheduled anti-entropy, Debian/RPM with a designated signing member, per-member read-only mode, native inbound mTLS, edge distribution only after the legal review described above.
+Not implemented yet: federation for the excluded formats, push-assisted wakeups (a peer nudges the other when its head moves, reducing latency while keeping pull as the source of truth), scheduled anti-entropy, Debian/RPM with a designated signing member, per-member read-only mode, native inbound mTLS, edge distribution only after the legal review described above.

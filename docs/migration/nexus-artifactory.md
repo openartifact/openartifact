@@ -6,11 +6,52 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Migrating from Nexus and Artifactory
 
-`oa import` copies the hosted repositories of a Sonatype Nexus 3 or JFrog Artifactory server into OpenArtifact, for every format OpenArtifact hosts that the source offers. Files are streamed from the source into the normal upload endpoints, verified by SHA-256 against the source and against what the server stored, and keep their original creation time.
+Use `oa import` to copy the hosted repositories of a Sonatype Nexus 3 or JFrog Artifactory server into OpenArtifact. Files stream from the source into the normal upload endpoints. Each file is verified by SHA-256 against the source and against what the server stored, and keeps its original creation time.
 
-To move from OpenArtifact 0.14 to 0.15, see [Migrating from OpenArtifact 0.14](openartifact.md).
+To move from OpenArtifact 0.14, see [Upgrading from OpenArtifact 0.14](openartifact.md) instead.
 
-Supported formats:
+## Quick start
+
+1. Make sure you have an OpenArtifact **admin** access token ([Requirements](#requirements)).
+2. Plan the import first. This lists what would be uploaded and writes nothing:
+
+   ```sh
+   oa import nexus --source-url https://nexus.example.com \
+     --repo maven-releases:maven-releases --repo ubuntu-hosted:ubuntu --dry-run
+   ```
+
+3. Import. The source password or token is read from a file, from stdin with `-`, or from `$OA_IMPORT_SOURCE_TOKEN`; never from the command line:
+
+   ```sh
+   oa import nexus --source-url https://nexus.example.com \
+     --source-user migrator --source-token-file ~/.nexus-token \
+     --repo maven-releases:maven-releases --repo ubuntu-hosted:ubuntu \
+     --create-repos --concurrency 8 --state-file nexus-import.state
+   ```
+
+4. Re-run the same command to retry only what is missing.
+
+Artifactory takes the same flags. Repository keys are the source names:
+
+```sh
+oa import artifactory --source-url https://acme.jfrog.io/artifactory \
+  --source-user migrator --source-token-file ~/.jfrog-token \
+  --repo libs-release-local:libs-release --repo rpm-local --state-file jfrog.state
+```
+
+Syntax: `oa [global flags] import <nexus|artifactory> --source-url URL --repo SRC[:DST] [--repo ...] [flags]`. The global flags `--server`, `--token` and `--format` (see [the CLI page](../integrations/cli.md)) go before `import`, for example `oa --format json import nexus ...`.
+
+## Requirements
+
+Use an OpenArtifact **admin** access token (`oa auth login`, `--token` or `OA_TOKEN`; see [authentication](../security/authentication.md)). The importer calls the repository management and property APIs and sends `X-OA-Import-Created-At`, which the server honors only for principals with the `manage` action. Deploy tokens cannot import. A run without a token fails immediately, except with `--dry-run`.
+
+## Supported repositories and formats
+
+Only hosted repositories are imported: Nexus `hosted`, Artifactory `local` (and `federated`). Proxy, group and virtual repositories, and formats without an importer ([below](#formats-without-a-nexus-or-artifactory-importer)), are refused with an error for that `--repo`; recreate them in OpenArtifact (see [hosted, proxy and group repositories](../repositories/hosted-proxy-group.md)).
+
+### Format support
+
+Format names on the source side differ from OpenArtifact's:
 
 | Format in OpenArtifact | Nexus 3 | Artifactory (package type) |
 |---|---|---|
@@ -31,29 +72,9 @@ Supported formats:
 | `rubygems` | `rubygems` | `gems` |
 | `sbt` | none | `sbt` |
 
-Only hosted repositories are imported: Nexus `hosted`, Artifactory `local` (and `federated`). Proxy, group and virtual repositories, and any other format, are refused with an error for that `--repo`; recreate them in OpenArtifact (see [hosted, proxy and group repositories](../repositories/hosted-proxy-group.md)).
+### Formats without a Nexus or Artifactory importer
 
-## Usage
-
-```sh
-# 1. Plan only: lists what would be uploaded, writes nothing.
-oa import nexus --source-url https://nexus.example.com \
-  --repo maven-releases:maven-releases --repo ubuntu-hosted:ubuntu --dry-run
-
-# 2. Import. The source password/token is read from a file (or stdin with "-",
-#    or $OA_IMPORT_SOURCE_TOKEN), never from the command line.
-oa import nexus --source-url https://nexus.example.com \
-  --source-user migrator --source-token-file ~/.nexus-token \
-  --repo maven-releases:maven-releases --repo ubuntu-hosted:ubuntu \
-  --create-repos --concurrency 8 --state-file nexus-import.state
-
-# Artifactory: same flags; repository keys are the source names.
-oa import artifactory --source-url https://acme.jfrog.io/artifactory \
-  --source-user migrator --source-token-file ~/.jfrog-token \
-  --repo libs-release-local:libs-release --repo rpm-local --state-file jfrog.state
-```
-
-Syntax: `oa [global flags] import <nexus|artifactory> --source-url URL --repo SRC[:DST] [--repo ...] [flags]`. The global flags `--server`, `--token` and `--format` (see [the CLI page](../integrations/cli.md)) go before `import`: `oa --format json import nexus ...`.
+OpenArtifact hosts 22 formats; these six have no Nexus or Artifactory importer and are refused with an error for that `--repo`: `ansible`, `apk`, `composer`, `nix`, `pacman` and `terraform`. Recreate those repositories in OpenArtifact and publish their packages with the native client. The 0.14 importer in [Upgrading from OpenArtifact 0.14](openartifact.md) does cover them, but only for an OpenArtifact source.
 
 ## Flags
 
@@ -79,37 +100,50 @@ Syntax: `oa [global flags] import <nexus|artifactory> --source-url URL --repo SR
 
 Exit code: `0` on success, `1` when any asset failed or the run was interrupted (`SIGINT`/`SIGTERM`), `2` for invalid arguments or a missing token.
 
-## Requirements
+## How the import works
 
-Use an OpenArtifact **admin** access token (`oa auth login`, `--token` or `OA_TOKEN`; see [authentication](../security/authentication.md)). The importer calls the repository management and property APIs and sends `X-OA-Import-Created-At`, which the server honors only for principals with the `manage` action. Deploy tokens cannot import. A run without a token fails immediately, except with `--dry-run`.
+### Selection
 
-## Behavior
+Per format, only payload files are imported. Indexes, signatures and checksum sidecars are regenerated by the server. Paths starting with `.` (Artifactory internals) are skipped, and counted as "not importable".
 
-- **Selection.** Per format, only payload files are imported; indexes, signatures and checksum sidecars are regenerated by the server. Skipped (counted as "not importable"): paths starting with `.` (Artifactory internals) and, per format:
+| Format | Imported | Not imported |
+|---|---|---|
+| `cargo` | `*.crate` | the sparse index, `config.json` |
+| `conan` | Conan 2 layout: `.../<rrev>/export/*` and `.../<rrev>/package/<id>/<prev>/*` | Conan 1 layout, `index.json` |
+| `conda` | `<subdir>/<file>.conda`, `.tar.bz2` | `repodata.json*`, `channeldata.json`, `index.html` |
+| `deb` / `rpm` | `*.deb` / `*.rpm` | `dists/`, `repodata/` |
+| `docker` | one image per **tag** (Nexus `v2/<image>/manifests/<tag>`, Artifactory `<image>/<tag>/manifest.json`) | untagged manifests, referrers, foreign layers, schema 1 manifests |
+| `go` | `<module>/@v/<version>.zip` | `.mod`, `.info`, `list`, `@latest` (the server derives them from the zip) |
+| `helm` | `*.tgz` charts | `index.yaml`, `.prov` |
+| `ivy` / `sbt` | every file with at least four path segments | checksum files, `maven-metadata.xml` |
+| `maven` | files with at least four path segments | checksum files (`.md5`, `.sha1`, `.sha256`, `.sha512`), `maven-metadata.xml` |
+| `npm` | tarballs (`<pkg>/-/<file>.tgz`, scoped included) | packuments, `.npm/` metadata |
+| `nuget` | `*.nupkg` (Nexus `<Id>/<version>`) | symbol packages (`.snupkg`, `.symbols.nupkg`), `.nuspec` |
+| `pypi` | `.whl`, `.tar.gz`, `.zip`, `.egg`, `.tar.bz2`, `.tar.xz`, `.tar` | signatures, `simple/` indexes, `.whl.metadata`, installers (`.exe`, `.msi`, ...) |
+| `raw` | every file | |
+| `rubygems` | `gems/*.gem` | `quick/`, `specs.4.8.gz` and the other indexes |
 
-  | Format | Imported | Not imported |
-  |---|---|---|
-  | `cargo` | `*.crate` | the sparse index, `config.json` |
-  | `conan` | Conan 2 layout: `.../<rrev>/export/*` and `.../<rrev>/package/<id>/<prev>/*` | Conan 1 layout, `index.json` |
-  | `conda` | `<subdir>/<file>.conda`, `.tar.bz2` | `repodata.json*`, `channeldata.json`, `index.html` |
-  | `deb` / `rpm` | `*.deb` / `*.rpm` | `dists/`, `repodata/` |
-  | `docker` | one image per **tag** (Nexus `v2/<image>/manifests/<tag>`, Artifactory `<image>/<tag>/manifest.json`) | untagged manifests, referrers, foreign layers, schema 1 manifests |
-  | `go` | `<module>/@v/<version>.zip` | `.mod`, `.info`, `list`, `@latest` (the server derives them from the zip) |
-  | `helm` | `*.tgz` charts | `index.yaml`, `.prov` |
-  | `ivy` / `sbt` | every file with at least four path segments | checksum files, `maven-metadata.xml` |
-  | `maven` | files with at least four path segments | checksum files (`.md5`, `.sha1`, `.sha256`, `.sha512`), `maven-metadata.xml` |
-  | `npm` | tarballs (`<pkg>/-/<file>.tgz`, scoped included) | packuments, `.npm/` metadata |
-  | `nuget` | `*.nupkg` (Nexus `<Id>/<version>`) | symbol packages (`.snupkg`, `.symbols.nupkg`), `.nuspec` |
-  | `pypi` | `.whl`, `.tar.gz`, `.zip`, `.egg`, `.tar.bz2`, `.tar.xz`, `.tar` | signatures, `simple/` indexes, `.whl.metadata`, installers (`.exe`, `.msi`, ...) |
-  | `raw` | every file | |
-  | `rubygems` | `gems/*.gem` | `quick/`, `specs.4.8.gz` and the other indexes |
+Package identity comes from the source's own component metadata (Nexus components, Artifactory package properties such as `npm.name`, `pypi.version`, `nuget.id`) and otherwise from the file name or the metadata inside the archive (`package.json`, `.nuspec`, `Cargo.toml`, `PKG-INFO`).
 
-  Package identity comes from the source's own component metadata (Nexus components, Artifactory package properties such as `npm.name`, `pypi.version`, `nuget.id`) and otherwise from the file name or the metadata inside the archive (`package.json`, `.nuspec`, `Cargo.toml`, `PKG-INFO`).
-- **Idempotent.** Maven and raw assets are matched by path and SHA-256; every other format by SHA-256 (or, for docker, by tag and manifest digest) against the destination's package listing, because the server derives file names from package metadata. A source that reports no SHA-256 for a file (Nexus does not for npm and NuGet) falls back to name and version where the format allows it; an npm upload that meets an identical package (`409`, same digest) is accepted, but counted as uploaded rather than already present. An asset already present is not uploaded again, but its properties are (re)applied. Assets whose source reports no SHA-256 cannot be matched this way and are uploaded again. This works with or without `--state-file`.
-- **Verification.** The source's SHA-256 is preferred, SHA-1 is the fallback; size is compared when the source reports it. The digest of what was sent is then compared with what the server stored. A copy that fails verification is removed from the destination and reported as a failure, unless it replaced pre-existing content, which is left in place. Formats whose API has no hard delete cannot be cleaned up: a bad RubyGems copy is yanked, and bad Cargo, Conan and Go copies are reported and left in place (a re-run from a corrected source replaces Conan files). npm's removal is refused by the server's 72-hour unpublish rule for versions imported with an older creation time.
-- **Memory and disk.** Files are streamed. Cargo, npm, NuGet and PyPI uploads need metadata from inside the archive, so those files are first copied to a temporary file in `$TMPDIR` (one per concurrent transfer) and read from there; memory use does not grow with file size.
-- **Order.** Within one package the importer works in a fixed order: Conan recipe files before package files with `conanmanifest.txt` last, docker blobs and child manifests before the tag, npm versions oldest first (so the `latest` tag ends on the highest release).
-- **Re-run.** Re-run the same command to retry only what is missing.
+### Idempotency and re-runs
+
+- Maven and raw assets are matched by path and SHA-256.
+- Every other format is matched by SHA-256 against the destination's package listing, because the server derives file names from package metadata. Docker is matched by tag and manifest digest.
+- An asset already present is not uploaded again, but its properties are applied again. This works with or without `--state-file`.
+- A source that reports no SHA-256 for a file (Nexus does not for npm and NuGet) falls back to name and version where the format allows it. Where it does not, the asset is uploaded again.
+- An npm upload that meets an identical package (`409`, same digest) is accepted, but counted as uploaded rather than already present.
+
+### Verification and bad copies
+
+- The source's SHA-256 is preferred and SHA-1 is the fallback. Size is compared when the source reports it. The digest of what was sent is then compared with what the server stored.
+- A copy that fails verification is removed from the destination and reported as a failure. A copy that replaced pre-existing content is left in place.
+- Formats whose API has no hard delete cannot be cleaned up. A bad RubyGems copy is yanked. Bad Cargo, Conan and Go copies are reported and left in place; a re-run from a corrected source replaces Conan files.
+- npm's removal is refused by the server's 72-hour unpublish rule for versions imported with an older creation time.
+
+### Memory, disk and order
+
+- Files are streamed. Cargo, npm, NuGet and PyPI uploads need metadata from inside the archive, so those files are first copied to a temporary file in `$TMPDIR` (one per concurrent transfer). Memory use does not grow with file size.
+- Within one package the importer works in a fixed order: Conan recipe files before package files with `conanmanifest.txt` last, docker blobs and child manifests before the tag, and npm versions oldest first so the `latest` tag ends on the highest release.
 
 ### Retries
 
@@ -149,10 +183,28 @@ An asset with no answer is reported as a failure (pass the flags to fix it). Not
 
 ## Server contract
 
-What the importer relies on, usable by your own tooling:
+What the importer relies on. Your own tooling can use it too.
 
-| Item | Detail |
-|---|---|
-| `X-OA-Import-Created-At: <RFC 3339>` | Accepted on every hosted upload: Ivy, Maven, raw and sbt `PUT`; Cargo `crates/new`, Conda and Conan file uploads, Debian (`POST /api/v1/repositories/REPO/debs`), docker manifest `PUT` (stamping the manifest and the tag), Go `@v/<version>`, Helm `charts`, npm publish, NuGet `v3/package`, PyPI `legacy`, RPM (`POST /api/v1/repositories/REPO/packages`) and RubyGems `api/v1/gems`. Honored only for principals with the `manage` action; for every other authenticated caller (and anonymous ones) it is silently ignored, so it cannot backdate artifacts. From a `manage` principal, a malformed timestamp or one more than one minute in the future is rejected with `400`. |
-| Artifact id | Maven `PUT` returns it in the `X-OA-Artifact-Id` response header; Debian and RPM return it as `data.id` in the JSON body, raw as top-level `id`. For the other formats the importer reads it from the response or, when the response has none, from `GET /api/v1/repositories/REPO/packages` (the id used for properties). |
-| Properties | Attached afterwards with `PATCH /api/v1/repositories/REPO/artifacts/ID/properties` (see [properties](../repositories/properties.md)). |
+### Creation time header
+
+`X-OA-Import-Created-At: <RFC 3339>` sets the creation time of an upload. It is accepted on every hosted upload:
+
+- Ivy, Maven, raw and sbt `PUT`;
+- Cargo `crates/new`, Conda and Conan file uploads;
+- Debian (`POST /api/v1/repositories/REPO/debs`) and RPM (`POST /api/v1/repositories/REPO/packages`);
+- docker manifest `PUT`, which stamps the manifest and the tag;
+- Go `@v/<version>`, Helm `charts`, npm publish, NuGet `v3/package`, PyPI `legacy` and RubyGems `api/v1/gems`.
+
+The server honors the header only for principals with the `manage` action. For every other caller, anonymous ones included, it is silently ignored, so it cannot backdate artifacts. From a `manage` principal, a malformed timestamp or one more than one minute in the future is rejected with `400`.
+
+### Artifact id
+
+The importer needs the id of each upload to attach properties.
+
+- Maven `PUT` returns it in the `X-OA-Artifact-Id` response header.
+- Debian and RPM return it as `data.id` in the JSON body, and raw as top-level `id`.
+- For the other formats the importer reads it from the response or, when the response has none, from `GET /api/v1/repositories/REPO/packages`.
+
+### Properties
+
+Properties are attached afterwards with `PATCH /api/v1/repositories/REPO/artifacts/ID/properties` (see [properties](../repositories/properties.md)).

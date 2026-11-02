@@ -50,59 +50,67 @@ the AGPL.
 
 ## Formats
 
-| Repository type | Formats |
-|---|---|
-| Hosted | all 20 (listed above) |
-| Proxy (read-only mirror of an upstream) | Maven, Debian, RPM, Arch Linux (pacman), Nix, raw |
-| Group (ordered members, first hit wins) | Maven, Debian, RPM, Arch Linux (pacman), Nix, raw |
+Hosted, proxy (read-only mirror of an upstream) and group (ordered members, first hit wins) repositories are available for all 22 formats. Docker/OCI proxies and groups are served under `/v2/`. Federation between instances covers cargo, docker, go, helm, maven, npm, nuget, pypi and raw ([federation](docs/operations/federation.md)).
 
 Client URLs and setup per format: [docs/formats](docs/formats/README.md).
 
 ## Features
 
-- Native client protocols for Maven, npm, PyPI, Docker/OCI, Helm and more (see the [format matrix](docs/formats/README.md)); hosted, proxy (with serve-stale) and group repositories
-- RBAC with users, groups, permission targets and API tokens; SSO via OIDC and SAML; projects
+- Native client protocols for Maven, npm, PyPI, Docker/OCI, Helm and more (see the [format matrix](docs/formats/README.md)); hosted, proxy (serve-stale, minimum age, curation) and group repositories
+- RBAC with users, groups, permission targets and API tokens; SSO via OIDC and SAML; projects; service accounts and tokenless CI login through OIDC token exchange
 - SBOM (CycloneDX/SPDX), vulnerability scanning (OSV, Trivy, Grype), license compliance, secret detection
 - Cleanup policies, storage quotas, artifact properties, release bundles with promotion pipelines
 - Blob storage on filesystem, S3, GCS, Azure, Garage, SeaweedFS or an OCI registry; backups
 - GPG-signed APT and RPM metadata; signed, attested release images
-- Webhooks, audit log, Prometheus metrics, REST API with OpenAPI spec and a self-hosted interactive API reference
-- `oa` CLI with Nexus/Artifactory import; optional MCP server and AI analysis (both off by default)
+- Webhooks, audit log, repository activity, Prometheus metrics, REST API with OpenAPI spec and a self-hosted interactive API reference
+- `oa` CLI with Nexus/Artifactory import and declarative `oa apply`; optional MCP server and AI analysis (both off by default)
 
 ## Quickstart
 
-```sh
-cp docker/.env.example docker/.env      # set POSTGRES_PASSWORD
-make docker-up    # docker compose up -d --build with version/commit/build time stamped
-                  # (no dhi.io access? OPENARTIFACT_RUNTIME=distroless make docker-up)
-```
-
-The UI and API are on <http://localhost:8080>. The first start creates user
-`admin` with a random password printed once to the server's stderr
-(`docker compose -f docker/docker-compose.yml logs openartifact`). Change it at
-first login.
-
-On Kubernetes:
+You need Docker with Compose, `make` and `openssl`.
 
 ```sh
-helm install openartifact oci://ghcr.io/openartifact/charts/openartifact
+cp docker/.env.example docker/.env
+for k in POSTGRES_PASSWORD OPENARTIFACT_SECRET_KEY AUTH_HMAC_KEY; do
+  sed -i "s|^$k=.*|$k=$(openssl rand -hex 32)|" docker/.env
+done
+docker login dhi.io      # a free Docker ID is enough
+make docker-up
 ```
 
-More: [installation](docs/getting-started/installation.md),
-[configuration](docs/getting-started/configuration.md).
+Without a Docker ID, skip the login and run `OPENARTIFACT_RUNTIME=distroless make docker-up` instead. On macOS use `sed -i ''`.
+
+The UI and API are on <http://localhost:8080>. The first start creates the user `admin` with a random password, printed once to the server log:
+
+```sh
+docker compose -f docker/docker-compose.yml logs openartifact | grep -A6 'OPENARTIFACT BOOTSTRAP'
+```
+
+Next: [create your first repository](docs/getting-started/first-repository.md).
+
+On Kubernetes, install the chart with a database configured; see [Helm](docs/getting-started/installation.md#helm):
+
+```sh
+helm install openartifact oci://ghcr.io/openartifact/charts/openartifact \
+  --namespace openartifact --create-namespace -f my-values.yaml
+```
+
+More: [installation](docs/getting-started/installation.md), [configuration](docs/getting-started/configuration.md).
 
 ## Documentation
 
+The full page index is [docs/README.md](docs/README.md). Start here:
+
 | Section | Contents |
 |---|---|
-| [Getting started](docs/getting-started/installation.md) | [Installation](docs/getting-started/installation.md) (Compose, Helm, binaries, first login), [configuration](docs/getting-started/configuration.md) (every setting), [upgrading](docs/getting-started/upgrading.md) |
-| [Formats](docs/formats/README.md) | Client URLs and setup per format: [Ansible](docs/formats/ansible.md), [Cargo](docs/formats/cargo.md), [Composer](docs/formats/composer.md), [Conan](docs/formats/conan.md), [Conda](docs/formats/conda.md), [Debian](docs/formats/debian.md), [Docker](docs/formats/docker.md), [Go](docs/formats/go.md), [Helm](docs/formats/helm.md), [Ivy/sbt](docs/formats/ivy-sbt.md), [Maven](docs/formats/maven.md), [Nix](docs/formats/nix.md), [npm](docs/formats/npm.md), [NuGet](docs/formats/nuget.md), [Arch Linux](docs/formats/pacman.md), [PyPI](docs/formats/pypi.md), [raw](docs/formats/raw.md), [RPM](docs/formats/rpm.md), [RubyGems](docs/formats/rubygems.md), [Terraform/OpenTofu](docs/formats/terraform.md) |
+| [Getting started](docs/getting-started/installation.md) | [Installation](docs/getting-started/installation.md), [first repository](docs/getting-started/first-repository.md), [configuration](docs/getting-started/configuration.md), [web UI](docs/getting-started/web-ui.md), [upgrading](docs/getting-started/upgrading.md) |
+| [Formats](docs/formats/README.md) | Client URLs and setup for all 22 formats, and the [client setup](docs/formats/client-setup.md) commands |
 | [Repositories](docs/repositories/hosted-proxy-group.md) | [Hosted, proxy and group](docs/repositories/hosted-proxy-group.md), [cleanup and quotas](docs/repositories/cleanup-and-quotas.md), [properties](docs/repositories/properties.md), [release bundles](docs/repositories/release-bundles.md) |
-| [Security](docs/security/authentication.md) | [Authentication](docs/security/authentication.md), [SSO](docs/security/sso.md), [RBAC](docs/security/rbac.md), [scanning](docs/security/scanning.md), [signing and release verification](docs/security/signing.md) |
-| [Operations](docs/operations/storage.md) | [Storage](docs/operations/storage.md), [backup](docs/operations/backup.md), [monitoring](docs/operations/monitoring.md), [scaling and roles](docs/operations/scaling.md), [webhooks](docs/operations/webhooks.md), [performance](docs/operations/performance.md) |
-| [Migration](docs/migration/nexus-artifactory.md) | Import from Nexus or Artifactory with `oa import` |
-| [Integrations](docs/integrations/cli.md) | [`oa` CLI](docs/integrations/cli.md), [MCP server](docs/integrations/mcp.md), [REST API](docs/integrations/api.md), [AI analysis](docs/integrations/ai-analysis.md) |
-| [Development](docs/development/README.md) | [Build, test, CI](docs/development/README.md), [architecture](docs/development/architecture.md) |
+| [Security](docs/security/authentication.md) | [Authentication](docs/security/authentication.md), [SSO](docs/security/sso.md), [RBAC](docs/security/rbac.md), [projects](docs/security/projects.md), [scanning](docs/security/scanning.md), [findings](docs/security/findings.md), [SBOM](docs/security/sbom.md), [signing](docs/security/signing.md) |
+| [Operations](docs/operations/storage.md) | [Storage](docs/operations/storage.md), [backup](docs/operations/backup.md), [monitoring](docs/operations/monitoring.md), [scaling](docs/operations/scaling.md), [webhooks](docs/operations/webhooks.md) |
+| [Migration](docs/migration/nexus-artifactory.md) | Import from [Nexus or Artifactory](docs/migration/nexus-artifactory.md) or [OpenArtifact 0.14](docs/migration/openartifact.md) |
+| [Integrations](docs/integrations/cli.md) | [`oa` CLI](docs/integrations/cli.md), [CI](docs/integrations/ci.md), [declarative configuration](docs/integrations/declarative.md), [MCP server](docs/integrations/mcp.md), [REST API](docs/integrations/api.md) |
+| [Development](docs/development/README.md) | [Build, test, CI](docs/development/README.md), [architecture](docs/development/architecture.md), [testing](docs/development/testing.md), [documentation style](docs/development/docs-style.md) |
 
 The documentation is published, per release, at <https://openartifact.github.io/> (search, version switcher, generated configuration, metrics, CLI and REST API reference). The same pages are readable here: the full page index is [docs/README.md](docs/README.md).
 

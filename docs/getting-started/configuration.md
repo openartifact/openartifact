@@ -6,56 +6,93 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Configuration
 
-OpenArtifact is configured with defaults, an optional YAML file and environment variables; every setting has an environment override.
+This page explains how OpenArtifact reads its settings and describes the ones you change most often. Use it when you set up or tune an installation.
 
-Full annotated references: [`openartifact.example.yaml`](../../openartifact.example.yaml) (YAML) and [`.env.example`](../../.env.example) (environment). Compose credentials are in [`docker/.env.example`](../../docker/.env.example) ([installation](installation.md#docker-compose)).
+Which page is authoritative: the [configuration reference](../reference/config.md) is generated from the code and lists every key, type, default and environment variable. This page adds the explanations. The annotated [`openartifact.example.yaml`](../../openartifact.example.yaml) and [`.env.example`](../../.env.example) show the keys in context. Compose credentials are in [`docker/.env.example`](../../docker/.env.example); see [installation](installation.md#docker-compose).
 
-## Load order
+## Validate and start with a config file
+
+Settings come from three sources, each overriding the previous one:
 
 1. Built-in defaults.
-2. YAML file: `-config path`, or `OPENARTIFACT_CONFIG` (the flag wins).
-3. Environment variables, which take precedence over the file.
+2. A YAML file, given with `-config path` or `OPENARTIFACT_CONFIG` (the flag wins).
+3. Environment variables. Every setting has one.
 
 ```sh
-openartifact verify openartifact.yaml    # validate a config file (path optional if -config / OPENARTIFACT_CONFIG is set)
+openartifact verify openartifact.yaml    # validate a config file
 openartifact -config openartifact.yaml   # start with a config file
 openartifact -migrate                    # apply database migrations and exit
-openartifact -repair-gomod               # relink Go module zips damaged on <= 0.4.1, then exit (see upgrading)
 ```
 
-- `verify` loads the file with the current environment applied and checks: port 1-65535, non-empty database driver, storage type and log level, TLS cert/key present when TLS is enabled, and `mcp.transport` equal to `http`. The YAML is parsed non-strictly: **unknown or misspelled keys are ignored**, so `verify` does not catch typos.
-- Read and write timeouts default to `0` (unlimited) so large uploads and downloads are never truncated. Only `readHeaderTimeout` (default 20 s) bounds slow header reads.
+The path after `verify` is optional when `-config` or `OPENARTIFACT_CONFIG` is set. Put the flag before `verify`:
+
+```sh
+OPENARTIFACT_CONFIG=openartifact.yaml openartifact verify
+openartifact -config openartifact.yaml verify
+```
+
+`verify` loads the file with the current environment applied and checks:
+
+- the port is 1-65535;
+- the database driver, storage type and log level are not empty;
+- the TLS certificate and key are present when TLS is enabled;
+- `mcp.transport` is `http`.
+
+`verify` does not catch typos: the YAML is parsed non-strictly, so unknown or misspelled keys are ignored.
+
+`-repair-gomod` relinks Go module zips damaged on 0.4.1 or earlier, then exits; see [upgrading](upgrading.md).
+
+## How values are parsed
+
+- Booleans use Go's `strconv.ParseBool`: `1`, `t`, `T`, `TRUE`, `true`, `True`, `0`, `f`, `F`, `FALSE`, `false`, `False`. `yes`, `no`, `on` and `off` are invalid.
+- Integers are plain decimal. Durations use Go syntax (`5m`, `90s`).
+- List variables are comma-separated and trimmed. An empty list value does not clear a list set in the file.
+- An invalid integer, boolean or duration is ignored. The server prints `WARN: ignoring invalid value for <KEY>` to stderr, without the value, and keeps the previous setting.
+- With no `AUTH_HMAC_KEY` the server generates a random key once and stores it in the database, so it survives restarts and is shared by replicas.
+
+## Startup behaviour
+
+- Read and write timeouts default to `0` (unlimited) so large uploads and downloads are never cut off. Only `readHeaderTimeout` (default 20 s) bounds slow header reads.
 - Migrations run at startup unless `MIGRATE_ON_START=false`; see [upgrading](upgrading.md#database-migrations).
-- **Exit status.** The process exits `0` after a clean shutdown (`SIGINT`/`SIGTERM`, or `-migrate` and `verify` succeeding) and `1` when it cannot start or stops serving: invalid configuration or `OPENARTIFACT_SECRET_KEY`, no database connection, a failed migration or bootstrap, an unusable blob store, a listen address that is in use, an unreadable or invalid TLS certificate. The cause is logged as an `error` line (for example `failed to start server`) before the exit, so a container runtime or systemd sees the failure and restarts or reports it instead of treating the stopped process as a success.
-- Boolean variables are parsed with Go's `strconv.ParseBool`: `1`, `t`, `T`, `TRUE`, `true`, `True`, `0`, `f`, `F`, `FALSE`, `false`, `False`. `yes`/`no`/`on`/`off` are invalid.
-- An invalid integer, boolean or duration is ignored: a `WARN: ignoring invalid value for <KEY>` line is printed to stderr (without the value) and the previous setting stays.
-- Integers are plain decimal. Durations use Go syntax (`5m`, `90s`). List variables are comma-separated and trimmed; an empty list value does not clear a list set in the file.
-- With no `AUTH_HMAC_KEY` the server generates a random key once and persists it in `system_settings`, so it survives restarts and is shared by replicas.
+- The process exits `0` after a clean shutdown (`SIGINT`, `SIGTERM`, or `-migrate` and `verify` succeeding). It exits `1` when it cannot start or stops serving.
+- Failure causes include an invalid configuration or `OPENARTIFACT_SECRET_KEY`, no database connection, a failed migration or bootstrap, an unusable blob store, a listen address in use and an unreadable TLS certificate.
+- The cause is logged as an `error` line before the exit, so a container runtime or systemd restarts or reports the failure.
 
 ## Environment-only variables
 
-These are read directly from the environment, have no YAML key and are not in `internal/config`:
+These variables are read directly from the environment and have no YAML key:
 
 | Variable | Meaning |
 |---|---|
-| `OPENARTIFACT_SECRET_KEY` | Secret-encryption key (any string of at least 16 bytes; hashed to an AES-256-GCM key). Unset: stored credentials (including the generated SAML SP key) are kept in plaintext and a warning is logged. A shorter key aborts startup. Changing or losing it makes existing `enc:v1:` ciphertexts unreadable. Protects webhook secrets, upstream passwords, SSO client secrets, AI keys and storage credentials stored in the database |
-| `METRICS_AUTH_TOKEN` | Bearer token required for `GET /metrics`. See [monitoring](../operations/monitoring.md) |
-| `METRICS_ALLOW_ANONYMOUS` | Exactly `true` serves `/metrics` without a token. With neither variable set, `/metrics` answers `401` and a warning is logged |
-| `MIGRATE_ON_START` | Exactly `false` (lowercase) skips automatic migrations; any other value, including `0` or `FALSE`, keeps them on |
-| `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS` | `true` (case-insensitive) lets webhooks and proxy upstreams target private and loopback addresses; cloud metadata addresses (`169.254.0.0/16`, `fd00:ec2::/16`) stay blocked. See [webhooks](../operations/webhooks.md) and [proxy repositories](../repositories/hosted-proxy-group.md) |
+| `OPENARTIFACT_SECRET_KEY` | Secret-encryption key, at least 16 bytes |
+| `METRICS_AUTH_TOKEN` | Bearer token required for `GET /metrics` |
+| `METRICS_ALLOW_ANONYMOUS` | Exactly `true` serves `/metrics` without a token |
+| `MIGRATE_ON_START` | Exactly `false` (lowercase) skips automatic migrations |
+| `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS` | `true` lets webhooks and proxy upstreams target private and loopback addresses |
 | `OPENARTIFACT_CONFIG` | Default for the `-config` flag |
 
-`cmd/resetpw` has its own variables (`OPENARTIFACT_RESET_PASSWORD`, `OPENARTIFACT_RESET_USERNAME`); see [installation](installation.md#reset-the-admin-password). The S3 backend without `STORAGE_ACCESS_KEY`/`STORAGE_SECRET_KEY` uses the standard AWS SDK credential chain (`AWS_*` variables, shared config, instance role).
+Details:
+
+- **`OPENARTIFACT_SECRET_KEY`** is hashed to an AES-256-GCM key. It protects webhook secrets, upstream passwords, SSO client secrets, AI keys, storage credentials and the generated SAML key. Unset, they are stored in plaintext and a warning is logged. A key shorter than 16 bytes aborts startup. Changing or losing the key makes existing encrypted values (`enc:v1:`) unreadable.
+- **`METRICS_AUTH_TOKEN` and `METRICS_ALLOW_ANONYMOUS`.** With neither set, `/metrics` answers `401` and a warning is logged. See [monitoring](../operations/monitoring.md).
+- **`MIGRATE_ON_START`.** Any other value, including `0` or `FALSE`, keeps migrations on.
+- **`OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS`** is case-insensitive. Cloud metadata addresses (`169.254.0.0/16`, `fd00:ec2::/16`) stay blocked. See [webhooks](../operations/webhooks.md) and [proxy repositories](../repositories/hosted-proxy-group.md).
+
+The password-reset tool has its own variables (`OPENARTIFACT_RESET_PASSWORD`, `OPENARTIFACT_RESET_USERNAME`); see [installation](installation.md#reset-the-admin-password). The S3 backend without `STORAGE_ACCESS_KEY` and `STORAGE_SECRET_KEY` uses the standard AWS SDK credential chain (`AWS_*` variables, shared config, instance role).
 
 ## Settings
 
 YAML keys are nested under the section named in each heading. Secret values (marked **secret**) belong in environment variables or a protected file.
 
+The Docker Compose file passes only some of these variables to the container; see the [Compose settings reference](installation.md#compose-settings-reference) for which ones and how to add others.
+
 ### Top level
 
 | Env | YAML | Default | Meaning |
 |---|---|---|---|
-| `BASE_URL` | `baseUrl` | empty (SSO and webhooks then use `http://localhost:8080`) | Public URL: always used for SSO and SAML callbacks, webhook and event links; an explicit override for the URLs in package metadata, which follow the request host when it is unset (see [public URL](installation.md#the-public-url-and-base_url)) |
+| `BASE_URL` | `baseUrl` | empty (SSO and webhooks then use `http://localhost:8080`) | Public URL of the server; see the note below |
+
+`baseUrl` is always used for SSO and SAML callbacks and for webhook and event links. It also overrides the URLs in package metadata, which follow the request host when it is unset. See [public URL](installation.md#the-public-url-and-base_url).
 
 ### Server (`server`)
 
@@ -71,7 +108,7 @@ YAML keys are nested under the section named in each heading. Secret values (mar
 | `SERVER_MAX_BODY_BYTES` | `maxBodyBytes` | `17179869184` | Maximum request body (bytes) accepted by any endpoint; `0` = unlimited. Format handlers enforce lower limits of their own |
 | `SERVER_SHUTDOWN_TIMEOUT` | `shutdownTimeout` | `30` | Seconds allowed for graceful shutdown |
 | `SERVER_SHUTDOWN_DELAY` | `shutdownDelay` | `0` | Seconds to keep serving, with `/ready` answering 503, after a shutdown signal and before the listener closes; a second signal skips it. See [rolling updates](../operations/monitoring.md#graceful-shutdown-and-rolling-updates) |
-| `OPENARTIFACT_ROLE` | `role` | `all` | Process role: `all` (whole server in one process), `web` (HTTP API, UI and formats, no background workers; work is handed over through PostgreSQL) or `worker` (background workers and schedulers only, serves `/health`, `/ready` and `/metrics`). An unknown value fails startup. See [scaling and roles](../operations/scaling.md) |
+| `OPENARTIFACT_ROLE` | `role` | `all` | Process role: `all`, `web` or `worker`; see the list below |
 | `SERVER_TLS_ENABLED` | `tlsEnabled` | `false` | Serve HTTPS; requires cert and key; sends HSTS |
 | `SERVER_TLS_CERT` | `tlsCert` | empty | TLS certificate file (PEM) |
 | `SERVER_TLS_KEY` | `tlsKey` | empty | TLS private key file (PEM) |
@@ -81,6 +118,12 @@ YAML keys are nested under the section named in each heading. Secret values (mar
 | `OPENARTIFACT_RATE_LIMIT_RPS` | `rateLimitRps` | `0` (off) | Requests per second per client IP |
 | `OPENARTIFACT_TRUSTED_PROXIES` | `trustedProxies` | none | CIDRs of reverse proxies whose `X-Forwarded-For`/`X-Real-IP` are honored |
 | `OPENARTIFACT_PPROF_ENABLED` | `pprofEnabled` | `false` | Admin-only Go profiler at `/api/v1/admin/pprof/`; see [performance](../operations/performance.md) |
+
+Roles for `OPENARTIFACT_ROLE`; an unknown value fails startup. See [scaling and roles](../operations/scaling.md).
+
+- `all`: the whole server in one process.
+- `web`: HTTP API, UI and formats, with no background workers. Work is handed over through PostgreSQL.
+- `worker`: background workers and schedulers only. It serves `/health`, `/ready` and `/metrics`.
 
 ### Database (`database`)
 
@@ -101,164 +144,6 @@ PostgreSQL is the only supported database.
 | `DB_CONNECT_TIMEOUT` | `connectTimeout` | `60s` | How long startup retries the initial database connection (capped backoff, each wait logged at info) before exiting; `0` fails at the first error. Replaces the Helm chart's wait-for-database init container |
 | `DB_AUTH_CACHE_TTL_MS` | `authCacheTtlMs` | `2000` | In-memory cache of per-request auth lookups; changes made on this instance apply at once, other replicas see them within this time; `0` disables |
 | `DB_OPTIONS` | `options` | none | Extra libpq connection parameters; env form is comma-separated `key=value` pairs (`DB_OPTIONS=connect_timeout=5,application_name=oa`), merged over YAML keys |
-
-### Workers (`workers`)
-
-| Environment variable | YAML key | Default | Meaning |
-|---|---|---|---|
-| `OPENARTIFACT_METADATA_REGEN_CONCURRENCY` | `workers.metadataRegenConcurrency` | `4` | Max concurrent metadata regenerations (deb, maven, npm, rpm share it); each pins about two DB connections |
-| `OPENARTIFACT_DOCKER_GC_INTERVAL` | `workers.dockerGcInterval` | `1h` | Pause between Docker registry garbage-collection passes over all docker repositories; `0` disables the schedule (an admin can still run it through the API). See [Docker registry GC](../formats/docker.md#garbage-collection) |
-| `OPENARTIFACT_DOCKER_GC_GRACE_PERIOD` | `workers.dockerGcGracePeriod` | `24h` | How long an untagged manifest or an unreferenced blob must sit idle before GC may delete it; keep it longer than your slowest push and any digest-pinned reference to an untagged image. Must not be negative |
-| `OPENARTIFACT_PROXY_DOCKER_DIGEST_TTL` | `workers.proxyDockerDigestTtl` | `720h` | How long a Docker proxy keeps a manifest or blob addressed by digest after its last pull; the proxy cache worker then evicts it (and the blob once no other entry references it) and the next pull fetches it from the upstream again. A pull in the second half of the period renews it. `0` keeps them until an admin purge or the repository's removal. Must not be negative. See [Docker proxy caching](../formats/docker.md#proxy-and-group-repositories) |
-| `OPENARTIFACT_PROXY_UPSTREAM_STALL_TIMEOUT` | `workers.proxyUpstreamStallTimeout` | `1m` | How long a proxy upstream response body may deliver no data before the fetch fails (reset on every read, so slow but steady downloads are unaffected). `0` disables it. Must not be negative. See [upstream failures](../repositories/hosted-proxy-group.md#upstream-failures-and-serve-stale) |
-| `OPENARTIFACT_DOCKER_UPLOAD_TTL` | `workers.dockerUploadTtl` | `24h` | Age after which an unfinished Docker blob upload session and its staged file are removed; `0` disables the sweep. Must not be negative |
-| `OPENARTIFACT_DOCKER_UPLOAD_DIR` | `workers.dockerUploadDir` | `/tmp/openartifact/docker-uploads` | Directory where in-progress Docker blob uploads are staged; use a persistent volume that all replicas handling one upload share |
-| `OPENARTIFACT_WEBHOOK_DELIVERY_RETENTION_DAYS` | `workers.webhookDeliveryRetentionDays` | `30` | Days finished (success or failed) webhook delivery records are kept; the hourly purge deletes older ones. `0` keeps them forever. Must not be negative |
-
-### Documentation links (`docs`)
-
-| Environment variable | YAML key | Default | Description |
-|---|---|---|---|
-| `OPENARTIFACT_DOCS_BASE_URL` | `docs.baseUrl` | `https://openartifact.github.io/` | Root of the published documentation the web UI links to. The server appends `vX.Y/` for a release build (`MAJOR.MINOR.PATCH`) and `latest/` otherwise, and reports the result as `docs_url` in `GET /api/v1/system/info`. Point it at a mirror for air-gapped installs; empty hides every documentation link |
-
-### Branding (`branding`)
-
-White-label name, logos, colour and links; administrators can override each value at runtime (**Settings > Branding**), and a runtime value wins. Details, image rules and the attribution that cannot be hidden: [White-label branding](../operations/branding.md).
-
-| Environment variable | YAML key | Default | Description |
-|---|---|---|---|
-| `OPENARTIFACT_BRANDING_PRODUCT_NAME` | `branding.productName` | empty (`OpenArtifact`) | Product name shown in the title, sidebar, login page and installed-app name; 1 to 64 characters |
-| `OPENARTIFACT_BRANDING_LOGO_LIGHT` | `branding.logoLight` | empty | Path of a PNG or SVG logo (max 512 KiB) for light surfaces; used for both themes when `logoDark` is unset |
-| `OPENARTIFACT_BRANDING_LOGO_DARK` | `branding.logoDark` | empty | Path of a PNG or SVG logo for dark surfaces |
-| `OPENARTIFACT_BRANDING_FAVICON` | `branding.favicon` | empty | Path of a PNG or SVG favicon (at least 192x192 for an installable app) |
-| `OPENARTIFACT_BRANDING_PRIMARY_COLOR` | `branding.primaryColor` | empty | Accent colour as `#rrggbb`; a contrast-adjusted variant is derived per theme |
-| `OPENARTIFACT_BRANDING_LOGIN_MESSAGE` | `branding.loginMessage` | empty | Text shown on the login page (up to 2000 bytes; bold, italic, code and links only) |
-| `OPENARTIFACT_BRANDING_SUPPORT_URL` | `branding.supportUrl` | empty | `http(s)` or `mailto:` link shown in the About dialog |
-| `OPENARTIFACT_BRANDING_SOURCE_URL` | `branding.sourceUrl` | `https://github.com/openartifact/openartifact` | Target of the always-visible "Source code" link (AGPL-3.0 section 13): point it at the source of the build you run |
-
-### Trash (`trash`)
-
-| Environment variable | YAML key | Default | Meaning |
-|---|---|---|---|
-| `OPENARTIFACT_TRASH_RETENTION` | `trash.retentionDays` | `7` | Days a deleted artifact, version or repository stays restorable before the purge worker removes it; repositories can override it (`trash_retention_days`); `0` disables the trash (deletes are immediate and permanent). Must not be negative. See [Trash](../operations/trash.md) |
-| `OPENARTIFACT_TRASH_PURGE_INTERVAL` | `trash.purgeInterval` | `15m` | Pause between purge passes; `0` disables the schedule (admins can still purge by hand) |
-
-### Audit log (`audit`)
-
-| Environment variable | YAML key | Default | Meaning |
-|---|---|---|---|
-| `OPENARTIFACT_AUDIT_RETENTION_DAYS` | `audit.retentionDays` | `0` | Days audit entries are kept before the retention worker deletes them in batches; `0` keeps them forever. Nothing is exported first: use `oa audit export`. Must not be negative. See [audit log retention](../operations/audit-retention.md) |
-| `OPENARTIFACT_AUDIT_PURGE_INTERVAL` | `audit.purgeInterval` | `1h` | Pause between retention passes. Must be positive |
-| `OPENARTIFACT_AUDIT_PURGE_BATCH_SIZE` | `audit.purgeBatchSize` | `5000` | Entries one delete statement removes. Must be positive |
-
-### Federation (`federation`)
-
-| Environment variable | YAML key | Default | Meaning |
-|---|---|---|---|
-| `OPENARTIFACT_FEDERATION_ENABLED` | `federation.enabled` | `false` | Master switch of the pull workers and of the `/federation/v1` peer endpoints. Repositories are federated individually. See [Federation](../operations/federation.md) |
-| `OPENARTIFACT_FEDERATION_POLL_INTERVAL` | `federation.pollInterval` | `30s` | Pause between pulls of one peer |
-| `OPENARTIFACT_FEDERATION_BATCH_SIZE` | `federation.batchSize` | `200` | Log entries requested per `/log` call |
-| `OPENARTIFACT_FEDERATION_MAX_BACKOFF` | `federation.maxBackoff` | `15m` | Ceiling of the retry backoff for a failing peer |
-| `OPENARTIFACT_FEDERATION_REQUEST_TIMEOUT` | `federation.requestTimeout` | `30s` | Timeout of one peer request (blob transfers use an idle timeout instead) |
-| `OPENARTIFACT_FEDERATION_SPOOL_DIR` | `federation.spoolDir` | empty | Directory where blobs pulled from peers are downloaded; an interrupted download stays and is resumed with a `Range` request. Empty uses a directory under the OS temp dir; set a persistent volume to resume across restarts, one per instance |
-| `OPENARTIFACT_FEDERATION_MAX_PARTIAL_BYTES` | `federation.maxPartialBytes` | `10737418240` | Cap on the total size of kept interrupted downloads; the oldest are removed first |
-| `OPENARTIFACT_FEDERATION_MAX_PARTIAL_AGE` | `federation.maxPartialAge` | `24h` | An interrupted download not written to for this long is removed |
-| `OPENARTIFACT_FEDERATION_MAX_CLOCK_SKEW` | `federation.maxClockSkew` | `5m` | How far ahead of this instance's clock the stamp of a peer's change may be; a change beyond it is set aside and applied once the local clock catches up |
-| `OPENARTIFACT_FEDERATION_TOMBSTONE_RETENTION` | `federation.tombstoneRetention` | `720h` | How long delete tombstones are kept; set it above the longest partition a member must survive |
-
-### Storage tiers (`tiering`)
-
-Tuning of the background mover; tiers and policies are managed through the admin API ([storage tiers](../operations/storage-tiering.md#configuration)).
-
-| Environment variable | YAML key | Default | Meaning |
-|---|---|---|---|
-| `OPENARTIFACT_TIERING_ENABLED` | `tiering.enabled` | `true` | Run the mover. Off: nothing moves, reads still work from every tier |
-| `OPENARTIFACT_TIERING_INTERVAL` | `tiering.interval` | `5m` | Pause between passes; `0` disables the schedule |
-| `OPENARTIFACT_TIERING_BATCH` | `tiering.batch` | `200` | Most blobs moved per pass (at least 1) |
-| `OPENARTIFACT_TIERING_CONCURRENCY` | `tiering.concurrency` | `2` | Blobs copied at once (at least 1) |
-| `OPENARTIFACT_TIERING_MAX_BYTES_PER_SECOND` | `tiering.maxBytesPerSecond` | `67108864` | Shared copy bandwidth cap; `0` unlimited |
-| `OPENARTIFACT_TIERING_VERIFY_READBACK` | `tiering.verifyReadback` | `true` | Re-hash each copy on the target tier before the placement flips |
-| `OPENARTIFACT_TIERING_ACCESS_FLUSH_INTERVAL` | `tiering.accessFlushInterval` | `30s` | How often recorded downloads are written to the database |
-| `OPENARTIFACT_TIERING_REFRESH_INTERVAL` | `tiering.refreshInterval` | `30s` | How often each replica reloads the tier list |
-
-### Blob replication (`storage.replica`)
-
-An optional second copy of every blob on another backend, with read fallback and verify/repair ([blob replication](../operations/replication.md)). Replication is active when `storage.replica.type` is set; the block nests under `storage:` and takes the primary backend's keys plus the tuning keys below. The environment variables use the `OPENARTIFACT_STORAGE_REPLICA_` prefix (the primary's `STORAGE_*` variables are unrelated). The replica may not be the same location as the primary.
-
-| Environment variable | YAML key (under `storage.replica`) | Default | Meaning |
-|---|---|---|---|
-| `OPENARTIFACT_STORAGE_REPLICA_TYPE` | `type` | empty | Replica backend (`filesystem`, `s3`, `gcs`, `azure`, `garage`, `seaweedfs`, `oci`). Empty turns replication off |
-| `OPENARTIFACT_STORAGE_REPLICA_PATH` | `path` | empty | Directory (filesystem replica) |
-| `OPENARTIFACT_STORAGE_REPLICA_ENDPOINT` | `endpoint` | empty | S3-compatible endpoint, or OCI registry URL |
-| `OPENARTIFACT_STORAGE_REPLICA_BUCKET` | `bucket` | `artifacts` | Bucket (S3 family) or OCI repository prefix |
-| `OPENARTIFACT_STORAGE_REPLICA_REGION` | `region` | `us-east-1` | Region |
-| `OPENARTIFACT_STORAGE_REPLICA_ACCESS_KEY` | `accessKey` | empty | S3 access key; used only when both keys are set, otherwise the AWS credential chain applies |
-| `OPENARTIFACT_STORAGE_REPLICA_SECRET_KEY` | `secretKey` | empty | S3 secret key (**secret**) |
-| `OPENARTIFACT_STORAGE_REPLICA_FORCE_PATH_STYLE` | `forcePathStyle` | `false` | Path-style S3 addressing |
-| `OPENARTIFACT_STORAGE_REPLICA_OPTIONS` | `options` | none | Free-form backend options as comma-separated `key=value` pairs |
-| `OPENARTIFACT_STORAGE_REPLICA_GCS_BUCKET` | `gcsBucket` | empty | GCS bucket |
-| `OPENARTIFACT_STORAGE_REPLICA_GCS_HMAC_KEY` | `gcsHmacKey` | empty | GCS HMAC access key |
-| `OPENARTIFACT_STORAGE_REPLICA_GCS_HMAC_SECRET` | `gcsHmacSecret` | empty | GCS HMAC secret (**secret**) |
-| `OPENARTIFACT_STORAGE_REPLICA_AZURE_ACCOUNT_NAME` | `azureAccountName` | empty | Azure storage account |
-| `OPENARTIFACT_STORAGE_REPLICA_AZURE_ACCOUNT_KEY` | `azureAccountKey` | empty | Azure account key (**secret**) |
-| `OPENARTIFACT_STORAGE_REPLICA_AZURE_CONTAINER_NAME` | `azureContainerName` | empty | Azure container |
-| `OPENARTIFACT_STORAGE_REPLICA_AZURE_ENDPOINT` | `azureEndpoint` | empty | Blob service URL for Azurite or a sovereign cloud |
-| `OPENARTIFACT_STORAGE_REPLICA_OCI_USERNAME` | `ociUsername` | empty | OCI registry user |
-| `OPENARTIFACT_STORAGE_REPLICA_OCI_PASSWORD` | `ociPassword` | empty | OCI registry password (**secret**) |
-| `OPENARTIFACT_STORAGE_REPLICA_OCI_INSECURE` | `ociInsecure` | `false` | Allow an `http://` registry endpoint (dev/test only) |
-| `OPENARTIFACT_STORAGE_REPLICA_SPOOL_PATH` | `spoolPath` | empty | Spool directory of the replica backend (`s3`, `azure`, `oci`); default system temp dir |
-| `OPENARTIFACT_STORAGE_REPLICA_READ_FALLBACK` | `readFallback` | `notfound` | When reads fall back to the replica: `notfound` (the primary says the blob is missing), `error` (also when the primary fails), `off` |
-| `OPENARTIFACT_STORAGE_REPLICA_INTERVAL` | `interval` | `5s` | Pause between replication queue passes; must be positive |
-| `OPENARTIFACT_STORAGE_REPLICA_BATCH` | `batch` | `100` | Queued operations claimed per pass (at least 1) |
-| `OPENARTIFACT_STORAGE_REPLICA_CONCURRENCY` | `concurrency` | `4` | Blobs copied at once (at least 1). With an explicit `database.maxOpenConns`, that must be at least `2 * concurrency + 2` |
-| `OPENARTIFACT_STORAGE_REPLICA_VERIFY_INTERVAL` | `verifyInterval` | `24h` | Pause between full verify passes; `0` runs one only when an admin requests it |
-| `OPENARTIFACT_STORAGE_REPLICA_VERIFY_DEEP` | `verifyDeep` | `false` | Hash both copies in verify passes instead of comparing sizes (reads every blob from both backends) |
-| `OPENARTIFACT_STORAGE_REPLICA_MAX_BACKOFF` | `maxBackoff` | `1h` | Longest retry delay of a failing replication operation; must be positive |
-
-### Disaster-recovery journal (`recovery.journal`)
-
-Row journal that lets `openartifact rebuild` re-index an empty database from the blob store ([rebuild from storage](../operations/rebuild-from-storage.md)).
-
-| Environment variable | YAML key | Default | Meaning |
-|---|---|---|---|
-| `OPENARTIFACT_RECOVERY_JOURNAL_ENABLED` | `recovery.journal.enabled` | `true` | Capture changed package rows and write their sidecar blobs. Off: the database triggers return immediately and nothing is written |
-| `OPENARTIFACT_RECOVERY_JOURNAL_INTERVAL` | `recovery.journal.interval` | `10s` | Pause between worker passes; bounds how far sidecars lag behind the database |
-| `OPENARTIFACT_RECOVERY_JOURNAL_BATCH` | `recovery.journal.batch` | `200` | Rows claimed per drain step (at least 1) |
-| `OPENARTIFACT_RECOVERY_JOURNAL_CONCURRENCY` | `recovery.journal.concurrency` | `4` | Sidecar blobs written or deleted at once (at least 1) |
-| `OPENARTIFACT_RECOVERY_JOURNAL_RECONCILE_INTERVAL` | `recovery.journal.reconcileInterval` | `24h` | How often every journaled table is re-checked for rows without a sidecar and sidecars without a row; `0` runs only the first complete pass |
-### Vulnerability scanners (`scanners`)
-
-Settings for the `trivy` and `grype` backends of vulnerability scans; `osv` needs none. The binaries are not in the release image; see [Installing Trivy and Grype](../security/scanning.md#installing-trivy-and-grype) for installation, egress, offline mode and mirrors.
-
-| Environment variable | YAML key | Default | Meaning |
-|---|---|---|---|
-| `OPENARTIFACT_SCANNER_CACHE_DIR` | `scanners.cacheDir` | `<user cache dir>/openartifact/scanners` (the image sets `/var/cache/openartifact/scanners`) | Absolute directory for the scanner databases (`trivy/` and `grype/` inside); must be writable by the server unless offline |
-| `OPENARTIFACT_SCANNER_UPDATE_INTERVAL` | `scanners.updateInterval` | `6h` | Refresh interval of the background database download; at least `1h`, or `0` to download once and stop |
-| `OPENARTIFACT_SCANNER_OFFLINE` | `scanners.offline` | `false` | Never download databases; they must already be in the cache directory |
-| `OPENARTIFACT_TRIVY_PATH` | `scanners.trivy.path` | `trivy` (from `PATH`) | Command name or absolute path of the Trivy binary |
-| `OPENARTIFACT_SCANNER_DOWNLOAD_BASE_URL` | `scanners.downloadBaseUrl` | `https://github.com` | `https` origin the pinned Trivy/Grype release archives are downloaded from by `install: auto`; a mirror must serve GitHub's `/<owner>/<repo>/releases/download/<tag>/<file>` paths. No credentials, query or fragment |
-| `OPENARTIFACT_TRIVY_INSTALL` | `scanners.trivy.install` | `none` | `none` or `auto`. `auto` downloads the pinned, sha256-verified Trivy release into `<cacheDir>/bin` when no path is configured and `trivy` is not on `PATH` |
-| `OPENARTIFACT_GRYPE_INSTALL` | `scanners.grype.install` | `none` | Same for Grype |
-| `OPENARTIFACT_TRIVY_DB_REPOSITORY` | `scanners.trivy.dbRepository` | Trivy's built-in list (`mirror.gcr.io/aquasec/trivy-db:2`, then `ghcr.io/aquasecurity/trivy-db:2`) | OCI repository to download `trivy-db` from (a mirror) |
-| `OPENARTIFACT_TRIVY_JAVA_DB_REPOSITORY` | `scanners.trivy.javaDbRepository` | empty | When set, the Java index database is downloaded from this repository too; empty skips it |
-| `OPENARTIFACT_GRYPE_PATH` | `scanners.grype.path` | `grype` (from `PATH`) | Command name or absolute path of the Grype binary |
-| `OPENARTIFACT_GRYPE_DB_URL` | `scanners.grype.dbUrl` | Grype's built-in | `http(s)` URL of a Grype database `listing.json` (a mirror), without credentials in the URL |
-
-A path must be a bare command name or absolute (no relative paths), a repository must not contain whitespace or start with `-`, and the server refuses to start on an invalid value. The cache directory is created when the first download starts. The startup log reports each resolved binary and its database state.
-
-### Exploitation signals (`exploit`)
-
-The daily import of the CISA KEV catalog and the FIRST EPSS scores that mark vulnerability findings with exploitation evidence and rank them. See [Exploitation signals](../security/exploit-signals.md) for what the data is, its terms of use and how findings are prioritised.
-
-| Environment variable | YAML key | Default | Meaning |
-|---|---|---|---|
-| `OPENARTIFACT_EXPLOIT_ENABLED` | `exploit.enabled` | `true` | Import the feeds. Off, findings carry no KEV or EPSS data and their priority is their severity |
-| `OPENARTIFACT_EXPLOIT_KEV_URL` | `exploit.kevUrl` | CISA's `known_exploited_vulnerabilities.json` | `https` URL of the KEV catalog; a mirror in an air-gapped network serves the same JSON |
-| `OPENARTIFACT_EXPLOIT_EPSS_URL` | `exploit.epssUrl` | `https://epss.empiricalsecurity.com/epss_scores-current.csv.gz` | `https` URL of the gzip EPSS score file; a mirror serves the same file |
-| `OPENARTIFACT_EXPLOIT_INTERVAL` | `exploit.interval` | `24h` | Pause between imports; at least `1h` |
-| `OPENARTIFACT_EXPLOIT_EPSS_THRESHOLD` | `exploit.epssThreshold` | `0.1` | EPSS score, above `0` and at most `1`, from which a finding outside KEV ranks above its severity |
-
-The URLs must be absolute `https` URLs without credentials or fragment; the server refuses to start on an invalid value.
 
 ### Storage (`storage`)
 
@@ -318,6 +203,70 @@ See [authentication](../security/authentication.md) and [RBAC](../security/rbac.
 
 `API_KEY` lives under `server` in YAML, not `auth`.
 
+### Logging (`log`)
+
+| Env | YAML | Default | Meaning |
+|---|---|---|---|
+| `LOG_LEVEL` | `level` | `info` | `debug`, `info`, `warn`, `error` (unknown values fall back to `info`) |
+| `LOG_FORMAT` | `format` | `json` | `json`; any other value gives console text |
+| `LOG_OUTPUT` | `output` | `stdout` | `stdout`, `stderr` or a file path (appended) |
+
+## Feature settings
+
+Sections for features you switch on. Each links to its topical page.
+
+### Branding (`branding`)
+
+White-label name, logos, colour and links; administrators can override each value at runtime (**Settings > Branding**), and a runtime value wins. Details, image rules and the attribution that cannot be hidden: [White-label branding](../operations/branding.md).
+
+| Environment variable | YAML key | Default | Description |
+|---|---|---|---|
+| `OPENARTIFACT_BRANDING_PRODUCT_NAME` | `branding.productName` | empty (`OpenArtifact`) | Product name shown in the title, sidebar, login page and installed-app name; 1 to 64 characters |
+| `OPENARTIFACT_BRANDING_LOGO_LIGHT` | `branding.logoLight` | empty | Path of a PNG or SVG logo (max 512 KiB) for light surfaces; used for both themes when `logoDark` is unset |
+| `OPENARTIFACT_BRANDING_LOGO_DARK` | `branding.logoDark` | empty | Path of a PNG or SVG logo for dark surfaces |
+| `OPENARTIFACT_BRANDING_FAVICON` | `branding.favicon` | empty | Path of a PNG or SVG favicon (at least 192x192 for an installable app) |
+| `OPENARTIFACT_BRANDING_PRIMARY_COLOR` | `branding.primaryColor` | empty | Accent colour as `#rrggbb`; a contrast-adjusted variant is derived per theme |
+| `OPENARTIFACT_BRANDING_LOGIN_MESSAGE` | `branding.loginMessage` | empty | Text shown on the login page (up to 2000 bytes; bold, italic, code and links only) |
+| `OPENARTIFACT_BRANDING_SUPPORT_URL` | `branding.supportUrl` | empty | `http(s)` or `mailto:` link shown in the About dialog |
+| `OPENARTIFACT_BRANDING_SOURCE_URL` | `branding.sourceUrl` | `https://github.com/openartifact/openartifact` | Target of the always-visible "Source code" link (AGPL-3.0 section 13): point it at the source of the build you run |
+
+### Federation (`federation`)
+
+| Environment variable | YAML key | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_FEDERATION_ENABLED` | `federation.enabled` | `false` | Master switch of the pull workers and of the `/federation/v1` peer endpoints. Repositories are federated individually. See [Federation](../operations/federation.md) |
+| `OPENARTIFACT_FEDERATION_POLL_INTERVAL` | `federation.pollInterval` | `30s` | Pause between pulls of one peer |
+| `OPENARTIFACT_FEDERATION_BATCH_SIZE` | `federation.batchSize` | `200` | Log entries requested per `/log` call |
+| `OPENARTIFACT_FEDERATION_MAX_BACKOFF` | `federation.maxBackoff` | `15m` | Ceiling of the retry backoff for a failing peer |
+| `OPENARTIFACT_FEDERATION_REQUEST_TIMEOUT` | `federation.requestTimeout` | `30s` | Timeout of one peer request (blob transfers use an idle timeout instead) |
+| `OPENARTIFACT_FEDERATION_SPOOL_DIR` | `federation.spoolDir` | empty | Directory where blobs pulled from peers are downloaded |
+| `OPENARTIFACT_FEDERATION_MAX_PARTIAL_BYTES` | `federation.maxPartialBytes` | `10737418240` | Cap on the total size of kept interrupted downloads; the oldest are removed first |
+| `OPENARTIFACT_FEDERATION_MAX_PARTIAL_AGE` | `federation.maxPartialAge` | `24h` | An interrupted download not written to for this long is removed |
+| `OPENARTIFACT_FEDERATION_MAX_CLOCK_SKEW` | `federation.maxClockSkew` | `5m` | How far ahead of this instance's clock the stamp of a peer's change may be; a change beyond it is set aside and applied once the local clock catches up |
+| `OPENARTIFACT_FEDERATION_TOMBSTONE_RETENTION` | `federation.tombstoneRetention` | `720h` | How long delete tombstones are kept; set it above the longest partition a member must survive |
+
+An interrupted federation download stays in `federation.spoolDir` and resumes with a `Range` request. Empty uses a directory under the OS temp dir. Set a persistent volume, one per instance, to resume across restarts.
+
+### Vulnerability scanners (`scanners`)
+
+Settings for the `trivy` and `grype` backends of vulnerability scans; `osv` needs none. The binaries are not in the release image; see [Installing Trivy and Grype](../security/scanning.md#installing-trivy-and-grype) for installation, egress, offline mode and mirrors.
+
+| Environment variable | YAML key | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_SCANNER_CACHE_DIR` | `scanners.cacheDir` | `<user cache dir>/openartifact/scanners` (the image sets `/var/cache/openartifact/scanners`) | Absolute directory for the scanner databases (`trivy/` and `grype/` inside); must be writable by the server unless offline |
+| `OPENARTIFACT_SCANNER_UPDATE_INTERVAL` | `scanners.updateInterval` | `6h` | Refresh interval of the background database download; at least `1h`, or `0` to download once and stop |
+| `OPENARTIFACT_SCANNER_OFFLINE` | `scanners.offline` | `false` | Never download databases; they must already be in the cache directory |
+| `OPENARTIFACT_TRIVY_PATH` | `scanners.trivy.path` | `trivy` (from `PATH`) | Command name or absolute path of the Trivy binary |
+| `OPENARTIFACT_SCANNER_DOWNLOAD_BASE_URL` | `scanners.downloadBaseUrl` | `https://github.com` | `https` origin the pinned Trivy/Grype release archives are downloaded from by `install: auto`; a mirror must serve GitHub's `/<owner>/<repo>/releases/download/<tag>/<file>` paths. No credentials, query or fragment |
+| `OPENARTIFACT_TRIVY_INSTALL` | `scanners.trivy.install` | `none` | `none` or `auto`. `auto` downloads the pinned, sha256-verified Trivy release into `<cacheDir>/bin` when no path is configured and `trivy` is not on `PATH` |
+| `OPENARTIFACT_GRYPE_INSTALL` | `scanners.grype.install` | `none` | Same for Grype |
+| `OPENARTIFACT_TRIVY_DB_REPOSITORY` | `scanners.trivy.dbRepository` | Trivy's built-in list (`mirror.gcr.io/aquasec/trivy-db:2`, then `ghcr.io/aquasecurity/trivy-db:2`) | OCI repository to download `trivy-db` from (a mirror) |
+| `OPENARTIFACT_TRIVY_JAVA_DB_REPOSITORY` | `scanners.trivy.javaDbRepository` | empty | When set, the Java index database is downloaded from this repository too; empty skips it |
+| `OPENARTIFACT_GRYPE_PATH` | `scanners.grype.path` | `grype` (from `PATH`) | Command name or absolute path of the Grype binary |
+| `OPENARTIFACT_GRYPE_DB_URL` | `scanners.grype.dbUrl` | Grype's built-in | `http(s)` URL of a Grype database `listing.json` (a mirror), without credentials in the URL |
+
+A path must be a bare command name or absolute (no relative paths), a repository must not contain whitespace or start with `-`, and the server refuses to start on an invalid value. The cache directory is created when the first download starts. The startup log reports each resolved binary and its database state.
+
 ### GPG signing (`gpg`)
 
 Signs APT and RPM metadata and release bundle manifests; see [signing](../security/signing.md). Storing managed keys requires `OPENARTIFACT_SECRET_KEY`.
@@ -335,17 +284,11 @@ Signs SBOM and VEX attestations (`?attest=true`); see [SBOM and VEX](../security
 
 | Env | YAML | Default | Meaning |
 |---|---|---|---|
-| `ATTESTATION_KEY_PATH` | `keyPath` | empty | Unencrypted PKCS#8 or SEC1 PEM private key (ECDSA or Ed25519). Empty: an ECDSA P-256 key is generated on first use and stored encrypted in the database (requires `OPENARTIFACT_SECRET_KEY`; without it the attestation endpoints answer `409 secret_key_required`) |
+| `ATTESTATION_KEY_PATH` | `keyPath` | empty | Unencrypted PKCS#8 or SEC1 PEM private key (ECDSA or Ed25519); empty generates one |
 
 The Dependency-Track integration has no file or environment settings: it is configured in **Settings > Dependency-Track** or through the API ([Dependency-Track](../security/dependency-track.md)).
 
-### Logging (`log`)
-
-| Env | YAML | Default | Meaning |
-|---|---|---|---|
-| `LOG_LEVEL` | `level` | `info` | `debug`, `info`, `warn`, `error` (unknown values fall back to `info`) |
-| `LOG_FORMAT` | `format` | `json` | `json`; any other value gives console text |
-| `LOG_OUTPUT` | `output` | `stdout` | `stdout`, `stderr` or a file path (appended) |
+With `ATTESTATION_KEY_PATH` empty, the server generates an ECDSA P-256 key on first use and stores it encrypted in the database. That needs `OPENARTIFACT_SECRET_KEY`; without it the attestation endpoints answer `409 secret_key_required`.
 
 ### Backup (`backup`)
 
@@ -353,16 +296,6 @@ The Dependency-Track integration has no file or environment settings: it is conf
 |---|---|---|---|
 | `OPENARTIFACT_BACKUP_DIR` | `backupDir` | `/var/lib/openartifact/backups` | Directory for backup files; see [backup](../operations/backup.md) |
 | `OPENARTIFACT_BACKUP_LEASE_TTL` | `leaseTtl` | `5m` | How long a running backup's [lease](../operations/backup.md#consistency-without-locks) lasts without a heartbeat; the lease of a crashed backup stops holding blob deletions after this time. Must be positive |
-
-### Blob deletion (`blobDeletion`)
-
-Bytes of deleted blobs are removed later by a sweeper; see [deferred blob deletion](../operations/storage.md#deferred-blob-deletion).
-
-| Env | YAML | Default | Meaning |
-|---|---|---|---|
-| `OPENARTIFACT_BLOB_DELETION_GRACE` | `grace` | `24h` | Minimum time between deleting a blob and removing its bytes. `0` removes them as soon as no running backup needs them. Must not be negative |
-| `OPENARTIFACT_BLOB_DELETION_SWEEP_INTERVAL` | `sweepInterval` | `1m` | Pause between sweeper passes; `0` turns the sweeper off on this replica |
-| `OPENARTIFACT_BLOB_DELETION_SWEEP_BATCH` | `sweepBatch` | `200` | Deletions claimed per pass. Must be positive |
 
 ### Projects (`projects`)
 
@@ -402,6 +335,144 @@ Optional and off by default; see [MCP](../integrations/mcp.md).
 | `MCP_RATE_LIMIT_PER_MINUTE` | `rateLimitPerMinute` | `600` | MCP requests per authenticated principal per minute (`0` = unlimited) |
 | `MCP_AI_TRIGGER_PER_MINUTE` | `aiTriggerPerMinute` | `10` | `trigger_ai_analysis` calls per principal per minute (`0` = unlimited) |
 
-### Pre-set in the Docker Compose file
+## Tuning
 
-`docker/docker-compose.yml` sets `SERVER_HOST`, `SERVER_PORT`, `SERVER_SHUTDOWN_TIMEOUT`, `DB_*` (from `POSTGRES_*`, with `DB_SSLMODE=disable`), `STORAGE_BACKEND=filesystem`, `STORAGE_PATH`, `AUTH_HMAC_KEY`, `OPENARTIFACT_BACKUP_DIR`, `LOG_LEVEL` and `LOG_FORMAT`. Other variables must be added to its `environment:` block.
+Operational tunables. The defaults suit most installations; change them when the topical page tells you to.
+
+### Workers (`workers`)
+
+| Environment variable | YAML key | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_METADATA_REGEN_CONCURRENCY` | `workers.metadataRegenConcurrency` | `4` | Max concurrent metadata regenerations (deb, maven, npm, rpm share it); each pins about two DB connections |
+| `OPENARTIFACT_DOCKER_GC_INTERVAL` | `workers.dockerGcInterval` | `1h` | Pause between Docker registry garbage-collection passes over all docker repositories; `0` disables the schedule (an admin can still run it through the API). See [Docker registry GC](../formats/docker.md#garbage-collection) |
+| `OPENARTIFACT_DOCKER_GC_GRACE_PERIOD` | `workers.dockerGcGracePeriod` | `24h` | How long an untagged manifest or an unreferenced blob must sit idle before GC may delete it; keep it longer than your slowest push and any digest-pinned reference to an untagged image. Must not be negative |
+| `OPENARTIFACT_PROXY_DOCKER_DIGEST_TTL` | `workers.proxyDockerDigestTtl` | `720h` | How long a Docker proxy keeps a digest-addressed manifest or blob after its last pull; see the note below |
+| `OPENARTIFACT_PROXY_UPSTREAM_STALL_TIMEOUT` | `workers.proxyUpstreamStallTimeout` | `1m` | How long a proxy upstream response may deliver no data before the fetch fails; `0` disables it |
+| `OPENARTIFACT_DOCKER_UPLOAD_TTL` | `workers.dockerUploadTtl` | `24h` | Age after which an unfinished Docker blob upload session and its staged file are removed; `0` disables the sweep. Must not be negative |
+| `OPENARTIFACT_DOCKER_UPLOAD_DIR` | `workers.dockerUploadDir` | `/tmp/openartifact/docker-uploads` | Directory where in-progress Docker blob uploads are staged; use a persistent volume that all replicas handling one upload share |
+| `OPENARTIFACT_WEBHOOK_DELIVERY_RETENTION_DAYS` | `workers.webhookDeliveryRetentionDays` | `30` | Days finished (success or failed) webhook delivery records are kept; the hourly purge deletes older ones. `0` keeps them forever. Must not be negative |
+
+- `proxyDockerDigestTtl`: after this time the proxy cache worker evicts the manifest or blob (the blob once no other entry references it), and the next pull fetches it from the upstream again. A pull in the second half of the period renews it. `0` keeps them until an admin purge or the repository's removal. Must not be negative. See [Docker proxy caching](../formats/docker.md#proxy-and-group-repositories).
+- `proxyUpstreamStallTimeout`: the timer resets on every read, so slow but steady downloads are unaffected. Must not be negative. See [upstream failures](../repositories/hosted-proxy-group.md#upstream-failures-and-serve-stale).
+
+### Documentation links (`docs`)
+
+| Environment variable | YAML key | Default | Description |
+|---|---|---|---|
+| `OPENARTIFACT_DOCS_BASE_URL` | `docs.baseUrl` | `https://openartifact.github.io/` | Root of the published documentation the web UI links to; empty hides every link |
+
+The server appends `vX.Y/` for a release build and `latest/` otherwise, and reports the result as `docs_url` in `GET /api/v1/system/info`. Point `docs.baseUrl` at a mirror for air-gapped installs.
+
+### Trash (`trash`)
+
+| Environment variable | YAML key | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_TRASH_RETENTION` | `trash.retentionDays` | `7` | Days a deleted item stays restorable; `0` disables the trash |
+| `OPENARTIFACT_TRASH_PURGE_INTERVAL` | `trash.purgeInterval` | `15m` | Pause between purge passes; `0` disables the schedule (admins can still purge by hand) |
+
+`trash.retentionDays` applies to deleted artifacts, versions and repositories. A repository can override it (`trash_retention_days`). With `0`, deletes are immediate and permanent. Must not be negative. See [Trash](../operations/trash.md).
+
+### Audit log (`audit`)
+
+| Environment variable | YAML key | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_AUDIT_RETENTION_DAYS` | `audit.retentionDays` | `0` | Days audit entries are kept; `0` keeps them forever |
+| `OPENARTIFACT_AUDIT_PURGE_INTERVAL` | `audit.purgeInterval` | `1h` | Pause between retention passes. Must be positive |
+| `OPENARTIFACT_AUDIT_PURGE_BATCH_SIZE` | `audit.purgeBatchSize` | `5000` | Entries one delete statement removes. Must be positive |
+
+The retention worker deletes old audit entries in batches and exports nothing first; run `oa audit export` beforehand. Must not be negative. See [audit log retention](../operations/audit-retention.md).
+
+### Storage tiers (`tiering`)
+
+Tuning of the background mover; tiers and policies are managed through the admin API ([storage tiers](../operations/storage-tiering.md#configuration)).
+
+| Environment variable | YAML key | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_TIERING_ENABLED` | `tiering.enabled` | `true` | Run the mover. Off: nothing moves, reads still work from every tier |
+| `OPENARTIFACT_TIERING_INTERVAL` | `tiering.interval` | `5m` | Pause between passes; `0` disables the schedule |
+| `OPENARTIFACT_TIERING_BATCH` | `tiering.batch` | `200` | Most blobs moved per pass (at least 1) |
+| `OPENARTIFACT_TIERING_CONCURRENCY` | `tiering.concurrency` | `2` | Blobs copied at once (at least 1) |
+| `OPENARTIFACT_TIERING_MAX_BYTES_PER_SECOND` | `tiering.maxBytesPerSecond` | `67108864` | Shared copy bandwidth cap; `0` unlimited |
+| `OPENARTIFACT_TIERING_VERIFY_READBACK` | `tiering.verifyReadback` | `true` | Re-hash each copy on the target tier before the placement flips |
+| `OPENARTIFACT_TIERING_ACCESS_FLUSH_INTERVAL` | `tiering.accessFlushInterval` | `30s` | How often recorded downloads are written to the database |
+| `OPENARTIFACT_TIERING_REFRESH_INTERVAL` | `tiering.refreshInterval` | `30s` | How often each replica reloads the tier list |
+
+### Blob replication (`storage.replica`)
+
+An optional second copy of every blob on another backend, with read fallback and verify/repair ([blob replication](../operations/replication.md)). Replication is active when `storage.replica.type` is set; the block nests under `storage:` and takes the primary backend's keys plus the tuning keys below. The environment variables use the `OPENARTIFACT_STORAGE_REPLICA_` prefix (the primary's `STORAGE_*` variables are unrelated). The replica may not be the same location as the primary.
+
+| Environment variable | YAML key (under `storage.replica`) | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_STORAGE_REPLICA_TYPE` | `type` | empty | Replica backend (`filesystem`, `s3`, `gcs`, `azure`, `garage`, `seaweedfs`, `oci`). Empty turns replication off |
+| `OPENARTIFACT_STORAGE_REPLICA_PATH` | `path` | empty | Directory (filesystem replica) |
+| `OPENARTIFACT_STORAGE_REPLICA_ENDPOINT` | `endpoint` | empty | S3-compatible endpoint, or OCI registry URL |
+| `OPENARTIFACT_STORAGE_REPLICA_BUCKET` | `bucket` | empty | Bucket (S3 family) or OCI repository prefix |
+| `OPENARTIFACT_STORAGE_REPLICA_REGION` | `region` | `us-east-1` | Region |
+| `OPENARTIFACT_STORAGE_REPLICA_ACCESS_KEY` | `accessKey` | empty | S3 access key; used only when both keys are set, otherwise the AWS credential chain applies |
+| `OPENARTIFACT_STORAGE_REPLICA_SECRET_KEY` | `secretKey` | empty | S3 secret key (**secret**) |
+| `OPENARTIFACT_STORAGE_REPLICA_FORCE_PATH_STYLE` | `forcePathStyle` | `false` | Path-style S3 addressing |
+| `OPENARTIFACT_STORAGE_REPLICA_OPTIONS` | `options` | none | Free-form backend options as comma-separated `key=value` pairs |
+| `OPENARTIFACT_STORAGE_REPLICA_GCS_BUCKET` | `gcsBucket` | empty | GCS bucket |
+| `OPENARTIFACT_STORAGE_REPLICA_GCS_HMAC_KEY` | `gcsHmacKey` | empty | GCS HMAC access key |
+| `OPENARTIFACT_STORAGE_REPLICA_GCS_HMAC_SECRET` | `gcsHmacSecret` | empty | GCS HMAC secret (**secret**) |
+| `OPENARTIFACT_STORAGE_REPLICA_AZURE_ACCOUNT_NAME` | `azureAccountName` | empty | Azure storage account |
+| `OPENARTIFACT_STORAGE_REPLICA_AZURE_ACCOUNT_KEY` | `azureAccountKey` | empty | Azure account key (**secret**) |
+| `OPENARTIFACT_STORAGE_REPLICA_AZURE_CONTAINER_NAME` | `azureContainerName` | empty | Azure container |
+| `OPENARTIFACT_STORAGE_REPLICA_AZURE_ENDPOINT` | `azureEndpoint` | empty | Blob service URL for Azurite or a sovereign cloud |
+| `OPENARTIFACT_STORAGE_REPLICA_OCI_USERNAME` | `ociUsername` | empty | OCI registry user |
+| `OPENARTIFACT_STORAGE_REPLICA_OCI_PASSWORD` | `ociPassword` | empty | OCI registry password (**secret**) |
+| `OPENARTIFACT_STORAGE_REPLICA_OCI_INSECURE` | `ociInsecure` | `false` | Allow an `http://` registry endpoint (dev/test only) |
+| `OPENARTIFACT_STORAGE_REPLICA_SPOOL_PATH` | `spoolPath` | empty | Spool directory of the replica backend (`s3`, `azure`, `oci`); default system temp dir |
+| `OPENARTIFACT_STORAGE_REPLICA_READ_FALLBACK` | `readFallback` | `notfound` | When reads fall back to the replica: `notfound` (the primary says the blob is missing), `error` (also when the primary fails), `off` |
+| `OPENARTIFACT_STORAGE_REPLICA_INTERVAL` | `interval` | `5s` | Pause between replication queue passes; must be positive |
+| `OPENARTIFACT_STORAGE_REPLICA_BATCH` | `batch` | `100` | Queued operations claimed per pass (at least 1) |
+| `OPENARTIFACT_STORAGE_REPLICA_CONCURRENCY` | `concurrency` | `4` | Blobs copied at once (at least 1). With an explicit `database.maxOpenConns`, that must be at least `2 * concurrency + 2` |
+| `OPENARTIFACT_STORAGE_REPLICA_VERIFY_INTERVAL` | `verifyInterval` | `24h` | Pause between full verify passes; `0` runs one only when an admin requests it |
+| `OPENARTIFACT_STORAGE_REPLICA_VERIFY_DEEP` | `verifyDeep` | `false` | Hash both copies in verify passes instead of comparing sizes (reads every blob from both backends) |
+| `OPENARTIFACT_STORAGE_REPLICA_MAX_BACKOFF` | `maxBackoff` | `1h` | Longest retry delay of a failing replication operation; must be positive |
+
+### Disaster-recovery journal (`recovery.journal`)
+
+Row journal that lets `openartifact rebuild` re-index an empty database from the blob store ([rebuild from storage](../operations/rebuild-from-storage.md)).
+
+| Environment variable | YAML key | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_RECOVERY_JOURNAL_ENABLED` | `recovery.journal.enabled` | `true` | Capture changed package rows and write their sidecar blobs. Off: the database triggers return immediately and nothing is written |
+| `OPENARTIFACT_RECOVERY_JOURNAL_INTERVAL` | `recovery.journal.interval` | `10s` | Pause between worker passes; bounds how far sidecars lag behind the database |
+| `OPENARTIFACT_RECOVERY_JOURNAL_BATCH` | `recovery.journal.batch` | `200` | Rows claimed per drain step (at least 1) |
+| `OPENARTIFACT_RECOVERY_JOURNAL_CONCURRENCY` | `recovery.journal.concurrency` | `4` | Sidecar blobs written or deleted at once (at least 1) |
+| `OPENARTIFACT_RECOVERY_JOURNAL_RECONCILE_INTERVAL` | `recovery.journal.reconcileInterval` | `24h` | How often every journaled table is re-checked for rows without a sidecar and sidecars without a row; `0` runs only the first complete pass |
+
+### Exploitation signals (`exploit`)
+
+The daily import of the CISA KEV catalog and the FIRST EPSS scores that mark vulnerability findings with exploitation evidence and rank them. See [Exploitation signals](../security/exploit-signals.md) for what the data is, its terms of use and how findings are prioritised.
+
+| Environment variable | YAML key | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_EXPLOIT_ENABLED` | `exploit.enabled` | `true` | Import the feeds. Off, findings carry no KEV or EPSS data and their priority is their severity |
+| `OPENARTIFACT_EXPLOIT_KEV_URL` | `exploit.kevUrl` | CISA's `known_exploited_vulnerabilities.json` | `https` URL of the KEV catalog; a mirror in an air-gapped network serves the same JSON |
+| `OPENARTIFACT_EXPLOIT_EPSS_URL` | `exploit.epssUrl` | `https://epss.empiricalsecurity.com/epss_scores-current.csv.gz` | `https` URL of the gzip EPSS score file; a mirror serves the same file |
+| `OPENARTIFACT_EXPLOIT_INTERVAL` | `exploit.interval` | `24h` | Pause between imports; at least `1h` |
+| `OPENARTIFACT_EXPLOIT_EPSS_THRESHOLD` | `exploit.epssThreshold` | `0.1` | EPSS score, above `0` and at most `1`, from which a finding outside KEV ranks above its severity |
+
+The URLs must be absolute `https` URLs without credentials or fragment; the server refuses to start on an invalid value.
+
+### Blob deletion (`blobDeletion`)
+
+Bytes of deleted blobs are removed later by a sweeper; see [deferred blob deletion](../operations/storage.md#deferred-blob-deletion).
+
+| Env | YAML | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_BLOB_DELETION_GRACE` | `grace` | `24h` | Minimum time between deleting a blob and removing its bytes. `0` removes them as soon as no running backup needs them. Must not be negative |
+| `OPENARTIFACT_BLOB_DELETION_SWEEP_INTERVAL` | `sweepInterval` | `1m` | Pause between sweeper passes; `0` turns the sweeper off on this replica |
+| `OPENARTIFACT_BLOB_DELETION_SWEEP_BATCH` | `sweepBatch` | `200` | Deletions claimed per pass. Must be positive |
+
+## Other settings
+
+These settings are not repeated here. Look the keys up in the [configuration reference](../reference/config.md) and read the topical page for the behaviour.
+
+- `telemetry.otlp` and `telemetry.frontend` (OpenTelemetry export and browser telemetry): [monitoring](../operations/monitoring.md).
+- `osvMirror` (local OSV vulnerability mirror): [scanning](../security/scanning.md).
+- `GRYPE_DB_UPDATE_URL`: not read by OpenArtifact itself. Set `scanners.grype.dbUrl` (`OPENARTIFACT_GRYPE_DB_URL`), which passes the mirror URL to Grype; see [Vulnerability scanners](#vulnerability-scanners-scanners).
+- `api.docs` (interactive API reference at `/api/reference`): [API](../integrations/api.md).
+- `gpg.bundleSigners` (`GPG_BUNDLE_SIGNERS`, users who may sign release bundles): [signing](../security/signing.md#signing-release-bundles).

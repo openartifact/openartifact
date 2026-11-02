@@ -6,11 +6,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Design: format plugins and generic package tables
 
+> **Developer-internal design record.** This page explains why the format plugins and generic package tables look the way they do. It is not needed to operate OpenArtifact; for adding a format see [adding a format](../development/adding-a-format.md).
+
 Status: implemented in 0.15 (issue [#332](https://github.com/openartifact/openartifact/issues/332), item 1). This page is the design of record: the schema contract, what became data and what stayed code, the upgrade path and the trade-offs.
 
-Goal: adding a package format costs about ten files, and no union query, trigger, trash spec, recovery entry or exhaustiveness test has to be touched. Before 0.15 a format cost one table (or two), a branch in ~21 enumerations (listing, count, catalog, detail, usage, security, blob references, tiering, trash, quota, cleanup, snapshot/backup, promote, recovery journal, federation, search, ...), about 24 `quota_pending_*` functions with three triggers each, a `format_exhaustive_test.go` next to every per-format `switch`, and a hand-kept list per subsystem that silently went stale (the ansible format touched 120 files; `auditPackageKinds` forgot Nix, `finishRoutes` forgot apk's webhook publisher). The cure has two halves, delivered together:
+Goal: adding a package format costs about ten files, and no union query, trigger, trash spec, recovery entry or exhaustiveness test has to be touched.
 
-1. **Generic package tables** (`packages`, `package_versions`, `package_files`, `package_tags`) hold the data of every format but docker. Everything that spans formats reads them once instead of unioning 22 tables.
+Before 0.15 a format cost:
+
+- one table (or two);
+- a branch in about 21 enumerations: listing, count, catalog, detail, usage, security, blob references, tiering, trash, quota, cleanup, snapshot and backup, promote, recovery journal, federation, search and more;
+- about 24 `quota_pending_*` functions with three triggers each;
+- a `format_exhaustive_test.go` next to every per-format `switch`;
+- a hand-kept list per subsystem that silently went stale. The ansible format touched 120 files; `auditPackageKinds` forgot Nix, and `finishRoutes` forgot apk's webhook publisher.
+
+The cure has two halves, delivered together:
+
+1. **Generic package tables** (`packages`, `package_versions`, `package_files`, `package_tags`) hold the data of every format but docker. Everything that spans formats reads them once instead of unioning the tables of 22 formats.
 2. **A format plugin** (`internal/format/plugin`) is the single registration a format makes: hosted routes, analysis hooks (dependencies, license, PURL, manifest), client setup, proxy and group hooks, lifecycle hooks and the storage descriptor. Every method of the interface is required, so a forgotten capability is a compile error. The exhaustiveness tests that only existed to find forgotten switch arms are deleted.
 
 ## Scope
@@ -19,7 +31,9 @@ Goal: adding a package format costs about ten files, and no union query, trigger
 |---|---|
 | ansible, apk, cargo, composer, conan, conda, deb, go, helm, ivy, maven, npm, nix, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform | **docker** |
 
-**Why docker stays dedicated.** Docker is an object graph, not a package list. Manifests, layer blobs, referrers (`subject_digest`), upload sessions, the GC advisory lock (`docker-repo:<id>`), cross-repository mounts and a hand-written federation codec all depend on the dedicated `docker_*` tables, and the listing unit is a tag, not a file. Moving it is a separate, larger change. Docker is the **one explicit special case** in each cross-format subsystem (listing, usage, blob references, trash, quota, tiering, cleanup, search, recovery, backup, promote, federation), selected by the format name `docker`, never by a descriptor.
+**Why docker stays dedicated.** Docker is an object graph, not a package list. Manifests, layer blobs, referrers (`subject_digest`), upload sessions, the GC advisory lock (`docker-repo:<id>`), cross-repository mounts and a hand-written federation codec all depend on the dedicated `docker_*` tables. The listing unit is a tag, not a file. Moving it is a separate, larger change.
+
+Docker is the **one explicit special case** in each cross-format subsystem: listing, usage, blob references, trash, quota, tiering, cleanup, search, recovery, backup, promote and federation. It is selected by the format name `docker`, never by a descriptor.
 
 ## Generic tables
 
@@ -111,7 +125,13 @@ Design rules that follow:
 
 - **Plugins compute, subsystems read.** Everything a cross-format subsystem needs as a per-format expression (listing name, filename, size rule, arch, tiering path, search name, retention partition, federation unit key) is a *column written by the store at publish time*, not a `CASE format` at read time. The subsystems therefore contain no format names.
 - **`package_files.id` is the artifact id.** Listing ids, `GET/DELETE /packages/{id}`, `TrashRef{Kind,ID}`, `artifact_refs.artifact_path`, `vex_statements.artifact_id`, `release_bundle_items`, `audit_logs.resource_id`, recovery row keys and the scan-by-id results all name a `package_files` row. For formats whose unit is a version (cargo, helm, nuget, npm, go, ...) the version's primary file carries the id; a go module's `.mod` file is an extra file with `listed = false`.
-- **Two live-unique keys replace the 24 per-format ones:** `(package_id, version_key)` on versions and `(repository_id, path)` on files. The store renders the natural key of the format into `version_key`/`path` (rpm: `version-release:epoch|arch` / `name-version-release.arch.rpm`; conda: `version-build|platform` / `platform/filename`; conan: `version@user_channel#rrev` / `name/version@user_channel#rrev/[<package_id>#<prev>/]<filename>`; maven: `version[#snapshot_ts-build]` / the repository path). Soft-deleted duplicates stay legal because both indexes are partial. A violation on write is `database.ErrDuplicate` (message contains "already exists"); a violation on restore is `ErrTrashConflict`.
+- **Two live-unique keys replace the 24 per-format ones:** `(package_id, version_key)` on versions and `(repository_id, path)` on files. The store renders the natural key of the format into `version_key` and `path`:
+  - rpm: `version-release:epoch|arch` and `name-version-release.arch.rpm`;
+  - conda: `version-build|platform` and `platform/filename`;
+  - conan: `version@user_channel#rrev` and `name/version@user_channel#rrev/[<package_id>#<prev>/]<filename>`;
+  - maven: `version[#snapshot_ts-build]` and the repository path.
+
+  Soft-deleted duplicates stay legal because both indexes are partial. A violation on write is `database.ErrDuplicate` (the message contains "already exists"); a violation on restore is `ErrTrashConflict`.
 - **A version is live iff it has a live file.** Trashing files stamps the same `deleted_at`/`deleted_by` on the file and, when none is left live, on the version; restoring a file re-attaches it to the live version of the same `version_key` when there is one (merge), otherwise revives its own. A purge of the last file deletes the version, and of the last version the package.
 - **Counting.** A repository's artifact count is the number of live-or-trashed `package_files` with `role = 'primary'`; bytes are the sum of the blob sizes of all files. Soft delete releases nothing; hard delete and purge do, through the `quota_pending` protocol (the baseline triggers on `package_files` only consume or queue reservation entries, matched by exact `(size, count)`). A store reserves **per file**: a go module reserves `(zip size, 1)` and `(go.mod size, 0)`.
 - **`size_bytes`** is NULL unless the format's own size must win over the blob's (rpm `package_size`, rubygems `size`); the listing computes `COALESCE(size_bytes, blob.size_bytes, 0)`.
@@ -167,7 +187,7 @@ A side table extends `package_files` (`id uuid PRIMARY KEY REFERENCES package_fi
 
 | Subsystem | Before | After |
 |---|---|---|
-| Listing and count: `ListRepoComponents`, `…ByName`, `CountRepoComponents`, `GetRepoComponentBlob`, `ResolveComponentNames` | 22 branches each, two-stage per `package-listing.md` | **One generic branch** over `package_files` (listed, live) plus two pseudo-branches: docker tags and proxy-cache entries. Stage 1 takes the top `limit+offset` files by `(created_at DESC, id)` from `idx_package_files_listing`, joined to V and P only when `format_filter`, `name_filter` or `q` is set; stage 2 resolves name, version and blobs for the page by primary key. `ResolveComponentNames` has no deleted/listed filter, so trashed rows still resolve. |
+| Listing and count: `ListRepoComponents`, `…ByName`, `CountRepoComponents`, `GetRepoComponentBlob`, `ResolveComponentNames` | 22 branches each, two-stage per `package-listing.md` | **One generic branch** over `package_files` (listed, live) plus two pseudo-branches: docker tags and proxy-cache entries; see below the table |
 | Catalog roll-up, `catalog_detail`, `repo_usage`, findings name matching | per-table branches | One branch over F/V/P. The artifact detail is a **data descriptor** (`storage.Detail`: where each display field lives in `p`, `v`, `f`, the checksums, the side table or a sibling file, and the name of a dependency decoder in `internal/api`), resolved by one pure function; no per-format Go decoding switch. |
 | Blob references (`blobRefSpecs`), tiering | 26 entries | `package_files.blob_id` plus the docker and side tables that own a blob column. Tiering `path_glob` matches `package_files.path`. |
 | Trash (24 specs), restore, purge, list | per-kind table specs | Generic file-scope operations on `package_files` with version stamping. `storage.Trash` carries the per-format kind string, scope (`ScopeFile`, or `ScopeVersion` for go: the zip drags the `.mod` along), name/version display expressions, regeneration keys and the npm hooks. Docker has its own path (`trash_docker.go`). |
@@ -179,9 +199,16 @@ A side table extends `package_files` (`id uuid PRIMARY KEY REFERENCES package_fi
 | Recovery journal | 39 table entries and triggers | Registry built by `recovery.NewRegistry()` from the generic tables, the `SideTables` of the registered descriptors and the docker tables; sidecar magic **2**. |
 | Federation | 11 capture triggers, 9 per-format codecs | Capture triggers on `package_files`, `package_versions` (update) and `package_tags`; one generic codec parameterised by `storage.Federation`; docker keeps its codec. **Protocol 2.** |
 
+How the generic listing branch works: stage 1 takes the top `limit+offset` files by `(created_at DESC, id)` from `idx_package_files_listing`, joined to V and P only when `format_filter`, `name_filter` or `q` is set. Stage 2 resolves name, version and blobs for the page by primary key. `ResolveComponentNames` has no deleted or listed filter, so trashed rows still resolve.
+
 ## The plugin
 
-`internal/format/plugin` defines the interface and the registry; `internal/formats` lists the registrations (one file per format, one line each in `registrations()`, no `init()`). The plugin layer sits **above** the libraries: `proxy`, `group`, `vuln`, `sbom`, `pkgdeps`, `licensemeta`, `presign`, ... never import it. `formats.Register()` *pushes* each registration into their leaf registries (`proxy.Register`, the group, analysis and lifecycle hooks, `storage.Register`), so a library asks its own registry, not the plugin. Every binary and test binary that needs the hooks calls `formats.Register()` (idempotent) from `main`/`TestMain`. `internal/formats` must not import `internal/api`, `internal/worker` or `internal/middleware`.
+`internal/format/plugin` defines the interface and the registry. `internal/formats` lists the registrations: one file per format, one line each in `registrations()`, no `init()`.
+
+- The plugin layer sits **above** the libraries. `proxy`, `group`, `vuln`, `sbom`, `pkgdeps`, `licensemeta`, `presign` and the like never import it.
+- `formats.Register()` *pushes* each registration into the leaf registries (`proxy.Register`, the group, analysis and lifecycle hooks, `storage.Register`), so a library asks its own registry, not the plugin.
+- Every binary and test binary that needs the hooks calls `formats.Register()` (idempotent) from `main` or `TestMain`.
+- `internal/formats` must not import `internal/api`, `internal/worker` or `internal/middleware`.
 
 ```go
 // Format is the one registration a package format makes. Every method is required:
@@ -199,7 +226,11 @@ type Format interface {
 }
 ```
 
-`plugin.Definition{ID, NewHosted, Supply, Snippets, Mirror, Merge, Meta, Store}` is the table form most formats use. Optional capabilities of the hosted handler are discovered by interface (`Guarded`, `APIRouted`, `PublicRouted`, `WriteRouted`, `PutRouted`). Where the routes mount is `repotype.Spec.Mount` (`Shared`, `Guarded`, `Isolated`, `Dispatcher`, `OCI`), and registration order is the precedence of the shared `/repos/{name}` subrouter (`TestSharedRouteClashesAreKnown` fails on a new route-shape clash). `TestRegistrationsMatchSpecs` asserts that the registered set equals `repotype.Names()` and that `Spec.Proxy`/`Spec.Group`/`Spec.Federation` agree with the registrations.
+`plugin.Definition{ID, NewHosted, Supply, Snippets, Mirror, Merge, Meta, Store}` is the table form most formats use. Optional capabilities of the hosted handler are discovered by interface: `Guarded`, `APIRouted`, `PublicRouted`, `WriteRouted`, `PutRouted`.
+
+- Where the routes mount is `repotype.Spec.Mount` (`Shared`, `Guarded`, `Isolated`, `Dispatcher`, `OCI`).
+- Registration order is the precedence of the shared `/repos/{name}` subrouter. `TestSharedRouteClashesAreKnown` fails on a new route-shape clash.
+- `TestRegistrationsMatchSpecs` asserts that the registered set equals `repotype.Names()` and that `Spec.Proxy`, `Spec.Group` and `Spec.Federation` agree with the registrations.
 
 ### The storage descriptor
 
@@ -257,11 +288,20 @@ Everything else a new format adds is a table row in one descriptor.
 - **A 0.15 binary on a 0.14 database refuses to start** with `database.ErrLegacySchema`: `schema_migrations` holds migrations 0.15 does not ship and not `001_baseline.sql`. The message names `oa import`.
 - **Backup archives of 0.14 are refused** (archive version is now `2.0`; the error points to `oa import`). **Recovery sidecars of 0.14 are refused** (`SidecarMagic` is 2; `recovery.ErrSidecarLegacy`, reported in `Report.SidecarsLegacy`; a rebuild that finds only legacy sidecars fails). **Federation protocol 2** refuses a protocol-1 peer ("upgrade the peer to 0.15 or later"); upgrade all members.
 - **Ids are not preserved.** A file gets a fresh `package_files.id`. Restore re-derives ids as `md5(repoID||oldID)::uuid`. Scan results, VEX decisions, properties and audit history are not carried by `oa import` (see the runbook's "what is not reachable").
-- **Future migrations start at `002_<topic>.sql`.** The baseline widening `chk_repo_format` is the only schema work a new format needs (`002_<format>.sql` plus `002_<format>_validate.no_tx.sql`).
+- **Future migrations follow the baseline.** Each takes the next free number in `migrations/`. Widening `chk_repo_format` is the only schema work a new format needs (`NNN_<format>.sql` plus `NNN_<format>_validate.no_tx.sql`).
 
 ## Adding a format
 
-About ten files; the full checklist and a worked touch list are in [docs/development/README.md](../development/README.md#adding-a-format). In short: a `repotype.Spec` entry (and its upload routes), a `migrations/NNN_<format>.sql` widening `chk_repo_format`, the handler package `internal/format/<format>/`, the typed store `internal/database/pkg_<format>.go` with its queries, `internal/formats/<format>.go` with one line in `registrations()` (carrying the storage descriptor), the client-setup builder, the web label/colour/icon, `scripts/smoke/<format>.sh` and `docs/formats/<format>.md`. No table, union branch, trigger, trash/quota/cleanup/backup/promote/recovery entry or exhaustiveness test.
+About ten files; the full checklist and a worked touch list are in [adding a format](../development/adding-a-format.md). In short:
+
+- a `repotype.Spec` entry and its upload routes;
+- a `migrations/NNN_<format>.sql` widening `chk_repo_format`;
+- the handler package `internal/format/<format>/`;
+- the typed store `internal/database/pkg_<format>.go` with its queries;
+- `internal/formats/<format>.go` with one line in `registrations()`, carrying the storage descriptor;
+- the client-setup builder, the web label, colour and icon, `scripts/smoke/<format>.sh` and `docs/formats/<format>.md`.
+
+No table, union branch, trigger, trash, quota, cleanup, backup, promote or recovery entry, and no exhaustiveness test.
 
 ## Trade-offs and risks
 

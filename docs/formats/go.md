@@ -70,7 +70,7 @@ Each version's zip is stored under its own sha256. Up to 0.4.1 every upload regi
 - At every start a background repair relinks such versions (trashed ones included) to their real zip, which it finds in the blob store by content, and drops the shared database record without deleting any stored object. It runs on one replica at a time and exits at once when nothing is affected. Run it by hand with `openartifact-server -repair-gomod`; it prints what it repaired and every `repository: module@version` it could not.
 - A version that cannot be matched to exactly one stored zip stays `404`: delete it and upload it again. The repair finds orphaned zips by listing the blob store; every backend can do that except `oci`: the OCI Distribution specification has no operation that enumerates the blobs of a repository (only `HEAD`/`GET` of a blob whose digest is already known), and an orphaned zip is by definition a digest that no database row records, so no database query can stand in for the listing. On `oci` only the zip of the shared record itself is recovered and the other affected versions must be uploaded again.
 
-See the security note in [upgrading](../getting-started/upgrading.md#050-unreleased).
+See the security note in [upgrading](../getting-started/upgrading.md#050).
 
 ## Proxy and group repositories
 

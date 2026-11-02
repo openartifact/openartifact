@@ -4,18 +4,37 @@ SPDX-FileCopyrightText: The OpenArtifact Authors
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# Migrating from OpenArtifact 0.14
+# Upgrading from OpenArtifact 0.14 (to 0.15 and later)
 
-Release 0.15 starts from a squashed baseline of the database migrations, so a 0.14 database cannot be upgraded in place. To move to 0.15, run a fresh 0.15 instance beside the 0.14 one and copy the content and the configuration across with `oa`:
+> **Only needed if you still run 0.14.** Instances on 0.15 or later upgrade in place; see [upgrading](../getting-started/upgrading.md).
 
-- `oa import openartifact` reads a running 0.14 instance through its public REST and native-protocol APIs and republishes every hosted repository into the 0.15 instance through the normal upload endpoints of each format.
-- `oa import config openartifact` reads the configuration of the 0.14 instance and writes [declarative manifests](../integrations/declarative.md) plus a mapping report, which `oa apply` then loads into 0.15.
+Release 0.15 starts from a squashed baseline of the database migrations, so a 0.14 database cannot be upgraded in place. You run a fresh 0.15 instance beside the 0.14 one and copy the content and the configuration across with `oa`:
+
+- `oa import openartifact` reads a running 0.14 instance through its public REST and native-protocol APIs. It republishes every hosted repository into the 0.15 instance through the normal upload endpoints of each format.
+- `oa import config openartifact` reads the configuration of the 0.14 instance and writes [declarative manifests](../integrations/declarative.md) plus a mapping report. `oa apply` then loads them into 0.15.
 
 Nothing is written to the 0.14 instance, and nothing needs to be stopped there: it keeps serving while it is copied.
 
-The sections below describe the OpenArtifact source (shared flags, behavior and checksum rules are those of the [Nexus and Artifactory importer](nexus-artifactory.md)); the [runbook](#runbook-014-to-015) is the end-to-end procedure.
+The runbook comes first. The [reference](#reference-the-openartifact-source) after it describes the flags, what is copied and what is not. Shared flags, behavior and checksum rules are those of the [Nexus and Artifactory importer](nexus-artifactory.md).
 
-## OpenArtifact source
+## Runbook: 0.14 to 0.15
+
+1. **Deploy 0.15 beside 0.14.** Give 0.15 its own database (a new, empty one) and its own URL. It may use the same object-storage bucket as 0.14, in which case the blob store's SHA-256 deduplication applies to content that is already stored. Do not point 0.15 at the 0.14 database. Create an admin token on each instance (`oa auth token create`): the configuration export reads users, permission targets and other admin-only objects from 0.14, and `oa apply` and the content import need `manage` on 0.15.
+2. **Configuration.** Run `oa import config openartifact` against 0.14, read `mapping-report.json` and the summary, add the missing secrets (export the `OA_*` environment variables named in the report, add proxy `upstream_password` values), then `oa apply -f DIR -R --validate-only` and `oa apply -f DIR -R` on 0.15. This creates the repositories (empty), users, groups, permission targets, projects, webhooks and the rest. Users are created without a password: set one with an admin password reset, or let them sign in through SSO.
+3. **Content, with a dry run first.**
+
+   ```sh
+   oa --server https://oa015.example.com --token "$OA_TOKEN" import openartifact \
+     --source-url https://oa014.example.com --source-token-file ~/.oa014-token \
+     --all --deb-distribution jammy,noble --dry-run
+   ```
+
+   Check the per-repository counts against what you expect, then run the same command without `--dry-run` and with `--state-file oa014.state`. Re-run it until it reports no failures; a re-run copies only what is missing. To keep 0.14 writable during the copy, run it once now and again just before the switch: the second run copies the delta.
+4. **Verify.** Compare the per-repository counts of the import (`--format json` `repositories[]`) with `oa repo packages` or the web UI of both instances, and the re-run summary (`uploaded: 0`). Pull a few artifacts of each format through a real client against 0.15. Check that proxy and group repositories resolve.
+5. **Switch clients and DNS.** Point DNS or the ingress at 0.15, update the clients that used a token or a signing key (tokens are new; apt, yum, apk and nix clients must trust the new repository keys). Stop publishing to 0.14 and run the import once more to take the last uploads.
+6. **Decommission 0.14.** Keep it read-only for as long as you need its audit log and scan history; when you stop, shut it down, drop its database and, if it did not share a bucket with 0.15, its bucket. Do not delete a shared bucket: 0.15 uses it.
+
+## Reference: the OpenArtifact source
 
 ```sh
 # every hosted repository, same names; the source token is read from a file
@@ -28,7 +47,11 @@ oa import openartifact --source-url https://oa014.example.com \
   --repo libs-release:releases --repo images --state-file oa014.state
 ```
 
-Syntax: `oa [global flags] import openartifact --source-url URL (--all | --repo SRC[:DST]...) [flags]`. The global flags `--server` and `--token` select and authenticate the **destination** (the 0.15 instance); `--source-url` and `--source-token-file` select and authenticate the **source** (the 0.14 instance). The source token is read from the file, from stdin with `-`, or from `$OA_IMPORT_SOURCE_TOKEN`. It needs read access to every repository you copy (an admin token reads everything); plain HTTP is refused except for loopback hosts. The destination token needs the `manage` action, otherwise the original creation times are ignored (see below).
+Syntax: `oa [global flags] import openartifact --source-url URL (--all | --repo SRC[:DST]...) [flags]`.
+
+- The global flags `--server` and `--token` select and authenticate the **destination**, the 0.15 instance. Its token needs the `manage` action; otherwise the original creation times are ignored (see [creation times](#creation-times)).
+- `--source-url` and `--source-token-file` select and authenticate the **source**, the 0.14 instance. The source token is read from the file, from stdin with `-`, or from `$OA_IMPORT_SOURCE_TOKEN`. It needs read access to every repository you copy; an admin token reads everything.
+- Plain HTTP to the source is refused except for loopback hosts.
 
 | Flag | Meaning |
 |---|---|
@@ -86,13 +109,17 @@ Every upload carries `X-OA-Import-Created-At` with the source row's `created_at`
 
 ### Debian placement
 
-The API lists the packages of a deb repository but not its distributions. The importer reads `dists/<dist>/Release` and `dists/<dist>/<component>/binary-<arch>/Packages` of the source for every distribution in `--deb-distribution` and places each `.deb` where the index names it. A `.deb` listed in several distributions is copied once, into the first one found. A `.deb` that no index of the listed distributions names falls back to the first `--deb-distribution` and to `--deb-component`. Pass every distribution of the repository (`--deb-distribution jammy,noble`); a distribution that does not exist is ignored.
+The API lists the packages of a deb repository but not its distributions. The importer reads `dists/<dist>/Release` and `dists/<dist>/<component>/binary-<arch>/Packages` of the source for every distribution in `--deb-distribution`, and places each `.deb` where the index names it.
+
+- A `.deb` listed in several distributions is copied once, into the first one found.
+- A `.deb` that no index of the listed distributions names falls back to the first `--deb-distribution` and to `--deb-component`.
+- Pass every distribution of the repository, for example `--deb-distribution jammy,noble`. A distribution that does not exist is ignored.
 
 ### Proxy and group repositories
 
 Proxy and group repositories hold no data of their own, so the content import skips them. `oa import config` recreates their definitions (upstream URL, cache settings, group members and order, merge settings); a proxy cache fills again from its upstream. They are recreated empty by design.
 
-## Configuration
+### Configuration
 
 ```sh
 oa import config openartifact --source-url https://oa014.example.com \
@@ -116,15 +143,23 @@ oa --server https://oa015.example.com --token "$OA_TOKEN" apply -f ./oa014-confi
 
 Only what the source's REST API can read and the declarative API can write is carried. Artifact **properties** travel with the content (`oa import openartifact --properties`).
 
-### The mapping report
+#### The mapping report
 
 Every exported object is listed in `mapping-report.json` and in the summary with one status:
 
 | Status | Meaning |
 |---|---|
 | `translated` | carried over faithfully (informational notes may apply, such as "the content is copied by `oa import`" or "recreated empty: the proxy cache is not copied") |
-| `approximated` | recreated, but something differs and the reason says what to do: users have no password; secrets are placeholders (`secretRef` to an environment variable such as `OA_WEBHOOK_NOTIFY_SECRET`, to export before `oa apply`); a proxy that authenticates to its upstream needs its `upstream_password` added; a repository that signs packages gets a signing key of its own; a storage tier names a backend that must exist on the destination |
+| `approximated` | recreated, but something differs; the reason says what to do (details below the table) |
 | `skipped` | not written; the reason says why |
+
+What an `approximated` object needs from you:
+
+- **Users** have no password. Set one with an admin password reset, or let them sign in through SSO.
+- **Secrets** are placeholders: a `secretRef` to an environment variable such as `OA_WEBHOOK_NOTIFY_SECRET`. Export it before `oa apply`.
+- **A proxy that authenticates to its upstream** needs its `upstream_password` added.
+- **A repository that signs packages** gets a signing key of its own.
+- **A storage tier** names a backend that must exist on the destination.
 
 The report states explicitly, in its `out_of_scope` list, what is not carried: scan results, vulnerability findings and SBOMs (the new instance scans what you import), the audit log, user sessions, API and CI tokens, user passwords and hashes, secrets (placeholders only), GPG, apk and nix signing keys, storage backend definitions and server configuration, proxy caches, the trash, and the built-in objects every instance has.
 
@@ -137,20 +172,3 @@ The report states explicitly, in its `out_of_scope` list, what is not carried: s
 - **Quarantined and blocked packages** cannot be downloaded from the source, so they fail with the source's error; release or delete them first.
 - **Scan results, audit log, sessions, tokens**: see the mapping report.
 - **Storage backends and server configuration** (environment, Helm values) are not managed through the API: configure 0.15 yourself.
-
-## Runbook: 0.14 to 0.15
-
-1. **Deploy 0.15 beside 0.14.** Give 0.15 its own database (a new, empty one) and its own URL. It may use the same object-storage bucket as 0.14, in which case the blob store's SHA-256 deduplication applies to content that is already stored. Do not point 0.15 at the 0.14 database. Create an admin token on each instance (`oa auth token create`): the configuration export reads users, permission targets and other admin-only objects from 0.14, and `oa apply` and the content import need `manage` on 0.15.
-2. **Configuration.** Run `oa import config openartifact` against 0.14, read `mapping-report.json` and the summary, add the missing secrets (export the `OA_*` environment variables named in the report, add proxy `upstream_password` values), then `oa apply -f DIR -R --validate-only` and `oa apply -f DIR -R` on 0.15. This creates the repositories (empty), users, groups, permission targets, projects, webhooks and the rest. Users are created without a password: set one with an admin password reset, or let them sign in through SSO.
-3. **Content, with a dry run first.**
-
-   ```sh
-   oa --server https://oa015.example.com --token "$OA_TOKEN" import openartifact \
-     --source-url https://oa014.example.com --source-token-file ~/.oa014-token \
-     --all --deb-distribution jammy,noble --dry-run
-   ```
-
-   Check the per-repository counts against what you expect, then run the same command without `--dry-run` and with `--state-file oa014.state`. Re-run it until it reports no failures; a re-run copies only what is missing. To keep 0.14 writable during the copy, run it once now and again just before the switch: the second run copies the delta.
-4. **Verify.** Compare the per-repository counts of the import (`--format json` `repositories[]`) with `oa repo packages` or the web UI of both instances, and the re-run summary (`uploaded: 0`). Pull a few artifacts of each format through a real client against 0.15. Check that proxy and group repositories resolve.
-5. **Switch clients and DNS.** Point DNS or the ingress at 0.15, update the clients that used a token or a signing key (tokens are new; apt, yum, apk and nix clients must trust the new repository keys). Stop publishing to 0.14 and run the import once more to take the last uploads.
-6. **Decommission 0.14.** Keep it read-only for as long as you need its audit log and scan history; when you stop, shut it down, drop its database and, if it did not share a bucket with 0.15, its bucket. Do not delete a shared bucket: 0.15 uses it.
