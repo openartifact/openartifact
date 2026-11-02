@@ -4120,11 +4120,11 @@ export type PostApiV1RepositoriesData = {
         description?: string;
         public?: boolean;
         /**
-         * hosted (default), proxy or group. Proxy repositories are supported for apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rubygems, sbt and terraform; group repositories for apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rubygems, sbt and terraform (apk, deb and rpm groups serve generated Release/Packages, repodata or APKINDEX merged across their members). Docker proxies and groups are served under /v2/ only. Other combinations are rejected with 400 validation_failed. Proxy and group repositories are read-only.
+         * hosted (default), proxy or group. Every format can be a proxy or a group repository. apk, deb, rpm and pacman groups serve generated Release/Packages, repodata, APKINDEX or database files merged across their members. Docker proxies and groups are served under /v2/ only. Proxy and group repositories are read-only.
          */
         repo_type?: 'hosted' | 'proxy' | 'group';
         /**
-         * Required for proxy repos, except cargo (defaults to https://index.crates.io), docker (defaults to https://registry-1.docker.io), go (defaults to https://proxy.golang.org), nuget (defaults to the service index https://api.nuget.org/v3/index.json) and pypi (defaults to https://pypi.org/simple). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy.
+         * Required for proxy repos, except for formats with a default upstream: ansible (https://galaxy.ansible.com), cargo (https://index.crates.io), composer (https://repo.packagist.org), conan (https://center2.conan.io), docker (https://registry-1.docker.io), go (https://proxy.golang.org), nix (https://cache.nixos.org), nuget (https://api.nuget.org/v3/index.json), pacman (https://geo.mirror.pkgbuild.com), pypi (https://pypi.org/simple), rubygems (https://rubygems.org) and terraform (https://registry.terraform.io). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy.
          */
         upstream_url?: string;
         upstream_username?: string;
