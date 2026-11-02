@@ -22,7 +22,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <template v-else>
       <section class="bg-surface rounded-xl border border-border p-5 space-y-4" :aria-label="t('adm.dt.global')">
-        <h3 class="text-sm font-semibold text-foreground">{{ t('adm.dt.global') }}</h3>
+        <h2 class="text-sm font-semibold text-foreground">{{ t('adm.dt.global') }}</h2>
 
         <div class="flex items-start gap-4">
           <AppToggle v-model="form.enabled" labelledby="dt-enable-label" class="mt-0.5" />

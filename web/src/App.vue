@@ -48,6 +48,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </footer>
     </div>
 
+    <RouteAnnouncer v-if="showShell" />
     <ToastHost />
     <TooltipHost />
     <!-- The palette is a separate chunk, requested the first time it opens. -->
@@ -62,6 +63,7 @@ import { useEventListener, useMediaQuery } from '@vueuse/core'
 import AppHeader from './components/AppHeader.vue'
 import AppSidebar from './components/AppSidebar.vue'
 import PoweredBy from './components/PoweredBy.vue'
+import RouteAnnouncer from './components/RouteAnnouncer.vue'
 import ToastBanner from './components/ToastBanner.vue'
 import ToastHost from './components/ToastHost.vue'
 import TooltipHost from './components/ui/TooltipHost.vue'

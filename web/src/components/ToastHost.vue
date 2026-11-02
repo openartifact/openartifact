@@ -14,19 +14,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <div
     class="pointer-events-none fixed inset-x-4 bottom-4 z-50 flex flex-col-reverse gap-2 md:inset-x-auto md:right-8 md:items-end"
     role="region"
-    aria-live="polite"
     :aria-label="t('shell.notifications')"
   >
-    <TransitionGroup
-      enter-active-class="transition-all duration-300 ease-out"
-      enter-from-class="opacity-0 translate-y-3"
-      enter-to-class="opacity-100 translate-y-0"
-      leave-active-class="transition-all duration-200 ease-in"
-      leave-from-class="opacity-100 translate-y-0"
-      leave-to-class="opacity-0 translate-y-3"
-    >
-      <ToastCard v-for="toast in toasts" :key="toast.id" :toast="toast" @run="run(toast)" @dismiss="toastStore.dismiss(toast.id)" />
-    </TransitionGroup>
+    <!-- Two live regions that exist before any toast does (a region added together with its text is not announced):
+         errors and warnings interrupt (assertive; not `role="alert"`, which would be a second alert on every page), the rest wait for the screen reader to finish (`status`). -->
+    <div class="flex flex-col-reverse gap-2 md:items-end" aria-live="assertive" aria-atomic="false" data-testid="toast-urgent">
+      <TransitionGroup v-bind="transition">
+        <ToastCard v-for="toast in urgent" :key="toast.id" :toast="toast" @run="run(toast)" @dismiss="toastStore.dismiss(toast.id)" @hold="toastStore.pause(toast.id)" @release="toastStore.resume(toast.id)" />
+      </TransitionGroup>
+    </div>
+    <div class="flex flex-col-reverse gap-2 md:items-end" role="status">
+      <TransitionGroup v-bind="transition">
+        <ToastCard v-for="toast in polite" :key="toast.id" :toast="toast" @run="run(toast)" @dismiss="toastStore.dismiss(toast.id)" @hold="toastStore.pause(toast.id)" @release="toastStore.resume(toast.id)" />
+      </TransitionGroup>
+    </div>
   </div>
 </template>
 
@@ -39,6 +40,17 @@ import { t } from '../i18n'
 
 const toastStore = useToastStore()
 const toasts = computed(() => toastStore.visible.filter((toast) => !isSticky(toast)))
+const urgent = computed(() => toasts.value.filter((toast) => toast.level === 'error' || toast.level === 'warning'))
+const polite = computed(() => toasts.value.filter((toast) => toast.level !== 'error' && toast.level !== 'warning'))
+
+const transition = {
+  enterActiveClass: 'transition-all duration-300 ease-out',
+  enterFromClass: 'opacity-0 translate-y-3',
+  enterToClass: 'opacity-100 translate-y-0',
+  leaveActiveClass: 'transition-all duration-200 ease-in',
+  leaveFromClass: 'opacity-100 translate-y-0',
+  leaveToClass: 'opacity-0 translate-y-3',
+}
 
 function run(toast: Toast): void {
   toastStore.dismiss(toast.id)

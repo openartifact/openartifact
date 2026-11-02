@@ -21,7 +21,7 @@ describe('LanguageSelect', () => {
   it('offers the browser default and every language by its own name', () => {
     const wrapper = mount(LanguageSelect)
     const options = wrapper.findAll('option').map((o) => o.text())
-    expect(options).toEqual(['Browser default', 'English', 'Italiano', 'Deutsch', 'Français', 'Español', 'Português (Brasil)', '简体中文', '日本語'])
+    expect(options).toEqual(['Browser default', 'English', 'Italiano', 'Deutsch', 'Français', 'Español', 'Português (Brasil)', '简体中文', '日本語', '한국어', 'Polski', 'Українська'])
   })
 
   it('applies the chosen language at once, saves it and updates html lang', async () => {

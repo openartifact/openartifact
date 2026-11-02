@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Translating the web UI
 
-The web UI is translated into Italian, German, French, Spanish, Brazilian Portuguese, Simplified Chinese and Japanese; English is the source. Corrections are welcome as pull requests. This page is for translators and for contributors who add or change UI text.
+The web UI is translated into Italian, German, French, Spanish, Brazilian Portuguese, Simplified Chinese, Japanese, Korean, Polish and Ukrainian; English is the source. Corrections are welcome as pull requests. This page is for translators and for contributors who add or change UI text.
 
 For what the language setting does for users, see [Language](../getting-started/language.md).
 
@@ -14,7 +14,7 @@ For what the language setting does for users, see [Language](../getting-started/
 
 ```text
 web/src/i18n/locales/en/*.json        source of truth, edited in code reviews
-web/src/i18n/locales/<tag>/*.json     translations, edited by pull request (it, de, fr, es, pt-BR, zh-Hans, ja)
+web/src/i18n/locales/<tag>/*.json     translations, edited by pull request (it, de, fr, es, pt-BR, zh-Hans, ja, ko, pl, uk)
 web/src/i18n/glossary/<tag>.csv       preferred terms per language, with the style guide in README.md
 web/src/i18n/areas.ts                 the list of catalog files
 web/scripts/i18n-check.ts             the check CI runs
@@ -22,7 +22,7 @@ web/scripts/i18n-missing.ts           lists the keys a language lacks (bun run i
 web/scripts/i18n-apply.ts             writes translations back into the catalogs (bun run i18n:apply)
 ```
 
-A catalog file is a flat JSON object of dotted keys to strings, split by area (`admin.json`, `repos.json`, ...). A message with a number has one entry per plural form, `<key>_one` and `<key>_other` (and `_zero`, `_two`, `_few`, `_many` for languages that distinguish them, in the [CLDR](https://cldr.unicode.org/) sense). Japanese and Simplified Chinese have only `_other`. Placeholders are `{name}`, filled by the code at runtime; keep them exactly as in the English text.
+A catalog file is a flat JSON object of dotted keys to strings, split by area (`admin.json`, `repos.json`, ...). A message with a number has one entry per plural form, `<key>_one` and `<key>_other` (and `_zero`, `_two`, `_few`, `_many` for languages that distinguish them, in the [CLDR](https://cldr.unicode.org/) sense). Japanese, Korean and Simplified Chinese have only `_other`; Polish and Ukrainian have `_one`, `_few`, `_many` and `_other` (`bun run i18n:check` does not ask for `_few`/`_many`, a unit test does). Placeholders are `{name}`, filled by the code at runtime; keep them exactly as in the English text.
 
 Never translate product names (OpenArtifact), package formats and tools (Docker, Maven, npm, ...), commands and flags, file names, paths, URLs or API field names. The "Powered by OpenArtifact" attribution is not in the catalogs at all.
 

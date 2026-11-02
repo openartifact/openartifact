@@ -11,7 +11,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     :data-state="variant"
   >
     <component :is="icon" class="mb-3 h-8 w-8" :class="iconClass" aria-hidden="true" />
-    <h3 class="text-base font-semibold text-foreground">{{ heading }}</h3>
+    <component :is="`h${level}`" class="text-base font-semibold text-foreground">{{ heading }}</component>
     <p v-if="body" class="mt-1 max-w-md text-sm text-muted">{{ body }}</p>
     <div
       v-if="command"
@@ -49,8 +49,13 @@ const props = withDefaults(
     hint?: string
     /** A command or config line that gets the user out of this state; rendered with a copy button. */
     command?: string
+    /**
+     * Heading level of the title. 2 follows a page's h1 without skipping a level; pass 3 when the block sits
+     * under an h2 section heading of its own.
+     */
+    level?: 2 | 3
   }>(),
-  { variant: 'empty', title: undefined, hint: undefined, command: undefined },
+  { variant: 'empty', title: undefined, hint: undefined, command: undefined, level: 2 },
 )
 
 const ICONS = {

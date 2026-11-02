@@ -41,7 +41,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Table card -->
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-4 py-3 border-b border-border flex items-center justify-between">
-        <h3 class="text-sm font-semibold tracking-tight">{{ t('adm.webhooks.listTitle') }}</h3>
+        <h2 class="text-sm font-semibold tracking-tight">{{ t('adm.webhooks.listTitle') }}</h2>
         <span class="text-caption font-mono text-muted">{{ webhooks.length }} {{ t('adm.common.total') }}</span>
       </div>
 

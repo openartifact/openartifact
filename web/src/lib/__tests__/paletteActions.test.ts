@@ -89,8 +89,8 @@ describe('permission predicates', () => {
 
   it('offers every language but the one that is already chosen', () => {
     const tags = (ctx: PaletteContext) => languageActions(ctx).map((a) => a.key.replace('change-language:', ''))
-    expect(tags(dev)).toEqual(['auto', 'it', 'de', 'fr', 'es', 'pt-BR', 'zh-Hans', 'ja'])
-    expect(tags({ ...dev, language: 'it' })).toEqual(['auto', 'en', 'de', 'fr', 'es', 'pt-BR', 'zh-Hans', 'ja'])
+    expect(tags(dev)).toEqual(['auto', 'it', 'de', 'fr', 'es', 'pt-BR', 'zh-Hans', 'ja', 'ko', 'pl', 'uk'])
+    expect(tags({ ...dev, language: 'it' })).toEqual(['auto', 'en', 'de', 'fr', 'es', 'pt-BR', 'zh-Hans', 'ja', 'ko', 'pl', 'uk'])
     expect(tags({ ...dev, language: 'auto' })).not.toContain('auto')
   })
 })

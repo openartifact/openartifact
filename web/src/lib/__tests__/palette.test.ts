@@ -172,7 +172,7 @@ describe('buildGroups', () => {
 
   it('finds a language by its name and leaves out the current one', () => {
     expect(titles('>italiano', 'actions')).toEqual(['Change language to Italiano'])
-    expect(titles('>language', 'actions')).toHaveLength(8)
+    expect(titles('>language', 'actions')).toHaveLength(10)
     expect(titles('>language', 'actions')).not.toContain('Change language to English')
     expect(titles('>language', 'actions', { ...admin, language: 'auto' })).not.toContain('Change language to the browser default')
     expect(titles('>', 'actions').some((x) => x.startsWith('Change language'))).toBe(false)

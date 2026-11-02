@@ -10,7 +10,7 @@ import EmptyState from '../EmptyState.vue'
 describe('EmptyState', () => {
   it('renders the title and description only by default', () => {
     const w = mount(EmptyState, { props: { title: 'Nothing here', description: 'Add one.' } })
-    expect(w.get('h3').text()).toBe('Nothing here')
+    expect(w.get('h2').text()).toBe('Nothing here')
     expect(w.text()).toContain('Add one.')
     expect(w.find('[data-testid="docs-link"]').exists()).toBe(false)
     expect(w.find('[data-testid="empty-snippet"]').exists()).toBe(false)
@@ -59,5 +59,11 @@ describe('EmptyState', () => {
     })
     expect(w.text()).toContain('Create')
     expect(w.get('[data-testid="docs-link"]').exists()).toBe(true)
+  })
+
+  // A heading level that jumps from the page's h1 to an h3 breaks the outline a screen reader navigates by.
+  it('is an h2 by default, so it follows the page h1, and an h3 under a section heading', () => {
+    expect(mount(EmptyState, { props: { title: 'Nothing here' } }).find('h3').exists()).toBe(false)
+    expect(mount(EmptyState, { props: { title: 'Nothing here', level: 3 } }).get('h3').text()).toBe('Nothing here')
   })
 })

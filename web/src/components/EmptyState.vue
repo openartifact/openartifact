@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div class="flex flex-col items-center justify-center py-16 px-4 text-center">
-    <h3 class="text-base font-semibold text-foreground mb-1">{{ title }}</h3>
+    <component :is="`h${level}`" class="text-base font-semibold text-foreground mb-1">{{ title }}</component>
     <p v-if="description" class="text-sm text-muted max-w-sm">{{ description }}</p>
     <code
       v-if="snippet"
@@ -24,7 +24,7 @@ import AppButton from './AppButton.vue'
 import DocsLink from './DocsLink.vue'
 import { t } from '../i18n'
 
-defineProps<{
+withDefaults(defineProps<{
   title: string
   description?: string
   actionLabel?: string
@@ -35,5 +35,7 @@ defineProps<{
   docsUrl?: string | null
   /** Link text; defaults to "Read the documentation". */
   docsLabel?: string
-}>()
+  /** Heading level of the title: 2 follows a page's h1 without skipping a level, 3 sits under a section's own h2. */
+  level?: 2 | 3
+}>(), { docsUrl: undefined, docsLabel: undefined, description: undefined, actionLabel: undefined, actionTo: undefined, snippet: undefined, level: 2 })
 </script>

@@ -119,6 +119,23 @@ describe('PackageUploadZone', () => {
     expect(bar(1).attributes('style')).toContain('width: 100%')
   })
 
+  // The bar is a coloured div: without a role and a value a screen reader cannot tell a stalled upload from a running one.
+  it('exposes each upload as a named progressbar with its percentage and status', async () => {
+    const wrapper = mountZone({ repo: 'r', format: 'deb' })
+    await pick(wrapper, new File(['aaaa'], 'a.deb'))
+    FakeXHR.all[0].progress(1, 4)
+    await flushPromises()
+    const bar = rows(wrapper)[0].get('[role="progressbar"]')
+    expect(bar.attributes('aria-valuenow')).toBe('25')
+    expect(bar.attributes('aria-valuemin')).toBe('0')
+    expect(bar.attributes('aria-valuemax')).toBe('100')
+    expect(bar.attributes('aria-valuetext')).toContain('25%')
+    const name = rows(wrapper)[0].get(`#${bar.attributes('aria-labelledby')}`)
+    expect(name.text()).toBe('a.deb')
+    // The cancel button says which file it cancels.
+    expect(rows(wrapper)[0].get('button').attributes('aria-describedby')).toBe(bar.attributes('aria-labelledby'))
+  })
+
   it('on success marks the entry complete, toasts the file name and emits uploaded once per file', async () => {
     const wrapper = mountZone({ repo: 'r', format: 'deb' })
     await pick(wrapper, new File(['a'], 'a.deb'), new File(['b'], 'b.deb'))

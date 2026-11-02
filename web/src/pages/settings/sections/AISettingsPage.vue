@@ -66,7 +66,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Provider Picker -->
         <div class="bg-surface rounded-xl border border-border p-5 space-y-3">
           <div>
-            <h3 class="text-sm font-semibold text-foreground">{{ t('adm.ai.provider') }}</h3>
+            <h2 class="text-sm font-semibold text-foreground">{{ t('adm.ai.provider') }}</h2>
             <p class="text-caption text-muted mt-0.5">{{ t('adm.ai.providerHint') }}</p>
           </div>
           <div class="grid grid-cols-2 gap-2" role="radiogroup" :aria-label="t('adm.ai.provider')">
@@ -110,7 +110,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Configuration Fields -->
         <div class="bg-surface rounded-xl border border-border p-5 space-y-4">
           <div>
-            <h3 class="text-sm font-semibold text-foreground">{{ t('adm.ai.configuration') }}</h3>
+            <h2 class="text-sm font-semibold text-foreground">{{ t('adm.ai.configuration') }}</h2>
             <p class="text-caption text-muted mt-0.5">{{ t('adm.ai.configurationHint') }}</p>
           </div>
 

@@ -31,7 +31,9 @@ CLDR) are plural forms of one message. Provide exactly the forms CLDR defines fo
 |---|---|
 | de | `one`, `other` |
 | it, es, fr, pt-BR | `one`, `other` (CLDR also defines `many` for round millions: omit it, `other` covers it) |
-| ja, zh-Hans | only `other`: no `_one` entry |
+| ja, ko, zh-Hans | only `other`: no `_one` entry |
+| pl | `one` (1), `few` (2-4, 22-24, ...), `many` (0, 5-21, 25-31, ...), `other` (fractions): provide all four |
+| uk | `one` (1, 21, 31, ...), `few` (2-4, 22-24, ...), `many` (0, 5-20, 25-30, ...), `other` (fractions): provide all four |
 
 In fr and pt-BR the `one` form also covers 0, so write the number as `{n}` there, never a literal "1".
 
@@ -46,6 +48,9 @@ In fr and pt-BR the `one` form also covers 0, so write the number as `{n}` there
 | pt-BR | "você", or impersonal | Brazilian spelling and vocabulary |
 | zh-Hans | no pronoun; "您" only when needed | full-width punctuation for Chinese sentences; a space between Chinese and Latin/digits is not needed |
 | ja | です・ます form | no spaces around Latin words unless the original has them; "サインイン" for sign in |
+| ko | 합쇼체/해요체 polite, impersonal for buttons ("만들기") | spaces between words as in standard Korean; "로그인" for sign in |
+| pl | impersonal infinitive nouns or imperatives ("Utwórz"); "Ty" never spelled out | sentence case; "Zaloguj się" for sign in |
+| uk | impersonal or imperative ("Створити") | sentence case; "Увійти" for sign in |
 
 Keep the register short: buttons and menu items are verbs or nouns, never sentences. Keep a translation about as
 long as the English where possible (labels sit in fixed-width columns); prefer a common short word.

@@ -31,11 +31,14 @@ describe('resolveLocale', () => {
   })
 
   it('takes the first preferred language that has a translation', () => {
-    expect(resolveLocale(['ko', 'fr-FR', 'de'])).toBe('fr')
+    expect(resolveLocale(['ru', 'fr-FR', 'de'])).toBe('fr')
+    expect(resolveLocale(['ko-KR'])).toBe('ko')
+    expect(resolveLocale(['pl-PL'])).toBe('pl')
+    expect(resolveLocale(['uk-UA'])).toBe('uk')
   })
 
   it('falls back to English for unknown, empty or malformed input', () => {
-    expect(resolveLocale(['ko', 'ru'])).toBe('en')
+    expect(resolveLocale(['ru', 'ar'])).toBe('en')
     expect(resolveLocale([])).toBe('en')
     expect(resolveLocale(undefined)).toBe('en')
     expect(resolveLocale(['', '!!', 'zh-@@'])).toBe('en')
@@ -49,7 +52,7 @@ describe('resolveLocale', () => {
 
 describe('locale tags', () => {
   it('knows exactly the supported tags', () => {
-    expect(SUPPORTED_LOCALES.map((l) => l.tag)).toEqual(['en', 'it', 'de', 'fr', 'es', 'pt-BR', 'zh-Hans', 'ja'])
+    expect(SUPPORTED_LOCALES.map((l) => l.tag)).toEqual(['en', 'it', 'de', 'fr', 'es', 'pt-BR', 'zh-Hans', 'ja', 'ko', 'pl', 'uk'])
     expect(isLocaleTag('pt-BR')).toBe(true)
     expect(isLocaleTag('pt')).toBe(false)
     expect(isLocaleTag(null)).toBe(false)

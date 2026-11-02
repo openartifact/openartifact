@@ -225,4 +225,56 @@ describe('useToastStore', () => {
       jest.useRealTimers()
     }
   })
+
+  // WCAG 2.2.1: a keyboard or pointer user who is on a toast must not lose it under their hands.
+  it('pause() stops the countdown and resume() restarts it in full', () => {
+    jest.useFakeTimers()
+    try {
+      const store = useToastStore()
+      const id = store.push({ level: 'info', title: 'Hold me', timeoutMs: 4000 })
+      jest.advanceTimersByTime(3000)
+      store.pause(id)
+      jest.advanceTimersByTime(60_000)
+      expect(store.queue).toHaveLength(1)
+
+      store.resume(id)
+      jest.advanceTimersByTime(3999)
+      expect(store.queue).toHaveLength(1)
+      jest.advanceTimersByTime(1)
+      expect(store.queue).toHaveLength(0)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  it('resume() of a toast that is gone or already counting does nothing', () => {
+    jest.useFakeTimers()
+    try {
+      const store = useToastStore()
+      const id = store.push({ level: 'info', title: 'Counting', timeoutMs: 4000 })
+      store.resume(id)
+      store.resume(9999)
+      jest.advanceTimersByTime(4000)
+      expect(store.queue).toHaveLength(0)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  it('keeps a toast with a button (Undo) up for at least 12 s, so the keyboard can reach it', () => {
+    jest.useFakeTimers()
+    try {
+      const store = useToastStore()
+      store.push({ level: 'success', title: 'Quarantined', action: { label: 'Undo', run: () => {} } })
+      jest.advanceTimersByTime(11_999)
+      expect(store.queue).toHaveLength(1)
+      jest.advanceTimersByTime(1)
+      expect(store.queue).toHaveLength(0)
+      // A sticky toast stays sticky, a plain one keeps its level default.
+      const sticky = store.push({ level: 'info', title: 'New version', timeoutMs: 0, action: { label: 'Reload', run: () => {} } })
+      expect(store.queue.find((t) => t.id === sticky)?.timeoutMs).toBe(0)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
 })

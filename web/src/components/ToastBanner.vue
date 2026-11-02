@@ -8,18 +8,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   The notifications that stay until dismissed (today: "New version available"). They take a row between the
   header and the page, right-aligned to the content gutter, and push the page down instead of covering it: a
   toast that is still there a minute later must not sit on the card the user is reading. The row exists only
-  while there is one. Timed toasts are floated by `ToastHost`.
+  while there is one, but the `status` wrapper around it is always rendered: a live region that arrives
+  together with its text is not announced. Timed toasts are floated by `ToastHost`.
 -->
 <template>
-  <div
-    v-if="toasts.length > 0"
-    class="shrink-0 border-b border-border bg-bg px-4 py-3 md:px-8"
-    role="region"
-    aria-live="polite"
-    :aria-label="t('shell.notifications')"
-  >
-    <div class="mx-auto flex max-w-[1400px] flex-col gap-2 md:items-end">
-      <ToastCard v-for="toast in toasts" :key="toast.id" :toast="toast" @run="run(toast)" @dismiss="toastStore.dismiss(toast.id)" />
+  <div role="status">
+    <div v-if="toasts.length > 0" class="shrink-0 border-b border-border bg-bg px-4 py-3 md:px-8" role="region" :aria-label="t('shell.notifications')">
+      <div class="mx-auto flex max-w-[1400px] flex-col gap-2 md:items-end">
+        <ToastCard v-for="toast in toasts" :key="toast.id" :toast="toast" @run="run(toast)" @dismiss="toastStore.dismiss(toast.id)" />
+      </div>
     </div>
   </div>
 </template>

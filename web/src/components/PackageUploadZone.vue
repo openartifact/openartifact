@@ -67,8 +67,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class="bg-bg border border-border rounded-md p-2 flex items-center gap-3"
       >
         <div class="flex-1 min-w-0">
-          <p class="text-sm text-foreground truncate">{{ entry.file.name }}</p>
-          <div class="h-1 bg-surface-hover rounded mt-1 overflow-hidden">
+          <p :id="`upload-file-${entry.id}`" class="text-sm text-foreground truncate">{{ entry.file.name }}</p>
+          <div
+            class="h-1 bg-surface-hover rounded mt-1 overflow-hidden"
+            role="progressbar"
+            :aria-labelledby="`upload-file-${entry.id}`"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            :aria-valuenow="percent(entry)"
+            :aria-valuetext="`${percent(entry)}%, ${statusLabel(entry.status)}`"
+          >
             <div
               class="h-full bg-primary"
               :style="{ width: `${percent(entry)}%` }"
@@ -82,7 +90,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <button
           v-if="entry.status === 'uploading' || entry.status === 'queued'"
           type="button"
-          class="text-xs text-danger hover:opacity-80"
+          class="text-xs text-danger hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
+          :aria-describedby="`upload-file-${entry.id}`"
           @click="upload.cancel(entry)"
         >
           {{ t('upload.cancel') }}
