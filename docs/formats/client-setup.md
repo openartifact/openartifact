@@ -10,4 +10,6 @@ Configure and publish commands for every client, for your own server URL and rep
 
 <ClientSnippets />
 
+An empty hosted repository shows the same publish and consume commands in its **Packages** tab, with a link to create the access token to publish with.
+
 On GitHub this page shows no snippets (they are rendered by the documentation site, <https://openartifact.github.io/>). Open a repository in the web UI to get the same commands, or read the per-format pages: [format matrix](README.md).

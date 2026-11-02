@@ -36,13 +36,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <template v-else-if="repo">
       <div class="mb-6 space-y-4">
         <ConnectClientPanel :format="repo.format" :repo="repo.name" :repo-type="repo.repo_type" :read-only="repo.repo_type === 'proxy' || repo.repo_type === 'group'" />
-        <PackageUploadZone v-if="canUpload && showUpload" :repo="repo.name" :format="repo.format" @uploaded="onUploaded" />
+        <PackageUploadZone v-if="canUpload && showUpload" id="repo-upload" :repo="repo.name" :format="repo.format" @uploaded="onUploaded" />
         <ProxySettingsCard v-if="repo.repo_type === 'proxy'" :repo="repo" @saved="(r) => (repo = r)" />
       </div>
 
       <AppTabs :key="repoName" :tabs="tabs" :label="t('repoDetail.tabs')">
         <template #panel-members><RepoMembersTab :repo="repo.name" /></template>
-        <template #panel-packages><RepoPackagesTab :key="uploads" :repo="repo" /></template>
+        <template #panel-packages><RepoPackagesTab :key="uploads" :repo="repo" :can-upload="canUpload" @upload="openUpload" /></template>
         <template #panel-activity><RepoActivityTab :repo="repo.name" :admin="repoAdmin" /></template>
         <template #panel-security><RepoSecurityTab :repo="repo.name" /></template>
         <template #panel-trash><TrashList :repo="repo.name" :permissions="repo.permissions" /></template>
@@ -53,7 +53,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowUpTrayIcon } from '@heroicons/vue/24/outline'
 import AppButton from '../components/AppButton.vue'
@@ -114,6 +114,12 @@ const tabs = computed<TabDef[]>(() => {
     { id: 'settings', label: t('rl.tab.settings'), hidden: !repoAdmin.value },
   ]
 })
+
+// The empty package list offers the same upload as the header button: open the zone and bring it into view.
+function openUpload(): void {
+  showUpload.value = true
+  void nextTick(() => document.getElementById('repo-upload')?.scrollIntoView?.({ block: 'center' }))
+}
 
 function onUploaded(): void {
   uploads.value++

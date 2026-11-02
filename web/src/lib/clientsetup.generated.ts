@@ -158,6 +158,19 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
       {
         client: 'go',
         configure: 'go env -w GOPROXY={{base}},direct\ngo env -w GONOSUMDB=*',
+        publish: 'curl -X PUT -H "Authorization: Bearer <TOKEN>" --data-binary @v1.0.0.zip {{base}}/example.com/mymod/@v/v1.0.0',
+      },
+    ],
+    proxy: [
+      {
+        client: 'go',
+        configure: 'go env -w GOPROXY={{base}},direct\ngo env -w GONOSUMDB=*',
+      },
+    ],
+    group: [
+      {
+        client: 'go',
+        configure: 'go env -w GOPROXY={{base}},direct\ngo env -w GONOSUMDB=*',
       },
     ],
   },
