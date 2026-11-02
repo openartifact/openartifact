@@ -324,6 +324,16 @@ func cacheCases() []cacheCase {
 // newCacheFixture serves one format behind RBAC. The repository is public or
 // private; anonymous read of private repositories is off, as in a default
 // deployment.
+// repoFormat is the format of the case's repository: npm routes answer npm repositories only,
+// the other handlers do not look at it.
+func (c cacheCase) repoFormat() string {
+	if strings.HasPrefix(c.name, "npm") {
+		return "npm"
+	}
+
+	return "generic"
+}
+
 func newCacheFixture(t *testing.T, c cacheCase, public bool) cacheFixture {
 	t.Helper()
 
@@ -331,7 +341,7 @@ func newCacheFixture(t *testing.T, c cacheCase, public bool) cacheFixture {
 
 	_, cookieValue := setupMWUser(t, db.MockDatabase)
 
-	repo := &models.Repository{ID: "repo-1", Name: "r", Format: "generic", Public: public, RepoType: "hosted"}
+	repo := &models.Repository{ID: "repo-1", Name: "r", Format: c.repoFormat(), Public: public, RepoType: "hosted"}
 	if err := db.CreateRepository(context.Background(), repo); err != nil {
 		t.Fatalf("CreateRepository: %v", err)
 	}
