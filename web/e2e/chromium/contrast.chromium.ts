@@ -6,6 +6,7 @@ import { describe, expect } from 'bun:test'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { FORMAT_IDS } from '../../src/lib/formats.generated'
 import { contrastViolations } from '../lib/a11y'
 import { testAs, type Role } from '../lib/browser'
 import { freeze, painted, toastAtRest } from '../lib/visual'
@@ -238,7 +239,7 @@ for (const theme of ['light', 'dark'] as const) {
         })
       })
 
-      expect(rows).toHaveLength(22)
+      expect(rows).toHaveLength(FORMAT_IDS.length)
       const weak = rows.filter((r) => r.ratio < 3).map((r) => `${r.name}: ${r.ratio.toFixed(2)}:1`)
       expect(weak, `icons under 3:1 on the badge in the ${theme} theme`).toEqual([])
       expect(rows.filter((r) => r.name === '' || !r.drawn).map((r) => r.name || '(no label)')).toEqual([])
