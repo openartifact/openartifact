@@ -6,16 +6,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Cargo
 
-Cargo registry (hosted, proxy or group) with a sparse index, `config.json`, crate download, publish, yank/unyank and search.
+Use a Cargo repository as a private crate registry with a sparse index: `cargo publish` uploads to it and `cargo` resolves and downloads crates from it. A proxy mirrors crates.io (or another sparse registry), and a group merges hosted and proxy repositories.
 
-| | |
+| Item | Value |
 |---|---|
-| Repo URL | `HOST/repos/REPO/` (sparse index at `HOST/repos/REPO/index/`) |
-| Repository types | hosted, proxy, group. See [hosted, proxy, group](../repositories/hosted-proxy-group.md) |
+| Registry URL | `sparse+HOST/repos/REPO/index/` |
+| Format id | `cargo` |
+| Repository types | hosted, proxy, group |
+| Default upstream (proxy) | `https://index.crates.io` |
 
 ## Client setup
 
-`internal/clientsetup` produces:
+Create an API token as described in [authentication](../security/authentication.md). The web UI connect panel shows the same commands with your own URL.
 
 ```toml
 # ~/.cargo/config.toml
@@ -24,74 +26,136 @@ index = "sparse+HOST/repos/REPO/index/"
 token = "Bearer <TOKEN>"
 ```
 
+Cargo sends `token` verbatim as the `Authorization` header, so the value carries the `Bearer ` prefix. The server accepts `Authorization: Bearer <TOKEN>`, or Basic with the token as the password. A bare token without a prefix is not accepted.
+
+Cargo reads `config.json` from the root of the index it is given, `HOST/repos/REPO/index/config.json`.
+
+A private repository, proxy or group sets `"auth-required": true` in `config.json`. Cargo then sends the token with every request (index, download, search) instead of only after a `401`. A public repository is read anonymously and the key is absent.
+
+## Publish
+
 ```sh
 cargo publish --registry REPO
 ```
 
-The server accepts `Authorization: Bearer <TOKEN>` or Basic with the token as password; there is no bare-token form. Cargo sends `token` verbatim as the header value, so it carries the `Bearer ` prefix. See [authentication](../security/authentication.md).
+The body is the standard Cargo publish payload: a 32-bit little-endian metadata length, the metadata JSON, a 32-bit little-endian crate length, then the `.crate` bytes. The server validates the metadata before it stores anything. An invalid payload answers `400` with `{"errors":[{"detail":"..."}]}`, the shape cargo prints.
 
-## Proxy and group repositories
+- `name` starts with an ASCII letter or `_`, continues with ASCII letters, digits, `-` and `_`, and has at most 64 characters.
+- `vers` is a full SemVer 2.0 version (`MAJOR.MINOR.PATCH`, optional `-pre-release` and `+build`) of at most 100 characters.
 
-- **Proxy:** mirrors a sparse registry (default `https://index.crates.io`). Replace crates.io with it in `~/.cargo/config.toml`, or use it as an alternative registry:
+Success is `200` with `{"warnings": []}`.
 
-  ```toml
-  [source.crates-io]
-  replace-with = "oa"
+A version is published once. A second publish of an existing `name` and `vers` answers `409` with the same JSON error shape. Build metadata is ignored, so `1.0.0+a` equals `1.0.0`. The server decides this from the metadata alone, before it reads the crate part. If two publishes of one version run at the same time, the loser gets `409`, never `500`.
 
-  [source.oa]
-  registry = "sparse+HOST/repos/PROXY/index/"
-  ```
+Publishing a name that differs from an existing crate only in case is refused with `409`.
 
-  `config.json` is generated (`dl`/`api` point at the proxy); index files are cached with the repository TTL and served stale when the upstream is down; crate files are fetched from the upstream's `dl` template, verified against the index `cksum` and cached immutably. Publishing to a proxy is `405`. See [cargo proxies](../repositories/hosted-proxy-group.md#cargo-proxies).
-- **Group:** an ordered list of hosted and proxy cargo members behind one index URL. Index files are merged (union by version, first member wins), crates come from the first member that has them. Publishing to a group is `405`: publish to a hosted member and read through the group. See [group repositories](../repositories/hosted-proxy-group.md#group-repositories).
+The declared lengths are capped at 1 MiB for the metadata and 128 MiB for the crate; larger answers `413`. A body shorter than declared is `400`. The server does not reserve the declared length up front.
 
-**Minimum age:** with `min_age_hours` set on the proxy, an index entry whose `pubtime` (the publish time the sparse index states per version, RFC 3339) is younger than that is left out of the index file the proxy serves, and its `.crate` answers `403` unless it is already cached; a crate none of whose versions is old enough is `404`. An entry without a `pubtime` (an upstream or version that does not state one) is not held back. Cargo has no "latest" pointer in the index, so nothing else moves: it resolves to the newest remaining version that satisfies the requirement. A version pinned in a `Cargo.lock` that is hidden cannot be fetched until it is old enough. The `ETag` of the index changes with the threshold and, every 5 minutes, with the clock, so a version that has aged enough appears without a stale `304`. A group with the proxy as a member merges only what the proxy lists. See [Minimum age](../repositories/hosted-proxy-group.md#minimum-age).
+The server stores `description`, `homepage`, `documentation`, `repository`, `license`, `readme`, `keywords`, `categories`, `authors`, and the raw JSON (`deps`, `features`, `links`). The SHA-256 of the crate is the index `cksum`. Each index line carries `name`, `vers`, `deps`, `cksum`, `features`, `yanked`, `links`.
 
-**Curation:** a proxy repository can also hold back crates and versions by administrator rules, see [package curation](../repositories/hosted-proxy-group.md#package-curation). Rules name a crate lower-cased with `_` as `-` (`serde-json`) and a version as the index shows it; a matching version is left out of the index file like a too-young one (with no `pubtime` needed) and its `.crate` answers `403` even when it is already cached.
+The [storage quota](../repositories/cleanup-and-quotas.md#what-counts) applies on publish (`507` over quota). A yanked crate keeps counting.
 
-Private proxies and groups work like private hosted repositories: `config.json` carries `"auth-required": true` and cargo needs the token (`token = "Bearer <TOKEN>"`, see above).
+<a id="yank"></a>
 
-## Endpoints
+### Yank and unyank
 
-Relative to `HOST/repos/REPO`:
+```sh
+cargo yank --registry REPO --version 1.0.0 CRATE
+cargo yank --registry REPO --version 1.0.0 --undo CRATE
+```
+
+Yank sets `"yanked": true` in the index entry, so new dependency resolution skips the version. The `.crate` stays downloadable, so a `Cargo.lock` that already pins the version keeps building. Unyank clears the flag.
+
+## Install and consume
+
+Add a dependency with `registry = "REPO"`, or use the repository in place of crates.io (see [Proxy](#proxy)). Paths are relative to `HOST/repos/REPO`.
 
 | Method and path | Purpose |
 |---|---|
-| `GET /index/config.json` (also `GET /config.json`) | `{"dl": ".../repos/REPO/api/v1/crates", "api": ".../repos/REPO"}`, absolute URLs on the request origin (or `BASE_URL` when set), because `dl` is a URL template and cargo does not resolve it against anything; the response has an `ETag` and `Cache-Control` of 300 s; a private repository adds `"auth-required": true` |
-| `GET /index/<crate>`, `/index/<p1>/<crate>`, `/index/<p1>/<p2>/<crate>` | sparse index entry, newline-delimited JSON |
+| `GET /index/config.json` (also `GET /config.json`) | Registry configuration with `dl` and `api` |
+| `GET /index/<crate>`, `/index/<p1>/<crate>`, `/index/<p1>/<p2>/<crate>` | Sparse index entry, newline-delimited JSON |
 | `GET /api/v1/crates/<crate>/<version>/download` | `.crate` file; yanked versions are served too |
-| `PUT /api/v1/crates/new` | publish |
-| `DELETE /api/v1/crates/<crate>/<version>/yank` | yank |
-| `PUT /api/v1/crates/<crate>/<version>/unyank` | unyank |
-| `GET /api/v1/crates?q=&per_page=` | search, one entry per crate |
+| `PUT /api/v1/crates/new` | Publish |
+| `DELETE /api/v1/crates/<crate>/<version>/yank` | Yank |
+| `PUT /api/v1/crates/<crate>/<version>/unyank` | Unyank |
+| `GET /api/v1/crates?q=&per_page=` | Search, one entry per crate |
 
-Cargo reads `config.json` from the root of the index it was given (`HOST/repos/REPO/index/config.json`).
+`config.json` has the form `{"dl": ".../repos/REPO/api/v1/crates", "api": ".../repos/REPO"}`. Both URLs are absolute, on the request origin or on `BASE_URL` when it is set, because `dl` is a URL template that cargo does not resolve against anything.
 
-## Private repositories
+### Crate names
 
-`config.json` of a private repository carries `"auth-required": true`, which makes cargo send the registry token with every request (index, download, search) instead of only after a `401`. A public repository is read anonymously and the key is absent.
+Crate names are case-insensitive, as on crates.io. Cargo lower-cases them in index paths and download URLs, and lookups compare them case-insensitively. A crate published as `Demo-Crate` is found as `demo-crate`. The index entry keeps the name as published.
 
-## Crate names
+### Search
 
-Crate names are case-insensitive, as on crates.io: cargo lowercases them in index paths and download URLs, and lookups here compare them case-insensitively, so `Demo-Crate` published once is found as `demo-crate`. The index entry keeps the name as published. Publishing a name that differs from an existing crate only in case is refused (`409`).
+`GET /api/v1/crates?q=<text>&per_page=<1..100, default 10>` matches the crate name or description (substring, case-insensitive). It returns one entry per crate, ordered by name:
 
-## Yank
+- `name`
+- `max_version`: the highest non-yanked stable version, else the highest non-yanked pre-release, else (everything yanked) the highest version, by SemVer precedence
+- `description` of the newest version
+- `downloads`, summed over all versions
 
-Yank sets `"yanked": true` in the index entry so that new dependency resolution skips the version; the `.crate` stays downloadable, so a `Cargo.lock` that already pins it keeps building. Unyank clears the flag.
+`meta.total` is the number of crates that match the query, not the number in the page.
 
-## Search
+## Proxy
 
-`GET /api/v1/crates?q=<text>&per_page=<1..100, default 10>` matches crate name or description (substring, case-insensitive) and returns one entry per crate, ordered by name: `name`, `max_version`, `description` (of the newest version) and `downloads` (summed over all versions). `max_version` is the highest non-yanked stable version, else the highest non-yanked pre-release, else (everything yanked) the highest version, by SemVer precedence. `meta.total` is the number of crates matching the query, not the number returned in the page.
+Create a proxy with `repo_type: "proxy"`. Without `upstream_url` the default is `https://index.crates.io`. A cargo proxy is a sparse registry, not a path mirror. Point cargo at it with `sparse+HOST/repos/REPO/index/`, or replace the crates.io source:
 
-## Publish and metadata
+```toml
+# ~/.cargo/config.toml
+[source.crates-io]
+replace-with = "oa"
 
-The body is the standard Cargo publish payload: u32-LE metadata length, metadata JSON, u32-LE crate length, `.crate` bytes. The JSON needs string `name` and `vers`, validated before anything is stored (else `400` with `{"errors":[{"detail":"..."}]}`, the shape cargo prints):
+[source.oa]
+registry = "sparse+HOST/repos/REPO/index/"
+```
 
-- `name` starts with an ASCII letter or `_`, continues with ASCII letters, digits, `-` and `_`, and is at most 64 characters.
-- `vers` is a full SemVer 2.0 version (`MAJOR.MINOR.PATCH`, optional `-pre-release` and `+build`), at most 100 characters.
+- **`config.json`** is generated and never fetched from the upstream. `dl` and `api` point at the proxy.
+- **Index files** use the usual `1/`, `2/`, `3/<c>/` and `<ab>/<cd>/` lower-case layout. The server fetches them from the upstream and checks that they are well-formed newline-delimited JSON. An HTML error page served with `200` is `502` and is not cached.
+- **Index caching.** Index files are cached with the repository TTL and served stale when the upstream is down. The server answers `If-None-Match` with `304`. A path that does not follow the layout is `404` without an upstream request.
+- **Crate files** are fetched from the URL the upstream's own `config.json` `dl` template yields. The server first checks that the version is listed in the crate's index file. A version it does not list is `404` and is never fetched.
+- **Crate check.** The bytes must match the SHA-256 `cksum` of the index entry, or the server refuses them with `502` and does not cache them. Cached crate files never change. Yanked versions stay downloadable, as upstream.
+- **Credentials.** Upstream Basic credentials go only to the configured upstream host, never to the host a `dl` template points at. Registries that need cargo's bare-token `Authorization` header are not supported as upstreams.
+- **Writes.** `cargo publish`, `yank` and `unyank` answer `405` (`Allow: GET, HEAD`). `cargo search` is not proxied (`404`).
+- **Upstream down.** Builds keep working from the cache. Cached crates are always served. An index file is served stale (`Warning: 110`) for up to `max_stale_seconds` past its expiry. A crate never requested before answers `502`.
 
-A version is published once: a second publish of an existing `name`/`vers` (build metadata ignored, so `1.0.0+a` equals `1.0.0`) answers `409` with the same JSON error shape. This is decided from the metadata alone, before the crate part is read. Two concurrent publishes of one version also end in `409` for the loser, never `500`. The [storage quota](../repositories/cleanup-and-quotas.md#what-counts) is enforced on publish (`507` over quota); a yanked crate keeps counting.
+### Minimum age and curation
 
-The declared lengths are capped at 1 MiB for the metadata and 128 MiB for the crate (`413` above). The server does not allocate the declared length up front: buffers grow as bytes arrive, and a body shorter than declared is a `400`.
+Rules and `min_age_hours` follow [Minimum age](../repositories/hosted-proxy-group.md#minimum-age) and [Package curation](../repositories/hosted-proxy-group.md#package-curation). The format-specific parts:
 
-Stored: `description`, `homepage`, `documentation`, `repository`, `license`, `readme`, `keywords`, `categories`, `authors`, plus the raw JSON (`deps`, `features`, `links`). The sha256 of the crate is the index `cksum`. Each index line carries `name`, `vers`, `deps`, `cksum`, `features`, `yanked`, `links`. Success is `200` with `{"warnings": []}`.
+- **Names.** Rules name a crate lower-cased with `_` as `-` (`serde-json`) and a version as the index shows it.
+- **Minimum age date.** The server uses `pubtime` of the index entry (RFC 3339). An entry without a `pubtime` is not held back.
+- **Hidden version.** The entry leaves the index file. Its `.crate` answers `403`. A cached crate is still served when only the minimum age hides it. Curation refuses it even when cached.
+- **Hidden crate.** A crate none of whose versions is old enough, or allowed, answers `404`.
+- **Resolution.** The index has no "latest" pointer, so cargo resolves to the newest remaining version that satisfies the requirement. A version pinned in a `Cargo.lock` cannot be fetched while it is hidden.
+- **Freshness.** The `ETag` of the index changes with the threshold, and with the clock every 5 minutes. A version that has aged enough appears without a stale `304`.
+
+## Group
+
+A group puts hosted and cargo proxy repositories behind one index URL. Clients use `sparse+HOST/repos/GROUP/index/`.
+
+- **`config.json`** is the group's own. `dl` and `api` point at the group.
+- **Index files** are merged across the readable hosted and proxy members. The union of versions is listed, ignoring build metadata when comparing. The earliest member wins a version that several members list. Every other line stays untouched.
+- **Crate downloads** come from the member whose index entry won the merge.
+- **Hosted members win a crate name.** If a readable hosted member holds a crate, its index file lists only hosted versions and `.crate` downloads come only from hosted members. Setting `merge_proxy_versions` to `true` turns this off. See [hosted members win a package name](../repositories/hosted-proxy-group.md#hosted-members-win-a-package-name).
+- **Failing members.** A member that fails while another contributes is ignored. With no contributor the group answers `404`, or `502` if a member failed or served something that is not an index file.
+- **Minimum age and curation.** A group lists and serves what its proxy members serve, so hidden versions stay hidden.
+- **Writes.** Publishing to a group is `405`. Publish to a hosted member and read through the group.
+
+## Limits and behaviour
+
+- **Publish limits:** 1 MiB metadata, 128 MiB crate (`413` above).
+- **Caching:** the sparse index is served with `Cache-Control: public, max-age=60` for anonymous reads of a public repository, `private, no-cache` otherwise. `config.json` follows the same rule with `max-age=300`. Both carry an `ETag`.
+- **Status codes:** `400` invalid publish payload, `409` existing version or case-only name clash, `413` too large, `507` over quota.
+- **Yank:** the `.crate` stays downloadable.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `401` on publish or index fetch | The token is missing or has no `Bearer ` prefix. | Set `token = "Bearer <TOKEN>"` in `~/.cargo/config.toml`. |
+| `409` on publish | The version exists, or the name differs from an existing crate only in case. | Publish a new version. |
+| `502` from a proxy for an index file | The upstream returned something that is not an index. | Check `upstream_url`. |
+| `502` from a proxy for a crate | The download did not match the index `cksum`. | Retry; if it persists the upstream is serving a different file. |
+| `403` for a crate on a proxy | Minimum age or curation hides the version. | Wait until it is old enough, or change the rules. |
+| `405` on publish | The repository is a proxy or group. | Publish to a hosted repository. |

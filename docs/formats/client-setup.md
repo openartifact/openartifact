@@ -6,10 +6,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Client setup
 
-Configure and publish commands for every client, for your own server URL and repository name. The snippets come from `internal/clientsetup`, which the web UI's connect panel for a repository renders (through the templates generated into `web/src/lib/clientsetup.generated.ts`), so this page and the UI show the same commands. Credentials are always the placeholder `<TOKEN>`: create an API token as described in [authentication](../security/authentication.md).
+Copy the commands that configure a client and publish a package, filled in with your own server URL and repository name. The web UI's connect panel for a repository shows the same commands.
+
+Credentials are always the placeholder `<TOKEN>`. [Create an API token](../security/authentication.md) and put it in its place.
 
 <ClientSnippets />
 
-An empty hosted repository shows the same publish and consume commands in its **Packages** tab, with a link to create the access token to publish with.
+An empty hosted repository shows the same publish and consume commands in its **Packages** tab, with a link to create the access token.
 
-On GitHub this page shows no snippets (they are rendered by the documentation site, <https://openartifact.github.io/>). Open a repository in the web UI to get the same commands, or read the per-format pages: [format matrix](README.md).
+On GitHub this page shows no snippets, because the documentation site <https://openartifact.github.io/> renders them. On GitHub, open a repository in the web UI or read the per-format pages in the [format matrix](README.md).

@@ -6,28 +6,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Composer (PHP)
 
-Private Composer repository: Composer installs from an OpenArtifact repository through `packages.json` and the Composer repository v2 metadata (`p2/`), and packages are published as dist zips. Proxy repositories mirror `repo.packagist.org` (or any Composer repository v2), and group repositories merge hosted and proxy repositories.
+Use a Composer repository as a private PHP package registry: Composer installs from it through `packages.json` and the Composer repository v2 metadata (`p2/`), and you publish packages as dist zips. A proxy mirrors `repo.packagist.org` (or any Composer repository v2), and a group merges hosted and proxy repositories.
 
-| | |
+| Item | Value |
 |---|---|
-| Format id | `composer` |
 | Repository URL | `HOST/repos/REPO` (Composer reads `HOST/repos/REPO/packages.json`) |
-| Repository types | hosted, proxy (default upstream `https://repo.packagist.org`) and group |
+| Format id | `composer` |
+| Repository types | hosted, proxy, group |
+| Default upstream (proxy) | `https://repo.packagist.org` |
 
-## Overview
+A repository stores one dist zip per package version. A package is identified by its lower-case `vendor/name`, taken from the `name` field of the `composer.json` inside the zip. Permissions, quota, [trash](../operations/trash.md), webhooks and [cleanup](../repositories/cleanup-and-quotas.md) work as for any other format.
 
-A repository of format `composer` stores one dist zip per package version. A package is identified by its lowercase `vendor/name`, taken from the `name` field of the `composer.json` inside the zip. Permissions, quota, [trash](../operations/trash.md), webhooks and [cleanup](../repositories/cleanup-and-quotas.md) apply as for any other format. Create the repository in the web UI (format **Composer**) or with `format: composer` through the API or CLI, see [repositories](../repositories/hosted-proxy-group.md).
+Scope:
 
-## Supported scope
-
-- **Composer repository v2:** `packages.json`, `p2/VENDOR/NAME.json` (stable versions) and `p2/VENDOR/NAME~dev.json` (dev versions), `list.json` and `search.json`.
-- **Dist only.** Every version has a `dist` of type `zip`; there is no `source` (VCS) entry.
-- **Proxy and group repositories** are described [below](#proxy-repositories). A proxy and a group serve `packages.json` and `p2/` only: `list.json`, `search.json` and the upload routes answer `404`.
-- **Out of scope:** `security-advisories` and `providers-api` are not served, and the legacy Composer 1 `provider-includes` layout is not proxied.
+- Composer repository v2: `packages.json`, `p2/VENDOR/NAME.json` (stable versions), `p2/VENDOR/NAME~dev.json` (dev versions), `list.json` and `search.json`.
+- Dist only. Every version has a `dist` of type `zip`; there is no `source` (VCS) entry.
+- Not served: `security-advisories` and `providers-api`. The legacy Composer 1 `provider-includes` layout is not proxied.
 
 ## Client setup
 
-`internal/clientsetup` produces the same snippets the web UI shows. Create an API token as described in [authentication](../security/authentication.md). Composer sends credentials as HTTP Basic, with the token as the password; the user name is not checked, so use `token`. Read access installs, write access publishes. A public repository (or `allowAnonymousRead`) is read without credentials.
+Create an API token as described in [authentication](../security/authentication.md). Composer sends credentials as HTTP Basic with the token as the password. The server does not check the user name, so use `token`. Read access installs, write access publishes. A public repository, or a server with `allowAnonymousRead`, is read without credentials. The web UI connect panel shows the same commands with your own URL.
 
 `composer.json`:
 
@@ -39,49 +37,72 @@ A repository of format `composer` stores one dist zip per package version. A pac
 }
 ```
 
-or from the command line:
+From the command line:
 
 ```sh
 composer config repositories.openartifact composer https://HOST/repos/REPO
-composer config http-basic.HOST token TOKEN
+composer config http-basic.HOST token <TOKEN>
 composer require VENDOR/NAME
 ```
 
-`HOST` in `http-basic.HOST` is the host name, followed by `:PORT` when the repository URL names a port (Composer matches credentials on both). The same credentials can live in `auth.json`:
+`HOST` in `http-basic.HOST` is the host name, followed by `:PORT` when the repository URL names a port. Composer matches credentials on both. The same credentials can live in `auth.json`:
 
 ```json
 {
   "http-basic": {
-    "HOST": {"username": "token", "password": "TOKEN"}
+    "HOST": {"username": "token", "password": "<TOKEN>"}
   }
 }
 ```
 
-Composer refuses plain `http` repositories unless you run `composer config secure-http false`; prefer HTTPS. The web UI adds that line for a plain-http server.
-
-## Publish and delete
-
-Upload the dist zip, the package's `composer.json` at the archive root or in its single top-level directory (the layout `git archive` and `composer archive` produce), with a raw `PUT` body:
-
-```sh
-curl -T vendor-name-1.0.0.zip -H "Authorization: Bearer TOKEN" \
-  https://HOST/repos/REPO/packages/upload/VENDOR/NAME/1.0.0
-```
-
-`Authorization: Basic` with the token as the password works too. Delete a version with `DELETE` on the same path:
-
-```sh
-curl -X DELETE -H "Authorization: Bearer TOKEN" \
-  https://HOST/repos/REPO/packages/upload/VENDOR/NAME/1.0.0
-```
-
-The CLI publishes through the same endpoint: `oa upload REPO vendor-name-1.0.0.zip --version 1.0.0` ([CLI](../integrations/cli.md)). `vendor/name` is read from the zip's `composer.json`; the version from its `version` field, or from `--version` (which wins) when there is none, as is usual for a package that is versioned by its VCS tags. The web UI's upload zone asks for `vendor/name` and the version and sends the zip with the same raw `PUT`. Only the raw `PUT` is supported, not a multipart form.
-
-## Tokens and RBAC
+Composer refuses plain `http` repositories unless you run `composer config secure-http false`. Prefer HTTPS. The web UI adds that line for a plain-http server.
 
 Requests under `/repos/REPO/` map to `read` (GET and HEAD) and `write` (PUT and DELETE) on the repository; see [RBAC](../security/rbac.md).
 
-## API endpoints
+## Publish
+
+Upload the dist zip with a raw `PUT` body. The zip holds the package's `composer.json` at the archive root or in its single top-level directory, the layout that `git archive` and `composer archive` produce.
+
+```sh
+curl -T vendor-name-1.0.0.zip -H "Authorization: Bearer <TOKEN>" \
+  https://HOST/repos/REPO/packages/upload/VENDOR/NAME/1.0.0
+```
+
+`Authorization: Basic` with the token as the password works too. Only the raw `PUT` is supported, not a multipart form.
+
+Other ways to publish:
+
+- CLI: `oa upload REPO vendor-name-1.0.0.zip --version 1.0.0` ([CLI](../integrations/cli.md)). The CLI reads `vendor/name` from the zip's `composer.json`. It reads the version from the `version` field, or from `--version`, which wins. A package versioned by VCS tags has no `version` field.
+- Web UI: the upload zone asks for `vendor/name` and the version, then sends the zip with the same raw `PUT`.
+
+Delete a version with `DELETE` on the same path:
+
+```sh
+curl -X DELETE -H "Authorization: Bearer <TOKEN>" \
+  https://HOST/repos/REPO/packages/upload/VENDOR/NAME/1.0.0
+```
+
+A rejected upload answers `400` (or `409` for a duplicate) and nothing is stored.
+
+- `composer.json` is present and valid JSON. Its `name` equals the `VENDOR/NAME` of the URL (case-insensitive, stored lower case).
+- The version in the URL is a valid Composer version. A `version` field in `composer.json` normalises to the same version as the URL's.
+- The server reads only `composer.json` from the zip, at most 4 MiB, and extracts nothing. An archive with an unreasonable number of entries is refused.
+- The `license` of `composer.json` (a string or a list of SPDX ids) is checked against the repository's license policy.
+- Versions are immutable. Publishing an existing version answers `409`; delete it first to replace it.
+
+The zip is limited to 500 MiB; a larger upload answers `413`.
+
+### Versions
+
+Versions are normalised like Composer's `VersionParser`. `v1.2.3` becomes `1.2.3.0`. A branch such as `dev-main` stays as it is. `1.x-dev` becomes `1.9999999.9999999.9999999-dev`. The server keeps the version as published for display and for the `version` field of the metadata. The normalised form is the identity, so `1.0.0` and `v1.0` are the same version.
+
+The metadata is split by stability, as Composer expects. `p2/VENDOR/NAME.json` lists stable and pre-release versions. `p2/VENDOR/NAME~dev.json` lists dev versions.
+
+## Install and consume
+
+```sh
+composer require VENDOR/NAME
+```
 
 All paths are relative to `HOST/repos/REPO`.
 
@@ -96,55 +117,78 @@ All paths are relative to `HOST/repos/REPO`.
 | `DELETE /packages/upload/VENDOR/NAME/VERSION` | Delete a version (moved to the trash) |
 | `GET /dists/VENDOR/NAME/VERSION/REF.zip` | Download; `REF` is the SHA-256 of the zip and VERSION is path-escaped |
 
-## Versions
+Metadata points each version at `HOST/repos/REPO/dists/VENDOR/NAME/VERSION/REF.zip` with `type: zip` and the SHA-1 `shasum` set, so Composer verifies the download.
 
-Versions are normalised like Composer's `VersionParser`: `v1.2.3` becomes `1.2.3.0`, a branch such as `dev-main` stays as it is and `1.x-dev` becomes `1.9999999.9999999.9999999-dev`. The version as published is kept for display and for the `version` field of the metadata; the normalised form is the identity, so `1.0.0` and `v1.0` are the same version. The metadata is split by stability: `p2/VENDOR/NAME.json` lists the stable and pre-release versions, `p2/VENDOR/NAME~dev.json` the dev versions, as Composer expects.
+The version `dist.url`, the publish response URL and the search hit URL are absolute URLs on the request origin, because Composer does not resolve a relative `dist.url`. An explicit `BASE_URL` always wins. The root fields of `packages.json` (`metadata-url`, `list`, `search`) are path-absolute (`/repos/REPO/...`), which Composer resolves against the repository origin. Under a path prefix, set `BASE_URL`: the server uses only its path for those fields.
 
-## Validation on publish
+<a id="proxy-repositories"></a>
 
-A rejected upload answers `400` (or `409` for a duplicate) and nothing is stored.
+## Proxy
 
-- **`composer.json`** must be present, valid JSON, and its `name` must equal the `VENDOR/NAME` of the URL (case-insensitive; stored lowercase).
-- **Version** in the URL must be a valid Composer version. A `version` field in `composer.json` must normalise to the same version as the URL's.
-- **Archive limits:** only `composer.json` is read from the zip (at most 4 MiB, nothing is extracted), and an archive with an unreasonable number of entries is refused.
-- **Size limit** is 500 MiB; larger uploads answer `413`.
-- **License policy and quota** apply: the `license` of `composer.json` (a string or a list of SPDX ids) is checked against the repository's license policy.
-- **Versions are immutable.** Publishing a version that exists answers `409`; delete it first to replace it.
+Create a proxy with `repo_type: "proxy"`. Without `upstream_url` the default is `https://repo.packagist.org`. For a private Packagist, Satis or Private Packagist, set `upstream_url` to an instance that serves `p2/`. Clients use the same `HOST/repos/REPO` URL and `composer.json` as for a hosted repository. A proxy is read-only, so there is no publish. To use it instead of Packagist, add `"packagist.org": false` to the project's `repositories`.
 
-## Dist URL layout
+A proxy and a group serve `packages.json` and `p2/` only. `list.json`, `search.json` and the upload routes answer `404`.
 
-Metadata points each version at `HOST/repos/REPO/dists/VENDOR/NAME/VERSION/REF.zip` with `type: zip` and `shasum` (SHA-1) set, so Composer verifies the download. The version `dist.url`, the publish response url and the search hit url are absolute URLs on the request origin (Composer does not resolve a relative `dist.url`); an explicit `BASE_URL` always wins. The root fields of `packages.json` (`metadata-url`, `list`, `search`) are path-absolute (`/repos/REPO/...`), which Composer resolves against the repository origin. Under a path prefix, set `BASE_URL`: only its path is used for those fields.
-
-## Deletion and trash
-
-`DELETE` on a version is a soft delete: the version moves to the [trash](../operations/trash.md) (kind `composer`) and can be restored until it is purged.
-
-## Quotas
-
-The [storage quota](../repositories/cleanup-and-quotas.md#what-counts) is reserved before a package is stored and released on every failure. Each package version is one artifact.
-
-## Proxy repositories
-
-A proxy repository mirrors a Composer repository v2 (default `https://repo.packagist.org`; set `upstreamUrl` for a private Packagist, Satis or Private Packagist instance that serves `p2/`). Clients use the same `HOST/repos/REPO` URL and `composer.json` as for a hosted repository; a proxy is read-only, so there is no publish. To use it instead of Packagist, add `"packagist.org": false` to the project's `repositories`.
-
-- **`packages.json`** is generated by OpenArtifact: it names the proxy's own `metadata-url` and nothing else. It has no `available-packages` (an upstream cannot be enumerated), and `list.json` and `search.json` answer `404`: Packagist serves them from another host than its metadata.
-- **Metadata** (`p2/VENDOR/NAME.json`, `p2/VENDOR/NAME~dev.json`) is fetched from the upstream and cached verbatim with the repository's TTL; stale entries are served when the upstream is down, as for other proxies. Each request renders the cached document: it is expanded from Composer's minified form, the `dist.url` of every version is rewritten to `HOST/repos/REPO/dists/VENDOR/NAME/VERSION/REF.zip` and it is minified again. `source`, `dist.reference`, `dist.shasum` and everything else stay as the upstream published them, so Composer still verifies `shasum` end to end. Metadata is served with an `ETag` and answers `304` to `If-None-Match`; the `ETag` of the `packages.json` root depends only on the blob key and the path prefix. The rewritten `dist.url` is built at serve time from the request origin (or `BASE_URL`), never stored in the cache. Object keys inside a version are emitted in sorted order; arrays keep theirs.
-- **Dists.** A dist is fetched from the URL the cached metadata publishes for that version, never from a URL the client sent: `REF` in the path is a digest of that URL and the dist reference, so a path the metadata does not publish answers `404`. The URL passes the same outbound validation as webhooks (no loopback, private or link-local addresses), and redirects (GitHub's `zipball` redirects to `codeload.github.com`) are followed only through the SSRF-safe client and are validated at every hop. The zip is cached content-addressed, once however many versions or repositories point at it. When the upstream publishes a non-empty `shasum`, the download must match that SHA-1 or it is refused with `502` and not cached (Packagist publishes none for most packages, where the commit `reference` vouches for the dist). Dists of released versions are immutable; dists of branches (`dev-main`, `1.x-dev`) follow the repository TTL because a branch moves. Quarantine applies to cached dists.
-- **Credentials** (`upstreamUsername`/`upstreamPassword`) are sent to the origin of `upstreamUrl` only, **never** to the host a dist is downloaded from (`api.github.com`, `codeload.github.com`, GitLab, Bitbucket and so on). A private Packagist keeps its dists on its own origin and is authenticated; dists of private GitHub repositories are not reachable through a proxy, since no token is sent to GitHub.
+- **`packages.json`** is generated by OpenArtifact. It names the proxy's own `metadata-url` and nothing else. It has no `available-packages` because an upstream cannot be enumerated. Packagist serves `list.json` and `search.json` from another host than its metadata, so those answer `404` here.
+- **Metadata** is fetched from the upstream and cached unchanged for the repository TTL. The server serves stale entries when the upstream is down. On each request it rewrites the `dist.url` of every version to `HOST/repos/REPO/dists/VENDOR/NAME/VERSION/REF.zip`. `source`, `dist.reference`, `dist.shasum` and everything else stay as the upstream published them, so Composer still verifies `shasum` end to end.
+- **Metadata caching.** The server serves metadata with an `ETag` and answers `304` to `If-None-Match`. The server builds the rewritten `dist.url` from the request origin (or `BASE_URL`) when it answers and never stores it. The `ETag` of the `packages.json` root depends only on the path prefix and the cached document.
+- **Dists.** The server fetches a dist from the URL the cached metadata publishes for that version, never from a URL the client sent. `REF` in the path identifies that URL and the dist reference. A path the metadata does not publish answers `404`.
+- **Dist URLs.** A dist URL must pass the same outbound check as webhooks: no loopback, private or link-local addresses. The server follows redirects (GitHub's `zipball` redirects to `codeload.github.com`) and checks every hop.
+- **Dist cache.** The zip is cached once, however many versions or repositories point at it.
+- **Dist check.** When the upstream publishes a non-empty `shasum`, the download must match that SHA-1, or the server refuses it with `502` and does not cache it. Packagist publishes none for most packages; the commit `reference` vouches for the dist there.
+- **Dist freshness.** Dists of released versions never change. Dists of branches (`dev-main`, `1.x-dev`) follow the repository TTL because a branch moves.
+- **Quarantine** applies to cached dists.
+- **Credentials.** `upstreamUsername` and `upstreamPassword` go to the origin of `upstreamUrl` only. They never go to the host a dist is downloaded from (`api.github.com`, `codeload.github.com`, GitLab, Bitbucket). A private Packagist keeps its dists on its own origin and works. Dists of private GitHub repositories are not reachable through a proxy.
 - **Dists that are not zips** (`tar`, `rar`, `gzip`) lose their `dist`, so Composer installs that version from its `source` (`git clone`).
-- **Minimum age:** with `min_age_hours` set on the proxy, a version whose `time` in the upstream p2 document is younger than that is left out of what the proxy serves, and a download of its dist answers `403` unless the dist is already cached. The check runs on the expanded version entries, so a version that only inherits its `time` from the previous entry of the minified upstream document is dated by the inherited value; the document is minified again afterwards. Dev versions (branches, in the `~dev` document) are dated by their `time` too, so a branch with a recent commit is hidden until that commit is old enough. A version without a `time` is not held back. Composer has no "latest" pointer, so nothing else moves; a package whose versions are all too new answers `404`, as a package the upstream does not list. The `ETag` of a rendered document changes with the threshold and, every 5 minutes, with the clock, so a version that has aged enough appears without a stale `304`. A group that has the proxy as a member reads the proxy's rendering, so it does not list or serve the hidden versions either. See [Minimum age](../repositories/hosted-proxy-group.md#minimum-age).
-- **Curation:** a proxy repository can also hold back packages and versions by administrator rules, see [package curation](../repositories/hosted-proxy-group.md#package-curation). Rules name the package as `vendor/name` (lower case) and the version as the p2 document shows it (`1.2.3`, `v1.2.3`, `dev-main`). A matching version is left out of the p2 document like a too-young one (with no `time` needed) and its dist answers `403` with the reason even when it is already cached. A matching allow rule also exempts a version from the minimum age.
-- A package or version the upstream does not list answers `404`. Responses larger than 64 MiB for one document are refused.
+- **Unknown packages.** A package or version the upstream does not list answers `404`. The server refuses a single document larger than 64 MiB.
 
-`composer require` through a proxy: the first install fills the cache; later installs, including with the upstream unreachable, are served from it (expired metadata is served stale for `maxStaleSeconds`, see [cache TTLs](../repositories/hosted-proxy-group.md#cache-ttls)).
+After the first install fills the cache, later installs are served from it, including with the upstream unreachable. Expired metadata is served stale for `maxStaleSeconds`; see [cache TTLs](../repositories/hosted-proxy-group.md#cache-ttls).
 
-## Group repositories
+### Minimum age and curation
 
-A group merges hosted and proxy repositories of format `composer`, served at its own `HOST/repos/GROUP` with links to itself.
+Rules and `min_age_hours` follow [Minimum age](../repositories/hosted-proxy-group.md#minimum-age) and [Package curation](../repositories/hosted-proxy-group.md#package-curation). The format-specific parts:
 
-- **`packages.json`** is the group's own, with its `metadata-url`. It lists `available-packages` (the union of the members' lists, sorted) only when every member is hosted: Composer treats that list as complete, which a proxy cannot guarantee.
-- **Versions** of a package are merged across the members in order, keyed by normalized version: an earlier member wins a duplicate version, so a private `1.0.0` is never replaced by a public one. Stable and `~dev` documents are merged separately, as Composer asks for them separately.
-- **Dists** are linked to the group. A download is asked of the members in order and only the member that published that version has a dist with that reference, so it is served by the member whose version was listed. `source` blocks are kept as the member published them.
-- **Hosted wins.** Unless the group enables merging proxy versions, a package that a readable hosted member holds (stable or dev versions) is served from the hosted members only, so a public package cannot shadow a private one (dependency confusion). See [proxy and group rules](../repositories/hosted-proxy-group.md#hosted-members-win-a-package-name).
-- A member failing while another contributes is ignored, but the partial document is served with `Cache-Control: no-store` and no `ETag`; when only failing members could have the package the group answers `502` (not `404`). `list.json` and `search.json` are not merged and answer `404`.
-- Quota, publish and delete apply to hosted repositories only; a group is read-only.
+- **Names.** Rules name a package as lower-case `vendor/name` and a version as the p2 document shows it (`1.2.3`, `v1.2.3`, `dev-main`).
+- **Minimum age date.** The server uses `time` of the version in the p2 document. A version that only inherits its `time` from the previous entry of the upstream's compact document is dated by the inherited value. A version without a `time` is not held back.
+- **Dev versions.** They are dated by `time` too. A branch with a recent commit stays hidden until that commit is old enough.
+- **Hidden version.** It leaves the p2 document. Its dist answers `403` with the reason. A cached dist is still served when only the minimum age hides it. Curation refuses it even when cached.
+- **Hidden package.** A package whose versions are all hidden answers `404`, as a package the upstream does not list.
+- **Allow rules.** A matching allow rule exempts a version from the minimum age.
+- **Freshness.** The `ETag` of a rendered document changes with the threshold, and with the clock every 5 minutes. A version that has aged enough appears without a stale `304`.
+
+<a id="group-repositories"></a>
+
+## Group
+
+A group merges hosted and proxy `composer` repositories. It is served at `HOST/repos/GROUP`, with links to itself.
+
+- **`packages.json`** is the group's own, with its `metadata-url`. It lists `available-packages` (the union of the members' lists, sorted) only when every member is hosted. Composer treats that list as complete, which a proxy cannot guarantee.
+- **Versions** of a package are merged across the members in order, keyed by normalised version. An earlier member wins a duplicate version, so a private `1.0.0` is never replaced by a public one.
+- **Stable and dev documents** (`NAME.json` and `NAME~dev.json`) are merged separately, because Composer asks for them separately.
+- **Dists** are linked to the group. A download is asked of the members in order. Only the member that published that version has a dist with that reference, so the member whose version was listed serves it. `source` blocks stay as the member published them.
+- **Hosted members win a package name.** If a readable hosted member holds a package (stable or dev versions), only hosted members serve it, so a public package cannot shadow a private one. A hosted package with only dev versions hides the proxy's stable versions too. Setting `merge_proxy_versions` to `true` turns this off. See [hosted members win a package name](../repositories/hosted-proxy-group.md#hosted-members-win-a-package-name).
+- **Failing members.** A member that fails while another contributes is ignored. The server then serves the partial document with `Cache-Control: no-store` and no `ETag`. When only failing members could have the package, the group answers `502`, not `404`.
+- **Minimum age and curation.** A group reads the proxy's rendering, so it does not list or serve hidden versions.
+- **Not merged.** `list.json` and `search.json` answer `404`.
+- A group is read-only. Quota, publish and delete apply to hosted repositories only.
+
+## Limits and behaviour
+
+- **Zip size:** 500 MiB (`413` above).
+- **`composer.json` inside the zip:** at most 4 MiB.
+- **Caching:** metadata is served with `Cache-Control: public, max-age=60` for anonymous reads of a public repository, `private, no-cache` otherwise. Dists use the same rule with `max-age=3600`.
+- **Delete:** `DELETE` on a version is a soft delete. The version moves to the [trash](../operations/trash.md) (kind `composer`) and can be restored until it is purged.
+- **Quota:** the [storage quota](../repositories/cleanup-and-quotas.md#what-counts) is reserved before a package is stored and released on every failure. Each package version is one artifact.
+- **Status codes:** `400` invalid upload, `409` existing version, `413` too large.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `409` on publish | The version exists. | Delete it first, or publish a new version. |
+| `400` on publish | `composer.json` is missing, its `name` differs from the URL, or the version is invalid. | Check the zip layout and the URL. |
+| Composer refuses the repository | The URL is plain `http`. | Use HTTPS or run `composer config secure-http false`. |
+| `401` | The token is missing. | Set `http-basic` with user `token` and your token. |
+| `404` for `list.json` or `search.json` | The repository is a proxy or group. | Use `composer require` or `composer show` instead. |
+| `403` for a dist on a proxy | Minimum age or curation hides the version. | Wait until it is old enough, or change the rules. |
+| `502` for a dist on a proxy | The download did not match the upstream `shasum`. | Retry; if it persists the upstream serves a different file. |

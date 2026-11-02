@@ -6,7 +6,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Package formats
 
-OpenArtifact serves many package formats natively, each on the URL its client expects, behind one permission model.
+OpenArtifact serves many package formats natively, each on the URL its client expects, behind one permission model. Use this page to find the URL, the upload command and the page for your format.
+
+Start here:
+
+1. [Install the server and create your first repository](../getting-started/installation.md).
+2. [Create an API token](../security/authentication.md) for your client.
+3. Open the page of your format in the matrix below, or copy ready-made commands from [client setup](client-setup.md).
+4. To mirror a public registry or combine repositories, see [hosted, proxy and group repositories](../repositories/hosted-proxy-group.md).
 
 ## URL conventions
 
@@ -15,11 +22,14 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 - Every repository is served under `/repos/REPO/...`.
 - Ivy, Maven, raw and sbt are served under a format prefix: `/repos/ivy/REPO`, `/repos/maven/REPO`, `/repos/raw/REPO`, `/repos/sbt/REPO`. Repositories named like these prefixes are not reachable by the generic URL.
 - Docker / OCI is the exception: the registry API is at `HOST/v2/`, and the first path segment after `/v2/` is the repository name ([details](docker.md)).
-- `BASE_URL` (`baseUrl`) is optional for package clients. Helm, PyPI and Terraform metadata use relative references and need no host; npm, Cargo, NuGet, Conan 1.x, Composer `dist.url` and Ansible use the origin of the request (`Host`, or `X-Forwarded-Host`/`X-Forwarded-Proto` from a trusted proxy), and `BASE_URL` overrides it when set. Per protocol: [the public URL](../getting-started/installation.md#the-public-url-and-base_url).
+- `BASE_URL` (`baseUrl`) is optional for package clients. Set it when the server sits behind a proxy that does not forward the original host.
+  - Helm, PyPI and Terraform metadata use relative references and need no host.
+  - npm, Cargo, NuGet, Conan 1.x, Composer `dist.url` and Ansible use the origin of the request (`Host`, or `X-Forwarded-Host` and `X-Forwarded-Proto` from a trusted proxy). `BASE_URL` overrides it when set.
+  - Details: [the public URL](../getting-started/installation.md#the-public-url-and-base_url).
 
 ## Format matrix
 
-`Format id` is the `format` value used when creating a repository. Hosted repositories support upload for every format; proxy and group are limited as shown (details: [hosted, proxy, group](../repositories/hosted-proxy-group.md)).
+`Format id` is the `format` value you use when creating a repository. Every format can be a hosted, proxy or group repository (see [hosted, proxy, group](../repositories/hosted-proxy-group.md)). The Upload column shows how you publish to a hosted repository.
 
 | Format | Format id | Client URL | Types | Upload | Page |
 |---|---|---|---|---|---|
@@ -63,19 +73,19 @@ The *Upload* button on a hosted repository (users with write permission) sends t
 | Go | none | module path and version from the first entry of the module zip |
 | APK, Debian, RPM, pacman | branch/repo/arch (apk), architecture (pacman) | the package |
 
-Not available in the browser: Cargo (`cargo publish` computes the dependency metadata the registry stores), Conan, Docker, Ivy and sbt (many files in a client-specific layout), and Nix (`nix copy` pushes the NAR and `.narinfo`; the page shows the command). Use the clients above for those. Several files can be dropped at once; each shows progress and can be cancelled.
+Not available in the browser:
 
-Arch Linux (pacman) is uploaded with a `PUT` of the package file to `HOST/repos/REPO/os/<arch>/<file>`; its `.db`/`.files` databases are generated. A pacman proxy mirrors an Arch mirror root ([details](pacman.md#proxy)).
+- Cargo: `cargo publish` computes the dependency metadata the registry stores.
+- Conan, Docker, Ivy and sbt: many files in a client-specific layout.
+- Nix: `nix copy` pushes the NAR and `.narinfo`; the page shows the command.
 
-Nix is published with `nix copy --to`, which uploads the NAR and then its `.narinfo`; `.narinfo` files are signed when served with the repository's ed25519 key ([details](nix.md)). A Nix proxy mirrors a binary cache (default `https://cache.nixos.org`) and a Nix group serves hosted members first ([proxy](nix.md#proxy), [group](nix.md#group)).
+Use the clients in the matrix for those. You can drop several files at once; each shows progress and can be cancelled.
 
-Ansible collections are published with `ansible-galaxy collection publish` to the Galaxy API v3 under `HOST/repos/REPO/api/`; proxy repositories mirror `galaxy.ansible.com` and groups merge them ([details](ansible.md)).
+Debian and RPM have no upload route under `/repos/REPO/`. Upload them through the REST endpoints under `/api/v1/repositories/REPO/`. A `POST` or `PUT` to `HOST/repos/REPO/upload` of such a repository answers `404` and names the endpoint to use.
 
-Composer packages are uploaded with a `PUT` of the dist zip to `HOST/repos/REPO/packages/upload/VENDOR/NAME/VERSION`; Composer reads them through `packages.json` and the `p2/` metadata. Proxy repositories mirror `repo.packagist.org` and groups merge them ([details](composer.md)).
+## Proxy and group repositories
 
-Debian and RPM have no upload route under `/repos/REPO/`: they are uploaded through the REST endpoints under `/api/v1/repositories/REPO/`. `POST` or `PUT` to `HOST/repos/REPO/upload` of such a repository answers `404` and names the endpoint to use.
-
-Proxy repositories exist for these formats (Cargo, Debian, Docker, Go, Helm, Ivy, Maven, npm, NuGet, PyPI, raw, RPM, RubyGems and sbt); group repositories for the same formats. Creating any other combination is rejected with `400 validation_failed`. Proxy and group repositories are read-only: writes answer `405`.
+Every format in the matrix can be a proxy or a group repository. Proxy and group repositories are read-only: writes answer `405`. Each format page has a Proxy and a Group section with the format-specific behaviour.
 
 ## Authentication
 
@@ -91,4 +101,4 @@ Read requests map to the `read` action and writes (`PUT`, `POST`, `PATCH`, `DELE
 - Uploads emit `artifact.uploaded` and deletes `artifact.deleted` webhook events ([webhooks](../operations/webhooks.md)).
 - Storage quotas are enforced on upload for every hosted format; proxy caches are not metered ([quotas](../repositories/cleanup-and-quotas.md#what-counts)).
 - A repository with a [license policy](../security/scanning.md#blocking-licenses) whose action is `block` rejects an upload whose declared license is denied (`403`, code `LICENSE_BLOCKED`). The license is read from the package metadata; Conan, Go, Terraform and raw uploads carry none and are not checked.
-- [Client setup](client-setup.md) renders the snippets for every client with your own server URL and repository name. Client snippets in the web UI and in the MCP `repository` tool come from [`internal/clientsetup`](../../internal/clientsetup/clientsetup.go) (the web UI renders the same text from the templates generated into `web/src/lib/clientsetup.generated.ts`). Where this documentation differs from those snippets (Go format id), the page says so.
+- [Client setup](client-setup.md) renders the snippets for every client with your own server URL and repository name. The web UI and the MCP `repository` tool show the same snippets.
