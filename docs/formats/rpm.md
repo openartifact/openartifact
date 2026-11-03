@@ -69,7 +69,7 @@ Clients read the generated metadata, relative to `HOST/repos/REPO`:
 | Path | Notes |
 |---|---|
 | `repodata/repomd.xml` | index of the files below |
-| `repodata/<checksum>-primary.xml.gz` / `.xz`, `-filelists`, `-other` | one gzip and one xz copy of each |
+| `repodata/<checksum>-primary.xml.gz`, `-filelists`, `-other` | one gzip file of each, as listed in `repomd.xml` |
 | `repodata/comps.xml` | only after a comps upload |
 | `repodata/repomd.xml.asc`, `public.key` | only with signing enabled |
 | `Packages/<file>.rpm` | package download (`application/x-rpm`); honours quarantine |
