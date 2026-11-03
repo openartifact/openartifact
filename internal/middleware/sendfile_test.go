@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync/atomic"
 	"testing"
 
@@ -110,6 +111,7 @@ func TestArtifactDownloadReachesSendfile(t *testing.T) {
 
 		// A text type: an artifact must stay byte-exact, never encoded.
 		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Content-Length", strconv.Itoa(len(want)))
 
 		_, _ = iocopy.Copy(w, rc)
 	})
