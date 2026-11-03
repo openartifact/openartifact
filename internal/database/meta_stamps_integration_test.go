@@ -88,6 +88,8 @@ func TestMetadataStamps(t *testing.T) {
 				return v
 			}
 		}
+		var lastID string
+
 		add := func(id, version string) {
 			p := &models.NuGetPackage{
 				RepositoryID: s.repo, PackageID: id, Version: version, BlobKey: langSHA("nuget" + id + version),
@@ -96,6 +98,8 @@ func TestMetadataStamps(t *testing.T) {
 			if err := pg.CreateNuGetPackage(ctx, p); err != nil {
 				t.Fatal(err)
 			}
+
+			lastID = p.ID
 		}
 
 		demo := stamp("Demo")
@@ -110,7 +114,10 @@ func TestMetadataStamps(t *testing.T) {
 			t.Errorf("another package's stamp moved: %q -> %q", other, got)
 		}
 
-		if err := pg.IncrementNuGetDownloadCount(ctx, s.repo, "demo", "1.1.0"); err != nil {
+		// Downloads are not part of what the stamp names.
+		pg.CountFileDownload(lastID)
+
+		if err := pg.FlushDownloadCounts(ctx); err != nil {
 			t.Fatal(err)
 		}
 
@@ -259,7 +266,9 @@ func TestMetadataStamps(t *testing.T) {
 		}
 
 		// Counting a download is not a change of any document.
-		if err := pg.q.IncrementFileDownloads(ctx, second.ID); err != nil {
+		pg.CountFileDownload(second.ID)
+
+		if err := pg.FlushDownloadCounts(ctx); err != nil {
 			t.Fatal(err)
 		}
 
