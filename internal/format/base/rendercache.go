@@ -240,7 +240,7 @@ func (c *RenderCache) Do(ctx context.Context, key string, render func(ctx contex
 		return r, nil
 	}
 
-	v, err, _ := c.flight.Do(key, func() (any, error) {
+	ch := c.flight.DoChan(key, func() (any, error) {
 		if r, ok := c.Get(key); ok {
 			return r, nil
 		}
@@ -258,13 +258,21 @@ func (c *RenderCache) Do(ctx context.Context, key string, render func(ctx contex
 
 		return r, nil
 	})
-	if err != nil {
-		return nil, err //nolint:wrapcheck // the render error is returned unchanged
+
+	// The render outlives a caller that gives up (others may wait on it), but
+	// that caller does not wait for it.
+	select {
+	case <-ctx.Done():
+		return nil, context.Cause(ctx)
+	case res := <-ch:
+		if res.Err != nil {
+			return nil, res.Err //nolint:wrapcheck // the render error is returned unchanged
+		}
+
+		r, _ := res.Val.(*Rendered)
+
+		return r, nil
 	}
-
-	r, _ := v.(*Rendered)
-
-	return r, nil
 }
 
 func (c *RenderCache) put(key string, r *Rendered) {

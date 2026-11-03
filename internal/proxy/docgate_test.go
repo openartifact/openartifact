@@ -24,6 +24,8 @@ func assertDocGateBounds(t *testing.T, f *fixture, path string) {
 		t.Fatalf("priming %s: status %d: %s", path, w.Code, w.Body.String())
 	}
 
+	f.svc.forgetRenderings() // the primed rendering is cached: this test is about rendering it
+
 	f.svc.packuments = base.NewGate(1)
 	if err := f.svc.packuments.Acquire(t.Context()); err != nil {
 		t.Fatal(err)
@@ -73,3 +75,7 @@ func TestNuGetProxy_DocumentRenderWaitsForASlot(t *testing.T) {
 	assertDocGateBounds(t, f, "v3/registration/lib.a/index.json")
 	assertDocGateBounds(t, f, "v3/package/lib.a/index.json")
 }
+
+// forgetRenderings makes every cached rendering unreachable for s, so the next
+// request renders again from the cached upstream document.
+func (s *Service) forgetRenderings() { s.renderID = renderIDs.Add(1) }

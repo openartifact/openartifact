@@ -272,8 +272,8 @@ func (e renderFailure) Unwrap() error { return e.err }
 // validator covers the cached blob and everything the render hook depends on
 // (see renderedDoc.etag); the repository, the document and the content type the
 // cached copy was stored with qualify it.
-func renderKey(repo *models.Repository, d metaDoc, etag, contentType string) string {
-	return "proxy\x00" + repo.ID + "\x00" + d.key + "\x00" + etag + "\x00" + contentType
+func (s *Service) renderKey(repo *models.Repository, d metaDoc, etag, contentType string) string {
+	return "proxy\x00" + strconv.FormatUint(s.renderID, 10) + "\x00" + repo.ID + "\x00" + d.key + "\x00" + etag + "\x00" + contentType
 }
 
 // serveRendered answers a request for rd: it resolves the cached document,
@@ -305,7 +305,7 @@ func (s *Service) serveRendered(w http.ResponseWriter, r *http.Request, repo *mo
 		return
 	}
 
-	rendered, err := base.MergedRendered(r.Context(), renderKey(repo, rd.metaDoc, etag, res.entry.ContentType),
+	rendered, err := base.MergedRendered(r.Context(), s.renderKey(repo, rd.metaDoc, etag, res.entry.ContentType),
 		func(ctx context.Context) (*base.Rendered, error) { return s.renderDoc(ctx, repo, rd, res) })
 	if err != nil {
 		var failed renderFailure
