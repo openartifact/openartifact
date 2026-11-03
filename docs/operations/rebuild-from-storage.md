@@ -26,8 +26,8 @@ Sidecars go through the same blob store stack as every other blob, so they are t
 |---|---|---|---|
 | `recovery.journal.enabled` | `OPENARTIFACT_RECOVERY_JOURNAL_ENABLED` | `true` | Write sidecars. Disabling stops the worker and makes the triggers a no-op; re-enabling queues a full resync. |
 | `recovery.journal.interval` | `OPENARTIFACT_RECOVERY_JOURNAL_INTERVAL` | `10s` | Pause between passes. This is the journal lag, hence the recovery point objective of a rebuild. |
-| `recovery.journal.batch` | `OPENARTIFACT_RECOVERY_JOURNAL_BATCH` | `200` | Dirty keys claimed per step. |
-| `recovery.journal.concurrency` | `OPENARTIFACT_RECOVERY_JOURNAL_CONCURRENCY` | `4` | Parallel sidecar writes. |
+| `recovery.journal.batch` | `OPENARTIFACT_RECOVERY_JOURNAL_BATCH` | `400` | Dirty keys claimed per step. |
+| `recovery.journal.concurrency` | `OPENARTIFACT_RECOVERY_JOURNAL_CONCURRENCY` | `32` | Parallel sidecar writes. |
 | `recovery.journal.reconcileInterval` | `OPENARTIFACT_RECOVERY_JOURNAL_RECONCILE_INTERVAL` | `24h` | How often the full consistency scan restarts. |
 
 ## Cost

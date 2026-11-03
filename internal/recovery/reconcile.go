@@ -7,7 +7,6 @@ package recovery
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -61,15 +60,18 @@ func (j *Journal) ReconcileStep(ctx context.Context, budget int) (ReconcileResul
 		return res, nil
 	}
 
+	states, err := j.reconcileStates(ctx)
+	if err != nil {
+		return res, err
+	}
+
+	now := j.now()
+
 	for i := range j.reg.tables {
 		t := &j.reg.tables[i]
+		st := states[t.Name]
 
-		st, due, err := j.reconcileDue(ctx, t)
-		if err != nil {
-			return res, err
-		}
-
-		if !due {
+		if !j.reconcileDue(st, now) {
 			continue
 		}
 
@@ -85,48 +87,107 @@ func (j *Journal) ReconcileStep(ctx context.Context, budget int) (ReconcileResul
 
 	res.Idle = true
 
-	j.finishReconcileIfIdle(ctx)
+	j.finishReconcileIfIdle(ctx, states)
 
 	return res, nil
 }
 
 // finishReconcileIfIdle stamps recovery_state.last_reconcile_at once every
-// table has completed at least one pass.
-func (j *Journal) finishReconcileIfIdle(ctx context.Context) {
-	_, _ = j.db.ExecContext(ctx, `
+// table has completed at least one pass. states are the tables' states as
+// ReconcileStep read them; the UPDATE only runs when the newest completion
+// differs from what this process stamped last, so an idle journal does not
+// issue it every pass.
+func (j *Journal) finishReconcileIfIdle(ctx context.Context, states map[string]reconcileState) {
+	var latest time.Time
+
+	for i := range j.reg.tables {
+		st := states[j.reg.tables[i].Name]
+		if !st.lastCompleted.Valid {
+			return
+		}
+
+		if st.lastCompleted.Time.After(latest) {
+			latest = st.lastCompleted.Time
+		}
+	}
+
+	if j.stampedReconcile.Load() == latest.UnixMicro() {
+		return
+	}
+
+	_, err := j.db.ExecContext(ctx, `
 		UPDATE recovery_state SET last_reconcile_at = (SELECT max(last_completed_at) FROM recovery_reconcile)
 		WHERE id AND (SELECT count(*) FROM recovery_reconcile WHERE last_completed_at IS NOT NULL) >= $1
 		  AND last_reconcile_at IS DISTINCT FROM (SELECT max(last_completed_at) FROM recovery_reconcile)`, j.reg.Len())
+	if err == nil {
+		j.stampedReconcile.Store(latest.UnixMicro())
+	}
 }
 
-// reconcileDue loads (creating it when missing) the state of t and reports
-// whether a pass is running or due to start.
-func (j *Journal) reconcileDue(ctx context.Context, t *Table) (reconcileState, bool, error) {
-	if _, err := j.db.ExecContext(ctx,
-		`INSERT INTO recovery_reconcile (table_name) VALUES ($1) ON CONFLICT DO NOTHING`, t.Name); err != nil {
-		return reconcileState{}, false, fmt.Errorf("init reconcile state: %w", err)
-	}
+// reconcileStates loads the state of every registered table in one statement.
+// A table without a state row (a fresh install, a table a later release added
+// to the registry) gets one, created in a single INSERT for all missing tables
+// and read back, so the common case costs one query instead of two per table.
+func (j *Journal) reconcileStates(ctx context.Context) (map[string]reconcileState, error) {
+	names := j.reg.Names()
 
-	st := reconcileState{table: t.Name}
-
-	err := j.db.QueryRowContext(ctx, `
-		SELECT stage, cursor, full_pass, pass_started_at, last_completed_at
-		FROM recovery_reconcile WHERE table_name = $1`, t.Name).
-		Scan(&st.stage, &st.cursor, &st.full, &st.passStarted, &st.lastCompleted)
+	states, err := j.loadReconcileStates(ctx, names)
 	if err != nil {
-		return st, false, fmt.Errorf("load reconcile state: %w", err)
+		return nil, err
 	}
 
+	if len(states) == len(names) {
+		return states, nil
+	}
+
+	if _, err := j.db.ExecContext(ctx,
+		`INSERT INTO recovery_reconcile (table_name) SELECT unnest($1::text[]) ON CONFLICT DO NOTHING`, names); err != nil {
+		return nil, fmt.Errorf("init reconcile state: %w", err)
+	}
+
+	return j.loadReconcileStates(ctx, names)
+}
+
+func (j *Journal) loadReconcileStates(ctx context.Context, names []string) (map[string]reconcileState, error) {
+	rows, err := j.db.QueryContext(ctx, `
+		SELECT table_name, stage, cursor, full_pass, pass_started_at, last_completed_at
+		FROM recovery_reconcile WHERE table_name = ANY($1::text[])`, names)
+	if err != nil {
+		return nil, fmt.Errorf("load reconcile state: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	out := make(map[string]reconcileState, len(names))
+
+	for rows.Next() {
+		var st reconcileState
+		if err := rows.Scan(&st.table, &st.stage, &st.cursor, &st.full, &st.passStarted, &st.lastCompleted); err != nil {
+			return nil, fmt.Errorf("scan reconcile state: %w", err)
+		}
+
+		out[st.table] = st
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("load reconcile state: %w", err)
+	}
+
+	return out, nil
+}
+
+// reconcileDue reports whether a pass of the table is running or due to start.
+func (j *Journal) reconcileDue(st reconcileState, now time.Time) bool {
 	switch {
 	case st.passStarted.Valid:
-		return st, true, nil
+		return true
 	case !st.lastCompleted.Valid:
-		return st, true, nil
-	case j.cfg.ReconcileInterval > 0 && j.now().Sub(st.lastCompleted.Time) >= j.cfg.ReconcileInterval:
-		return st, true, nil
+		return true
+	case j.cfg.ReconcileInterval > 0 && now.Sub(st.lastCompleted.Time) >= j.cfg.ReconcileInterval:
+		return true
 	}
 
-	return st, false, nil
+	return false
 }
 
 // reconcileTable runs up to budget keys of t's pass.
@@ -382,23 +443,30 @@ func (j *Journal) existingKeys(ctx context.Context, t *Table, keys []string) (ma
 	return out, rows.Err() //nolint:wrapcheck // iteration error
 }
 
-// backlog returns the number of dirty marks (capped) and the age of the oldest.
+// backlog returns the number of dirty marks (capped) and the age of the oldest,
+// and refreshes the backlog gauges with them. One statement: the worker calls
+// it every pass.
 func (j *Journal) backlog(ctx context.Context) (int64, time.Duration, error) {
-	var n int64
-
-	if err := j.db.QueryRowContext(ctx,
-		fmt.Sprintf(`SELECT count(*) FROM (SELECT 1 FROM recovery_dirty LIMIT %d) s`, backlogCountCap)).Scan(&n); err != nil {
-		return 0, 0, fmt.Errorf("count recovery backlog: %w", err)
-	}
+	var (
+		n       int64
+		ageSecs sql.NullFloat64
+	)
 
 	// The lowest seq is the oldest mark: a re-mark bumps seq and marked_at together.
-	var ageSecs sql.NullFloat64
-
-	err := j.db.QueryRowContext(ctx,
-		`SELECT extract(epoch FROM now() - marked_at) FROM recovery_dirty ORDER BY seq LIMIT 1`).Scan(&ageSecs)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return 0, 0, fmt.Errorf("read oldest recovery mark: %w", err)
+	err := j.db.QueryRowContext(ctx, fmt.Sprintf(`
+		SELECT (SELECT count(*) FROM (SELECT 1 FROM recovery_dirty LIMIT %d) s),
+		       (SELECT extract(epoch FROM now() - marked_at) FROM recovery_dirty ORDER BY seq LIMIT 1)`,
+		backlogCountCap)).Scan(&n, &ageSecs)
+	if err != nil {
+		return 0, 0, fmt.Errorf("read recovery backlog: %w", err)
 	}
 
-	return n, time.Duration(max(ageSecs.Float64, 0) * float64(time.Second)), nil
+	age := time.Duration(max(ageSecs.Float64, 0) * float64(time.Second))
+
+	if j.m != nil {
+		j.m.JournalBacklog.Set(float64(n))
+		j.m.OldestDirtyAgeSeconds.Set(age.Seconds())
+	}
+
+	return n, age, nil
 }

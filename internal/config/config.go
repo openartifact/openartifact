@@ -789,8 +789,8 @@ func defaultConfig() *Config {
 		Recovery: RecoveryConfig{Journal: RecoveryJournalConfig{
 			Enabled:           true,
 			Interval:          10 * time.Second,
-			Batch:             200,
-			Concurrency:       4,
+			Batch:             400,
+			Concurrency:       32,
 			ReconcileInterval: 24 * time.Hour,
 		}},
 		OSVMirror: defaultOSVMirror(),

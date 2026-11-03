@@ -30,12 +30,12 @@ import (
 
 const systemProjectID = "00000000-0000-0000-0000-000000000001"
 
-func testLog(t *testing.T) *logger.Logger {
-	t.Helper()
+func testLog(tb testing.TB) *logger.Logger {
+	tb.Helper()
 
 	log, err := logger.New("error", "json", "stdout")
 	if err != nil {
-		t.Fatalf("logger: %v", err)
+		tb.Fatalf("logger: %v", err)
 	}
 
 	return log
@@ -76,40 +76,40 @@ func registerFixtureFormats() {
 
 // newTestDB creates an empty, migrated database on the TEST_DATABASE_URL server
 // and registers the fixture format descriptors.
-func newTestDB(t *testing.T) *sql.DB {
-	t.Helper()
+func newTestDB(tb testing.TB) *sql.DB {
+	tb.Helper()
 
 	registerFixtureFormats()
 
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
 		if os.Getenv("CI") != "" {
-			t.Fatal("TEST_DATABASE_URL not set in CI; integration services are required")
+			tb.Fatal("TEST_DATABASE_URL not set in CI; integration services are required")
 		}
 
-		t.Skip("TEST_DATABASE_URL not set")
+		tb.Skip("TEST_DATABASE_URL not set")
 	}
 
 	admin, err := sql.Open("pgx", dsn)
 	if err != nil {
-		t.Fatalf("open admin connection: %v", err)
+		tb.Fatalf("open admin connection: %v", err)
 	}
 
-	t.Cleanup(func() { _ = admin.Close() })
+	tb.Cleanup(func() { _ = admin.Close() })
 
 	dbName := fmt.Sprintf("oa_recovery_%d", time.Now().UnixNano())
 
 	if _, err := admin.ExecContext(context.Background(), `CREATE DATABASE `+dbName); err != nil {
-		t.Fatalf("create database: %v", err)
+		tb.Fatalf("create database: %v", err)
 	}
 
-	t.Cleanup(func() {
+	tb.Cleanup(func() {
 		_, _ = admin.ExecContext(context.Background(), `DROP DATABASE IF EXISTS `+dbName+` WITH (FORCE)`)
 	})
 
 	u, err := url.Parse(dsn)
 	if err != nil {
-		t.Fatalf("parse TEST_DATABASE_URL: %v", err)
+		tb.Fatalf("parse TEST_DATABASE_URL: %v", err)
 	}
 
 	port, _ := strconv.Atoi(u.Port())
@@ -123,56 +123,56 @@ func newTestDB(t *testing.T) *sql.DB {
 	pg, err := database.NewPostgresDB(database.DatabaseConfig{
 		Host: u.Hostname(), Port: port, User: u.User.Username(), Password: pw,
 		Database: dbName, SSLMode: sslmode, MaxOpenConns: 8, MaxIdleConns: 8,
-	}, testLog(t))
+	}, testLog(tb))
 	if err != nil {
-		t.Fatalf("NewPostgresDB: %v", err)
+		tb.Fatalf("NewPostgresDB: %v", err)
 	}
 
-	t.Cleanup(func() { _ = pg.Close() })
+	tb.Cleanup(func() { _ = pg.Close() })
 
 	if err := pg.Migrate(context.Background()); err != nil {
-		t.Fatalf("apply migrations: %v", err)
+		tb.Fatalf("apply migrations: %v", err)
 	}
 
 	return pg.GetDB()
 }
 
-func newFSStore(t *testing.T) storage.BlobStore {
-	t.Helper()
+func newFSStore(tb testing.TB) storage.BlobStore {
+	tb.Helper()
 
-	s, err := storage.NewFilesystemStore(t.TempDir())
+	s, err := storage.NewFilesystemStore(tb.TempDir())
 	if err != nil {
-		t.Fatalf("filesystem store: %v", err)
+		tb.Fatalf("filesystem store: %v", err)
 	}
 
 	return s
 }
 
-func mustExec(t *testing.T, db *sql.DB, q string, args ...any) {
-	t.Helper()
+func mustExec(tb testing.TB, db *sql.DB, q string, args ...any) {
+	tb.Helper()
 
 	if _, err := db.ExecContext(context.Background(), q, args...); err != nil {
-		t.Fatalf("exec %q: %v", q, err)
+		tb.Fatalf("exec %q: %v", q, err)
 	}
 }
 
-func mustCount(t *testing.T, db *sql.DB, q string, args ...any) int {
-	t.Helper()
+func mustCount(tb testing.TB, db *sql.DB, q string, args ...any) int {
+	tb.Helper()
 
 	var n int
 	if err := db.QueryRowContext(context.Background(), q, args...).Scan(&n); err != nil {
-		t.Fatalf("count %q: %v", q, err)
+		tb.Fatalf("count %q: %v", q, err)
 	}
 
 	return n
 }
 
-func mustString(t *testing.T, db *sql.DB, q string, args ...any) string {
-	t.Helper()
+func mustString(tb testing.TB, db *sql.DB, q string, args ...any) string {
+	tb.Helper()
 
 	var s sql.NullString
 	if err := db.QueryRowContext(context.Background(), q, args...).Scan(&s); err != nil {
-		t.Fatalf("query %q: %v", q, err)
+		tb.Fatalf("query %q: %v", q, err)
 	}
 
 	return s.String
@@ -263,18 +263,18 @@ func insertRawFile(t *testing.T, db *sql.DB, repoID, blobID, path string, trashe
 	return ids
 }
 
-func newTestJournal(t *testing.T, db *sql.DB, store storage.BlobStore) *Journal {
-	t.Helper()
+func newTestJournal(tb testing.TB, db *sql.DB, store storage.BlobStore) *Journal {
+	tb.Helper()
 
-	return NewJournal(db, store, testLog(t), nil, JournalConfig{Batch: 100, Concurrency: 4})
+	return NewJournal(db, store, testLog(tb), nil, JournalConfig{Batch: 100, Concurrency: 4})
 }
 
 // drain drains the queue until it holds nothing claimable.
-func drain(t *testing.T, j *Journal) {
-	t.Helper()
+func drain(tb testing.TB, j *Journal) {
+	tb.Helper()
 
 	if _, failed, err := j.Drain(context.Background()); err != nil || failed != 0 {
-		t.Fatalf("drain: failed=%d err=%v", failed, err)
+		tb.Fatalf("drain: failed=%d err=%v", failed, err)
 	}
 }
 

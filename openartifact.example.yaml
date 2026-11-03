@@ -366,8 +366,8 @@ recovery:
   journal:
     enabled: true             # capture changes (database triggers) and write the sidecars
     interval: 10s             # pause between worker passes draining the changed-row queue
-    batch: 200                # rows claimed per drain step
-    concurrency: 4            # sidecar blobs written or deleted at once
+    batch: 400                # rows claimed per drain step
+    concurrency: 32           # sidecar blobs written or deleted at once
     reconcileInterval: 24h    # re-check every table for missing/stale sidecars (backfill); 0 = only the first complete pass
 
 # Local OSV mirror (https://osv.dev, data under CC-BY 4.0). A background worker

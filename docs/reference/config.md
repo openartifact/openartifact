@@ -341,8 +341,8 @@ This page lists every configuration key with its type, built-in default and the 
 |---|---|---|---|---|
 | `recovery.journal.enabled` | `OPENARTIFACT_RECOVERY_JOURNAL_ENABLED` | bool | `true` | `enabled` switches the journal on: the database triggers mark changed rows and the worker writes their sidecar blobs. Off, nothing is captured and `openartifact rebuild` cannot restore rows created while it was off. |
 | `recovery.journal.interval` | `OPENARTIFACT_RECOVERY_JOURNAL_INTERVAL` | duration | `10s` | `interval` is the pause between worker passes that drain the dirty queue. |
-| `recovery.journal.batch` | `OPENARTIFACT_RECOVERY_JOURNAL_BATCH` | int | `200` | `batch` is how many dirty rows one drain step claims. |
-| `recovery.journal.concurrency` | `OPENARTIFACT_RECOVERY_JOURNAL_CONCURRENCY` | int | `4` | `concurrency` is how many sidecar blobs are written or deleted at once. |
+| `recovery.journal.batch` | `OPENARTIFACT_RECOVERY_JOURNAL_BATCH` | int | `400` | `batch` is how many dirty rows one drain step claims. |
+| `recovery.journal.concurrency` | `OPENARTIFACT_RECOVERY_JOURNAL_CONCURRENCY` | int | `32` | `concurrency` is how many sidecar blobs are written or deleted at once. |
 | `recovery.journal.reconcileInterval` | `OPENARTIFACT_RECOVERY_JOURNAL_RECONCILE_INTERVAL` | duration | `24h` | `reconcileInterval` is how often every journaled table is re-checked for rows without a sidecar (backfill) and sidecars without a row. Zero disables periodic reconciles after the first complete one. |
 
 ## projects
