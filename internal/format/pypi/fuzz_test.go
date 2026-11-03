@@ -5,13 +5,15 @@
 package pypi
 
 import (
+	"bytes"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/pypisimple"
 	"github.com/openartifact/openartifact/pkg/pyversion"
@@ -117,16 +119,44 @@ func FuzzDeclaredLicenses(f *testing.F) {
 	f.Add("", "a\nb", "License ::", "License :: a :: b\r")
 
 	f.Fuzz(func(t *testing.T, expr, lic, classifiers1, classifiers2 string) {
-		form := url.Values{
+		var body bytes.Buffer
+
+		mw := multipart.NewWriter(&body)
+
+		for name, values := range map[string][]string{
 			"license_expression": {expr},
 			"license":            {lic},
 			"classifiers":        {classifiers1, classifiers2},
+		} {
+			for _, v := range values {
+				if err := mw.WriteField(name, v); err != nil {
+					t.Fatal(err)
+				}
+			}
 		}
 
-		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		fw, err := mw.CreateFormFile("content", "x-1.0.tar.gz")
+		if err != nil {
+			t.Fatal(err)
+		}
 
-		got := declaredLicenses(req)
+		_, _ = fw.Write([]byte("data"))
+
+		if err := mw.Close(); err != nil {
+			t.Fatal(err)
+		}
+
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", &body)
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+
+		form, err := base.ReadForm(req, base.FormSpec{FileField: "content", MaxFile: 1 << 10})
+		if err != nil {
+			t.Skip("fields that cannot travel in a multipart form")
+		}
+
+		defer form.Close()
+
+		got := declaredLicenses(form)
 
 		candidates := map[string]bool{strings.TrimSpace(expr): true, strings.TrimSpace(lic): true}
 

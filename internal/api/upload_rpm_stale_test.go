@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -127,4 +128,51 @@ func TestRPMUploadMarksRepoStale(t *testing.T) {
 	if len(db.stale) != 1 || db.stale[0] != "r1" {
 		t.Errorf("MarkRepoStale calls = %v, want [r1]", db.stale)
 	}
+}
+
+// An rpm larger than the old in-memory form threshold (1 MiB) must leave no
+// scratch file behind: the multipart parser's own temp file was never removed
+// for a routed (copied) request.
+func TestRPMUploadLeavesNoTempFile(t *testing.T) {
+	assertEmpty := formattest.IsolatedTemp(t)
+
+	log, err := logger.New("error", "json", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := storage.NewFilesystemStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile("../../pkg/rpm/testdata/weakdeps.rpm")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The payload is never read: padding it is a larger, still parseable, rpm.
+	data = append(data, make([]byte, 3<<20)...)
+
+	var body bytes.Buffer
+
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("file", "weakdeps.rpm")
+	_, _ = fw.Write(data)
+	_ = mw.Close()
+
+	router := chi.NewRouter()
+	NewRPMUploadHandler(log, &staleUploadDB{}, store, nil).Register(router)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/repositories/rpms/packages", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	rw := httptest.NewRecorder()
+	router.ServeHTTP(rw, req)
+
+	if rw.Code != http.StatusOK {
+		t.Fatalf("upload status %d: %s", rw.Code, rw.Body.String())
+	}
+
+	assertEmpty()
 }

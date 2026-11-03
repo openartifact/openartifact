@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -500,4 +501,28 @@ func MavenGARefsFromArtifacts(arts []*models.MavenArtifact) *models.MavenGARefs 
 	refs.Versions = slices.Compact(refs.Versions)
 
 	return refs
+}
+
+// IsolatedTemp points TMPDIR at a fresh directory for the test and returns a
+// check that fails the test when anything is left in it: an upload handler
+// must not leave a spool, a multipart temp file or any other scratch file
+// behind once its request is answered.
+func IsolatedTemp(t testing.TB) (assertEmpty func()) {
+	t.Helper()
+
+	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
+
+	return func() {
+		t.Helper()
+
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("read temp dir: %v", err)
+		}
+
+		for _, e := range entries {
+			t.Errorf("leftover temp file after the upload: %s", e.Name())
+		}
+	}
 }

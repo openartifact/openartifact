@@ -381,3 +381,43 @@ func TestDebUploadNoLicenseAdmittedUnderBlockPolicy(t *testing.T) {
 		t.Errorf("unlicensed package not stored")
 	}
 }
+
+// A deb larger than the old in-memory form threshold must leave no scratch
+// file behind: the multipart parser's own temp file was never removed for a
+// routed (copied) request, nor were the handler's own copies guaranteed gone.
+func TestDebUploadLeavesNoTempFile(t *testing.T) {
+	assertEmpty := formattest.IsolatedTemp(t)
+
+	db := &debAPIDB{DB: formattest.NewDB(), pkgs: map[string]*models.Component{}}
+	db.Repo.Format = "deb"
+
+	h := NewDebUploadHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), nil)
+
+	router := chi.NewRouter()
+	h.Register(router)
+
+	const dataSize = 40 << 20
+
+	deb := buildTestDeb(t)
+	deb = append(deb, fmt.Sprintf("%-16s%-12s%-6s%-6s%-8s%-10d`\n", "data.tar.gz", "0", "0", "0", "100644", dataSize)...)
+	deb = append(deb, make([]byte, dataSize)...)
+
+	var body bytes.Buffer
+
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("file", "hello.deb")
+	_, _ = fw.Write(deb)
+	_ = mw.Close()
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/repositories/myrepo/debs", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("upload status = %d: %s", w.Code, w.Body.String())
+	}
+
+	assertEmpty()
+}

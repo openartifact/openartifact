@@ -161,3 +161,14 @@ func TestDepCacheEvictsLeastRecentlyUsed(t *testing.T) {
 		t.Errorf("cache holds %d/%d entries, want 2", len(c.items), c.order.Len())
 	}
 }
+
+// A push larger than the old in-memory form threshold must leave no scratch
+// file behind, whether it is accepted or not.
+func TestPushLeavesNoTempFile(t *testing.T) {
+	assertEmpty := formattest.IsolatedTemp(t)
+	h, _, _, _ := newV3Handler(t)
+
+	pushBytes(t, h, bytes.Repeat([]byte("n"), 40<<20))
+
+	assertEmpty()
+}

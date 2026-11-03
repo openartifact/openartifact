@@ -129,6 +129,7 @@ Newest first. Each version starts with **What you must do**; the text below it l
 
 ### Unreleased
 
+- **Uploads no longer leave temp files behind.** The PyPI, Debian, RPM, NuGet, Alpine and Ansible upload endpoints read the multipart body in one streaming pass into a single spool file. Before, a large upload (over 32 MiB for PyPI, Debian and RPM) left a full-size `multipart-*` file in the temp directory that nothing removed, and the endpoints held up to 128 MiB of the form in memory. An upload over its size limit is now answered with `413` by every one of these endpoints.
 - Go module paths of any length are served from a hosted Go repository. `@latest` and the `@v/...` files of a module whose path has one or two segments after the host (`example.com`, `example.com/mod`) were answered `404 repository not found` or with another format's document.
 - A hosted npm repository answers `GET /<package>/<version>` and `GET /@scope/<package>/<version>` with the version document, and `latest` or any other dist-tag stands for its version, as the npm registry and an npm proxy do. They were `404`.
 - A Docker blob `GET` honours a single `Range` header (`206` with `Content-Range`, `416` past the end of the blob) so an interrupted layer pull resumes.

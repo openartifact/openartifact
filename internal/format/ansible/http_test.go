@@ -563,3 +563,15 @@ func TestPublishBase64Part(t *testing.T) {
 		t.Errorf("stored %+v, want the decoded artifact", db.rows)
 	}
 }
+
+// A publish larger than the old in-memory form threshold must leave no scratch
+// file behind, whether it is accepted or not.
+func TestPublishLeavesNoTempFile(t *testing.T) {
+	assertEmpty := formattest.IsolatedTemp(t)
+	h, _, _, _ := newTestHandler(t)
+
+	body, ct := publishForm(t, "acme-tools-1.0.0.tar.gz", bytes.Repeat([]byte("a"), 12<<20), "")
+	do(h, http.MethodPost, publishPath, body, "Content-Type", ct)
+
+	assertEmpty()
+}

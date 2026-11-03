@@ -99,6 +99,41 @@ func SpoolLimited(r io.Reader, maxBytes int64, extra ...hash.Hash) (*Spool, erro
 	return s, nil
 }
 
+// SpoolWrite keeps what produce writes, like SpoolLimited keeps a body: for the
+// output of a library that writes to an io.Writer (a re-signed package). It
+// runs produce on its own goroutine and returns only once produce has returned,
+// so produce may read its own inputs without the caller racing it. A produce
+// error is returned as is.
+func SpoolWrite(maxBytes int64, produce func(io.Writer) error, extra ...hash.Hash) (*Spool, error) {
+	pr, pw := io.Pipe()
+	done := make(chan error, 1)
+
+	go func() {
+		err := produce(pw)
+		_ = pw.CloseWithError(err)
+		done <- err
+	}()
+
+	spool, readErr := SpoolLimited(pr, maxBytes, extra...)
+
+	// Unblock a producer still writing after the spool gave up.
+	_ = pr.CloseWithError(readErr)
+
+	produceErr := <-done
+
+	if readErr != nil {
+		return nil, readErr
+	}
+
+	if produceErr != nil {
+		spool.Close()
+
+		return nil, produceErr
+	}
+
+	return spool, nil
+}
+
 // readFill reads until buf is full or r ends; eof reports that r ended. Unlike
 // io.ReadFull it does not turn a source's own io.ErrUnexpectedEOF into a short
 // read, so a truncated body stays an error.

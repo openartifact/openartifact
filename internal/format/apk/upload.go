@@ -27,8 +27,6 @@ import (
 )
 
 const (
-	// multipartMemory is how much of a multipart upload is buffered in memory.
-	multipartMemory = 8 << 20
 	// multipartOverhead is the slack the form framing adds to maxUploadBytes.
 	multipartOverhead = 1 << 20
 
@@ -231,7 +229,7 @@ func (h *HTTPHandler) writeIngestError(w http.ResponseWriter, err error, rest bo
 	case errors.Is(err, quota.ErrExceeded):
 		quota.WriteExceeded(w)
 		return http.StatusInsufficientStorage
-	case errors.Is(err, base.ErrContentTooLarge):
+	case base.IsTooLarge(err):
 		status, code, msg = http.StatusRequestEntityTooLarge, "INVALID_INPUT", "upload too large"
 	default:
 		h.Log.Errorw("apk upload failed", "error", err)
@@ -339,21 +337,22 @@ func (h *HTTPHandler) handleRESTUpload(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+multipartOverhead)
 
-	if err := r.ParseMultipartForm(multipartMemory); err != nil { //nolint:gosec // r.Body is bounded by http.MaxBytesReader above
-		status = http.StatusBadRequest
-		httpx.WriteError(w, status, "INVALID_INPUT", fmt.Sprintf("failed to parse form: %v", err))
-
-		return
-	}
-
-	file, _, err := r.FormFile("file")
+	form, err := base.ReadForm(r, base.FormSpec{FileField: "file", MaxFile: maxUploadBytes, MaxFields: multipartOverhead})
 	if err != nil {
-		status = http.StatusBadRequest
-		httpx.WriteError(w, status, "INVALID_INPUT", "missing file field")
+		switch {
+		case base.IsTooLarge(err):
+			status = h.writeIngestError(w, err, true)
+		case errors.Is(err, base.ErrNoFormFile):
+			status = http.StatusBadRequest
+			httpx.WriteError(w, status, "INVALID_INPUT", "missing file field")
+		default:
+			status = http.StatusBadRequest
+			httpx.WriteError(w, status, "INVALID_INPUT", fmt.Sprintf("failed to parse form: %v", err))
+		}
 
 		return
 	}
-	defer base.CloseLog(file, h.Log)
+	defer form.Close()
 
 	repo := h.hostedAPKRepo(w, r, true)
 	if repo == nil {
@@ -366,19 +365,12 @@ func (h *HTTPHandler) handleRESTUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	spool, err := base.SpoolLimited(file, maxUploadBytes)
-	if err != nil {
-		status = h.writeIngestError(w, err, true)
-		return
-	}
-	defer spool.Close()
-
 	row, err := h.ingest(w, r, ingestRequest{
 		repo:    repo,
-		branch:  defaultTo(r.FormValue("branch"), "edge"),
-		repoDir: defaultTo(r.FormValue("repo"), "main"),
-		arch:    r.FormValue("arch"),
-		body:    spool,
+		branch:  defaultTo(form.Value("branch"), "edge"),
+		repoDir: defaultTo(form.Value("repo"), "main"),
+		arch:    form.Value("arch"),
+		body:    form.File,
 	})
 	if err != nil {
 		status = h.writeIngestError(w, err, true)
