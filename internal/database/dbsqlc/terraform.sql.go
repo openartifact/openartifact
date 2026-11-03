@@ -121,22 +121,6 @@ func (q *Queries) GetTerraformProvider(ctx context.Context, arg GetTerraformProv
 	return i, err
 }
 
-const incrementTerraformDownloadCount = `-- name: IncrementTerraformDownloadCount :exec
-UPDATE package_files SET download_count = download_count + 1
-WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL
-`
-
-type IncrementTerraformDownloadCountParams struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-}
-
-// One download of a module archive or a provider zip.
-func (q *Queries) IncrementTerraformDownloadCount(ctx context.Context, arg IncrementTerraformDownloadCountParams) error {
-	_, err := q.db.Exec(ctx, incrementTerraformDownloadCount, arg.ID, arg.RepositoryID)
-	return err
-}
-
 const listTerraformModuleVersions = `-- name: ListTerraformModuleVersions :many
 SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'name', '')::text AS name, COALESCE(p.attrs ->> 'system', '')::text AS system,
        v.version, COALESCE(f.attrs ->> 'archive_ext', '')::text AS archive_ext, b.blob_key, b.sha256 AS checksum, b.size_bytes,
@@ -476,8 +460,7 @@ type TerraformPackageStampParams struct {
 
 // Fingerprint of the live files of one module or provider type: their count
 // and an order-independent hash of their IDs. Files are immutable apart from
-// the download counter (updated_at moves with every download, so it is no
-// validator), and trash/restore changes membership.
+// the download counter, and trash/restore changes membership.
 func (q *Queries) TerraformPackageStamp(ctx context.Context, arg TerraformPackageStampParams) (string, error) {
 	row := q.db.QueryRow(ctx, terraformPackageStamp, arg.RepositoryID, arg.NameKey)
 	var stamp string

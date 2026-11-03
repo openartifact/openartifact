@@ -224,19 +224,6 @@ func (p *CargoStore) YankCargoCrate(ctx context.Context, repoID, name, version s
 	return nil
 }
 
-func (p *CargoStore) IncrementCargoDownloadCount(ctx context.Context, repoID, name, version string) error {
-	err := p.q.IncrementCargoDownloadCount(ctx, dbsqlc.IncrementCargoDownloadCountParams{
-		RepositoryID: repoID,
-		Name:         name,
-		Version:      version,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to increment cargo download count: %w", err)
-	}
-
-	return nil
-}
-
 // CargoIndexStamp is a cheap validator of one crate's sparse index entry:
 // it changes when a live version is added, removed or (un)yanked.
 func (p *CargoStore) CargoIndexStamp(ctx context.Context, repoID, name string) (string, error) {

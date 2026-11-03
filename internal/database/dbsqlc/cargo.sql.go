@@ -26,8 +26,8 @@ type CargoIndexStampParams struct {
 }
 
 // Fingerprint of the sparse index entry of one crate: its live versions and
-// their yanked flags, the only mutable state the entry shows. (updated_at is
-// no validator: every download bumps it.)
+// their yanked flags, the only mutable state the entry shows (download counts
+// are not part of it).
 func (q *Queries) CargoIndexStamp(ctx context.Context, arg CargoIndexStampParams) (string, error) {
 	row := q.db.QueryRow(ctx, cargoIndexStamp, arg.RepositoryID, arg.Name)
 	var stamp string
@@ -124,26 +124,6 @@ func (q *Queries) GetCargoCrate(ctx context.Context, arg GetCargoCrateParams) (G
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const incrementCargoDownloadCount = `-- name: IncrementCargoDownloadCount :exec
-UPDATE package_files f SET download_count = f.download_count + 1, updated_at = now()
-FROM package_versions v
-JOIN packages p ON p.id = v.package_id
-WHERE f.version_id = v.id AND f.deleted_at IS NULL AND v.deleted_at IS NULL
-  AND p.repository_id = $1 AND p.name_key = lower($2::text)
-  AND v.version_key = $3
-`
-
-type IncrementCargoDownloadCountParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Name         string `db:"name" json:"name"`
-	Version      string `db:"version" json:"version"`
-}
-
-func (q *Queries) IncrementCargoDownloadCount(ctx context.Context, arg IncrementCargoDownloadCountParams) error {
-	_, err := q.db.Exec(ctx, incrementCargoDownloadCount, arg.RepositoryID, arg.Name, arg.Version)
-	return err
 }
 
 const listCargoCrateVersions = `-- name: ListCargoCrateVersions :many

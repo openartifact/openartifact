@@ -81,7 +81,9 @@ type HTTPStore interface {
 	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
 	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
-	IncrementNixDownloadCount(ctx context.Context, id string, repoID string) error
+	// CountFileDownload counts one download of a package file; it is batched and
+	// written to the database with the next flush.
+	CountFileDownload(fileID string)
 	PutNixPendingNar(ctx context.Context, n *models.NixPendingNar) error
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
 	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
@@ -404,9 +406,7 @@ func (h *HTTPHandler) serveNar(w http.ResponseWriter, r *http.Request, repo *mod
 		h.Log.Warnw("failed to write nix nar", "file", file, "error", err)
 	}
 
-	if err := h.DB.IncrementNixDownloadCount(r.Context(), p.ID, repo.ID); err != nil {
-		h.Log.Warnw("failed to count nix download", "id", p.ID, "error", err)
-	}
+	h.DB.CountFileDownload(p.ID)
 }
 
 // serveStagedNarHead answers the HEAD "nix copy" sends before uploading a NAR:

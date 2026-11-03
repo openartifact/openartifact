@@ -134,6 +134,8 @@ Newest first. Each version starts with **What you must do**; the text below it l
 - A Docker blob `GET` honours a single `Range` header (`206` with `Content-Range`, `416` past the end of the blob) so an interrupted layer pull resumes.
 - A hosted raw file `GET` and `HEAD` send a strong `ETag` (the sha256 of the file) and `Last-Modified`, answer `If-None-Match` and `If-Modified-Since` with `304`, and honour `Range` and `If-Range`.
 - **Deb, RPM, apk and pacman groups update their owner table incrementally.** A regeneration used to delete and reinsert every `group_package_owners` row (19 000 dead rows per upload on a group of that size); it now writes only the rows that changed. Deb groups also keep the rendered `Packages` stanzas of hosted members in memory (bounded at 256 MiB, rebuilt from the database after a restart) and keep the stored `Packages.gz`/`Packages.xz` of an index that did not change, so a regeneration after a proxy refresh, a member's upload to another distribution or a no-op notification does not compress it again. Nothing to do on upgrade; the published files and their checksums are the same as before.
+- Download counters of cargo, nuget, apk, nix and terraform packages are batched: a download is counted in memory and written with the next flush (`DB_DOWNLOAD_COUNT_FLUSH_INTERVAL`, default 5s), so the counter lags by up to that long and the counts of a crashed process since its last flush are lost. A clean shutdown flushes. Counting a download no longer changes the file's `updated_at`. See [Download counters](../operations/performance.md#download-counters).
+
 
 ### 0.18.0
 

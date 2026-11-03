@@ -128,6 +128,7 @@ For each scenario this writes `<scenario>.{cpu,heap,allocs,mutex,block,goroutine
 | Warm DB connections | `DB_MAX_IDLE_CONNS` | `database.maxIdleConns` | 5 |
 | DB connection lifetime | `DB_CONN_MAX_LIFETIME_MINUTES` | `database.connMaxLifetimeMinutes` | 30 |
 | Auth lookup cache | `DB_AUTH_CACHE_TTL_MS` | `database.authCacheTtlMs` | 2000 |
+| Download counter flush | `DB_DOWNLOAD_COUNT_FLUSH_INTERVAL` | `database.downloadCountFlushInterval` | 5s |
 | Metadata regeneration workers | `OPENARTIFACT_METADATA_REGEN_CONCURRENCY` | `workers.metadataRegenConcurrency` | 4 |
 | Per-IP rate limit | `OPENARTIFACT_RATE_LIMIT_RPS` | `server.rateLimitRps` | 0 (off) |
 | Request read timeout (seconds) | `SERVER_READ_TIMEOUT` | `server.readTimeout` | 0 (unlimited) |
@@ -147,6 +148,16 @@ Read and write timeouts default to 0 so large uploads and downloads are never cu
 - The repository package listing (`GET /api/v1/repositories/{name}/packages`) counts the matching rows only when the page is full (or past the end); a short page, the common case for small repositories, derives `total` from the page itself. Large repositories still pay one `COUNT` per full page.
 - The npm worker computes the `latest` dist-tag from version numbers and a deprecation flag read in SQL, so a publish does not load every manifest of the package.
 - A group request resolves its members with one query instead of one per member.
+
+### Download counters
+
+Cargo, NuGet, APK, Nix and Terraform count every download in `package_files.download_count`. A download only increments an in-memory counter; one batched `UPDATE` per `DB_DOWNLOAD_COUNT_FLUSH_INTERVAL` (default 5 seconds, or earlier when 10,000 distinct files are waiting) adds the deltas to the rows. A hot file therefore costs one row update per interval instead of one per download.
+
+- Counters are eventually consistent: a download shows up in the API and the web UI within one interval, not at once.
+- A clean shutdown flushes the pending counts. A crash or `kill -9` loses the counts since the last flush, at most one interval.
+- Replicas flush independently and add their deltas, so the totals add up across replicas.
+- Memory is bounded: at most 100,000 distinct files wait for a flush. If the database is unreachable the counts are kept and retried; counts for further files beyond the bound are dropped.
+- Counting a download does not change the file's `updated_at`.
 
 ### Auth lookup cache
 

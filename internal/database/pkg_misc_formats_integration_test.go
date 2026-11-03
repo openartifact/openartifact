@@ -326,7 +326,14 @@ func TestNuGetStoreRoundTrip(t *testing.T) { //nolint:gocyclo,cyclop // one roun
 		t.Fatalf("Search page 2 = %v, %v; want other", res, err)
 	}
 
-	if err := pg.IncrementNuGetDownloadCount(ctx, repo, "Demo", "1.0.0"); err != nil {
+	demo, err := pg.GetNuGetPackage(ctx, repo, "demo", "1.0.0")
+	if err != nil || demo == nil {
+		t.Fatalf("GetNuGetPackage = %v, %v", demo, err)
+	}
+
+	pg.CountFileDownload(demo.ID)
+
+	if err := pg.FlushDownloadCounts(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -574,7 +581,9 @@ func TestTerraformStoreRoundTrip(t *testing.T) { //nolint:gocyclo,cyclop // one 
 		t.Fatalf("ListTerraformModules = %v, %v (providers must not show up)", ml, err)
 	}
 
-	if err := pg.IncrementTerraformModuleDownloadCount(ctx, repo, m1.ID); err != nil {
+	pg.CountFileDownload(m1.ID)
+
+	if err := pg.FlushDownloadCounts(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -603,7 +612,9 @@ func TestTerraformStoreRoundTrip(t *testing.T) { //nolint:gocyclo,cyclop // one 
 
 	before := stamp()
 
-	if err := pg.IncrementTerraformModuleDownloadCount(ctx, repo, m1.ID); err != nil {
+	pg.CountFileDownload(m1.ID)
+
+	if err := pg.FlushDownloadCounts(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -645,7 +656,9 @@ func TestTerraformStoreRoundTrip(t *testing.T) { //nolint:gocyclo,cyclop // one 
 		t.Fatalf("ListTerraformProviders = %v, %v (modules must not show up)", pl, err)
 	}
 
-	if err := pg.IncrementTerraformProviderDownloadCount(ctx, repo, pa.ID); err != nil {
+	pg.CountFileDownload(pa.ID)
+
+	if err := pg.FlushDownloadCounts(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -829,7 +842,9 @@ func TestNixStoreRoundTrip(t *testing.T) { //nolint:gocyclo,cyclop // one round 
 		}
 	}
 
-	if err := pg.IncrementNixDownloadCount(ctx, a.ID, repo); err != nil {
+	pg.CountFileDownload(a.ID)
+
+	if err := pg.FlushDownloadCounts(ctx); err != nil {
 		t.Fatal(err)
 	}
 

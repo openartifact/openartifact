@@ -1598,9 +1598,6 @@ func (m *MockDatabase) ListNuGetPackageVersions(ctx context.Context, repoID, pac
 func (m *MockDatabase) SearchNuGetPackages(ctx context.Context, repoID, query string, skip, take int) ([]*models.NuGetPackage, int, error) {
 	return nil, 0, nil
 }
-func (m *MockDatabase) IncrementNuGetDownloadCount(ctx context.Context, repoID, packageID, version string) error {
-	return nil
-}
 
 // Go Module Proxy methods
 func (m *MockDatabase) CreateGoModule(ctx context.Context, mod *models.GoModule) error { return nil }
@@ -1687,9 +1684,6 @@ func (m *MockDatabase) SearchCargoCrates(ctx context.Context, repoID, query stri
 	return nil, nil
 }
 func (m *MockDatabase) YankCargoCrate(ctx context.Context, repoID, name, version string, yanked bool) error {
-	return nil
-}
-func (m *MockDatabase) IncrementCargoDownloadCount(ctx context.Context, repoID, name, version string) error {
 	return nil
 }
 

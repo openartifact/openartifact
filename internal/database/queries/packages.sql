@@ -61,8 +61,21 @@ DELETE FROM packages p
 WHERE p.id = ANY(sqlc.arg(ids)::uuid[])
   AND NOT EXISTS (SELECT 1 FROM package_versions v WHERE v.package_id = p.id);
 
--- name: IncrementFileDownloads :exec
-UPDATE package_files SET download_count = download_count + 1, updated_at = now() WHERE id = $1;
+-- name: AddFileDownloads :exec
+-- Adds the batched download counts of the flush (ids[i] gained counts[i]). The
+-- rows are locked in id order so two replicas flushing overlapping sets cannot
+-- deadlock each other. A trashed file is skipped, and updated_at is left alone:
+-- a download is not a modification (the table trigger agrees).
+WITH due AS (
+    SELECT f.id, v.n
+    FROM package_files f
+    JOIN (SELECT unnest(sqlc.arg(ids)::uuid[]) AS id, unnest(sqlc.arg(counts)::bigint[]) AS n) v ON f.id = v.id
+    WHERE f.deleted_at IS NULL
+    ORDER BY f.id
+    FOR UPDATE OF f
+)
+UPDATE package_files f SET download_count = f.download_count + due.n
+FROM due WHERE f.id = due.id;
 
 -- The packument-style validator of a package: every write that changes what a
 -- package page shows bumps it.

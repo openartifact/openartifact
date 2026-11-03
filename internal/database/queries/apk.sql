@@ -36,10 +36,6 @@ JOIN blobs b ON b.id = f.blob_id
 WHERE f.repository_id = $1 AND f.deleted_at IS NULL
 ORDER BY p.attrs ->> 'branch', p.attrs ->> 'repo', f.arch, p.attrs ->> 'name', v.version;
 
--- name: IncrementApkDownloadCount :exec
-UPDATE package_files SET download_count = download_count + 1
-WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL;
-
 -- name: GetApkSigningKey :one
 SELECT repository_id, key_name, fingerprint, public_key, private_key, created_by, created_at, updated_at
 FROM apk_signing_keys WHERE repository_id = $1;

@@ -286,9 +286,7 @@ func (h *HTTPHandler) handleModuleDownload(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.DB.IncrementTerraformModuleDownloadCount(r.Context(), repo.ID, m.ID); err != nil {
-		h.Log.Warnw("failed to count terraform module download", "id", m.ID, "error", err)
-	}
+	h.DB.CountFileDownload(m.ID)
 
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("X-Terraform-Get", link)

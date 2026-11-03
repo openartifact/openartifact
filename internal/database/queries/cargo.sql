@@ -79,18 +79,10 @@ FROM packages p
 WHERE p.id = v.package_id AND p.repository_id = sqlc.arg(repository_id) AND p.name_key = lower(sqlc.arg(name)::text)
   AND v.version_key = sqlc.arg(version) AND v.deleted_at IS NULL;
 
--- name: IncrementCargoDownloadCount :exec
-UPDATE package_files f SET download_count = f.download_count + 1, updated_at = now()
-FROM package_versions v
-JOIN packages p ON p.id = v.package_id
-WHERE f.version_id = v.id AND f.deleted_at IS NULL AND v.deleted_at IS NULL
-  AND p.repository_id = sqlc.arg(repository_id) AND p.name_key = lower(sqlc.arg(name)::text)
-  AND v.version_key = sqlc.arg(version);
-
 -- name: CargoIndexStamp :one
 -- Fingerprint of the sparse index entry of one crate: its live versions and
--- their yanked flags, the only mutable state the entry shows. (updated_at is
--- no validator: every download bumps it.)
+-- their yanked flags, the only mutable state the entry shows (download counts
+-- are not part of it).
 SELECT (count(*)::text || ':' ||
         COALESCE(sum(hashtextextended(f.id::text || COALESCE(v.metadata->>'yanked', 'false'), 0)), 0)::text)::text AS stamp
 FROM packages p

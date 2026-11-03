@@ -75,7 +75,9 @@ type HTTPStore interface {
 	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
 	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
-	IncrementApkDownloadCount(ctx context.Context, id string, repoID string) error
+	// CountFileDownload counts one download of a package file; it is batched and
+	// written to the database with the next flush.
+	CountFileDownload(fileID string)
 	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
 	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
@@ -252,9 +254,7 @@ func (h *HTTPHandler) servePackage(w http.ResponseWriter, r *http.Request, repo 
 		return
 	}
 
-	if err := h.DB.IncrementApkDownloadCount(r.Context(), pkg.ID, repo.ID); err != nil {
-		h.Log.Warnw("failed to count apk download", "id", pkg.ID, "error", err)
-	}
+	h.DB.CountFileDownload(pkg.ID)
 
 	if h.TryPresign(w, r, presign.Blob{
 		SHA256: pkg.BlobKey, Size: pkg.SizeBytes, Filename: t.file, ContentType: "application/vnd.alpine.apk", Repository: repo,

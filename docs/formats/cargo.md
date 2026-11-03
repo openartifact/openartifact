@@ -93,7 +93,7 @@ Crate names are case-insensitive, as on crates.io. Cargo lower-cases them in ind
 - `name`
 - `max_version`: the highest non-yanked stable version, else the highest non-yanked pre-release, else (everything yanked) the highest version, by SemVer precedence
 - `description` of the newest version
-- `downloads`, summed over all versions
+- `downloads`, summed over all versions (counts are written in batches, so a download shows up within `DB_DOWNLOAD_COUNT_FLUSH_INTERVAL`, 5 seconds by default)
 
 `meta.total` is the number of crates that match the query, not the number in the page.
 

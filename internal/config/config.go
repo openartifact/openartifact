@@ -69,7 +69,8 @@ var (
 	errPlaceholderDBPassword = errors.New(
 		"database.password is still the CHANGE_ME placeholder from the example files: set a real password",
 	)
-	errMaxOpenConnsTooSmall = errors.New(
+	errNegativeDownloadFlush = errors.New("database.downloadCountFlushInterval must not be negative")
+	errMaxOpenConnsTooSmall  = errors.New(
 		"database.maxOpenConns must be 0 (driver default) or at least 2: " +
 			"a blob-lock transaction pins one connection and its callback needs another",
 	)
@@ -654,19 +655,20 @@ func defaultConfig() *Config {
 			TrustedProxies:    []string{},
 		},
 		Database: database.DatabaseConfig{
-			Driver:                 "postgres",
-			Host:                   "localhost",
-			Port:                   5432,
-			User:                   "postgres",
-			Password:               "",
-			Database:               "artifact_repo",
-			SSLMode:                "require",
-			Options:                make(map[string]string),
-			MaxOpenConns:           25,
-			MaxIdleConns:           5,
-			ConnMaxLifetimeMinutes: 30,
-			AuthCacheTTLMillis:     2000,
-			ConnectTimeout:         60 * time.Second,
+			Driver:                     "postgres",
+			Host:                       "localhost",
+			Port:                       5432,
+			User:                       "postgres",
+			Password:                   "",
+			Database:                   "artifact_repo",
+			SSLMode:                    "require",
+			Options:                    make(map[string]string),
+			MaxOpenConns:               25,
+			MaxIdleConns:               5,
+			ConnMaxLifetimeMinutes:     30,
+			AuthCacheTTLMillis:         2000,
+			DownloadCountFlushInterval: 5 * time.Second,
+			ConnectTimeout:             60 * time.Second,
 		},
 		Storage: storage.StorageConfig{
 			Type:                     "filesystem",
@@ -854,6 +856,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideInt(&cfg.Database.ConnMaxLifetimeMinutes, "DB_CONN_MAX_LIFETIME_MINUTES")
 	overrideDuration(&cfg.Database.ConnectTimeout, "DB_CONNECT_TIMEOUT")
 	overrideInt(&cfg.Database.AuthCacheTTLMillis, "DB_AUTH_CACHE_TTL_MS")
+	overrideDuration(&cfg.Database.DownloadCountFlushInterval, "DB_DOWNLOAD_COUNT_FLUSH_INTERVAL")
 	overrideKeyValues(&cfg.Database.Options, "DB_OPTIONS")
 
 	// Storage config
@@ -1148,6 +1151,10 @@ func (c *Config) Validate() error {
 
 	if c.Database.MaxOpenConns < 0 || c.Database.MaxOpenConns == 1 {
 		return errMaxOpenConnsTooSmall
+	}
+
+	if c.Database.DownloadCountFlushInterval < 0 {
+		return errNegativeDownloadFlush
 	}
 
 	if c.Database.Password == placeholderPassword {

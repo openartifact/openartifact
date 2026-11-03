@@ -259,21 +259,6 @@ func (q *Queries) GetNixSigningKey(ctx context.Context, repositoryID string) (Ni
 	return i, err
 }
 
-const incrementNixDownloadCount = `-- name: IncrementNixDownloadCount :exec
-UPDATE package_files SET download_count = download_count + 1
-WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL
-`
-
-type IncrementNixDownloadCountParams struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-}
-
-func (q *Queries) IncrementNixDownloadCount(ctx context.Context, arg IncrementNixDownloadCountParams) error {
-	_, err := q.db.Exec(ctx, incrementNixDownloadCount, arg.ID, arg.RepositoryID)
-	return err
-}
-
 const listNixPaths = `-- name: ListNixPaths :many
 SELECT f.id, f.repository_id, v.version AS store_hash, p.name, v.metadata, f.download_count,
        b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, f.created_at, f.updated_at

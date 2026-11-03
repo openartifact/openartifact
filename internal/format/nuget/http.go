@@ -70,7 +70,9 @@ type HTTPStore interface {
 	GetNuGetPackage(ctx context.Context, repoID string, packageID string, version string) (*models.NuGetPackage, error)
 	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
-	IncrementNuGetDownloadCount(ctx context.Context, repoID string, packageID string, version string) error
+	// CountFileDownload counts one download of a package file; it is batched and
+	// written to the database with the next flush.
+	CountFileDownload(fileID string)
 	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
 	ListNuGetPackageVersions(ctx context.Context, repoID string, packageID string) ([]*models.NuGetPackage, error)
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
@@ -694,10 +696,7 @@ func (h *HTTPHandler) handleDownloadPackage(w http.ResponseWriter, r *http.Reque
 
 	// Count the download before the blob is opened or redirected to: a
 	// presigned response never reaches the streaming code below.
-	if err := h.DB.IncrementNuGetDownloadCount(r.Context(), repoID, packageID, version); err != nil {
-		h.Log.Errorw("failed to increment download count", "id", packageID, "version", version, "error", err)
-		// Continue anyway
-	}
+	h.DB.CountFileDownload(pkg.ID)
 
 	if h.TryPresign(
 		w,

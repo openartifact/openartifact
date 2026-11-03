@@ -117,9 +117,7 @@ func (h *HTTPHandler) handleProviderDownload(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := h.DB.IncrementTerraformProviderDownloadCount(r.Context(), repo.ID, p.ID); err != nil {
-		h.Log.Warnw("failed to count terraform provider download", "id", p.ID, "error", err)
-	}
+	h.DB.CountFileDownload(p.ID)
 
 	w.Header().Set("Cache-Control", "private, no-store")
 	writeJSON(w, http.StatusOK, map[string]any{

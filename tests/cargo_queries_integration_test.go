@@ -63,8 +63,10 @@ func TestCargoCrateLookupsAreCaseInsensitive(t *testing.T) {
 		t.Fatalf("YankCargoCrate: %v", err)
 	}
 
-	if err := pg.IncrementCargoDownloadCount(ctx, repoID, "demo-crate", "1.0.0"); err != nil {
-		t.Fatalf("IncrementCargoDownloadCount: %v", err)
+	pg.CountFileDownload(got.ID)
+
+	if err := pg.FlushDownloadCounts(ctx); err != nil {
+		t.Fatalf("FlushDownloadCounts: %v", err)
 	}
 
 	got, _ = pg.GetCargoCrate(ctx, repoID, "Demo-Crate", "1.0.0")

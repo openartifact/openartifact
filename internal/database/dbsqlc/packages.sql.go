@@ -11,6 +11,33 @@ import (
 	"time"
 )
 
+const addFileDownloads = `-- name: AddFileDownloads :exec
+WITH due AS (
+    SELECT f.id, v.n
+    FROM package_files f
+    JOIN (SELECT unnest($1::uuid[]) AS id, unnest($2::bigint[]) AS n) v ON f.id = v.id
+    WHERE f.deleted_at IS NULL
+    ORDER BY f.id
+    FOR UPDATE OF f
+)
+UPDATE package_files f SET download_count = f.download_count + due.n
+FROM due WHERE f.id = due.id
+`
+
+type AddFileDownloadsParams struct {
+	Ids    []string `db:"ids" json:"ids"`
+	Counts []int64  `db:"counts" json:"counts"`
+}
+
+// Adds the batched download counts of the flush (ids[i] gained counts[i]). The
+// rows are locked in id order so two replicas flushing overlapping sets cannot
+// deadlock each other. A trashed file is skipped, and updated_at is left alone:
+// a download is not a modification (the table trigger agrees).
+func (q *Queries) AddFileDownloads(ctx context.Context, arg AddFileDownloadsParams) error {
+	_, err := q.db.Exec(ctx, addFileDownloads, arg.Ids, arg.Counts)
+	return err
+}
+
 const deletePackageFilesByID = `-- name: DeletePackageFilesByID :many
 DELETE FROM package_files WHERE repository_id = $1 AND id = ANY($2::uuid[])
 RETURNING id, version_id, blob_id
@@ -64,15 +91,6 @@ func (q *Queries) GetLiveVersionID(ctx context.Context, arg GetLiveVersionIDPara
 	var id string
 	err := row.Scan(&id)
 	return id, err
-}
-
-const incrementFileDownloads = `-- name: IncrementFileDownloads :exec
-UPDATE package_files SET download_count = download_count + 1, updated_at = now() WHERE id = $1
-`
-
-func (q *Queries) IncrementFileDownloads(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, incrementFileDownloads, id)
-	return err
 }
 
 const insertPackageFile = `-- name: InsertPackageFile :one

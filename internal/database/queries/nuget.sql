@@ -71,13 +71,6 @@ JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
 JOIN blobs b ON b.id = f.blob_id
 ORDER BY m.name_key, v.created_at, v.id;
 
--- name: IncrementNuGetDownloadCount :exec
-UPDATE package_files f SET download_count = f.download_count + 1, updated_at = NOW()
-FROM package_versions v, packages p
-WHERE f.version_id = v.id AND v.package_id = p.id
-  AND p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(name_key)
-  AND v.version_key = sqlc.arg(version) AND v.deleted_at IS NULL AND f.deleted_at IS NULL;
-
 -- name: SetNuGetDependencyGroups :exec
 -- Backfills the dependency groups of a package published before they were
 -- stored. It never overwrites a value; the file's updated_at (the one the

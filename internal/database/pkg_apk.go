@@ -186,15 +186,6 @@ func (p *APKStore) DeleteApkPackage(ctx context.Context, id, repoID string) erro
 	return nil
 }
 
-// IncrementApkDownloadCount counts one download of a package.
-func (p *APKStore) IncrementApkDownloadCount(ctx context.Context, id, repoID string) error {
-	if err := p.q.IncrementApkDownloadCount(ctx, dbsqlc.IncrementApkDownloadCountParams{ID: id, RepositoryID: repoID}); err != nil {
-		return fmt.Errorf("failed to count apk download: %w", err)
-	}
-
-	return nil
-}
-
 // GetApkSigningKey returns the repository's signing key, or (nil, nil).
 func (p *APKStore) GetApkSigningKey(ctx context.Context, repoID string) (*models.ApkSigningKey, error) {
 	row, err := p.q.GetApkSigningKey(ctx, repoID)

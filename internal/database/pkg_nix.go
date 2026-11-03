@@ -229,15 +229,6 @@ func (p *NixStore) DeleteNixPath(ctx context.Context, repoID, id string) error {
 	return nil
 }
 
-// IncrementNixDownloadCount counts one download of a path's NAR file.
-func (p *NixStore) IncrementNixDownloadCount(ctx context.Context, id, repoID string) error {
-	if err := p.q.IncrementNixDownloadCount(ctx, dbsqlc.IncrementNixDownloadCountParams{ID: id, RepositoryID: repoID}); err != nil {
-		return fmt.Errorf("failed to count nix download: %w", err)
-	}
-
-	return nil
-}
-
 // DeleteStaleNixPendingNars deletes up to limit staging rows older than before
 // and returns the sha256 of their NAR files so the caller can delete the blobs.
 func (p *NixStore) DeleteStaleNixPendingNars(ctx context.Context, before time.Time, limit int) ([]string, error) {

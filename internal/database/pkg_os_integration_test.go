@@ -558,7 +558,9 @@ func TestApkStoreRoundTrip(t *testing.T) {
 		t.Errorf("duplicate create = %v, want ErrDuplicate", err)
 	}
 
-	if err := pg.IncrementApkDownloadCount(ctx, pkg.ID, repoID); err != nil {
+	pg.CountFileDownload(pkg.ID)
+
+	if err := pg.FlushDownloadCounts(ctx); err != nil {
 		t.Fatal(err)
 	}
 

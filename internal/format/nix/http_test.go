@@ -119,9 +119,8 @@ func (d *nixDB) DeleteNixPath(_ context.Context, _, id string) error {
 	return nil
 }
 
-func (d *nixDB) IncrementNixDownloadCount(_ context.Context, id, _ string) error {
+func (d *nixDB) CountFileDownload(id string) {
 	d.downloads[id]++
-	return nil
 }
 
 func (d *nixDB) BlobReferenceCount(_ context.Context, sha string) (int, error) {

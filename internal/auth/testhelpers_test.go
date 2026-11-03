@@ -488,9 +488,6 @@ func (m *tokenMockDB) ListNuGetPackageVersions(_ context.Context, _, _ string) (
 func (m *tokenMockDB) SearchNuGetPackages(_ context.Context, _, _ string, _, _ int) ([]*models.NuGetPackage, int, error) {
 	return nil, 0, nil
 }
-func (m *tokenMockDB) IncrementNuGetDownloadCount(_ context.Context, _, _, _ string) error {
-	return nil
-}
 
 // Go Module Proxy methods
 func (m *tokenMockDB) CreateGoModule(_ context.Context, _ *models.GoModule) error { return nil }
@@ -567,9 +564,6 @@ func (m *tokenMockDB) SearchCargoCrates(_ context.Context, _, _ string, _ int) (
 	return nil, nil
 }
 func (m *tokenMockDB) YankCargoCrate(_ context.Context, _, _, _ string, _ bool) error { return nil }
-func (m *tokenMockDB) IncrementCargoDownloadCount(_ context.Context, _, _, _ string) error {
-	return nil
-}
 
 // RubyGems methods
 func (m *tokenMockDB) CreateRubyGem(_ context.Context, _ *models.RubyGem) error { return nil }

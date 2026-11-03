@@ -34,16 +34,10 @@ JOIN blobs b ON b.id = f.blob_id
 WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND p.attrs ->> 'kind' = 'module'
 ORDER BY p.attrs ->> 'name', p.attrs ->> 'system', f.created_at, f.id;
 
--- name: IncrementTerraformDownloadCount :exec
--- One download of a module archive or a provider zip.
-UPDATE package_files SET download_count = download_count + 1
-WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL;
-
 -- name: TerraformPackageStamp :one
 -- Fingerprint of the live files of one module or provider type: their count
 -- and an order-independent hash of their IDs. Files are immutable apart from
--- the download counter (updated_at moves with every download, so it is no
--- validator), and trash/restore changes membership.
+-- the download counter, and trash/restore changes membership.
 SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(f.id::text, 0)), 0)::text)::text AS stamp
 FROM packages p
 JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL

@@ -41,7 +41,7 @@ func (d *apkDB) GetApkPackageFile(_ context.Context, _, _, _, _, name, version s
 	return nil, nil
 }
 
-func (*apkDB) IncrementApkDownloadCount(context.Context, string, string) error { return nil }
+func (*apkDB) CountFileDownload(string) {}
 
 // TestDownloadQuarantinedByRowID: a scan keyed by the package's row id (the id
 // the package listing shows) blocks the download of that package only.

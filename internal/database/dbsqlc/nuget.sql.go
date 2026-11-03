@@ -64,25 +64,6 @@ func (q *Queries) GetNuGetPackage(ctx context.Context, arg GetNuGetPackageParams
 	return i, err
 }
 
-const incrementNuGetDownloadCount = `-- name: IncrementNuGetDownloadCount :exec
-UPDATE package_files f SET download_count = f.download_count + 1, updated_at = NOW()
-FROM package_versions v, packages p
-WHERE f.version_id = v.id AND v.package_id = p.id
-  AND p.repository_id = $1 AND p.name_key = $2
-  AND v.version_key = $3 AND v.deleted_at IS NULL AND f.deleted_at IS NULL
-`
-
-type IncrementNuGetDownloadCountParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	NameKey      string `db:"name_key" json:"name_key"`
-	Version      string `db:"version" json:"version"`
-}
-
-func (q *Queries) IncrementNuGetDownloadCount(ctx context.Context, arg IncrementNuGetDownloadCountParams) error {
-	_, err := q.db.Exec(ctx, incrementNuGetDownloadCount, arg.RepositoryID, arg.NameKey, arg.Version)
-	return err
-}
-
 const listNuGetPackageFileIDs = `-- name: ListNuGetPackageFileIDs :many
 SELECT f.id
 FROM packages p
