@@ -7,7 +7,6 @@ package worker
 import (
 	"bytes"
 	"cmp"
-	"compress/gzip"
 	"context"
 	"crypto/md5"  //nolint:gosec // required by the protocol
 	"crypto/sha1" //nolint:gosec // required by the protocol
@@ -21,30 +20,24 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/klauspost/compress/gzip"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repotype"
-	"github.com/openartifact/openartifact/internal/xzutil"
 	"golang.org/x/sync/errgroup"
 )
 
 const (
 	// maxUpstreamRelease caps an upstream Release file read for a merge.
 	maxUpstreamRelease = 64 << 20
-	// debStanzaHint is a typical Packages stanza size, used to size the xz
-	// dictionary of an index.
-	debStanzaHint = 1024
-	// debProxyIndexHint is the expected size of a proxy member's index (a
-	// full Debian suite component is tens of MiB).
-	debProxyIndexHint = 32 << 20
 	// debFetchWorkers bounds the concurrent reads of upstream metadata (each
 	// holds a decompressor and, on a cold proxy cache, an upstream request).
 	debFetchWorkers = 8
-	// debCompressWorkers bounds the indexes compressed at once; each holds an
-	// xz encoder (up to about 50 MB) and its output.
+	// debCompressWorkers bounds the indexes compressed at once; each holds
+	// the accepted stanzas of its index and its output.
 	debCompressWorkers = 3
 	// maxBufferHint caps the output buffer pre-sized from the index size.
 	maxBufferHint = 64 << 20
@@ -332,33 +325,27 @@ func (j *groupJob) buildDebDist(ctx context.Context, dist string, hosted map[str
 	for _, idx := range indexes {
 		files = append(files, idx.plainInfo(idx.base))
 
-		for _, form := range []struct {
-			ext    string
-			data   []byte
-			reused *formatdeb.FileInfo
-		}{{".gz", idx.gz, idx.reusedGz}, {".xz", idx.xz, idx.reusedXz}} {
-			rel := "dists/" + dist + "/" + idx.base + form.ext
+		rel := "dists/" + dist + "/" + idx.base + ".gz"
 
-			if form.reused != nil {
-				j.unchanged[rel] = form.reused.SHA256
-				files = append(files, *form.reused)
+		if idx.reusedGz != nil {
+			j.unchanged[rel] = idx.reusedGz.SHA256
+			files = append(files, *idx.reusedGz)
 
-				continue
-			}
-
-			j.blobs[rel] = form.data
-			md5sum, sha1sum, sha256sum := formatdeb.CalculateChecksums(form.data)
-			files = append(
-				files,
-				formatdeb.FileInfo{
-					Filename: idx.base + form.ext,
-					Size:     int64(len(form.data)),
-					MD5sum:   md5sum,
-					SHA1:     sha1sum,
-					SHA256:   sha256sum,
-				},
-			)
+			continue
 		}
+
+		j.blobs[rel] = idx.gz
+		md5sum, sha1sum, sha256sum := formatdeb.CalculateChecksums(idx.gz)
+		files = append(
+			files,
+			formatdeb.FileInfo{
+				Filename: idx.base + ".gz",
+				Size:     int64(len(idx.gz)),
+				MD5sum:   md5sum,
+				SHA1:     sha1sum,
+				SHA256:   sha256sum,
+			},
+		)
 	}
 
 	sort.Slice(files, func(a, b int) bool { return files[a].Filename < files[b].Filename })
@@ -484,14 +471,11 @@ type debIndex struct {
 	texts []string
 	// size is the uncompressed size, the sum of the texts' lengths.
 	size int64
-	// dictHint sizes the xz dictionary.
-	dictHint int
-
-	gz, xz []byte
-	// reusedGz and reusedXz are set instead of gz and xz when the index is
-	// byte for byte the one the group published last: the stored compressed
-	// files are kept and only their Release entries are carried over.
-	reusedGz, reusedXz *formatdeb.FileInfo
+	gz   []byte
+	// reusedGz is set instead of gz when the index is byte for byte the one the
+	// group published last: the stored compressed file is kept and only its
+	// Release entry is carried over.
+	reusedGz *formatdeb.FileInfo
 
 	// plain describes the uncompressed index for the Release file. Release lists
 	// it although it is not stored: apt skips an index whose uncompressed entry
@@ -510,24 +494,24 @@ func (i *debIndex) plainInfo(name string) formatdeb.FileInfo {
 	}
 }
 
-// compress produces the gzip and xz forms and the checksums of the plain index,
-// unless prev shows that the group already published this very index: then
-// nothing is compressed, the stored files stay and their Release entries are
-// those of the previous Release. The compressions and the checksums are
-// independent passes over the texts, so they run concurrently (xz dominates;
-// it is an order of magnitude slower than gzip).
+// compress produces the gzip form and the checksums of the plain index, unless
+// prev shows that the group already published this very index: then nothing is
+// compressed, the stored file stays and its Release entry is the one of the
+// previous Release. The compression and the checksums are independent passes
+// over the texts, so they run concurrently. Only gzip is published: the pure-Go
+// xz encoder costs about ten times the CPU of gzip for an index 5 % smaller,
+// and apt uses gzip when Release lists no xz.
 func (i *debIndex) compress(prev *debPrevious) error {
 	if i.reuse(prev) {
 		return nil
 	}
 
 	var (
-		gzBuf, xzBuf bytes.Buffer
-		wg           errgroup.Group
+		gzBuf bytes.Buffer
+		wg    errgroup.Group
 	)
 
 	gzBuf.Grow(int(min(i.size/4, maxBufferHint)))
-	xzBuf.Grow(int(min(i.size/6, maxBufferHint)))
 
 	wg.Go(func() error {
 		gw := gzip.NewWriter(&gzBuf)
@@ -538,23 +522,6 @@ func (i *debIndex) compress(prev *debPrevious) error {
 
 		if err := gw.Close(); err != nil {
 			return fmt.Errorf("group worker: gzip compression: %w", err)
-		}
-
-		return nil
-	})
-
-	wg.Go(func() error {
-		xw, err := xzutil.NewWriter(&xzBuf, i.dictHint)
-		if err != nil {
-			return fmt.Errorf("group worker: xz compression: %w", err)
-		}
-
-		if err := writeAll(xw, i.texts); err != nil {
-			return err
-		}
-
-		if err := xw.Close(); err != nil {
-			return fmt.Errorf("group worker: xz compression: %w", err)
 		}
 
 		return nil
@@ -578,7 +545,7 @@ func (i *debIndex) compress(prev *debPrevious) error {
 		return err //nolint:wrapcheck // the tasks wrap
 	}
 
-	i.gz, i.xz = gzBuf.Bytes(), xzBuf.Bytes()
+	i.gz = gzBuf.Bytes()
 	i.texts = nil
 
 	return nil
@@ -599,13 +566,13 @@ func (i *debIndex) reuse(prev *debPrevious) bool {
 
 	sum := hex.EncodeToString(h.Sum(nil))
 
-	plain, gz, xz, ok := prev.reusable(i.base, i.size, sum)
+	plain, gz, ok := prev.reusable(i.base, i.size, sum)
 	if !ok {
 		return false
 	}
 
 	i.plainMD5, i.plainSHA1, i.plainSHA256 = plain.MD5sum, plain.SHA1, plain.SHA256
-	i.reusedGz, i.reusedXz = &gz, &xz
+	i.reusedGz = &gz
 	i.texts = nil
 
 	return true
@@ -623,23 +590,21 @@ type debPrevious struct {
 }
 
 // reusable returns the Release entries of the index base (relative to the
-// distribution) and of its compressed forms when the last published index has the
-// given size and SHA-256 and its compressed files are still stored as that
-// Release lists them.
+// distribution) and of its gzip form when the last published index has the given
+// size and SHA-256 and its gzip file is still stored as that Release lists it.
 func (p *debPrevious) reusable(
 	base string,
 	size int64,
 	sha256sum string,
-) (formatdeb.FileInfo, formatdeb.FileInfo, formatdeb.FileInfo, bool) {
-	plain, gz, xz := p.files[base], p.files[base+".gz"], p.files[base+".xz"]
+) (formatdeb.FileInfo, formatdeb.FileInfo, bool) {
+	plain, gz := p.files[base], p.files[base+".gz"]
 	if plain.SHA256 != sha256sum || plain.Size != size {
-		return plain, gz, xz, false
+		return plain, gz, false
 	}
 
-	ok := p.stored[p.prefix+base+".gz"] == gz.SHA256 && p.stored[p.prefix+base+".xz"] == xz.SHA256 &&
-		gz.SHA256 != "" && xz.SHA256 != ""
+	ok := p.stored[p.prefix+base+".gz"] == gz.SHA256 && gz.SHA256 != ""
 
-	return plain, gz, xz, ok
+	return plain, gz, ok
 }
 
 func writeAll(w io.Writer, texts []string) error {
@@ -683,7 +648,7 @@ func (j *groupJob) buildDebIndexes(
 	indexes := make([]*debIndex, 0, len(comps)*len(archs))
 	for _, comp := range comps {
 		for _, arch := range archs {
-			indexes = append(indexes, &debIndex{base: fmt.Sprintf("%s/binary-%s/Packages", comp, arch), dictHint: j.debDictHint(contribs)})
+			indexes = append(indexes, &debIndex{base: fmt.Sprintf("%s/binary-%s/Packages", comp, arch)})
 		}
 	}
 
@@ -703,23 +668,6 @@ func (j *groupJob) buildDebIndexes(
 	}
 
 	return indexes, nil
-}
-
-// debDictHint sizes the xz dictionary: a proxy member's index is tens of MiB,
-// a hosted member's is a stanza per entry.
-func (j *groupJob) debDictHint(contribs []debContribution) int {
-	hint, proxies := 0, false
-
-	for _, c := range contribs {
-		hint += c.hostedFileCount() * debStanzaHint
-		proxies = proxies || c.rel != nil
-	}
-
-	if proxies {
-		hint += debProxyIndexHint
-	}
-
-	return hint
 }
 
 // scanDebProxies reads, concurrently, the Packages index every proxy member
@@ -804,8 +752,8 @@ func (j *groupJob) mergeDebIndex(idx *debIndex, comp, arch string, contribs []de
 }
 
 // compressDebIndexes compresses the indexes concurrently, biggest first so the
-// slowest one starts at once. Each compression holds an xz encoder of up to
-// 50 MB, hence the small pool.
+// slowest one starts at once. Each compression holds the index's stanzas and
+// its output, hence the small pool.
 func compressDebIndexes(ctx context.Context, indexes []*debIndex, prev *debPrevious) error {
 	order := slices.Clone(indexes)
 	slices.SortStableFunc(order, func(a, b *debIndex) int { return cmp.Compare(b.size, a.size) })
@@ -825,14 +773,6 @@ func compressDebIndexes(ctx context.Context, indexes []*debIndex, prev *debPrevi
 	}
 
 	return wg.Wait() //nolint:wrapcheck // the tasks wrap
-}
-
-func (c debContribution) hostedFileCount() int {
-	if c.hosted == nil {
-		return 0
-	}
-
-	return len(c.hosted.files)
 }
 
 // debStanzaKey identifies a package version within an index.

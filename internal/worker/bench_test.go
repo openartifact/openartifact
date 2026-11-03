@@ -106,7 +106,7 @@ func benchDebWorkerEntries(n int) []models.DebPackageEntry {
 	return entries
 }
 
-// BenchmarkDebGenerateDistribution renders every Packages/.gz/.xz index plus
+// BenchmarkDebGenerateDistribution renders every Packages/.gz index plus
 // Release for one distribution (2 components x 2 real architectures + all),
 // the pure part of DebMetadataWorker.regenerate.
 func BenchmarkDebGenerateDistribution(b *testing.B) {
@@ -178,7 +178,7 @@ func benchRPMWorkerPackages(n int) []pkgrpm.Package {
 }
 
 // BenchmarkRPMBuildMetadata is the pure core of RPMetadataWorker.Regenerate:
-// primary/filelists/other XML, gzip+xz compression, repomd.xml (unsigned).
+// primary/filelists/other XML, gzip compression, repomd.xml (unsigned).
 func BenchmarkRPMBuildMetadata(b *testing.B) {
 	w := &RPMetadataWorker{db: &benchWorkerDB{}}
 

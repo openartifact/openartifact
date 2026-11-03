@@ -73,7 +73,7 @@ func compressRPMXML(t *testing.T, data []byte) *formatrpm.CompressedMetadata {
 	c, err := formatrpm.CompressMetadataStream(func(w io.Writer) error {
 		_, err := w.Write(data)
 		return err
-	}, len(data))
+	})
 	if err != nil {
 		t.Fatalf("CompressMetadataStream() error: %v", err)
 	}
@@ -125,24 +125,12 @@ func TestCompressionAndChecksums(t *testing.T) {
 		t.Error("gzip data is empty")
 	}
 
-	if len(compressed.XZData) == 0 {
-		t.Error("xz data is empty")
-	}
-
 	if compressed.GzSHA256 == "" {
 		t.Error("gzip SHA-256 is empty")
 	}
 
-	if compressed.XZSHA256 == "" {
-		t.Error("xz SHA-256 is empty")
-	}
-
 	if compressed.GzSize == 0 {
 		t.Error("gzip size is 0")
-	}
-
-	if compressed.XZSize == 0 {
-		t.Error("xz size is 0")
 	}
 
 	if compressed.OpenSize == 0 {

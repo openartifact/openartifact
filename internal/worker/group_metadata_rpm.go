@@ -26,12 +26,8 @@ import (
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
-const (
-	// maxUpstreamRepomd caps an upstream repomd.xml read for a merge.
-	maxUpstreamRepomd = 16 << 20
-	// rpmXMLPerPackageHint sizes the xz dictionary of the merged documents.
-	rpmXMLPerPackageHint = 2048
-)
+// maxUpstreamRepomd caps an upstream repomd.xml read for a merge.
+const maxUpstreamRepomd = 16 << 20
 
 // rpmDocKinds are the repodata documents a group merges, in repomd order.
 func rpmDocKinds() []rpmDocKind {
@@ -93,7 +89,7 @@ func (j *groupJob) buildRPM(ctx context.Context) error {
 	for _, doc := range rpmDocKinds() {
 		comp, err := formatrpm.CompressMetadataStream(func(out io.Writer) error {
 			return j.writeRPMDocument(ctx, out, doc.name, doc.kind, sources, count)
-		}, count*rpmXMLPerPackageHint)
+		})
 		if err != nil {
 			return fmt.Errorf("group worker: generating %s.xml: %w", doc.name, err)
 		}
@@ -106,7 +102,6 @@ func (j *groupJob) buildRPM(ctx context.Context) error {
 		})
 
 		j.blobs[loc] = comp.GzipData
-		j.blobs[fmt.Sprintf("repodata/%s-%s.xml.xz", comp.XZSHA256, doc.name)] = comp.XZData
 	}
 
 	if entry, data, ok, err := j.mergeModules(ctx, sources, ts); err != nil {

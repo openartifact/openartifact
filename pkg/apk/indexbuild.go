@@ -33,7 +33,9 @@ type archiveFile struct {
 func gzipTar(files []archiveFile, withEnd bool) ([]byte, error) {
 	var buf bytes.Buffer
 
-	gw, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	// Level 6: on a real 8 MB community index level 9 costs three times the CPU
+	// for an archive 3 % smaller.
+	gw, err := gzip.NewWriterLevel(&buf, gzip.DefaultCompression)
 	if err != nil {
 		return nil, err
 	}

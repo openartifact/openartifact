@@ -227,7 +227,7 @@ func BenchmarkGenerateRepomdXML(b *testing.B) {
 	}
 }
 
-// BenchmarkCompressMetadata measures the gzip(best)+xz compression the worker
+// BenchmarkCompressMetadata measures the gzip compression the worker
 // runs for primary.xml on every regeneration. The 10000-package case is
 // skipped under -short.
 func BenchmarkCompressMetadata(b *testing.B) {
@@ -287,7 +287,6 @@ func BenchmarkPrimaryPipeline(b *testing.B) {
 			for b.Loop() {
 				if _, err := CompressMetadataStream(
 					func(w io.Writer) error { return WritePrimaryXML(w, pkgs) },
-					len(pkgs)*2048,
 				); err != nil {
 					b.Fatal(err)
 				}

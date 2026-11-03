@@ -26,5 +26,5 @@ func compressXML(data []byte) (*CompressedMetadata, error) {
 	return CompressMetadataStream(func(w io.Writer) error {
 		_, err := w.Write(data)
 		return err
-	}, len(data))
+	})
 }

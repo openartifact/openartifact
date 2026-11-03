@@ -69,7 +69,7 @@ Clients read the generated layout, relative to `HOST/repos/REPO`:
 |---|---|
 | `dists/<dist>/Release` | `Origin` and `Label` are `openartifact`; `Suite` and `Codename` are the distribution; MD5Sum, SHA1, SHA256 |
 | `dists/<dist>/InRelease`, `Release.gpg` | only when signing is configured, otherwise `404` |
-| `dists/<dist>/<comp>/binary-<arch>/Packages`, `.gz`, `.xz` | one per component and architecture |
+| `dists/<dist>/<comp>/binary-<arch>/Packages`, `.gz` | one per component and architecture; no `.xz` is built, apt uses the gzip index |
 | `pool/<comp>/<prefix>/<package>/<file>.deb` | package download |
 
 - A background worker regenerates the indexes 500 ms after an upload or delete. Until it has run, `Release` and `Packages*` are served straight from the database.
@@ -105,7 +105,7 @@ Curation applies to downloads. Minimum age has no effect, because Debian indexes
 
 ## Group
 
-A Debian group is read-only. It publishes merged `Release`, `InRelease`, `Release.gpg` and `Packages.gz`/`Packages.xz` for each distribution at least one member has, signed with the server key. It serves `pool/` files from the member that owns them.
+A Debian group is read-only. It publishes merged `Release`, `InRelease`, `Release.gpg` and `Packages.gz` for each distribution at least one member has, signed with the server key. It serves `pool/` files from the member that owns them.
 
 Use it like a hosted repository, with the key from the group's `public.key`:
 

@@ -112,23 +112,6 @@ func BenchmarkPackagesGenerateGzipped(b *testing.B) {
 	}
 }
 
-func BenchmarkPackagesGenerateXZipped(b *testing.B) {
-	for _, n := range benchEntryCounts {
-		gen := benchPackagesGenerator(n)
-
-		b.Run(fmt.Sprintf("entries=%d", n), func(b *testing.B) {
-			b.ReportAllocs()
-			b.SetBytes(int64(len(gen.Generate())))
-
-			for b.Loop() {
-				if _, err := gen.GenerateXZipped(); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-	}
-}
-
 func BenchmarkGenerateRelease(b *testing.B) {
 	for _, n := range []int{10, 100, 1000} {
 		files := make([]FileInfo, n)
