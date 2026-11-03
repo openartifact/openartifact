@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/ulikunitz/xz"
@@ -157,6 +158,79 @@ func ParseRelease(data []byte) UpstreamRelease {
 	}
 
 	return rel
+}
+
+// ParseReleaseChecksums reads the files a Release or InRelease document lists
+// (MD5Sum, SHA1 and SHA256 sections) by their path relative to dists/<dist>/. An
+// entry is returned only when all three sections list the file with the same
+// size, so every field of it is set.
+func ParseReleaseChecksums(data []byte) map[string]FileInfo {
+	// listing is what the three sections say about one file.
+	type listing struct {
+		sum  [3]string
+		size [3]int64
+		have [3]bool
+	}
+
+	listings := make(map[string]*listing)
+	section := -1
+
+	for line := range strings.SplitSeq(string(stripClearsign(data)), "\n") {
+		line = strings.TrimRight(line, "\r")
+		if line == "" {
+			continue
+		}
+
+		if line[0] != ' ' && line[0] != '\t' {
+			name, _, _ := strings.Cut(line, ":")
+			section = releaseSection(name)
+
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if section < 0 || len(fields) != 3 {
+			continue
+		}
+
+		size, err := strconv.ParseInt(fields[1], 10, 64)
+		if err != nil || size < 0 {
+			continue
+		}
+
+		l := listings[fields[2]]
+		if l == nil {
+			l = &listing{}
+			listings[fields[2]] = l
+		}
+
+		l.sum[section], l.size[section], l.have[section] = fields[0], size, true
+	}
+
+	out := make(map[string]FileInfo, len(listings))
+
+	for name, l := range listings {
+		if l.have[0] && l.have[1] && l.have[2] && l.size[0] == l.size[1] && l.size[1] == l.size[2] {
+			out[name] = FileInfo{Filename: name, Size: l.size[2], MD5sum: l.sum[0], SHA1: l.sum[1], SHA256: l.sum[2]}
+		}
+	}
+
+	return out
+}
+
+// releaseSection maps the name of a Release checksum field to its index in
+// ParseReleaseChecksums, or -1 for any other field.
+func releaseSection(name string) int {
+	switch strings.ToLower(name) {
+	case "md5sum":
+		return 0
+	case "sha1":
+		return 1
+	case "sha256":
+		return 2
+	}
+
+	return -1
 }
 
 // stripClearsign returns the signed text of a cleartext-signed document, or

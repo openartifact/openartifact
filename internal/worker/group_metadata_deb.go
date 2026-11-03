@@ -62,7 +62,7 @@ func ValidDistName(name string) bool { return validDistName.MatchString(name) }
 type debHostedDist struct {
 	components    []string
 	architectures []string
-	entries       []models.DebPackageEntry
+	files         []debFile
 }
 
 // debContribution is what one member offers for a distribution.
@@ -192,7 +192,7 @@ func (j *groupJob) loadHostedDeb(ctx context.Context) (map[string]map[string]*de
 			return nil, fmt.Errorf("group worker: querying distributions of %s: %w", m.Name, err)
 		}
 
-		entries, err := db.ListDebPackageEntries(ctx, m.ID, "", "", "")
+		files, err := j.w.stanzas.files(ctx, db, m.ID)
 		if err != nil {
 			return nil, fmt.Errorf("group worker: querying packages of %s: %w", m.Name, err)
 		}
@@ -223,12 +223,12 @@ func (j *groupJob) loadHostedDeb(ctx context.Context) (map[string]map[string]*de
 			byDist[d.Name] = hd
 		}
 
-		for _, e := range entries {
-			if hd := byDist[e.Distribution]; hd != nil {
-				hd.entries = append(hd.entries, e)
+		for _, f := range files {
+			if hd := byDist[f.stamp.Distribution]; hd != nil {
+				hd.files = append(hd.files, f)
 			}
 
-			j.hostedNames[e.Name] = struct{}{}
+			j.hostedNames[f.stamp.Name] = struct{}{}
 		}
 
 		out[m.ID] = byDist
@@ -332,12 +332,31 @@ func (j *groupJob) buildDebDist(ctx context.Context, dist string, hosted map[str
 	for _, idx := range indexes {
 		files = append(files, idx.plainInfo(idx.base))
 
-		for ext, data := range map[string][]byte{".gz": idx.gz, ".xz": idx.xz} {
-			j.blobs["dists/"+dist+"/"+idx.base+ext] = data
-			md5sum, sha1sum, sha256sum := formatdeb.CalculateChecksums(data)
+		for _, form := range []struct {
+			ext    string
+			data   []byte
+			reused *formatdeb.FileInfo
+		}{{".gz", idx.gz, idx.reusedGz}, {".xz", idx.xz, idx.reusedXz}} {
+			rel := "dists/" + dist + "/" + idx.base + form.ext
+
+			if form.reused != nil {
+				j.unchanged[rel] = form.reused.SHA256
+				files = append(files, *form.reused)
+
+				continue
+			}
+
+			j.blobs[rel] = form.data
+			md5sum, sha1sum, sha256sum := formatdeb.CalculateChecksums(form.data)
 			files = append(
 				files,
-				formatdeb.FileInfo{Filename: idx.base + ext, Size: int64(len(data)), MD5sum: md5sum, SHA1: sha1sum, SHA256: sha256sum},
+				formatdeb.FileInfo{
+					Filename: idx.base + form.ext,
+					Size:     int64(len(form.data)),
+					MD5sum:   md5sum,
+					SHA1:     sha1sum,
+					SHA256:   sha256sum,
+				},
 			)
 		}
 	}
@@ -469,6 +488,10 @@ type debIndex struct {
 	dictHint int
 
 	gz, xz []byte
+	// reusedGz and reusedXz are set instead of gz and xz when the index is
+	// byte for byte the one the group published last: the stored compressed
+	// files are kept and only their Release entries are carried over.
+	reusedGz, reusedXz *formatdeb.FileInfo
 
 	// plain describes the uncompressed index for the Release file. Release lists
 	// it although it is not stored: apt skips an index whose uncompressed entry
@@ -487,10 +510,17 @@ func (i *debIndex) plainInfo(name string) formatdeb.FileInfo {
 	}
 }
 
-// compress produces the gzip and xz forms and the checksums of the plain index.
-// The three are independent passes over the texts, so they run concurrently
-// (xz dominates; it is an order of magnitude slower than gzip).
-func (i *debIndex) compress() error {
+// compress produces the gzip and xz forms and the checksums of the plain index,
+// unless prev shows that the group already published this very index: then
+// nothing is compressed, the stored files stay and their Release entries are
+// those of the previous Release. The compressions and the checksums are
+// independent passes over the texts, so they run concurrently (xz dominates;
+// it is an order of magnitude slower than gzip).
+func (i *debIndex) compress(prev *debPrevious) error {
+	if i.reuse(prev) {
+		return nil
+	}
+
 	var (
 		gzBuf, xzBuf bytes.Buffer
 		wg           errgroup.Group
@@ -554,6 +584,64 @@ func (i *debIndex) compress() error {
 	return nil
 }
 
+// reuse sets the index up from prev when the group already published exactly
+// this index; it reports whether it did. An index of another size cannot be it,
+// so only then is the plain index hashed.
+func (i *debIndex) reuse(prev *debPrevious) bool {
+	if prev == nil || prev.files[i.base].Size != i.size {
+		return false
+	}
+
+	h := sha256.New()
+	if err := writeAll(h, i.texts); err != nil {
+		return false
+	}
+
+	sum := hex.EncodeToString(h.Sum(nil))
+
+	plain, gz, xz, ok := prev.reusable(i.base, i.size, sum)
+	if !ok {
+		return false
+	}
+
+	i.plainMD5, i.plainSHA1, i.plainSHA256 = plain.MD5sum, plain.SHA1, plain.SHA256
+	i.reusedGz, i.reusedXz = &gz, &xz
+	i.texts = nil
+
+	return true
+}
+
+// debPrevious is what the group published for a distribution the last time:
+// the files its Release listed, and the checksum each stored file is under.
+type debPrevious struct {
+	files map[string]formatdeb.FileInfo
+	// stored is the blob checksum of the stored files by group-relative path.
+	stored map[string]string
+	// prefix is the group-relative path of the distribution's directory,
+	// "dists/<dist>/", under the scope.
+	prefix string
+}
+
+// reusable returns the Release entries of the index base (relative to the
+// distribution) and of its compressed forms when the last published index has the
+// given size and SHA-256 and its compressed files are still stored as that
+// Release lists them.
+func (p *debPrevious) reusable(
+	base string,
+	size int64,
+	sha256sum string,
+) (formatdeb.FileInfo, formatdeb.FileInfo, formatdeb.FileInfo, bool) {
+	plain, gz, xz := p.files[base], p.files[base+".gz"], p.files[base+".xz"]
+	if plain.SHA256 != sha256sum || plain.Size != size {
+		return plain, gz, xz, false
+	}
+
+	ok := p.stored[p.prefix+base+".gz"] == gz.SHA256 && p.stored[p.prefix+base+".xz"] == xz.SHA256 &&
+		gz.SHA256 != "" && xz.SHA256 != ""
+
+	return plain, gz, xz, ok
+}
+
 func writeAll(w io.Writer, texts []string) error {
 	for _, t := range texts {
 		if _, err := io.WriteString(w, t); err != nil {
@@ -610,7 +698,7 @@ func (j *groupJob) buildDebIndexes(
 		scans[n] = nil // let the parsed stanzas go once merged
 	}
 
-	if err := compressDebIndexes(ctx, indexes); err != nil {
+	if err := compressDebIndexes(ctx, indexes, j.previousDebFiles(ctx, dist)); err != nil {
 		return nil, err
 	}
 
@@ -623,7 +711,7 @@ func (j *groupJob) debDictHint(contribs []debContribution) int {
 	hint, proxies := 0, false
 
 	for _, c := range contribs {
-		hint += len(c.hostedEntries()) * debStanzaHint
+		hint += c.hostedFileCount() * debStanzaHint
 		proxies = proxies || c.rel != nil
 	}
 
@@ -682,7 +770,8 @@ func (j *groupJob) mergeDebIndex(idx *debIndex, comp, arch string, contribs []de
 
 	for ci, c := range contribs {
 		if c.hosted != nil {
-			for _, e := range c.hosted.entries {
+			for i := range c.hosted.files {
+				e := &c.hosted.files[i].stamp
 				if e.ComponentName != comp || (e.Arch != arch && e.Arch != "all") {
 					continue
 				}
@@ -690,7 +779,7 @@ func (j *groupJob) mergeDebIndex(idx *debIndex, comp, arch string, contribs []de
 				st := formatdeb.Stanza{
 					Package: e.Name, Version: e.Version, Architecture: e.Arch,
 					Filename: formatdeb.GetPoolPath(e.ComponentName, e.Name, e.Version, e.Filename),
-					SHA256:   e.SHA256, Text: formatdeb.FormatPackagesEntry(e),
+					SHA256:   e.SHA256, Text: c.hosted.files[i].text,
 				}
 
 				add(c.member, st, true)
@@ -717,7 +806,7 @@ func (j *groupJob) mergeDebIndex(idx *debIndex, comp, arch string, contribs []de
 // compressDebIndexes compresses the indexes concurrently, biggest first so the
 // slowest one starts at once. Each compression holds an xz encoder of up to
 // 50 MB, hence the small pool.
-func compressDebIndexes(ctx context.Context, indexes []*debIndex) error {
+func compressDebIndexes(ctx context.Context, indexes []*debIndex, prev *debPrevious) error {
 	order := slices.Clone(indexes)
 	slices.SortStableFunc(order, func(a, b *debIndex) int { return cmp.Compare(b.size, a.size) })
 
@@ -731,19 +820,19 @@ func compressDebIndexes(ctx context.Context, indexes []*debIndex) error {
 				return fmt.Errorf("group worker: compressing %s: %w", idx.base, err)
 			}
 
-			return idx.compress()
+			return idx.compress(prev)
 		})
 	}
 
 	return wg.Wait() //nolint:wrapcheck // the tasks wrap
 }
 
-func (c debContribution) hostedEntries() []models.DebPackageEntry {
+func (c debContribution) hostedFileCount() int {
 	if c.hosted == nil {
-		return nil
+		return 0
 	}
 
-	return c.hosted.entries
+	return len(c.hosted.files)
 }
 
 // debStanzaKey identifies a package version within an index.
@@ -816,4 +905,78 @@ func (j *groupJob) scanProxyIndex(ctx context.Context, c debContribution, dist, 
 
 		return
 	}
+}
+
+// previousDebFiles reads what the group published for dist the last time (nil
+// when it published nothing, or it cannot be read: the index is then compressed
+// afresh).
+func (j *groupJob) previousDebFiles(ctx context.Context, dist string) *debPrevious {
+	prefix := "dists/" + dist + "/"
+
+	stored := j.storedDebMetadata(ctx)
+
+	sum := stored[prefix+"Release"]
+	if sum == "" {
+		return nil
+	}
+
+	rc, err := j.w.blobStore.Get(ctx, sum)
+	if err != nil {
+		return nil
+	}
+
+	defer func() { _ = rc.Close() }()
+
+	data, err := io.ReadAll(io.LimitReader(rc, maxUpstreamRelease))
+	if err != nil {
+		return nil
+	}
+
+	return &debPrevious{files: formatdeb.ParseReleaseChecksums(data), stored: stored, prefix: prefix}
+}
+
+// storedDebMetadata returns the checksums of the group's stored dists/ files
+// (by group-relative path) as they were when the generation started; the group
+// lock keeps anyone else from changing them meanwhile.
+func (j *groupJob) storedDebMetadata(ctx context.Context) map[string]string {
+	if j.stored != nil {
+		return j.stored
+	}
+
+	j.stored = map[string]string{}
+
+	if j.w.db == nil {
+		return j.stored
+	}
+
+	db := j.w.db.GetDB()
+	if db == nil {
+		return j.stored
+	}
+
+	rows, err := db.QueryContext(ctx,
+		`SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND starts_with(path, $2)`,
+		j.group.ID, j.scope+"dists/")
+	if err != nil {
+		return j.stored
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	found := map[string]string{}
+
+	for rows.Next() {
+		var path, sum string
+		if err := rows.Scan(&path, &sum); err != nil {
+			return j.stored
+		}
+
+		found[strings.TrimPrefix(path, j.scope)] = sum
+	}
+
+	if rows.Err() == nil {
+		j.stored = found
+	}
+
+	return j.stored
 }

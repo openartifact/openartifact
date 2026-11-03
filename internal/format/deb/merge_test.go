@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ulikunitz/xz"
 )
@@ -212,5 +213,42 @@ func TestDecompressIndexReadsInLargeChunks(t *testing.T) {
 
 	if limit := xzBuf.Len()/1024 + 8; src.reads > limit {
 		t.Errorf("%d reads of the source for %d compressed bytes, want at most %d", src.reads, xzBuf.Len(), limit)
+	}
+}
+
+func TestParseReleaseChecksumsRoundTrip(t *testing.T) {
+	files := []FileInfo{
+		{Filename: "main/binary-amd64/Packages", Size: 1234, MD5sum: "m1", SHA1: "s1", SHA256: "h1"},
+		{Filename: "main/binary-amd64/Packages.xz", Size: 99, MD5sum: "m2", SHA1: "s2", SHA256: "h2"},
+	}
+	rfg := &ReleaseFileGenerator{Origin: "o", Codename: "bookworm", Date: time.Unix(0, 0).UTC()}
+	release := rfg.GenerateRelease(files)
+
+	for name, doc := range map[string]string{
+		"Release":   release,
+		"InRelease": "-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\n" + release + "-----BEGIN PGP SIGNATURE-----\n\nabc\n-----END PGP SIGNATURE-----\n",
+	} {
+		got := ParseReleaseChecksums([]byte(doc))
+		if len(got) != len(files) {
+			t.Fatalf("%s: parsed %d files, want %d: %v", name, len(got), len(files), got)
+		}
+
+		for _, want := range files {
+			if got[want.Filename] != want {
+				t.Errorf("%s: %s = %+v, want %+v", name, want.Filename, got[want.Filename], want)
+			}
+		}
+	}
+}
+
+func TestParseReleaseChecksumsDropsIncompleteEntries(t *testing.T) {
+	doc := "Codename: x\n" +
+		"MD5Sum:\n m1 10 a\n m2 10 b\n m3 10 c\n" +
+		"SHA1:\n s1 10 a\n s2 99 b\n" +
+		"SHA256:\n h1 10 a\n h2 10 b\n h3 10 c\n"
+
+	got := ParseReleaseChecksums([]byte(doc))
+	if len(got) != 1 || got["a"].SHA256 != "h1" {
+		t.Errorf("entries = %v, want only a: b's sizes disagree and c has no SHA1", got)
 	}
 }
