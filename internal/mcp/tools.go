@@ -230,7 +230,7 @@ type artifactIn struct {
 //nolint:lll // jsonschema descriptions must stay on the tag line
 type sbomIn struct {
 	Repository string `json:"repository"       jsonschema:"Repository name"`
-	ArtifactID string `json:"artifact_id"      jsonschema:"Artifact ID: the id of a version returned by get_package or list_packages"`
+	ArtifactID string `json:"artifact_id"      jsonschema:"Artifact ID the SBOM was generated for: the id of a version returned by get_package or list_packages, or name@version"`
 	Format     string `json:"format,omitempty" jsonschema:"Stored SBOM format to read: cyclonedx, spdx-json, spdx3-json or spdx. Default: the most recently generated one."`
 	Limit      int    `json:"limit,omitempty"  jsonschema:"Max components to list (default 100, max 500)"`
 }
