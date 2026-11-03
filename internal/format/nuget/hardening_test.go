@@ -166,7 +166,7 @@ func TestDepCacheEvictsLeastRecentlyUsed(t *testing.T) {
 // file behind, whether it is accepted or not.
 func TestPushLeavesNoTempFile(t *testing.T) {
 	assertEmpty := formattest.IsolatedTemp(t)
-	h, _, _, _ := newV3Handler(t)
+	h, _, _, _ := newV3Handler(t) //nolint:dogsled // only the handler matters here
 
 	pushBytes(t, h, bytes.Repeat([]byte("n"), 40<<20))
 

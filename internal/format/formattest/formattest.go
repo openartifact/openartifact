@@ -507,22 +507,22 @@ func MavenGARefsFromArtifacts(arts []*models.MavenArtifact) *models.MavenGARefs 
 // check that fails the test when anything is left in it: an upload handler
 // must not leave a spool, a multipart temp file or any other scratch file
 // behind once its request is answered.
-func IsolatedTemp(t testing.TB) (assertEmpty func()) {
-	t.Helper()
+func IsolatedTemp(tb testing.TB) func() {
+	tb.Helper()
 
-	dir := t.TempDir()
-	t.Setenv("TMPDIR", dir)
+	dir := tb.TempDir()
+	tb.Setenv("TMPDIR", dir)
 
 	return func() {
-		t.Helper()
+		tb.Helper()
 
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			t.Fatalf("read temp dir: %v", err)
+			tb.Fatalf("read temp dir: %v", err)
 		}
 
 		for _, e := range entries {
-			t.Errorf("leftover temp file after the upload: %s", e.Name())
+			tb.Errorf("leftover temp file after the upload: %s", e.Name())
 		}
 	}
 }

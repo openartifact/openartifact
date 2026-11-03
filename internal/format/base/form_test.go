@@ -7,7 +7,7 @@ package base_test
 import (
 	"bytes"
 	"context"
-	"crypto/md5" //nolint:gosec // hash under test, not a security use
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -69,13 +69,16 @@ func formRequest(t *testing.T, body io.Reader, contentType, target string) *http
 	return req
 }
 
+// ctxKey is a request-context key of the tests that rewrap the request.
+type ctxKey struct{}
+
 func TestReadFormFieldsAndFileInEitherOrder(t *testing.T) {
 	content := bytes.Repeat([]byte("0123456789"), 300_000) // 3 MB: spools to disk
 	sum := sha256.Sum256(content)
-	wantMD5 := md5.Sum(content) //nolint:gosec // hash under test
+	wantMD5 := md5.Sum(content)
 
 	for _, fileFirst := range []bool{false, true} {
-		md5Sum := md5.New() //nolint:gosec // hash under test
+		md5Sum := md5.New()
 
 		body, ct := formBody(t, "pkg.bin", content, fileFirst,
 			formField{"name", "demo"}, formField{"tag", "a"}, formField{"tag", "b"})
@@ -189,7 +192,7 @@ func TestReadFormLeavesNoTempFile(t *testing.T) {
 	})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handler.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), struct{}{}, 1)))
+		handler.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, 1)))
 	}))
 	defer srv.Close()
 
