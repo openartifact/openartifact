@@ -80,11 +80,6 @@ func (j *Journal) Status(ctx context.Context) (Status, error) {
 		return st, fmt.Errorf("count reconciled tables: %w", err)
 	}
 
-	if j.m != nil {
-		j.m.JournalBacklog.Set(float64(st.Backlog))
-		j.m.OldestDirtyAgeSeconds.Set(st.OldestDirtyAgeSeconds)
-	}
-
 	return st, nil
 }
 

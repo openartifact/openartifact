@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -27,6 +28,9 @@ const (
 	// loadChunk bounds how many rows of one table are loaded (and held in
 	// memory) at once; npm manifests can be megabytes each.
 	loadChunk = 50
+
+	// chunkWorkers is how many chunks of a batch are processed at once.
+	chunkWorkers = 4
 
 	// retryBase and retryMax bound the per-row backoff after a failure.
 	retryBase = 5 * time.Second
@@ -46,7 +50,8 @@ const (
 type JournalConfig struct {
 	// Batch is how many dirty rows one drain step claims.
 	Batch int
-	// Concurrency is how many sidecar blobs are written or deleted at once.
+	// Concurrency is how many sidecar blobs are written or deleted at once,
+	// across all chunks of a batch.
 	Concurrency int
 	// ReconcileInterval is how often a completed reconcile of a table starts
 	// over; zero means only the first (backfill) pass ever runs.
@@ -73,6 +78,14 @@ type Journal struct {
 	reg    *Registry
 	schema int
 
+	// io bounds the sidecar blobs in flight (Concurrency), across chunks.
+	io chan struct{}
+
+	// stampedReconcile is the completion time (UnixMicro) last written to
+	// recovery_state.last_reconcile_at by this process, so an idle pass does
+	// not repeat the write.
+	stampedReconcile atomic.Int64
+
 	// now is replaceable by tests.
 	now func() time.Time
 }
@@ -83,16 +96,39 @@ func NewJournal(db *sql.DB, store storage.BlobStore, log *logger.Logger, m *metr
 	cfg.Batch = max(cfg.Batch, 1)
 	cfg.Concurrency = max(cfg.Concurrency, 1)
 
-	return &Journal{db: db, store: store, log: log, m: m, cfg: cfg, reg: NewRegistry(), schema: SchemaVersion(), now: time.Now}
+	return &Journal{
+		db:     db,
+		store:  store,
+		log:    log,
+		m:      m,
+		cfg:    cfg,
+		io:     make(chan struct{}, cfg.Concurrency),
+		reg:    NewRegistry(),
+		schema: SchemaVersion(),
+		now:    time.Now,
+	}
 }
 
 // SetEnabled stores the journal switch the database triggers consult. When the
 // journal is switched on after having been off, changes made meanwhile are
 // unknown, so every table is queued for a full re-hash (a reconcile in full
 // mode) the first time it is enabled again.
+//
+// A boot that finds the switch already in the wanted position only reads it:
+// no row lock, no write, no commit flush on the startup path.
 func (j *Journal) SetEnabled(ctx context.Context, enabled bool) error {
 	var was bool
 
+	if err := j.db.QueryRowContext(ctx, `SELECT enabled FROM recovery_state WHERE id`).Scan(&was); err != nil {
+		return fmt.Errorf("read recovery journal switch: %w", err)
+	}
+
+	if was == enabled {
+		return nil
+	}
+
+	// Read and flip in one statement so two replicas flipping at once cannot both
+	// see "was off" and queue the resync twice, or miss it.
 	err := j.db.QueryRowContext(ctx, `
 		WITH old AS (SELECT enabled FROM recovery_state WHERE id FOR UPDATE),
 		     upd AS (UPDATE recovery_state SET enabled = $1 WHERE id RETURNING 1)
@@ -205,24 +241,50 @@ func (j *Journal) DrainOnce(ctx context.Context) (int, int, error) {
 		byTable[m.table] = append(byTable[m.table], m)
 	}
 
+	// Chunks are independent (distinct rows), so several run at once: a chunk
+	// is mostly waiting for the store, and one at a time left the I/O
+	// semaphore idle between a chunk's last write and the next one's first.
+	var chunks []chunk
+
 	for _, name := range order {
 		ms := byTable[name]
 
 		for len(ms) > 0 {
 			n := min(loadChunk, len(ms))
-
-			f, err := j.processChunk(ctx, name, ms[:n])
-			failed += f
-
-			if err != nil {
-				return 0, failed, err
-			}
-
+			chunks = append(chunks, chunk{table: name, marks: ms[:n]})
 			ms = ms[n:]
 		}
 	}
 
+	var (
+		mu       sync.Mutex
+		firstErr error
+	)
+
+	j.fanOut(ctx, len(chunks), chunkWorkers, func(i int) {
+		f, err := j.processChunk(ctx, chunks[i].table, chunks[i].marks)
+
+		mu.Lock()
+		defer mu.Unlock()
+
+		failed += f
+
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	})
+
+	if firstErr != nil {
+		return 0, failed, firstErr
+	}
+
 	return len(marks), failed, nil
+}
+
+// chunk is up to loadChunk marks of one table.
+type chunk struct {
+	table string
+	marks []dirtyMark
 }
 
 func (j *Journal) claim(ctx context.Context) ([]dirtyMark, error) {
@@ -561,9 +623,31 @@ func (j *Journal) deleteBlob(ctx context.Context, sha string) error {
 	return nil
 }
 
-// parallel runs fn(0..n-1) with at most Concurrency in flight.
+// parallel runs fn(0..n-1) for storage calls. At most Concurrency calls are in
+// flight across every chunk being processed (the semaphore is shared).
 func (j *Journal) parallel(ctx context.Context, n int, fn func(i int)) {
-	sem := make(chan struct{}, j.cfg.Concurrency)
+	var wg sync.WaitGroup
+
+	for i := range n {
+		if ctx.Err() != nil {
+			break
+		}
+
+		j.io <- struct{}{}
+
+		wg.Go(func() {
+			defer func() { <-j.io }()
+
+			fn(i)
+		})
+	}
+
+	wg.Wait()
+}
+
+// fanOut runs fn(0..n-1) with at most limit in flight.
+func (j *Journal) fanOut(ctx context.Context, n, limit int, fn func(i int)) {
+	sem := make(chan struct{}, max(limit, 1))
 
 	var wg sync.WaitGroup
 
