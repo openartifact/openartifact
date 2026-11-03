@@ -805,7 +805,8 @@ Fields of the `200` response (`application/json`):
 | `next_cursor` | string | no | Per-file listing, newest first only: set whenever has_more is true; pass it as cursor to fetch the next page. |
 | `packages` | array of any | no | - |
 | `page` | integer | no | - |
-| `total` | integer | no | Number of matching rows. Absent on a per-file request that carries a cursor, which does not count. |
+| `total` | integer | no | Number of matching rows. Absent on a per-file request that carries a cursor, which does not count. On a per-file request the count stops at a ceiling (10000, or the end of the requested page if later): see `total_exact`. |
+| `total_exact` | boolean | no | Per-file listing only: false when `total` is a lower bound (more rows match; show it as "N+"), true when it is the exact number of matching rows. `has_more` stays authoritative for paging. Absent with `total`. |
 
 ### `POST /api/v1/repositories/{name}/packages`
 
