@@ -152,6 +152,11 @@ func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
 			return nil, err
 		}
 
+		if n := len(rest) - fs.NArg(); n > 0 && rest[n-1] == "--" {
+			// "--" ends the flags: the rest is positional whatever it looks like.
+			return append(positional, fs.Args()...), nil
+		}
+
 		if fs.NArg() == 0 {
 			return positional, nil
 		}

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -284,7 +285,8 @@ func handleSBOM(args []string, client *Client, outFmt string) {
 }
 
 func needArgs(args []string, n int, usage string) {
-	if len(args) < n {
+	// The first n arguments are positional: a flag there means one is missing.
+	if len(args) < n || slices.ContainsFunc(args[:n], isFlagArg) {
 		dief("%s", usage)
 	}
 }

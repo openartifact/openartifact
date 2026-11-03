@@ -113,19 +113,9 @@ func parseCIUploadArgs(args []string, output io.Writer) (ciUploadOptions, error)
 	flags.StringVar(&o.buildURL, "build-url", "", "Build URL, recorded as property "+propBuildURL)
 	flags.StringVar(&o.vcsRevision, "vcs-revision", "", "Source revision, recorded as property "+propVCSRevision)
 
-	var positional []string
-
-	for rest := args; ; {
-		if err := flags.Parse(rest); err != nil {
-			return ciUploadOptions{}, err
-		}
-
-		if flags.NArg() == 0 {
-			break
-		}
-
-		positional = append(positional, flags.Arg(0))
-		rest = flags.Args()[1:]
+	positional, err := parseInterspersed(flags, args)
+	if err != nil {
+		return ciUploadOptions{}, err
 	}
 
 	if len(positional) < 2 {

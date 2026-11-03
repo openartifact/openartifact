@@ -109,7 +109,8 @@ user delete <id>                   Delete user
 
 ```text
 group list                         List groups
-group create <name>                Create group
+group create <name> [--description D]
+                                   Create group
 group show <id>                    Show group
 group delete <id>                  Delete group
 group members <id>                 List group members
@@ -121,7 +122,8 @@ group rm-member <id> <user-id>     Remove member from group
 
 ```text
 project list                       List projects
-project create <name>              Create a project
+project create <name> [--display-name N] [--description D] [--owner USERNAME]
+                                   Create a project (--owner: global admins only)
 project show <name>                Show project (includes my_role)
 project update <name> [--display-name N] [--description D]
                                    Update a project (owner); policy flags (--allowed-formats,
@@ -263,7 +265,8 @@ cleanup list <repo>                List cleanup policies
 cleanup create <repo> --name N [--keep-count N] [--keep-days N] [--name-pattern RE] [--schedule CRON] [--enabled=false]
                                    Create cleanup policy (needs --keep-count or --keep-days)
 cleanup show <repo> <id>           Show cleanup policy
-cleanup update <repo> <id> [same flags]  Update cleanup policy
+cleanup update <repo> <id> [--name N] [--keep-count N] [--keep-days N] [--name-pattern RE] [--schedule CRON] [--enabled[=false]]
+                                   Update cleanup policy (only the flags you pass are sent)
 cleanup delete <repo> <id>         Delete cleanup policy
 cleanup run <repo> <id>            Run cleanup policy now
 ```

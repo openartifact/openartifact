@@ -7,6 +7,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -97,15 +99,119 @@ func printHelp(args []string) {
 	fmt.Fprint(os.Stdout, usageSection(usageText(), args))
 }
 
+// literalOperands holds the arguments that came after a bare "--". They are
+// positional whatever they look like, so the flag-like-name guard lets them
+// through.
+//
+//nolint:gochecknoglobals // per-process command line state
+var literalOperands = map[string]bool{}
+
+// isFlagArg reports whether s is a flag: it starts with "-" and was not placed
+// after "--".
+func isFlagArg(s string) bool {
+	return strings.HasPrefix(s, "-") && !literalOperands[s]
+}
+
 // operand rejects a positional value that looks like a flag. Names, ids and
-// paths never start with "-", so one that does is a mistyped or misplaced flag
-// that must not be sent to the server as a resource name.
+// paths normally never start with "-", so one that does is a mistyped or
+// misplaced flag that must not be sent to the server as a resource name. A
+// value placed after "--" is always accepted.
 func operand(s string) string {
-	if strings.HasPrefix(s, "-") {
-		dief("%q looks like a flag, not a name or id; put flags after the positional arguments (see `oa <command> --help`)", s)
+	if isFlagArg(s) {
+		dief("%q is a flag where a name or id is expected: an argument is missing, or the name starts with - "+
+			"(put flags after the positional arguments; use -- before names starting with -; see `oa <command> --help`)", s)
 	}
 
 	return s
+}
+
+// flagWord matches a flag in a usage entry: -x or --long, after a space, "[" or "|".
+var flagWord = regexp.MustCompile(`(^|[\s\[|(])--?[A-Za-z]`)
+
+// rejectUnknownFlags refuses a flag on a command that documents none: such a
+// command has no flag set of its own to report it, so it would silently ignore
+// a mistyped flag. Commands that take flags report their own unknown ones.
+func rejectUnknownFlags(command string, args []string) {
+	words := []string{command}
+
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") || len(words) == 3 {
+			break
+		}
+
+		words = append(words, a)
+	}
+
+	usage := usageText()
+	section := usageSection(usage, words)
+
+	if section == usage || flagWord.MatchString(section) {
+		return
+	}
+
+	for _, a := range args {
+		if a == "--" {
+			return
+		}
+
+		if len(a) > 1 && strings.HasPrefix(a, "-") && !literalOperands[a] {
+			cmd := strings.Join(words, " ")
+			dief("unknown flag %s for `oa %s` (see `oa %s --help`; use -- before names starting with -)", a, cmd, cmd)
+		}
+	}
+}
+
+// checkFormat refuses an output format other than table or json.
+func checkFormat(format string) {
+	if format != "table" && format != "json" {
+		dief("invalid --format %q: want table or json", format)
+	}
+}
+
+// terminatorHandledByParser lists the commands whose positionals are read by
+// parseInterspersed, which understands "--" itself.
+func terminatorHandledByParser(command string, args []string) bool {
+	switch command {
+	case "upload", "bundle", "promote", "search":
+		return true
+	case "artifact":
+		return len(args) > 0 && args[0] == "upload"
+	}
+
+	return false
+}
+
+// endOfFlags applies a bare "--" in the arguments of command: what follows is
+// positional even if it starts with "-". The operands move up to just after
+// the leading command words and the flags given before "--" follow them, which
+// is the order every subcommand reads; the operands are remembered so the
+// flag-like-name guard lets them through.
+func endOfFlags(command string, args []string) []string {
+	i := slices.Index(args, "--")
+	if i < 0 {
+		return args
+	}
+
+	before, after := args[:i], args[i+1:]
+
+	for _, a := range after {
+		literalOperands[a] = true
+	}
+
+	if terminatorHandledByParser(command, args) {
+		return args
+	}
+
+	n := 0
+	for n < len(before) && !strings.HasPrefix(before[n], "-") {
+		n++
+	}
+
+	out := make([]string, 0, len(args))
+	out = append(out, before[:n]...)
+	out = append(out, after...)
+
+	return append(out, before[n:]...)
 }
 
 // commandsWithOwnFlag lists the commands that define a flag of the same name

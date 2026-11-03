@@ -102,7 +102,7 @@ func handleTrash(args []string, client *Client, outFmt string) {
 		trashRestore(client, args[1], args[2], args[3:], outFmt)
 	case "purge":
 		const purgeUsage = "Usage: oa trash purge <kind> <id> [--yes]  |  oa trash purge --repo NAME --all [--yes]"
-		if len(args) > 1 && strings.HasPrefix(args[1], "-") {
+		if len(args) > 1 && isFlagArg(args[1]) {
 			trashEmpty(client, args[1:], outFmt)
 			return
 		}

@@ -119,19 +119,9 @@ func parseUploadArgs(args []string, errorHandling flag.ErrorHandling, output io.
 	fs.StringVar(&opts.apkRepo, "apk-repo", "", "Alpine repository directory of an .apk upload (default main)")
 	fs.StringVar(&opts.arch, "arch", "", "Architecture directory of an .apk upload; needed for noarch packages")
 
-	var positional []string
-
-	for rest := args; ; {
-		if err := fs.Parse(rest); err != nil {
-			return uploadOptions{}, err
-		}
-
-		if fs.NArg() == 0 {
-			break
-		}
-
-		positional = append(positional, fs.Arg(0))
-		rest = fs.Args()[1:]
+	positional, err := parseInterspersed(fs, args)
+	if err != nil {
+		return uploadOptions{}, err
 	}
 
 	if len(positional) != 2 {

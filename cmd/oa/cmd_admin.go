@@ -415,7 +415,7 @@ func projectAddMember(client *Client, args []string) {
 	rest := args[1:]
 	userID := ""
 
-	if len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
+	if len(rest) > 0 && !isFlagArg(rest[0]) {
 		userID, rest = rest[0], rest[1:]
 	}
 

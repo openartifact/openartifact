@@ -260,7 +260,7 @@ func gpgResolve(client *Client, ref string) string {
 func gpgKeyArg(fs *flag.FlagSet, args []string, usage string) string {
 	var ref string
 
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+	if len(args) > 0 && !isFlagArg(args[0]) {
 		ref, args = args[0], args[1:]
 	}
 
