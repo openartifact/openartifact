@@ -59,7 +59,7 @@ func referenceNormalizeName(name string) string {
 	return strings.ToLower(referenceSeparators.ReplaceAllString(name, "-"))
 }
 
-var referenceSeparators = regexp.MustCompile(`[-_.]+`) //nolint:gochecknoglobals // test oracle
+var referenceSeparators = regexp.MustCompile(`[-_.]+`)
 
 func TestNormalizeNameMatchesReference(t *testing.T) {
 	for _, in := range []string{

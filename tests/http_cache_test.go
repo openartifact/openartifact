@@ -79,6 +79,26 @@ func (d *cacheDB) ListPyPIPackageVersions(_ context.Context, _, name string) ([]
 	return out, nil
 }
 
+// PyPIIndexStamp changes with the project names, as the real stamp does.
+func (d *cacheDB) PyPIIndexStamp(ctx context.Context, repoID string) (string, error) {
+	names, _ := d.ListPyPIPackageNames(ctx, repoID)
+
+	return strings.Join(names, ";"), nil
+}
+
+// PyPIProjectStamp changes with the files of the project, as the real stamp does.
+func (d *cacheDB) PyPIProjectStamp(ctx context.Context, repoID, name string) (string, int64, error) {
+	versions, _ := d.ListPyPIPackageVersions(ctx, repoID, name)
+
+	var b strings.Builder
+
+	for _, p := range versions {
+		b.WriteString(p.Filename + p.SHA256Digest + ";")
+	}
+
+	return b.String(), int64(len(versions)), nil
+}
+
 func (d *cacheDB) IsArtifactQuarantined(context.Context, string, []string) (bool, error) {
 	return false, nil
 }
