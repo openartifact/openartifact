@@ -29,7 +29,7 @@ COPY web/ ./
 # precompress.js gzips dist/ once so the binary embeds each asset a single time.
 RUN bunx vite build && bun scripts/precompress.js
 # ---- Backend build stage ----------------------------------------------------
-FROM --platform=$BUILDPLATFORM docker.io/golang:1.27.3-alpine@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS builder
+FROM --platform=$BUILDPLATFORM docker.io/golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS builder
 
 WORKDIR /app
 
