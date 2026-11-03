@@ -6,7 +6,8 @@ import { describe, it, expect, afterAll, spyOn } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ApiError, request } from '../../api/client'
-import { startTelemetry, stopTelemetry } from '..'
+import { startTelemetry, startTelemetryIfAdvertised, stopTelemetry } from '..'
+import { resetAppInfo } from '../../composables/useAppVersion'
 import { exceptionAttributes, initTelemetry, traceparent } from '../otel'
 
 const WEB = join(import.meta.dir, '..', '..', '..')
@@ -16,6 +17,39 @@ const TRACEPARENT = /^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/
 function headersOf(spy: { mock: { calls: unknown[][] } }, n: number): Headers {
   return (spy.mock.calls[n]?.[1] as RequestInit & { headers: Headers }).headers
 }
+
+describe('startTelemetryIfAdvertised', () => {
+  afterAll(() => {
+    stopTelemetry()
+    resetAppInfo()
+  })
+
+  it('never asks for the settings while the server does not advertise the feature', async () => {
+    resetAppInfo()
+    const fetch = spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ version: '1.0.0' }), { status: 200 }))
+    await startTelemetryIfAdvertised(() => true)
+    expect(fetch.mock.calls.map((c) => String(c[0]))).toEqual(['/api/v1/system/info'])
+  })
+
+  it('does not ask for the settings when the user signed out while the info loaded', async () => {
+    resetAppInfo()
+    const fetch = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ version: '1.0.0', frontend_telemetry_enabled: true }), { status: 200 }),
+    )
+    await startTelemetryIfAdvertised(() => false)
+    expect(fetch.mock.calls.map((c) => String(c[0]))).toEqual(['/api/v1/system/info'])
+  })
+
+  it('asks for the settings when the info advertises it and the user is still signed in', async () => {
+    resetAppInfo()
+    const fetch = spyOn(globalThis, 'fetch').mockImplementation((async (url: string) =>
+      String(url).endsWith('/system/info')
+        ? new Response(JSON.stringify({ version: '1.0.0', frontend_telemetry_enabled: true }), { status: 200 })
+        : new Response('{"error":"not found"}', { status: 404 })) as never)
+    await startTelemetryIfAdvertised(() => true)
+    expect(fetch.mock.calls.map((c) => String(c[0]))).toEqual(['/api/v1/system/info', '/api/v1/telemetry/frontend'])
+  })
+})
 
 describe('startTelemetry', () => {
   // Some tests install the wrapper for real; leave no span factory behind

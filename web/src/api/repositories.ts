@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { request, preflight, JSON_HEADERS } from './client'
+import { mapPool } from '../lib/pool'
 import type {
   ActivityEntry,
   PackageFile,
@@ -53,6 +54,8 @@ interface ListRepositoriesResult {
 interface ListPackagesResult {
   /** Absent on a request that carries a cursor (it is not counted). */
   total?: number
+  /** False when `total` is a lower bound (a capped count): `has_more` and `next_cursor` stay authoritative. */
+  total_exact?: boolean
   /** The listing continues after this page (per-file listing). */
   has_more?: boolean
   /** Set while `has_more`, on the newest-first listing: the `cursor` of the next page. */
@@ -212,23 +215,51 @@ export function listPackageVersions(repoName: string, packageName: string, forma
   return listAllPackages(repoName, { format, packageName })
 }
 
+/** Page requests in flight at once while walking a listing: enough to hide the round trips, few enough not to flood the server. */
+const PAGE_CONCURRENCY = 6
+
 /**
- * Every row of a repository's newest-first listing that matches the filters,
- * walked by keyset cursor (`next_cursor` / `has_more`) so a deep page costs the
- * same as the first.
+ * Every row of a repository's newest-first listing that matches the filters.
+ *
+ * The first page carries the total, so the remaining pages are requested by number, a few at a
+ * time, instead of one after another (each hop was a round trip: a 2,000-version package took 20).
+ * Whatever the total did not cover (rows added meanwhile, a capped total) is then followed by
+ * keyset cursor (`next_cursor` / `has_more`), which costs the same at any depth. Rows that shifted
+ * between pages are returned once.
  */
 export async function listAllPackages(
   repoName: string,
   filters: Pick<ListPackagesParams, 'format' | 'packageName' | 'q'> = {},
 ): Promise<PackageItem[]> {
+  const fetchPage = (extra: Pick<ListPackagesParams, 'page' | 'cursor'>) =>
+    listPackages(repoName, { ...filters, limit: COMPONENT_PAGE_SIZE, ...extra })
+
+  const first = await fetchPage({})
+  const pages = [first]
+  // A capped total (`total_exact` false) is a lower bound: its page count says nothing about the end, so only the cursor walks it.
+  const pageCount = first.total_exact === false ? 0 : Math.ceil((first.total ?? 0) / COMPONENT_PAGE_SIZE)
+  if (first.has_more && pageCount > 1) {
+    const numbers = Array.from({ length: pageCount - 1 }, (_, i) => i + 2)
+    for (const res of await mapPool(numbers, PAGE_CONCURRENCY, (page) => fetchPage({ page }))) {
+      if (!res.ok) throw res.error
+      pages.push(res.value)
+    }
+  }
+
+  let last = pages[pages.length - 1]
+  while (last.has_more && last.next_cursor && (last.packages ?? []).length > 0) {
+    last = await fetchPage({ cursor: last.next_cursor })
+    pages.push(last)
+  }
+
+  const seen = new Set<string>()
   const items: PackageItem[] = []
-  let cursor: string | undefined
-  for (;;) {
-    const res = await listPackages(repoName, { ...filters, limit: COMPONENT_PAGE_SIZE, cursor })
-    const rows = res.packages ?? []
-    items.push(...rows)
-    if (!res.has_more || !res.next_cursor || rows.length === 0) break
-    cursor = res.next_cursor
+  for (const page of pages) {
+    for (const row of page.packages ?? []) {
+      if (seen.has(row.id)) continue
+      seen.add(row.id)
+      items.push(row)
+    }
   }
   return items
 }

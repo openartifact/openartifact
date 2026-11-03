@@ -18,14 +18,22 @@ const restoreGitkeep = {
   },
 }
 
-/** `locale-pt-BR` for src/i18n/locales/pt-BR/admin.json (the group's `name` callback receives the module id). */
-function localeChunk(id: string): string {
-  const m = /i18n[\\/]locales[\\/]([^\\/]+)[\\/]/.exec(id)
-  return `locale-${m?.[1] ?? 'unknown'}`
+// The UI font is referenced from the stylesheet, so the browser only learns about it after the CSS
+// arrived and the first paint needs it: preload it from the document instead (the file name carries
+// a build-time hash, so the link is added here). Only the latin subset of the sans font: it is what
+// the first screen renders.
+const preloadFont = {
+  name: 'oa-preload-ui-font',
+  apply: 'build' as const,
+  transformIndexHtml(_html: string, ctx: { bundle?: Record<string, unknown> }) {
+    const font = Object.keys(ctx.bundle ?? {}).find((f) => /^assets\/inter-latin-wght-normal-.*\.woff2$/.test(f))
+    if (!font) return []
+    return [{ tag: 'link', attrs: { rel: 'preload', as: 'font', type: 'font/woff2', crossorigin: '', href: `/${font}` }, injectTo: 'head' as const }]
+  },
 }
 
 export default defineConfig({
-  plugins: [vue(), tailwindcss(), pwa(), restoreGitkeep],
+  plugins: [vue(), tailwindcss(), pwa(), preloadFont, restoreGitkeep],
   build: {
     outDir: 'dist',
     manifest: true,
@@ -34,13 +42,8 @@ export default defineConfig({
         chunkFileNames: 'assets/[name]-[hash].js',
         entryFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash][extname]',
-        // One chunk per translated language (all its catalog files), fetched only for a user of that language.
-        // English is statically imported and stays in the entry chunk.
-        codeSplitting: {
-          groups: [
-            { name: (id: string) => localeChunk(id), test: /src[\\/]i18n[\\/]locales[\\/](?!en[\\/])[^\\/]+[\\/]/ },
-          ],
-        },
+        // Each translated language is one dynamic module (src/i18n/catalogs/locale-<tag>.ts), so it is
+        // one chunk named locale-<tag> with no per-file stub chunks; English stays in the entry chunk.
       },
     },
   },

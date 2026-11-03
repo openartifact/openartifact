@@ -57,7 +57,8 @@ func (a *app) registerPublicRoutes() error {
 	w.public.sysInfo = api.NewSystemInfoHandler(version, commit, buildTime, db, a.store.blobs, cfg.Storage.Type).
 		WithDocsBaseURL(cfg.Docs.BaseURL).
 		WithAPIReference(cfg.API.Docs.Enabled).
-		WithAIAvailable(aiBuilt)
+		WithAIAvailable(aiBuilt).
+		WithFrontendTelemetry(cfg.Telemetry.FrontendActive())
 	w.public.sysInfo.RegisterPublic(router)
 
 	// Public branding (no auth required: the login page and the app shell need

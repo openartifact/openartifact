@@ -14,6 +14,7 @@ const apiReferenceEnabled = ref(false)
 // True until the server says otherwise: servers that predate the field, and the
 // moment before the answer arrives, show the AI entries.
 const aiAvailable = ref(true)
+let frontendTelemetryEnabled = false
 let inflight: Promise<void> | null = null
 
 function load(): Promise<void> {
@@ -23,6 +24,7 @@ function load(): Promise<void> {
       // The value is rendered as an href: anything but http(s) is dropped.
       apiReferenceEnabled.value = info?.api_reference_enabled === true
       aiAvailable.value = info?.ai_available !== false
+      frontendTelemetryEnabled = info?.frontend_telemetry_enabled === true
       docsUrl.value = info?.docs_url && /^https?:\/\//i.test(info.docs_url) ? info.docs_url : null
     })
     .catch(() => {
@@ -58,6 +60,14 @@ export function useApiReferenceEnabled(): Ref<boolean> {
   return apiReferenceEnabled
 }
 
+/**
+ * Whether the server has the experimental frontend telemetry on. The settings endpoint answers 404 while it
+ * is off, so the UI asks it only when this says true. False when the info cannot be fetched.
+ */
+export function loadFrontendTelemetryEnabled(): Promise<boolean> {
+  return load().then(() => frontendTelemetryEnabled)
+}
+
 /** Current value of `useAiAvailable()` without triggering the fetch, for code that reads it inside a computed. */
 export function isAiAvailable(): boolean {
   return aiAvailable.value
@@ -76,6 +86,7 @@ export function resetAppInfo(): void {
   docsUrl.value = null
   apiReferenceEnabled.value = false
   aiAvailable.value = true
+  frontendTelemetryEnabled = false
 }
 
 /** Display form of a server version: `v1.2.3`, or `dev` for development builds. */

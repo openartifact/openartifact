@@ -342,3 +342,22 @@ func TestOpenAPISpecContentEncoding(t *testing.T) {
 		}
 	}
 }
+
+func TestSystemInfoAdvertisesFrontendTelemetry(t *testing.T) {
+	t.Parallel()
+
+	for _, on := range []bool{true, false} {
+		h := NewSystemInfoHandler("1.0.0", "", "", nil, nil, "").WithFrontendTelemetry(on)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/system/info", nil))
+
+		var body map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+
+		if body["frontend_telemetry_enabled"] != on {
+			t.Errorf("frontend_telemetry_enabled = %v, want %v", body["frontend_telemetry_enabled"], on)
+		}
+	}
+}

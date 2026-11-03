@@ -33,6 +33,26 @@ describe('BackupPage polling', () => {
     wrapper.unmount()
   })
 
+  it('does not poll while the tab is hidden and polls again once it is shown', async () => {
+    const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((async () => new Response(JSON.stringify(RUNNING), { status: 200 })) as never)
+    const setIntervalSpy = spyOn(globalThis, 'setInterval')
+    const wrapper = mountPage()
+    await flushPromises()
+    const tick = setIntervalSpy.mock.calls[0][0] as () => void
+    const loads = fetchSpy.mock.calls.length
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+    tick()
+    await flushPromises()
+    expect(fetchSpy.mock.calls.length).toBe(loads)
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+    tick()
+    await flushPromises()
+    expect(fetchSpy.mock.calls.length).toBe(loads + 1)
+    wrapper.unmount()
+  })
+
   it('does not start a poll timer when the page unmounts while the first load is in flight', async () => {
     let finish: (res: Response) => void = () => {}
     spyOn(globalThis, 'fetch').mockImplementation((() => new Promise<Response>((resolve) => { finish = resolve })) as never)

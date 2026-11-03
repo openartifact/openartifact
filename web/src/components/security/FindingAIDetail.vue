@@ -83,6 +83,7 @@ import { getAIAnalysis, triggerAIAnalysis, type AIAnalysis } from '../../api/ai'
 import { isFeatureUnavailable } from '../../api/client'
 import type { SecurityFinding } from '../../api/security'
 import { formatDateTime, timeAgo } from '../../lib/datetime'
+import { isTabHidden } from '../../lib/visibility'
 import { useToastStore } from '../../stores/toast'
 import { t, tDynamic } from '../../i18n'
 
@@ -123,6 +124,12 @@ const licenseVariant = computed(() => {
   return s === 'SAFE' ? 'success' : s === 'REVIEW_REQUIRED' ? 'warning' : 'neutral'
 })
 
+/** The next refresh of a running analysis; a hidden tab skips it and asks again after the next interval. */
+function poll(): void {
+  if (isTabHidden()) timer = setTimeout(poll, POLL_MS)
+  else void load(true)
+}
+
 async function load(silent = false): Promise<void> {
   const mine = ++seq
   clearTimeout(timer)
@@ -142,7 +149,7 @@ async function load(silent = false): Promise<void> {
   } finally {
     if (mine === seq) {
       loading.value = false
-      if (active.value) timer = setTimeout(() => void load(true), POLL_MS)
+      if (active.value) timer = setTimeout(poll, POLL_MS)
     }
   }
 }
