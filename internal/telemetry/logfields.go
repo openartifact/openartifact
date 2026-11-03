@@ -9,28 +9,29 @@ import (
 
 	"go.opentelemetry.io/contrib/bridges/otelzap"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-// LogFields returns the "trace_id" and "span_id" key/value pairs of the span in
-// ctx, ready to append to a zap sugared call, or nil when ctx has no valid
-// span (telemetry disabled, or a request outside any trace). The ids let a log
-// line be joined to its trace in the backend.
+// LogFields returns the "trace_id" and "span_id" fields of the span in ctx, ready
+// to pass to a zap logger call, or nil when ctx has no valid span (telemetry
+// disabled, or a request outside any trace). The ids let a log line be joined to
+// its trace in the backend.
 //
-// The pairs are followed by ctx itself, in a field no encoder writes: the log
+// The fields are followed by ctx itself, in a field no encoder writes: the log
 // line is unchanged, and the OTLP bridge (LogCore) emits the record under ctx,
 // so the record carries the span's trace and span ids as its own, not only as
 // attributes.
-func LogFields(ctx context.Context) []any {
+func LogFields(ctx context.Context) []zap.Field {
 	sc := trace.SpanContextFromContext(ctx)
 	if !sc.IsValid() {
 		return nil
 	}
 
-	return []any{
-		"trace_id", sc.TraceID().String(),
-		"span_id", sc.SpanID().String(),
-		zapcore.Field{Key: "context", Type: zapcore.SkipType, Interface: ctx},
+	return []zap.Field{
+		zap.String("trace_id", sc.TraceID().String()),
+		zap.String("span_id", sc.SpanID().String()),
+		{Key: "context", Type: zapcore.SkipType, Interface: ctx},
 	}
 }
 

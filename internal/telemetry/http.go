@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/httpx"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -120,18 +121,18 @@ func HTTPMiddleware() func(http.Handler) http.Handler {
 					attribute.String("network.protocol.version", protoVersion(r)),
 				))
 
-			rw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+			rw := httpx.WrapStatus(w)
 
 			defer func() {
 				// A panic bubbles up to the recovery middleware, which answers
 				// 500; record that instead of the optimistic 200.
 				if p := recover(); p != nil {
-					rw.status = http.StatusInternalServerError
-					finishServer(ctx, span, method, rw.status)
+					rw.SetStatus(http.StatusInternalServerError)
+					finishServer(ctx, span, method, rw.Status())
 					panic(p)
 				}
 
-				finishServer(ctx, span, method, rw.status)
+				finishServer(ctx, span, method, rw.Status())
 			}()
 
 			next.ServeHTTP(rw, r.WithContext(ctx))
@@ -171,28 +172,6 @@ func finishServer(ctx context.Context, span trace.Span, method string, status in
 
 func protoVersion(r *http.Request) string {
 	return strconv.Itoa(r.ProtoMajor) + "." + strconv.Itoa(r.ProtoMinor)
-}
-
-// statusWriter records the status code the handler chose.
-type statusWriter struct {
-	http.ResponseWriter
-
-	status int
-}
-
-func (w *statusWriter) WriteHeader(code int) {
-	w.status = code
-	w.ResponseWriter.WriteHeader(code)
-}
-
-// Unwrap lets http.ResponseController reach the underlying writer.
-func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
-
-// Flush keeps streaming handlers working through the wrapper.
-func (w *statusWriter) Flush() {
-	if f, ok := w.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
 }
 
 // WrapClient instruments c in place: every request through it becomes a client

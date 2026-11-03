@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/ocipath"
 	"github.com/openartifact/openartifact/internal/repotype"
@@ -64,9 +65,9 @@ func isOCIUpload(r *http.Request) bool {
 // openartifact_uploads_total by response status.
 func CountUploads(reg *metrics.Registry, format string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		rw := httpx.WrapStatus(w)
 
-		defer func() { reg.CountUpload(format, metrics.UploadResult(rw.statusCode)) }()
+		defer func() { reg.CountUpload(format, metrics.UploadResult(rw.Status())) }()
 
 		next(rw, r)
 	}

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -86,7 +87,7 @@ func TestSimplePagesAreRelative(t *testing.T) {
 	assert.Equal(t, page.Body.String(), other.Body.String())
 	assert.Equal(t, page.Header().Get("ETag"), other.Header().Get("ETag"))
 	assert.NotEmpty(t, page.Header().Get("ETag"))
-	assert.NotContains(t, page.Header().Get("Vary"), "Host")
+	assert.NotContains(t, strings.Join(page.Header().Values("Vary"), ", "), "Host")
 }
 
 // The legacy JSON API keeps absolute URLs from the public origin.
@@ -132,7 +133,7 @@ func TestLegacyJSONURLs(t *testing.T) {
 			assert.Equal(t, tc.want+"/repos/myrepo/files/demo-1.0-py3-none-any.whl", doc.Releases["1.0"][0].URL)
 
 			if tc.explicit == "" {
-				assert.Contains(t, w.Header().Get("Vary"), "Host")
+				assert.Contains(t, strings.Join(w.Header().Values("Vary"), ", "), "Host")
 			}
 		})
 	}

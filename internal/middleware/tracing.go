@@ -6,8 +6,6 @@ package middleware
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"net/http"
 
 	"go.opentelemetry.io/otel/trace"
@@ -38,14 +36,6 @@ func TracingMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("X-Trace-Id", traceID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
-}
-
-// generateTraceID generates a random 16-byte hex trace ID.
-func generateTraceID() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-
-	return hex.EncodeToString(b)
 }
 
 // traceIDLen is the length of a hex trace id (16 bytes).

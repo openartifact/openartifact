@@ -9,48 +9,59 @@ import (
 	"slices"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/telemetry"
 	"github.com/openartifact/openartifact/pkg/logger"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // RequestIDMiddleware adds a unique request ID to each request.
 func RequestIDMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestID := uuid.New().String()
-		r.Header.Set("X-Request-ID", requestID)
-		w.Header().Set("X-Request-ID", requestID)
+		requestID := newUUID()
+		setRequestID(r.Header, requestID)
+		setRequestID(w.Header(), requestID)
 		next.ServeHTTP(w, r)
 	})
 }
 
 // LoggingMiddleware logs HTTP requests.
 func LoggingMiddleware(log *logger.Logger) func(http.Handler) http.Handler {
+	// The access log is the hottest log site: typed fields on the desugared
+	// logger skip the sugar's per-call field boxing, and the entry is only
+	// built when the level is enabled.
+	zl := log.Desugar()
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
-			requestID := r.Header.Get("X-Request-ID")
+			requestID := requestIDOf(r.Header)
 
-			// Create a response writer wrapper to capture status code
-			wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+			// The status-recording wrapper is shared with the metrics, tracing
+			// and audit layers.
+			wrapped := httpx.WrapStatus(w)
 
 			next.ServeHTTP(wrapped, r)
 
+			ce := zl.Check(zapcore.InfoLevel, "HTTP request")
+			if ce == nil {
+				return
+			}
+
 			duration := time.Since(start)
-			fields := []any{
-				"request_id", requestID,
-				"method", r.Method,
+			ce.Write(append([]zap.Field{
+				zap.String("request_id", requestID),
+				zap.String("method", r.Method),
 				// Path only: the query string can carry credentials and OAuth
 				// codes/state (SSO callbacks, ?token= style clients).
-				"path", r.URL.Path,
-				"status", wrapped.statusCode,
-				"duration_ms", duration.Milliseconds(),
-				"remote_addr", r.RemoteAddr,
-			}
-			// trace_id/span_id join the line to its OpenTelemetry trace; absent
-			// while telemetry is disabled.
-			log.Infow("HTTP request", append(fields, telemetry.LogFields(r.Context())...)...)
+				zap.String("path", r.URL.Path),
+				zap.Int("status", wrapped.Status()),
+				zap.Int64("duration_ms", duration.Milliseconds()),
+				zap.String("remote_addr", r.RemoteAddr),
+				// trace_id/span_id join the line to its OpenTelemetry trace;
+				// absent while telemetry is disabled.
+			}, telemetry.LogFields(r.Context())...)...)
 		})
 	}
 }
@@ -61,7 +72,7 @@ func RecoveryMiddleware(log *logger.Logger) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if err := recover(); err != nil {
-					requestID := r.Header.Get("X-Request-ID")
+					requestID := requestIDOf(r.Header)
 					log.Errorw("panic recovered",
 						"request_id", requestID,
 						"error", err,
@@ -131,20 +142,4 @@ func CORSMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-// responseWriter wraps http.ResponseWriter to capture status code.
-type responseWriter struct {
-	http.ResponseWriter
-
-	statusCode int
-}
-
-// Unwrap lets http.ResponseController reach the underlying writer
-// (Flush, SetWriteDeadline, Hijack).
-func (rw *responseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
 }
