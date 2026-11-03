@@ -248,7 +248,6 @@ func (h *HTTPHandler) handleVersionManifest(w http.ResponseWriter, r *http.Reque
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	//nolint:gosec // G705: npm package manifest JSON, not HTML output
 	_, _ = w.Write(body)
 }
 

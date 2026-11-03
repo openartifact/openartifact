@@ -25,6 +25,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
@@ -1036,23 +1037,17 @@ func (h *HTTPHandler) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get blob from blobstore
-	rc, err := h.blobStore.Get(r.Context(), blob.BlobSHA256)
+	// A client resuming an interrupted pull sends a single Range (OCI
+	// distribution spec, "Pulling blobs"); ServeBlob answers 206 or 416.
+	w.Header().Set("Docker-Content-Digest", blob.Digest)
+
+	err = base.ServeBlob(w, r, h.blobStore, blob.BlobSHA256, base.ServeBlobOptions{
+		ContentType: blobContentType,
+		Size:        size,
+	})
 	if err != nil {
 		h.log.Errorw("failed to get blob from store", "sha256", blob.BlobSHA256, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-	defer func() { _ = rc.Close() }()
-
-	w.Header().Set("Content-Type", blobContentType)
-	w.Header().Set("Docker-Content-Digest", blob.Digest)
-	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
-	w.WriteHeader(http.StatusOK)
-
-	if _, err := iocopy.Copy(w, rc); err != nil {
-		h.log.Errorw("failed to write blob response", "digest", digest, "error", err)
 	}
 }
 

@@ -241,24 +241,19 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Stream blob
-	rc, err := h.BlobStore.Get(r.Context(), artifact.BlobKey)
+	// The path is mutable (a PUT replaces the content), so the validator is the
+	// content digest: an unchanged file revalidates to a 304.
+	w.Header().Set("X-Checksum-Sha256", artifact.SHA256)
+
+	err = base.ServeBlob(w, r, h.BlobStore, artifact.BlobKey, base.ServeBlobOptions{
+		ContentType: artifact.ContentType,
+		Size:        artifact.SizeBytes,
+		ETag:        `"` + artifact.SHA256 + `"`,
+		ModTime:     artifact.UpdatedAt,
+	})
 	if err != nil {
 		h.Log.Errorw("failed to get blob", "key", artifact.BlobKey, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-	defer func() { _ = rc.Close() }()
-
-	w.Header().Set("Content-Type", artifact.ContentType)
-	w.Header().Set("Content-Length", strconv.FormatInt(artifact.SizeBytes, 10))
-
-	w.Header().Set("X-Checksum-Sha256", artifact.SHA256)
-	w.WriteHeader(http.StatusOK)
-
-	if _, err := iocopy.Copy(w, rc); err != nil {
-		h.Log.Errorw("failed to write response", "path", path, "error", err)
 	}
 }
 
@@ -341,6 +336,9 @@ func (h *HTTPHandler) handleHead(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.FormatInt(artifact.SizeBytes, 10))
 
 	w.Header().Set("X-Checksum-Sha256", artifact.SHA256)
+	w.Header().Set("ETag", `"`+artifact.SHA256+`"`)
+	w.Header().Set("Accept-Ranges", "bytes")
+	w.Header().Set("Last-Modified", artifact.UpdatedAt.UTC().Format(http.TimeFormat))
 	w.WriteHeader(http.StatusOK)
 }
 

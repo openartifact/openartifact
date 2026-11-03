@@ -90,7 +90,7 @@ Pull with `docker pull HOSTPORT/REPO/image:tag`. The endpoints are:
 | `GET /v2/` | `200` with `Docker-Distribution-Api-Version: registry/2.0` |
 | `GET /v2/_catalog` | images the caller may read, paginated with `n` and `last` |
 | `GET`, `HEAD`, `PUT`, `DELETE /v2/<name>/manifests/<ref>` | manifests by tag or digest |
-| `GET`, `HEAD`, `DELETE /v2/<name>/blobs/<digest>` | blobs |
+| `GET`, `HEAD`, `DELETE /v2/<name>/blobs/<digest>` | blobs; a `GET` with `Range: bytes=<from>-<to>` answers `206` with `Content-Range` (`416` past the end), so an interrupted pull resumes |
 | `POST /v2/<name>/blobs/uploads/` | start an upload; `?mount=<digest>&from=<name>` attempts a cross-repository mount |
 | `GET`, `PATCH`, `PUT`, `DELETE /v2/<name>/blobs/uploads/<uuid>` | status, chunk, complete (`?digest=`), cancel |
 | `GET /v2/<name>/tags/list` | tags of the image |

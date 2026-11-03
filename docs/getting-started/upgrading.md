@@ -127,6 +127,13 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
+### Unreleased
+
+- Go module paths of any length are served from a hosted Go repository. `@latest` and the `@v/...` files of a module whose path has one or two segments after the host (`example.com`, `example.com/mod`) were answered `404 repository not found` or with another format's document.
+- A hosted npm repository answers `GET /<package>/<version>` and `GET /@scope/<package>/<version>` with the version document, and `latest` or any other dist-tag stands for its version, as the npm registry and an npm proxy do. They were `404`.
+- A Docker blob `GET` honours a single `Range` header (`206` with `Content-Range`, `416` past the end of the blob) so an interrupted layer pull resumes.
+- A hosted raw file `GET` and `HEAD` send a strong `ETag` (the sha256 of the file) and `Last-Modified`, answer `If-None-Match` and `If-Modified-Since` with `304`, and honour `Range` and `If-Range`.
+
 ### 0.18.0
 
 **What you must do**
