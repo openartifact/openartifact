@@ -70,8 +70,9 @@ type HTTPStore interface {
 		osName string,
 		arch string,
 	) (*models.TerraformProvider, error)
-	IncrementTerraformModuleDownloadCount(ctx context.Context, repoID string, id string) error
-	IncrementTerraformProviderDownloadCount(ctx context.Context, repoID string, id string) error
+	// CountFileDownload counts one download of a package file; it is batched and
+	// written to the database with the next flush.
+	CountFileDownload(fileID string)
 	ListTerraformModuleVersions(ctx context.Context, repoID string, name string, system string) ([]*models.TerraformModule, error)
 	ListTerraformProviderPlatforms(ctx context.Context, repoID string, typ string) ([]*models.TerraformProvider, error)
 	ListTerraformProviderVersionPlatforms(

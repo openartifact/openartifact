@@ -99,7 +99,7 @@ The registration index lists versions in ascending order, in pages of at most 64
 
 - Search returns one entry per package. `totalHits`, `skip` and `take` count packages.
 - Each entry carries the metadata of the latest version: the highest stable version, or the highest prerelease when there is no stable one.
-- Each entry also has `totalDownloads` over all versions and a `versions` array of `{"@id", "version", "downloads"}`.
+- Each entry also has `totalDownloads` over all versions and a `versions` array of `{"@id", "version", "downloads"}`. Download counts are written in batches and lag by up to `DB_DOWNLOAD_COUNT_FLUSH_INTERVAL` (5 seconds by default).
 - Autocomplete lists each package id once.
 
 ## Proxy

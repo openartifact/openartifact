@@ -43,10 +43,6 @@ JOIN blobs b ON b.id = f.blob_id
 WHERE f.repository_id = $1 AND f.deleted_at IS NULL
 ORDER BY f.path;
 
--- name: IncrementNixDownloadCount :exec
-UPDATE package_files SET download_count = download_count + 1
-WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL;
-
 -- name: PutNixPendingNar :exec
 INSERT INTO nix_pending_nars (repository_id, sha256, nar_file, blob_id)
 VALUES ($1, $2, $3, $4)

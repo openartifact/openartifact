@@ -47,6 +47,20 @@ func freshPostgresCfg(t *testing.T, maxOpen int, mutate func(*database.DatabaseC
 		_, _ = admin.ExecContext(context.Background(), `DROP DATABASE IF EXISTS `+dbName+` WITH (FORCE)`)
 	})
 
+	pg := openPostgres(t, dbName, maxOpen, mutate)
+
+	if err := pg.Migrate(ctx); err != nil {
+		t.Fatalf("apply embedded migrations: %v", err)
+	}
+
+	return pg
+}
+
+// openPostgres connects a PostgresDB to the named database of the
+// TEST_DATABASE_URL server and closes it when the test ends.
+func openPostgres(t *testing.T, dbName string, maxOpen int, mutate func(*database.DatabaseConfig)) *database.PostgresDB {
+	t.Helper()
+
 	u, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
 	if err != nil {
 		t.Fatalf("parse TEST_DATABASE_URL: %v", err)
@@ -83,11 +97,20 @@ func freshPostgresCfg(t *testing.T, maxOpen int, mutate func(*database.DatabaseC
 
 	t.Cleanup(func() { _ = pg.Close() })
 
-	if err := pg.Migrate(ctx); err != nil {
-		t.Fatalf("apply embedded migrations: %v", err)
+	return pg
+}
+
+// secondPostgres opens another PostgresDB (another server replica) over the
+// database of pg.
+func secondPostgres(t *testing.T, pg *database.PostgresDB, mutate func(*database.DatabaseConfig)) *database.PostgresDB {
+	t.Helper()
+
+	var name string
+	if err := pg.GetDB().QueryRowContext(context.Background(), `SELECT current_database()`).Scan(&name); err != nil {
+		t.Fatalf("current_database: %v", err)
 	}
 
-	return pg
+	return openPostgres(t, name, 5, mutate)
 }
 
 func TestEmbeddedMigrationsApplyCleanly(t *testing.T) {

@@ -103,7 +103,9 @@ func TestNixPendingCommitAndUnique(t *testing.T) {
 		t.Fatalf("absent hash = %+v, %v; want nil, nil", none, err)
 	}
 
-	if err := pg.IncrementNixDownloadCount(ctx, p.ID, repoID); err != nil {
+	pg.CountFileDownload(p.ID)
+
+	if err := pg.FlushDownloadCounts(ctx); err != nil {
 		t.Fatal(err)
 	}
 

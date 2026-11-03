@@ -301,7 +301,7 @@ Every other source is refused with `501` and a message pointing here:
 
 ### Module details
 
-`GET /MODULE/SYSTEM/VERSION` on a proxy is generated from the version list. `published_at` is absent and `downloads` is `0`. A hosted repository returns the upload time and the real download count.
+`GET /MODULE/SYSTEM/VERSION` on a proxy is generated from the version list. `published_at` is absent and `downloads` is `0`. A hosted repository returns the upload time and the real download count (written in batches, so it lags by up to `DB_DOWNLOAD_COUNT_FLUSH_INTERVAL`).
 
 ### Quarantine and access
 

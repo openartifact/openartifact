@@ -85,6 +85,10 @@ type DatabaseConfig struct {
 	// invalidate immediately; other replicas observe a change after at most
 	// this long. 0 disables the cache.
 	AuthCacheTTLMillis int `yaml:"authCacheTtlMs"`
+	// DownloadCountFlushInterval is how often the batched package download
+	// counters (cargo, nuget, apk, nix, terraform) are written to the database.
+	// A download shows in the counter within this long; 0 means 5s.
+	DownloadCountFlushInterval time.Duration `yaml:"downloadCountFlushInterval"`
 	// ConnectTimeout is how long startup keeps retrying the initial database
 	// connection (capped exponential backoff) before giving up. 0 fails at the
 	// first error.

@@ -355,11 +355,6 @@ type formatStore interface {
 	GetTokenByHash(ctx context.Context, hash string) (*models.Token, error)
 	GetUserByID(ctx context.Context, id string) (*models.User, error)
 	HelmIndexStamp(ctx context.Context, repoID string) (string, error)
-	IncrementCargoDownloadCount(ctx context.Context, repoID string, name string, version string) error
-	IncrementNixDownloadCount(ctx context.Context, id string, repoID string) error
-	IncrementNuGetDownloadCount(ctx context.Context, repoID string, packageID string, version string) error
-	IncrementTerraformModuleDownloadCount(ctx context.Context, repoID string, id string) error
-	IncrementTerraformProviderDownloadCount(ctx context.Context, repoID string, id string) error
 	ListAnsibleCollectionNames(ctx context.Context, repoID string, limit int, offset int) ([]*models.AnsibleCollectionName, int, error)
 	ListAnsibleCollectionVersions(ctx context.Context, repoID string, namespace string, name string) ([]*models.AnsibleCollection, error)
 	ListCargoCrateVersions(ctx context.Context, repoID string, name string) ([]*models.CargoCrate, error)

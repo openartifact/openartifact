@@ -356,7 +356,9 @@ func TestCargoStoreRoundTrip(t *testing.T) {
 		t.Fatalf("ListCargoCrateVersions = %+v, %v", list, err)
 	}
 
-	if err := pg.IncrementCargoDownloadCount(ctx, s.repo, "serde-json", "1.0.0"); err != nil {
+	pg.CountFileDownload(list[0].ID)
+
+	if err := pg.FlushDownloadCounts(ctx); err != nil {
 		t.Fatal(err)
 	}
 

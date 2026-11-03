@@ -158,7 +158,14 @@ func TestMetadataStamps(t *testing.T) {
 
 		afterOne := stamp()
 
-		if err := pg.IncrementCargoDownloadCount(ctx, s.repo, "serde", "1.0.0"); err != nil {
+		crate, err := pg.GetCargoCrate(ctx, s.repo, "serde", "1.0.0")
+		if err != nil || crate == nil {
+			t.Fatalf("GetCargoCrate = %v, %v", crate, err)
+		}
+
+		pg.CountFileDownload(crate.ID)
+
+		if err := pg.FlushDownloadCounts(ctx); err != nil {
 			t.Fatal(err)
 		}
 

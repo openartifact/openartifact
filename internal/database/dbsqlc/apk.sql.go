@@ -132,21 +132,6 @@ func (q *Queries) GetApkSigningKey(ctx context.Context, repositoryID string) (Ap
 	return i, err
 }
 
-const incrementApkDownloadCount = `-- name: IncrementApkDownloadCount :exec
-UPDATE package_files SET download_count = download_count + 1
-WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL
-`
-
-type IncrementApkDownloadCountParams struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-}
-
-func (q *Queries) IncrementApkDownloadCount(ctx context.Context, arg IncrementApkDownloadCountParams) error {
-	_, err := q.db.Exec(ctx, incrementApkDownloadCount, arg.ID, arg.RepositoryID)
-	return err
-}
-
 const listApkPackages = `-- name: ListApkPackages :many
 SELECT f.id, f.repository_id,
        COALESCE(p.attrs ->> 'branch', '')::text AS branch,

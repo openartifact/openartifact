@@ -184,17 +184,21 @@ func (d *tfDB) DeleteTerraformModule(_ context.Context, repoID, id string) error
 	return nil
 }
 
-func (d *tfDB) IncrementTerraformModuleDownloadCount(_ context.Context, repoID, id string) error {
+func (d *tfDB) CountFileDownload(id string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	for _, row := range d.mods {
-		if row.RepositoryID == repoID && row.ID == id {
+		if row.ID == id {
 			row.DownloadCount++
 		}
 	}
 
-	return nil
+	for _, row := range d.provs {
+		if row.ID == id {
+			row.DownloadCount++
+		}
+	}
 }
 
 func (d *tfDB) TerraformModuleStamp(_ context.Context, repoID, name, system string) (string, error) {
@@ -282,19 +286,6 @@ func (d *tfDB) DeleteTerraformProvider(_ context.Context, repoID, id string) err
 			d.provs = append(d.provs[:i], d.provs[i+1:]...)
 
 			return nil
-		}
-	}
-
-	return nil
-}
-
-func (d *tfDB) IncrementTerraformProviderDownloadCount(_ context.Context, repoID, id string) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	for _, row := range d.provs {
-		if row.RepositoryID == repoID && row.ID == id {
-			row.DownloadCount++
 		}
 	}
 

@@ -202,18 +202,6 @@ func (p *NuGetStore) SearchNuGetPackages(ctx context.Context, repoID, query stri
 	return packages, int(total), nil
 }
 
-func (p *NuGetStore) IncrementNuGetDownloadCount(ctx context.Context, repoID, packageID, version string) error {
-	if err := p.q.IncrementNuGetDownloadCount(ctx, dbsqlc.IncrementNuGetDownloadCountParams{
-		RepositoryID: repoID,
-		NameKey:      nugetKey(packageID),
-		Version:      version,
-	}); err != nil {
-		return fmt.Errorf("failed to increment nuget download count: %w", err)
-	}
-
-	return nil
-}
-
 // nugetPackageRow lists the sqlc row types nugetRowToModel converts; they share the columns of GetNuGetPackageRow.
 type nugetPackageRow interface {
 	dbsqlc.GetNuGetPackageRow | dbsqlc.ListNuGetPackagesRow | dbsqlc.ListNuGetPackageVersionsRow

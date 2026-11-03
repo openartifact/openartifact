@@ -59,6 +59,9 @@ type core struct {
 	// authCache serves the per-request auth lookups (see auth_cache.go).
 	authCache authCache
 
+	// downloads batches the package-file download counters (see download_counts.go).
+	downloads downloadCounter
+
 	// trashDefaultDays is the retention, in days, of repositories without their
 	// own trash_retention_days (see SetTrashRetentionDays).
 	trashDefaultDays atomic.Int32
@@ -108,7 +111,7 @@ func NewPostgresDB(cfg DatabaseConfig, log *logger.Logger) (*PostgresDB, error) 
 		lockSlots = make(chan struct{}, max(1, cfg.MaxOpenConns/2))
 	}
 
-	return newPostgresDB(&core{
+	c := &core{
 		db:        db,
 		pool:      pool,
 		rawPool:   pool,
@@ -116,7 +119,10 @@ func NewPostgresDB(cfg DatabaseConfig, log *logger.Logger) (*PostgresDB, error) 
 		log:       log,
 		lockSlots: lockSlots,
 		authCache: authCache{ttl: time.Duration(cfg.AuthCacheTTLMillis) * time.Millisecond},
-	}), nil
+	}
+	c.downloads.interval = cfg.DownloadCountFlushInterval
+
+	return newPostgresDB(c), nil
 }
 
 // sqlIdleTimeout is how long a surplus database/sql connection may sit idle
@@ -152,8 +158,12 @@ func (p *core) PoolStat() *pgxpool.Stat {
 	return p.rawPool.Stat()
 }
 
-// Close closes the database connection.
+// Close writes the pending download counts and closes the database connection.
 func (p *core) Close() error {
+	if p.rawPool != nil {
+		p.stopDownloadCounter()
+	}
+
 	if p.rawPool != nil {
 		p.rawPool.Close()
 		if p.log != nil {

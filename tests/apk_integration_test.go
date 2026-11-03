@@ -96,7 +96,9 @@ func TestApkPackageLifecycle(t *testing.T) {
 
 	requireApkListOrder(t, pg, repo)
 
-	if err := pg.IncrementApkDownloadCount(ctx, got.ID, repo); err != nil {
+	pg.CountFileDownload(got.ID)
+
+	if err := pg.FlushDownloadCounts(ctx); err != nil {
 		t.Fatal(err)
 	}
 

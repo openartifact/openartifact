@@ -213,16 +213,6 @@ func (p *TerraformStore) DeleteTerraformModule(ctx context.Context, repoID, id s
 	return nil
 }
 
-// IncrementTerraformModuleDownloadCount counts one download of a module version.
-func (p *TerraformStore) IncrementTerraformModuleDownloadCount(ctx context.Context, repoID, id string) error {
-	err := p.q.IncrementTerraformDownloadCount(ctx, dbsqlc.IncrementTerraformDownloadCountParams{ID: id, RepositoryID: repoID})
-	if err != nil {
-		return fmt.Errorf("failed to count terraform module download: %w", err)
-	}
-
-	return nil
-}
-
 // TerraformModuleStamp fingerprints the live versions of one module.
 func (p *TerraformStore) TerraformModuleStamp(ctx context.Context, repoID, name, system string) (string, error) {
 	stamp, err := p.q.TerraformPackageStamp(ctx, dbsqlc.TerraformPackageStampParams{
@@ -324,16 +314,6 @@ func (p *TerraformStore) ListTerraformProviders(ctx context.Context, repoID stri
 func (p *TerraformStore) DeleteTerraformProvider(ctx context.Context, repoID, id string) error {
 	if err := p.deleteLiveFilesByID(ctx, repoID, []string{id}); err != nil {
 		return fmt.Errorf("failed to delete terraform provider: %w", err)
-	}
-
-	return nil
-}
-
-// IncrementTerraformProviderDownloadCount counts one download of a provider zip.
-func (p *TerraformStore) IncrementTerraformProviderDownloadCount(ctx context.Context, repoID, id string) error {
-	err := p.q.IncrementTerraformDownloadCount(ctx, dbsqlc.IncrementTerraformDownloadCountParams{ID: id, RepositoryID: repoID})
-	if err != nil {
-		return fmt.Errorf("failed to count terraform provider download: %w", err)
 	}
 
 	return nil

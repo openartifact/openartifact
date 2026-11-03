@@ -46,7 +46,9 @@ type HTTPStore interface {
 	GetCargoCrate(ctx context.Context, repoID string, name string, version string) (*models.CargoCrate, error)
 	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
-	IncrementCargoDownloadCount(ctx context.Context, repoID string, name string, version string) error
+	// CountFileDownload counts one download of a package file; it is batched and
+	// written to the database with the next flush.
+	CountFileDownload(fileID string)
 	ListCargoCrateVersions(ctx context.Context, repoID string, name string) ([]*models.CargoCrate, error)
 	ListCargoIndexVersions(ctx context.Context, repoID string, name string) ([]*models.CargoCrate, error)
 	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
@@ -258,9 +260,7 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 
 	// Count the download before the blob is opened or redirected to: a
 	// presigned response never reaches the streaming code below.
-	if err := h.DB.IncrementCargoDownloadCount(r.Context(), repoID, crateName, version); err != nil {
-		h.Log.Errorw("failed to increment download count", "name", crateName, "version", version, "error", err)
-	}
+	h.DB.CountFileDownload(crate.ID)
 
 	if h.TryPresign(
 		w,

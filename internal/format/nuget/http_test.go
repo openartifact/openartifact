@@ -69,7 +69,7 @@ func (d *nugetDB) DeleteNuGetPackage(_ context.Context, _, _, _ string) error {
 	return nil
 }
 
-func (d *nugetDB) IncrementNuGetDownloadCount(_ context.Context, _, _, _ string) error { return nil }
+func (d *nugetDB) CountFileDownload(string) {}
 
 func newTestHandler(t *testing.T) (*HTTPHandler, *nugetDB, *formattest.BlobStore, *formattest.Publisher) {
 	t.Helper()

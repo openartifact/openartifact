@@ -97,12 +97,12 @@ func (d *memDB) ListNuGetPackageVersions(_ context.Context, _, id string) ([]*mo
 	return out, nil
 }
 
-func (d *memDB) IncrementNuGetDownloadCount(_ context.Context, _, id, version string) error {
-	if p := d.find(id, version); p != nil {
-		p.DownloadCount++
+func (d *memDB) CountFileDownload(fileID string) {
+	for _, p := range d.pkgs {
+		if p.ID == fileID {
+			p.DownloadCount++
+		}
 	}
-
-	return nil
 }
 
 func (d *memDB) BlobReferenceCount(_ context.Context, sha string) (int, error) {

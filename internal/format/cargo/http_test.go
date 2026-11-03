@@ -219,7 +219,7 @@ func (d *cargoDB) SearchCargoCrateSummaries(_ context.Context, _, _ string, _ in
 	return d.summaries, d.total, nil
 }
 
-func (d *cargoDB) IncrementCargoDownloadCount(_ context.Context, _, _, _ string) error { return nil }
+func (d *cargoDB) CountFileDownload(string) {}
 
 func newCargoHandler(t *testing.T) (*HTTPHandler, *cargoDB, *formattest.BlobStore, *formattest.Publisher) {
 	t.Helper()
