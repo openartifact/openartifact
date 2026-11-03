@@ -80,3 +80,45 @@ WHERE r.id = e.repository_id
       WHEN e.blob_key IS NOT NULL THEN COALESCE(r.max_stale_seconds, 0) * interval '1 second'
       ELSE interval '0'
   END;
+
+-- A hosted deb repository's package files as a deb group merges them: the
+-- columns of ListDebPackageEntries without the control stanza, plus the row
+-- version of that stanza (xmin of the deb_files row). The group keeps the
+-- Packages stanza it rendered for a file under this key and only reads the
+-- controls of the files it has not seen. Same order as ListDebPackageEntries.
+-- name: ListDebPackageStamps :many
+SELECT f.id, p.name, v.version, f.arch, f.filename,
+       d.distribution_id, dd.name AS distribution, dc.name AS component_name,
+       COALESCE(b.sha256, '')::text AS sha256,
+       COALESCE(b.size_bytes, 0)::bigint AS size,
+       COALESCE((f.attrs ->> 'installed_size')::bigint, 0)::bigint AS installed_size,
+       d.xmin::text::bigint AS control_rev
+FROM package_files f
+JOIN deb_files d ON d.id = f.id
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN debian_distributions dd ON dd.id = d.distribution_id
+JOIN debian_components dc ON dc.id = d.component_id
+LEFT JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL
+ORDER BY dd.name, dc.name, f.arch, p.name, v.version;
+
+-- The package files of ListDebPackageStamps with their control stanzas, for
+-- the given file ids (those the group has no rendered stanza for).
+-- name: ListDebPackagesWithControls :many
+SELECT f.id, p.name, v.version, f.arch, f.filename,
+       d.distribution_id, dd.name AS distribution, dc.name AS component_name,
+       COALESCE(b.sha256, '')::text AS sha256,
+       COALESCE(b.size_bytes, 0)::bigint AS size,
+       COALESCE((f.attrs ->> 'installed_size')::bigint, 0)::bigint AS installed_size,
+       d.xmin::text::bigint AS control_rev,
+       d.control_fields
+FROM package_files f
+JOIN deb_files d ON d.id = f.id
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN debian_distributions dd ON dd.id = d.distribution_id
+JOIN debian_components dc ON dc.id = d.component_id
+LEFT JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = sqlc.arg(repository_id)::uuid AND f.deleted_at IS NULL
+  AND f.id = ANY(sqlc.arg(ids)::uuid[]);

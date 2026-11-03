@@ -133,6 +133,7 @@ Newest first. Each version starts with **What you must do**; the text below it l
 - A hosted npm repository answers `GET /<package>/<version>` and `GET /@scope/<package>/<version>` with the version document, and `latest` or any other dist-tag stands for its version, as the npm registry and an npm proxy do. They were `404`.
 - A Docker blob `GET` honours a single `Range` header (`206` with `Content-Range`, `416` past the end of the blob) so an interrupted layer pull resumes.
 - A hosted raw file `GET` and `HEAD` send a strong `ETag` (the sha256 of the file) and `Last-Modified`, answer `If-None-Match` and `If-Modified-Since` with `304`, and honour `Range` and `If-Range`.
+- **Deb, RPM, apk and pacman groups update their owner table incrementally.** A regeneration used to delete and reinsert every `group_package_owners` row (19 000 dead rows per upload on a group of that size); it now writes only the rows that changed. Deb groups also keep the rendered `Packages` stanzas of hosted members in memory (bounded at 256 MiB, rebuilt from the database after a restart) and keep the stored `Packages.gz`/`Packages.xz` of an index that did not change, so a regeneration after a proxy refresh, a member's upload to another distribution or a no-op notification does not compress it again. Nothing to do on upgrade; the published files and their checksums are the same as before.
 
 ### 0.18.0
 

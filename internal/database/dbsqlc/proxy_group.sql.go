@@ -7,6 +7,7 @@ package dbsqlc
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -147,6 +148,153 @@ func (q *Queries) ListCachedProxyKeys(ctx context.Context, arg ListCachedProxyKe
 			return nil, err
 		}
 		items = append(items, cache_key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDebPackageStamps = `-- name: ListDebPackageStamps :many
+SELECT f.id, p.name, v.version, f.arch, f.filename,
+       d.distribution_id, dd.name AS distribution, dc.name AS component_name,
+       COALESCE(b.sha256, '')::text AS sha256,
+       COALESCE(b.size_bytes, 0)::bigint AS size,
+       COALESCE((f.attrs ->> 'installed_size')::bigint, 0)::bigint AS installed_size,
+       d.xmin::text::bigint AS control_rev
+FROM package_files f
+JOIN deb_files d ON d.id = f.id
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN debian_distributions dd ON dd.id = d.distribution_id
+JOIN debian_components dc ON dc.id = d.component_id
+LEFT JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL
+ORDER BY dd.name, dc.name, f.arch, p.name, v.version
+`
+
+type ListDebPackageStampsRow struct {
+	ID             string `db:"id" json:"id"`
+	Name           string `db:"name" json:"name"`
+	Version        string `db:"version" json:"version"`
+	Arch           string `db:"arch" json:"arch"`
+	Filename       string `db:"filename" json:"filename"`
+	DistributionID string `db:"distribution_id" json:"distribution_id"`
+	Distribution   string `db:"distribution" json:"distribution"`
+	ComponentName  string `db:"component_name" json:"component_name"`
+	Sha256         string `db:"sha256" json:"sha256"`
+	Size           int64  `db:"size" json:"size"`
+	InstalledSize  int64  `db:"installed_size" json:"installed_size"`
+	ControlRev     int64  `db:"control_rev" json:"control_rev"`
+}
+
+// A hosted deb repository's package files as a deb group merges them: the
+// columns of ListDebPackageEntries without the control stanza, plus the row
+// version of that stanza (xmin of the deb_files row). The group keeps the
+// Packages stanza it rendered for a file under this key and only reads the
+// controls of the files it has not seen. Same order as ListDebPackageEntries.
+func (q *Queries) ListDebPackageStamps(ctx context.Context, repositoryID string) ([]ListDebPackageStampsRow, error) {
+	rows, err := q.db.Query(ctx, listDebPackageStamps, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDebPackageStampsRow{}
+	for rows.Next() {
+		var i ListDebPackageStampsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Version,
+			&i.Arch,
+			&i.Filename,
+			&i.DistributionID,
+			&i.Distribution,
+			&i.ComponentName,
+			&i.Sha256,
+			&i.Size,
+			&i.InstalledSize,
+			&i.ControlRev,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDebPackagesWithControls = `-- name: ListDebPackagesWithControls :many
+SELECT f.id, p.name, v.version, f.arch, f.filename,
+       d.distribution_id, dd.name AS distribution, dc.name AS component_name,
+       COALESCE(b.sha256, '')::text AS sha256,
+       COALESCE(b.size_bytes, 0)::bigint AS size,
+       COALESCE((f.attrs ->> 'installed_size')::bigint, 0)::bigint AS installed_size,
+       d.xmin::text::bigint AS control_rev,
+       d.control_fields
+FROM package_files f
+JOIN deb_files d ON d.id = f.id
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN debian_distributions dd ON dd.id = d.distribution_id
+JOIN debian_components dc ON dc.id = d.component_id
+LEFT JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL
+  AND f.id = ANY($2::uuid[])
+`
+
+type ListDebPackagesWithControlsParams struct {
+	RepositoryID string   `db:"repository_id" json:"repository_id"`
+	Ids          []string `db:"ids" json:"ids"`
+}
+
+type ListDebPackagesWithControlsRow struct {
+	ID             string          `db:"id" json:"id"`
+	Name           string          `db:"name" json:"name"`
+	Version        string          `db:"version" json:"version"`
+	Arch           string          `db:"arch" json:"arch"`
+	Filename       string          `db:"filename" json:"filename"`
+	DistributionID string          `db:"distribution_id" json:"distribution_id"`
+	Distribution   string          `db:"distribution" json:"distribution"`
+	ComponentName  string          `db:"component_name" json:"component_name"`
+	Sha256         string          `db:"sha256" json:"sha256"`
+	Size           int64           `db:"size" json:"size"`
+	InstalledSize  int64           `db:"installed_size" json:"installed_size"`
+	ControlRev     int64           `db:"control_rev" json:"control_rev"`
+	ControlFields  json.RawMessage `db:"control_fields" json:"control_fields"`
+}
+
+// The package files of ListDebPackageStamps with their control stanzas, for
+// the given file ids (those the group has no rendered stanza for).
+func (q *Queries) ListDebPackagesWithControls(ctx context.Context, arg ListDebPackagesWithControlsParams) ([]ListDebPackagesWithControlsRow, error) {
+	rows, err := q.db.Query(ctx, listDebPackagesWithControls, arg.RepositoryID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDebPackagesWithControlsRow{}
+	for rows.Next() {
+		var i ListDebPackagesWithControlsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Version,
+			&i.Arch,
+			&i.Filename,
+			&i.DistributionID,
+			&i.Distribution,
+			&i.ComponentName,
+			&i.Sha256,
+			&i.Size,
+			&i.InstalledSize,
+			&i.ControlRev,
+			&i.ControlFields,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

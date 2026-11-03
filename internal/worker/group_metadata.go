@@ -70,7 +70,7 @@ type GroupMetadataStore interface {
 	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
 	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
 	ListApkPackages(ctx context.Context, repoID string) ([]*models.ApkPackage, error)
-	ListDebPackageEntries(ctx context.Context, repoID string, dist string, comp string, arch string) ([]models.DebPackageEntry, error)
+	debStanzaStore
 	ListGroupMemberRepositories(ctx context.Context, groupRepoID string) ([]*models.Repository, error)
 	ListMetadataGroupsOfMember(ctx context.Context, memberRepoID string) ([]string, error)
 	ListPacmanFileLists(ctx context.Context, repoID string) (map[string]string, error)
@@ -97,8 +97,10 @@ type GroupMetadataWorker struct {
 	signers   gpg.Resolver
 	// apkSigners resolves the key that signs apk groups' indexes (nil: unsigned).
 	apkSigners ApkSignerResolver
-	log        *logger.Logger
-	q          *regenQueue[string]
+	// stanzas keeps the rendered Packages stanzas of hosted deb members.
+	stanzas *debStanzaCache
+	log     *logger.Logger
+	q       *regenQueue[string]
 }
 
 // NewGroupMetadataWorker creates the worker. signers resolves the key that signs
@@ -112,7 +114,8 @@ func NewGroupMetadataWorker(
 	signers gpg.Resolver,
 	log *logger.Logger,
 ) *GroupMetadataWorker {
-	w := &GroupMetadataWorker{db: db, blobStore: blobStore, opener: opener, rpm: rpm, signers: signers, log: log}
+	w := &GroupMetadataWorker{db: db, blobStore: blobStore, opener: opener, rpm: rpm, signers: signers, log: log,
+		stanzas: newDebStanzaCache(debStanzaCacheBytes)}
 	w.q = newRegenQueue("group", log, func(ctx context.Context, groupID string) error {
 		err := w.generate(ctx, groupID, "", false, nil)
 		if errors.Is(err, group.ErrNoRepodata) {
@@ -289,6 +292,13 @@ type groupJob struct {
 	keep map[string]struct{}
 	// blobs are the generated files keyed by group-relative path.
 	blobs map[string][]byte
+	// unchanged are the files of the previous generation this one keeps as
+	// they are (group-relative path -> blob checksum): their content did not
+	// change, so it was not produced again.
+	unchanged map[string]string
+	// stored caches the checksums of the group's stored dists/ files
+	// (storedDebMetadata).
+	stored map[string]string
 	// owners maps each file the index lists to the member serving it.
 	owners map[string]groupOwner
 	// partial is set when a proxy member could not be read (as opposed to
@@ -497,9 +507,10 @@ func (w *GroupMetadataWorker) run(
 
 	j := &groupJob{
 		w: w, group: grp, members: members, scope: scope,
-		blobs:  make(map[string][]byte),
-		owners: make(map[string]groupOwner),
-		keep:   make(map[string]struct{}),
+		blobs:     make(map[string][]byte),
+		unchanged: make(map[string]string),
+		owners:    make(map[string]groupOwner),
+		keep:      make(map[string]struct{}),
 	}
 
 	if err := j.resolveSigner(ctx); err != nil {
@@ -705,6 +716,16 @@ func (w *GroupMetadataWorker) publish(ctx context.Context, j *groupJob, st *mode
 		}
 	}
 
+	// Files this generation did not produce because their content is the
+	// previous one's stay under the checksum they had.
+	for rel, sum := range j.unchanged {
+		if oldSHA[j.scope+rel] != sum {
+			return fmt.Errorf("group worker: %s changed while the group was generated", j.scope+rel) //nolint:err113 // dynamic context
+		}
+
+		newSHA[j.scope+rel] = sum
+	}
+
 	stalePaths, reclaim := supersededMetadata(oldSHA, newSHA)
 
 	for _, path := range stalePaths {
@@ -718,7 +739,7 @@ func (w *GroupMetadataWorker) publish(ctx context.Context, j *groupJob, st *mode
 		}
 	}
 
-	if err := replaceOwners(ctx, tx, groupID, j.scope, j.owners, j.keptPrefixes()); err != nil {
+	if err := syncOwners(ctx, tx, groupID, j.scope, j.owners, j.keptPrefixes()); err != nil {
 		return err
 	}
 
@@ -751,31 +772,58 @@ func listOldGroupMetadata(ctx context.Context, tx database.Transaction, groupID,
 	)
 }
 
-// replaceOwners swaps the group's owner table for owners; rows under a path
-// prefix of keep stay.
-func replaceOwners(ctx context.Context, tx database.Transaction, groupID, scope string, owners map[string]groupOwner, keep []string) error {
-	if _, err := tx.ExecContext(
-		ctx,
-		`DELETE FROM group_package_owners WHERE group_repo_id = $1 AND ($2 = '' OR starts_with(path, $2))
-		 AND NOT EXISTS (SELECT 1 FROM unnest($3::text[]) AS k(prefix) WHERE starts_with(path, k.prefix))`,
-		groupID,
-		scope,
-		keep,
-	); err != nil {
-		return fmt.Errorf("group worker: clearing owners: %w", err)
+// syncOwners brings the group's owner table in line with owners: it deletes the
+// rows of files the generation no longer lists, inserts the new ones and
+// re-points those whose owner changed. Rows that are right are not written, so
+// a generation after one upload touches one row (and leaves no dead tuples
+// behind) rather than rewriting the whole table. Rows under a path prefix of
+// keep stay as they are; scope is the variant prefix the owners are stored
+// under.
+func syncOwners(ctx context.Context, tx database.Transaction, groupID, scope string, owners map[string]groupOwner, keep []string) error {
+	current, err := loadOwners(ctx, tx, groupID, scope)
+	if err != nil {
+		return err
 	}
 
-	paths := make([]string, 0, len(owners))
-	for p := range owners {
-		paths = append(paths, p)
+	var drop []string
+
+	for path := range current {
+		if _, ok := owners[strings.TrimPrefix(path, scope)]; !ok && !hasAnyPrefix(path, keep) {
+			drop = append(drop, path)
+		}
 	}
 
-	sort.Strings(paths)
+	sort.Strings(drop)
 
-	for len(paths) > 0 {
-		n := min(groupOwnerChunk, len(paths))
-		chunk := paths[:n]
-		paths = paths[n:]
+	for len(drop) > 0 {
+		n := min(groupOwnerChunk, len(drop))
+
+		if _, err := tx.ExecContext(
+			ctx,
+			`DELETE FROM group_package_owners WHERE group_repo_id = $1 AND path = ANY($2::text[])`,
+			groupID,
+			drop[:n],
+		); err != nil {
+			return fmt.Errorf("group worker: deleting owners: %w", err)
+		}
+
+		drop = drop[n:]
+	}
+
+	var write []string
+
+	for p, o := range owners {
+		if member, ok := current[scope+p]; !ok || member != o.member {
+			write = append(write, p)
+		}
+	}
+
+	sort.Strings(write)
+
+	for len(write) > 0 {
+		n := min(groupOwnerChunk, len(write))
+		chunk := write[:n]
+		write = write[n:]
 
 		members := make([]string, n)
 		scoped := make([]string, n)
@@ -788,12 +836,48 @@ func replaceOwners(ctx context.Context, tx database.Transaction, groupID, scope 
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO group_package_owners (group_repo_id, path, member_repo_id)
 			SELECT $1, t.p, t.m::uuid FROM unnest($2::text[], $3::text[]) AS t(p, m)
+			ON CONFLICT (group_repo_id, path) DO UPDATE SET member_repo_id = EXCLUDED.member_repo_id
 		`, groupID, scoped, members); err != nil {
 			return fmt.Errorf("group worker: storing owners: %w", err)
 		}
 	}
 
 	return nil
+}
+
+// loadOwners returns the stored owners (path -> member id) of the group: all of
+// them for the shared index (so that regenerating it drops the variants'), those
+// under scope for a variant.
+func loadOwners(ctx context.Context, tx database.Transaction, groupID, scope string) (map[string]string, error) {
+	rows, err := tx.QueryContext(ctx,
+		`SELECT path, member_repo_id FROM group_package_owners WHERE group_repo_id = $1 AND ($2 = '' OR starts_with(path, $2))`,
+		groupID, scope)
+	if err != nil {
+		return nil, fmt.Errorf("group worker: listing owners: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	current := make(map[string]string)
+
+	for rows.Next() {
+		var path, member string
+		if err := rows.Scan(&path, &member); err != nil {
+			return nil, fmt.Errorf("group worker: scanning owners: %w", err)
+		}
+
+		current[path] = member
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("group worker: listing owners: %w", err)
+	}
+
+	return current, nil
+}
+
+func hasAnyPrefix(s string, prefixes []string) bool {
+	return slices.ContainsFunc(prefixes, func(p string) bool { return strings.HasPrefix(s, p) })
 }
 
 // markGenerated records the generation: the stale flag is only cleared when no
