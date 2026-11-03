@@ -177,10 +177,29 @@ func (p *Publisher) Events() []Event {
 // embed it in a database mock.
 type Quarantine struct {
 	Keys map[string]bool
+	// Lookups counts the quarantine queries (single and batched) the store served.
+	Lookups int
+}
+
+// QuarantinedKeys returns the keys that are in the quarantined set, in one lookup.
+func (q *Quarantine) QuarantinedKeys(_ context.Context, _ string, keys []string) ([]string, error) {
+	q.Lookups++
+
+	var out []string
+
+	for _, k := range keys {
+		if q.Keys[k] {
+			out = append(out, k)
+		}
+	}
+
+	return out, nil
 }
 
 // IsArtifactQuarantined reports whether any key is in the quarantined set.
 func (q *Quarantine) IsArtifactQuarantined(_ context.Context, _ string, keys []string) (bool, error) {
+	q.Lookups++
+
 	for _, k := range keys {
 		if q.Keys[k] {
 			return true, nil

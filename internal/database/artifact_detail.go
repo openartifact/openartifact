@@ -73,5 +73,25 @@ func (p *CatalogStore) GetRepoComponentDetail(ctx context.Context, repoID, id st
 		detail.Info = info
 	}
 
+	if row.VersionID == "" {
+		detail.Files = []models.ComponentFile{{
+			ID: row.ID, Filename: row.Filename, Arch: row.Arch, Size: row.SizeBytes, SHA256: row.Sha256,
+		}}
+
+		return detail, nil
+	}
+
+	files, err := p.q.ListVersionFiles(ctx, dbsqlc.ListVersionFilesParams{
+		VersionID: row.VersionID, RepoID: repoID, MaxFiles: models.MaxDetailFiles,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list version files: %w", err)
+	}
+
+	detail.Files = make([]models.ComponentFile, len(files))
+	for i, f := range files {
+		detail.Files[i] = models.ComponentFile{ID: f.ID, Filename: f.Filename, Arch: f.Arch, Size: f.SizeBytes, SHA256: f.Sha256}
+	}
+
 	return detail, nil
 }

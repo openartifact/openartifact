@@ -16,7 +16,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -409,12 +408,11 @@ func TestRecentPackages(t *testing.T) {
 	})
 }
 
-// detailDB serves one package version and the listing rows of its files.
+// detailDB serves one package version with its files.
 type detailDB struct {
 	catalogDB
 
 	detail *models.ComponentDetail
-	rows   []*models.Component
 }
 
 func (db *detailDB) GetRepoComponentDetail(_ context.Context, repoID, id string) (*models.ComponentDetail, error) {
@@ -423,10 +421,6 @@ func (db *detailDB) GetRepoComponentDetail(_ context.Context, repoID, id string)
 	}
 
 	return nil, nil
-}
-
-func (db *detailDB) SearchComponents(context.Context, string, database.ComponentListOptions) ([]*models.Component, int, error) {
-	return db.rows, len(db.rows), nil
 }
 
 func TestPackageDetail(t *testing.T) {
@@ -440,10 +434,7 @@ func TestPackageDetail(t *testing.T) {
 			Info:        map[string]string{"main": "index.js", "author": "me"},
 			Deps:        []byte(`{"dependencies":{"left-pad":"^1.0.0"}}`),
 			DepsDecoder: "npm-manifest",
-		},
-		rows: []*models.Component{
-			{ID: "p1", Name: "widget", Version: "1.0.0", Format: "npm", Filename: "widget-1.0.0.tgz"},
-			{ID: "p2", Name: "widget", Version: "1.0.0-rc.1", Format: "npm", Filename: "widget-1.0.0-rc.1.tgz"},
+			Files:       []models.ComponentFile{{ID: "p1", Filename: "widget-1.0.0.tgz"}},
 		},
 	}
 	h := newCatalogHandler(t, &db.catalogDB, adminTargets())
@@ -485,7 +476,7 @@ func TestPackageDetail(t *testing.T) {
 	}
 
 	if len(body.Files) != 1 || body.Files[0].ID != "p1" {
-		t.Fatalf("only the exact version's files are listed: %+v", body.Files)
+		t.Fatalf("the files of the detail are listed: %+v", body.Files)
 	}
 
 	if len(body.Dependencies) != 1 || body.Dependencies[0].Name != "left-pad" {

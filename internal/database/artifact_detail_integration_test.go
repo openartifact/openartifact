@@ -142,6 +142,20 @@ func detailCases(f *detailFixture) []detailCase {
 	}
 }
 
+// detailFileCases are the expectations on the file list of the detail: the
+// listed files of the version, so the unlisted go.mod stays out.
+func detailFileCases(f *detailFixture) []detailCase {
+	return []detailCase{
+		{"go files", f.goRepo, f.goFiles[0], true, func(d *models.ComponentDetail) bool {
+			return len(d.Files) == 1 && d.Files[0].ID == f.goFiles[0] && d.Files[0].Filename == "v1.0.0.zip" &&
+				d.Files[0].Size == 5 && d.Files[0].SHA256 == strings.Repeat("c", 64)
+		}},
+		{"npm files", f.npmRepo, f.npmFile[0], true, func(d *models.ComponentDetail) bool {
+			return len(d.Files) == 1 && d.Files[0].ID == f.npmFile[0] && d.Files[0].SHA256 == strings.Repeat("a", 64)
+		}},
+	}
+}
+
 func TestArtifactDetailReadsGenericTables(t *testing.T) {
 	registerFixtures(t)
 
@@ -157,7 +171,7 @@ func TestArtifactDetailReadsGenericTables(t *testing.T) {
 	f.seedMaven(t)
 	f.seedGo(t)
 
-	cases := detailCases(f)
+	cases := append(detailCases(f), detailFileCases(f)...)
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -174,5 +188,22 @@ func TestArtifactDetailReadsGenericTables(t *testing.T) {
 				t.Fatalf("detail %+v", d)
 			}
 		})
+	}
+}
+
+// A docker tag has no version row: its detail lists the tag itself as the only file.
+func TestArtifactDetailDockerTagFile(t *testing.T) {
+	pg := newQuotaTestDB(t, 4)
+	s := newQuotaSeeder(t, pg, "detail-docker", "docker")
+	tag := s.queryID(`INSERT INTO docker_tags (repository_id, image, name, manifest_digest)
+	        VALUES ($1, 'app', 'latest', 'sha256:a') RETURNING id`, s.repo)
+
+	d, err := pg.GetRepoComponentDetail(context.Background(), s.repo, tag)
+	if err != nil || d == nil {
+		t.Fatalf("detail: %v, %+v", err, d)
+	}
+
+	if len(d.Files) != 1 || d.Files[0].ID != tag {
+		t.Fatalf("files %+v, want the tag itself", d.Files)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -358,6 +359,39 @@ func (h *HTTPHandler) dropQuarantined(
 	versions []*models.GoModule,
 ) ([]*models.GoModule, error) {
 	kept := make([]*models.GoModule, 0, len(versions))
+
+	// One query for every version's keys instead of one per version.
+	if bc, ok := h.DB.(interface {
+		QuarantinedKeys(ctx context.Context, repoID string, keys []string) ([]string, error)
+	}); ok {
+		var all []string
+
+		for _, v := range versions {
+			all = append(all, versionQuarantineKeys(v.ID, modulePath, v.Version)...)
+		}
+
+		hit, err := bc.QuarantinedKeys(ctx, repoID, all)
+		if err != nil {
+			return nil, fmt.Errorf("check quarantine: %w", err)
+		}
+
+		blocked := make(map[string]struct{}, len(hit))
+		for _, k := range hit {
+			blocked[k] = struct{}{}
+		}
+
+		for _, v := range versions {
+			if !slices.ContainsFunc(versionQuarantineKeys(v.ID, modulePath, v.Version), func(k string) bool {
+				_, bad := blocked[k]
+
+				return bad
+			}) {
+				kept = append(kept, v)
+			}
+		}
+
+		return kept, nil
+	}
 
 	for _, v := range versions {
 		blocked, err := quarantine.IsQuarantined(ctx, h.DB, repoID, versionQuarantineKeys(v.ID, modulePath, v.Version)...)

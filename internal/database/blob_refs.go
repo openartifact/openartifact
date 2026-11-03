@@ -156,38 +156,44 @@ func (p *BlobRefStore) ListUnreferencedBlobs(
 	after string,
 	scan, limit int,
 ) ([]string, string, error) {
-	// Upper bound of the window: the scan-th sha after the cursor.
-	var upper sql.NullString
-
-	err := p.db.QueryRowContext(ctx,
-		`SELECT sha256 FROM blobs WHERE sha256 > $1 ORDER BY sha256 OFFSET $2 LIMIT 1`, after, scan-1,
-	).Scan(&upper)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return nil, "", fmt.Errorf("list unreferenced blobs: window: %w", err)
-	}
-
+	// One statement reads the window (the first scan blobs rows after the
+	// cursor, an ordered index walk that stops at scan rows: no OFFSET pass),
+	// reports its size and last sha, and lists the old unreferenced rows in it.
+	// LEFT JOIN: the window row is returned even when it holds no orphan.
 	rows, err := p.db.QueryContext(ctx,
-		`SELECT b.sha256 FROM blobs b
-		 WHERE b.sha256 > $1 AND ($2::text IS NULL OR b.sha256 <= $2::text)
-		   AND b.created_at < now() - make_interval(secs => $3)
-		   AND `+blobUnreferencedExpr+`
-		 ORDER BY b.sha256
-		 LIMIT $4`, after, upper, minAge.Seconds(), limit)
+		`WITH w AS MATERIALIZED (
+		     SELECT b.id, b.sha256, b.created_at FROM blobs b WHERE b.sha256 > $1 ORDER BY b.sha256 LIMIT $2
+		 )
+		 SELECT s.size, s.last, o.sha256
+		 FROM (SELECT count(*) AS size, max(sha256) AS last FROM w) s
+		 LEFT JOIN LATERAL (
+		     SELECT b.sha256 FROM w b
+		     WHERE b.created_at < now() - make_interval(secs => $3)
+		       AND `+blobUnreferencedExpr+`
+		     ORDER BY b.sha256
+		     LIMIT $4
+		 ) o ON true`, after, scan, minAge.Seconds(), limit)
 	if err != nil {
 		return nil, "", fmt.Errorf("list unreferenced blobs: %w", err)
 	}
 
 	defer func() { _ = rows.Close() }()
 
-	var out []string
+	var (
+		out      []string
+		winSize  int
+		winLast  sql.NullString
+		orphanID sql.NullString
+	)
 
 	for rows.Next() {
-		var sha string
-		if err := rows.Scan(&sha); err != nil {
+		if err := rows.Scan(&winSize, &winLast, &orphanID); err != nil {
 			return nil, "", fmt.Errorf("scan unreferenced blob: %w", err)
 		}
 
-		out = append(out, sha)
+		if orphanID.Valid {
+			out = append(out, orphanID.String)
+		}
 	}
 
 	if err := rows.Err(); err != nil {
@@ -200,12 +206,101 @@ func (p *BlobRefStore) ListUnreferencedBlobs(
 	case len(out) >= limit:
 		// The window was cut short by the limit; resume right after the last hit.
 		next = out[len(out)-1]
-	case upper.Valid:
-		next = upper.String
+	case winSize >= scan && winLast.Valid:
+		next = winLast.String
 	}
 
 	return out, next, nil
 }
+
+// blobBatchLockChunk bounds how many blob advisory locks one batched delete
+// holds in its transaction.
+const blobBatchLockChunk = 100
+
+// DeleteBlobsIfUnreferenced is DeleteBlobIfUnreferenced for many blobs: per
+// chunk of blobBatchLockChunk, ONE transaction takes the blobs' advisory locks
+// (sorted, the order WithBlobLocks uses, so no deadlock with an uploader), then
+// one statement re-checks the references, deletes the blobs rows still
+// unreferenced and queues their bytes for deletion. The check runs after the
+// locks, exactly as in the single-blob protocol, so a blob an uploader is
+// about to reference is never removed. It returns how many blobs were
+// removed. An error (a foreign key a table outside the reference list holds,
+// for example) fails the chunk it happened in as a whole: the caller retries
+// those blobs one by one to isolate the offender.
+func (p *BlobRefStore) DeleteBlobsIfUnreferenced(ctx context.Context, shas []string) (int, error) {
+	keys := slices.Clone(shas)
+	slices.Sort(keys)
+	keys = slices.Compact(keys)
+
+	removed := 0
+
+	for chunk := range slices.Chunk(keys, blobBatchLockChunk) {
+		n, err := p.deleteBlobChunk(ctx, chunk)
+		if err != nil {
+			return removed, err
+		}
+
+		removed += n
+	}
+
+	return removed, nil
+}
+
+func (p *BlobRefStore) deleteBlobChunk(ctx context.Context, keys []string) (int, error) {
+	release, err := p.acquireLockSlot(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer release()
+
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin blob batch delete tx: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	for _, sha := range keys {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('blob:' || $1, 0))`, sha); err != nil {
+			return 0, fmt.Errorf("acquire blob lock: %w", err)
+		}
+	}
+
+	res, err := tx.ExecContext(ctx, deleteUnreferencedBlobsSQL, keys, BlobDeletionScopeAll, p.deletionGraceSeconds())
+	if err != nil {
+		return 0, fmt.Errorf("delete unreferenced blobs: %w", err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("count deleted blobs: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit blob batch delete: %w", err)
+	}
+
+	// RowsAffected of a data-modifying CTE counts the outer INSERT: one per blob.
+	return int(n), nil
+}
+
+// deleteUnreferencedBlobsSQL removes the blobs rows of $1 that no table
+// references and queues their bytes like enqueueBlobDeletionSQL does (keep the
+// two in sync).
+//
+//nolint:gochecknoglobals // built once, read-only
+var deleteUnreferencedBlobsSQL = `WITH gone AS (
+    DELETE FROM blobs b WHERE b.sha256 = ANY($1::text[]) AND ` + blobUnreferencedExpr + `
+    RETURNING b.sha256
+)
+INSERT INTO blob_deletions (sha256, scope, not_before)
+SELECT sha256, $2::text, now() + make_interval(secs => $3::float8) FROM gone
+ON CONFLICT (sha256, scope) DO UPDATE
+SET queued_at = now(),
+    deleted_xid = (pg_current_xact_id()::text)::bigint,
+    not_before = EXCLUDED.not_before,
+    claimed_until = NULL,
+    attempts = 0`
 
 // EnsureBlob ensures the global blobs table has a row for sha256 (creating
 // it if it does not exist yet) and returns its

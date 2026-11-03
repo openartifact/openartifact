@@ -70,8 +70,11 @@ type PackageListResponse struct {
 	// Total is the number of matching files; absent on a request that carries a
 	// cursor, which does not count.
 	Total *int `json:"total,omitempty"`
-	Page  int  `json:"page"`
-	Limit int  `json:"limit"`
+	// TotalExact is false when Total is a lower bound (the count stops at a
+	// ceiling on a huge repository): show it as "N+". Absent with Total.
+	TotalExact *bool `json:"total_exact,omitempty"`
+	Page       int   `json:"page"`
+	Limit      int   `json:"limit"`
 	// HasMore: the listing continues after this page.
 	HasMore bool `json:"has_more"`
 	// NextCursor, set whenever HasMore is true on the newest-first listing,

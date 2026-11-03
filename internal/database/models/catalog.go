@@ -151,4 +151,19 @@ type ComponentDetail struct {
 	// decoder named DepsDecoder; empty when the format shows none.
 	Deps        []byte
 	DepsDecoder string
+	// Files are the listed files of the version (the row itself for a proxy
+	// cache entry or a docker tag), newest first, at most MaxDetailFiles.
+	Files []ComponentFile
+}
+
+// MaxDetailFiles bounds the files ComponentDetail lists for one version.
+const MaxDetailFiles = 200
+
+// ComponentFile is one file of a package version in a ComponentDetail.
+type ComponentFile struct {
+	ID       string
+	Filename string
+	Arch     string
+	Size     int64
+	SHA256   string
 }

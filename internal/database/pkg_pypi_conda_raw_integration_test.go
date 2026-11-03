@@ -601,10 +601,8 @@ func TestRawRoundTrip(t *testing.T) {
 }
 
 // A directory listing is an index scan bounded by the repository
-// (uq_package_files_path or idx_package_files_filename, both lead with
-// repository_id and raw filename = path); like the former (repository_id, path)
-// index it cannot turn LIKE into a range under a non-C collation, so the
-// prefix is a filter on the repository's index range.
+// (uq_package_files_path, the unique index built with text_pattern_ops, which
+// turns the LIKE prefix into a range under any collation).
 func TestRawPrefixListingUsesPathIndex(t *testing.T) {
 	pg := newQuotaTestDB(t, 4)
 	ctx := context.Background()
@@ -657,7 +655,7 @@ func TestRawPrefixListingUsesPathIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if strings.Contains(plan.String(), "Seq Scan") || !strings.Contains(plan.String(), "idx_package_files_path_prefix") {
-		t.Errorf("prefix listing does not use idx_package_files_path_prefix:\n%s", plan.String())
+	if strings.Contains(plan.String(), "Seq Scan") || !strings.Contains(plan.String(), "uq_package_files_path") {
+		t.Errorf("prefix listing does not use uq_package_files_path:\n%s", plan.String())
 	}
 }

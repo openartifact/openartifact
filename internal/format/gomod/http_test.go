@@ -13,6 +13,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -517,6 +518,25 @@ func TestQuarantinedVersionHiddenFromListLatestInfo(t *testing.T) {
 
 	if got := latestInfo(t, router, testModule); got != "v1.0.0" {
 		t.Errorf("@latest = %q, want v1.0.0", got)
+	}
+}
+
+// The version list checks the quarantine state of all its versions in one
+// lookup, not one per version.
+func TestListChecksQuarantineInOneLookup(t *testing.T) {
+	router, db, _, _ := newTestRouter(t)
+	db.seed(testModule, "v1.0.0", "v1.1.0", "v1.2.0", "v1.3.0")
+	db.Keys[testModule+"/@v/v1.2.0.mod"] = true
+
+	db.Lookups = 0
+
+	w := serve(router, http.MethodGet, "/repos/myrepo/"+testModule+"/@v/list", nil)
+	if got := strings.Fields(w.Body.String()); len(got) != 3 || slices.Contains(got, "v1.2.0") {
+		t.Errorf("list = %q, want the three unquarantined versions", w.Body.String())
+	}
+
+	if db.Lookups != 1 {
+		t.Errorf("%d quarantine lookups for one list, want 1", db.Lookups)
 	}
 }
 

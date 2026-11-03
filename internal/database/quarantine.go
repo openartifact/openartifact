@@ -44,6 +44,49 @@ func (p *QuarantineStore) IsArtifactQuarantined(ctx context.Context, repoID stri
 	return quarantined, nil
 }
 
+// QuarantinedKeys is IsArtifactQuarantined for many artifacts at once: it
+// returns the subset of keys that identify a quarantined artifact of the
+// repository, in one query (a listing checks every version it advertises).
+func (p *QuarantineStore) QuarantinedKeys(ctx context.Context, repoID string, keys []string) ([]string, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+
+	rows, err := p.db.QueryContext(ctx, `
+		SELECT DISTINCT ref.artifact_path
+		FROM artifact_refs ref
+		JOIN scan_jobs sj ON sj.artifact_ref_id = ref.id
+		WHERE ref.repository_id = $1
+		  AND ref.artifact_path = ANY($2::text[])
+		  AND (
+			EXISTS (SELECT 1 FROM vuln_results vr WHERE vr.scan_job_id = sj.id AND vr.quarantined)
+			OR EXISTS (SELECT 1 FROM secret_results sr WHERE sr.scan_job_id = sj.id AND sr.quarantined)
+			OR EXISTS (SELECT 1 FROM license_results lr WHERE lr.scan_job_id = sj.id AND lr.quarantined)
+		  )`, repoID, keys)
+	if err != nil {
+		return nil, fmt.Errorf("list quarantined keys: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	var out []string
+
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, fmt.Errorf("scan quarantined key: %w", err)
+		}
+
+		out = append(out, k)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list quarantined keys: %w", err)
+	}
+
+	return out, nil
+}
+
 // QuarantineArtifact updates the quarantine status of an artifact.
 func (p *QuarantineStore) QuarantineArtifact(ctx context.Context, repoID, artifactID string, quarantined bool) error {
 	_, err := p.db.ExecContext(ctx, `

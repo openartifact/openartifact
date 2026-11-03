@@ -4275,9 +4275,13 @@ export type GetApiV1RepositoriesByNamePackagesResponses = {
      */
     200: {
         /**
-         * Number of matching rows. Absent on a per-file request that carries a cursor, which does not count.
+         * Number of matching rows. Absent on a per-file request that carries a cursor, which does not count. On a per-file request the count stops at a ceiling (10000, or the end of the requested page if later): see `total_exact`.
          */
         total?: number;
+        /**
+         * Per-file listing only: false when `total` is a lower bound (more rows match; show it as "N+"), true when it is the exact number of matching rows. `has_more` stays authoritative for paging. Absent with `total`.
+         */
+        total_exact?: boolean;
         page?: number;
         limit?: number;
         /**

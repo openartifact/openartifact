@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,6 +25,8 @@ type packageListDB struct {
 
 	plain    int
 	searched []database.ComponentListOptions
+	// total is what SearchComponents reports.
+	total int
 }
 
 // ArtifactSecurity is not exercised by the tests.
@@ -44,7 +47,7 @@ func (db *packageListDB) SearchComponents(
 ) ([]*models.Component, int, error) {
 	db.searched = append(db.searched, opts)
 
-	return nil, 0, nil
+	return nil, db.total, nil
 }
 
 func TestPackagesListingQueryParams(t *testing.T) {
@@ -52,22 +55,27 @@ func TestPackagesListingQueryParams(t *testing.T) {
 		name       string
 		query      string
 		wantStatus int
-		wantPlain  bool
 		want       database.ComponentListOptions
 	}{
-		{name: "default listing stays on the plain query", query: "page=2&limit=10", wantStatus: http.StatusOK, wantPlain: true},
-		{name: "explicit created order is the default order", query: "sort=created", wantStatus: http.StatusOK, wantPlain: true},
+		{
+			name: "default listing counts up to the ceiling", query: "page=2&limit=10", wantStatus: http.StatusOK,
+			want: database.ComponentListOptions{TotalCap: packageTotalCap, Page: 2, Limit: 10},
+		},
+		{
+			name: "explicit created order is the default order", query: "sort=created", wantStatus: http.StatusOK,
+			want: database.ComponentListOptions{TotalCap: packageTotalCap, Page: 1, Limit: 25},
+		},
 		{
 			name: "q is trimmed and passed through", query: "q=%20Wid%20", wantStatus: http.StatusOK,
-			want: database.ComponentListOptions{Query: "Wid", Page: 1, Limit: 25},
+			want: database.ComponentListOptions{Query: "Wid", TotalCap: packageTotalCap, Page: 1, Limit: 25},
 		},
 		{
 			name: "sort=name with format, page and limit", query: "sort=name&format=npm&page=3&limit=50", wantStatus: http.StatusOK,
-			want: database.ComponentListOptions{Format: "npm", SortByName: true, Page: 3, Limit: 50},
+			want: database.ComponentListOptions{Format: "npm", SortByName: true, TotalCap: packageTotalCap, Page: 3, Limit: 50},
 		},
 		{
 			name: "package_name keeps meaning an exact lookup", query: "package_name=%40acme%2Fwidget", wantStatus: http.StatusOK,
-			want: database.ComponentListOptions{Name: "@acme/widget", Page: 1, Limit: 25},
+			want: database.ComponentListOptions{Name: "@acme/widget", TotalCap: packageTotalCap, Page: 1, Limit: 25},
 		},
 		{name: "unknown sort is rejected", query: "sort=size", wantStatus: http.StatusBadRequest},
 		{name: "overlong q is rejected", query: "q=" + strings.Repeat("a", maxPackageQueryLen+1), wantStatus: http.StatusBadRequest},
@@ -99,16 +107,52 @@ func TestPackagesListingQueryParams(t *testing.T) {
 				return
 			}
 
-			if tc.wantPlain {
-				if db.plain != 1 || len(db.searched) != 0 {
-					t.Fatalf("plain=%d searched=%v, want one plain listing", db.plain, db.searched)
-				}
-
-				return
-			}
-
 			if db.plain != 0 || len(db.searched) != 1 || db.searched[0] != tc.want {
 				t.Fatalf("plain=%d searched=%+v, want one search %+v", db.plain, db.searched, tc.want)
+			}
+		})
+	}
+}
+
+// A count that stopped at its ceiling is reported as a lower bound: total is the
+// ceiling, total_exact false and has_more true; below it the total is exact.
+func TestPackagesListingCappedTotal(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		dbTotal     int
+		wantTotal   int
+		wantExact   bool
+		wantHasMore bool
+	}{
+		{"over the ceiling", packageTotalCap + 1, packageTotalCap, false, true},
+		{"within the ceiling", 40, 40, true, true},
+		{"last page", 20, 20, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := &packageListDB{total: tc.dbTotal}
+			db.targets = adminTargets()
+			db.repo = &models.Repository{ID: "repo-1", Name: "pkgs", Format: "npm"}
+			log := newFixTestLogger(t)
+			h := NewRepositoriesHandler(db, log, auth.NewEvaluator(db, log, false))
+
+			router := chi.NewRouter()
+			router.Get("/api/v1/repositories/{name}/packages", h.handlePackages)
+
+			rw := httptest.NewRecorder()
+			router.ServeHTTP(rw, adminRequest(nil, http.MethodGet, "/api/v1/repositories/pkgs/packages?limit=20", ""))
+
+			var body struct {
+				Total      *int  `json:"total"`
+				TotalExact *bool `json:"total_exact"`
+				HasMore    bool  `json:"has_more"`
+			}
+			if err := json.Unmarshal(rw.Body.Bytes(), &body); err != nil {
+				t.Fatalf("body %q: %v", rw.Body.String(), err)
+			}
+
+			if body.Total == nil || *body.Total != tc.wantTotal || body.TotalExact == nil || *body.TotalExact != tc.wantExact ||
+				body.HasMore != tc.wantHasMore {
+				t.Fatalf("body %s, want total %d exact %v has_more %v", rw.Body.String(), tc.wantTotal, tc.wantExact, tc.wantHasMore)
 			}
 		})
 	}

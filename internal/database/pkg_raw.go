@@ -31,7 +31,7 @@ import (
 // Overwriting a path updates the file in place (id and created_at are kept);
 // a path that was trashed and is written again gets a new version under the
 // same package. Directory listings scan uq_package_files_path
-// (repository_id, path) by prefix, as the former (repository_id, path) index.
+// (repository_id, path text_pattern_ops) by prefix.
 //
 // Cleanup note: the former retention partition was the DIRECTORY of the path
 // (regexp_replace(path, '[^/]*$', ”)), ranked newest first; with one package

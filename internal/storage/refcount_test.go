@@ -7,6 +7,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -187,4 +188,67 @@ func TestDiscardUnreferencedBytes(t *testing.T) {
 			t.Fatal("expected an error")
 		}
 	})
+}
+
+// batchOrphanDB is an orphanDB that also deletes in batches.
+type batchOrphanDB struct {
+	orphanDB
+
+	batches [][]string
+	failAll bool
+}
+
+func (d *batchOrphanDB) DeleteBlobsIfUnreferenced(_ context.Context, shas []string) (int, error) {
+	d.batches = append(d.batches, shas)
+
+	if d.failAll {
+		return 0, errors.New("batch failed")
+	}
+
+	return len(shas), nil
+}
+
+// A database with the batched delete removes the orphans in chunks, not one
+// statement per blob; invalid ids never reach the batch.
+func TestCollectOrphanBlobsDeletesInBatches(t *testing.T) {
+	shas := make([]string, 0, orphanDeleteChunk+3)
+	for i := range orphanDeleteChunk + 2 {
+		shas = append(shas, fmt.Sprintf("%064x", i+1))
+	}
+
+	shas = append(shas, "not-a-sha")
+
+	db := &batchOrphanDB{orphanDB{shas: shas}, nil, false}
+	blobs := &deleteRecorder{}
+
+	removed, err := CollectOrphanBlobs(context.Background(), db, blobs, time.Hour, 500)
+	if err == nil || !errors.Is(err, ErrInvalidBlobID) {
+		t.Fatalf("err = %v, want the invalid id reported", err)
+	}
+
+	if removed != orphanDeleteChunk+2 {
+		t.Errorf("removed = %d, want %d", removed, orphanDeleteChunk+2)
+	}
+
+	if len(db.batches) != 2 || len(db.batches[0]) != orphanDeleteChunk || len(db.batches[1]) != 2 {
+		t.Errorf("batches = %d chunks, want %d + 2", len(db.batches), orphanDeleteChunk)
+	}
+}
+
+// A failing batch falls back to the per-blob path, which keeps the checks
+// (reference count, poisoned blob isolation) of the single delete.
+func TestCollectOrphanBlobsBatchFailureFallsBackPerBlob(t *testing.T) {
+	good := strings.Repeat("a", 64)
+	live := strings.Repeat("b", 64)
+
+	db := &batchOrphanDB{orphanDB{shas: []string{good, live}, refCountOf: map[string]int{live: 1}}, nil, true}
+	blobs := &deleteRecorder{}
+
+	if _, err := CollectOrphanBlobs(context.Background(), db, blobs, time.Hour, 500); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(blobs.deleted) != 1 || blobs.deleted[0] != good {
+		t.Errorf("deleted = %v, want only the unreferenced blob", blobs.deleted)
+	}
 }
