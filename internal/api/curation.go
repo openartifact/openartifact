@@ -25,33 +25,14 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// Sources of an availability reason besides the gate's own (curation.SourceMinAge,
-// curation.SourceCuration).
-const (
-	sourceQuarantine        = "quarantine"
-	sourceLicensePolicy     = "license_policy"
-	sourceRepositoryBlocked = "repository_blocked"
-)
-
-// Values of AvailabilityResponse.MinAge.
-const (
-	minAgeOff     = "off"
-	minAgeChecked = "checked"
-	minAgeUnknown = "unknown"
-)
-
-// maxAvailabilityParam bounds the package and version of an availability query.
-const maxAvailabilityParam = 1024
-
 // CurationStore is the part of the database CurationHandler needs.
 type CurationStore interface {
 	repoAccessStore
-	ListCurationRulesUncached(ctx context.Context, repoID string) ([]curation.Rule, error)
+	AvailabilityStore
 	GetCurationRule(ctx context.Context, repoID, id string) (*curation.Rule, error)
 	CreateCurationRule(ctx context.Context, rule *curation.Rule) (*curation.Rule, error)
 	UpdateCurationRule(ctx context.Context, rule *curation.Rule) (*curation.Rule, error)
 	DeleteCurationRule(ctx context.Context, repoID, id string) error
-	PackageVersionHolds(ctx context.Context, repoID, pkg, version string) (models.VersionHolds, error)
 }
 
 // PublishTimeSource is the publish time an upstream states for a package
@@ -327,42 +308,23 @@ func (h *CurationHandler) handleAvailability(w http.ResponseWriter, r *http.Requ
 	}
 
 	pkg, version := r.URL.Query().Get("package"), r.URL.Query().Get("version")
-	if pkg == "" || version == "" || len(pkg) > maxAvailabilityParam || len(version) > maxAvailabilityParam {
+	if pkg == "" || version == "" || len(pkg) > MaxAvailabilityParam || len(version) > MaxAvailabilityParam {
 		writeError(w, http.StatusBadRequest, "validation_failed",
-			fmt.Sprintf("package and version are required (at most %d bytes each)", maxAvailabilityParam))
+			fmt.Sprintf("package and version are required (at most %d bytes each)", MaxAvailabilityParam))
 
 		return
 	}
 
-	if repo.RepoType == repotype.Group {
-		writeError(w, http.StatusBadRequest, "validation_failed",
-			"a group repository has no availability of its own: ask one of its members")
-
+	resp, err := ExplainAvailability(r.Context(), h.db, h.published, repo, pkg, version)
+	if errors.Is(err, ErrGroupAvailability) {
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 		return
-	}
-
-	resp := responses.AvailabilityResponse{Reasons: []responses.AvailabilityReason{}, MinAge: minAgeOff}
-
-	if repo.Blocked {
-		resp.Reasons = append(resp.Reasons, responses.AvailabilityReason{
-			Source: sourceRepositoryBlocked, Detail: "the repository is blocked",
-		})
-	}
-
-	var err error
-
-	if repo.RepoType == repotype.Proxy {
-		err = h.explainProxy(r.Context(), repo, pkg, version, &resp)
-	} else {
-		err = h.explainHosted(r.Context(), repo, pkg, version, &resp)
 	}
 
 	if err != nil {
 		h.dbError(w, "explain availability: db error", err)
 		return
 	}
-
-	resp.Available = len(resp.Reasons) == 0
 
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -386,34 +348,14 @@ func (h *CurationHandler) proxyPackageRequest(w http.ResponseWriter, r *http.Req
 	}
 
 	pkg := r.URL.Query().Get("package")
-	if pkg == "" || len(pkg) > maxAvailabilityParam {
+	if pkg == "" || len(pkg) > MaxAvailabilityParam {
 		writeError(w, http.StatusBadRequest, "validation_failed",
-			fmt.Sprintf("package is required (at most %d bytes)", maxAvailabilityParam))
-
-		return nil, "", false
-	}
-
-	if repo.RepoType != repotype.Proxy || h.published == nil {
-		writeError(w, http.StatusBadRequest, "validation_failed", "only a proxy repository has upstream versions")
+			fmt.Sprintf("package is required (at most %d bytes)", MaxAvailabilityParam))
 
 		return nil, "", false
 	}
 
 	return repo, pkg, true
-}
-
-// holdReason is a gate hold as the API states it.
-func holdReason(hold curation.Hold) responses.AvailabilityReason {
-	reason := responses.AvailabilityReason{Source: hold.Source, Detail: hold.Detail}
-	if !hold.Until.IsZero() {
-		reason.Until = hold.Until.UTC().Format(time.RFC3339)
-	}
-
-	if hold.Rule != nil {
-		reason.RuleID = hold.Rule.ID
-	}
-
-	return reason
 }
 
 // handleHeldBack lists the versions of a proxy package the repository's gate
@@ -432,21 +374,9 @@ func (h *CurationHandler) handleHeldBack(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	held, supported, err := h.published.HeldBackVersions(r.Context(), repo, pkg)
-	if err != nil {
-		h.dbError(w, "list held-back versions: db error", err)
+	resp, err := HeldBackVersions(r.Context(), h.published, repo, pkg)
+	if h.writeProxyListError(w, err, "list held-back versions: db error") {
 		return
-	}
-
-	resp := responses.HeldBackResponse{Supported: supported, Versions: make([]responses.HeldBackVersion, 0, len(held))}
-
-	for _, v := range held {
-		item := responses.HeldBackVersion{Version: v.Version, Reasons: []responses.AvailabilityReason{holdReason(v.Hold)}}
-		if !v.Published.IsZero() {
-			item.PublishedAt = v.Published.UTC().Format(time.RFC3339)
-		}
-
-		resp.Versions = append(resp.Versions, item)
 	}
 
 	writeJSON(w, http.StatusOK, resp)
@@ -467,106 +397,26 @@ func (h *CurationHandler) handleProxyVersions(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	list, err := h.published.ListProxyVersions(r.Context(), repo, pkg)
-	if err != nil {
-		h.dbError(w, "list proxy versions: db error", err)
+	resp, err := ProxyVersionList(r.Context(), h.published, repo, pkg)
+	if h.writeProxyListError(w, err, "list proxy versions: db error") {
 		return
-	}
-
-	resp := responses.ProxyVersionsResponse{
-		Supported:  list.Supported,
-		CacheKnown: list.CacheKnown,
-		Versions:   make([]responses.ProxyVersion, 0, len(list.Versions)),
-	}
-
-	for _, v := range list.Versions {
-		item := responses.ProxyVersion{Version: v.Version, Status: "available", Cached: v.Cached, Reasons: []responses.AvailabilityReason{}}
-		if v.Held {
-			item.Status = "held"
-			item.Reasons = []responses.AvailabilityReason{holdReason(v.Hold)}
-		}
-
-		if !v.Published.IsZero() {
-			item.PublishedAt = v.Published.UTC().Format(time.RFC3339)
-		}
-
-		resp.Versions = append(resp.Versions, item)
 	}
 
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// explainProxy adds what the gate of a proxy repository says about the version.
-func (h *CurationHandler) explainProxy(
-	ctx context.Context, repo *models.Repository, pkg, version string, resp *responses.AvailabilityResponse,
-) error {
-	var rules []curation.Rule
-
-	if repo.CurationMode != "" && repo.CurationMode != curation.ModeOff {
-		var err error
-
-		if rules, err = h.db.ListCurationRulesUncached(ctx, repo.ID); err != nil {
-			return fmt.Errorf("list curation rules: %w", err)
-		}
-	}
-
-	gate := curation.NewGate(repo.Format, repo.CurationMode, rules, repo.MinAgeHours, time.Now())
-
-	var published time.Time
-
-	if h.published != nil {
-		if t, ok := h.published.PublishTime(ctx, repo, pkg, version); ok {
-			published = t
-			resp.PublishedAt = t.UTC().Format(time.RFC3339)
-		}
-	}
-
+// writeProxyListError answers a failed upstream-version listing (400 for a
+// repository that is not a proxy, 500 otherwise) and reports whether err was
+// one.
+func (h *CurationHandler) writeProxyListError(w http.ResponseWriter, err error, op string) bool {
 	switch {
-	case !gate.AgeActive():
-		resp.MinAge = minAgeOff
-	case published.IsZero():
-		resp.MinAge = minAgeUnknown
+	case err == nil:
+		return false
+	case errors.Is(err, ErrNotProxy):
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 	default:
-		resp.MinAge = minAgeChecked
+		h.dbError(w, op, err)
 	}
 
-	if hidden, hold := gate.Hidden(pkg, version, published); hidden {
-		reason := responses.AvailabilityReason{Source: hold.Source, Detail: hold.Detail}
-		if !hold.Until.IsZero() {
-			reason.Until = hold.Until.UTC().Format(time.RFC3339)
-		}
-
-		if hold.Rule != nil {
-			reason.RuleID = hold.Rule.ID
-		}
-
-		resp.Reasons = append(resp.Reasons, reason)
-	}
-
-	return nil
-}
-
-// explainHosted adds the quarantine and license-policy holds of the stored
-// version of a hosted repository.
-func (h *CurationHandler) explainHosted(
-	ctx context.Context, repo *models.Repository, pkg, version string, resp *responses.AvailabilityResponse,
-) error {
-	holds, err := h.db.PackageVersionHolds(ctx, repo.ID, pkg, version)
-	if err != nil {
-		return fmt.Errorf("package version holds: %w", err)
-	}
-
-	if holds.Quarantined {
-		resp.Reasons = append(resp.Reasons, responses.AvailabilityReason{
-			Source: sourceQuarantine, Detail: "a file of the version is quarantined by a vulnerability or secret scan",
-		})
-	}
-
-	if holds.LicenseBlocked {
-		resp.Reasons = append(resp.Reasons, responses.AvailabilityReason{
-			Source: sourceLicensePolicy, Detail: "a file of the version is held by the repository's license policy",
-		})
-	}
-
-	return nil
+	return true
 }

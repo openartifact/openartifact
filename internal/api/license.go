@@ -216,7 +216,7 @@ func (h *LicenseHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 		auditQuarantine(r, repo, quarantined, "license", updated.ArtifactID, "", "")
 	}
 
-	writeJSON(w, http.StatusOK, scanResultToMap(updated))
+	writeJSON(w, http.StatusOK, LicenseScanResultResponse(updated))
 }
 
 // handleListScans lists all license scan results for a repository.
@@ -226,7 +226,7 @@ func (h *LicenseHandler) handleListScans(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeRepoList(w, r, h.repoAccess, repo, "list license scans", "scans", h.db.ListLicenseScanResults, scanResultToMap)
+	writeRepoList(w, r, h.repoAccess, repo, "list license scans", "scans", h.db.ListLicenseScanResults, LicenseScanResultResponse)
 }
 
 // handleGetScan gets a specific license scan result.
@@ -241,7 +241,7 @@ func (h *LicenseHandler) handleGetScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, scanResultToMap(result))
+	writeJSON(w, http.StatusOK, LicenseScanResultResponse(result))
 }
 
 // handleListPolicies lists all license policies for a repository.
@@ -533,7 +533,9 @@ func (h *LicenseHandler) handleCreateGlobalPolicy(w http.ResponseWriter, r *http
 
 // Helper functions
 
-func scanResultToMap(result *models.LicenseScanResult) responses.LicenseScanResultResponse {
+// LicenseScanResultResponse is the API shape of a license scan result (the REST
+// license scan endpoints and the MCP get_licenses tool).
+func LicenseScanResultResponse(result *models.LicenseScanResult) responses.LicenseScanResultResponse {
 	var scanError *string
 	if result.ScanError != "" {
 		scanError = &result.ScanError

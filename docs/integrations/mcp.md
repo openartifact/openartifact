@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # MCP server
 
-Use the MCP server to let AI agents browse repositories, inspect packages and vulnerabilities, and look up client setup commands through the [Model Context Protocol](https://modelcontextprotocol.io). It is disabled by default.
+Use the MCP server to let AI agents browse repositories, inspect packages, vulnerabilities, licenses and SBOMs, find out why a package version is not installable, read a repository's activity, and look up client setup commands through the [Model Context Protocol](https://modelcontextprotocol.io). It is disabled by default.
 
 ## Quick start
 
@@ -101,9 +101,10 @@ Authorization is per tool, not per HTTP method. The HTTP layer only requires an 
 |---|---|
 | all repository-scoped tools except below | `read` on the repository |
 | `trigger_ai_analysis` | `write` on the repository |
-| `get_vulnerabilities` | global `manage` (administrator), matching the REST scan endpoints, plus `read` |
+| `get_vulnerabilities`, `get_licenses`, `get_sbom` | global `manage` (administrator), matching the REST scan, license and SBOM endpoints, plus `read` |
+| `get_repository_activity` | `read` on the repository; the categories `cleanup`, `settings`, `curation` and `federation` also need repository admin (a global administrator, or a maintainer of its project) |
 
-Token `scopes` restrict as everywhere. A repository you cannot read behaves as if it does not exist: the tool returns `not found or access denied` in both cases, and `list_repositories` and `search_artifacts` filter by `read` before paginating. Refusals are tool errors (`isError: true`), not HTTP 403. Internal errors return a generic `internal error` and are logged server-side. Results never contain upstream credentials or other secrets. `deploy`-kind tokens are never granted `manage`, so `get_vulnerabilities` is unavailable to them ([authentication](../security/authentication.md#api-tokens)).
+Token `scopes` restrict as everywhere. A repository you cannot read behaves as if it does not exist: the tool returns `not found or access denied` in both cases, and `list_repositories` and `search_artifacts` filter by `read` before paginating. Refusals are tool errors (`isError: true`), not HTTP 403. Internal errors return a generic `internal error` and are logged server-side. Results never contain upstream credentials or other secrets. `deploy`-kind tokens are never granted `manage`, so `get_vulnerabilities`, `get_licenses` and `get_sbom` are unavailable to them ([authentication](../security/authentication.md#api-tokens)).
 
 ### Read-only token
 
@@ -119,11 +120,11 @@ curl -sS -X POST HOST/api/v1/permission-targets/<TARGET_ID>/assignments -H 'Auth
   -H 'Content-Type: application/json' -d '{"principal_type":"user","principal_id":"<USER_ID>"}'
 ```
 
-Then, in a login session of that user, create the token with `"scopes":["<TARGET_ID>"]` (**Settings > Access tokens**, or `POST /api/v1/auth/tokens`, see [authentication](../security/authentication.md#api-tokens)). The token can then read repositories and packages but `trigger_ai_analysis` and `get_vulnerabilities` are refused.
+Then, in a login session of that user, create the token with `"scopes":["<TARGET_ID>"]` (**Settings > Access tokens**, or `POST /api/v1/auth/tokens`, see [authentication](../security/authentication.md#api-tokens)). The token can then read repositories and packages but `trigger_ai_analysis`, `get_vulnerabilities`, `get_licenses` and `get_sbom` are refused, and `get_repository_activity` leaves out the administrator categories.
 
 ## Tools
 
-Ten tools. Arguments are validated against each tool's JSON schema and unknown arguments are rejected; numeric limits are clamped (`0` or omitted means the default).
+Sixteen tools. Arguments are validated against each tool's JSON schema and unknown arguments are rejected; numeric limits are clamped (`0` or omitted means the default).
 
 | Tool | Purpose |
 |---|---|
@@ -138,6 +139,37 @@ Ten tools. Arguments are validated against each tool's JSON schema and unknown a
 | `get_artifact_analysis(repository_id, artifact_id)` | one stored AI analysis |
 | `trigger_ai_analysis(repository_id, artifact_id, manifest_text?, artifact_format?, artifact_name?, artifact_version?)` | queue an analysis; the artifact must exist in the given repository (also when `manifest_text` is supplied); without `manifest_text` (max 64 KiB) the server reads the manifest from the stored artifact; returns `queued` immediately and the result appears asynchronously |
 
+### Availability, licenses, SBOMs and activity
+
+These six tools answer what an assistant is asked after "install it": why a version cannot be installed, which versions are coming, what licenses and components a package has, and what changed in a repository. They are read-only and never start a scan, a fetch from the upstream or an SBOM generation.
+
+| Tool | Use it when | Example question |
+|---|---|---|
+| `check_availability(repository, package, version)` | an install fails with 404 or 403, or before you pin a version | "Why can't I install left-pad 1.1.0 from web-npm?" |
+| `list_held_back_versions(repository, package)` | you need the versions a proxy hides and when each unlocks | "When does the newest left-pad become installable?" |
+| `list_proxy_versions(repository, package)` | you need every upstream version, whether it is held and whether it is cached | "Which left-pad versions can I install offline?" |
+| `get_licenses(repository, artifact_id)` | you need the licenses of one scanned artifact | "What licenses does this artifact declare, and is it quarantined?" |
+| `get_sbom(repository, artifact_id, format?, limit?)` | you need the components of an artifact's stored SBOM | "Which packages does this image contain?" |
+| `get_repository_activity(repository, category?, limit?, cursor?)` | you need to know who changed what and when | "Who deleted left-pad 1.0.0 from images last week?" |
+
+`check_availability` returns `available` and a list of `reasons`. Each reason has a `source`:
+
+| Source | Meaning |
+|---|---|
+| `min_age` | the version is younger than the proxy's minimum age; `until` is when it unlocks |
+| `curation` | a curation rule or the allowlist hides it; `rule_id` names the rule and `detail` quotes its reason |
+| `quarantine`, `license_policy` | a scan or the license policy holds a stored version |
+| `repository_blocked` | the repository is blocked |
+| `not_found` | a hosted repository stores no such package version, judged on the names `get_package` lists |
+
+The answer is the one of `GET /api/v1/repositories/{name}/availability` (see [minimum age](../repositories/hosted-proxy-group.md#minimum-age) and [package curation](../repositories/hosted-proxy-group.md#package-curation)), except that `not_found` exists only here. `min_age` is `off` without a minimum age, `checked` when the publish time is known and `unknown` when the proxy has not cached the version's metadata yet. The upstream is never asked. A group repository has no verdict: ask one of its members. The rule's pattern is not returned, only its id and reason.
+
+`list_held_back_versions` and `list_proxy_versions` work on proxy repositories only and return at most 200 versions, newest first, with `truncated: true` when more exist. `supported: false` means the format cannot list versions or nothing is cached for the package yet; fetch the package once.
+
+`get_sbom` returns the stored SBOM's `report_id`, `format`, `spec_version`, `generated_at`, `component_count` and its components (`name`, `version`, `purl`, `licenses`): at most `limit` of them (default 100, max 500), with `truncated: true` when the document has more. `format` is `cyclonedx`, `spdx-json`, `spdx3-json` or `spdx`; the newest stored one is used by default and `available_formats` lists the others. An artifact without a stored SBOM is a tool error: [generate one](../security/sbom.md) first. `get_licenses` takes the same `artifact_id` and never returns the scan's error text.
+
+`get_repository_activity` pages with `next_cursor`, passed back as `cursor`. The categories open to anyone who can read the repository are `uploads`, `deletions`, `trash`, `promotions` and `quarantine`. Asking for `cleanup`, `settings`, `curation` or `federation` without repository admin is a tool error. Without `category` you get every category you may see.
+
 The three AI tools take the repository **UUID** (`repository_id`), not its name, and `artifact_id` is the package/component ID. They only produce results when AI analysis is enabled; see [AI analysis](ai-analysis.md).
 
 ### Results and annotations
@@ -146,7 +178,7 @@ Results are JSON with snake_case keys, returned as `structuredContent` and as th
 
 ### Untrusted content
 
-Package names, versions, filenames, descriptions, vulnerability summaries and AI analyses are written by third parties or by a language model, so they can carry prompt injection. Every result that contains them (all tools except `trigger_ai_analysis` and `client_setup`) has top-level `content_trust: "untrusted"` and `notice` fields in `structuredContent` and a second text block starting with `NOTE:`. AI `summary` and `security_notes` are capped at 4,000 bytes and vulnerability summaries at 500. The server `instructions` repeat the warning. Clients should treat these fields as data and never as instructions.
+Package names, versions, filenames, descriptions, vulnerability summaries, licenses, SBOM components, activity messages, curation rule reasons and AI analyses are written by third parties or by a language model, so they can carry prompt injection. Every result that contains them (all tools except `trigger_ai_analysis` and `client_setup`) has top-level `content_trust: "untrusted"` and `notice` fields in `structuredContent` and a second text block starting with `NOTE:`. AI `summary` and `security_notes` are capped at 4,000 bytes, vulnerability summaries at 500, curation reasons at 4,000, license and SBOM text at 500 and 300 bytes per field, and activity messages at 1,000. The server `instructions` repeat the warning. Clients should treat these fields as data and never as instructions.
 
 ### Errors
 
