@@ -26,16 +26,8 @@ func TestCompressMetadataStream_Valid(t *testing.T) {
 		t.Error("GzipData should not be empty")
 	}
 
-	if len(meta.XZData) == 0 {
-		t.Error("XZData should not be empty")
-	}
-
 	if meta.GzSHA256 == "" {
 		t.Error("GzSHA256 should not be empty")
-	}
-
-	if meta.XZSHA256 == "" {
-		t.Error("XZSHA256 should not be empty")
 	}
 
 	if meta.OpenSize != int64(len(data)) {

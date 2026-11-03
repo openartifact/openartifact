@@ -159,6 +159,11 @@ func TestRPMRegenerateHonoursStaleFlagAndLivePackages(t *testing.T) {
 		t.Error("primary.xml advertises a trashed package")
 	}
 
+	// repomd.xml lists the gzip files only; an xz copy would be dead weight.
+	if n := f.count(`SELECT COUNT(*) FROM repository_metadata WHERE repository_id = $1 AND path LIKE '%.xz'`, f.repoID); n != 0 {
+		t.Errorf("%d xz metadata blobs were stored, repomd.xml never lists them", n)
+	}
+
 	for _, path := range []string{"repodata/repomd.xml"} {
 		if f.count(`SELECT COUNT(*) FROM repository_metadata WHERE repository_id = $1 AND path = $2`, f.repoID, path) != 1 {
 			t.Errorf("%s was not generated", path)

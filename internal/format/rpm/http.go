@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -89,7 +88,6 @@ func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 	r.Get("/repodata/repomd.xml.asc", h.handleRepomdXMLAsc)
 	r.Get("/repodata/comps.xml", h.handleComps)
 	r.Get("/repodata/{checksum}-{type}.xml.gz", h.handleMetadataFile)
-	r.Get("/repodata/{checksum}-{type}.xml.xz", h.handleMetadataFile)
 	r.Get("/Packages/{filename}", h.handlePackageDownload)
 	r.Get("/public.key", h.handlePublicKey)
 }
@@ -135,22 +133,10 @@ func (h *HTTPHandler) handleMetadataFile(w http.ResponseWriter, r *http.Request)
 	checksum := vars["checksum"]
 	metaType := vars["type"]
 
-	isGZ := strings.HasSuffix(r.URL.Path, ".gz")
-
-	contentType := "application/x-xz"
-	if isGZ {
-		contentType = "application/x-gzip"
-	}
-
-	ext := ".xz"
-	if isGZ {
-		ext = ".gz"
-	}
-
-	path := fmt.Sprintf("repodata/%s-%s.xml%s", checksum, metaType, ext)
+	path := fmt.Sprintf("repodata/%s-%s.xml.gz", checksum, metaType)
 
 	// The checksum is part of the file name: the content behind it never changes.
-	if h.tryServeRepoBlob(w, r, repo, path, contentType, repodataMaxAge) {
+	if h.tryServeRepoBlob(w, r, repo, path, "application/x-gzip", repodataMaxAge) {
 		return
 	}
 

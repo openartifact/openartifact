@@ -6,7 +6,6 @@ package deb
 
 import (
 	"bytes"
-	"compress/gzip"
 	"crypto/md5"  //nolint:gosec // required by protocol specification
 	"crypto/sha1" //nolint:gosec // required by protocol specification
 	"crypto/sha256"
@@ -17,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/xzutil"
+	"github.com/klauspost/compress/gzip"
 )
 
 // ReleaseFileGenerator generates Debian Release files.
@@ -197,28 +196,6 @@ func (pfg *PackagesFileGenerator) GenerateGzipped() ([]byte, error) {
 
 	if err := gzWriter.Close(); err != nil {
 		return nil, fmt.Errorf("failed to close gzip writer: %w", err)
-	}
-
-	return buf.Bytes(), nil
-}
-
-// GenerateXZipped generates xz-compressed Packages file content.
-func (pfg *PackagesFileGenerator) GenerateXZipped() ([]byte, error) {
-	content := pfg.Generate()
-
-	var buf bytes.Buffer
-
-	xzWriter, err := xzutil.NewWriter(&buf, len(content))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create xz writer: %w", err)
-	}
-
-	if _, err := io.WriteString(xzWriter, content); err != nil {
-		return nil, fmt.Errorf("failed to write xz content: %w", err)
-	}
-
-	if err := xzWriter.Close(); err != nil {
-		return nil, fmt.Errorf("failed to close xz writer: %w", err)
 	}
 
 	return buf.Bytes(), nil

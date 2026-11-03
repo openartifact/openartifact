@@ -292,7 +292,7 @@ func TestGroupDebMergesHostedAndProxyInMemberOrder(t *testing.T) {
 	md := f.metadata(grp.ID)
 
 	for _, path := range []string{"dists/bookworm/Release", "dists/bookworm/InRelease", "dists/bookworm/Release.gpg",
-		"dists/bookworm/main/binary-amd64/Packages.gz", "dists/bookworm/main/binary-amd64/Packages.xz", "public.key"} {
+		"dists/bookworm/main/binary-amd64/Packages.gz", "public.key"} {
 		if _, ok := md[path]; !ok {
 			t.Errorf("missing %s; have %v", path, keys(md))
 		}

@@ -201,22 +201,6 @@ func gunzip(tb testing.TB, data []byte) string {
 	return string(out)
 }
 
-func unxz(tb testing.TB, data []byte) string {
-	tb.Helper()
-
-	xr, err := xz.NewReader(bytes.NewReader(data))
-	if err != nil {
-		tb.Fatal(err)
-	}
-
-	out, err := io.ReadAll(xr)
-	if err != nil {
-		tb.Fatal(err)
-	}
-
-	return string(out)
-}
-
 // TestBuildDebDistMergesProxyMembers checks the merged indexes against a plain
 // sequential merge, the checksums the Release lists, and that every upstream
 // file is opened exactly once however many indexes the group merges.
@@ -279,8 +263,12 @@ func TestBuildDebDistMergesProxyMembers(t *testing.T) {
 			t.Errorf("%s.gz differs from the sequential merge (%d bytes, want %d)", base, len(got), len(plain))
 		}
 
-		if got := unxz(t, j.blobs[base+".xz"]); got != plain {
-			t.Errorf("%s.xz differs from the sequential merge (%d bytes, want %d)", base, len(got), len(plain))
+		if _, ok := j.blobs[base+".xz"]; ok {
+			t.Errorf("%s.xz is published; only gzip is built", base)
+		}
+
+		if strings.Contains(release, "/Packages.xz") {
+			t.Error("Release lists a Packages.xz that is not published")
 		}
 
 		sum := sha256.Sum256([]byte(plain))
@@ -296,7 +284,7 @@ func TestBuildDebDistMergesProxyMembers(t *testing.T) {
 			t.Errorf("Release lacks the plain index entry %q", line)
 		}
 
-		for _, ext := range []string{".gz", ".xz"} {
+		for _, ext := range []string{".gz"} {
 			data := j.blobs[base+ext]
 			gsum := sha256.Sum256(data)
 

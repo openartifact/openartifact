@@ -106,7 +106,7 @@ func benchDebWorkerEntries(n int) []models.DebPackageEntry {
 	return entries
 }
 
-// BenchmarkDebGenerateDistribution renders every Packages/.gz/.xz index plus
+// BenchmarkDebGenerateDistribution renders every Packages/.gz index plus
 // Release for one distribution (2 components x 2 real architectures + all),
 // the pure part of DebMetadataWorker.regenerate.
 func BenchmarkDebGenerateDistribution(b *testing.B) {

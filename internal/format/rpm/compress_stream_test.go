@@ -12,8 +12,6 @@ import (
 	"errors"
 	"io"
 	"testing"
-
-	"github.com/ulikunitz/xz"
 )
 
 func sha256Hex(b []byte) string {
@@ -30,7 +28,7 @@ func TestCompressMetadataStreamRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	streamed, err := CompressMetadataStream(func(w io.Writer) error { return WritePrimaryXML(w, pkgs) }, 0)
+	streamed, err := CompressMetadataStream(func(w io.Writer) error { return WritePrimaryXML(w, pkgs) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,17 +50,7 @@ func TestCompressMetadataStreamRoundTrip(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			xr, err := xz.NewReader(bytes.NewReader(c.XZData))
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			gotXZ, err := io.ReadAll(xr)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			if !bytes.Equal(gotGz, want) || !bytes.Equal(gotXZ, want) {
+			if !bytes.Equal(gotGz, want) {
 				t.Fatal("decompressed content differs from the generated XML")
 			}
 
@@ -70,11 +58,11 @@ func TestCompressMetadataStreamRoundTrip(t *testing.T) {
 				t.Errorf("OpenSize = %d, want %d", c.OpenSize, len(want))
 			}
 
-			if c.GzSize != int64(len(c.GzipData)) || c.XZSize != int64(len(c.XZData)) {
-				t.Errorf("sizes %d/%d do not match data %d/%d", c.GzSize, c.XZSize, len(c.GzipData), len(c.XZData))
+			if c.GzSize != int64(len(c.GzipData)) {
+				t.Errorf("size %d does not match data %d", c.GzSize, len(c.GzipData))
 			}
 
-			if c.GzSHA256 != sha256Hex(c.GzipData) || c.XZSHA256 != sha256Hex(c.XZData) {
+			if c.GzSHA256 != sha256Hex(c.GzipData) {
 				t.Error("checksums do not match the compressed data")
 			}
 		})
@@ -84,11 +72,11 @@ func TestCompressMetadataStreamRoundTrip(t *testing.T) {
 func TestCompressMetadataStreamErrors(t *testing.T) {
 	boom := errors.New("generator failed")
 
-	if _, err := CompressMetadataStream(func(io.Writer) error { return boom }, 0); !errors.Is(err, boom) {
+	if _, err := CompressMetadataStream(func(io.Writer) error { return boom }); !errors.Is(err, boom) {
 		t.Errorf("writer error not propagated: %v", err)
 	}
 
-	if _, err := CompressMetadataStream(func(io.Writer) error { return nil }, 0); err == nil {
+	if _, err := CompressMetadataStream(func(io.Writer) error { return nil }); err == nil {
 		t.Error("expected an error when nothing was written")
 	}
 }

@@ -247,7 +247,7 @@ func (w *DebMetadataWorker) regenerate(ctx context.Context, repoID string) error
 	return nil
 }
 
-// generateDistribution renders Packages{,.gz,.xz}, Release, InRelease and
+// generateDistribution renders Packages{,.gz}, Release, InRelease and
 // Release.gpg for one distribution into blobs, keyed by full "dists/..." path.
 // Every component x architecture pair gets an index (empty when no packages
 // remain) so stale listings can never be served after deletions.
@@ -300,7 +300,7 @@ func (w *DebMetadataWorker) generateDistribution(
 		releaseGen.AddArchitecture(a)
 	}
 
-	fileInfos := make([]formatdeb.FileInfo, 0, len(compNames)*len(archNames)*3)
+	fileInfos := make([]formatdeb.FileInfo, 0, len(compNames)*len(archNames)*2)
 
 	addFile := func(rel string, data []byte) {
 		blobs["dists/"+dist.Name+"/"+rel] = data
@@ -338,12 +338,6 @@ func (w *DebMetadataWorker) generateDistribution(
 
 			addFile(base+".gz", gzipped)
 
-			xzipped, err := gen.GenerateXZipped()
-			if err != nil {
-				return fmt.Errorf("deb worker: xz compressing packages for %s/%s/%s: %w", dist.Name, comp, arch, err)
-			}
-
-			addFile(base+".xz", xzipped)
 		}
 	}
 

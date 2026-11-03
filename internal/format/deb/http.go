@@ -55,7 +55,6 @@ func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 	r.Get("/dists/{dist}/Release.gpg", h.handleReleaseGPG)
 	r.Get("/dists/{dist}/{comp}/binary-{arch}/Packages", h.handlePackages)
 	r.Get("/dists/{dist}/{comp}/binary-{arch}/Packages.gz", h.handlePackagesGz)
-	r.Get("/dists/{dist}/{comp}/binary-{arch}/Packages.xz", h.handlePackagesXz)
 	r.Get("/pool/{comp}/{prefix}/{pkg}/{filename}", h.handlePoolFile)
 	r.Get("/public.key", h.handlePublicKey)
 }
@@ -161,10 +160,6 @@ func (h *HTTPHandler) handlePackages(w http.ResponseWriter, r *http.Request) {
 
 func (h *HTTPHandler) handlePackagesGz(w http.ResponseWriter, r *http.Request) {
 	h.servePackages(w, r, "application/gzip", "Packages.gz", CompressionGzip, GetPackagesGzPath)
-}
-
-func (h *HTTPHandler) handlePackagesXz(w http.ResponseWriter, r *http.Request) {
-	h.servePackages(w, r, "application/x-xz", "Packages.xz", CompressionXZ, GetPackagesXzPath)
 }
 
 // servePackages serves a binary-<arch> Packages index in one compression: the
@@ -301,10 +296,6 @@ func GetPackagesPath(distribution, component, architecture string) string {
 
 func GetPackagesGzPath(distribution, component, architecture string) string {
 	return "dists/" + distribution + "/" + component + "/binary-" + architecture + "/Packages.gz"
-}
-
-func GetPackagesXzPath(distribution, component, architecture string) string {
-	return "dists/" + distribution + "/" + component + "/binary-" + architecture + "/Packages.xz"
 }
 
 func GetReleasePath(distribution string) string {

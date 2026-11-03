@@ -357,9 +357,6 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 		write func(io.Writer, []rpm.Package) error
 	}
 
-	// Typical uncompressed XML bytes per package, used only to size the xz dictionary.
-	const xmlBytesPerPackageHint = 2048
-
 	kinds := []kind{
 		{"primary", formatrpm.WritePrimaryXML},
 		{"filelists", formatrpm.WriteFilelistsXML},
@@ -372,11 +369,11 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 	)
 
 	for _, k := range kinds {
-		// The XML streams straight into the gzip and xz encoders; the
-		// uncompressed document is never held in memory.
+		// The XML streams straight into the gzip encoder; the uncompressed
+		// document is never held in memory. repomd.xml lists the gzip file only,
+		// so no other encoding is built.
 		comp, err := formatrpm.CompressMetadataStream(
 			func(out io.Writer) error { return k.write(out, packages) },
-			len(packages)*xmlBytesPerPackageHint,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("rpm worker: generating %s.xml: %w", k.name, err)
@@ -389,7 +386,6 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 		})
 
 		blobs[fmt.Sprintf("repodata/%s-%s.xml.gz", comp.GzSHA256, k.name)] = comp.GzipData
-		blobs[fmt.Sprintf("repodata/%s-%s.xml.xz", comp.XZSHA256, k.name)] = comp.XZData
 	}
 
 	// Check for comps.xml and add group entry if it exists

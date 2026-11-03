@@ -13,14 +13,13 @@ package deb
 // pre-generated blob exists in RepoMetadata.
 
 import (
-	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
 	"strings"
 
+	"github.com/klauspost/compress/gzip"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/xzutil"
 )
 
 // Compression selects the output encoding for StreamPackages.
@@ -29,7 +28,6 @@ type Compression int
 const (
 	CompressionNone Compression = iota
 	CompressionGzip
-	CompressionXZ
 )
 
 // StreamPackagesStore is the part of the database StreamPackages needs.
@@ -72,24 +70,6 @@ func StreamPackages(
 
 		if err := gz.Close(); err != nil {
 			return cw.n, fmt.Errorf("stream packages: gzip close: %w", err)
-		}
-
-		return cw.n, nil
-
-	case CompressionXZ:
-		cw := newCountingWriter(w)
-
-		xzw, err := xzutil.NewWriter(cw, len(content))
-		if err != nil {
-			return cw.n, fmt.Errorf("stream packages: xz writer: %w", err)
-		}
-
-		if _, err := io.WriteString(xzw, content); err != nil {
-			return cw.n, fmt.Errorf("stream packages: xz write: %w", err)
-		}
-
-		if err := xzw.Close(); err != nil {
-			return cw.n, fmt.Errorf("stream packages: xz close: %w", err)
 		}
 
 		return cw.n, nil
