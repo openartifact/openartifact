@@ -28,7 +28,7 @@ func TestWorkerStopWithoutStartAndTwice(t *testing.T) {
 		"cleanup":   NewCleanupWorker(nil, nil, log).Stop,
 		"dockergc":  NewDockerGCWorker(&gcDB{}, nil, log, time.Hour, time.Hour).Stop,
 		"presigned": NewPresignedUploadWorker(nil, nil, time.Hour, log).Stop,
-		"dockerup":  NewDockerUploadSweeper(nil, storage.NewDirChunkStore(t.TempDir()), time.Hour, log).Stop,
+		"dockerup":  NewDockerUploadSweeper(nil, storage.NewDirUploadStore(t.TempDir()), time.Hour, log).Stop,
 	}
 
 	for name, stop := range stoppers {

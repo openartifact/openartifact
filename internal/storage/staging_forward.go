@@ -10,14 +10,15 @@ import (
 	"time"
 )
 
-// StagingForwarder is the staging, multipart staging and upload chunk
+// StagingForwarder is the staging, multipart staging and resumable upload
 // capability of a store that fronts another one: every call goes to the store
 // target returns. A target without the staging capability answers
-// ErrPresignNotSupported; one without the chunk capability reports
-// ChunksSupported false and answers ErrChunksNotSupported. Chunks are scratch
-// data of in-flight uploads, so they bypass replication, tiering and metrics
-// of the wrapper. A wrapper embeds it and overrides the calls it has to
-// intercept.
+// ErrPresignNotSupported; one without the upload capability reports
+// UploadsSupported false and answers ErrUploadsNotSupported. Uploads are
+// scratch data of in-flight pushes, so they bypass replication, tiering and
+// metrics of the wrapper, except PromoteUpload, which a wrapper overrides to
+// account for the new blob. A wrapper embeds it and overrides the calls it has
+// to intercept.
 type StagingForwarder struct {
 	target func() BlobStore
 }
@@ -25,7 +26,7 @@ type StagingForwarder struct {
 var (
 	_ StagingStore          = StagingForwarder{}
 	_ MultipartStagingStore = StagingForwarder{}
-	_ ChunkStore            = StagingForwarder{}
+	_ UploadStore           = StagingForwarder{}
 )
 
 // NewStagingForwarder returns a forwarder to the store target returns; target
@@ -156,55 +157,81 @@ func (f StagingForwarder) CompleteMultipart(ctx context.Context, id, handle stri
 	return m.CompleteMultipart(ctx, id, handle, size, partSize)
 }
 
-func (f StagingForwarder) chunks() (ChunkStore, bool) {
-	c, ok := f.target().(ChunkStore)
+func (f StagingForwarder) uploads() (UploadStore, bool) {
+	u, ok := f.target().(UploadStore)
 
-	return c, ok
+	return u, ok
 }
 
-// ChunksSupported implements ChunkStore.
-func (f StagingForwarder) ChunksSupported() bool {
-	c, ok := f.chunks()
+// UploadsSupported implements UploadStore.
+func (f StagingForwarder) UploadsSupported() bool {
+	u, ok := f.uploads()
 
-	return ok && c.ChunksSupported()
+	return ok && u.UploadsSupported()
 }
 
-// PutChunk implements ChunkStore.
-func (f StagingForwarder) PutChunk(ctx context.Context, id string, r io.Reader) (int64, error) {
-	c, ok := f.chunks()
+// AppendUpload implements UploadStore.
+func (f StagingForwarder) AppendUpload(
+	ctx context.Context,
+	id string,
+	at UploadPosition,
+	r io.Reader,
+	commit func(ctx context.Context, state string, n int64) error,
+) error {
+	u, ok := f.uploads()
 	if !ok {
-		return 0, ErrChunksNotSupported
+		return ErrUploadsNotSupported
 	}
 
-	return c.PutChunk(ctx, id, r)
+	return u.AppendUpload(ctx, id, at, r, commit)
 }
 
-// OpenChunk implements ChunkStore.
-func (f StagingForwarder) OpenChunk(ctx context.Context, id string) (io.ReadCloser, error) {
-	c, ok := f.chunks()
+// CompleteUpload implements UploadStore.
+func (f StagingForwarder) CompleteUpload(ctx context.Context, id string, at UploadPosition) (StagedObject, error) {
+	u, ok := f.uploads()
 	if !ok {
-		return nil, ErrChunksNotSupported
+		return StagedObject{}, ErrUploadsNotSupported
 	}
 
-	return c.OpenChunk(ctx, id)
+	return u.CompleteUpload(ctx, id, at)
 }
 
-// DeleteChunk implements ChunkStore.
-func (f StagingForwarder) DeleteChunk(ctx context.Context, id string) error {
-	c, ok := f.chunks()
+// PromoteUpload implements UploadStore.
+func (f StagingForwarder) PromoteUpload(ctx context.Context, id, sha256, version string, metadata map[string]string) error {
+	u, ok := f.uploads()
 	if !ok {
-		return ErrChunksNotSupported
+		return ErrUploadsNotSupported
 	}
 
-	return c.DeleteChunk(ctx, id)
+	return u.PromoteUpload(ctx, id, sha256, version, metadata)
 }
 
-// WalkChunks implements ChunkStore.
-func (f StagingForwarder) WalkChunks(ctx context.Context, olderThan time.Time, fn func(ids []string) error) error {
-	c, ok := f.chunks()
+// OpenUpload implements UploadStore.
+func (f StagingForwarder) OpenUpload(ctx context.Context, id, version string) (io.ReadCloser, error) {
+	u, ok := f.uploads()
 	if !ok {
-		return ErrChunksNotSupported
+		return nil, ErrUploadsNotSupported
 	}
 
-	return c.WalkChunks(ctx, olderThan, fn)
+	return u.OpenUpload(ctx, id, version)
+}
+
+// DeleteUpload implements UploadStore.
+func (f StagingForwarder) DeleteUpload(ctx context.Context, id string) error {
+	u, ok := f.uploads()
+	if !ok {
+		return ErrUploadsNotSupported
+	}
+
+	return u.DeleteUpload(ctx, id)
+}
+
+// WalkUploads implements UploadStore.
+func (f StagingForwarder) WalkUploads(ctx context.Context, olderThan time.Time, fn func(ids []string) error) error {
+	u, ok := f.uploads()
+	if !ok {
+		return ErrUploadsNotSupported
+	}
+
+	return u.WalkUploads(ctx, olderThan, fn)
 }

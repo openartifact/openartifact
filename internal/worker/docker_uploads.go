@@ -18,18 +18,19 @@ import (
 const dockerUploadSweepInterval = 15 * time.Minute
 
 // DockerUploadSweeper deletes abandoned docker blob upload sessions: rows idle
-// longer than the TTL (their chunk rows go with them) and the chunk objects no
-// session lists any more, whatever left them behind (a cancelled or crashed
-// push, a repository deleted with uploads in flight, a failed object delete).
-// Every replica runs it: deleting a session is one atomic statement, deleting a
-// chunk object is idempotent, and a replica that keeps chunks on its own disk
-// (the oci backend) is the only one that can sweep them, so no lock elects a
-// single sweeper.
+// longer than the TTL together with the data they hold (a multipart upload in
+// progress is aborted, which is what frees its parts), and the upload data no
+// session owns any more, whatever left it behind (a cancelled or crashed push,
+// a repository deleted with uploads in flight, a failed delete). Every replica
+// runs it: deleting a session is one atomic statement, deleting upload data is
+// idempotent, and a replica that keeps uploads on its own disk (the oci
+// backend) is the only one that can sweep them, so no lock elects a single
+// sweeper.
 type DockerUploadSweeper struct {
-	store  database.DockerUploadSweepStore
-	chunks storage.ChunkStore
-	ttl    time.Duration
-	log    *logger.Logger
+	store   database.DockerUploadSweepStore
+	uploads storage.UploadStore
+	ttl     time.Duration
+	log     *logger.Logger
 
 	startOnce sync.Once
 	stopOnce  sync.Once
@@ -37,19 +38,19 @@ type DockerUploadSweeper struct {
 	doneCh    chan struct{}
 }
 
-// NewDockerUploadSweeper builds the sweeper over the chunk store of the blob
-// store (storage.ChunksFor). A non-positive ttl, a nil chunk store or a
+// NewDockerUploadSweeper builds the sweeper over the upload store of the blob
+// store (storage.UploadsFor). A non-positive ttl, a nil upload store or a
 // database without DockerUploadSweepStore yields a sweeper that does nothing.
-func NewDockerUploadSweeper(db any, chunks storage.ChunkStore, ttl time.Duration, log *logger.Logger) *DockerUploadSweeper {
+func NewDockerUploadSweeper(db any, uploads storage.UploadStore, ttl time.Duration, log *logger.Logger) *DockerUploadSweeper {
 	store, _ := db.(database.DockerUploadSweepStore)
 
 	return &DockerUploadSweeper{
-		store:  store,
-		chunks: chunks,
-		ttl:    ttl,
-		log:    log,
-		stopCh: make(chan struct{}),
-		doneCh: make(chan struct{}),
+		store:   store,
+		uploads: uploads,
+		ttl:     ttl,
+		log:     log,
+		stopCh:  make(chan struct{}),
+		doneCh:  make(chan struct{}),
 	}
 }
 
@@ -59,7 +60,7 @@ func (s *DockerUploadSweeper) Start() {
 }
 
 func (s *DockerUploadSweeper) start() {
-	if s.ttl <= 0 || s.chunks == nil || s.store == nil {
+	if s.ttl <= 0 || s.uploads == nil || s.store == nil {
 		close(s.doneCh)
 		return
 	}
@@ -106,8 +107,8 @@ func (s *DockerUploadSweeper) Stop() {
 	<-s.doneCh
 }
 
-// Sweep deletes upload sessions idle since before now-ttl and the chunk objects
-// untouched since then that no session lists.
+// Sweep deletes upload sessions idle since before now-ttl with their data, and
+// the upload data untouched since then that no session owns.
 func (s *DockerUploadSweeper) Sweep(ctx context.Context, now time.Time) {
 	cutoff := now.Add(-s.ttl)
 
@@ -117,36 +118,43 @@ func (s *DockerUploadSweeper) Sweep(ctx context.Context, now time.Time) {
 		return
 	}
 
-	removed := len(uuids) + s.sweepOrphanChunks(ctx, cutoff)
+	for _, id := range uuids {
+		if err := s.uploads.DeleteUpload(ctx, id); err != nil {
+			s.log.Warnw("docker upload sweep: delete upload", "upload", id, "error", err)
+		}
+	}
+
+	removed := len(uuids) + s.sweepOrphanUploads(ctx, cutoff)
 	if removed > 0 {
 		s.log.Infow("docker upload sweep", "removed", removed, "cutoff", cutoff)
 	}
 }
 
-// sweepOrphanChunks deletes the chunk objects last modified before the cutoff
-// that no live session lists. A chunk is written once, right before its row, so
-// an old object without a row is garbage. It returns how many it deleted.
-func (s *DockerUploadSweeper) sweepOrphanChunks(ctx context.Context, cutoff time.Time) int {
+// sweepOrphanUploads deletes the uploads (objects and unfinished multipart
+// uploads) started before the cutoff that no live session owns. An upload's
+// data is created after its session row, so old data without a row is garbage.
+// It returns how many uploads it deleted.
+func (s *DockerUploadSweeper) sweepOrphanUploads(ctx context.Context, cutoff time.Time) int {
 	removed := 0
 
-	err := s.chunks.WalkChunks(ctx, cutoff, func(ids []string) error {
-		known, err := s.store.ExistingDockerUploadChunkIDs(ctx, ids)
+	err := s.uploads.WalkUploads(ctx, cutoff, func(ids []string) error {
+		known, err := s.store.ExistingDockerUploadIDs(ctx, ids)
 		if err != nil {
-			return fmt.Errorf("look up chunk rows: %w", err)
+			return fmt.Errorf("look up upload sessions: %w", err)
 		}
 
-		listed := make(map[string]struct{}, len(known))
+		owned := make(map[string]struct{}, len(known))
 		for _, id := range known {
-			listed[id] = struct{}{}
+			owned[id] = struct{}{}
 		}
 
 		for _, id := range ids {
-			if _, ok := listed[id]; ok {
+			if _, ok := owned[id]; ok {
 				continue
 			}
 
-			if err := s.chunks.DeleteChunk(ctx, id); err != nil {
-				s.log.Warnw("docker upload sweep: delete chunk", "chunk", id, "error", err)
+			if err := s.uploads.DeleteUpload(ctx, id); err != nil {
+				s.log.Warnw("docker upload sweep: delete upload", "upload", id, "error", err)
 				continue
 			}
 
@@ -156,7 +164,7 @@ func (s *DockerUploadSweeper) sweepOrphanChunks(ctx context.Context, cutoff time
 		return ctx.Err()
 	})
 	if err != nil {
-		s.log.Warnw("docker upload sweep: walk chunks", "error", err)
+		s.log.Warnw("docker upload sweep: walk uploads", "error", err)
 	}
 
 	return removed

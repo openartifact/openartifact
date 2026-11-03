@@ -196,56 +196,113 @@ func dockerUploadFromRow(row dbsqlc.DockerUpload) *models.DockerUpload {
 		RepositoryID: row.RepositoryID,
 		UploadUUID:   row.UploadUuid,
 		Offset:       row.Offset,
+		HashState:    row.HashState,
+		StageState:   row.StageState,
 		CreatedAt:    row.CreatedAt,
 		UpdatedAt:    row.UpdatedAt,
 	}
 }
 
-// AppendDockerUploadChunk records chunkID as the next chunk of the session and
-// moves its offset from oldOffset to newOffset, atomically. It reports whether
-// it did: false means the offset no longer equals oldOffset (another request
-// advanced or completed the session) and nothing was recorded.
-func (p *DockerStore) AppendDockerUploadChunk(
+// AcquireDockerUploadLease takes the session's lease for token (a UUID) for ttl
+// and returns the session as it stands, so the caller starts from the committed
+// position. It returns nil when the session does not exist or another live
+// lease holds it.
+func (p *DockerStore) AcquireDockerUploadLease(
 	ctx context.Context,
-	repositoryID, uploadUUID, chunkID string,
-	oldOffset, newOffset int64,
-) (bool, error) {
-	n, err := p.q.AppendDockerUploadChunk(ctx, dbsqlc.AppendDockerUploadChunkParams{
-		ChunkID:      chunkID,
-		NewOffset:    newOffset,
-		OldOffset:    oldOffset,
+	repositoryID, uploadUUID, token string,
+	ttl time.Duration,
+) (*models.DockerUpload, error) {
+	row, err := p.q.AcquireDockerUploadLease(ctx, dbsqlc.AcquireDockerUploadLeaseParams{
 		RepositoryID: repositoryID,
 		UploadUuid:   uploadUUID,
+		Token:        token,
+		TtlSeconds:   ttl.Seconds(),
+	})
+
+	return mapRow(row, err, "acquire docker upload lease", dockerUploadFromRow)
+}
+
+// RenewDockerUploadLease extends the lease held by token to ttl from now. It
+// reports false when the lease is no longer held (expired and taken over, or
+// the session is gone).
+func (p *DockerStore) RenewDockerUploadLease(
+	ctx context.Context,
+	repositoryID, uploadUUID, token string,
+	ttl time.Duration,
+) (bool, error) {
+	n, err := p.q.RenewDockerUploadLease(ctx, dbsqlc.RenewDockerUploadLeaseParams{
+		RepositoryID: repositoryID,
+		UploadUuid:   uploadUUID,
+		Token:        token,
+		TtlSeconds:   ttl.Seconds(),
 	})
 	if err != nil {
-		return false, fmt.Errorf("failed to append docker upload chunk: %w", err)
+		return false, fmt.Errorf("failed to renew docker upload lease: %w", err)
 	}
 
 	return n == 1, nil
 }
 
-// ListDockerUploadChunks returns the chunks of the session in upload order.
-func (p *DockerStore) ListDockerUploadChunks(ctx context.Context, repositoryID, uploadUUID string) ([]models.DockerUploadChunk, error) {
-	rows, err := p.q.ListDockerUploadChunks(ctx, dbsqlc.ListDockerUploadChunksParams{
+// ReleaseDockerUploadLease clears the lease if token still holds it; it is not
+// an error when it does not.
+func (p *DockerStore) ReleaseDockerUploadLease(ctx context.Context, repositoryID, uploadUUID, token string) error {
+	if err := p.q.ReleaseDockerUploadLease(ctx, dbsqlc.ReleaseDockerUploadLeaseParams{
 		RepositoryID: repositoryID,
 		UploadUuid:   uploadUUID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list docker upload chunks: %w", err)
+		Token:        token,
+	}); err != nil {
+		return fmt.Errorf("failed to release docker upload lease: %w", err)
 	}
 
-	chunks := make([]models.DockerUploadChunk, len(rows))
-	for i, row := range rows {
-		chunks[i] = models.DockerUploadChunk{ChunkID: row.ChunkID, Size: row.SizeBytes}
-	}
-
-	return chunks, nil
+	return nil
 }
 
-// ExistingDockerUploadChunkIDs returns the ids among ids that belong to a live
-// upload session.
-func (p *DockerStore) ExistingDockerUploadChunkIDs(ctx context.Context, ids []string) ([]string, error) {
-	return existingUUIDs(ctx, ids, p.q.ExistingDockerUploadChunkIDs, "docker upload chunks")
+// AdvanceDockerUpload moves the session from oldOffset to newOffset and records
+// hashState and stageState with it, in one compare-and-set statement. keepLease
+// extends the lease held by token to ttl; otherwise the lease is released with
+// the move. It reports whether the session moved: false means the lease was
+// lost, the offset is not oldOffset, or the session is gone, and nothing
+// changed.
+func (p *DockerStore) AdvanceDockerUpload(
+	ctx context.Context,
+	repositoryID, uploadUUID, token string,
+	oldOffset, newOffset int64,
+	hashState []byte,
+	stageState string,
+	ttl time.Duration,
+	keepLease bool,
+) (bool, error) {
+	n, err := p.q.AdvanceDockerUpload(ctx, dbsqlc.AdvanceDockerUploadParams{
+		NewOffset:    newOffset,
+		HashState:    hashState,
+		StageState:   stageState,
+		KeepLease:    keepLease,
+		TtlSeconds:   ttl.Seconds(),
+		RepositoryID: repositoryID,
+		UploadUuid:   uploadUUID,
+		Token:        token,
+		OldOffset:    oldOffset,
+	})
+	if err != nil {
+		return false, fmt.Errorf("failed to advance docker upload: %w", err)
+	}
+
+	return n == 1, nil
+}
+
+// ExistingDockerUploadIDs returns the ids among ids that are the upload UUID of
+// a live session.
+func (p *DockerStore) ExistingDockerUploadIDs(ctx context.Context, ids []string) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	found, err := p.q.ExistingDockerUploadIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("failed to look up docker uploads: %w", err)
+	}
+
+	return found, nil
 }
 
 func (p *DockerStore) DeleteDockerUpload(ctx context.Context, repositoryID, uploadUUID string) error {
@@ -274,7 +331,7 @@ func (p *DockerStore) DeleteStaleDockerUploads(ctx context.Context, cutoff time.
 // reports itself unsupported for databases that do not.
 type DockerUploadSweepStore interface {
 	DeleteStaleDockerUploads(ctx context.Context, cutoff time.Time) ([]string, error)
-	ExistingDockerUploadChunkIDs(ctx context.Context, ids []string) ([]string, error)
+	ExistingDockerUploadIDs(ctx context.Context, ids []string) ([]string, error)
 }
 
 var _ DockerUploadSweepStore = (*PostgresDB)(nil)

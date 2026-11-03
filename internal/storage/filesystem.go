@@ -616,6 +616,14 @@ func (fs *FilesystemStore) PromoteStaging(ctx context.Context, id, sha256hex, ve
 
 	defer func() { _ = src.Close() }()
 
+	return linkIntoBlob(src, fs.objectPath(id), blobPath, sha256hex, metadata)
+}
+
+// linkIntoBlob makes the verified object src (at srcPath, on the blob
+// filesystem) the blob at blobPath: a hard link, with the ".meta" sidecar Put
+// writes, or a copy where the filesystem cannot link. An existing blob is left
+// untouched.
+func linkIntoBlob(src *os.File, srcPath, blobPath, sha256hex string, metadata map[string]string) error {
 	dir := filepath.Dir(blobPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create blob directory: %w", err)
@@ -643,7 +651,7 @@ func (fs *FilesystemStore) PromoteStaging(ctx context.Context, id, sha256hex, ve
 		return fmt.Errorf("failed to write blob metadata: %w", err)
 	}
 
-	if err := os.Link(fs.objectPath(id), blobPath); err != nil {
+	if err := os.Link(srcPath, blobPath); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return nil
 		}

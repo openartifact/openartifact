@@ -92,12 +92,19 @@ func (a *AzureBlobStore) StatStaging(ctx context.Context, id string) (StagedObje
 		return StagedObject{}, err
 	}
 
+	obj, err := a.statBlob(ctx, key)
+	if errors.Is(err, ErrBlobNotFound) {
+		return StagedObject{}, ErrStagingNotFound
+	}
+
+	return obj, err
+}
+
+// statBlob describes the blob key (size and ETag); a missing blob is an error
+// wrapping ErrBlobNotFound.
+func (a *AzureBlobStore) statBlob(ctx context.Context, key string) (StagedObject, error) {
 	h, err := a.headBlob(ctx, key)
 	if err != nil {
-		if errors.Is(err, ErrBlobNotFound) {
-			return StagedObject{}, ErrStagingNotFound
-		}
-
 		return StagedObject{}, err
 	}
 
@@ -121,6 +128,12 @@ func (a *AzureBlobStore) OpenStaging(ctx context.Context, id, version string) (i
 		return nil, err
 	}
 
+	return a.openBlobIfMatch(ctx, key, version)
+}
+
+// openBlobIfMatch reads the blob key if it still has the ETag version
+// (ErrStagingChanged when it has not, ErrStagingNotFound when it is gone).
+func (a *AzureBlobStore) openBlobIfMatch(ctx context.Context, key, version string) (io.ReadCloser, error) {
 	if version == "" {
 		return nil, fmt.Errorf("%w: no version to open", ErrStagingChanged)
 	}
@@ -162,6 +175,12 @@ func (a *AzureBlobStore) PromoteStaging(ctx context.Context, id, sha256, version
 		return err
 	}
 
+	return a.promoteBlob(ctx, src, sha256, version, metadata)
+}
+
+// promoteBlob is PromoteStaging for the object src (a staging object or a
+// completed upload).
+func (a *AzureBlobStore) promoteBlob(ctx context.Context, src, sha256, version string, metadata map[string]string) error {
 	if err := ValidateBlobID(sha256); err != nil {
 		return err
 	}
@@ -458,7 +477,7 @@ func (a *AzureBlobStore) CompleteMultipart(ctx context.Context, id, _ string, si
 		return err
 	}
 
-	if err := a.putBlockList(ctx, key, blockIDs); err != nil {
+	if _, err := a.putBlockList(ctx, key, blockIDs); err != nil {
 		return err
 	}
 
@@ -574,8 +593,9 @@ func partList(numbers []int) string {
 }
 
 // putBlockList commits the blocks, in order, as the content of blob (Put Block
-// List). Latest picks the uncommitted block of an id over a committed one.
-func (a *AzureBlobStore) putBlockList(ctx context.Context, blob string, blockIDs []string) error {
+// List). Latest picks the uncommitted block of an id over a committed one. It
+// returns the ETag of the committed blob.
+func (a *AzureBlobStore) putBlockList(ctx context.Context, blob string, blockIDs []string) (string, error) {
 	var sb strings.Builder
 
 	sb.WriteString(`<?xml version="1.0" encoding="utf-8"?><BlockList>`)
@@ -597,13 +617,13 @@ func (a *AzureBlobStore) putBlockList(ctx context.Context, blob string, blockIDs
 		length: int64(len(body)),
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if !azureOK(resp) {
-		return azureStatusError("put block list", resp)
+		return "", azureStatusError("put block list", resp)
 	}
 
-	return nil
+	return resp.Header.Get("ETag"), nil
 }

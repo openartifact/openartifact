@@ -31,7 +31,7 @@ var (
 	_ storage.Presigner             = (*Store)(nil)
 	_ storage.StagingStore          = (*Store)(nil)
 	_ storage.MultipartStagingStore = (*Store)(nil)
-	_ storage.ChunkStore            = (*Store)(nil)
+	_ storage.UploadStore           = (*Store)(nil)
 )
 
 func newStore(c *core, repairs *repairer) *Store {
@@ -374,6 +374,19 @@ func (s *Store) PresignGet(ctx context.Context, sha string, ttl time.Duration, o
 // PromoteStaging).
 func (s *Store) PromoteStaging(ctx context.Context, id, sha, version string, metadata map[string]string) error {
 	if err := s.StagingForwarder.PromoteStaging(ctx, id, sha, version, metadata); err != nil {
+		return err //nolint:wrapcheck // transparent wrapper
+	}
+
+	s.enqueueWritten(ctx, sha)
+
+	return nil
+}
+
+// PromoteUpload promotes the completed docker upload to its blob and queues the
+// copy, like PromoteStaging; the rest of the upload calls go to the primary
+// store unchanged.
+func (s *Store) PromoteUpload(ctx context.Context, id, sha, version string, metadata map[string]string) error {
+	if err := s.StagingForwarder.PromoteUpload(ctx, id, sha, version, metadata); err != nil {
 		return err //nolint:wrapcheck // transparent wrapper
 	}
 

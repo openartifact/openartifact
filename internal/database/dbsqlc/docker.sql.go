@@ -10,40 +10,88 @@ import (
 	"time"
 )
 
-const appendDockerUploadChunk = `-- name: AppendDockerUploadChunk :execrows
-WITH moved AS (
-    UPDATE docker_uploads SET "offset" = $2::bigint, updated_at = now()
-    WHERE repository_id = $4 AND upload_uuid = $5 AND "offset" = $3::bigint
-    RETURNING id
-)
-INSERT INTO docker_upload_chunks (chunk_id, upload_id, seq, size_bytes)
-SELECT $1::uuid, moved.id,
-       (SELECT COALESCE(max(c.seq) + 1, 0) FROM docker_upload_chunks c WHERE c.upload_id = moved.id),
-       $2::bigint - $3::bigint
-FROM moved
+const acquireDockerUploadLease = `-- name: AcquireDockerUploadLease :one
+UPDATE docker_uploads
+SET lease_token = $1::uuid, lease_until = now() + make_interval(secs => $2::float8)
+WHERE repository_id = $3 AND upload_uuid = $4
+  AND (lease_until IS NULL OR lease_until < now())
+RETURNING id, repository_id, upload_uuid, "offset", created_at, updated_at, hash_state, stage_state, lease_token, lease_until
 `
 
-type AppendDockerUploadChunkParams struct {
-	ChunkID      string `db:"chunk_id" json:"chunk_id"`
-	NewOffset    int64  `db:"new_offset" json:"new_offset"`
-	OldOffset    int64  `db:"old_offset" json:"old_offset"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	UploadUuid   string `db:"upload_uuid" json:"upload_uuid"`
+type AcquireDockerUploadLeaseParams struct {
+	Token        string  `db:"token" json:"token"`
+	TtlSeconds   float64 `db:"ttl_seconds" json:"ttl_seconds"`
+	RepositoryID string  `db:"repository_id" json:"repository_id"`
+	UploadUuid   string  `db:"upload_uuid" json:"upload_uuid"`
 }
 
-// Compare-and-set append: moves the session's offset from old_offset to
-// new_offset and records the chunk object that holds those bytes, in one
-// statement. Zero rows means the offset moved (another request advanced or
-// completed the session) and nothing was recorded; the caller discards the
-// chunk object it wrote. The row lock of the UPDATE serialises concurrent
-// appends, so the next sequence number cannot repeat.
-func (q *Queries) AppendDockerUploadChunk(ctx context.Context, arg AppendDockerUploadChunkParams) (int64, error) {
-	result, err := q.db.Exec(ctx, appendDockerUploadChunk,
-		arg.ChunkID,
-		arg.NewOffset,
-		arg.OldOffset,
+// Takes the session's lease for one request and returns the session as it is
+// now (offset, hash state and stage state included), so the holder never works
+// from a position another request has already moved. No row means the session
+// does not exist or a live lease holds it; a lease whose holder died is taken
+// over once lease_until has passed.
+func (q *Queries) AcquireDockerUploadLease(ctx context.Context, arg AcquireDockerUploadLeaseParams) (DockerUpload, error) {
+	row := q.db.QueryRow(ctx, acquireDockerUploadLease,
+		arg.Token,
+		arg.TtlSeconds,
 		arg.RepositoryID,
 		arg.UploadUuid,
+	)
+	var i DockerUpload
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.UploadUuid,
+		&i.Offset,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.HashState,
+		&i.StageState,
+		&i.LeaseToken,
+		&i.LeaseUntil,
+	)
+	return i, err
+}
+
+const advanceDockerUpload = `-- name: AdvanceDockerUpload :execrows
+UPDATE docker_uploads
+SET "offset" = $1::bigint,
+    hash_state = $2::bytea,
+    stage_state = $3::text,
+    updated_at = now(),
+    lease_token = CASE WHEN $4::boolean THEN lease_token END,
+    lease_until = CASE WHEN $4::boolean THEN now() + make_interval(secs => $5::float8) END
+WHERE repository_id = $6 AND upload_uuid = $7
+  AND lease_token = $8::uuid AND "offset" = $9::bigint
+`
+
+type AdvanceDockerUploadParams struct {
+	NewOffset    int64   `db:"new_offset" json:"new_offset"`
+	HashState    []byte  `db:"hash_state" json:"hash_state"`
+	StageState   string  `db:"stage_state" json:"stage_state"`
+	KeepLease    bool    `db:"keep_lease" json:"keep_lease"`
+	TtlSeconds   float64 `db:"ttl_seconds" json:"ttl_seconds"`
+	RepositoryID string  `db:"repository_id" json:"repository_id"`
+	UploadUuid   string  `db:"upload_uuid" json:"upload_uuid"`
+	Token        string  `db:"token" json:"token"`
+	OldOffset    int64   `db:"old_offset" json:"old_offset"`
+}
+
+// Compare-and-set move of the session position: offset, hash state and stage
+// state change together or not at all. Zero rows: the lease was lost, the offset
+// is not old_offset, or the session is gone; the caller must not trust what it
+// stored. updated_at marks activity for the idle sweep; lease renewals do not.
+func (q *Queries) AdvanceDockerUpload(ctx context.Context, arg AdvanceDockerUploadParams) (int64, error) {
+	result, err := q.db.Exec(ctx, advanceDockerUpload,
+		arg.NewOffset,
+		arg.HashState,
+		arg.StageState,
+		arg.KeepLease,
+		arg.TtlSeconds,
+		arg.RepositoryID,
+		arg.UploadUuid,
+		arg.Token,
+		arg.OldOffset,
 	)
 	if err != nil {
 		return 0, err
@@ -431,7 +479,9 @@ DELETE FROM docker_uploads WHERE updated_at < $1 RETURNING upload_uuid
 `
 
 // Drops upload sessions that saw no activity since the cutoff and returns their
-// UUIDs so the caller can remove the staged files.
+// UUIDs so the caller can remove the staged files. Taking, renewing and
+// releasing a lease update the row too (the updated_at trigger), so a session a
+// request is working on is never idle.
 func (q *Queries) DeleteStaleDockerUploads(ctx context.Context, updatedAt time.Time) ([]string, error) {
 	rows, err := q.db.Query(ctx, deleteStaleDockerUploads, updatedAt)
 	if err != nil {
@@ -580,23 +630,25 @@ func (q *Queries) DockerImageExists(ctx context.Context, arg DockerImageExistsPa
 	return exists, err
 }
 
-const existingDockerUploadChunkIDs = `-- name: ExistingDockerUploadChunkIDs :many
-SELECT chunk_id FROM docker_upload_chunks WHERE chunk_id = ANY($1::uuid[])
+const existingDockerUploadIDs = `-- name: ExistingDockerUploadIDs :many
+SELECT upload_uuid FROM docker_uploads WHERE upload_uuid = ANY($1::text[])
 `
 
-func (q *Queries) ExistingDockerUploadChunkIDs(ctx context.Context, ids []string) ([]string, error) {
-	rows, err := q.db.Query(ctx, existingDockerUploadChunkIDs, ids)
+// Compared as text: upload_uuid is text and the candidates come from object
+// names, which need not be UUIDs.
+func (q *Queries) ExistingDockerUploadIDs(ctx context.Context, ids []string) ([]string, error) {
+	rows, err := q.db.Query(ctx, existingDockerUploadIDs, ids)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	items := []string{}
 	for rows.Next() {
-		var chunk_id string
-		if err := rows.Scan(&chunk_id); err != nil {
+		var upload_uuid string
+		if err := rows.Scan(&upload_uuid); err != nil {
 			return nil, err
 		}
-		items = append(items, chunk_id)
+		items = append(items, upload_uuid)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -722,7 +774,7 @@ func (q *Queries) GetDockerTag(ctx context.Context, arg GetDockerTagParams) (Doc
 }
 
 const getDockerUpload = `-- name: GetDockerUpload :one
-SELECT id, repository_id, upload_uuid, "offset", created_at, updated_at
+SELECT id, repository_id, upload_uuid, "offset", created_at, updated_at, hash_state, stage_state, lease_token, lease_until
 FROM docker_uploads
 WHERE repository_id = $1 AND upload_uuid = $2
 `
@@ -742,6 +794,10 @@ func (q *Queries) GetDockerUpload(ctx context.Context, arg GetDockerUploadParams
 		&i.Offset,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.HashState,
+		&i.StageState,
+		&i.LeaseToken,
+		&i.LeaseUntil,
 	)
 	return i, err
 }
@@ -1334,45 +1390,6 @@ func (q *Queries) ListDockerTagsByRepo(ctx context.Context, arg ListDockerTagsBy
 	return items, nil
 }
 
-const listDockerUploadChunks = `-- name: ListDockerUploadChunks :many
-SELECT c.chunk_id, c.size_bytes
-FROM docker_upload_chunks c
-JOIN docker_uploads u ON u.id = c.upload_id
-WHERE u.repository_id = $1 AND u.upload_uuid = $2
-ORDER BY c.seq
-`
-
-type ListDockerUploadChunksParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	UploadUuid   string `db:"upload_uuid" json:"upload_uuid"`
-}
-
-type ListDockerUploadChunksRow struct {
-	ChunkID   string `db:"chunk_id" json:"chunk_id"`
-	SizeBytes int64  `db:"size_bytes" json:"size_bytes"`
-}
-
-// The chunk objects of a session in upload order.
-func (q *Queries) ListDockerUploadChunks(ctx context.Context, arg ListDockerUploadChunksParams) ([]ListDockerUploadChunksRow, error) {
-	rows, err := q.db.Query(ctx, listDockerUploadChunks, arg.RepositoryID, arg.UploadUuid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListDockerUploadChunksRow{}
-	for rows.Next() {
-		var i ListDockerUploadChunksRow
-		if err := rows.Scan(&i.ChunkID, &i.SizeBytes); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listUnindexedDockerManifests = `-- name: ListUnindexedDockerManifests :many
 SELECT dm.id, dm.image, dm.digest, b.sha256 AS blob_sha256
 FROM docker_manifests dm
@@ -1421,6 +1438,55 @@ func (q *Queries) ListUnindexedDockerManifests(ctx context.Context, arg ListUnin
 		return nil, err
 	}
 	return items, nil
+}
+
+const releaseDockerUploadLease = `-- name: ReleaseDockerUploadLease :exec
+UPDATE docker_uploads
+SET lease_token = NULL, lease_until = NULL
+WHERE repository_id = $1 AND upload_uuid = $2
+  AND lease_token = $3::uuid
+`
+
+type ReleaseDockerUploadLeaseParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	UploadUuid   string `db:"upload_uuid" json:"upload_uuid"`
+	Token        string `db:"token" json:"token"`
+}
+
+// Gives the lease back when the request ends without moving the position. A
+// holder that lost the lease changes nothing.
+func (q *Queries) ReleaseDockerUploadLease(ctx context.Context, arg ReleaseDockerUploadLeaseParams) error {
+	_, err := q.db.Exec(ctx, releaseDockerUploadLease, arg.RepositoryID, arg.UploadUuid, arg.Token)
+	return err
+}
+
+const renewDockerUploadLease = `-- name: RenewDockerUploadLease :execrows
+UPDATE docker_uploads
+SET lease_until = now() + make_interval(secs => $1::float8)
+WHERE repository_id = $2 AND upload_uuid = $3
+  AND lease_token = $4::uuid
+`
+
+type RenewDockerUploadLeaseParams struct {
+	TtlSeconds   float64 `db:"ttl_seconds" json:"ttl_seconds"`
+	RepositoryID string  `db:"repository_id" json:"repository_id"`
+	UploadUuid   string  `db:"upload_uuid" json:"upload_uuid"`
+	Token        string  `db:"token" json:"token"`
+}
+
+// Extends the lease of a long request. Zero rows: the lease was lost (it
+// expired and was taken over, or the session is gone) and the holder must stop.
+func (q *Queries) RenewDockerUploadLease(ctx context.Context, arg RenewDockerUploadLeaseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, renewDockerUploadLease,
+		arg.TtlSeconds,
+		arg.RepositoryID,
+		arg.UploadUuid,
+		arg.Token,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const touchDockerBlob = `-- name: TouchDockerBlob :one

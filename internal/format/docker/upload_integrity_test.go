@@ -48,6 +48,22 @@ func startUpload(t *testing.T, g *registry, name string) string {
 	return start.Header().Get("Location")
 }
 
+// hookUploads runs beforePromote just before the upload store makes the
+// completed upload the blob.
+type hookUploads struct {
+	storage.UploadStore
+
+	beforePromote func()
+}
+
+func (s *hookUploads) PromoteUpload(ctx context.Context, id, sha256, version string, metadata map[string]string) error {
+	if s.beforePromote != nil {
+		s.beforePromote()
+	}
+
+	return s.UploadStore.PromoteUpload(ctx, id, sha256, version, metadata)
+}
+
 // A PATCH racing the completion of the same session must wait for it (and
 // then find the session gone): the stored bytes are the bytes that were hashed.
 func TestCompleteUpload_ConcurrentPatchCannotChangeStoredBytes(t *testing.T) {
@@ -55,8 +71,8 @@ func TestCompleteUpload_ConcurrentPatchCannotChangeStoredBytes(t *testing.T) {
 	db := newRegFakeDB("reg")
 	g := newRegistry(t, db)
 
-	store := &hookStore{BlobStore: g.h.blobStore}
-	g.h.blobStore = store
+	hook := &hookUploads{UploadStore: g.h.uploads}
+	g.h.SetUploadStore(hook)
 
 	loc := startUpload(t, g, "reg/app")
 
@@ -66,7 +82,7 @@ func TestCompleteUpload_ConcurrentPatchCannotChangeStoredBytes(t *testing.T) {
 		patched   = make(chan struct{})
 	)
 
-	store.hook = func() {
+	hook.beforePromote = func() {
 		go func() {
 			defer close(patched)
 
@@ -98,30 +114,131 @@ func TestCompleteUpload_ConcurrentPatchCannotChangeStoredBytes(t *testing.T) {
 	}
 }
 
-// If the bytes the store receives differ from the verified ones, completion
-// fails and no object exists under the claimed digest.
-func TestCompleteUpload_SwappedBytesAreRejectedAndNotStored(t *testing.T) {
+// A PATCH that reaches the session through another replica while a completion
+// holds it is refused, not interleaved with it.
+func TestCompleteUpload_PatchOnAnotherReplicaIsRefusedWhileCompleting(t *testing.T) {
+	layer := []byte("the real layer content")
+	db := newRegFakeDB("reg")
+	a := newRegistry(t, db)
+	b := otherReplica(t, a, db)
+
+	hook := &hookUploads{UploadStore: a.h.uploads}
+	a.h.SetUploadStore(hook)
+
+	loc := startUpload(t, a, "reg/app")
+
+	var patchCode int
+
+	hook.beforePromote = func() {
+		patchCode = b.do(http.MethodPatch, loc, "ATTACKER BYTES").Code
+	}
+
+	if rec := a.do(http.MethodPut, loc+"?digest="+digestOf(layer), string(layer)); rec.Code != http.StatusCreated {
+		t.Fatalf("complete = %d; body=%s", rec.Code, rec.Body.String())
+	}
+
+	if patchCode != http.StatusConflict {
+		t.Errorf("PATCH on another replica during the completion = %d, want 409", patchCode)
+	}
+
+	rec := b.do(http.MethodGet, "/v2/reg/app/blobs/"+digestOf(layer), "")
+	if rec.Code != http.StatusOK || rec.Body.String() != string(layer) {
+		t.Fatalf("stored blob = %d %q, want the pushed layer", rec.Code, rec.Body.String())
+	}
+}
+
+// If the upload object is overwritten after its digest was verified and before
+// it becomes the blob, completion fails and no object exists under the claimed
+// digest.
+func TestCompleteUpload_ObjectSwappedAfterVerificationIsRejectedAndNotStored(t *testing.T) {
 	layer := []byte("the real layer content")
 	db := newRegFakeDB("reg")
 	g := newRegistry(t, db)
 
-	store := &hookStore{BlobStore: g.h.blobStore, swap: []byte("attacker bytes")}
-	g.h.blobStore = store
+	hook := &hookUploads{UploadStore: g.h.uploads}
+	g.h.SetUploadStore(hook)
 
 	loc := startUpload(t, g, "reg/app")
+	id := uploadID(loc)
+
+	hook.beforePromote = func() {
+		err := hook.AppendUpload(context.Background(), id, storage.UploadPosition{}, strings.NewReader("attacker bytes!"),
+			func(context.Context, string, int64) error { return nil })
+		if err != nil {
+			t.Errorf("overwrite the upload object: %v", err)
+		}
+	}
 
 	rec := g.do(http.MethodPut, loc+"?digest="+digestOf(layer), string(layer))
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("complete = %d, want 400; body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "DIGEST_INVALID") {
+		t.Fatalf("complete = %d %s, want 400 DIGEST_INVALID", rec.Code, rec.Body.String())
 	}
 
 	hexDigest := strings.TrimPrefix(digestOf(layer), "sha256:")
 
-	if ok, _ := store.Exists(context.Background(), hexDigest); ok {
+	if ok, _ := g.h.blobStore.Exists(context.Background(), hexDigest); ok {
 		t.Fatal("an object was stored under the claimed digest")
 	}
 
 	if db.blobs[scoped("id-reg", digestOf(layer))] != nil {
 		t.Fatal("a blob row was created")
 	}
+}
+
+// A blob store that cannot hold uploads (oci) keeps them in a host directory
+// and the completed upload is streamed into Put: the push still completes, and
+// if the bytes Put receives differ from the verified ones nothing is stored
+// under the claimed digest.
+func TestCompleteUpload_StreamsIntoPutWhenTheStoreCannotPromote(t *testing.T) {
+	layer := []byte("the real layer content")
+
+	t.Run("completes", func(t *testing.T) {
+		db := newRegFakeDB("reg")
+		g := newRegistry(t, db)
+		g.h.SetUploadStore(storage.NewDirUploadStore(t.TempDir()))
+
+		loc := startUpload(t, g, "reg/app")
+		if rec := g.do(http.MethodPatch, loc, string(layer[:5])); rec.Code != http.StatusAccepted {
+			t.Fatalf("patch = %d", rec.Code)
+		}
+
+		if rec := g.do(http.MethodPut, loc+"?digest="+digestOf(layer), string(layer[5:])); rec.Code != http.StatusCreated {
+			t.Fatalf("complete = %d; body=%s", rec.Code, rec.Body.String())
+		}
+
+		rec := g.do(http.MethodGet, "/v2/reg/app/blobs/"+digestOf(layer), "")
+		if rec.Code != http.StatusOK || rec.Body.String() != string(layer) {
+			t.Fatalf("pulled blob = %d %q, want the pushed layer", rec.Code, rec.Body.String())
+		}
+
+		if n := len(uploadObjects(t, g.h)); n != 0 {
+			t.Fatalf("upload files left = %d, want 0", n)
+		}
+	})
+
+	t.Run("swapped bytes", func(t *testing.T) {
+		db := newRegFakeDB("reg")
+		g := newRegistry(t, db)
+		g.h.SetUploadStore(storage.NewDirUploadStore(t.TempDir()))
+
+		store := &hookStore{BlobStore: g.h.blobStore, swap: []byte("attacker bytes")}
+		g.h.blobStore = store
+
+		loc := startUpload(t, g, "reg/app")
+
+		rec := g.do(http.MethodPut, loc+"?digest="+digestOf(layer), string(layer))
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("complete = %d, want 400; body=%s", rec.Code, rec.Body.String())
+		}
+
+		hexDigest := strings.TrimPrefix(digestOf(layer), "sha256:")
+
+		if ok, _ := store.Exists(context.Background(), hexDigest); ok {
+			t.Fatal("an object was stored under the claimed digest")
+		}
+
+		if db.blobs[scoped("id-reg", digestOf(layer))] != nil {
+			t.Fatal("a blob row was created")
+		}
+	})
 }

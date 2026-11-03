@@ -232,7 +232,6 @@ var NotJournaled = map[string]string{
 	"vex_statements":                "operator decisions about vulnerabilities; database backups",
 	"webhooks":                      "contain signing secrets; `oa apply` or database backups",
 	"docker_uploads":                "transient in-flight blob uploads",
-	"docker_upload_chunks":          "transient chunk rows of in-flight blob uploads",
 }
 
 // KeyExpr returns the SQL expression yielding the canonical row key of the

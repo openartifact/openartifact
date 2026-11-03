@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -77,6 +78,11 @@ func (s *S3BlobStore) StatStaging(ctx context.Context, id string) (StagedObject,
 		return StagedObject{}, err
 	}
 
+	return s.statObject(ctx, key)
+}
+
+// statObject describes the object at key; ErrStagingNotFound when it is missing.
+func (s *S3BlobStore) statObject(ctx context.Context, key string) (StagedObject, error) {
 	out, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key)})
 	if err != nil {
 		if isNotFound(err) {
@@ -103,11 +109,17 @@ func (s *S3BlobStore) OpenStaging(ctx context.Context, id, version string) (io.R
 		return nil, err
 	}
 
+	return s.openVersioned(ctx, key, version)
+}
+
+// openVersioned reads the object at key if it still is version; optFns tune
+// the request (the SDK options of a GetObject call).
+func (s *S3BlobStore) openVersioned(ctx context.Context, key, version string, optFns ...func(*s3.Options)) (io.ReadCloser, error) {
 	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket:  aws.String(s.bucket),
 		Key:     aws.String(key),
 		IfMatch: aws.String(version),
-	})
+	}, optFns...)
 	if err != nil {
 		switch {
 		case isNotFound(err):
@@ -149,6 +161,11 @@ func (s *S3BlobStore) PromoteStaging(ctx context.Context, id, sha256, version st
 		return err
 	}
 
+	return s.promoteObject(ctx, src, sha256, version, metadata)
+}
+
+// promoteObject makes the object at src (exactly version) the blob sha256.
+func (s *S3BlobStore) promoteObject(ctx context.Context, src, sha256, version string, metadata map[string]string) error {
 	if err := ValidateBlobID(sha256); err != nil {
 		return err
 	}
@@ -169,15 +186,41 @@ func isPreconditionFailed(err error) bool {
 
 // WalkStaging lists staging objects last modified before olderThan.
 func (s *S3BlobStore) WalkStaging(ctx context.Context, olderThan time.Time, fn func(ids []string) error) error {
+	err := s.walkObjectIDs(ctx, stagingPrefix, olderThan, stagingObjectID, fn)
+	if err != nil {
+		return err
+	}
+
+	return s.walkStagingMultipart(ctx, olderThan, fn)
+}
+
+// stagingObjectID is the id of the staging object at key, if it is one.
+func stagingObjectID(key string) (string, bool) {
+	id := strings.TrimPrefix(key, stagingPrefix)
+	_, err := uuid.Parse(id)
+
+	return id, err == nil
+}
+
+// walkObjectIDs lists the objects under prefix last modified before olderThan
+// and hands the ids idOf derives from their keys to fn, one batch per listing
+// page (an id more than once in a page is reported once).
+func (s *S3BlobStore) walkObjectIDs(
+	ctx context.Context,
+	prefix string,
+	olderThan time.Time,
+	idOf func(key string) (string, bool),
+	fn func(ids []string) error,
+) error {
 	pages := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{
 		Bucket: aws.String(s.bucket),
-		Prefix: aws.String(stagingPrefix),
+		Prefix: aws.String(prefix),
 	})
 
 	for pages.HasMorePages() {
 		page, err := pages.NextPage(ctx)
 		if err != nil {
-			return fmt.Errorf("s3: list %s: %w", stagingPrefix, err)
+			return fmt.Errorf("s3: list %s: %w", prefix, err)
 		}
 
 		var ids []string
@@ -187,12 +230,9 @@ func (s *S3BlobStore) WalkStaging(ctx context.Context, olderThan time.Time, fn f
 				continue
 			}
 
-			id := strings.TrimPrefix(*obj.Key, stagingPrefix)
-			if _, err := uuid.Parse(id); err != nil {
-				continue
+			if id, ok := idOf(*obj.Key); ok && !slices.Contains(ids, id) {
+				ids = append(ids, id)
 			}
-
-			ids = append(ids, id)
 		}
 
 		if len(ids) == 0 {
@@ -204,7 +244,7 @@ func (s *S3BlobStore) WalkStaging(ctx context.Context, olderThan time.Time, fn f
 		}
 	}
 
-	return s.walkStagingMultipart(ctx, olderThan, fn)
+	return nil
 }
 
 // walkStagingMultipart reports unfinished multipart uploads older than
@@ -232,5 +272,5 @@ func (s *S3BlobStore) DeleteStaging(ctx context.Context, id string) error {
 		return fmt.Errorf("s3: delete %s: %w", key, err)
 	}
 
-	return s.abortStagingMultipart(ctx, key)
+	return s.abortKeyMultipart(ctx, key)
 }

@@ -280,9 +280,9 @@ func (s *S3BlobStore) abortMultipart(ctx context.Context, key, uploadID string) 
 	return nil
 }
 
-// abortStagingMultipart aborts every in-progress multipart upload of the
-// staging key, so a deleted staging area leaves no parts behind.
-func (s *S3BlobStore) abortStagingMultipart(ctx context.Context, key string) error {
+// abortKeyMultipart aborts every in-progress multipart upload of the object
+// key, so a deleted staging area or upload leaves no parts behind.
+func (s *S3BlobStore) abortKeyMultipart(ctx context.Context, key string) error {
 	var uploads []types.MultipartUpload
 
 	err := s.multipartUploadsWhere(ctx, key, func(u types.MultipartUpload) error {
@@ -305,18 +305,28 @@ func (s *S3BlobStore) abortStagingMultipart(ctx context.Context, key string) err
 	return nil
 }
 
-// stagingMultipartIDs reports the ids of unfinished multipart uploads that
-// started before olderThan.
+// stagingMultipartIDs reports the ids of unfinished multipart uploads of
+// staging objects that started before olderThan.
 func (s *S3BlobStore) stagingMultipartIDs(ctx context.Context, olderThan time.Time) ([]string, error) {
+	return s.multipartIDs(ctx, stagingPrefix, olderThan, stagingObjectID)
+}
+
+// multipartIDs reports the ids (as idOf derives them from the object key) of
+// unfinished multipart uploads under prefix that started before olderThan.
+func (s *S3BlobStore) multipartIDs(
+	ctx context.Context,
+	prefix string,
+	olderThan time.Time,
+	idOf func(key string) (string, bool),
+) ([]string, error) {
 	var ids []string
 
-	err := s.multipartUploadsWhere(ctx, stagingPrefix, func(u types.MultipartUpload) error {
+	err := s.multipartUploadsWhere(ctx, prefix, func(u types.MultipartUpload) error {
 		if u.Initiated == nil || !u.Initiated.Before(olderThan) {
 			return nil
 		}
 
-		id := strings.TrimPrefix(*u.Key, stagingPrefix)
-		if _, err := stagingKey(id); err == nil && !slices.Contains(ids, id) {
+		if id, ok := idOf(*u.Key); ok && !slices.Contains(ids, id) {
 			ids = append(ids, id)
 		}
 

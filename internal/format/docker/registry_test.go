@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -39,7 +40,7 @@ type regFakeDBStore interface {
 // real ON CONFLICT queries.
 type regFakeDB struct {
 	regFakeDBStore
-	chunkRows
+	uploadLeases
 	formattest.Quarantine
 	fakeBlobHolds
 
@@ -152,27 +153,44 @@ func (d *regFakeDB) GetDockerUpload(_ context.Context, repoID, uploadUUID string
 	return d.uploads[scoped(repoID, uploadUUID)], nil
 }
 
-func (d *regFakeDB) AppendDockerUploadChunk(
-	_ context.Context, repoID, uploadUUID, chunkID string, oldOffset, newOffset int64,
+func (d *regFakeDB) AcquireDockerUploadLease(
+	_ context.Context, repoID, uploadUUID, token string, ttl time.Duration,
+) (*models.DockerUpload, error) {
+	u := d.uploads[scoped(repoID, uploadUUID)]
+	if u == nil || !d.acquire(scoped(repoID, uploadUUID), token, ttl) {
+		return nil, nil
+	}
+
+	row := *u
+
+	return &row, nil
+}
+
+func (d *regFakeDB) RenewDockerUploadLease(_ context.Context, repoID, uploadUUID, token string, ttl time.Duration) (bool, error) {
+	return d.renew(scoped(repoID, uploadUUID), token, ttl), nil
+}
+
+func (d *regFakeDB) ReleaseDockerUploadLease(_ context.Context, repoID, uploadUUID, token string) error {
+	d.release(scoped(repoID, uploadUUID), token)
+
+	return nil
+}
+
+func (d *regFakeDB) AdvanceDockerUpload(
+	_ context.Context, repoID, uploadUUID, token string,
+	oldOffset, newOffset int64, hashState []byte, stageState string, ttl time.Duration, keepLease bool,
 ) (bool, error) {
 	u := d.uploads[scoped(repoID, uploadUUID)]
-	if u == nil || u.Offset != oldOffset {
+	if u == nil {
 		return false, nil
 	}
 
-	u.Offset = newOffset
-	d.append(repoID, uploadUUID, chunkID, newOffset-oldOffset)
-
-	return true, nil
-}
-
-func (d *regFakeDB) ListDockerUploadChunks(_ context.Context, repositoryID, uploadUUID string) ([]models.DockerUploadChunk, error) {
-	return d.list(repositoryID, uploadUUID), nil
+	return d.advance(scoped(repoID, uploadUUID), u, token, oldOffset, newOffset, hashState, stageState, ttl, keepLease), nil
 }
 
 func (d *regFakeDB) DeleteDockerUpload(_ context.Context, repoID, uploadUUID string) error {
 	delete(d.uploads, scoped(repoID, uploadUUID))
-	d.drop(repoID, uploadUUID)
+	d.drop(scoped(repoID, uploadUUID))
 
 	return nil
 }

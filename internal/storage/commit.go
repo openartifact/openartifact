@@ -49,6 +49,12 @@ type Blob struct {
 	// Open marks a blob that must already exist: it is checked under the lock
 	// and a missing one fails with ErrBlobGone.
 	Open func() (io.Reader, error)
+	// Promote, when set, stores the blob without its bytes passing through the
+	// server (a server-side copy or link of an object already verified in the
+	// store) and is tried before Open. ErrPromoteNotSupported falls back to
+	// Open; any other error fails the call. A Blob with only Promote set has
+	// no content to fall back to.
+	Promote func(ctx context.Context) error
 }
 
 // BytesBlob is a Blob whose content is held in memory.
@@ -132,7 +138,7 @@ func CommitBlobs(
 	for i, b := range blobs {
 		shas[i] = b.SHA256
 
-		if b.Open == nil {
+		if b.Open == nil && b.Promote == nil {
 			continue
 		}
 
@@ -160,7 +166,7 @@ func CommitBlobs(
 			}
 
 			if !exists {
-				if b.Open == nil {
+				if b.Open == nil && b.Promote == nil {
 					return fmt.Errorf("%w: %s", ErrBlobGone, b.SHA256)
 				}
 
@@ -189,6 +195,17 @@ func lookup(ctx context.Context, store BlobStore, b Blob) (string, bool, error) 
 
 // put writes the blob and returns its storage key.
 func put(ctx context.Context, store BlobStore, b Blob) (string, error) {
+	if b.Promote != nil {
+		err := b.Promote(ctx)
+
+		switch {
+		case err == nil:
+			return b.SHA256, nil
+		case !errors.Is(err, ErrPromoteNotSupported) || b.Open == nil:
+			return "", &StoreError{SHA256: b.SHA256, Op: "store", Err: err}
+		}
+	}
+
 	r, err := b.Open()
 	if err != nil {
 		return "", &StoreError{SHA256: b.SHA256, Op: "store", Err: err}

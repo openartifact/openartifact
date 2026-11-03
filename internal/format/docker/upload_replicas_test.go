@@ -5,7 +5,6 @@
 package docker
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -91,7 +90,7 @@ func TestChunkedUpload_AlternatesBetweenReplicas(t *testing.T) {
 		}
 	}
 
-	if n := a.chunkCount(); n != 0 || len(db.uploads) != 0 {
+	if n := a.uploadCount(); n != 0 || len(db.uploads) != 0 {
 		t.Fatalf("after completion: chunk objects = %d, sessions = %d, want none", n, len(db.uploads))
 	}
 }
@@ -123,7 +122,7 @@ func TestChunkedUpload_CompleteAndCancelOnAnotherReplica(t *testing.T) {
 		t.Fatalf("DELETE on A = %d", rec.Code)
 	}
 
-	if n := a.chunkCount(); n != 0 {
+	if n := a.uploadCount(); n != 0 {
 		t.Fatalf("chunk objects after cancel = %d, want 0", n)
 	}
 
@@ -147,13 +146,14 @@ func TestChunkedUpload_DigestMismatchDiscardsChunksOfOtherReplica(t *testing.T) 
 		t.Fatalf("PUT = %d %s, want 400 DIGEST_INVALID", rec.Code, rec.Body.String())
 	}
 
-	if n := a.chunkCount(); n != 0 || len(db.uploads) != 0 {
+	if n := a.uploadCount(); n != 0 || len(db.uploads) != 0 {
 		t.Fatalf("leftovers: chunk objects = %d, sessions = %d", n, len(db.uploads))
 	}
 }
 
-// A chunk one replica stored is readable through the chunk store of another.
-func TestChunkedUpload_ReplicasShareChunkStore(t *testing.T) {
+// What one replica stored is what another one completes: the upload object is
+// in the blob store both share, listed under the session id.
+func TestChunkedUpload_ReplicasShareTheUploadObject(t *testing.T) {
 	db := newRegFakeDB("reg")
 	a := newRegistry(t, db)
 	b := otherReplica(t, a, db)
@@ -161,15 +161,14 @@ func TestChunkedUpload_ReplicasShareChunkStore(t *testing.T) {
 	loc := startUpload(t, a, "reg/app")
 	a.do(http.MethodPatch, loc, "xyz")
 
-	rows := db.list("id-reg", uploadID(loc))
-	if len(rows) != 1 {
-		t.Fatalf("chunk rows = %d, want 1", len(rows))
+	if ids := uploadObjects(t, b.h); len(ids) != 1 || ids[0] != uploadID(loc) {
+		t.Fatalf("replica B sees uploads %v, want the one replica A wrote to (%s)", ids, uploadID(loc))
 	}
 
-	rc, err := b.h.chunks.OpenChunk(context.Background(), rows[0].ChunkID)
-	if err != nil {
-		t.Fatalf("replica B cannot read the chunk replica A stored: %v", err)
+	// Together with the session row it carries the whole state of the upload:
+	// nothing the next request needs lives in the replica.
+	row := db.uploads[scoped("id-reg", uploadID(loc))]
+	if row.Offset != 3 || len(row.HashState) == 0 {
+		t.Fatalf("session = offset %d, hash state %d bytes; want offset 3 and a digest state", row.Offset, len(row.HashState))
 	}
-
-	_ = rc.Close()
 }

@@ -30,45 +30,66 @@ VALUES ($1, $2, $3)
 RETURNING id, created_at, updated_at;
 
 -- name: GetDockerUpload :one
-SELECT id, repository_id, upload_uuid, "offset", created_at, updated_at
+SELECT id, repository_id, upload_uuid, "offset", created_at, updated_at, hash_state, stage_state, lease_token, lease_until
 FROM docker_uploads
 WHERE repository_id = $1 AND upload_uuid = $2;
 
--- name: AppendDockerUploadChunk :execrows
--- Compare-and-set append: moves the session's offset from old_offset to
--- new_offset and records the chunk object that holds those bytes, in one
--- statement. Zero rows means the offset moved (another request advanced or
--- completed the session) and nothing was recorded; the caller discards the
--- chunk object it wrote. The row lock of the UPDATE serialises concurrent
--- appends, so the next sequence number cannot repeat.
-WITH moved AS (
-    UPDATE docker_uploads SET "offset" = sqlc.arg(new_offset)::bigint, updated_at = now()
-    WHERE repository_id = sqlc.arg(repository_id) AND upload_uuid = sqlc.arg(upload_uuid) AND "offset" = sqlc.arg(old_offset)::bigint
-    RETURNING id
-)
-INSERT INTO docker_upload_chunks (chunk_id, upload_id, seq, size_bytes)
-SELECT sqlc.arg(chunk_id)::uuid, moved.id,
-       (SELECT COALESCE(max(c.seq) + 1, 0) FROM docker_upload_chunks c WHERE c.upload_id = moved.id),
-       sqlc.arg(new_offset)::bigint - sqlc.arg(old_offset)::bigint
-FROM moved;
+-- name: AcquireDockerUploadLease :one
+-- Takes the session's lease for one request and returns the session as it is
+-- now (offset, hash state and stage state included), so the holder never works
+-- from a position another request has already moved. No row means the session
+-- does not exist or a live lease holds it; a lease whose holder died is taken
+-- over once lease_until has passed.
+UPDATE docker_uploads
+SET lease_token = sqlc.arg(token)::uuid, lease_until = now() + make_interval(secs => sqlc.arg(ttl_seconds)::float8)
+WHERE repository_id = sqlc.arg(repository_id) AND upload_uuid = sqlc.arg(upload_uuid)
+  AND (lease_until IS NULL OR lease_until < now())
+RETURNING id, repository_id, upload_uuid, "offset", created_at, updated_at, hash_state, stage_state, lease_token, lease_until;
 
--- name: ListDockerUploadChunks :many
--- The chunk objects of a session in upload order.
-SELECT c.chunk_id, c.size_bytes
-FROM docker_upload_chunks c
-JOIN docker_uploads u ON u.id = c.upload_id
-WHERE u.repository_id = $1 AND u.upload_uuid = $2
-ORDER BY c.seq;
+-- name: RenewDockerUploadLease :execrows
+-- Extends the lease of a long request. Zero rows: the lease was lost (it
+-- expired and was taken over, or the session is gone) and the holder must stop.
+UPDATE docker_uploads
+SET lease_until = now() + make_interval(secs => sqlc.arg(ttl_seconds)::float8)
+WHERE repository_id = sqlc.arg(repository_id) AND upload_uuid = sqlc.arg(upload_uuid)
+  AND lease_token = sqlc.arg(token)::uuid;
 
--- name: ExistingDockerUploadChunkIDs :many
-SELECT chunk_id FROM docker_upload_chunks WHERE chunk_id = ANY(sqlc.arg(ids)::uuid[]);
+-- name: ReleaseDockerUploadLease :exec
+-- Gives the lease back when the request ends without moving the position. A
+-- holder that lost the lease changes nothing.
+UPDATE docker_uploads
+SET lease_token = NULL, lease_until = NULL
+WHERE repository_id = sqlc.arg(repository_id) AND upload_uuid = sqlc.arg(upload_uuid)
+  AND lease_token = sqlc.arg(token)::uuid;
+
+-- name: AdvanceDockerUpload :execrows
+-- Compare-and-set move of the session position: offset, hash state and stage
+-- state change together or not at all. Zero rows: the lease was lost, the offset
+-- is not old_offset, or the session is gone; the caller must not trust what it
+-- stored. updated_at marks activity for the idle sweep; lease renewals do not.
+UPDATE docker_uploads
+SET "offset" = sqlc.arg(new_offset)::bigint,
+    hash_state = sqlc.arg(hash_state)::bytea,
+    stage_state = sqlc.arg(stage_state)::text,
+    updated_at = now(),
+    lease_token = CASE WHEN sqlc.arg(keep_lease)::boolean THEN lease_token END,
+    lease_until = CASE WHEN sqlc.arg(keep_lease)::boolean THEN now() + make_interval(secs => sqlc.arg(ttl_seconds)::float8) END
+WHERE repository_id = sqlc.arg(repository_id) AND upload_uuid = sqlc.arg(upload_uuid)
+  AND lease_token = sqlc.arg(token)::uuid AND "offset" = sqlc.arg(old_offset)::bigint;
+
+-- name: ExistingDockerUploadIDs :many
+-- Compared as text: upload_uuid is text and the candidates come from object
+-- names, which need not be UUIDs.
+SELECT upload_uuid FROM docker_uploads WHERE upload_uuid = ANY(sqlc.arg(ids)::text[]);
 
 -- name: DeleteDockerUpload :exec
 DELETE FROM docker_uploads WHERE repository_id = $1 AND upload_uuid = $2;
 
 -- name: DeleteStaleDockerUploads :many
 -- Drops upload sessions that saw no activity since the cutoff and returns their
--- UUIDs so the caller can remove the staged files.
+-- UUIDs so the caller can remove the staged files. Taking, renewing and
+-- releasing a lease update the row too (the updated_at trigger), so a session a
+-- request is working on is never idle.
 DELETE FROM docker_uploads WHERE updated_at < $1 RETURNING upload_uuid;
 
 -- name: CreateDockerManifest :one
