@@ -530,7 +530,8 @@ func TestRawDownloadValidatorsAndRange(t *testing.T) {
 
 	// HEAD describes the same representation.
 	hh, hbody := s.mustDo(http.StatusOK, http.MethodHead, "/repos/raw/r/dir/file.bin", nil)
-	if len(hbody) != 0 || hh.Get("ETag") != etag || hh.Get("Accept-Ranges") != "bytes" || hh.Get("Last-Modified") != h.Get("Last-Modified") {
+	if len(hbody) != 0 || hh.Get("ETag") != etag || hh.Get("Accept-Ranges") != "bytes" ||
+		hh.Get("Last-Modified") != h.Get("Last-Modified") {
 		t.Errorf("HEAD: headers %v", hh)
 	}
 
