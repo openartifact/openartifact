@@ -328,14 +328,20 @@ func flagError(cmd *cobra.Command, err error) error {
 // lookupFlag finds the flag a command line accepts as --name: the command's
 // own flags, then the persistent flags of it and its parents.
 func lookupFlag(cmd *cobra.Command, name string) *pflag.Flag {
+	return findFlag(cmd, func(fs *pflag.FlagSet) *pflag.Flag { return fs.Lookup(name) })
+}
+
+// findFlag applies lookup to the flags of cmd, then to the persistent flags of
+// it and its parents.
+func findFlag(cmd *cobra.Command, lookup func(*pflag.FlagSet) *pflag.Flag) *pflag.Flag {
 	cmd.InitDefaultHelpFlag()
 
-	if f := cmd.Flags().Lookup(name); f != nil {
+	if f := lookup(cmd.Flags()); f != nil {
 		return f
 	}
 
 	for c := cmd; c != nil; c = c.Parent() {
-		if f := c.PersistentFlags().Lookup(name); f != nil {
+		if f := lookup(c.PersistentFlags()); f != nil {
 			return f
 		}
 	}
@@ -387,19 +393,7 @@ func rejectSingleDashLong(root *cobra.Command, args []string) error {
 func takesValue(f *pflag.Flag) bool { return f.NoOptDefVal == "" }
 
 func shorthand(cmd *cobra.Command, name string) *pflag.Flag {
-	cmd.InitDefaultHelpFlag()
-
-	if f := cmd.Flags().ShorthandLookup(name); f != nil {
-		return f
-	}
-
-	for c := cmd; c != nil; c = c.Parent() {
-		if f := c.PersistentFlags().ShorthandLookup(name); f != nil {
-			return f
-		}
-	}
-
-	return nil
+	return findFlag(cmd, func(fs *pflag.FlagSet) *pflag.Flag { return fs.ShorthandLookup(name) })
 }
 
 func findChild(cmd *cobra.Command, name string) *cobra.Command {
