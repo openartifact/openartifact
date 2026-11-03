@@ -107,7 +107,7 @@ FROM scanners-${SCANNERS} AS scanners
 # ---- Runtime bases (shell-less, digest-pinned) ------------------------------
 FROM dhi.io/static:20250419-debian13@sha256:66e3dac42874997512a34ac68b59fa424a261394618b6ba0642454522aef4565 AS runtime-dhi
 LABEL org.opencontainers.image.base.name="dhi.io/static:20250419-debian13"
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 AS runtime-distroless
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329 AS runtime-distroless
 LABEL org.opencontainers.image.base.name="gcr.io/distroless/static-debian13:nonroot"
 
 # ---- Runtime stage ----------------------------------------------------------
