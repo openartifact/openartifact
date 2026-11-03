@@ -105,7 +105,7 @@ COPY --from=grype-src /grype /scanners/grype
 FROM scanners-${SCANNERS} AS scanners
 
 # ---- Runtime bases (shell-less, digest-pinned) ------------------------------
-FROM dhi.io/static:20250419-debian13@sha256:66e3dac42874997512a34ac68b59fa424a261394618b6ba0642454522aef4565 AS runtime-dhi
+FROM dhi.io/static:20250419-debian13@sha256:4749130e822c145dbdf9ca11ec0cc2f694b5fe687fd74268a2b62160e6726f39 AS runtime-dhi
 LABEL org.opencontainers.image.base.name="dhi.io/static:20250419-debian13"
 FROM gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 AS runtime-distroless
 LABEL org.opencontainers.image.base.name="gcr.io/distroless/static-debian13:nonroot"
