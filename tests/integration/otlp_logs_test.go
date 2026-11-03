@@ -173,7 +173,7 @@ func TestOTLPRequestLogsCarryTheRequestSpan(t *testing.T) {
 	}
 
 	var h http.Handler = http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		log.Infow(handlerMsg, telemetry.LogFields(r.Context())...)
+		log.Desugar().Info(handlerMsg, telemetry.LogFields(r.Context())...)
 	})
 	h = middleware.LoggingMiddleware(log)(h)
 	h = middleware.TracingMiddleware(h)
