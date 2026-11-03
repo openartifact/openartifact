@@ -61,12 +61,12 @@ func TestLogCoreEmitsUnderTheLoggedSpan(t *testing.T) {
 		zapcore.AddSync(&out),
 		zapcore.InfoLevel,
 	)
-	log := zap.New(zapcore.NewTee(stdout, LogCore())).Sugar()
+	log := zap.New(zapcore.NewTee(stdout, LogCore()))
 
 	ctx, span := otel.Tracer(scope).Start(t.Context(), "s")
 	defer span.End()
 
-	log.Warnw("HTTP request", append([]any{"status", 503}, LogFields(ctx)...)...)
+	log.Warn("HTTP request", append([]zap.Field{zap.Int("status", 503)}, LogFields(ctx)...)...)
 
 	sc := span.SpanContext()
 

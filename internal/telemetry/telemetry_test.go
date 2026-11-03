@@ -546,11 +546,11 @@ func TestLogFields(t *testing.T) {
 	defer span.End()
 
 	f := LogFields(ctx)
-	if len(f) != 5 || f[0] != "trace_id" || f[2] != "span_id" {
+	if len(f) != 3 || f[0].Key != "trace_id" || f[1].Key != "span_id" {
 		t.Fatalf("fields = %v", f)
 	}
 
-	if f[1] != span.SpanContext().TraceID().String() || f[3] != span.SpanContext().SpanID().String() {
+	if f[0].String != span.SpanContext().TraceID().String() || f[1].String != span.SpanContext().SpanID().String() {
 		t.Errorf("fields %v do not match span %v", f, span.SpanContext())
 	}
 }

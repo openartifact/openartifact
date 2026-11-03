@@ -61,7 +61,7 @@ func LoggingMiddleware(log *logger.Logger) func(http.Handler) http.Handler {
 				zap.String("remote_addr", r.RemoteAddr),
 				// trace_id/span_id join the line to its OpenTelemetry trace;
 				// absent while telemetry is disabled.
-			}, telemetry.LogFieldsZap(r.Context())...)...)
+			}, telemetry.LogFields(r.Context())...)...)
 		})
 	}
 }
