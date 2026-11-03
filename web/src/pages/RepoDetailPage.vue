@@ -46,28 +46,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <template #panel-activity><RepoActivityTab :repo="repo.name" :admin="repoAdmin" /></template>
         <template #panel-security><RepoSecurityTab :repo="repo.name" /></template>
         <template #panel-trash><TrashList :repo="repo.name" :permissions="repo.permissions" /></template>
-        <template #panel-settings><RepoSettings :repo="repo" @saved="(r) => (repo = r)" /></template>
+        <template #panel-settings><RepoSettings :repo="repo" @saved="(r: Repository) => (repo = r)" /></template>
       </AppTabs>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowUpTrayIcon } from '@heroicons/vue/24/outline'
 import AppButton from '../components/AppButton.vue'
 import ConnectClientPanel from '../components/ConnectClientPanel.vue'
-import PackageUploadZone from '../components/PackageUploadZone.vue'
 import { canUpload as canUploadFormat } from '../lib/uploadPlans'
 import PageHeader from '../components/PageHeader.vue'
 import RepoMeta from '../components/RepoMeta.vue'
-import ProxySettingsCard from '../components/repos/ProxySettingsCard.vue'
-import RepoMembersTab from '../components/repos/RepoMembersTab.vue'
 import RepoPackagesTab from '../components/repos/RepoPackagesTab.vue'
-import RepoSecurityTab from '../components/repos/RepoSecurityTab.vue'
-import RepoSettings from '../components/repos/RepoSettings.vue'
-import TrashList from '../components/trash/TrashList.vue'
 import AppTabs from '../components/ui/AppTabs.vue'
 import StateBlock from '../components/ui/StateBlock.vue'
 import { ApiError } from '../api/client'
@@ -81,7 +75,14 @@ const route = useRoute()
 const session = useSessionStore()
 
 // Loaded when the tab is first shown.
+// Only the Packages tab is open on arrival: the other tabs, the upload zone and the proxy card load when shown.
 const RepoActivityTab = asyncTab(() => import('../components/repos/RepoActivityTab.vue'))
+const RepoMembersTab = asyncTab(() => import('../components/repos/RepoMembersTab.vue'))
+const RepoSecurityTab = asyncTab(() => import('../components/repos/RepoSecurityTab.vue'))
+const TrashList = asyncTab(() => import('../components/trash/TrashList.vue'))
+const RepoSettings = asyncTab(() => import('../components/repos/RepoSettings.vue'))
+const PackageUploadZone = defineAsyncComponent(() => import('../components/PackageUploadZone.vue'))
+const ProxySettingsCard = defineAsyncComponent(() => import('../components/repos/ProxySettingsCard.vue'))
 
 const repoName = computed(() => route.params.repo as string)
 const repo = ref<Repository | null>(null)

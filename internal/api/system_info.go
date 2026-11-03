@@ -43,6 +43,7 @@ type SystemInfoHandler struct {
 	docsURL     string
 	apiRefOn    bool
 	aiBuilt     bool
+	frontendTel bool
 
 	mu            sync.Mutex
 	checkedAt     time.Time
@@ -89,6 +90,15 @@ func (h *SystemInfoHandler) WithAPIReference(enabled bool) *SystemInfoHandler {
 // AI settings and health entry instead of showing a feature that answers 501.
 func (h *SystemInfoHandler) WithAIAvailable(built bool) *SystemInfoHandler {
 	h.aiBuilt = built
+
+	return h
+}
+
+// WithFrontendTelemetry sets whether the experimental frontend telemetry is
+// active (frontend_telemetry_enabled), so the UI asks for its settings only
+// when the server has them instead of probing a 404 on every page load.
+func (h *SystemInfoHandler) WithFrontendTelemetry(active bool) *SystemInfoHandler {
+	h.frontendTel = active
 
 	return h
 }
@@ -175,6 +185,8 @@ func (h *SystemInfoHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 		"status":                status,
 		"api_reference_enabled": h.apiRefOn,
 		"ai_available":          h.aiBuilt,
+
+		"frontend_telemetry_enabled": h.frontendTel,
 	}
 	if h.docsURL != "" {
 		body["docs_url"] = h.docsURL

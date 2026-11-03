@@ -14,6 +14,16 @@ export interface Catalog {
   readonly messages: Messages
 }
 
+/** Merges the catalog files of one language into one map; empty values (a string not translated yet) are left out so English shows instead. */
+export function mergeAreas(files: readonly Messages[]): Messages {
+  const merged: Record<string, string> = {}
+  for (const messages of files) {
+    for (const [key, value] of Object.entries(messages)) if (value !== '') merged[key] = value
+  }
+
+  return merged
+}
+
 export type Params = Readonly<Record<string, string>>
 
 const PLACEHOLDER = /\{(\w+)\}/g

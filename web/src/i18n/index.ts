@@ -10,7 +10,6 @@
 // English.
 
 import { computed, shallowRef } from 'vue'
-import { AREAS } from './areas'
 import { SOURCE_LOCALE, localeDirection, type LocaleTag } from './locales'
 import { initialLocale } from './preference'
 import { interpolate, lookup, pluralMessage, type Catalog, type Messages, type Params } from './translate'
@@ -106,49 +105,21 @@ const loading = new Map<LocaleTag, Promise<Messages>>()
 type TranslatedTag = Exclude<LocaleTag, 'en'>
 
 /**
- * One loader per translated language, each a dynamic import over that
- * language's directory only: the bundler turns every one into a glob of its
- * own files (one chunk per language, vite.config.ts) and never sees English
- * here, which is bundled statically above.
+ * One loader per translated language: its whole catalog is one module (`catalogs/locale-<tag>.ts`),
+ * hence one chunk and one request, fetched only for a user of that language. English is bundled
+ * statically above.
  */
-const LOADERS: Readonly<Record<TranslatedTag, (area: string) => Promise<{ default: Messages }>>> = {
-  it: (area) => import(`./locales/it/${area}.json`),
-  de: (area) => import(`./locales/de/${area}.json`),
-  fr: (area) => import(`./locales/fr/${area}.json`),
-  es: (area) => import(`./locales/es/${area}.json`),
-  'pt-BR': (area) => import(`./locales/pt-BR/${area}.json`),
-  'zh-Hans': (area) => import(`./locales/zh-Hans/${area}.json`),
-  ja: (area) => import(`./locales/ja/${area}.json`),
-  ko: (area) => import(`./locales/ko/${area}.json`),
-  pl: (area) => import(`./locales/pl/${area}.json`),
-  uk: (area) => import(`./locales/uk/${area}.json`),
-}
-
-/** A catalog file a language does not have yet (a language may translate some areas only): the bundler's or the runtime's "no such module" error. */
-function isMissingModule(err: unknown): boolean {
-  return err instanceof Error && /unknown variable dynamic import|cannot find module|not found/i.test(err.message)
-}
-
-/**
- * Merges every area of one locale into one map; empty values (a placeholder for a
- * string not translated yet) are left out so English shows instead.
- */
-async function fetchLocale(tag: TranslatedTag): Promise<Messages> {
-  const load = LOADERS[tag]
-  const modules = await Promise.all(
-    AREAS.map((area) =>
-      load(area).catch((err: unknown) => {
-        if (isMissingModule(err)) return { default: {} as Messages }
-        throw err
-      }),
-    ),
-  )
-  const merged: Record<string, string> = {}
-  for (const { default: messages } of modules) {
-    for (const [key, value] of Object.entries(messages)) if (value !== '') merged[key] = value
-  }
-
-  return merged
+const LOADERS: Readonly<Record<TranslatedTag, () => Promise<{ default: Messages }>>> = {
+  it: () => import('./catalogs/locale-it'),
+  de: () => import('./catalogs/locale-de'),
+  fr: () => import('./catalogs/locale-fr'),
+  es: () => import('./catalogs/locale-es'),
+  'pt-BR': () => import('./catalogs/locale-pt-BR'),
+  'zh-Hans': () => import('./catalogs/locale-zh-Hans'),
+  ja: () => import('./catalogs/locale-ja'),
+  ko: () => import('./catalogs/locale-ko'),
+  pl: () => import('./catalogs/locale-pl'),
+  uk: () => import('./catalogs/locale-uk'),
 }
 
 /** Loads the catalog of `tag` (once; English is always present). Rejects when the chunk cannot be fetched. */
@@ -158,8 +129,8 @@ export function loadLocale(tag: LocaleTag): Promise<Messages> {
   if (done) return Promise.resolve(done)
   let pending = loading.get(tag)
   if (!pending) {
-    pending = fetchLocale(tag)
-      .then((messages) => {
+    pending = LOADERS[tag]()
+      .then(({ default: messages }) => {
         loaded.set(tag, messages)
         return messages
       })

@@ -84,6 +84,20 @@ for (const dir of readdirSync(localesDir)) {
   if (!SUPPORTED_LOCALES.some((l) => l.tag === dir)) errors.push(`locales/${dir}: not in SUPPORTED_LOCALES (src/i18n/locales.ts)`)
 }
 
+// Each language's catalog module must import every area file it has (it is what the build bundles).
+for (const { tag } of SUPPORTED_LOCALES) {
+  if (tag === SOURCE_LOCALE) continue
+  const file = join(root, 'i18n', 'catalogs', `locale-${tag}.ts`)
+  if (!existsSync(file)) {
+    errors.push(`catalogs/locale-${tag}.ts is missing (copy another language's file and change the tag)`)
+    continue
+  }
+  const text = readFileSync(file, 'utf8')
+  for (const area of AREAS) {
+    if (!text.includes(`'../locales/${tag}/${area}.json'`)) errors.push(`catalogs/locale-${tag}.ts does not import locales/${tag}/${area}.json`)
+  }
+}
+
 const enKeys = Object.values(en).reduce((n, m) => n + Object.keys(m).length, 0)
 console.log(`English catalog: ${enKeys} keys in ${Object.keys(en).length} files`)
 for (const s of stats) {

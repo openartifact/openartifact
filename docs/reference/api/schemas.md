@@ -1495,6 +1495,7 @@ Partial update: omitted fields stay unchanged.
 | `ai_available` | boolean | no | Whether this binary contains AI analysis. False in a build made with -tags noai, where the AI routes answer 501 feature_unavailable; independent of whether an administrator enabled AI. |
 | `api_reference_enabled` | boolean | no | Whether the interactive API reference is served at /api/reference. |
 | `docs_url` | string | no | Absolute URL, ending in a slash, of the published documentation matching this server version. Omitted when documentation links are disabled. |
+| `frontend_telemetry_enabled` | boolean | no | Whether the experimental frontend telemetry is active, so the web UI requests GET /api/v1/telemetry/frontend only when true. |
 | `status` | string | no | - |
 | `version` | string | no | - |
 

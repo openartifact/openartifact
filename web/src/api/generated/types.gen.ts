@@ -257,6 +257,10 @@ export type PublicSystemInfo = {
      * Whether this binary contains AI analysis. False in a build made with -tags noai, where the AI routes answer 501 feature_unavailable; independent of whether an administrator enabled AI.
      */
     ai_available?: boolean;
+    /**
+     * Whether the experimental frontend telemetry is active, so the web UI requests GET /api/v1/telemetry/frontend only when true.
+     */
+    frontend_telemetry_enabled?: boolean;
 };
 
 export type SystemInfo = {

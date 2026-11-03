@@ -312,6 +312,7 @@ jobs:
           retention-days: 14
 
       - run: bun run build
+      # Initial bundle size, initial request count and a budget per lazy chunk (route, tab, language).
       - run: bun run web/scripts/check-bundle-size.js
         working-directory: .
 

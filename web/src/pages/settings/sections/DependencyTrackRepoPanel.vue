@@ -168,6 +168,7 @@ import type {
 } from '../../../api/dependencyTrack'
 import { formatDateTime } from '../../../lib/datetime'
 import { MONO_INPUT_CLASS } from '../../../lib/formClasses'
+import { skipWhileHidden } from '../../../lib/visibility'
 import { t } from '../../../i18n'
 
 // Pushes are polled while one is queued/running, at most MAX_POLLS times.
@@ -265,7 +266,7 @@ function syncPolling(): void {
     return
   }
   if (timer === null) {
-    timer = setInterval(() => void refreshPushes(), POLL_MS)
+    timer = setInterval(skipWhileHidden(() => void refreshPushes()), POLL_MS)
   }
 }
 

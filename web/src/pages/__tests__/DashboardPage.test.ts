@@ -235,6 +235,26 @@ describe('DashboardPage roles', () => {
 })
 
 describe('DashboardPage activity (admin)', () => {
+  it('asks for the feed while the other blocks are still loading', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    setActivePinia(createPinia())
+    useSessionStore().user = ADMIN
+    const answerer = answer({ ...HEALTHY_ADMIN, '/api/v1/admin/audit': { data: [], has_more: false } })
+    const spy = spyOn(globalThis, 'fetch').mockImplementation((async (input: unknown) => {
+      if (new URL(String(input), 'http://localhost').pathname === '/api/v1/security/health') await held
+      return answerer(input)
+    }) as never)
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:rest(.*)*', component: DashboardPage }] })
+    await router.push('/')
+    const w = mount(DashboardPage, { attachTo: document.body, global: { plugins: [router] } })
+    await flushPromises()
+    expect(paths(spy)).toContain('/api/v1/admin/audit')
+    release()
+    await flushPromises()
+    w.unmount()
+  })
+
   it('leaves requests, downloads, sign-ins and subject-less entries out of the feed', async () => {
     const at = inDays(-1)
     const { w } = await mountPage(ADMIN, {

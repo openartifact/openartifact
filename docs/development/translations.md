@@ -52,9 +52,9 @@ Check how a text looks in the UI before you finish a long label: texts of the sa
 
 ## Adding a language
 
-1. Add it to `SUPPORTED_LOCALES` (tag and the language's own name) and to `BY_LANGUAGE` (browser language to tag) in `web/src/i18n/locales.ts`, and a loader line in `LOADERS` in `web/src/i18n/index.ts`.
+1. Add it to `SUPPORTED_LOCALES` (tag and the language's own name) and to `BY_LANGUAGE` (browser language to tag) in `web/src/i18n/locales.ts`, and a loader line in `LOADERS` in `web/src/i18n/index.ts`. Copy another language's `web/src/i18n/catalogs/locale-<tag>.ts` to `locale-<new tag>.ts` and change the tag in its imports.
 2. Add `web/src/i18n/glossary/<tag>.csv` and its row in the style guide.
 3. Copy `web/src/i18n/locales/en` to `web/src/i18n/locales/<tag>` and translate the values; the check fails until every key has a value (`bun run i18n:missing --locale <tag>` lists what is left).
 4. Update the list of tags in `web/src/i18n/__tests__/locales.test.ts`, and `web/src/components/__tests__/LanguageSelect.test.ts`.
 
-The build puts each language in its own chunk (`locale-<tag>-<hash>.js`), downloaded only when a user of that language opens the UI or switches to it. The chunks are not part of the initial bundle and not in the service worker's precache.
+The build puts each language in its own chunk (`locale-<tag>-<hash>.js`, one request, from `web/src/i18n/catalogs/`), downloaded only when a user of that language opens the UI or switches to it. The chunks are not part of the initial bundle and not in the service worker's precache.

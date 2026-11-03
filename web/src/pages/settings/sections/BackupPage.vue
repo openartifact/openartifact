@@ -222,6 +222,7 @@ import SkeletonRows from '../../../components/ui/SkeletonRows.vue'
 import StatTiles, { type StatTile } from '../../../components/ui/StatTiles.vue'
 import TableScroller from '../../../components/ui/TableScroller.vue'
 import { ACTIONS_CELL, ACTIONS_HEAD } from '../../../components/ui/tableStyles'
+import { skipWhileHidden } from '../../../lib/visibility'
 import {
   PlusIcon,
   ArrowDownTrayIcon,
@@ -349,7 +350,7 @@ async function load(): Promise<void> {
 function startPolling(): void {
   if (pollTimer || unmounted) return
   polling.value = true
-  pollTimer = setInterval(() => void load(), POLL_INTERVAL_MS)
+  pollTimer = setInterval(skipWhileHidden(() => void load()), POLL_INTERVAL_MS)
 }
 
 function stopPolling(): void {

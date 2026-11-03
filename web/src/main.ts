@@ -11,19 +11,30 @@ import { useThemeStore } from './stores/theme'
 import { useToastStore } from './stores/toast'
 import { useBrandingStore } from './stores/branding'
 import { useSessionStore } from './stores/session'
+import { preloadRouteChunks } from './lib/startup'
 import { isSessionExpired } from './api/client'
 import { initI18n, t } from './i18n'
 import { captureInstallPrompt } from './composables/useInstallPrompt'
 import { retireServiceWorkers, startServiceWorkerForServer } from './pwa/register'
 import { loadAppVersion } from './composables/useAppVersion'
-import { recordError, startTelemetry, stopTelemetry } from './telemetry'
-
-// The catalog of the user's language is fetched before anything renders in it.
-await initI18n()
+import { recordError, startTelemetryIfAdvertised, stopTelemetry } from './telemetry'
 
 const app = createApp(App)
 
-app.use(createPinia())
+const pinia = createPinia()
+app.use(pinia)
+
+// The catalog of the user's language is fetched before anything renders in it, so its request goes
+// out first. The session probe and the first page's code do not depend on the language: the probe
+// starts now (a few bytes), the page's code as soon as the catalog is there, so that both are
+// already under way when the app mounts instead of starting after it (a chain of round trips on a
+// slow link). The code waits for the catalog because it would share the link with it and delay the
+// first paint. The router guard shares the in-flight probe.
+const i18nReady = initI18n()
+const session = useSessionStore()
+void session.fetchMe()
+void i18nReady.then(() => preloadRouteChunks(router, router.options.history.location))
+await i18nReady
 
 // Initialize the theme store before the router mounts so the .dark class
 // stays in sync with the persisted mode (the FOUC guard applied an initial
@@ -65,18 +76,18 @@ captureInstallPrompt()
 
 // Experimental frontend telemetry: its settings need a session, so they are
 // asked for once someone is signed in and stopped again on sign-out; nothing is loaded while the server has it off.
-const session = useSessionStore()
 watch(
   () => session.isAuthenticated && !session.mustChangePassword,
   (signedIn) => {
-    if (signedIn) void startTelemetry()
+    if (signedIn) void startTelemetryIfAdvertised(() => session.isAuthenticated && !session.mustChangePassword)
     else stopTelemetry()
   },
   { immediate: true },
 )
 
 app.mount('#app')
-void branding.refresh()
+// The server embedded the current branding in index.html; only a page without it asks.
+if (!branding.branding) void branding.refresh()
 
 // Not in dev: Vite serves modules the worker would otherwise have to ignore, and a development
 // server (an unstamped build) would offer an update after every rebuild. Both also drop a worker an

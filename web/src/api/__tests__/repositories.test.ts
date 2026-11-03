@@ -163,4 +163,67 @@ describe('listPackageVersions', () => {
     expect(await listPackageVersions('r', 'x')).toHaveLength(1)
     expect(seen.urls).toHaveLength(1)
   })
+
+  it('fetches the pages after the first by number, all at once, and keeps the newest-first order', async () => {
+    const row = (id: number) => ({ id: String(id), name: '@a/b', version: `1.0.${id}`, format: 'npm' })
+    const pageRows = (page: number) => Array.from({ length: page === 4 ? 50 : 100 }, (_, i) => row((page - 1) * 100 + i))
+    const urls: string[] = []
+    let inFlight = 0
+    let peak = 0
+    spyOn(globalThis, 'fetch').mockImplementation((async (url: string) => {
+      urls.push(String(url))
+      const page = Number(new URL(String(url), 'http://x').searchParams.get('page') ?? '1')
+      inFlight++
+      peak = Math.max(peak, inFlight)
+      await new Promise((r) => setTimeout(r, 2))
+      inFlight--
+      const body = { ...(page === 1 ? { total: 350 } : {}), page, limit: 100, has_more: page < 4, packages: pageRows(page) }
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }) as never)
+
+    const rows = await listPackageVersions('r', '@a/b')
+    expect(rows).toHaveLength(350)
+    expect(rows.map((r) => r.id)).toEqual(Array.from({ length: 350 }, (_, i) => String(i)))
+    expect(urls).toHaveLength(4)
+    expect(peak).toBeGreaterThan(1)
+  })
+
+  it('follows the cursor for rows the total did not cover and returns a shifted row once', async () => {
+    const row = (id: string) => ({ id, name: 'x', version: id, format: 'npm' })
+    const seen = stubFetch([
+      { total: 150, has_more: true, next_cursor: 'c1', packages: [row('1')] },
+      { page: 2, has_more: true, next_cursor: 'c2', packages: [row('1'), row('2')] },
+      { has_more: false, packages: [row('3')] },
+    ])
+    const rows = await listPackageVersions('r', 'x')
+    expect(rows.map((r) => r.id)).toEqual(['1', '2', '3'])
+    expect(seen.urls[1]).toContain('page=2')
+    expect(seen.urls[2]).toContain('cursor=c2')
+  })
+
+  it('walks a capped total (total_exact false) by cursor only, never by page number', async () => {
+    const row = (id: string) => ({ id, name: 'x', version: id, format: 'npm' })
+    const seen = stubFetch([
+      { total: 10000, total_exact: false, has_more: true, next_cursor: 'c1', packages: [row('1')] },
+      { has_more: true, next_cursor: 'c2', packages: [row('2')] },
+      { has_more: false, packages: [row('3')] },
+    ])
+    const rows = await listPackageVersions('r', 'x')
+    expect(rows.map((r) => r.id)).toEqual(['1', '2', '3'])
+    expect(seen.urls.every((u) => !u.includes('page=2'))).toBe(true)
+    expect(seen.urls[1]).toContain('cursor=c1')
+  })
+
+  it('rejects when any page fails', async () => {
+    let n = 0
+    spyOn(globalThis, 'fetch').mockImplementation((async () => {
+      n++
+      if (n === 3) return new Response('{"error":"boom"}', { status: 500, headers: { 'Content-Type': 'application/json' } })
+      return new Response(JSON.stringify({ total: 400, has_more: true, next_cursor: 'c', packages: [{ id: String(n), name: 'x', version: '1', format: 'npm' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }) as never)
+    await expect(listPackageVersions('r', 'x')).rejects.toThrow()
+  })
 })

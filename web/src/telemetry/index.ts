@@ -9,6 +9,7 @@
 
 import { getFrontendTelemetry } from '../api/telemetry'
 import { setClientSpanFactory } from '../api/client'
+import { loadFrontendTelemetryEnabled } from '../composables/useAppVersion'
 
 let recorder: ((err: unknown) => void) | undefined
 let shutdown: (() => Promise<void>) | undefined
@@ -37,6 +38,16 @@ export function startTelemetry(): Promise<void> {
     })
   starting = run
   return run
+}
+
+/**
+ * `startTelemetry` once the public system info says the server has the feature on, so a server with
+ * it off is never asked for settings it answers with a 404. `signedIn` is checked again after the
+ * info arrives: someone may have signed out meanwhile.
+ */
+export async function startTelemetryIfAdvertised(signedIn: () => boolean): Promise<void> {
+  if (!(await loadFrontendTelemetryEnabled()) || !signedIn()) return
+  await startTelemetry()
 }
 
 /**

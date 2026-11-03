@@ -164,6 +164,7 @@ export function useDashboard() {
       toBlock(loader).then((b) => void (target.value = b))
     const skip = <T>(target: { value: Block<T> }): void => void (target.value = { state: 'forbidden' })
 
+    let ownPublishes: Promise<void> = Promise.resolve()
     const tasks: Promise<void>[] = [
       settle(repos, () => listRepositoryPage({ sort: 'updated', limit: 100 })),
       settle(nearQuota, () => listRepositoryPage({ near_quota: true })),
@@ -186,11 +187,13 @@ export function useDashboard() {
       for (const b of [system, storage, security, unscanned, userCount] as { value: Block<unknown> }[]) skip(b)
       tasks.push(
         settle(tokenCount, countTokens),
-        settle(mine, () => listRecentPackages({ mine: true, limit: FEED_LIMIT })),
+        (ownPublishes = settle(mine, () => listRecentPackages({ mine: true, limit: FEED_LIMIT }))),
       )
     }
+    // The feed does not wait for the other blocks: an administrator's needs none of them, and a
+    // developer's only needs their own published packages (merged into the feed).
+    tasks.push(ownPublishes.then(loadActivity).then((block) => void (activity.value = block)))
     await Promise.all(tasks)
-    activity.value = await loadActivity()
   }
 
   onMounted(() => void load())
