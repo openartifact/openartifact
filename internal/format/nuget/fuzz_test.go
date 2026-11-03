@@ -41,11 +41,6 @@ const fuzzNuspec = `<?xml version="1.0" encoding="utf-8"?>
   </metadata>
 </package>`
 
-// fuzzFile is the in-memory multipart file of a pushed package.
-type fuzzFile struct{ *bytes.Reader }
-
-func (fuzzFile) Close() error { return nil }
-
 // fuzzZip builds a zip whose entries hold the given name/content pairs.
 func fuzzZip(entries ...[2]string) []byte {
 	var buf bytes.Buffer
@@ -159,9 +154,9 @@ func fuzzCheckPushed(t *testing.T, meta map[string]any, data []byte) {
 
 	sum512 := sha512.New()
 
-	part, err := base.HashPart(fuzzFile{bytes.NewReader(data)}, int64(len(data)), sum512)
+	part, err := base.SpoolLimited(bytes.NewReader(data), int64(len(data)), sum512)
 	if err != nil {
-		t.Fatalf("HashPart: %v", err)
+		t.Fatalf("SpoolLimited: %v", err)
 	}
 
 	defer part.Close()

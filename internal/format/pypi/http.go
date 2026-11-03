@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"mime"
 	"net/http"
@@ -90,9 +91,6 @@ const (
 	// uploadFormOverhead leaves room for the form fields and multipart
 	// boundaries on top of the file.
 	uploadFormOverhead = 1 << 20
-	// uploadFormMemory is the in-memory threshold of the multipart parser;
-	// larger parts spill to disk.
-	uploadFormMemory = 32 << 20
 )
 
 // pypiFileExtensions are the multi-part file endings stripped before a
@@ -222,53 +220,37 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// readUploadedFile parses the multipart upload and returns the "content" part
-// with its MD5 and file name, hashed. The caller closes it. On failure it writes the
-// response and returns false.
-func (h *HTTPHandler) readUploadedFile(w http.ResponseWriter, r *http.Request) (*base.Part, string, string, bool) {
-	// Cap the whole body: ParseMultipartForm only bounds the in-memory part and
-	// spools the rest to disk.
+// readUploadedForm reads the multipart upload: the "content" part spooled and
+// hashed (its MD5 is returned), the other fields in the form. The caller closes
+// the form. On failure it writes the response and returns false.
+func (h *HTTPHandler) readUploadedForm(w http.ResponseWriter, r *http.Request) (*base.Form, string, bool) {
+	// Cap the whole body: the file part is bounded by maxUpload, the fields by
+	// the form overhead.
 	r.Body = http.MaxBytesReader(w, r.Body, h.maxUpload+uploadFormOverhead)
-
-	if err := r.ParseMultipartForm(uploadFormMemory); err != nil { //nolint:gosec // r.Body is bounded by http.MaxBytesReader above
-		if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-			http.Error(w, "file too large", http.StatusRequestEntityTooLarge)
-			return nil, "", "", false
-		}
-
-		h.Log.Errorw("failed to parse form", "error", err)
-		http.Error(w, "invalid form", http.StatusBadRequest)
-
-		return nil, "", "", false
-	}
-
-	file, fileHeader, err := r.FormFile("content")
-	if err != nil {
-		h.Log.Errorw("failed to get file from form", "error", err)
-		http.Error(w, "missing file", http.StatusBadRequest)
-
-		return nil, "", "", false
-	}
-
-	if fileHeader.Size > h.maxUpload {
-		_ = file.Close()
-
-		http.Error(w, "file too large", http.StatusRequestEntityTooLarge)
-
-		return nil, "", "", false
-	}
 
 	md5Sum := md5.New() //nolint:gosec // required by protocol specification
 
-	part, err := base.HashPart(file, fileHeader.Size, md5Sum)
-	if err != nil {
-		h.Log.Errorw("failed to read file", "error", err)
-		http.Error(w, "failed to read file", http.StatusBadRequest)
+	form, err := base.ReadForm(r, base.FormSpec{
+		FileField: "content",
+		MaxFile:   h.maxUpload,
+		MaxFields: uploadFormOverhead,
+		Hashes:    []hash.Hash{md5Sum},
+	})
 
-		return nil, "", "", false
+	switch {
+	case err == nil:
+		return form, hex.EncodeToString(md5Sum.Sum(nil)), true
+	case base.IsTooLarge(err):
+		http.Error(w, "file too large", http.StatusRequestEntityTooLarge)
+	case errors.Is(err, base.ErrNoFormFile):
+		h.Log.Errorw("failed to get file from form", "error", err)
+		http.Error(w, "missing file", http.StatusBadRequest)
+	default:
+		h.Log.Errorw("failed to read upload form", "error", err)
+		http.Error(w, "invalid form", http.StatusBadRequest)
 	}
 
-	return part, hex.EncodeToString(md5Sum.Sum(nil)), fileHeader.Filename, true
+	return nil, "", false
 }
 
 // filenameTaken reports, after writing the response, whether the repository
@@ -301,26 +283,28 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	upload, md5Digest, filename, ok := h.readUploadedFile(w, r)
+	form, md5Digest, ok := h.readUploadedForm(w, r)
 	if !ok {
 		return
 	}
-	defer upload.Close()
+	defer form.Close()
+
+	upload, filename := form.File, form.Filename
 
 	sha256Digest := upload.SHA256Hex()
 
 	// Get form fields
-	name := strings.TrimSpace(r.FormValue("name"))
-	version := strings.TrimSpace(r.FormValue("version"))
-	filetype := strings.TrimSpace(r.FormValue("filetype"))
-	pyversion := strings.TrimSpace(r.FormValue("pyversion"))
-	requiresPython := strings.TrimSpace(r.FormValue("requires_python"))
-	summary := strings.TrimSpace(r.FormValue("summary"))
-	author := strings.TrimSpace(r.FormValue("author"))
-	authorEmail := strings.TrimSpace(r.FormValue("author_email"))
-	license := strings.TrimSpace(r.FormValue("license"))
-	keywords := strings.TrimSpace(r.FormValue("keywords"))
-	classifiersStr := r.FormValue("classifiers")
+	name := strings.TrimSpace(form.Value("name"))
+	version := strings.TrimSpace(form.Value("version"))
+	filetype := strings.TrimSpace(form.Value("filetype"))
+	pyversion := strings.TrimSpace(form.Value("pyversion"))
+	requiresPython := strings.TrimSpace(form.Value("requires_python"))
+	summary := strings.TrimSpace(form.Value("summary"))
+	author := strings.TrimSpace(form.Value("author"))
+	authorEmail := strings.TrimSpace(form.Value("author_email"))
+	license := strings.TrimSpace(form.Value("license"))
+	keywords := strings.TrimSpace(form.Value("keywords"))
+	classifiersStr := form.Value("classifiers")
 
 	// Parse classifiers
 	var classifiers []string
@@ -333,7 +317,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	licenses, ok := h.uploadLicenses(w, r, repoID, filename, upload)
+	licenses, ok := h.uploadLicenses(w, r, repoID, form)
 	if !ok || licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, licenses...) {
 		return
 	}
@@ -541,9 +525,11 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 // cannot be read at all (not a wheel or sdist, a damaged archive) when the
 // repository has a blocking policy: only the client's claims would decide it
 // (false, response written).
-func (h *HTTPHandler) uploadLicenses(w http.ResponseWriter, r *http.Request, repoID, filename string, upload *base.Part) ([]string, bool) {
+func (h *HTTPHandler) uploadLicenses(w http.ResponseWriter, r *http.Request, repoID string, form *base.Form) ([]string, bool) {
+	filename := form.Filename
+
 	res, err := licensemeta.Read(r.Context(), "pypi", filename, func() (io.ReadCloser, error) {
-		return io.NopCloser(upload.Reader()), nil
+		return io.NopCloser(form.File.Reader()), nil
 	})
 
 	switch {
@@ -562,7 +548,7 @@ func (h *HTTPHandler) uploadLicenses(w http.ResponseWriter, r *http.Request, rep
 		return res.Licenses, true
 	}
 
-	return declaredLicenses(r), true
+	return declaredLicenses(form), true
 }
 
 // maxLicenseTextLen bounds a free-text "license" field that is treated as a
@@ -573,19 +559,19 @@ const maxLicenseTextLen = 100
 // declaredLicenses returns the licenses an upload form declares: the PEP 639
 // license_expression if present, else a short single-line license field, plus
 // every "License ::" trove classifier.
-func declaredLicenses(r *http.Request) []string {
+func declaredLicenses(form *base.Form) []string {
 	var out []string
 
-	if expr := strings.TrimSpace(r.FormValue("license_expression")); expr != "" {
+	if expr := strings.TrimSpace(form.Value("license_expression")); expr != "" {
 		out = append(out, expr)
-	} else if lic := strings.TrimSpace(r.FormValue("license")); lic != "" &&
+	} else if lic := strings.TrimSpace(form.Value("license")); lic != "" &&
 		len(lic) <= maxLicenseTextLen && !strings.ContainsAny(lic, "\r\n") {
 		out = append(out, lic)
 	}
 
 	// twine sends one "classifiers" value per classifier; tolerate
 	// newline-joined values as well.
-	for _, v := range r.Form["classifiers"] {
+	for _, v := range form.Values("classifiers") {
 		for c := range strings.SplitSeq(v, "\n") {
 			if c = strings.TrimSpace(c); strings.HasPrefix(c, "License ::") {
 				out = append(out, c)

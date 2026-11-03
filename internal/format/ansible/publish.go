@@ -9,9 +9,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
-	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"path"
 	"strconv"
 	"strings"
@@ -34,25 +33,14 @@ const (
 	maxPublishBytes = 500 << 20
 	// formOverhead is what the multipart envelope may add to the artifact.
 	formOverhead = 1 << 20
-	// formMemory is how much of the form the parser keeps in memory; the rest
-	// goes to a temporary file.
-	formMemory = 8 << 20
 	// artifactMaxAge is how long shared caches may keep a public artifact: it
 	// never changes under its file name.
 	artifactMaxAge = 3600
 )
 
-// body is the artifact of an upload, read in place and hashed.
-type body interface {
-	Size() int64
-	SHA256Hex() string
-	Reader() *io.SectionReader
-	Close()
-}
-
 // upload is a parsed publish request.
 type upload struct {
-	part     body
+	part     *base.Spool
 	filename string
 	// sha256 is the checksum the client declared, "" when it sent none.
 	sha256 string
@@ -64,33 +52,24 @@ type upload struct {
 func (h *HTTPHandler) readUpload(w http.ResponseWriter, r *http.Request) *upload {
 	r.Body = http.MaxBytesReader(w, r.Body, maxPublishBytes+formOverhead)
 
-	if err := r.ParseMultipartForm(formMemory); err != nil { //nolint:gosec // r.Body is bounded by http.MaxBytesReader above
-		if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
+	form, err := base.ReadForm(r, base.FormSpec{FileField: "file", MaxFile: maxPublishBytes, MaxFields: formOverhead})
+	if err != nil {
+		switch {
+		case base.IsTooLarge(err):
 			writeError(w, http.StatusRequestEntityTooLarge, "too_large", "Collection too large.", "")
-			return nil
+		case errors.Is(err, base.ErrNoFormFile):
+			writeError(w, http.StatusBadRequest, "invalid", "Missing the file part.", "")
+		default:
+			writeError(w, http.StatusBadRequest, "invalid", "Invalid multipart form.", "")
 		}
 
-		writeError(w, http.StatusBadRequest, "invalid", "Invalid multipart form.", "")
-
 		return nil
 	}
 
-	file, header, err := r.FormFile("file")
+	part, err := decodePart(form.File, form.Header)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid", "Missing the file part.", "")
-		return nil
-	}
+		form.Close()
 
-	if header.Size > maxPublishBytes {
-		_ = file.Close()
-
-		writeError(w, http.StatusRequestEntityTooLarge, "too_large", "Collection too large.", "")
-
-		return nil
-	}
-
-	part, err := readPart(file, header)
-	if err != nil {
 		if errors.Is(err, base.ErrContentTooLarge) {
 			writeError(w, http.StatusRequestEntityTooLarge, "too_large", "Collection too large.", "")
 			return nil
@@ -104,22 +83,23 @@ func (h *HTTPHandler) readUpload(w http.ResponseWriter, r *http.Request) *upload
 
 	return &upload{
 		part:     part,
-		filename: path.Base(strings.ReplaceAll(header.Filename, "\\", "/")),
-		sha256:   strings.ToLower(strings.TrimSpace(r.FormValue("sha256"))),
+		filename: path.Base(strings.ReplaceAll(form.Filename, "\\", "/")),
+		sha256:   strings.ToLower(strings.TrimSpace(form.Value("sha256"))),
 	}
 }
 
-// readPart hashes the uploaded file. ansible-galaxy sends the artifact base64
-// encoded (Content-Transfer-Encoding: base64), which the multipart reader does
-// not undo; it is decoded here into a spool.
-func readPart(file multipart.File, header *multipart.FileHeader) (body, error) {
-	if !strings.EqualFold(strings.TrimSpace(header.Header.Get("Content-Transfer-Encoding")), "base64") {
-		return base.HashPart(file, header.Size)
+// decodePart returns the uploaded file as is, or decoded when ansible-galaxy
+// sent it base64 encoded (Content-Transfer-Encoding: base64), which the
+// multipart reader does not undo; the decoded copy is a second spool and the
+// encoded one is released.
+func decodePart(file *base.Spool, header textproto.MIMEHeader) (*base.Spool, error) {
+	if !strings.EqualFold(strings.TrimSpace(header.Get("Content-Transfer-Encoding")), "base64") {
+		return file, nil
 	}
 
-	defer func() { _ = file.Close() }()
+	defer file.Close()
 
-	spool, err := base.SpoolLimited(base64.NewDecoder(base64.StdEncoding, file), maxPublishBytes)
+	spool, err := base.SpoolLimited(base64.NewDecoder(base64.StdEncoding, file.Reader()), maxPublishBytes)
 	if err != nil {
 		return nil, fmt.Errorf("decode base64 file: %w", err)
 	}
@@ -231,7 +211,7 @@ func (h *HTTPHandler) store(
 	r *http.Request,
 	repo *models.Repository,
 	row *models.AnsibleCollection,
-	part body,
+	part *base.Spool,
 ) bool {
 	if err := quota.Enforce(r.Context(), h.DB, repo.ID, row.SizeBytes); err != nil {
 		if errors.Is(err, quota.ErrExceeded) {
@@ -266,7 +246,7 @@ func (h *HTTPHandler) store(
 // commit stores the blob first, then inserts the referencing row under the
 // per-blob lock so a concurrent delete cannot remove the blob in between. When
 // no row results the blob is dropped again unless something else references it.
-func (h *HTTPHandler) commit(ctx context.Context, row *models.AnsibleCollection, part body) (err error) {
+func (h *HTTPHandler) commit(ctx context.Context, row *models.AnsibleCollection, part *base.Spool) (err error) {
 	defer func() {
 		if err != nil {
 			h.dropBlob(ctx, row.SHA256, "publish")

@@ -7,12 +7,10 @@ package api
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"time"
 
 	"database/sql"
@@ -24,7 +22,6 @@ import (
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/importmeta"
-	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/quota"
@@ -41,7 +38,6 @@ import (
 
 const (
 	maxRPMUploadSize = 500 * 1024 * 1024 // 500MB
-	rpmFormMemory    = 1 << 20           // multipart bytes held in memory
 	maxCompsSize     = 10 * 1024 * 1024
 )
 
@@ -167,46 +163,28 @@ func (h *RPMUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Cap the whole request body (file plus multipart overhead); keep only a
-	// small part of the form in memory, the rest spills to disk.
-	r.Body = http.MaxBytesReader(w, r.Body, maxRPMUploadSize+1<<20)
+	// Cap the whole request body (file plus multipart overhead).
+	r.Body = http.MaxBytesReader(w, r.Body, maxRPMUploadSize+multipartOverhead)
 
-	if err := r.ParseMultipartForm(rpmFormMemory); err != nil { //nolint:gosec // r.Body is bounded by http.MaxBytesReader above
-		if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-			uploadResult = "error"
-
-			writeError(w, http.StatusRequestEntityTooLarge, "INVALID_INPUT", "file exceeds maximum size limit")
-
-			return
-		}
-
-		uploadResult = "error"
-
-		h.log.Debugw("RPM upload: multipart form unreadable", "repository", repoName, "error", err)
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid multipart upload form")
-
-		return
-	}
-
-	file, header, err := r.FormFile("file")
+	form, err := base.ReadForm(r, base.FormSpec{FileField: "file", MaxFile: maxRPMUploadSize, MaxFields: multipartOverhead})
 	if err != nil {
 		uploadResult = "error"
 
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "missing file field")
+		switch {
+		case base.IsTooLarge(err):
+			writeError(w, http.StatusRequestEntityTooLarge, "INVALID_INPUT", "file exceeds maximum size limit")
+		case errors.Is(err, base.ErrNoFormFile):
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "missing file field")
+		default:
+			h.log.Debugw("RPM upload: multipart form unreadable", "repository", repoName, "error", err)
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid multipart upload form")
+		}
 
 		return
 	}
-	defer func() { base.CloseLog(file, h.log) }()
+	defer form.Close()
 
-	if header.Size > maxRPMUploadSize {
-		uploadResult = "error"
-
-		writeError(w, http.StatusRequestEntityTooLarge, "INVALID_INPUT", "file exceeds maximum size limit")
-
-		return
-	}
-
-	contentType := header.Header.Get("Content-Type")
+	contentType := form.Header.Get("Content-Type")
 	if contentType != "" && contentType != "application/x-rpm" && contentType != "application/octet-stream" {
 		uploadResult = "error"
 
@@ -215,11 +193,11 @@ func (h *RPMUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	result, err := h.uploadPipeline(w, r, file, repo)
+	result, err := h.uploadPipeline(w, r, form.File, repo)
 	if err != nil {
 		uploadResult = "error"
 
-		h.writeUploadError(w, err, repoName, header.Filename)
+		h.writeUploadError(w, err, repoName, form.Filename)
 
 		return
 	}
@@ -262,40 +240,6 @@ func (h *RPMUploadHandler) ensureRPMRepo(ctx context.Context, repoID string) err
 	return nil
 }
 
-// rpmSpool is an upload buffered on disk with its digest and size.
-type rpmSpool struct {
-	file   *os.File
-	sha256 string
-	size   int64
-}
-
-func (s *rpmSpool) close(log *logger.Logger) {
-	base.CloseLog(s.file, log)
-
-	_ = os.Remove(s.file.Name())
-}
-
-// spoolUpload streams the request file to a temp file while hashing it.
-func (h *RPMUploadHandler) spoolUpload(file io.Reader) (*rpmSpool, error) {
-	tmpFile, err := os.CreateTemp("", "rpm-upload-*.tmp")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp file: %w", err)
-	}
-
-	sp := &rpmSpool{file: tmpFile}
-	hasher := sha256.New()
-
-	sp.size, err = iocopy.Copy(tmpFile, io.TeeReader(file, hasher))
-	if err != nil {
-		sp.close(h.log)
-		return nil, fmt.Errorf("failed to buffer upload: %w", err)
-	}
-
-	sp.sha256 = hex.EncodeToString(hasher.Sum(nil))
-
-	return sp, nil
-}
-
 // isInvalidRPMError reports whether err means the uploaded file is not a valid rpm.
 func isInvalidRPMError(err error) bool {
 	return errors.Is(err, pkgrpm.ErrInvalidHeader) || errors.Is(err, pkgrpm.ErrInvalidHeaderMagic) ||
@@ -304,12 +248,8 @@ func isInvalidRPMError(err error) bool {
 }
 
 // parseSpooled parses the spooled file as an rpm package.
-func parseSpooled(sp *rpmSpool) (*pkgrpm.Package, error) {
-	if _, err := sp.file.Seek(0, io.SeekStart); err != nil {
-		return nil, fmt.Errorf("failed to seek temp file: %w", err)
-	}
-
-	pkg, err := pkgrpm.ParseRPM(sp.file)
+func parseSpooled(sp *base.Spool) (*pkgrpm.Package, error) {
+	pkg, err := pkgrpm.ParseRPM(sp.Reader())
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse rpm: %w", err)
 	}
@@ -406,7 +346,7 @@ func (h *RPMUploadHandler) dropOrphanBlob(ctx context.Context, sha256sum, reason
 func (h *RPMUploadHandler) persistPackage(
 	ctx context.Context,
 	repo *models.Repository,
-	sp *rpmSpool,
+	sp *base.Spool,
 	pkg *pkgrpm.Package,
 	extra []byte,
 ) (*formatrpm.UploadResult, error) {
@@ -418,19 +358,19 @@ func (h *RPMUploadHandler) persistPackage(
 	filename := rpmFilename(pkg)
 	// Zero unless an administrator supplied an origin timestamp (importmeta).
 	createdAt := importmeta.CreatedAt(ctx)
-	comp := newComponent(repo.ID, "", filename, sp.size, pkg, extra, createdAt)
+	comp := newComponent(repo.ID, "", filename, sp.Size(), pkg, extra, createdAt)
 
-	blob := storage.SeekerBlob(sp.sha256, sp.file, map[string]string{
+	blob := storage.SeekerBlob(sp.SHA256Hex(), sp.Reader(), map[string]string{
 		"format":    "rpm",
 		"repo_name": repo.Name,
-		"sha256":    sp.sha256,
+		"sha256":    sp.SHA256Hex(),
 	})
 
 	err := storage.CommitBlob(ctx, h.db, h.blobStore, blob, func(ctx context.Context, key string) error {
 		blobID = key
 
 		// Upsert into blobs table to get the UUID for blob_id FK reference.
-		blobUUID, err := h.db.UpsertBlob(ctx, sp.sha256, sp.sha256, sp.size)
+		blobUUID, err := h.db.UpsertBlob(ctx, sp.SHA256Hex(), sp.SHA256Hex(), sp.Size())
 		if err != nil {
 			return fmt.Errorf("failed to upsert blob record: %w", err)
 		}
@@ -448,13 +388,13 @@ func (h *RPMUploadHandler) persistPackage(
 	if created {
 		if err != nil {
 			// Only the (empty) lock transaction failed to commit; the row exists.
-			h.log.Warnw("blob lock commit failed after package was stored", "sha256", sp.sha256, "error", err)
+			h.log.Warnw("blob lock commit failed after package was stored", "sha256", sp.SHA256Hex(), "error", err)
 		}
 
 		return &formatrpm.UploadResult{
 			ID:   comp.ID,
 			Name: pkg.Name, Version: pkg.Version, Release: pkg.Release, Arch: pkg.Arch,
-			SHA256: sp.sha256, BlobID: blobID, Size: sp.size,
+			SHA256: sp.SHA256Hex(), BlobID: blobID, Size: sp.Size(),
 		}, nil
 	}
 
@@ -464,7 +404,7 @@ func (h *RPMUploadHandler) persistPackage(
 		reason = "duplicate"
 	}
 
-	h.dropOrphanBlob(ctx, sp.sha256, reason)
+	h.dropOrphanBlob(ctx, sp.SHA256Hex(), reason)
 
 	// Lost the check-then-insert race: another concurrent upload of the same
 	// package won (HTTP 409).
@@ -516,19 +456,11 @@ func (h *RPMUploadHandler) writeSigningError(w http.ResponseWriter, err error, r
 	return true
 }
 
-// countingWriter counts the bytes written through it.
-type countingWriter struct{ n int64 }
-
-func (c *countingWriter) Write(p []byte) (int, error) {
-	c.n += int64(len(p))
-	return len(p), nil
-}
-
 // signUpload returns a signed copy of the spooled package and its parsed
 // header. The copy is a different file: its digest, size and header offsets
 // differ from the upload's, and those are what the blob store, the database
 // and the repodata checksums then use. The caller closes the returned spool.
-func (h *RPMUploadHandler) signUpload(ctx context.Context, repo *models.Repository, sp *rpmSpool) (*rpmSpool, *pkgrpm.Package, error) {
+func (h *RPMUploadHandler) signUpload(ctx context.Context, repo *models.Repository, sp *base.Spool) (*base.Spool, *pkgrpm.Package, error) {
 	var signer gpg.Signer
 
 	if h.keys != nil {
@@ -544,24 +476,17 @@ func (h *RPMUploadHandler) signUpload(ctx context.Context, repo *models.Reposito
 		return nil, nil, errNoSigningKey
 	}
 
-	out, err := os.CreateTemp("", "rpm-signed-*.tmp")
+	// The signature header is added to the package: allow it some room.
+	signed, err := base.SpoolWrite(maxRPMUploadSize+multipartOverhead, func(w io.Writer) error {
+		return rpmsign.Sign(sp.Reader(), w, signer)
+	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create temp file: %w", err)
-	}
-
-	signed := &rpmSpool{file: out}
-
-	hasher, count := sha256.New(), &countingWriter{}
-	if err := rpmsign.Sign(sp.file, io.MultiWriter(out, hasher, count), signer); err != nil {
-		signed.close(h.log)
 		return nil, nil, fmt.Errorf("%w: %w", errSigningFailed, err)
 	}
 
-	signed.sha256, signed.size = hex.EncodeToString(hasher.Sum(nil)), count.n
-
 	pkg, err := parseSpooled(signed)
 	if err != nil {
-		signed.close(h.log)
+		signed.Close()
 		return nil, nil, fmt.Errorf("%w: the signed package does not parse: %w", errSigningFailed, err)
 	}
 
@@ -574,7 +499,7 @@ var errResponseWritten = errors.New("response already written")
 func (h *RPMUploadHandler) uploadPipeline(
 	w http.ResponseWriter,
 	r *http.Request,
-	file io.Reader,
+	sp *base.Spool,
 	repo *models.Repository,
 ) (*formatrpm.UploadResult, error) {
 	ctx := r.Context()
@@ -588,14 +513,8 @@ func (h *RPMUploadHandler) uploadPipeline(
 		return nil, fmt.Errorf("rpm upload: %w", err)
 	}
 
-	sp, err := h.spoolUpload(file)
-	if err != nil {
-		return nil, err
-	}
-	defer sp.close(h.log)
-
 	// Per-repo duplicate check: same package already in this repo.
-	exists, err := h.db.ArtifactExists(ctx, sp.sha256, repo.ID)
+	exists, err := h.db.ArtifactExists(ctx, sp.SHA256Hex(), repo.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check artifact existence: %w", err)
 	}
@@ -629,7 +548,7 @@ func (h *RPMUploadHandler) uploadPipeline(
 			return nil, err
 		}
 
-		defer signed.close(h.log)
+		defer signed.Close()
 
 		sp, pkg = signed, signedPkg
 	}
@@ -640,13 +559,13 @@ func (h *RPMUploadHandler) uploadPipeline(
 	}
 
 	// Reserve quota before persisting anything; give it back unless a package row exists.
-	if err := quota.Enforce(ctx, h.db, repo.ID, sp.size); err != nil {
+	if err := quota.Enforce(ctx, h.db, repo.ID, sp.Size()); err != nil {
 		return nil, fmt.Errorf("rpm upload: %w", err)
 	}
 
 	result, err := h.persistPackage(ctx, repo, sp, pkg, extra)
 	if err != nil || result.Duplicate {
-		h.releaseQuota(ctx, repo.Name, repo.ID, sp.size)
+		h.releaseQuota(ctx, repo.Name, repo.ID, sp.Size())
 		return result, err
 	}
 
@@ -671,8 +590,8 @@ func (h *RPMUploadHandler) uploadPipeline(
 			Name:       pkg.Name,
 			Version:    rpmVersionRelease(pkg.Version, pkg.Release),
 			Path:       rpmFilename(pkg),
-			SHA256:     sp.sha256,
-			Size:       sp.size,
+			SHA256:     sp.SHA256Hex(),
+			Size:       sp.Size(),
 		}),
 	)
 

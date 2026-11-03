@@ -50,9 +50,6 @@ const (
 	// pushFormOverhead leaves room for form fields and multipart boundaries on
 	// top of the package.
 	pushFormOverhead = 1 << 20
-	// pushFormMemory is the in-memory threshold of the multipart parser; larger
-	// parts spill to disk.
-	pushFormMemory = 32 << 20
 )
 
 // validPackageID is the id charset NuGet accepts (pushedPackage also refuses
@@ -222,55 +219,40 @@ func (h *HTTPHandler) handleServiceIndex(w http.ResponseWriter, r *http.Request)
 // readPushedPackage reads the "package" part of a push request, hashed with
 // SHA-512 (sum512 receives it) besides the SHA-256 of the part. On failure it
 // writes the response and returns false.
-func (h *HTTPHandler) readPushedPackage(w http.ResponseWriter, r *http.Request, sum512 hash.Hash) (*base.Part, bool) {
-	// Cap the whole body: ParseMultipartForm only bounds the in-memory part and
-	// spools the rest to disk.
+func (h *HTTPHandler) readPushedPackage(w http.ResponseWriter, r *http.Request, sum512 hash.Hash) (*base.Spool, bool) {
+	// Cap the whole body: the package is bounded by maxPush, the form fields by
+	// the overhead.
 	r.Body = http.MaxBytesReader(w, r.Body, h.maxPush+pushFormOverhead)
 
-	if err := r.ParseMultipartForm(pushFormMemory); err != nil { //nolint:gosec // r.Body is bounded by http.MaxBytesReader above
-		if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-			http.Error(w, "package too large", http.StatusRequestEntityTooLarge)
-			return nil, false
-		}
+	form, err := base.ReadForm(r, base.FormSpec{
+		FileField: "package",
+		MaxFile:   h.maxPush,
+		MaxFields: pushFormOverhead,
+		Hashes:    []hash.Hash{sum512},
+	})
 
-		h.Log.Errorw("failed to parse multipart form", "error", err)
-		http.Error(w, "invalid request", http.StatusBadRequest)
-
-		return nil, false
-	}
-
-	file, header, err := r.FormFile("package")
-	if err != nil {
+	switch {
+	case err == nil:
+		// The part is all a push needs; the form owns nothing else.
+		return form.File, true
+	case base.IsTooLarge(err):
+		http.Error(w, "package too large", http.StatusRequestEntityTooLarge)
+	case errors.Is(err, base.ErrNoFormFile):
 		h.Log.Errorw("failed to get package file", "error", err)
 		http.Error(w, "package file required", http.StatusBadRequest)
-
-		return nil, false
+	default:
+		h.Log.Errorw("failed to read push form", "error", err)
+		http.Error(w, "invalid request", http.StatusBadRequest)
 	}
 
-	if header.Size > h.maxPush {
-		_ = file.Close()
-
-		http.Error(w, "package too large", http.StatusRequestEntityTooLarge)
-
-		return nil, false
-	}
-
-	part, err := base.HashPart(file, header.Size, sum512)
-	if err != nil {
-		h.Log.Errorw("failed to read package data", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return nil, false
-	}
-
-	return part, true
+	return nil, false
 }
 
 // pushedPackage builds the database record for a pushed .nupkg from its
 // nuspec metadata. The id is lower-cased and the version normalized (see
 // pkgnuget.Normalize), the form clients request. It returns an error for a
 // package without a usable id or version.
-func pushedPackage(repoID string, metadata map[string]any, part *base.Part, sum512 hash.Hash) (*models.NuGetPackage, error) {
+func pushedPackage(repoID string, metadata map[string]any, part *base.Spool, sum512 hash.Hash) (*models.NuGetPackage, error) {
 	id, _ := metadata["id"].(string)
 	// "." and ".." fit the charset but are no id: as a URL segment they name the
 	// directory, so no client can fetch the package.
@@ -333,7 +315,7 @@ func (h *HTTPHandler) pushedLicenses(
 	r *http.Request,
 	repoID string,
 	pkg *models.NuGetPackage,
-	part *base.Part,
+	part *base.Spool,
 	metadata map[string]any,
 ) ([]string, bool) {
 	res, err := licensemeta.Read(r.Context(), "nuget", pkg.PackageID+"."+pkg.Version+".nupkg", func() (io.ReadCloser, error) {
@@ -459,7 +441,7 @@ func (h *HTTPHandler) handlePushPackage(w http.ResponseWriter, r *http.Request) 
 // unpublish cannot delete the blob in between).
 // When the row is not created (a concurrent push of the same version won) the
 // blob is dropped again unless something else references it.
-func (h *HTTPHandler) storePackage(ctx context.Context, pkg *models.NuGetPackage, part *base.Part) error {
+func (h *HTTPHandler) storePackage(ctx context.Context, pkg *models.NuGetPackage, part *base.Spool) error {
 	blob := storage.ReaderBlob(pkg.BlobKey, map[string]string{
 		"sha256":   pkg.BlobKey,
 		"filename": nupkgName(pkg.PackageID, pkg.Version),

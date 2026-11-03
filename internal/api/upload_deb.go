@@ -6,13 +6,9 @@ package api
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -21,7 +17,6 @@ import (
 	"github.com/openartifact/openartifact/internal/format/base"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/importmeta"
-	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -40,8 +35,6 @@ const (
 	maxDebUploadSize = 500 * 1024 * 1024
 	// multipartOverhead leaves room for form fields and boundaries on top of the file.
 	multipartOverhead = 1 << 20
-	// multipartMemory is the in-memory threshold; larger parts spill to disk.
-	multipartMemory = 32 << 20
 )
 
 var (
@@ -120,40 +113,30 @@ func (h *DebUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxDebUploadSize+multipartOverhead)
 
-	err := r.ParseMultipartForm(multipartMemory) //nolint:gosec // r.Body is bounded by http.MaxBytesReader above
+	form, err := base.ReadForm(r, base.FormSpec{FileField: "file", MaxFile: maxDebUploadSize, MaxFields: multipartOverhead})
 	if err != nil {
 		uploadResult = "error"
 
-		h.log.Debugw("Deb upload: multipart form unreadable", "repository", repoName, "error", err)
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid multipart upload form")
+		switch {
+		case base.IsTooLarge(err):
+			writeError(w, http.StatusRequestEntityTooLarge, "INVALID_INPUT", "file exceeds maximum size limit")
+		case errors.Is(err, base.ErrNoFormFile):
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "missing file field")
+		default:
+			h.log.Debugw("Deb upload: multipart form unreadable", "repository", repoName, "error", err)
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid multipart upload form")
+		}
 
 		return
 	}
+	defer form.Close()
 
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		uploadResult = "error"
-
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "missing file field")
-
-		return
-	}
-	defer func() { base.CloseLog(file, h.log) }()
-
-	if header.Size > maxDebUploadSize {
-		uploadResult = "error"
-
-		writeError(w, http.StatusRequestEntityTooLarge, "INVALID_INPUT", "file exceeds maximum size limit")
-
-		return
-	}
-
-	distribution := r.FormValue("distribution")
+	distribution := form.Value("distribution")
 	if distribution == "" {
 		distribution = "stable"
 	}
 
-	component := r.FormValue("component")
+	component := form.Value("component")
 	if component == "" {
 		component = "main"
 	}
@@ -166,7 +149,7 @@ func (h *DebUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	result, err := h.uploadPipeline(w, r, file, repoName, distribution, component)
+	result, err := h.uploadPipeline(w, r, form.File, repoName, distribution, component)
 	if err != nil {
 		uploadResult = "error"
 
@@ -184,7 +167,7 @@ func (h *DebUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 		case errors.Is(err, quota.ErrExceeded):
 			quota.WriteExceeded(w)
 		default:
-			h.log.Errorw("Deb upload failed", "repository", repoName, "filename", header.Filename, "error", err)
+			h.log.Errorw("Deb upload failed", "repository", repoName, "filename", form.Filename, "error", err)
 			writeError(w, http.StatusInternalServerError, "UPLOAD_ERROR", "upload processing failed")
 		}
 
@@ -254,7 +237,7 @@ func (h *DebUploadHandler) resolveRepoID(r *http.Request, repoName string) (stri
 func (h *DebUploadHandler) uploadPipeline(
 	w http.ResponseWriter,
 	r *http.Request,
-	file io.Reader,
+	spool *base.Spool,
 	repoName string,
 	distribution string,
 	component string,
@@ -269,22 +252,7 @@ func (h *DebUploadHandler) uploadPipeline(
 		return nil, err
 	}
 
-	// Stream to temp file while computing SHA256
-	tmpFile, err := os.CreateTemp("", "deb-upload-*.tmp")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp file: %w", err)
-	}
-	defer func() { _ = os.Remove(tmpFile.Name()) }()
-	defer func() { base.CloseLog(tmpFile, h.log) }()
-
-	hasher := sha256.New()
-
-	written, err := iocopy.Copy(tmpFile, io.TeeReader(file, hasher))
-	if err != nil {
-		return nil, fmt.Errorf("failed to buffer upload: %w", err)
-	}
-
-	sha256sum := hex.EncodeToString(hasher.Sum(nil))
+	written, sha256sum := spool.Size(), spool.SHA256Hex()
 
 	// Per-repo duplicate check: same package already in this repo.
 	exists, err := h.db.ArtifactExists(r.Context(), sha256sum, repoID)
@@ -297,7 +265,7 @@ func (h *DebUploadHandler) uploadPipeline(
 	}
 
 	// Parse from the temp file via ReadAt: only the control archive is loaded.
-	debFile, err := pkgdeb.ParseDebFileAt(tmpFile, written)
+	debFile, err := pkgdeb.ParseDebFileAt(spool, written)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errDebInvalid, err) //nolint:errorlint // keep parser detail for the client message
 	}
@@ -372,7 +340,7 @@ func (h *DebUploadHandler) uploadPipeline(
 	// The bytes are stored first; existence is re-checked under the blob lock,
 	// which then covers only the blob record and the referencing row, so a
 	// concurrent unpublish cannot delete the blob in between.
-	blob := storage.SeekerBlob(sha256sum, tmpFile, map[string]string{
+	blob := storage.SeekerBlob(sha256sum, spool.Reader(), map[string]string{
 		"sha256":    sha256sum,
 		"format":    "deb",
 		"repo_name": repoName,

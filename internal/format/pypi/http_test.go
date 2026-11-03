@@ -681,3 +681,24 @@ func TestUploadUnderivableLicenses(t *testing.T) {
 		}
 	}
 }
+
+// A distribution larger than the old in-memory form threshold must leave no
+// scratch file behind: the form parser's own temp file was never removed for a
+// routed (copied) request.
+func TestUploadLeavesNoTempFile(t *testing.T) {
+	assertEmpty := formattest.IsolatedTemp(t)
+	h, db, bs, _ := newTestHandler(t)
+
+	data := bytes.Repeat([]byte("p"), 40<<20)
+
+	w := formattest.Do(register(h), uploadRequest(t, "demo_pkg-1.0.tar.gz", data))
+	if w.Code != http.StatusOK {
+		t.Fatalf("upload status = %d: %s", w.Code, w.Body.String())
+	}
+
+	if len(db.pkgs) != 1 || len(bs.Blobs) != 1 {
+		t.Fatalf("stored pkgs=%d blobs=%d, want 1 and 1", len(db.pkgs), len(bs.Blobs))
+	}
+
+	assertEmpty()
+}
