@@ -35,13 +35,13 @@ func TestRepoAndProjectNameRegexps(t *testing.T) {
 	invalid := []string{"", "-", "--help", "-h", "_a", "a b", "a/b", "a.b"}
 
 	for _, n := range valid {
-		if !repoNameRe.MatchString(n) || !projectNameRe.MatchString(n) {
+		if !repoNameRe().MatchString(n) || !projectNameRe().MatchString(n) {
 			t.Errorf("%q should be valid", n)
 		}
 	}
 
 	for _, n := range invalid {
-		if repoNameRe.MatchString(n) || projectNameRe.MatchString(n) {
+		if repoNameRe().MatchString(n) || projectNameRe().MatchString(n) {
 			t.Errorf("%q should be invalid", n)
 		}
 	}
@@ -51,7 +51,7 @@ func TestRepoAndProjectNameRegexps(t *testing.T) {
 		long[i] = 'a'
 	}
 
-	if repoNameRe.Match(long) || !repoNameRe.Match(long[:100]) {
+	if repoNameRe().Match(long) || !repoNameRe().Match(long[:100]) {
 		t.Error("length limit must stay 100")
 	}
 }

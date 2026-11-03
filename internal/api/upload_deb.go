@@ -13,7 +13,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"regexp"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -23,6 +22,7 @@ import (
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/iocopy"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/quota"
@@ -49,10 +49,10 @@ var (
 	errDebWrongFormat  = errors.New("repository is not a deb repository")
 	errDebNotHosted    = errors.New("repository is not hosted")
 	errDebRepoNotFound = errors.New("repository not found")
-	debNameRe          = regexp.MustCompile(`^[a-z0-9][a-z0-9+.\-]+$`)
-	debVersionRe       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.+~:\-]*$`)
-	debArchRe          = regexp.MustCompile(`^[a-z0-9][a-z0-9\-]*$`)
-	debSegmentRe       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._\-]*$`)
+	debNameRe          = lazyre.New(`^[a-z0-9][a-z0-9+.\-]+$`)
+	debVersionRe       = lazyre.New(`^[A-Za-z0-9][A-Za-z0-9.+~:\-]*$`)
+	debArchRe          = lazyre.New(`^[a-z0-9][a-z0-9\-]*$`)
+	debSegmentRe       = lazyre.New(`^[A-Za-z0-9][A-Za-z0-9._\-]*$`)
 )
 
 // DebUploadStore is the part of the database DebUploadHandler needs.
@@ -158,7 +158,7 @@ func (h *DebUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 		component = "main"
 	}
 
-	if !debSegmentRe.MatchString(distribution) || !debSegmentRe.MatchString(component) {
+	if !debSegmentRe().MatchString(distribution) || !debSegmentRe().MatchString(component) {
 		uploadResult = "error"
 
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid distribution or component name")
@@ -304,7 +304,7 @@ func (h *DebUploadHandler) uploadPipeline(
 
 	pkg := debFile.Package
 
-	if !debNameRe.MatchString(pkg.Package) || !debVersionRe.MatchString(pkg.Version) || !debArchRe.MatchString(pkg.Architecture) {
+	if !debNameRe().MatchString(pkg.Package) || !debVersionRe().MatchString(pkg.Version) || !debArchRe().MatchString(pkg.Architecture) {
 		return nil, fmt.Errorf("%w: package name, version or architecture contains invalid characters", errDebInvalid)
 	}
 

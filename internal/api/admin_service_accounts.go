@@ -112,7 +112,7 @@ func (h *AdminServiceAccountsHandler) handleCreate(w http.ResponseWriter, r *htt
 		return
 	}
 
-	if !usernameRe.MatchString(body.Name) {
+	if !usernameRe().MatchString(body.Name) {
 		writeError(w, http.StatusBadRequest, "validation_failed", "name must be 3-64 alphanumeric/dash/underscore characters")
 		return
 	}

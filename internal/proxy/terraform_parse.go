@@ -12,12 +12,12 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
 
 	"github.com/openartifact/openartifact/internal/format/terraform"
+	"github.com/openartifact/openartifact/internal/lazyre"
 )
 
 // Parsers of the documents a Terraform or OpenTofu registry serves and of the
@@ -254,11 +254,11 @@ func (s tfModuleSource) repack() bool { return s.strip || s.subdir != "" }
 const tfCodeloadBase = "https://codeload.github.com"
 
 var (
-	tfGitHubOwnerRE = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`)
-	tfGitHubRepoRE  = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
-	tfRefSegmentRE  = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._+-]*$`)
-	tfSubdirSegRE   = regexp.MustCompile(`^[A-Za-z0-9._+@~-]{1,100}$`)
-	tfDepthRE       = regexp.MustCompile(`^[0-9]{1,4}$`)
+	tfGitHubOwnerRE = lazyre.New(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`)
+	tfGitHubRepoRE  = lazyre.New(`^[A-Za-z0-9._-]{1,100}$`)
+	tfRefSegmentRE  = lazyre.New(`^[A-Za-z0-9_][A-Za-z0-9._+-]*$`)
+	tfSubdirSegRE   = lazyre.New(`^[A-Za-z0-9._+@~-]{1,100}$`)
+	tfDepthRE       = lazyre.New(`^[0-9]{1,4}$`)
 )
 
 // validTFGitRef reports whether ref is a branch, tag or commit name that is
@@ -270,7 +270,7 @@ func validTFGitRef(ref string) bool {
 	}
 
 	for seg := range strings.SplitSeq(ref, "/") {
-		if !tfRefSegmentRE.MatchString(seg) {
+		if !tfRefSegmentRE().MatchString(seg) {
 			return false
 		}
 	}
@@ -288,7 +288,7 @@ func cleanTFSubdir(sub string) (string, bool) {
 	}
 
 	for seg := range strings.SplitSeq(sub, "/") {
-		if seg == "." || seg == ".." || !tfSubdirSegRE.MatchString(seg) {
+		if seg == "." || seg == ".." || !tfSubdirSegRE().MatchString(seg) {
 			return "", false
 		}
 	}
@@ -396,7 +396,7 @@ func gitHubRepo(u *url.URL, segs []string, head string) (string, error) {
 	}
 
 	repo := strings.TrimSuffix(segs[1], ".git")
-	if !tfGitHubOwnerRE.MatchString(segs[0]) || !tfGitHubRepoRE.MatchString(repo) || repo == "." || repo == ".." {
+	if !tfGitHubOwnerRE().MatchString(segs[0]) || !tfGitHubRepoRE().MatchString(repo) || repo == "." || repo == ".." {
 		return "", fmt.Errorf("%w: %q is not a GitHub repository address (owner/repository)", errTFUnsupportedSource, truncate(head, 80))
 	}
 
@@ -431,7 +431,7 @@ func gitHubRef(rawQuery, head string) (string, error) {
 
 			ref = values[0]
 		case "depth":
-			if !tfDepthRE.MatchString(values[0]) {
+			if !tfDepthRE().MatchString(values[0]) {
 				return "", fmt.Errorf("%w: the depth %q is not a number", errTFUnsupportedSource, truncate(values[0], 20))
 			}
 		default:
@@ -616,10 +616,10 @@ func archiveExtOf(p string) string {
 
 // tfFileNameRE is the shape of a file name taken from an upstream document and
 // used in cache keys and download URLs.
-var tfFileNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$`)
+var tfFileNameRE = lazyre.New(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$`)
 
 // validTFFileName reports whether s is a safe file name.
-func validTFFileName(s string) bool { return tfFileNameRE.MatchString(s) }
+func validTFFileName(s string) bool { return tfFileNameRE().MatchString(s) }
 
 // parseSHA256SUMS reads a checksum file ("<64 hex>  <name>" per line, binary
 // mode marked by a "*" before the name) into name -> lowercase digest. A

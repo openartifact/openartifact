@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
@@ -23,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	formatraw "github.com/openartifact/openartifact/internal/format/raw"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/quarantine"
@@ -66,7 +66,7 @@ const (
 	presignedRetryAfter = "5"
 )
 
-var sha256HexPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var sha256HexPattern = lazyre.New(`^[0-9a-f]{64}$`)
 
 // PresignedUploadStore is the part of the database PresignedUploadHandler needs.
 type PresignedUploadStore interface {
@@ -260,7 +260,7 @@ func (h *PresignedUploadHandler) handleCreate(w http.ResponseWriter, r *http.Req
 	}
 
 	digest := strings.ToLower(req.SHA256)
-	if !sha256HexPattern.MatchString(digest) {
+	if !sha256HexPattern().MatchString(digest) {
 		writeError(w, http.StatusBadRequest, "invalid_sha256", "sha256 must be 64 hex characters")
 		return
 	}

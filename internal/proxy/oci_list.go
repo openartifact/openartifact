@@ -12,13 +12,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/ocipath"
 )
 
@@ -26,9 +26,9 @@ import (
 const maxListBody = 16 << 20
 
 var (
-	lastRE     = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
-	artifactRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+/-]{0,254}$`)
-	linkNextRE = regexp.MustCompile(`^<([^>]*)>\s*;\s*rel="?next"?`)
+	lastRE     = lazyre.New(`^[A-Za-z0-9._-]{1,128}$`)
+	artifactRE = lazyre.New(`^[A-Za-z0-9][A-Za-z0-9._+/-]{0,254}$`)
+	linkNextRE = lazyre.New(`^<([^>]*)>\s*;\s*rel="?next"?`)
 
 	errListTooLarge = errors.New("upstream listing too large")
 	errNotObject    = errors.New("upstream tag list is not a JSON object")
@@ -51,7 +51,7 @@ func (s *Service) serveOCITags(w http.ResponseWriter, r *http.Request, repo *mod
 	}
 
 	if last := r.URL.Query().Get("last"); last != "" {
-		if !lastRE.MatchString(last) {
+		if !lastRE().MatchString(last) {
 			ocipath.WriteError(w, http.StatusBadRequest, "PAGINATION_NUMBER_INVALID", "invalid last")
 			return
 		}
@@ -119,7 +119,7 @@ func rewriteTagList(body []byte, name string) ([]byte, error) {
 
 // serveOCIReferrers passes the referrers listing of a digest through.
 func (s *Service) serveOCIReferrers(w http.ResponseWriter, r *http.Request, repo *models.Repository, req ocipath.Request, up ociUpstream) {
-	if !digestRE.MatchString(req.Ref) {
+	if !digestRE().MatchString(req.Ref) {
 		ocipath.WriteError(w, http.StatusBadRequest, "DIGEST_INVALID", "invalid digest")
 		return
 	}
@@ -127,7 +127,7 @@ func (s *Service) serveOCIReferrers(w http.ResponseWriter, r *http.Request, repo
 	target := up.base + "/v2/" + up.name + "/referrers/" + req.Ref
 
 	if at := r.URL.Query().Get("artifactType"); at != "" {
-		if !artifactRE.MatchString(at) {
+		if !artifactRE().MatchString(at) {
 			ocipath.WriteError(w, http.StatusBadRequest, "UNSUPPORTED", "invalid artifactType")
 			return
 		}
@@ -235,7 +235,7 @@ func writeList(w http.ResponseWriter, r *http.Request, contentType string, body 
 // rewriteNextLink points the upstream's rel="next" Link at the listing the
 // client is paging through ("" when there is no next page).
 func rewriteNextLink(link, name string) string {
-	m := linkNextRE.FindStringSubmatch(strings.TrimSpace(link))
+	m := linkNextRE().FindStringSubmatch(strings.TrimSpace(link))
 	if m == nil {
 		return ""
 	}

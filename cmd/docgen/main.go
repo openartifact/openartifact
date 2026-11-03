@@ -89,11 +89,20 @@ func run(root string, check bool) error {
 		}
 	}
 
+	specStale, err := syncSpecGzip(root, !check)
+	if err != nil {
+		return err
+	}
+
 	slices.Sort(drift)
 
 	if check {
 		if err := checkLinks(root); err != nil {
 			return err
+		}
+
+		if specStale {
+			return fmt.Errorf("%s is not the gzip of %s; run `make docs-gen` and commit it", apiSpecGzFile, apiSpecFile)
 		}
 
 		if len(drift) > 0 {

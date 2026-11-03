@@ -8,7 +8,6 @@ import (
 	"context"
 	"math"
 	"net/http"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -19,14 +18,15 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 var (
-	projectNameRe   = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$`)
-	projectPrefixRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{0,100}$`)
+	projectNameRe   = lazyre.New(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$`)
+	projectPrefixRe = lazyre.New(`^[a-zA-Z0-9_-]{0,100}$`)
 )
 
 const (
@@ -190,7 +190,7 @@ func (pp *projectPolicy) validate() string {
 		}
 	}
 
-	if pp.RepoNamePrefix != nil && !projectPrefixRe.MatchString(*pp.RepoNamePrefix) {
+	if pp.RepoNamePrefix != nil && !projectPrefixRe().MatchString(*pp.RepoNamePrefix) {
 		return "repo_name_prefix must be at most 100 alphanumeric characters, hyphens, or underscores"
 	}
 
@@ -433,7 +433,7 @@ type createProjectRequest struct {
 }
 
 func (req *createProjectRequest) validate() string {
-	if !projectNameRe.MatchString(req.Name) {
+	if !projectNameRe().MatchString(req.Name) {
 		return "project name must be 1-100 characters: letters, digits, hyphen or underscore, starting with a letter or digit"
 	}
 

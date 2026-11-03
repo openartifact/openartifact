@@ -7,7 +7,6 @@ package api
 import (
 	"errors"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -21,11 +20,12 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-var usernameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,64}$`)
+var usernameRe = lazyre.New(`^[a-zA-Z0-9_-]{3,64}$`)
 
 // AdminUsersStore is the part of the database AdminUsersHandler needs.
 type AdminUsersStore interface {
@@ -73,7 +73,7 @@ func (h *AdminUsersHandler) handleCreate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if !usernameRe.MatchString(body.Username) {
+	if !usernameRe().MatchString(body.Username) {
 		writeError(w, http.StatusBadRequest, "validation_failed", "username must be 3-64 alphanumeric/dash/underscore characters")
 		return
 	}

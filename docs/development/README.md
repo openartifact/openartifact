@@ -111,7 +111,7 @@ Start the server on `:8080` for the dev server to talk to. Build the server with
 Three more rules keep the binaries small:
 
 - `web/dist` is embedded once, gzipped: `web/scripts/precompress.js` (run by `bun run build` and the Dockerfile) replaces each compressible file with `name.gz`, `web/assets.go` streams that gzip from the binary as it is and expands it per request for clients that do not accept gzip. Startup only hashes the files; a build without the script (plain `vite build`) gzips each compressible asset on its first request, once, with a pooled writer, and keeps only that gzip in memory. Source maps are not emitted.
-- `cmd/oa` and `cmd/resetpw` link no server code: no database, storage, telemetry, web or cloud-SDK packages (`internal/passwd` holds the password hashing `resetpw` needs; `internal/auth` pulls in the whole server). `tests/binary_deps_test.go` fails when an import brings one back, and when the server links `golang.org/x/net/trace` again.
+- `cmd/oa` (the package `internal/oacli`) and `cmd/resetpw` link no server code: no database, storage, telemetry, web or cloud-SDK packages (`internal/passwd` holds the password hashing `resetpw` needs; `internal/auth` pulls in the whole server). `tests/binary_deps_test.go` fails when an import brings one back, when the server links `golang.org/x/net/trace` again, and when `oa` or the server links text/template execution (a cobra help, usage or version template: it turns on the linker's keep-every-method mode and costs 1.9 MB).
 - UPX is not used, and the official binaries and image carry every documented feature; the optional [build tags](#build-tags) below are for self-built slim servers.
 
 To see where the bytes go, build the server without `-s -w` and analyse it with [go-size-analyzer](https://github.com/Zxilly/go-size-analyzer) (it needs the symbol table; stripped binaries are not analysed):
@@ -129,6 +129,8 @@ Two negative tags compile optional features out of the server; the default build
 |---|---|
 | `noai` | AI analysis: the LLM client (`internal/ai`), the AI worker and the admin and per-repository AI handlers. `internal/ai/manifest` stays, it is shared with the dependency, license and SBOM code |
 | `nomcp` | The MCP server (`internal/mcp`) and the `github.com/modelcontextprotocol/go-sdk` dependency tree |
+
+Measured on a stripped server: `nomcp` saves about 2.25 MB, `noai` only about 0.11 MB (the LLM client is a thin HTTP layer), so `nomcp` is the size lever and `noai` is for removing the feature.
 
 Build with `make build-slim` (both tags on top of `grpcnotrace`, output `bin/openartifact-slim`), by hand with `go build -tags grpcnotrace,noai,nomcp ./cmd/server`, or an image with `docker build --build-arg GO_TAGS=grpcnotrace,noai,nomcp -f docker/Dockerfile .` (the default is `GO_TAGS=grpcnotrace`).
 

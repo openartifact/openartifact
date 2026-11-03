@@ -200,8 +200,13 @@ linters:
       - path: "web/src/api/types.d.ts"
         linters:
           - lll
+      # Regular expressions declared with lazyre.New are compiled on first use;
+      # the variable holds only the function (the check allows regexp.MustCompile globals)
+      - source: "= lazyre\\.New\\("
+        linters:
+          - gochecknoglobals
       # Main entrypoints can be longer and more complex
-      - path: "cmd/"
+      - path: "^(cmd|internal/oacli)/"
         linters:
           - funlen
           - cyclop
@@ -230,7 +235,7 @@ linters:
         linters:
           - tagliatelle
       # Nexus / Artifactory REST payloads are camelCase by contract
-      - path: "cmd/oa/import_source\\.go"
+      - path: "internal/oacli/import_source\\.go"
         linters:
           - tagliatelle
       - path: "internal/format/gomod/http\\.go"

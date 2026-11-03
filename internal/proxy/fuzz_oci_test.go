@@ -93,7 +93,7 @@ func FuzzOCIDigesterMatches(f *testing.F) {
 		for _, digest := range []string{first, second} {
 			got := d.matches(digest)
 
-			if digestRE.MatchString(digest) {
+			if digestRE().MatchString(digest) {
 				algo, _, _ := strings.Cut(digest, ":")
 				if got != (digest == want[algo]) {
 					t.Fatalf("matches(%q) = %v for a body hashing to %q", digest, got, want[algo])

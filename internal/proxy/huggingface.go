@@ -18,7 +18,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +26,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/iocopy"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/presign"
@@ -68,12 +68,12 @@ const (
 )
 
 var (
-	hfIDPart   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
-	hfRevOK    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
-	hfSHA1Hex  = regexp.MustCompile(`^[0-9a-f]{40}$`)
-	hfSHA256   = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	hfCursorOK = regexp.MustCompile(`^[A-Za-z0-9_=+/.-]+$`)
-	hfNextLink = regexp.MustCompile(`<([^>]+)>\s*;\s*rel="next"`)
+	hfIDPart   = lazyre.New(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+	hfRevOK    = lazyre.New(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
+	hfSHA1Hex  = lazyre.New(`^[0-9a-f]{40}$`)
+	hfSHA256   = lazyre.New(`^[0-9a-f]{64}$`)
+	hfCursorOK = lazyre.New(`^[A-Za-z0-9_=+/.-]+$`)
+	hfNextLink = lazyre.New(`<([^>]+)>\s*;\s*rel="next"`)
 )
 
 // hfAction is what a request asks for.
@@ -228,7 +228,7 @@ func (q hfRequest) valid() bool {
 	}
 
 	for _, p := range ids {
-		if len(p) > hfMaxIDPartLen || !hfIDPart.MatchString(p) {
+		if len(p) > hfMaxIDPartLen || !hfIDPart().MatchString(p) {
 			return false
 		}
 	}
@@ -237,7 +237,7 @@ func (q hfRequest) valid() bool {
 		return true
 	}
 
-	return len(q.rev) <= hfMaxRevLen && hfRevOK.MatchString(q.rev) &&
+	return len(q.rev) <= hfMaxRevLen && hfRevOK().MatchString(q.rev) &&
 		!strings.Contains(q.rev, "..") && !strings.Contains(q.rev, "//") && !strings.HasSuffix(q.rev, "/")
 }
 
@@ -487,7 +487,7 @@ func (c *hfCall) info(ctx context.Context, rev string) (hfInfoBody, *resolution,
 		}
 
 		b.SHA = strings.ToLower(b.SHA)
-		if !hfSHA1Hex.MatchString(b.SHA) {
+		if !hfSHA1Hex().MatchString(b.SHA) {
 			return b, errHFDocument
 		}
 
@@ -521,7 +521,7 @@ type hfPin struct {
 func (c *hfCall) pin(ctx context.Context) (hfPin, error) {
 	rev := c.req.rev
 
-	if hfSHA1Hex.MatchString(strings.ToLower(rev)) {
+	if hfSHA1Hex().MatchString(strings.ToLower(rev)) {
 		sha := strings.ToLower(rev)
 
 		var date time.Time
@@ -558,7 +558,7 @@ func (c *hfCall) pin(ctx context.Context) (hfPin, error) {
 
 		for _, cm := range cms {
 			sha := strings.ToLower(cm.ID)
-			if hfSHA1Hex.MatchString(sha) && checkGate(c.g, c.req.pkg(), sha, cm.date()) == nil {
+			if hfSHA1Hex().MatchString(sha) && checkGate(c.g, c.req.pkg(), sha, cm.date()) == nil {
 				return hfPin{sha: sha}, nil
 			}
 		}
@@ -647,7 +647,7 @@ func (c *hfCall) treeTransform(resp *http.Response) error {
 
 	doc := hfTreeDoc{Entries: stripped}
 
-	if m := hfNextLink.FindStringSubmatch(resp.Header.Get("Link")); m != nil {
+	if m := hfNextLink().FindStringSubmatch(resp.Header.Get("Link")); m != nil {
 		if u, perr := url.Parse(m[1]); perr == nil {
 			doc.Next = u.Query().Get("cursor")
 		}
@@ -688,7 +688,7 @@ func (c *hfCall) serveTree(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if cur := q.Get("cursor"); cur != "" {
-		if len(cur) > 2048 || !hfCursorOK.MatchString(cur) {
+		if len(cur) > 2048 || !hfCursorOK().MatchString(cur) {
 			http.Error(w, "invalid cursor", http.StatusBadRequest)
 			return
 		}
@@ -903,9 +903,9 @@ func (c *hfCall) fileOpts(m hfFileMeta) fetchOpts {
 	o := c.opts(fetchOpts{})
 
 	switch {
-	case hfSHA256.MatchString(m.ETag):
+	case hfSHA256().MatchString(m.ETag):
 		o.wantSHA256 = m.ETag
-	case hfSHA1Hex.MatchString(m.ETag):
+	case hfSHA1Hex().MatchString(m.ETag):
 	default:
 		o.unverified = true
 	}
@@ -920,7 +920,7 @@ func (c *hfCall) fileOpts(m hfFileMeta) fetchOpts {
 			return fmt.Errorf("%w: %d bytes, the upstream announced %d", errHFMismatch, n, m.Size)
 		}
 
-		if !hfSHA1Hex.MatchString(m.ETag) {
+		if !hfSHA1Hex().MatchString(m.ETag) {
 			return nil
 		}
 
@@ -1018,7 +1018,7 @@ func hfImmutable(key string) bool {
 		strings.HasPrefix(key, hfCommitsDir), strings.HasPrefix(key, hfTreeDir):
 		return true
 	case strings.HasPrefix(key, hfInfoDir), strings.HasPrefix(key, hfBlobsDir):
-		return hfSHA1Hex.MatchString(path.Base(key))
+		return hfSHA1Hex().MatchString(path.Base(key))
 	}
 
 	return false
@@ -1078,7 +1078,7 @@ func (c *hfCall) cachedVersions(ctx context.Context) []DatedVersion {
 	}
 
 	var head hfInfoBody
-	if json.Unmarshal(body, &head) != nil || !hfSHA1Hex.MatchString(strings.ToLower(head.SHA)) {
+	if json.Unmarshal(body, &head) != nil || !hfSHA1Hex().MatchString(strings.ToLower(head.SHA)) {
 		return nil
 	}
 

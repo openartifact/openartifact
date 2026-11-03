@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,6 +33,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/httpcache"
 	"github.com/openartifact/openartifact/internal/iocopy"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -41,7 +41,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-var sha256HexRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var sha256HexRe = lazyre.New(`^[0-9a-f]{64}$`)
 
 // errDeltaInputTooLarge is returned when a delta source blob exceeds the cap.
 var errDeltaInputTooLarge = errors.New("delta input exceeds size limit")
@@ -159,7 +159,7 @@ func (h *DeltaHandler) handleGetDelta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !sha256HexRe.MatchString(fromSHA256) {
+	if !sha256HexRe().MatchString(fromSHA256) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "'from' must be a 64-character hex sha256")
 		return
 	}

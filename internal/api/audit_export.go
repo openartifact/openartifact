@@ -13,12 +13,12 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -213,12 +213,12 @@ func parseAuditExportTime(s string) (time.Time, error) {
 	return t, nil
 }
 
-var exportNameUnsafe = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+var exportNameUnsafe = lazyre.New(`[^A-Za-z0-9._-]+`)
 
 // exportFilename is "<prefix>-<UTC timestamp>.<format>" with the prefix
 // reduced to filename-safe characters.
 func exportFilename(prefix, format string, now time.Time) string {
-	prefix = strings.Trim(exportNameUnsafe.ReplaceAllString(prefix, "-"), "-.")
+	prefix = strings.Trim(exportNameUnsafe().ReplaceAllString(prefix, "-"), "-.")
 	if prefix == "" {
 		prefix = "audit"
 	}

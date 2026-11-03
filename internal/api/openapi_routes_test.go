@@ -135,7 +135,7 @@ func TestOpenAPISpecMatchesRoutes(t *testing.T) {
 	var spec struct {
 		Paths map[string]map[string]json.RawMessage `json:"paths"`
 	}
-	if err := json.Unmarshal(openapiSpec, &spec); err != nil {
+	if err := json.Unmarshal(mustOpenAPISpec(t), &spec); err != nil {
 		t.Fatal(err)
 	}
 	documented := map[string]bool{}

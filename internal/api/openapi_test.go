@@ -5,11 +5,13 @@
 package api
 
 import (
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -264,6 +266,79 @@ func TestSystemInfoAdvertisesAPIReference(t *testing.T) {
 
 		if body["api_reference_enabled"] != on {
 			t.Errorf("api_reference_enabled = %v, want %v", body["api_reference_enabled"], on)
+		}
+	}
+}
+
+func mustOpenAPISpec(t *testing.T) []byte {
+	t.Helper()
+
+	spec, err := openapiSpec()
+	if err != nil {
+		t.Fatalf("embedded openapi.json.gz: %v", err)
+	}
+
+	return spec
+}
+
+// TestEmbeddedSpecIsCurrent fails when openapi.json changed and the embedded
+// gzip copy was not regenerated.
+func TestEmbeddedSpecIsCurrent(t *testing.T) {
+	t.Parallel()
+
+	src, err := os.ReadFile("openapi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(mustOpenAPISpec(t), src) {
+		t.Fatal("openapi.json.gz is not the gzip of openapi.json: run `make docs-gen` and commit it")
+	}
+}
+
+// TestOpenAPISpecContentEncoding: a client that accepts gzip gets the gzip form
+// and a client that does not gets the plain document, both the same content.
+func TestOpenAPISpecContentEncoding(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range []string{"/api/v1/openapi.json", "/api/v1/openapi.yaml"} {
+		plain := serveOpenAPI(t, "1.2.3", true, path)
+		if plain.Code != http.StatusOK || plain.Header().Get("Content-Encoding") != "" {
+			t.Fatalf("%s without Accept-Encoding: status %d, Content-Encoding %q", path, plain.Code, plain.Header().Get("Content-Encoding"))
+		}
+
+		packed := serveOpenAPI(t, "1.2.3", true, path, "Accept-Encoding", "br, gzip;q=0.8")
+		if packed.Header().Get("Content-Encoding") != "gzip" {
+			t.Fatalf("%s with gzip accepted: Content-Encoding %q", path, packed.Header().Get("Content-Encoding"))
+		}
+
+		if !strings.Contains(packed.Header().Get("Vary"), "Accept-Encoding") ||
+			packed.Header().Get("Content-Type") != plain.Header().Get("Content-Type") {
+			t.Errorf(
+				"%s: Vary %q, Content-Type %q (plain %q)",
+				path,
+				packed.Header().Get("Vary"),
+				packed.Header().Get("Content-Type"),
+				plain.Header().Get("Content-Type"),
+			)
+		}
+
+		zr, err := gzip.NewReader(packed.Body)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+
+		got, err := io.ReadAll(zr)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+
+		if !bytes.Equal(got, plain.Body.Bytes()) {
+			t.Errorf("%s: the gzip body inflates to %d bytes, the plain body is %d bytes", path, len(got), plain.Body.Len())
+		}
+
+		if packed.Body.Len() >= plain.Body.Len()/2 {
+			t.Errorf("%s: gzip body is %d bytes for a %d-byte document", path, packed.Body.Len(), plain.Body.Len())
 		}
 	}
 }
