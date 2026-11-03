@@ -163,7 +163,7 @@ func (h *RepositoriesHandler) handleList(w http.ResponseWriter, r *http.Request)
 	start := min((params.page-1)*params.limit, total)
 	pageRepos := repos[start:min(start+params.limit, total)]
 
-	stats, counts, err := h.repositoryPageStats(ctx, pageRepos)
+	stats, err := h.repositoryPageStats(ctx, pageRepos)
 	if err != nil {
 		h.log.Errorw("list repositories: stats error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -176,7 +176,7 @@ func (h *RepositoriesHandler) handleList(w http.ResponseWriter, r *http.Request)
 
 	for _, repo := range pageRepos {
 		resp := h.repositoryResponse(ctx, repo, projectNames)
-		resp.Stats = repositoryStatsResponse(stats[repo.ID], counts[repo.ID])
+		resp.Stats = repositoryStatsResponse(stats[repo.ID])
 		items = append(items, resp)
 	}
 
@@ -274,7 +274,7 @@ func (h *RepositoriesHandler) filterAndSortRepositories(
 	if params.needsStats() && len(repos) > 0 {
 		var err error
 
-		stats, err = h.db.RepoCatalogStats(ctx, repoIDs(repos), params.sort == repoSortLastPublished)
+		stats, err = h.db.RepoCatalogStats(ctx, repoIDs(repos))
 		if err != nil {
 			return nil, err
 		}
@@ -348,33 +348,18 @@ func repoIDs(repos []*models.Repository) []string {
 	return ids
 }
 
-// repositoryPageStats loads the stats and package counts of one page of
-// repositories, each in a single grouped query.
-func (h *RepositoriesHandler) repositoryPageStats(
-	ctx context.Context,
-	repos []*models.Repository,
-) (map[string]models.RepoStats, map[string]int64, error) {
+// repositoryPageStats loads the stats of one page of repositories in a single
+// grouped query.
+func (h *RepositoriesHandler) repositoryPageStats(ctx context.Context, repos []*models.Repository) (map[string]models.RepoStats, error) {
 	if len(repos) == 0 {
-		return nil, nil, nil
+		return map[string]models.RepoStats{}, nil
 	}
 
-	ids := repoIDs(repos)
-
-	stats, err := h.db.RepoCatalogStats(ctx, ids, true)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	counts, err := h.db.CountRepoPackageNames(ctx, ids)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return stats, counts, nil
+	return h.db.RepoCatalogStats(ctx, repoIDs(repos))
 }
 
 // repositoryStatsResponse renders a repository's stats.
-func repositoryStatsResponse(s models.RepoStats, packageCount int64) *responses.RepositoryStats {
+func repositoryStatsResponse(s models.RepoStats) *responses.RepositoryStats {
 	quota := responses.RepositoryQuota{UsedBytes: s.Quota.UsedBytes}
 	if s.Quota.LimitBytes > 0 {
 		limit := s.Quota.LimitBytes
@@ -382,7 +367,7 @@ func repositoryStatsResponse(s models.RepoStats, packageCount int64) *responses.
 	}
 
 	return &responses.RepositoryStats{
-		PackageCount:    packageCount,
+		PackageCount:    s.PackageCount,
 		SizeBytes:       s.SizeBytes,
 		LastPublishedAt: formatTimePtr(s.LastPublishedAt),
 		Security: responses.RepositorySecurity{

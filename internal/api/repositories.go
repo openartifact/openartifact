@@ -75,7 +75,6 @@ type RepositoriesStore interface {
 	collectOrphansAsyncStore
 	reclaimMetadataBlobsStore
 	ArtifactSecurity(ctx context.Context, repoID string, artifactIDs []string) (map[string]models.ArtifactSecurity, error)
-	CountRepoPackageNames(ctx context.Context, repoIDs []string) (map[string]int64, error)
 	CreateProjectRepository(ctx context.Context, repo *models.Repository, memberIDs []string, maxRepositories int) error
 	CreateRepositoryWithMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error
 	DeleteRepository(ctx context.Context, id string) error
@@ -94,7 +93,7 @@ type RepositoriesStore interface {
 	ListRepositories(ctx context.Context, page int, limit int, formatFilter string) ([]*models.Repository, error)
 	MoveRepositoryToProject(ctx context.Context, repoID string, toProjectID string, maxRepositories int) error
 	ReplaceGroupMembers(ctx context.Context, groupRepoID string, memberIDs []string) error
-	RepoCatalogStats(ctx context.Context, repoIDs []string, withLastPublished bool) (map[string]models.RepoStats, error)
+	RepoCatalogStats(ctx context.Context, repoIDs []string) (map[string]models.RepoStats, error)
 	UpdateRepository(ctx context.Context, repo *models.Repository) error
 	UpdateRepositoryAndMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error
 }

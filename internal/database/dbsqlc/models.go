@@ -1061,6 +1061,29 @@ type ReleaseBundleItem struct {
 	AdderID *string `db:"adder_id" json:"adder_id"`
 }
 
+// Derived per-repository figures of the repository list, recomputed by the repo stats worker from the package, scan and cache tables; a missing row reads as zeros. Not journaled: rebuildable.
+type RepoStat struct {
+	RepositoryID      string     `db:"repository_id" json:"repository_id"`
+	PackageCount      int64      `db:"package_count" json:"package_count"`
+	LastPublishedAt   *time.Time `db:"last_published_at" json:"last_published_at"`
+	VulnCritical      int64      `db:"vuln_critical" json:"vuln_critical"`
+	VulnHigh          int64      `db:"vuln_high" json:"vuln_high"`
+	VulnMedium        int64      `db:"vuln_medium" json:"vuln_medium"`
+	VulnLow           int64      `db:"vuln_low" json:"vuln_low"`
+	Secrets           int64      `db:"secrets" json:"secrets"`
+	LicenseViolations int64      `db:"license_violations" json:"license_violations"`
+	Quarantined       int64      `db:"quarantined" json:"quarantined"`
+	ScannedAt         *time.Time `db:"scanned_at" json:"scanned_at"`
+	// When the row was last recomputed; rows older than the worker's drift age are recomputed whether or not they were marked.
+	RefreshedAt time.Time `db:"refreshed_at" json:"refreshed_at"`
+}
+
+// Append-only marks of repositories whose repo_stats row is out of date; claimed (deleted) by the repo stats worker. Not journaled: derived.
+type RepoStatsDirty struct {
+	RepositoryID string    `db:"repository_id" json:"repository_id"`
+	MarkedAt     time.Time `db:"marked_at" json:"marked_at"`
+}
+
 // Parent table for all repository instances (deb, rpm, maven, npm, etc.)
 type Repository struct {
 	ID   string `db:"id" json:"id"`
@@ -1182,6 +1205,8 @@ type ScanJob struct {
 	CompletedAt  *time.Time `db:"completed_at" json:"completed_at"`
 	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
 	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
+	// True for the newest job (created_at DESC, id) of its (artifact_ref_id, scan_type); kept by the scan_jobs_latest trigger.
+	IsLatest bool `db:"is_latest" json:"is_latest"`
 }
 
 // Secret detection payloads. FK to scan_jobs.
@@ -1193,7 +1218,6 @@ type SecretResult struct {
 	Quarantined  bool            `db:"quarantined" json:"quarantined"`
 }
 
-// Every vuln/license/secret/AI result in one shape (counts, quarantine, VEX state, KEV and EPSS aggregates); is_finding marks the ones that report something. Read by the security findings list, summary and per-package summary.
 type SecurityResult struct {
 	Kind           string    `db:"kind" json:"kind"`
 	ID             string    `db:"id" json:"id"`

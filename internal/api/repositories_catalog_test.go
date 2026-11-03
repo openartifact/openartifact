@@ -24,7 +24,6 @@ type catalogDB struct {
 	repositoriesListMockDB
 
 	stats       map[string]models.RepoStats
-	counts      map[string]int64
 	statsCalls  int
 	rollup      []models.PackageRollup
 	rollupOpts  models.PackageRollupOptions
@@ -40,7 +39,7 @@ func (*catalogDB) ListProjectGrantsByUser(context.Context, string) ([]*models.Pr
 	return nil, nil
 }
 
-func (db *catalogDB) RepoCatalogStats(_ context.Context, ids []string, _ bool) (map[string]models.RepoStats, error) {
+func (db *catalogDB) RepoCatalogStats(_ context.Context, ids []string) (map[string]models.RepoStats, error) {
 	db.statsCalls++
 
 	out := map[string]models.RepoStats{}
@@ -50,10 +49,6 @@ func (db *catalogDB) RepoCatalogStats(_ context.Context, ids []string, _ bool) (
 	}
 
 	return out, nil
-}
-
-func (db *catalogDB) CountRepoPackageNames(context.Context, []string) (map[string]int64, error) {
-	return db.counts, nil
 }
 
 func (db *catalogDB) ListRepoPackageRollup(_ context.Context, opts models.PackageRollupOptions) ([]models.PackageRollup, int, error) {
@@ -136,18 +131,17 @@ func catalogRepos() (*catalogDB, []string) {
 		},
 		stats: map[string]models.RepoStats{
 			"r1": {
-				SizeBytes: 100, LastPublishedAt: &older,
+				PackageCount: 3, SizeBytes: 100, LastPublishedAt: &older,
 				Security: models.RepoSecurity{ScannedAt: &scanned},
 				Quota:    models.RepoQuotaUsage{UsedBytes: 100},
 			},
 			"r2": {
-				SizeBytes: 900, LastPublishedAt: &now,
+				PackageCount: 7, SizeBytes: 900, LastPublishedAt: &now,
 				Security: models.RepoSecurity{SecurityCounts: models.SecurityCounts{Critical: 2}, ScannedAt: &scanned},
 				Quota:    models.RepoQuotaUsage{LimitBytes: 1000, UsedBytes: 900},
 			},
 			"r3": {SizeBytes: 500, Quota: models.RepoQuotaUsage{UsedBytes: 500}},
 		},
-		counts: map[string]int64{"r1": 3, "r2": 7, "r3": 0},
 	}
 
 	return db, []string{"alpha", "beta", "gamma-npm"}

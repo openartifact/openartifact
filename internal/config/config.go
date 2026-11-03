@@ -41,6 +41,7 @@ var (
 	errTLSFilesRequired   = errors.New("server TLS is enabled but tlsCert/tlsKey are not set")
 
 	errNegativeDockerGCGrace    = errors.New("workers.dockerGcGracePeriod must not be negative")
+	errRepoStatsInterval        = errors.New("workers.repoStatsInterval must be positive")
 	errNegativeStallTimeout     = errors.New("workers.proxyUpstreamStallTimeout must not be negative")
 	errNegativeDigestTTL        = errors.New("workers.proxyDockerDigestTtl must not be negative")
 	errNegativeWebhookRetention = errors.New("workers.webhookDeliveryRetentionDays must not be negative")
@@ -208,6 +209,12 @@ type WorkersConfig struct {
 	// outlast the slowest push: layers are uploaded before the manifest that
 	// references them.
 	DockerGCGracePeriod time.Duration `yaml:"dockerGcGracePeriod"`
+	// RepoStatsInterval is the pause between passes of the worker that
+	// recomputes the per-repository figures of the repository list (package
+	// count, newest publication, security counts) for the repositories that
+	// changed. The list can lag the data by about this long. It must be
+	// positive.
+	RepoStatsInterval time.Duration `yaml:"repoStatsInterval"`
 	// ProxyDockerDigestTTL is how long a docker proxy keeps a manifest or blob
 	// addressed by digest after its last pull. Such content never changes, so
 	// this only bounds the cache's size: the proxy cache worker evicts what has
@@ -747,6 +754,7 @@ func defaultConfig() *Config {
 			MetadataRegenConcurrency:     4,
 			DockerGCInterval:             time.Hour,
 			DockerGCGracePeriod:          24 * time.Hour,
+			RepoStatsInterval:            15 * time.Second,
 			ProxyDockerDigestTTL:         30 * 24 * time.Hour,
 			ProxyUpstreamStallTimeout:    60 * time.Second,
 			DockerUploadTTL:              24 * time.Hour,
@@ -975,6 +983,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideInt(&cfg.Workers.MetadataRegenConcurrency, "OPENARTIFACT_METADATA_REGEN_CONCURRENCY")
 	overrideDuration(&cfg.Workers.DockerGCInterval, "OPENARTIFACT_DOCKER_GC_INTERVAL")
 	overrideDuration(&cfg.Workers.DockerGCGracePeriod, "OPENARTIFACT_DOCKER_GC_GRACE_PERIOD")
+	overrideDuration(&cfg.Workers.RepoStatsInterval, "OPENARTIFACT_REPO_STATS_INTERVAL")
 	overrideDuration(&cfg.Workers.ProxyDockerDigestTTL, "OPENARTIFACT_PROXY_DOCKER_DIGEST_TTL")
 	overrideDuration(&cfg.Workers.ProxyUpstreamStallTimeout, "OPENARTIFACT_PROXY_UPSTREAM_STALL_TIMEOUT")
 	overrideDuration(&cfg.Workers.DockerUploadTTL, "OPENARTIFACT_DOCKER_UPLOAD_TTL")
@@ -1131,6 +1140,10 @@ func (c *Config) Validate() error {
 
 	if c.Workers.DockerGCGracePeriod < 0 {
 		return errNegativeDockerGCGrace
+	}
+
+	if c.Workers.RepoStatsInterval <= 0 {
+		return errRepoStatsInterval
 	}
 
 	if err := c.validateProxyWorkers(); err != nil {

@@ -21,18 +21,13 @@ import (
 // needs no branch: it lists once it writes package_files rows.
 type CatalogStore struct{ *core }
 
-// RepoCatalogStats returns the catalog figures of the repositories in repoIDs
-// (a repository without any is present with zero values): stored size and quota
-// and the security aggregates, plus the time of the newest package when
-// withLastPublished. It runs one query of each kind for the whole set, however
-// many repositories it holds. The package count is separate
-// (CountRepoPackageNames), and the newest-package time is optional: both probe
-// every package table, which the list filters do not need.
-func (p *CatalogStore) RepoCatalogStats(
-	ctx context.Context,
-	repoIDs []string,
-	withLastPublished bool,
-) (map[string]models.RepoStats, error) {
+// RepoCatalogStats returns the catalog figures of the repositories in repoIDs (a
+// repository without any is present with zero values): package count, newest
+// publication and security counts as the repo stats worker last stored them (see
+// ReconcileRepoStats, docs/getting-started/upgrading.md), and the stored size
+// and quota, which are live counters. It runs one indexed query for the whole
+// set whatever the number of packages or scans.
+func (p *CatalogStore) RepoCatalogStats(ctx context.Context, repoIDs []string) (map[string]models.RepoStats, error) {
 	stats := make(map[string]models.RepoStats, len(repoIDs))
 	if len(repoIDs) == 0 {
 		return stats, nil
@@ -42,113 +37,28 @@ func (p *CatalogStore) RepoCatalogStats(
 		stats[id] = models.RepoStats{}
 	}
 
-	usage, err := p.q.RepoStorageUsage(ctx, repoIDs)
+	rows, err := p.q.RepoCatalogStats(ctx, repoIDs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load repository storage usage: %w", err)
+		return nil, fmt.Errorf("failed to load repository stats: %w", err)
 	}
 
-	for _, u := range usage {
-		s := stats[u.RepositoryID]
-		s.SizeBytes = u.CurrentSizeBytes
-		s.Quota = models.RepoQuotaUsage{LimitBytes: u.MaxSizeBytes, UsedBytes: u.CurrentSizeBytes}
-		stats[u.RepositoryID] = s
-	}
-
-	security, err := p.q.RepoSecurityCounts(ctx, repoIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load repository security counts: %w", err)
-	}
-
-	for _, sc := range security {
-		s := stats[sc.RepositoryID]
-		s.Security = models.RepoSecurity{
-			Critical: sc.Critical, High: sc.High, Medium: sc.Medium, Low: sc.Low,
-			Secrets:           sc.Secrets,
-			LicenseViolations: sc.LicenseViolations,
-			Quarantined:       sc.Quarantined,
-			ScannedAt:         sc.ScannedAt,
-		}
-		stats[sc.RepositoryID] = s
-	}
-
-	if withLastPublished {
-		if err := p.loadLastPublished(ctx, repoIDs, stats); err != nil {
-			return nil, err
+	for _, r := range rows {
+		stats[r.RepositoryID] = models.RepoStats{
+			PackageCount:    r.PackageCount,
+			SizeBytes:       r.CurrentSizeBytes,
+			LastPublishedAt: r.LastPublishedAt,
+			Quota:           models.RepoQuotaUsage{LimitBytes: r.MaxSizeBytes, UsedBytes: r.CurrentSizeBytes},
+			Security: models.RepoSecurity{
+				SecurityCounts:    models.SecurityCounts{Critical: r.Critical, High: r.High, Medium: r.Medium, Low: r.Low},
+				Secrets:           r.Secrets,
+				LicenseViolations: r.LicenseViolations,
+				Quarantined:       r.Quarantined,
+				ScannedAt:         r.ScannedAt,
+			},
 		}
 	}
 
 	return stats, nil
-}
-
-func (p *CatalogStore) loadLastPublished(ctx context.Context, repoIDs []string, stats map[string]models.RepoStats) error {
-	rows, err := p.pool.Query(ctx, lastPublishedQuery(), repoIDs)
-	if err != nil {
-		return fmt.Errorf("failed to load last published times: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var (
-			id string
-			at *time.Time
-		)
-
-		if err := rows.Scan(&id, &at); err != nil {
-			return fmt.Errorf("failed to scan last published time: %w", err)
-		}
-
-		s := stats[id]
-		s.LastPublishedAt = at
-		stats[id] = s
-	}
-
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("failed to iterate last published times: %w", err)
-	}
-
-	return nil
-}
-
-// CountRepoPackageNames returns the number of distinct package names (as the
-// package listing names them) of each repository in repoIDs; a repository with
-// no packages maps to 0. A hosted repository is counted from its packages rows
-// (those with a live version), so the cost follows the number of packages, not of
-// files; docker and proxy repositories count their tag and cache rows. Ask for
-// one page of repositories at a time.
-func (p *CatalogStore) CountRepoPackageNames(ctx context.Context, repoIDs []string) (map[string]int64, error) {
-	counts := make(map[string]int64, len(repoIDs))
-	if len(repoIDs) == 0 {
-		return counts, nil
-	}
-
-	for _, id := range repoIDs {
-		counts[id] = 0
-	}
-
-	rows, err := p.pool.Query(ctx, packageCountQuery(), repoIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to count packages: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var (
-			id string
-			n  int64
-		)
-
-		if err := rows.Scan(&id, &n); err != nil {
-			return nil, fmt.Errorf("failed to scan package count: %w", err)
-		}
-
-		counts[id] = n
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate package counts: %w", err)
-	}
-
-	return counts, nil
 }
 
 // ListRepoPackageRollup lists the packages (format, name) of a repository, one

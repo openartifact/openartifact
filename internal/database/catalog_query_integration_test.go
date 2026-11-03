@@ -230,7 +230,6 @@ func TestCatalogRollupUpdatedAt(t *testing.T) {
 // version is not listed.
 func TestCatalogRollupTrashed(t *testing.T) {
 	f, _, roll := rollupFixture(t)
-	ctx := context.Background()
 
 	trashVersion(t, f, "alpha@2.1.0")
 
@@ -243,9 +242,10 @@ func TestCatalogRollupTrashed(t *testing.T) {
 
 	trashVersion(t, f, "beta@1.0.0")
 
-	counts, err := f.pg.CountRepoPackageNames(ctx, []string{f.repo})
-	if err != nil || counts[f.repo] != 1 {
-		t.Fatalf("package count %v err %v, want 1 (a package without a live version is not listed)", counts, err)
+	reconcileRepoStats(t, f.pg)
+
+	if got := repoStatsOf(t, f.pg, f.repo).PackageCount; got != 1 {
+		t.Fatalf("package count %d, want 1 (a package without a live version is not listed)", got)
 	}
 
 	if rows := roll(models.PackageRollupOptions{}); len(rows) != 1 || rows[0].Name != "alpha" {
@@ -310,12 +310,14 @@ func TestCatalogPackageCountPerRepository(t *testing.T) {
 		repo: other, format: "npm", name: "gamma", version: "1.0.0", filename: "gamma.tgz", blobSeed: "gamma", blobSize: 1, created: base,
 	})
 
-	counts, err := f.pg.CountRepoPackageNames(ctx, []string{f.repo, other, empty})
+	reconcileRepoStats(t, f.pg)
+
+	counts, err := f.pg.RepoCatalogStats(ctx, []string{f.repo, other, empty})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if counts[f.repo] != 2 || counts[other] != 1 || counts[empty] != 0 {
+	if counts[f.repo].PackageCount != 2 || counts[other].PackageCount != 1 || counts[empty].PackageCount != 0 {
 		t.Fatalf("counts %v", counts)
 	}
 }

@@ -706,6 +706,45 @@ func TestDockerGCConfig(t *testing.T) {
 	})
 }
 
+func TestRepoStatsIntervalConfig(t *testing.T) {
+	t.Run("defaults to 15 seconds", func(t *testing.T) {
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if cfg.Workers.RepoStatsInterval != 15*time.Second {
+			t.Fatalf("RepoStatsInterval = %v, want 15s", cfg.Workers.RepoStatsInterval)
+		}
+	})
+
+	t.Run("env overrides", func(t *testing.T) {
+		t.Setenv("OPENARTIFACT_REPO_STATS_INTERVAL", "2m")
+
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if cfg.Workers.RepoStatsInterval != 2*time.Minute {
+			t.Fatalf("RepoStatsInterval = %v, want 2m", cfg.Workers.RepoStatsInterval)
+		}
+	})
+
+	t.Run("zero is rejected", func(t *testing.T) {
+		t.Setenv("OPENARTIFACT_REPO_STATS_INTERVAL", "0s")
+
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := cfg.Validate(); !errors.Is(err, errRepoStatsInterval) {
+			t.Fatalf("Validate() = %v, want errRepoStatsInterval", err)
+		}
+	})
+}
+
 func TestProxyDockerDigestTTLConfig(t *testing.T) {
 	t.Run("defaults to 30 days", func(t *testing.T) {
 		cfg, err := Load("")
