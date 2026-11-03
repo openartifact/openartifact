@@ -223,3 +223,66 @@ func assertNoSpoolFiles(t *testing.T, dir string) {
 		t.Errorf("temp files left behind: %v", entries)
 	}
 }
+
+func TestSpoolReaderIsAVerifiedFileOnlyWhileUnread(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+
+	big := spoolPayload(spoolMemoryLimit + 100)
+
+	spool, err := SpoolLimited(bytes.NewReader(big), int64(len(big)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer spool.Close()
+
+	r := spool.Reader()
+
+	path, sha, size, ok := r.VerifiedFile()
+	if !ok || size != int64(len(big)) || sha != spool.SHA256Hex() || path == "" {
+		t.Fatalf("VerifiedFile = %q %q %d %v", path, sha, size, ok)
+	}
+
+	if _, err := r.Read(make([]byte, 1)); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, _, ok := r.VerifiedFile(); ok {
+		t.Fatal("a partly read reader still offers its file")
+	}
+
+	small, err := SpoolLimited(strings.NewReader("tiny"), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer small.Close()
+
+	if _, _, _, ok := small.Reader().VerifiedFile(); ok {
+		t.Fatal("a body held in memory offers a file")
+	}
+}
+
+func TestSetSpoolDirPlacesSpoolFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	SetSpoolDir(dir)
+	t.Cleanup(func() { SetSpoolDir("") })
+
+	big := spoolPayload(spoolMemoryLimit + 1)
+
+	spool, err := SpoolLimited(bytes.NewReader(big), int64(len(big)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Fatalf("spool dir holds %d files, want 1", len(entries))
+	}
+
+	spool.Close()
+
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("spool dir holds %d files after Close", len(entries))
+	}
+}

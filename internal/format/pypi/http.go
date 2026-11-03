@@ -529,7 +529,7 @@ func (h *HTTPHandler) uploadLicenses(w http.ResponseWriter, r *http.Request, rep
 	filename := form.Filename
 
 	res, err := licensemeta.Read(r.Context(), "pypi", filename, func() (io.ReadCloser, error) {
-		return io.NopCloser(form.File.Reader()), nil
+		return form.File.Reader(), nil
 	})
 
 	switch {

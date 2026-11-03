@@ -175,7 +175,7 @@ Backends: `filesystem`, `s3`, `gcs`, `azure`, `garage`, `seaweedfs`, `oci`. `gar
 | `OPENARTIFACT_AZURE_CONTAINER_NAME` | `azureContainerName` | empty | Azure container |
 | `OPENARTIFACT_AZURE_ENDPOINT` | `azureEndpoint` | empty | Azure blob service URL (Azurite, sovereign clouds); empty uses `https://<account>.blob.core.windows.net` |
 | `STORAGE_STAGING_PATH` | `stagingPath` | empty | Spool directory for server-relayed presigned uploads on `oci` storage; required (persistent) while uploads are relayed, it also holds the relay signing key |
-| `STORAGE_SPOOL_PATH` | `spoolPath` | empty | Directory where `s3`, `azure` and `oci` spool a blob while verifying it; stale leftovers are swept at startup (default: system temp dir, not swept) |
+| `STORAGE_SPOOL_PATH` | `spoolPath` | empty | Directory where uploads are spooled while they are received and hashed, before `s3`, `azure` and `oci` send them on; stale leftovers are swept at startup (default: system temp dir, not swept). On `filesystem` storage the spool is always `<path>/spool`, on the blob filesystem, so a stored upload is a hard link and is not written twice |
 | `STORAGE_OCI_USERNAME` | `ociUsername` | empty | OCI registry user |
 | `STORAGE_OCI_PASSWORD` | `ociPassword` | empty | OCI registry password (**secret**) |
 | `STORAGE_OCI_INSECURE` | `ociInsecure` | `false` | Allow an `http://` registry endpoint (dev/test only); without it such an endpoint is refused at startup. TLS verification is never disabled |

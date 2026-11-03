@@ -60,7 +60,7 @@ PUT /repos/maven/REPO/<group/path>/<artifactId>/<version>/<file>
 | Request | Behaviour |
 |---|---|
 | `PUT <path>` | stores the file; `201` when new, `200` when replaced or identical |
-| `PUT <file>.md5`, `.sha1`, `.sha256`, `.sha512` | answered `200` and discarded; the server computes all four checksums while it receives the file |
+| `PUT <file>.md5`, `.sha1`, `.sha256`, `.sha512` | answered `200` and discarded; the server computes the SHA-256 and SHA-1 while it receives the file and serves `.md5` and `.sha512` by hashing the stored file when they are requested |
 | `PUT .../maven-metadata.xml` | answered `200` and discarded; metadata is always generated |
 | `DELETE <path>` | removes one file, `204`; a path ending in `/` is `405` |
 | `MKCOL` | answered `200` for WebDAV clients |

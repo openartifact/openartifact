@@ -110,12 +110,12 @@ func (p *BlobRefStore) DeleteBlobIfUnreferenced(ctx context.Context, sha256 stri
 		return false, fmt.Errorf("acquire blob lock: %w", err)
 	}
 
-	count, err := blobRefCount(ctx, tx, sha256)
+	referenced, err := blobReferenced(ctx, tx, sha256)
 	if err != nil {
 		return false, err
 	}
 
-	if count > 0 {
+	if referenced {
 		return false, nil
 	}
 
@@ -386,6 +386,29 @@ func blobRefCount(ctx context.Context, q rowQuerier, sha256 string) (int, error)
 	}
 
 	return count, nil
+}
+
+// blobReferenced reports whether any table references the blob identified by
+// sha256. Unlike blobRefCount it stops at the first reference instead of
+// counting them all, which matters for a blob that thousands of rows share.
+func blobReferenced(ctx context.Context, q rowQuerier, sha256 string) (bool, error) {
+	var unreferenced bool
+
+	err := q.QueryRowContext(ctx,
+		`SELECT
+			`+blobUnreferencedExpr+`
+		 FROM (SELECT $1::text AS sha256, (SELECT id FROM blobs WHERE sha256 = $1::text) AS id) b`,
+		sha256,
+	).Scan(&unreferenced)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("failed to check blob references: %w", err)
+	}
+
+	return !unreferenced, nil
 }
 
 // enqueueBlobDeletionSQL is the statement behind sqlc's EnqueueBlobDeletion,

@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path"
 	"time"
 
@@ -185,17 +184,14 @@ func (s *S3BlobStore) Put(ctx context.Context, data io.Reader, metadata map[stri
 	// the claimed digest matches the bytes, and the bytes uploaded are the
 	// bytes that were hashed.
 	_, endSpool := telemetry.StartSpan(ctx, "storage.s3.spool")
-	spool, size, err := spoolVerified(data, sha, s.spoolDir, "s3-put-*.tmp")
+	spool, size, release, err := openVerified(data, sha, s.spoolDir, "s3-put-*.tmp")
 	endSpool(err)
 
 	if err != nil {
 		return "", fmt.Errorf("s3: %w", err)
 	}
 
-	defer func() {
-		_ = spool.Close()
-		_ = os.Remove(spool.Name())
-	}()
+	defer release()
 
 	// Verified content already present is never overwritten.
 	existsCtx, endExists := telemetry.StartSpan(ctx, "storage.s3.head")

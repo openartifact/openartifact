@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/api"
+	"github.com/openartifact/openartifact/internal/format/base"
 	formatgomod "github.com/openartifact/openartifact/internal/format/gomod"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/replication"
@@ -59,6 +60,10 @@ func (a *app) setupStorage() error {
 	}
 
 	a.store.raw = raw
+
+	// On the filesystem backend the upload spools live next to the blobs, so
+	// storing one is a hard link instead of a second write.
+	base.SetSpoolDir(storage.SpoolDirFor(a.cfg.Storage))
 
 	if err := a.setupTiers(); err != nil {
 		return err

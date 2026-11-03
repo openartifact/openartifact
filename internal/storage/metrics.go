@@ -20,6 +20,29 @@ import (
 type countingReader struct {
 	r     io.Reader
 	count int64
+	// viaFile is the size of the file a store took over directly (VerifiedFile)
+	// instead of reading it through r.
+	viaFile int64
+}
+
+// VerifiedFile forwards the wrapped reader's file so the store below still
+// sees the upload spool; the bytes it takes from the file count as written.
+func (cr *countingReader) VerifiedFile() (string, string, int64, bool) {
+	path, sha, size, ok := verifiedFileOf(cr.r)
+	if ok {
+		cr.viaFile = size
+	}
+
+	return path, sha, size, ok
+}
+
+// written is the number of bytes the store consumed.
+func (cr *countingReader) written() int64 {
+	if cr.count == 0 {
+		return cr.viaFile
+	}
+
+	return cr.count
 }
 
 func (cr *countingReader) Read(p []byte) (int, error) {
@@ -75,7 +98,7 @@ func (m *MetricsBlobStore) Put(ctx context.Context, data io.Reader, metadata map
 	done(err)
 
 	if err == nil {
-		m.reg.BlobBytesTotal.WithLabelValues("put").Add(float64(cr.count))
+		m.reg.BlobBytesTotal.WithLabelValues("put").Add(float64(cr.written()))
 	}
 
 	return id, err

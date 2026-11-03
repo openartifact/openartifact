@@ -319,7 +319,7 @@ func (h *HTTPHandler) pushedLicenses(
 	metadata map[string]any,
 ) ([]string, bool) {
 	res, err := licensemeta.Read(r.Context(), "nuget", pkg.PackageID+"."+pkg.Version+".nupkg", func() (io.ReadCloser, error) {
-		return io.NopCloser(part.Reader()), nil
+		return part.Reader(), nil
 	})
 
 	switch {

@@ -16,7 +16,6 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
 	"sort"
 	"strconv"
@@ -381,15 +380,12 @@ func (a *AzureBlobStore) Put(ctx context.Context, data io.Reader, metadata map[s
 	// Spool to a private temp file: it yields the content length without
 	// buffering in memory and proves the bytes hash to the claimed digest
 	// before anything becomes visible.
-	spool, size, err := spoolVerified(data, sha, a.spoolDir, "azure-put-*.tmp")
+	spool, size, release, err := openVerified(data, sha, a.spoolDir, "azure-put-*.tmp")
 	if err != nil {
 		return "", fmt.Errorf("azure: %w", err)
 	}
 
-	defer func() {
-		_ = spool.Close()
-		_ = os.Remove(spool.Name())
-	}()
+	defer release()
 
 	// Verified content already present is never overwritten.
 	exists, err := a.Exists(ctx, sha)

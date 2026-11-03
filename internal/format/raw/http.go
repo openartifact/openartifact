@@ -5,14 +5,11 @@
 package raw
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
@@ -24,7 +21,6 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/importmeta"
-	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
@@ -96,46 +92,34 @@ func (h *HTTPHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Spool the body to a temp file while hashing it, so the per-blob lock is
-	// only held for the (fast) store + insert and not while the client streams.
-	tmp, err := os.CreateTemp("", "raw-upload-*")
-	if err != nil {
-		h.Log.Errorw("failed to create spool file", "path", path, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	defer func() {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-	}()
-
+	// Spool the body while hashing it, so the per-blob lock is only held for
+	// the (fast) store + insert and not while the client streams.
 	defer func() { _ = r.Body.Close() }()
 
-	hasher := sha256.New()
-
-	size, err := iocopy.Copy(io.MultiWriter(tmp, hasher), io.LimitReader(r.Body, maxRawUploadBytes+1))
+	spool, err := base.SpoolLimited(r.Body, maxRawUploadBytes)
 	if err != nil {
+		if errors.Is(err, base.ErrContentTooLarge) {
+			http.Error(w, "upload too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+
 		h.Log.Errorw("failed to read upload", "path", path, "error", err)
 		http.Error(w, "failed to read upload", http.StatusBadRequest)
 
 		return
 	}
 
-	if size > maxRawUploadBytes {
-		http.Error(w, "upload too large", http.StatusRequestEntityTooLarge)
-		return
-	}
+	defer spool.Close()
 
-	sha256Hex := hex.EncodeToString(hasher.Sum(nil))
+	size := spool.Size()
+	sha256Hex := spool.SHA256Hex()
 
 	// Detect content type
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "" {
 		buf := make([]byte, 512)
 
-		n, _ := tmp.ReadAt(buf, 0)
+		n, _ := spool.ReadAt(buf, 0)
 		if n > 0 {
 			contentType = http.DetectContentType(buf[:n])
 		} else {
@@ -160,7 +144,7 @@ func (h *HTTPHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		"sha256": sha256Hex,
 		"format": "raw",
 		"path":   path,
-	}, func() io.Reader { return io.NewSectionReader(tmp, 0, size) }))
+	}, func() io.Reader { return spool.Reader() }))
 	if err != nil {
 		if errors.Is(err, trash.ErrImmutableRelease) {
 			h.writeGuardError(w, err, "overwrite", path)

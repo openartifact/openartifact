@@ -146,12 +146,7 @@ func (p *ReplicationStore) BlobReplicationReferenced(ctx context.Context, sha256
 		return true, nil
 	}
 
-	n, err := blobRefCount(ctx, p.db, sha256)
-	if err != nil {
-		return false, err
-	}
-
-	return n > 0, nil
+	return blobReferenced(ctx, p.db, sha256)
 }
 
 // GetBlobReplicationState reads the singleton state.
