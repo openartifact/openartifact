@@ -337,7 +337,6 @@ func (w *DebMetadataWorker) generateDistribution(
 			}
 
 			addFile(base+".gz", gzipped)
-
 		}
 	}
 
