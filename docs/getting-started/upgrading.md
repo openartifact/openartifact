@@ -127,6 +127,16 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
+### Unreleased
+
+**What you must do**
+
+- Nothing. There is no migration and no configuration change.
+
+**New features.**
+
+- **Six more MCP tools.** `check_availability` explains why a package version can or cannot be installed (minimum age with the unlock time, curation rule, quarantine, license policy, not found). `list_held_back_versions` and `list_proxy_versions` list the upstream versions of a proxy package. `get_licenses` and `get_sbom` read the stored license scan and SBOM of an artifact. `get_repository_activity` reads a repository's recent events. They are read-only and follow the permissions of the REST endpoints they mirror: `get_licenses` and `get_sbom` need global `manage`, and the `cleanup`, `settings`, `curation` and `federation` activity categories need repository admin. A test now fails when the REST API gains a GET capability without a decision for the MCP server. See [MCP server](../integrations/mcp.md#availability-licenses-sboms-and-activity).
+
 ### 0.17.0
 
 **What you must do**

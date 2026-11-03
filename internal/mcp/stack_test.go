@@ -177,6 +177,13 @@ func newStack(t *testing.T, mutate func(*stackOptions)) *stack {
 		return evaluator.RepoReadFilter(ctx, *middleware.PrincipalFromContext(ctx))
 	})
 	s.SetSearcher(fakeSearcher{})
+	s.SetRepoAdmin(func(ctx context.Context, repoName string) bool {
+		ok, err := evaluator.EvaluateRepoAdmin(ctx, *middleware.PrincipalFromContext(ctx), repoName)
+
+		return err == nil && ok
+	})
+	s.SetBlobStore(&db.gate.blobs)
+	s.SetProxyService(&db.gate.upstream)
 
 	st := &stack{t: t, db: db, mcp: s, secrets: map[string]string{}}
 	st.addUser("reader", targetReadOnly, []string{targetReadOnly})

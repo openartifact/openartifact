@@ -22,8 +22,9 @@ const jsonRPCInvalidParams = -32602
 
 func allTools() []string {
 	return []string{
-		"client_setup", "get_artifact_analysis", "get_package", "get_repository", "get_vulnerabilities",
-		"list_ai_analyses", "list_packages", "list_repositories", "search_artifacts", "trigger_ai_analysis",
+		"check_availability", "client_setup", "get_artifact_analysis", "get_licenses", "get_package", "get_repository",
+		"get_repository_activity", "get_sbom", "get_vulnerabilities", "list_ai_analyses", "list_held_back_versions",
+		"list_packages", "list_proxy_versions", "list_repositories", "search_artifacts", "trigger_ai_analysis",
 	}
 }
 

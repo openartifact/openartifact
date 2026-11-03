@@ -14,6 +14,7 @@ import (
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/exploit"
+	"github.com/openartifact/openartifact/internal/sbom"
 )
 
 // Every tool result is built from the explicit snake_case DTOs below. Never
@@ -237,4 +238,90 @@ func toRepositoryDTO(r *models.Repository) responses.RepositoryResponse {
 	resp.UpstreamUsername = ""
 
 	return resp
+}
+
+// availabilityResult is the answer of the availability endpoint for one package
+// version. Reason details quote curation rule reasons written by repository
+// admins, so the result is marked untrusted.
+type availabilityResult struct {
+	provenance
+
+	responses.AvailabilityResponse
+
+	Repository string `json:"repository"`
+	Package    string `json:"package"`
+	Version    string `json:"version"`
+}
+
+// heldBackResult is the held-back-versions answer for one proxy package.
+type heldBackResult struct {
+	provenance
+
+	Repository string `json:"repository"`
+	Package    string `json:"package"`
+	// Supported is false when the format cannot list versions or the upstream
+	// metadata of the package is not cached yet: Versions is then empty.
+	Supported bool                        `json:"supported"`
+	Versions  []responses.HeldBackVersion `json:"versions"`
+	// Truncated is set when more versions are held back than Versions lists.
+	Truncated bool `json:"truncated"`
+}
+
+// proxyVersionsResult is the proxy-versions answer for one proxy package.
+type proxyVersionsResult struct {
+	provenance
+
+	Repository string `json:"repository"`
+	Package    string `json:"package"`
+	Supported  bool   `json:"supported"`
+	// CacheKnown is false when the format's cache keys name no version: Cached
+	// is then false for every version.
+	CacheKnown bool `json:"cache_known"`
+	// TotalVersions counts the versions the upstream metadata names; Versions
+	// lists the newest of them, at most maxUpstreamVersions.
+	TotalVersions int                      `json:"total_versions"`
+	Versions      []responses.ProxyVersion `json:"versions"`
+	Truncated     bool                     `json:"truncated"`
+}
+
+// licenseResult is the license scan result of one artifact. The scan error
+// text of the REST shape is left out: it can echo file paths and parser
+// messages.
+type licenseResult struct {
+	provenance
+
+	responses.LicenseScanResultResponse
+
+	Repository string `json:"repository"`
+}
+
+// sbomResult is one stored SBOM of an artifact with the packages it names.
+type sbomResult struct {
+	provenance
+
+	Repository  string `json:"repository"`
+	ArtifactID  string `json:"artifact_id"`
+	ReportID    string `json:"report_id"`
+	Format      string `json:"format"`
+	SpecVersion string `json:"spec_version"`
+	GeneratedAt string `json:"generated_at"`
+	// ComponentCount is the number of components the report recorded when it
+	// was generated; Components lists at most Limit of them, in document order.
+	ComponentCount int              `json:"component_count"`
+	Components     []sbom.Component `json:"components"`
+	Truncated      bool             `json:"truncated"`
+	// AvailableFormats are the formats the artifact has a stored SBOM in; pass
+	// one as format to read another.
+	AvailableFormats []string `json:"available_formats"`
+}
+
+// activityResult is one page of the activity feed of a repository. Messages
+// name packages, users and rule reasons written by third parties, so the result
+// is marked untrusted.
+type activityResult struct {
+	provenance
+
+	responses.ActivityPage
+
+	Repository string `json:"repository"`
 }
