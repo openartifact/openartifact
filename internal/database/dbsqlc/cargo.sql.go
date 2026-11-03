@@ -26,8 +26,8 @@ type CargoIndexStampParams struct {
 }
 
 // Fingerprint of the sparse index entry of one crate: its live versions and
-// their yanked flags, the only mutable state the entry shows. (updated_at is
-// no validator: every download bumps it.)
+// their yanked flags, the only mutable state the entry shows (download counts
+// are not part of it).
 func (q *Queries) CargoIndexStamp(ctx context.Context, arg CargoIndexStampParams) (string, error) {
 	row := q.db.QueryRow(ctx, cargoIndexStamp, arg.RepositoryID, arg.Name)
 	var stamp string

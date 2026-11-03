@@ -68,6 +68,7 @@ This page lists every configuration key with its type, built-in default and the 
 | `database.maxIdleConns` | `DB_MAX_IDLE_CONNS` | int | `5` | `maxIdleConns` is how many idle connections the pool keeps warm. |
 | `database.connMaxLifetimeMinutes` | `DB_CONN_MAX_LIFETIME_MINUTES` | int | `30` | `connMaxLifetimeMinutes` is the maximum lifetime of a connection, in minutes. |
 | `database.authCacheTtlMs` | `DB_AUTH_CACHE_TTL_MS` | int | `2000` | `authCacheTtlMs` is how long, in milliseconds, per-request authentication lookups (token, user, groups, permission targets, repository by name) are served from memory. Writes through this process invalidate immediately; other replicas observe a change after at most this long. 0 disables the cache. |
+| `database.downloadCountFlushInterval` | `DB_DOWNLOAD_COUNT_FLUSH_INTERVAL` | duration | `5s` | `downloadCountFlushInterval` is how often the batched package download counters (cargo, nuget, apk, nix, terraform) are written to the database. A download shows in the counter within this long; 0 means 5s. |
 | `database.connectTimeout` | `DB_CONNECT_TIMEOUT` | duration | `1m` | `connectTimeout` is how long startup keeps retrying the initial database connection (capped exponential backoff) before giving up. 0 fails at the first error. |
 
 ## storage

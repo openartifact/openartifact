@@ -335,6 +335,7 @@ func (m *sessionMockDB) ListNuGetPackageVersions(_ context.Context, _, _ string)
 func (m *sessionMockDB) SearchNuGetPackages(_ context.Context, _, _ string, _, _ int) ([]*models.NuGetPackage, int, error) {
 	return nil, 0, nil
 }
+
 // Go Module Proxy methods
 func (m *sessionMockDB) CreateGoModule(_ context.Context, _ *models.GoModule) error { return nil }
 func (m *sessionMockDB) GetGoModule(_ context.Context, _, _, _ string) (*models.GoModule, error) {
@@ -410,6 +411,7 @@ func (m *sessionMockDB) SearchCargoCrates(_ context.Context, _, _ string, _ int)
 	return nil, nil
 }
 func (m *sessionMockDB) YankCargoCrate(_ context.Context, _, _, _ string, _ bool) error { return nil }
+
 // RubyGems methods
 func (m *sessionMockDB) CreateRubyGem(_ context.Context, _ *models.RubyGem) error { return nil }
 func (m *sessionMockDB) GetRubyGem(_ context.Context, _, _, _, _ string) (*models.RubyGem, error) {

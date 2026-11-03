@@ -460,8 +460,7 @@ type TerraformPackageStampParams struct {
 
 // Fingerprint of the live files of one module or provider type: their count
 // and an order-independent hash of their IDs. Files are immutable apart from
-// the download counter (updated_at moves with every download, so it is no
-// validator), and trash/restore changes membership.
+// the download counter, and trash/restore changes membership.
 func (q *Queries) TerraformPackageStamp(ctx context.Context, arg TerraformPackageStampParams) (string, error) {
 	row := q.db.QueryRow(ctx, terraformPackageStamp, arg.RepositoryID, arg.NameKey)
 	var stamp string
