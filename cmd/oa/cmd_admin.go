@@ -77,6 +77,30 @@ func adminDeleteCmd(a *app, short, arg, base, label string, comp completer) *cob
 // USER (admin)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// userIDs completes user ids.
+func (a *app) userIDs() completer {
+	return a.listNames("/api/v1/users", "data", "id")
+}
+
+// groupIDs completes group ids.
+func (a *app) groupIDs() completer {
+	return a.listNames("/api/v1/groups", "data", "id")
+}
+
+// projectMemberIDs completes the user ids of the members of the project named first.
+func (a *app) projectMemberIDs() completer {
+	return a.listNamesAt(func(args []string) string {
+		return "/api/v1/projects/" + escape(args[0]) + "/members"
+	}, "members", "user_id")
+}
+
+// groupMemberIDs completes the user ids of the members of the group named first.
+func (a *app) groupMemberIDs() completer {
+	return a.listNamesAt(func(args []string) string {
+		return "/api/v1/groups/" + escape(args[0]) + "/members"
+	}, "data", "id")
+}
+
 func newUserCmd(a *app) *cobra.Command {
 	return parentCmd("user", "Manage users (admin)",
 		&cobra.Command{
@@ -90,9 +114,9 @@ func newUserCmd(a *app) *cobra.Command {
 			},
 		},
 		userCreateCmd(a),
-		adminShowCmd(a, "Show a user", "id", "/api/v1/users/", nothing),
+		adminShowCmd(a, "Show a user", "id", "/api/v1/users/", a.userIDs()),
 		userUpdateCmd(a),
-		adminDeleteCmd(a, "Delete a user", "id", "/api/v1/users/", "User", nothing),
+		adminDeleteCmd(a, "Delete a user", "id", "/api/v1/users/", "User", a.userIDs()),
 	)
 }
 
@@ -174,7 +198,7 @@ func userUpdateCmd(a *app) *cobra.Command {
 		Use:               "update <id>",
 		Short:             "Update a user (only the flags you pass are sent)",
 		Args:              usageArgs(1, 1),
-		ValidArgsFunction: positional(nothing),
+		ValidArgsFunction: positional(a.userIDs()),
 	}
 
 	email := cmd.Flags().String("email", "", "Email")
@@ -236,13 +260,13 @@ func newGroupCmd(a *app) *cobra.Command {
 		adminListCmd(a, "List groups", "/api/v1/groups", "data",
 			[]string{"ID", "NAME", "DESCRIPTION"}, []string{"id", "name", "description"}),
 		create,
-		adminShowCmd(a, "Show a group", "id", base, nothing),
-		adminDeleteCmd(a, "Delete a group", "id", base, "Group", nothing),
+		adminShowCmd(a, "Show a group", "id", base, a.groupIDs()),
+		adminDeleteCmd(a, "Delete a group", "id", base, "Group", a.groupIDs()),
 		&cobra.Command{
 			Use:               "members <id>",
 			Short:             "List group members",
 			Args:              usageArgs(1, 1),
-			ValidArgsFunction: positional(nothing),
+			ValidArgsFunction: positional(a.groupIDs()),
 			Run: func(_ *cobra.Command, args []string) {
 				listGeneric(a.client, base+escape(args[0])+"/members", "data",
 					[]string{"USER_ID", "USERNAME", "EMAIL"}, []string{"id", "username", "email"}, a.outFmt)
@@ -252,7 +276,7 @@ func newGroupCmd(a *app) *cobra.Command {
 			Use:               "add-member <id> <user-id>",
 			Short:             "Add a member to a group",
 			Args:              usageArgs(2, 2),
-			ValidArgsFunction: positional(nothing, nothing),
+			ValidArgsFunction: positional(a.groupIDs(), a.userIDs()),
 			Run: func(_ *cobra.Command, args []string) {
 				postEmpty(a.client, base+escape(args[0])+"/members/"+escape(args[1]), "Member added.",
 					http.StatusOK, http.StatusNoContent, http.StatusCreated)
@@ -262,7 +286,7 @@ func newGroupCmd(a *app) *cobra.Command {
 			Use:               "rm-member <id> <user-id>",
 			Short:             "Remove a member from a group",
 			Args:              usageArgs(2, 2),
-			ValidArgsFunction: positional(nothing, nothing),
+			ValidArgsFunction: positional(a.groupIDs(), a.groupMemberIDs()),
 			Run: func(_ *cobra.Command, args []string) {
 				deleteResource(a.client, base+escape(args[0])+"/members/"+escape(args[1]), "Member removed.")
 			},
@@ -290,7 +314,7 @@ func newProjectCmd(a *app) *cobra.Command {
 		Use:               "set-role <name> <user-id> <role>",
 		Short:             "Change a member's role",
 		Args:              usageArgs(3, 3),
-		ValidArgsFunction: positional(a.projectNames(), nothing, enum(projectRoles...)),
+		ValidArgsFunction: positional(a.projectNames(), a.projectMemberIDs(), enum(projectRoles...)),
 		Run: func(_ *cobra.Command, args []string) {
 			sendJSON(a.client, "PATCH", base+escape(args[0])+"/members/"+escape(args[1]),
 				map[string]string{"role": args[2]}, http.StatusOK)
@@ -337,7 +361,7 @@ func newProjectCmd(a *app) *cobra.Command {
 			Use:               "rm-member <name> <user-id>",
 			Short:             "Remove a member from a project",
 			Args:              usageArgs(2, 2),
-			ValidArgsFunction: positional(a.projectNames(), nothing),
+			ValidArgsFunction: positional(a.projectNames(), a.projectMemberIDs()),
 			Run: func(_ *cobra.Command, args []string) {
 				deleteResource(a.client, base+escape(args[0])+"/members/"+escape(args[1]), "Member removed.")
 			},
@@ -484,7 +508,7 @@ func projectAddMemberCmd(a *app) *cobra.Command {
 		Use:               "add-member <name> (<user-id> | --username U)",
 		Short:             "Add a member to a project",
 		Args:              usageArgs(1, 2),
-		ValidArgsFunction: positional(a.projectNames(), nothing),
+		ValidArgsFunction: positional(a.projectNames(), a.userIDs()),
 	}
 
 	role := cmd.Flags().String("role", "viewer", "Role: viewer|developer|maintainer|owner")

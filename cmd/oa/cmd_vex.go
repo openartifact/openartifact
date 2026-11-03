@@ -47,13 +47,22 @@ func newVEXCmd(a *app) *cobra.Command {
 			[]string{"id", "artifact_id", "vuln_id", "status", "justification", "updated_at"}, a.outFmt)
 	}
 
-	return parentCmd("vex", "VEX documents and decisions",
+	return parentCmd(
+		"vex",
+		"VEX documents and decisions",
 		vexGetCmd(a),
 		list,
 		vexSetCmd(a),
-		leafCmd("delete <repo> <id>", "Delete a VEX decision", 2, 2, repos, func(_ *cobra.Command, args []string) {
-			deleteResource(a.client, repoPath(args[0], "vex/statements/"+escape(args[1])), "VEX decision deleted.")
-		}),
+		leafCmd(
+			"delete <repo> <id>",
+			"Delete a VEX decision",
+			2,
+			2,
+			a.repoScanIDs("vex/statements", "statements"),
+			func(_ *cobra.Command, args []string) {
+				deleteResource(a.client, repoPath(args[0], "vex/statements/"+escape(args[1])), "VEX decision deleted.")
+			},
+		),
 	)
 }
 

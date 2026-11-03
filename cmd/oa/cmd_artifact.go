@@ -28,7 +28,7 @@ func newArtifactCmd(a *app) *cobra.Command {
 			Use:               "delete <repo> <id>",
 			Short:             "Delete a package by id",
 			Args:              usageArgs(2, 2),
-			ValidArgsFunction: positional(a.repoNames(), nothing),
+			ValidArgsFunction: positional(a.repoNames(), a.repoIDs("packages", "packages")),
 			Run:               func(_ *cobra.Command, args []string) { artifactDelete(a.client, args[0], args[1]) },
 		},
 	)

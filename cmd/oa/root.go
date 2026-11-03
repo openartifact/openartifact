@@ -96,7 +96,7 @@ func newRootCmd() *cobra.Command {
 	pf.StringVar(&a.server, "server", "", "Server URL (default "+defaultServer+", env OA_SERVER)")
 	pf.StringVar(&a.token, "token", "", "API token (env OA_TOKEN)")
 	pf.StringVar(&a.format, "format", formatTable, "Output format: table or json")
-	mustRegister(root.RegisterFlagCompletionFunc("format", enumCompletion(formatTable, formatJSON)))
+	mustRegister(root.RegisterFlagCompletionFunc("format", enum(formatTable, formatJSON)))
 
 	root.CompletionOptions.DisableDefaultCmd = true
 

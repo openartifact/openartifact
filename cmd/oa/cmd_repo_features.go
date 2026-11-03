@@ -247,6 +247,7 @@ var attestValues = []string{"true", "bundle"}
 
 func newSBOMCmd(a *app) *cobra.Command {
 	repos := []completer{a.repoNames()}
+	reports := a.repoScanIDs("sbom", "reports")
 
 	return parentCmd("sbom", "Manage SBOMs",
 		leafCmd("list <repo>", "List the SBOMs of a repository", 1, 1, repos, func(_ *cobra.Command, args []string) {
@@ -254,11 +255,11 @@ func newSBOMCmd(a *app) *cobra.Command {
 				[]string{"id", "artifact_id", "format", "component_count", "created_at"}, a.outFmt)
 		}),
 		sbomGenerateCmd(a),
-		leafCmd("show <repo> <id>", "Show an SBOM", 2, 2, repos, func(_ *cobra.Command, args []string) {
+		leafCmd("show <repo> <id>", "Show an SBOM", 2, 2, reports, func(_ *cobra.Command, args []string) {
 			showGeneric(a.client, repoPath(args[0], "sbom/"+escape(args[1])), a.outFmt)
 		}),
 		sbomDownloadCmd(a),
-		leafCmd("delete <repo> <id>", "Delete an SBOM", 2, 2, repos, func(_ *cobra.Command, args []string) {
+		leafCmd("delete <repo> <id>", "Delete an SBOM", 2, 2, reports, func(_ *cobra.Command, args []string) {
 			deleteResource(a.client, repoPath(args[0], "sbom/"+escape(args[1])), "SBOM deleted.")
 		}),
 	)
@@ -311,7 +312,7 @@ func sbomGenerateCmd(a *app) *cobra.Command {
 
 func sbomDownloadCmd(a *app) *cobra.Command {
 	cmd := leafCmd("download <repo> <id> <dest>", "Download an SBOM (or its signed attestation)", 3, 3,
-		[]completer{a.repoNames(), nothing, files}, nil)
+		[]completer{a.repoNames(), a.repoIDs("sbom", "reports"), files}, nil)
 
 	attest := cmd.Flags().String(
 		"attest",
@@ -370,6 +371,7 @@ func osvEcosystems() []string {
 
 func newVulnCmd(a *app) *cobra.Command {
 	repos := []completer{a.repoNames()}
+	scans := a.repoScanIDs("vuln/scans", "scans")
 
 	return parentCmd("vuln", "Vulnerability scanning",
 		vulnScanCmd(a),
@@ -378,11 +380,11 @@ func newVulnCmd(a *app) *cobra.Command {
 				[]string{"ID", "ARTIFACT", "STATUS", "CRITICAL", "HIGH", "QUARANTINED", "CREATED"},
 				[]string{"id", "artifact_id", "scan_status", "critical_count", "high_count", "quarantined", "created_at"}, a.outFmt)
 		}),
-		leafCmd("show <repo> <id>", "Show a vulnerability scan", 2, 2, repos, func(_ *cobra.Command, args []string) {
+		leafCmd("show <repo> <id>", "Show a vulnerability scan", 2, 2, scans, func(_ *cobra.Command, args []string) {
 			showGeneric(a.client, repoPath(args[0], "vuln/scans/"+escape(args[1])), a.outFmt)
 		}),
-		quarantineCmd(a, "Quarantine the vulnerable package (--release lifts it)", "vuln"),
-		leafCmd("delete <repo> <id>", "Delete a vulnerability scan", 2, 2, repos, func(_ *cobra.Command, args []string) {
+		quarantineCmd(a, "Quarantine the vulnerable package (--release lifts it)", "vuln", scans),
+		leafCmd("delete <repo> <id>", "Delete a vulnerability scan", 2, 2, scans, func(_ *cobra.Command, args []string) {
 			deleteResource(a.client, repoPath(args[0], "vuln/scans/"+escape(args[1])), "Scan deleted.")
 		}),
 	)
@@ -429,9 +431,10 @@ func vulnScanCmd(a *app) *cobra.Command {
 
 // quarantineCmd quarantines the package of a scan result, or with --release
 // lifts the quarantine. The server needs the wanted state in the body, so
-// --release=false quarantines. sub is the API path segment of its scans (vuln, secrets).
-func quarantineCmd(a *app, short, sub string) *cobra.Command {
-	cmd := leafCmd("quarantine <repo> <id>", short, 2, 2, []completer{a.repoNames()}, nil)
+// --release=false quarantines. sub is the API path segment of its scans (vuln, secrets);
+// comps complete the repository and the scan id.
+func quarantineCmd(a *app, short, sub string, comps []completer) *cobra.Command {
+	cmd := leafCmd("quarantine <repo> <id>", short, 2, 2, comps, nil)
 
 	release := cmd.Flags().Bool("release", false, "Lift the quarantine (--release=false quarantines)")
 
@@ -470,16 +473,25 @@ func newLicenseCmd(a *app) *cobra.Command {
 		printScanResult(result, a.outFmt, "License scan %v: %v.", "id", "scan_status")
 	}
 
-	return parentCmd("license", "License scanning",
+	return parentCmd(
+		"license",
+		"License scanning",
 		scan,
 		leafCmd("list <repo>", "List license scans", 1, 1, repos, func(_ *cobra.Command, args []string) {
 			listGeneric(a.client, repoPath(args[0], "license/scans"), "scans",
 				[]string{"ID", "ARTIFACT", "STATUS", "LICENSES", "CREATED"},
 				[]string{"id", "artifact_id", "scan_status", "licenses", "created_at"}, a.outFmt)
 		}),
-		leafCmd("show <repo> <id>", "Show a license scan", 2, 2, repos, func(_ *cobra.Command, args []string) {
-			showGeneric(a.client, repoPath(args[0], "license/scans/"+escape(args[1])), a.outFmt)
-		}),
+		leafCmd(
+			"show <repo> <id>",
+			"Show a license scan",
+			2,
+			2,
+			a.repoScanIDs("license/scans", "scans"),
+			func(_ *cobra.Command, args []string) {
+				showGeneric(a.client, repoPath(args[0], "license/scans/"+escape(args[1])), a.outFmt)
+			},
+		),
 	)
 }
 
@@ -489,6 +501,7 @@ func newLicenseCmd(a *app) *cobra.Command {
 
 func newSecretCmd(a *app) *cobra.Command {
 	repos := []completer{a.repoNames()}
+	scans := a.repoScanIDs("secrets/scans", "scans")
 
 	return parentCmd("secret", "Secret scanning",
 		secretScanCmd(a),
@@ -497,11 +510,11 @@ func newSecretCmd(a *app) *cobra.Command {
 				[]string{"ID", "ARTIFACT", "STATUS", "FINDINGS", "QUARANTINED", "CREATED"},
 				[]string{"id", "artifact_id", "scan_status", "finding_count", "quarantined", "created_at"}, a.outFmt)
 		}),
-		leafCmd("show <repo> <id>", "Show a secret scan", 2, 2, repos, func(_ *cobra.Command, args []string) {
+		leafCmd("show <repo> <id>", "Show a secret scan", 2, 2, scans, func(_ *cobra.Command, args []string) {
 			showGeneric(a.client, repoPath(args[0], "secrets/scans/"+escape(args[1])), a.outFmt)
 		}),
-		quarantineCmd(a, "Quarantine the package with the leaked secret (--release lifts it)", "secrets"),
-		leafCmd("delete <repo> <id>", "Delete a secret scan", 2, 2, repos, func(_ *cobra.Command, args []string) {
+		quarantineCmd(a, "Quarantine the package with the leaked secret (--release lifts it)", "secrets", scans),
+		leafCmd("delete <repo> <id>", "Delete a secret scan", 2, 2, scans, func(_ *cobra.Command, args []string) {
 			deleteResource(a.client, repoPath(args[0], "secrets/scans/"+escape(args[1])), "Scan deleted.")
 		}),
 	)
@@ -557,8 +570,26 @@ func readContent(path string) string {
 // CLEANUP
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// repoIDs completes the ids under a repository sub-resource (sbom, vuln/scans,
+// packages...): the list at repoPath(<repo>, sub), key listKey, of the
+// repository named first.
+func (a *app) repoIDs(sub, listKey string) completer {
+	return a.listNamesAt(func(args []string) string { return repoPath(args[0], sub) }, listKey, "id")
+}
+
+// repoScanIDs completes (repository, id) of an SBOM, scan or VEX decision.
+func (a *app) repoScanIDs(sub, listKey string) []completer {
+	return []completer{a.repoNames(), a.repoIDs(sub, listKey)}
+}
+
+// cleanupIDs completes the policy ids of the repository named first.
+func (a *app) cleanupIDs() completer {
+	return a.listNamesAt(func(args []string) string { return repoPath(args[0], "cleanup-policies") }, "policies", "id")
+}
+
 func newCleanupCmd(a *app) *cobra.Command {
 	repos := []completer{a.repoNames()}
+	policies := []completer{a.repoNames(), a.cleanupIDs()}
 
 	return parentCmd("cleanup", "Manage cleanup policies",
 		leafCmd("list <repo>", "List cleanup policies", 1, 1, repos, func(_ *cobra.Command, args []string) {
@@ -567,14 +598,14 @@ func newCleanupCmd(a *app) *cobra.Command {
 				[]string{"id", "name", "enabled", "keep_last_n", "keep_since_days", "schedule_cron"}, a.outFmt)
 		}),
 		cleanupCreateCmd(a),
-		leafCmd("show <repo> <id>", "Show a cleanup policy", 2, 2, repos, func(_ *cobra.Command, args []string) {
+		leafCmd("show <repo> <id>", "Show a cleanup policy", 2, 2, policies, func(_ *cobra.Command, args []string) {
 			showGeneric(a.client, repoPath(args[0], "cleanup-policies/"+escape(args[1])), a.outFmt)
 		}),
 		cleanupUpdateCmd(a),
-		leafCmd("delete <repo> <id>", "Delete a cleanup policy", 2, 2, repos, func(_ *cobra.Command, args []string) {
+		leafCmd("delete <repo> <id>", "Delete a cleanup policy", 2, 2, policies, func(_ *cobra.Command, args []string) {
 			deleteResource(a.client, repoPath(args[0], "cleanup-policies/"+escape(args[1])), "Cleanup policy deleted.")
 		}),
-		leafCmd("run <repo> <id>", "Run a cleanup policy now", 2, 2, repos, func(_ *cobra.Command, args []string) {
+		leafCmd("run <repo> <id>", "Run a cleanup policy now", 2, 2, policies, func(_ *cobra.Command, args []string) {
 			postEmpty(a.client, repoPath(args[0], "cleanup-policies/"+escape(args[1])+"/run"),
 				"Cleanup policy run initiated.", http.StatusAccepted)
 		}),
@@ -662,7 +693,7 @@ func cleanupUpdateCmd(a *app) *cobra.Command {
 	var f cleanupFlags
 
 	cmd := leafCmd("update <repo> <id>", "Update a cleanup policy (only the flags you pass are sent)", 2, 2,
-		[]completer{a.repoNames()}, nil)
+		[]completer{a.repoNames(), a.cleanupIDs()}, nil)
 	f.bind(cmd)
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -748,18 +779,19 @@ func quotaSetCmd(a *app) *cobra.Command {
 
 func newPropsCmd(a *app) *cobra.Command {
 	repos := []completer{a.repoNames()}
+	artifacts := []completer{a.repoNames(), a.repoIDs("packages", "packages")}
 
 	return parentCmd("props", "Manage artifact properties",
-		leafCmd("list <repo> <artifact-id>", "List the properties of an artifact", 2, 2, repos, func(_ *cobra.Command, args []string) {
+		leafCmd("list <repo> <artifact-id>", "List the properties of an artifact", 2, 2, artifacts, func(_ *cobra.Command, args []string) {
 			showGeneric(a.client, repoPath(args[0], "artifacts/"+escape(args[1])+"/properties"), a.outFmt)
 		}),
-		leafCmd("set <repo> <artifact-id> <key> <value>", "Set a property of an artifact", 4, 4, repos,
+		leafCmd("set <repo> <artifact-id> <key> <value>", "Set a property of an artifact", 4, 4, artifacts,
 			func(_ *cobra.Command, args []string) {
 				sendJSON(a.client, "PATCH", repoPath(args[0], "artifacts/"+escape(args[1])+"/properties"),
 					map[string]string{args[2]: args[3]}, http.StatusOK)
 				fmt.Printf("Property '%s' set.\n", args[2])
 			}),
-		leafCmd("delete <repo> <artifact-id> <key>", "Delete a property of an artifact", 3, 3, repos,
+		leafCmd("delete <repo> <artifact-id> <key>", "Delete a property of an artifact", 3, 3, artifacts,
 			func(_ *cobra.Command, args []string) {
 				deleteResource(
 					a.client,
@@ -805,9 +837,14 @@ func propsSearch(client *Client, repo, key, value, outFmt string) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 func newDeltaCmd(a *app) *cobra.Command {
-	repos := []completer{a.repoNames()}
-
-	get := leafCmd("get <repo> <pkg-id> <dest>", "Download a delta patch", 3, 3, []completer{a.repoNames(), nothing, files}, nil)
+	get := leafCmd(
+		"get <repo> <pkg-id> <dest>",
+		"Download a delta patch",
+		3,
+		3,
+		[]completer{a.repoNames(), a.repoIDs("packages", "packages"), files},
+		nil,
+	)
 	fromSHA := get.Flags().String("from", "", "Source SHA256")
 	get.Run = func(_ *cobra.Command, args []string) {
 		if *fromSHA == "" {
@@ -819,12 +856,21 @@ func newDeltaCmd(a *app) *cobra.Command {
 		downloadFile(a.client, repoPath(args[0], "packages/"+escape(args[1])+"/delta?"+q.Encode()), args[2])
 	}
 
-	return parentCmd("delta", "Package deltas",
-		leafCmd("list <repo> <pkg-id>", "List the available deltas of a package", 2, 2, repos, func(_ *cobra.Command, args []string) {
-			listGeneric(a.client, repoPath(args[0], "packages/"+escape(args[1])+"/deltas"), "data",
-				[]string{"FROM_SHA256", "TO_SHA256", "SIZE", "FORMAT"},
-				[]string{"from_sha256", "to_sha256", "delta_size", "format"}, a.outFmt)
-		}),
+	return parentCmd(
+		"delta",
+		"Package deltas",
+		leafCmd(
+			"list <repo> <pkg-id>",
+			"List the available deltas of a package",
+			2,
+			2,
+			[]completer{a.repoNames(), a.repoIDs("packages", "packages")},
+			func(_ *cobra.Command, args []string) {
+				listGeneric(a.client, repoPath(args[0], "packages/"+escape(args[1])+"/deltas"), "data",
+					[]string{"FROM_SHA256", "TO_SHA256", "SIZE", "FORMAT"},
+					[]string{"from_sha256", "to_sha256", "delta_size", "format"}, a.outFmt)
+			},
+		),
 		get,
 	)
 }
