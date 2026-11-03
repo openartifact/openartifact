@@ -17,9 +17,9 @@ import (
 const filesystemUploadsDir = "uploads"
 
 // isReservedRootDir reports whether rel, a directory under the blob root, holds
-// no blobs (staging area, uploads).
+// no blobs (staging area, uploads, upload spool).
 func isReservedRootDir(rel string) bool {
-	return rel == filesystemStagingDir || rel == filesystemUploadsDir
+	return rel == filesystemStagingDir || rel == filesystemUploadsDir || rel == FilesystemSpoolDir
 }
 
 var _ UploadStore = (*FilesystemStore)(nil)

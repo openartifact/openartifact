@@ -7,7 +7,13 @@ package maven
 import (
 	"bytes"
 	"context"
+	"crypto/md5"  //nolint:gosec // required by the Maven protocol
+	"crypto/sha1" //nolint:gosec // required by the Maven protocol
+	"crypto/sha512"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"hash"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -32,6 +38,8 @@ import (
 const maxMetadataBlobBytes = 16 << 20
 
 const metadataMaxAge = 300
+
+var errNoDigest = errors.New("no digest for checksum suffix")
 
 // HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
@@ -229,6 +237,18 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 				hashVal = art.SHA512
 			}
 
+			// New uploads store only the SHA-256 and SHA-1 (the digest Maven
+			// asks for); MD5 and SHA-512 are computed from the blob when a
+			// client asks for them.
+			if hashVal == "" {
+				if hashVal, err = h.digestOfBlob(r.Context(), art.SHA256, suffix); err != nil {
+					h.Log.Errorw("failed to compute checksum", "path", underlyingPath, "suffix", suffix, "error", err)
+					http.Error(w, "internal error", http.StatusInternalServerError)
+
+					return
+				}
+			}
+
 			w.Header().Set("Content-Type", "text/plain")
 			//nolint:gosec // G705: Maven artifact content, not HTML output
 			_, _ = fmt.Fprintf(w, "%s  %s\n", hashVal, underlyingFilename)
@@ -298,6 +318,35 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.serveArtifactBlob(w, r, repo.Public, art, ContentTypeForFile(filename))
+}
+
+// digestOfBlob hashes the blob with the algorithm the checksum suffix names.
+func (h *HTTPHandler) digestOfBlob(ctx context.Context, sha256 string, suffix string) (string, error) {
+	var hasher hash.Hash
+
+	switch suffix {
+	case ".md5":
+		hasher = md5.New() //nolint:gosec // required by the Maven protocol
+	case ".sha1":
+		hasher = sha1.New() //nolint:gosec // required by the Maven protocol
+	case ".sha512":
+		hasher = sha512.New()
+	default:
+		return "", fmt.Errorf("%w: %q", errNoDigest, suffix)
+	}
+
+	rc, err := h.BlobStore.Get(ctx, sha256)
+	if err != nil {
+		return "", fmt.Errorf("get blob: %w", err)
+	}
+
+	defer func() { _ = rc.Close() }()
+
+	if _, err := iocopy.Copy(hasher, rc); err != nil {
+		return "", fmt.Errorf("hash blob: %w", err)
+	}
+
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
 // readMetadataBlob reads a maven-metadata.xml blob. The blob is content

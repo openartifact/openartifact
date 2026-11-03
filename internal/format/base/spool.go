@@ -15,6 +15,7 @@ import (
 	"math"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/openartifact/openartifact/internal/iocopy"
 )
@@ -25,6 +26,22 @@ var errNegativeOffset = errors.New("negative offset")
 // is moved to a temp file so a 500 MB upload never costs 500 MB (plus the
 // regrowth garbage of an append-built buffer) of heap.
 const spoolMemoryLimit = 1 << 20
+
+//nolint:gochecknoglobals // process-wide setting, written once at startup
+var spoolDir atomic.Pointer[string]
+
+// SetSpoolDir sets the directory body spools are created in; empty (the
+// default) is the OS temp dir. Point it at the blob filesystem so a spooled
+// upload becomes the blob by a hard link instead of a second copy.
+func SetSpoolDir(dir string) { spoolDir.Store(&dir) }
+
+func currentSpoolDir() string {
+	if d := spoolDir.Load(); d != nil {
+		return *d
+	}
+
+	return ""
+}
 
 //nolint:gochecknoglobals // sync.Pool of read-ahead buffers, same reason
 var headPool = sync.Pool{New: func() any {
@@ -158,7 +175,7 @@ func readFill(r io.Reader, buf []byte) (int, bool, error) {
 
 // spill moves the already-read head and the rest of src into a temp file.
 func (s *Spool) spill(head []byte, src io.Reader) error {
-	f, err := os.CreateTemp("", "oa-spool-*")
+	f, err := os.CreateTemp(currentSpoolDir(), "oa-spool-*")
 	if err != nil {
 		return fmt.Errorf("create spool file: %w", err)
 	}
@@ -209,8 +226,31 @@ func (s *Spool) ReadAt(p []byte, off int64) (int, error) {
 
 // Reader returns an independent reader over the whole body, positioned at its
 // start; it also implements io.Seeker and io.ReaderAt.
-func (s *Spool) Reader() *io.SectionReader {
-	return io.NewSectionReader(s, 0, s.size)
+func (s *Spool) Reader() *SpoolReader {
+	return &SpoolReader{SectionReader: io.NewSectionReader(s, 0, s.size), spool: s}
+}
+
+// SpoolReader is the reader Spool.Reader returns. When the body is in a temp
+// file and nothing has been read yet it also tells a blob store where that file
+// is and what it hashes to (storage.VerifiedFile), so the store takes the file
+// over instead of reading, hashing and writing it again.
+type SpoolReader struct {
+	*io.SectionReader
+
+	spool *Spool
+}
+
+// VerifiedFile implements storage.VerifiedFile.
+func (r *SpoolReader) VerifiedFile() (path, sha256 string, size int64, ok bool) {
+	if r.spool.file == nil {
+		return "", "", 0, false
+	}
+
+	if pos, err := r.Seek(0, io.SeekCurrent); err != nil || pos != 0 {
+		return "", "", 0, false
+	}
+
+	return r.spool.file.Name(), r.spool.sha256, r.spool.size, true
 }
 
 // Bytes returns the body as one slice: the memory copy itself (do not modify)

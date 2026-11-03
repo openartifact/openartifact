@@ -9,11 +9,13 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/sha1"
+	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -204,6 +206,50 @@ func TestHandleGet_Quarantine(t *testing.T) {
 
 		if w.Code != want {
 			t.Errorf("quarantined=%v: status = %d, want %d", quarantined, w.Code, want)
+		}
+	}
+}
+
+// TestHandleGet_ArtifactChecksumsDerivedFromBlob covers a file uploaded since
+// MD5 and SHA-512 are no longer computed at upload time: their columns are
+// empty and the digests come from the blob; a stored digest is served as is.
+func TestHandleGet_ArtifactChecksumsDerivedFromBlob(t *testing.T) {
+	data := []byte("jar content")
+	sha256Sum := sha256.Sum256(data)
+	sha256Hex := hex.EncodeToString(sha256Sum[:])
+	sha1Sum := sha1.Sum(data)
+	md5Sum := md5.Sum(data)
+	sha512Sum := sha512.Sum512(data)
+
+	db := &mavenQuarantineDB{
+		mavenMockDB: mavenMockDB{repo: &models.Repository{ID: "repo-1", Name: "myrepo"}},
+		art: &models.MavenArtifact{
+			ID: "a1", RepoPath: "com/example/app/1.0/app-1.0.jar", SHA256: sha256Hex,
+			SHA1: hex.EncodeToString(sha1Sum[:]),
+		},
+	}
+
+	log, err := logger.New("info", "json", "stdout")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h := NewHTTPHandler(log, db, &mavenMockBlobStore{blobs: map[string][]byte{sha256Hex: data}})
+	router := chi.NewRouter()
+	h.RegisterRoutes(router, "/repos/{name}")
+
+	for suffix, want := range map[string]string{
+		".md5":    hex.EncodeToString(md5Sum[:]),
+		".sha1":   hex.EncodeToString(sha1Sum[:]),
+		".sha256": sha256Hex,
+		".sha512": hex.EncodeToString(sha512Sum[:]),
+	} {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/repos/myrepo/com/example/app/1.0/app-1.0.jar"+suffix, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK || !strings.HasPrefix(w.Body.String(), want+"  app-1.0.jar") {
+			t.Errorf("%s: status %d body %q, want digest %s", suffix, w.Code, w.Body.String(), want)
 		}
 	}
 }

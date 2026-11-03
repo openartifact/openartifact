@@ -6,16 +6,12 @@ package api
 
 import (
 	"context"
-	"crypto/md5"  //nolint:gosec // required by Maven protocol
 	"crypto/sha1" //nolint:gosec // required by Maven protocol
-	"crypto/sha256"
-	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -25,6 +21,7 @@ import (
 	"github.com/openartifact/openartifact/internal/bgtask"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensemeta"
@@ -231,36 +228,21 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmp, err := os.CreateTemp("", "maven-upload-*")
-	if err != nil {
-		uploadResult = "error"
-
-		h.log.Errorw("failed to create temp file", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	defer func() {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-	}()
-
-	hMD5 := md5.New()   //nolint:gosec // required by Maven protocol
-	hSHA1 := sha1.New() //nolint:gosec // required by Maven protocol
-	hSHA256 := sha256.New()
-	hSHA512 := sha512.New()
-
 	limit := MaxMavenUploadBytes
 	if parts.ext == "pom" {
 		limit = pkgmaven.MaxPOMBytes
 	}
 
-	size, err := iocopy.Copy(io.MultiWriter(tmp, hMD5, hSHA1, hSHA256, hSHA512), http.MaxBytesReader(w, r.Body, limit))
+	// One pass over the body: spooled with its SHA-256 and the SHA-1 Maven
+	// clients fetch. MD5 and SHA-512 are not computed here; the download side
+	// derives them from the blob on request.
+	hSHA1 := sha1.New() //nolint:gosec // required by Maven protocol
+
+	spool, err := base.SpoolLimited(http.MaxBytesReader(w, r.Body, limit+1), limit, hSHA1)
 	if err != nil {
 		uploadResult = "error"
 
-		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok || errors.Is(err, base.ErrContentTooLarge) {
 			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
 			return
 		}
@@ -271,10 +253,11 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	md5Hex := hex.EncodeToString(hMD5.Sum(nil))
+	defer spool.Close()
+
+	size := spool.Size()
+	sha256Hex := spool.SHA256Hex()
 	sha1Hex := hex.EncodeToString(hSHA1.Sum(nil))
-	sha256Hex := hex.EncodeToString(hSHA256.Sum(nil))
-	sha512Hex := hex.EncodeToString(hSHA512.Sum(nil))
 
 	existing, err := h.db.GetMavenArtifactByPath(r.Context(), repoID, artPath)
 	if err != nil {
@@ -306,7 +289,7 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 	if parts.ext == "pom" && parts.classifier == "" {
 		var rejected bool
 
-		if rejected, pomInfo = h.enforcePomLicenses(w, r, tmp, repoID, groupID, artifactIDCoord, version, artPath); rejected {
+		if rejected, pomInfo = h.enforcePomLicenses(w, r, spool.Reader(), repoID, groupID, artifactIDCoord, version, artPath); rejected {
 			uploadResult = "error"
 			return
 		}
@@ -359,9 +342,7 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		IsSnapshot:          isSnapshot,
 		RepoPath:            artPath,
 		SHA256:              sha256Hex,
-		MD5:                 md5Hex,
 		SHA1:                sha1Hex,
-		SHA512:              sha512Hex,
 		CreatedAt:           createdAt,
 		UpdatedAt:           time.Now(),
 	}
@@ -380,7 +361,7 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 
 	// The bytes are stored first; existence is re-checked under the blob lock,
 	// which covers only the DB work below.
-	blob := storage.SeekerBlob(sha256Hex, tmp, map[string]string{
+	blob := storage.SeekerBlob(sha256Hex, spool.Reader(), map[string]string{
 		"sha256":    sha256Hex,
 		"format":    "maven",
 		"repo_name": repoName,
@@ -477,11 +458,7 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 
 // parseUploadedPOM parses the spooled pom from its start; nil when it cannot be
 // read or parsed.
-func parseUploadedPOM(pomFile *os.File) *pkgmaven.POM {
-	if _, err := pomFile.Seek(0, io.SeekStart); err != nil {
-		return nil
-	}
-
+func parseUploadedPOM(pomFile io.Reader) *pkgmaven.POM {
 	pom, err := pkgmaven.ParsePOM(pomFile)
 	if err != nil {
 		return nil
@@ -515,7 +492,7 @@ type pomLicenseInfo struct {
 func (h *MavenUploadHandler) enforcePomLicenses(
 	w http.ResponseWriter,
 	r *http.Request,
-	pomFile *os.File,
+	pomFile io.Reader,
 	repoID, groupID, artifactID, version, artPath string,
 ) (bool, pomLicenseInfo) {
 	pom := parseUploadedPOM(pomFile)

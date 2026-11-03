@@ -30,7 +30,6 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 )
@@ -150,15 +149,12 @@ func (o *OCIBlobStore) Put(ctx context.Context, data io.Reader, metadata map[str
 
 	// Verify locally before talking to the registry, so a mismatch never
 	// leaves an upload session behind and the bytes sent are the bytes hashed.
-	spool, size, err := spoolVerified(data, sha, o.spoolDir, "oci-put-*.tmp")
+	spool, size, release, err := openVerified(data, sha, o.spoolDir, "oci-put-*.tmp")
 	if err != nil {
 		return "", fmt.Errorf("oci: %w", err)
 	}
 
-	defer func() {
-		_ = spool.Close()
-		_ = os.Remove(spool.Name())
-	}()
+	defer release()
 
 	// Check if blob already exists (avoid re-upload).
 	exists, err := o.Exists(ctx, sha)

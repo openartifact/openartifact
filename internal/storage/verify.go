@@ -18,7 +18,7 @@ import (
 
 // spoolBufSize is the copy buffer of spoolVerified. Large enough to keep the
 // write syscalls few on multi-megabyte blobs.
-const spoolBufSize = 128 * 1024
+const spoolBufSize = 256 * 1024
 
 // spoolBufs pools the copy buffers: io.Copy into an *os.File allocates a fresh
 // 32 KiB buffer per call, which showed up as io.copyBuffer in allocation
@@ -82,6 +82,30 @@ func spoolVerified(data io.Reader, want, dir, pattern string) (*os.File, int64, 
 	}
 
 	return spool, size, nil
+}
+
+// openVerified returns a seekable file holding data, whose bytes hash to want,
+// and the function that releases it. When data is the unread content of a file
+// that was hashed on its way in (VerifiedFile) and the digest is want, that
+// file is opened read-only and nothing is copied or hashed again; otherwise
+// data is spooled and verified by spoolVerified. release is never nil after a
+// successful call.
+func openVerified(data io.Reader, want, dir, pattern string) (*os.File, int64, func(), error) {
+	if path, sha, size, ok := verifiedFileOf(data); ok && sha == want {
+		if f, err := os.Open(path); err == nil {
+			return f, size, func() { _ = f.Close() }, nil
+		}
+	}
+
+	spool, size, err := spoolVerified(data, want, dir, pattern)
+	if err != nil {
+		return nil, 0, nil, err
+	}
+
+	return spool, size, func() {
+		_ = spool.Close()
+		_ = os.Remove(spool.Name())
+	}, nil
 }
 
 // staleSpoolAge is how old a leftover spool file must be before the startup

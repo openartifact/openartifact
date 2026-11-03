@@ -36,6 +36,38 @@ type FilesystemStore struct {
 // on the same filesystem as the blobs so promotion is a link, not a copy.
 const filesystemStagingDir = "staging"
 
+// FilesystemSpoolDir is the directory under the blob root where the upload
+// spools live (see SpoolDirFor). It is on the blob filesystem so that storing a
+// spooled upload is a hard link, not a second write.
+const FilesystemSpoolDir = "spool"
+
+// SpoolDirFor returns the directory upload spools should be created in for the
+// configured storage, creating it and removing spools a crashed process left
+// behind. It is empty (the OS temp dir) for every backend but the filesystem
+// one: only there can a spool become the blob without being copied.
+func SpoolDirFor(cfg StorageConfig) string {
+	if (cfg.Type != "filesystem" && cfg.Type != "") || cfg.Path == "" {
+		return ""
+	}
+
+	dir := filepath.Join(cfg.Path, FilesystemSpoolDir)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return ""
+	}
+
+	cutoff := time.Now().Add(-staleUploadTempAge)
+
+	if entries, err := os.ReadDir(dir); err == nil {
+		for _, e := range entries {
+			if info, err := e.Info(); err == nil && info.Mode().IsRegular() && info.ModTime().Before(cutoff) {
+				_ = os.Remove(filepath.Join(dir, e.Name()))
+			}
+		}
+	}
+
+	return dir
+}
+
 // staleUploadTempAge is how old a blob-upload-*.tmp file must be before the
 // startup sweep removes it: anything younger may belong to a live Put.
 const staleUploadTempAge = time.Hour
@@ -126,6 +158,12 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 		}
 	}
 
+	// A spool that was hashed on its way in is linked into place instead of
+	// being written and hashed a second time.
+	if path, sha, size, ok := verifiedFileOf(data); ok && (metadata["sha256"] == "" || metadata["sha256"] == sha) {
+		return fs.putVerified(path, sha, size, metadata)
+	}
+
 	tmpFile, err := os.CreateTemp(fs.basePath, "blob-upload-*.tmp")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
@@ -135,7 +173,13 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 
 	hasher := sha256.New()
 
-	written, err := io.Copy(tmpFile, io.TeeReader(data, hasher))
+	buf := spoolBufs.Get().(*[]byte) //nolint:forcetypeassert // the pool only holds *[]byte
+	// The writer is wrapped so *os.File.ReadFrom does not take over and
+	// allocate its own buffer.
+	written, err := io.CopyBuffer(struct{ io.Writer }{tmpFile}, io.TeeReader(data, hasher), *buf)
+
+	spoolBufs.Put(buf)
+
 	if err != nil {
 		_ = tmpFile.Close()
 		_ = os.Remove(tmpPath)
@@ -230,6 +274,140 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 	}
 
 	return id, nil
+}
+
+// putVerified stores the blob held by the file at path, whose SHA-256 sha was
+// computed when the file was written. A blob that is already present is left
+// untouched and nothing is written. Otherwise the file is hard-linked under a
+// temporary name (no bytes move when the spool lives on the blob filesystem, see
+// base.SetSpoolDir) or, across filesystems, copied without hashing again, then
+// published the way Put publishes a fresh blob.
+func (fs *FilesystemStore) putVerified(path, sha string, size int64, metadata map[string]string) (string, error) {
+	blobPath, err := fs.getBlobPath(sha)
+	if err != nil {
+		return "", err
+	}
+
+	dir := filepath.Dir(blobPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create blob directory: %w", err)
+	}
+
+	metaPath := blobPath + ".meta"
+
+	metaData, err := encodeBlobMeta(metadata, size, sha)
+	if err != nil {
+		return "", err
+	}
+
+	if _, statErr := os.Stat(blobPath); statErr == nil {
+		if err := restoreBlobMeta(dir, metaPath, metaData); err != nil {
+			return "", err
+		}
+
+		return sha, nil
+	}
+
+	tmpPath, err := fs.linkOrCopy(path)
+	if err != nil {
+		return "", err
+	}
+
+	// Sync through a fresh descriptor: the data lives in the inode, which the
+	// spool's own descriptor shares.
+	if err := syncFile(tmpPath); err != nil {
+		_ = os.Remove(tmpPath)
+
+		return "", fmt.Errorf("failed to sync blob file: %w", err)
+	}
+
+	if metaData != nil {
+		if err := writeFileAtomic(dir, metaPath, metaData); err != nil {
+			_ = os.Remove(tmpPath)
+
+			return "", fmt.Errorf("failed to write blob metadata: %w", err)
+		}
+	}
+
+	if err := os.Rename(tmpPath, blobPath); err != nil {
+		_ = os.Remove(tmpPath)
+
+		return "", fmt.Errorf("failed to move blob to final path: %w", err)
+	}
+
+	if err := syncDir(dir); err != nil {
+		return "", fmt.Errorf("failed to sync blob directory: %w", err)
+	}
+
+	return sha, nil
+}
+
+// linkOrCopy makes a temporary file under the blob root with the content of
+// src: a hard link when src is on the same filesystem, a copy otherwise.
+func (fs *FilesystemStore) linkOrCopy(src string) (string, error) {
+	tmp, err := os.CreateTemp(fs.basePath, "blob-upload-*.tmp")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+
+	tmpPath := tmp.Name()
+
+	// The unique name is reserved by CreateTemp; link needs it free.
+	if err := os.Remove(tmpPath); err == nil {
+		if linkErr := os.Link(src, tmpPath); linkErr == nil {
+			_ = tmp.Close()
+
+			return tmpPath, nil
+		}
+
+		tmp, err = os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err != nil {
+			return "", fmt.Errorf("failed to create temp file: %w", err)
+		}
+	}
+
+	in, err := os.Open(src)
+	if err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+
+		return "", fmt.Errorf("failed to open blob source: %w", err)
+	}
+
+	defer func() { _ = in.Close() }()
+
+	// *os.File to *os.File: the kernel copies, no buffer in user space.
+	if _, err := io.Copy(tmp, in); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+
+		return "", fmt.Errorf("failed to write blob data: %w", err)
+	}
+
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+
+		return "", fmt.Errorf("failed to write blob data: %w", err)
+	}
+
+	return tmpPath, nil
+}
+
+// syncFile flushes the file at path to disk.
+func syncFile(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open file: %w", err)
+	}
+
+	err = f.Sync()
+	_ = f.Close()
+
+	if err != nil {
+		return fmt.Errorf("sync file: %w", err)
+	}
+
+	return nil
 }
 
 // syncDir flushes a directory's entries to disk.

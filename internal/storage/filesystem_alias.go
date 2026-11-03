@@ -84,7 +84,9 @@ func (fsys *FilesystemStore) scanAliases() map[string]string {
 
 	_ = filepath.WalkDir(fsys.basePath, func(path string, d fs.DirEntry, err error) error {
 		if err == nil && d.IsDir() &&
-			(path == filepath.Join(fsys.basePath, filesystemStagingDir) || path == filepath.Join(fsys.basePath, filesystemUploadsDir)) {
+			(path == filepath.Join(fsys.basePath, filesystemStagingDir) ||
+				path == filepath.Join(fsys.basePath, filesystemUploadsDir) ||
+				path == filepath.Join(fsys.basePath, FilesystemSpoolDir)) {
 			return filepath.SkipDir
 		}
 
