@@ -204,6 +204,47 @@ type clientSetupIn struct {
 	Repository string `json:"repository" jsonschema:"Repository name"`
 }
 
+// availabilityIn is the input of the check_availability tool.
+type availabilityIn struct {
+	Repository string `json:"repository" jsonschema:"Repository name (hosted or proxy; not a group)"`
+	Package    string `json:"package"    jsonschema:"Exact package name"`
+	Version    string `json:"version"    jsonschema:"Exact version"`
+}
+
+// upstreamPackageIn is the input of the tools that list the upstream versions
+// of a proxied package.
+type upstreamPackageIn struct {
+	Repository string `json:"repository" jsonschema:"Proxy repository name"`
+	Package    string `json:"package"    jsonschema:"Exact package name as the upstream names it"`
+}
+
+// artifactIn is the input of the tools that read what a scan recorded for one
+// stored artifact.
+type artifactIn struct {
+	Repository string `json:"repository"  jsonschema:"Repository name"`
+	ArtifactID string `json:"artifact_id" jsonschema:"Artifact ID: the id of a version returned by get_package or list_packages"`
+}
+
+// sbomIn is the input of the get_sbom tool.
+//
+//nolint:lll // jsonschema descriptions must stay on the tag line
+type sbomIn struct {
+	Repository string `json:"repository"       jsonschema:"Repository name"`
+	ArtifactID string `json:"artifact_id"      jsonschema:"Artifact ID the SBOM was generated for: the id of a version returned by get_package or list_packages, or name@version"`
+	Format     string `json:"format,omitempty" jsonschema:"Stored SBOM format to read: cyclonedx, spdx-json, spdx3-json or spdx. Default: the most recently generated one."`
+	Limit      int    `json:"limit,omitempty"  jsonschema:"Max components to list (default 100, max 500)"`
+}
+
+// activityIn is the input of the get_repository_activity tool.
+//
+//nolint:lll // jsonschema descriptions must stay on the tag line
+type activityIn struct {
+	Repository string `json:"repository"         jsonschema:"Repository name"`
+	Category   string `json:"category,omitempty" jsonschema:"Only events of these categories, comma separated (see the tool description). Default: every category you may see."`
+	Limit      int    `json:"limit,omitempty"    jsonschema:"Max events (default 25, max 100)"`
+	Cursor     string `json:"cursor,omitempty"   jsonschema:"next_cursor of the previous page, to read older events"`
+}
+
 func (s *Server) registerTools() {
 	addTool(s, readTool(
 		"list_repositories",
@@ -291,4 +332,7 @@ func (s *Server) registerTools() {
 			"...). Credentials are placeholders: <USERNAME> and <TOKEN>. Requires read permission on the repository.",
 	),
 		false, s.clientSetup)
+
+	s.registerGateTools()
+	s.registerReportTools()
 }

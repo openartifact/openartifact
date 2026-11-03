@@ -6,11 +6,14 @@ package api
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -87,18 +90,45 @@ var activityCategories = map[string]activityCategory{
 	},
 }
 
-// activityFilterError is a refused `category` filter: its HTTP status and the
-// message for the client.
-type activityFilterError struct {
-	status  int
-	message string
+// ActivityCategoryNames lists the values of the `category` filter, sorted: the
+// ones open to anyone who may read the repository, then the ones reserved to
+// its admins.
+func ActivityCategoryNames() ([]string, []string) {
+	var open, adminOnly []string
+
+	for name, c := range activityCategories {
+		if c.adminOnly {
+			adminOnly = append(adminOnly, name)
+		} else {
+			open = append(open, name)
+		}
+	}
+
+	slices.Sort(open)
+	slices.Sort(adminOnly)
+
+	return open, adminOnly
 }
+
+// Refusals of a repository activity query.
+var (
+	// ErrActivityCategory: the category filter names no category.
+	ErrActivityCategory = errors.New("unknown category")
+	// ErrActivityAdminCategory: the category filter names a category reserved to
+	// the repository's admins and the caller is not one.
+	ErrActivityAdminCategory = errors.New("admin access required for this category")
+	// ErrActivityActor: an anonymous caller asked to filter by actor.
+	ErrActivityActor = errors.New("sign in to filter by actor")
+	// ErrActivityCursor: the cursor is not one this feed issued.
+	ErrActivityCursor = errors.New("invalid cursor")
+)
 
 // activityActions turns the `category` parameter (comma separated, repeatable)
 // into the audit actions to keep. With no category an admin gets every event of
 // the repository (nil), anyone else every category open to readers. An unknown
-// category is a 400, an admin-only one asked by a non-admin a 403.
-func activityActions(values []string, isAdmin bool) ([]string, *activityFilterError) {
+// category is ErrActivityCategory, an admin-only one asked by a non-admin
+// ErrActivityAdminCategory.
+func activityActions(values []string, isAdmin bool) ([]string, error) {
 	var names []string
 
 	for _, v := range values {
@@ -122,11 +152,11 @@ func activityActions(values []string, isAdmin bool) ([]string, *activityFilterEr
 	for _, n := range names {
 		c, ok := activityCategories[n]
 		if !ok {
-			return nil, &activityFilterError{http.StatusBadRequest, "unknown category"}
+			return nil, ErrActivityCategory
 		}
 
 		if c.adminOnly && !isAdmin {
-			return nil, &activityFilterError{http.StatusForbidden, "admin access required for this category"}
+			return nil, ErrActivityAdminCategory
 		}
 
 		actions = append(actions, c.actions...)
@@ -150,6 +180,85 @@ func readerActions() []string {
 	slices.Sort(out)
 
 	return out
+}
+
+// ActivityCaller is who asks for the activity of a repository.
+type ActivityCaller struct {
+	// SignedIn is false for an anonymous caller (a public repository): no actor
+	// names and no actor filter.
+	SignedIn bool
+	// RepoAdmin: a global admin, a maintainer of the repository's project or a
+	// delegated repository admin (auth.Evaluator.EvaluateRepoAdmin).
+	RepoAdmin bool
+}
+
+// ActivityQuery is the filter of a repository activity listing.
+type ActivityQuery struct {
+	// Categories are category names, each possibly comma separated.
+	Categories  []string
+	PackageName string
+	Version     string
+	Actor       string
+	Action      string
+	// Cursor is the next_cursor of the previous page.
+	Cursor string
+	// Limit is the page size, already bounded by the caller.
+	Limit int
+}
+
+// ListRepositoryActivity is the page of audit events recorded against repo that
+// caller may see, newest first, with actor and subject names resolved. It is the
+// answer of GET /api/v1/repositories/{name}/activity and of the MCP
+// get_repository_activity tool; the caller has already checked read access to
+// the repository. The category restriction is applied here, whatever the client
+// asks for. Refused filters are the ErrActivity* errors.
+func ListRepositoryActivity(
+	ctx context.Context, db RepositoryActivityStore, log *logger.Logger,
+	repo *models.Repository, caller ActivityCaller, q ActivityQuery,
+) (responses.ActivityPage, error) {
+	if !caller.SignedIn && q.Actor != "" {
+		return responses.ActivityPage{}, ErrActivityActor
+	}
+
+	actions, err := activityActions(q.Categories, caller.RepoAdmin)
+	if err != nil {
+		return responses.ActivityPage{}, err
+	}
+
+	params := models.AuditListParams{
+		RepositoryID:   repo.ID,
+		PackageName:    q.PackageName,
+		PackageVersion: q.Version,
+		Actor:          q.Actor,
+		Action:         q.Action,
+		Actions:        actions,
+		Limit:          q.Limit,
+		NoTotal:        true,
+	}
+
+	if q.Cursor != "" {
+		cursor, err := decodeAuditCursor(q.Cursor)
+		if err != nil {
+			return responses.ActivityPage{}, ErrActivityCursor
+		}
+
+		params.After = cursor
+	}
+
+	page, err := db.ListAuditLogs(ctx, params)
+	if err != nil {
+		return responses.ActivityPage{}, fmt.Errorf("list repository activity: %w", err)
+	}
+
+	resp := activityPage(ctx, db, log, page, q.Limit)
+
+	if !caller.SignedIn {
+		for i := range resp.Data {
+			resp.Data[i].Actor, resp.Data[i].ActorName = "", ""
+		}
+	}
+
+	return resp, nil
 }
 
 // handleList returns the audit events recorded against one repository, newest
@@ -185,12 +294,10 @@ func (h *RepositoryActivityHandler) handleList(w http.ResponseWriter, r *http.Re
 	}
 
 	principal := currentPrincipal(r)
-	signedIn := principal != nil && !principal.IsAnonymous
+	caller := ActivityCaller{SignedIn: principal != nil && !principal.IsAnonymous}
 
-	isAdmin := false
-
-	if signedIn {
-		isAdmin, err = h.evaluator.EvaluateRepoAdmin(r.Context(), *principal, name)
+	if caller.SignedIn {
+		caller.RepoAdmin, err = h.evaluator.EvaluateRepoAdmin(r.Context(), *principal, name)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
 			return
@@ -199,61 +306,25 @@ func (h *RepositoryActivityHandler) handleList(w http.ResponseWriter, r *http.Re
 
 	q := r.URL.Query()
 
-	if !signedIn && q.Get("actor") != "" {
-		writeError(w, http.StatusForbidden, "forbidden", "sign in to filter by actor")
-		return
-	}
+	resp, err := ListRepositoryActivity(r.Context(), h.db, h.log, repo, caller, ActivityQuery{
+		Categories:  q["category"],
+		PackageName: q.Get("package_name"),
+		Version:     q.Get("version"),
+		Actor:       q.Get("actor"),
+		Action:      q.Get("action"),
+		Cursor:      q.Get("cursor"),
+		Limit:       queryIntParam(r, "limit", activityDefaultPerPage, 1, activityMaxPerPage),
+	})
 
-	actions, ferr := activityActions(q["category"], isAdmin)
-	if ferr != nil {
-		code := "bad_request"
-		if ferr.status == http.StatusForbidden {
-			code = "forbidden"
-		}
-
-		writeError(w, ferr.status, code, ferr.message)
-
-		return
-	}
-
-	limit := queryIntParam(r, "limit", activityDefaultPerPage, 1, activityMaxPerPage)
-
-	params := models.AuditListParams{
-		RepositoryID:   repo.ID,
-		PackageName:    q.Get("package_name"),
-		PackageVersion: q.Get("version"),
-		Actor:          q.Get("actor"),
-		Action:         q.Get("action"),
-		Actions:        actions,
-		Limit:          limit,
-		NoTotal:        true,
-	}
-
-	if raw := q.Get("cursor"); raw != "" {
-		cursor, err := decodeAuditCursor(raw)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "bad_request", "invalid cursor")
-			return
-		}
-
-		params.After = cursor
-	}
-
-	page, err := h.db.ListAuditLogs(r.Context(), params)
-	if err != nil {
+	switch {
+	case err == nil:
+		writeJSON(w, http.StatusOK, resp)
+	case errors.Is(err, ErrActivityCategory), errors.Is(err, ErrActivityCursor):
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+	case errors.Is(err, ErrActivityAdminCategory), errors.Is(err, ErrActivityActor):
+		writeError(w, http.StatusForbidden, "forbidden", err.Error())
+	default:
 		h.log.Errorw("repository activity: list failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
 	}
-
-	resp := activityPage(r.Context(), h.db, h.log, page, limit)
-
-	if !signedIn {
-		for i := range resp.Data {
-			resp.Data[i].Actor, resp.Data[i].ActorName = "", ""
-		}
-	}
-
-	writeJSON(w, http.StatusOK, resp)
 }

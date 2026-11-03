@@ -57,6 +57,7 @@ type mockDB struct {
 	components []*models.Component
 	scans      []*models.VulnScanResult
 	analysis   *models.AIAnalysis
+	gate       gateFixtures
 	err        error
 
 	lastPage, lastLimit int

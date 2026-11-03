@@ -446,7 +446,7 @@ func TestCurationAvailability(t *testing.T) {
 		{name: "unknown repository", repo: "nope", pkg: "a", ver: "1", wantCode: 404},
 		{name: "missing package", repo: "px", ver: "1", wantCode: 400},
 		{name: "missing version", repo: "px", pkg: "a", wantCode: 400},
-		{name: "oversized package", repo: "px", pkg: strings.Repeat("a", maxAvailabilityParam+1), ver: "1", wantCode: 400},
+		{name: "oversized package", repo: "px", pkg: strings.Repeat("a", MaxAvailabilityParam+1), ver: "1", wantCode: 400},
 		{name: "holds failure", setup: func(db *curationMockDB) { db.holdsErr = errors.New("pq: boom") }, repo: "hosted",
 			pkg: "a", ver: "1", wantCode: 500},
 	}

@@ -13,6 +13,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/openartifact/openartifact/internal/api"
 	oaauth "github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/exploit"
@@ -59,6 +61,17 @@ type Authorizer func(ctx context.Context, repoName, action string) bool
 // caller identified by ctx may read a repository. Resolving it once avoids one
 // permission evaluation per repository.
 type ReadFilterFunc func(ctx context.Context) (func(repo *models.Repository) (bool, error), error)
+
+// RepoAdminFunc reports whether the caller identified by ctx may administer the
+// named repository: a global admin, or a maintainer of its project. It gates
+// the activity categories reserved to repository admins.
+type RepoAdminFunc func(ctx context.Context, repoName string) bool
+
+// BlobReader reads a stored blob by its sha256 (a storage.BlobStore satisfies
+// it); get_sbom reads stored SBOM documents through it.
+type BlobReader interface {
+	Get(ctx context.Context, id string) (io.ReadCloser, error)
+}
 
 // ArtifactSearcher runs the cross-repository artifact search restricted to the
 // given readable repositories.
@@ -135,9 +148,12 @@ type Options struct {
 
 // ServerStore is the part of the database Server needs.
 type ServerStore interface {
+	api.AvailabilityStore
+	api.RepositoryActivityStore
 	GetAIAnalysis(ctx context.Context, repoID string, artifactID string) (*models.AIAnalysis, error)
 	GetRepoComponentBlob(ctx context.Context, repoID string, id string) (*models.ComponentBlob, error)
 	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+	GetLicenseScanResult(ctx context.Context, repoID string, artifactID string) (*models.LicenseScanResult, error)
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
 	ListAIAnalyses(
 		ctx context.Context,
@@ -149,14 +165,18 @@ type ServerStore interface {
 	) ([]*models.AIAnalysis, int, error)
 	ListComponentsByRepo(ctx context.Context, repoID string, formatFilter string, page int, limit int) ([]*models.Component, int, error)
 	ListRepositories(ctx context.Context, page int, limit int, formatFilter string) ([]*models.Repository, error)
+	ListSBOMReports(ctx context.Context, repoID string) ([]*models.SBOMReport, error)
 	ListVulnScanResults(ctx context.Context, repoID string, vulnerableOnly bool) ([]*models.VulnScanResult, error)
 }
 
 // Server wraps the MCP server with OpenArtifact dependencies.
 type Server struct {
-	authorizer Authorizer       // nil denies every repository-scoped call
-	readFilter ReadFilterFunc   // nil hides every repository from listings
-	searcher   ArtifactSearcher // nil disables cross-repository search
+	authorizer Authorizer            // nil denies every repository-scoped call
+	readFilter ReadFilterFunc        // nil hides every repository from listings
+	searcher   ArtifactSearcher      // nil disables cross-repository search
+	repoAdmin  RepoAdminFunc         // nil: nobody administers a repository
+	blobs      BlobReader            // nil: stored SBOM documents cannot be read
+	upstream   api.PublishTimeSource // nil: no proxy service (publish times unknown, no upstream versions)
 	mcpServer  *sdk.Server
 	db         ServerStore
 	analyzer   AIAnalyzer
@@ -220,6 +240,20 @@ func (s *Server) SetReadFilter(f ReadFilterFunc) { s.readFilter = f }
 
 // SetSearcher installs the SQL search backend for cross-repository search.
 func (s *Server) SetSearcher(a ArtifactSearcher) { s.searcher = a }
+
+// SetRepoAdmin installs the repository-admin check that opens the
+// administrator-only categories of get_repository_activity. Without it only the
+// categories open to readers are served.
+func (s *Server) SetRepoAdmin(f RepoAdminFunc) { s.repoAdmin = f }
+
+// SetBlobStore installs the store get_sbom reads stored SBOM documents from.
+func (s *Server) SetBlobStore(b BlobReader) { s.blobs = b }
+
+// SetProxyService installs the proxy service that knows the publish times and
+// cached versions of upstream packages (check_availability, list_held_back_versions
+// and list_proxy_versions). Without it the minimum age of a proxy version is
+// reported as unknown and the two version listings refuse every repository.
+func (s *Server) SetProxyService(p api.PublishTimeSource) { s.upstream = p }
 
 // SetExploit installs the enricher that adds the CISA KEV and FIRST EPSS signals
 // to the vulnerabilities the tools return. Without it only the severity

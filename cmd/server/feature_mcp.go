@@ -45,6 +45,8 @@ func (a *app) setupMCP() {
 
 	a.feat.mcpServer = aimcp.NewServer(a.db, a.mcpAnalyzer(), a.log, opts)
 	a.feat.mcpServer.SetExploit(a.workers.exploit)
+	a.feat.mcpServer.SetBlobStore(a.store.blobs)
+	a.feat.mcpServer.SetProxyService(a.workers.proxySvc)
 	a.log.Infow("MCP server enabled", "path", cfg.MCP.HTTPPath)
 }
 
@@ -86,6 +88,16 @@ func (a *app) configureMCPAuth(rbacCfg *middleware.RBACConfig) {
 		}
 
 		ok, err := evaluator.Evaluate(ctx, *principal, repoName, "", action)
+
+		return err == nil && ok
+	})
+	mcpServer.SetRepoAdmin(func(ctx context.Context, repoName string) bool {
+		principal := middleware.PrincipalFromContext(ctx)
+		if principal == nil {
+			return false
+		}
+
+		ok, err := evaluator.EvaluateRepoAdmin(ctx, *principal, repoName)
 
 		return err == nil && ok
 	})
