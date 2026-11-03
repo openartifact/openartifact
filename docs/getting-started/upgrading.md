@@ -127,7 +127,7 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
-### Unreleased
+### 0.18.0
 
 **What you must do**
 
@@ -135,11 +135,14 @@ Newest first. Each version starts with **What you must do**; the text below it l
 - If a script passes more arguments than a command takes (`oa repo show a b`), remove them: extra arguments are now a usage error (exit 1) where they used to be ignored.
 - If a script reads the text of a flag or usage error, match the new wording (`unknown flag: --x`, `Usage: oa repo show <name> (see ...)`); the exit code is unchanged.
 - If a script gives `--format` after `repo create`, `sbom generate`, `vex get` or `audit export` and means the output format, put it before the command (`oa --format json repo create r --format npm`): after the command name `--format` is the command's own flag.
+- If a script runs `oa repo create NAME` without `--format`, add it (`oa repo create NAME --format npm`): the command no longer sends the request and lists the accepted formats.
+- Repository and project names must start with a letter or digit. A script that creates a name starting with `_` or `-` now fails (`400` from the API, a usage error from `oa`); existing names keep working.
+- If a script checks the exit code of `oa import` for a bad flag or flag value, expect 1 where it was 2. A usage error such as a missing `--repo` still exits 2.
 - Optional: install shell completion (`oa completion bash|zsh|fish|powershell`, see [CLI](../integrations/cli.md#shell-completion)); the release archives of `oa` now include the scripts.
 
 **New features.**
 
-- **Shell completion.** `oa completion bash|zsh|fish|powershell` prints a completion script for commands, flags, flag values and file names, and completes repository, project, group, webhook, storage, backup, GPG key and token names from the server (best effort, about two seconds at most, nothing when the server or token is unavailable). The `oa` release archives carry the scripts in `completions/`.
+- **Shell completion.** `oa completion bash|zsh|fish|powershell` prints a completion script for commands, flags, flag values and file names, and completes repository, project, user, group, webhook, storage, backup, GPG key and token names, and the ids of cleanup policies, SBOMs, scans, VEX decisions, packages and group and project members (for example `oa cleanup show REPO <Tab>`), from the server (best effort, about two seconds at most, nothing when the server or token is unavailable). The `oa` release archives carry the scripts in `completions/`.
 - **`oa --version`**, next to `oa version`.
 - **Flags anywhere.** Flags may come before or after the arguments of every command (`oa project create --display-name X p`, `oa upload repo f.bin --flat`); `-r` for `--repo` and `-y` for `--yes` are new short forms.
 - **Six more MCP tools.** `check_availability` explains why a package version can or cannot be installed (minimum age with the unlock time, curation rule, quarantine, license policy, not found). `list_held_back_versions` and `list_proxy_versions` list the upstream versions of a proxy package. `get_licenses` and `get_sbom` read the stored license scan and SBOM of an artifact. `get_repository_activity` reads a repository's recent events. They are read-only and follow the permissions of the REST endpoints they mirror: `get_licenses` and `get_sbom` need global `manage`, and the `cleanup`, `settings`, `curation` and `federation` activity categories need repository admin. A test now fails when the REST API gains a GET capability without a decision for the MCP server. See [MCP server](../integrations/mcp.md#availability-licenses-sboms-and-activity).
