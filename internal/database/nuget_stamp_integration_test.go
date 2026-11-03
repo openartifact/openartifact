@@ -26,8 +26,15 @@ func seedNuGetBench(b *testing.B) (*PostgresDB, string) {
 
 	add := func(id, version string) {
 		p := &models.NuGetPackage{
-			RepositoryID: repo, PackageID: id, Version: version, Description: "a benchmark library", Authors: "au",
-			Tags: "t1 t2", BlobKey: langSHA("bench" + id + version), PackageSize: 5, DependencyGroups: []byte(`[{"targetFramework":"net8.0"}]`),
+			RepositoryID:     repo,
+			PackageID:        id,
+			Version:          version,
+			Description:      "a benchmark library",
+			Authors:          "au",
+			Tags:             "t1 t2",
+			BlobKey:          langSHA("bench" + id + version),
+			PackageSize:      5,
+			DependencyGroups: []byte(`[{"targetFramework":"net8.0"}]`),
 		}
 		if err := pg.CreateNuGetPackage(ctx, p); err != nil {
 			b.Fatal(err)

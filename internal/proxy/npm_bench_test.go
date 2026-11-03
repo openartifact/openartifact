@@ -110,7 +110,7 @@ type discardWriter struct {
 	n      int
 }
 
-func (w *discardWriter) Header() http.Header { return w.header }
+func (w *discardWriter) Header() http.Header  { return w.header }
 func (w *discardWriter) WriteHeader(code int) { w.code = code }
 func (w *discardWriter) Write(p []byte) (int, error) {
 	if w.code == 0 {

@@ -260,13 +260,13 @@ type renderedDoc struct {
 	render func(body []byte, res *resolution) ([]byte, string, error)
 }
 
-// renderFailure marks an error of a renderedDoc's render hook, as opposed to
+// renderError marks an error of a renderedDoc's render hook, as opposed to
 // one of loading the document, so both can be told apart after they were shared
 // between the requests of one render.
-type renderFailure struct{ err error }
+type renderError struct{ err error }
 
-func (e renderFailure) Error() string { return e.err.Error() }
-func (e renderFailure) Unwrap() error { return e.err }
+func (e renderError) Error() string { return e.err.Error() }
+func (e renderError) Unwrap() error { return e.err }
 
 // renderKey is the render-cache key of the rendering of d for a validator: the
 // validator covers the cached blob and everything the render hook depends on
@@ -308,8 +308,7 @@ func (s *Service) serveRendered(w http.ResponseWriter, r *http.Request, repo *mo
 	rendered, err := base.MergedRendered(r.Context(), s.renderKey(repo, rd.metaDoc, etag, res.entry.ContentType),
 		func(ctx context.Context) (*base.Rendered, error) { return s.renderDoc(ctx, repo, rd, res) })
 	if err != nil {
-		var failed renderFailure
-		if errors.As(err, &failed) {
+		if failed, ok := errors.AsType[renderError](err); ok {
 			s.failRender(w, r, repo, rd.metaDoc, failed.err)
 			return
 		}
@@ -337,7 +336,7 @@ func (s *Service) renderDoc(ctx context.Context, repo *models.Repository, rd ren
 	release()
 
 	if err != nil {
-		return nil, renderFailure{err}
+		return nil, renderError{err}
 	}
 
 	return &base.Rendered{

@@ -156,12 +156,12 @@ type fixture struct {
 
 // newFixture serves upstream through a maven proxy repository. handler is
 // wrapped to count upstream requests.
-func newFixture(t testing.TB, handler http.HandlerFunc) *fixture {
-	t.Helper()
-	t.Setenv(allowPrivateEnv, "true") // httptest upstreams are loopback
+func newFixture(tb testing.TB, handler http.HandlerFunc) *fixture {
+	tb.Helper()
+	tb.Setenv(allowPrivateEnv, "true") // httptest upstreams are loopback
 
-	f := startFixture(t, handler)
-	t.Cleanup(f.upstream.Close)
+	f := startFixture(tb, handler)
+	tb.Cleanup(f.upstream.Close)
 
 	return f
 }
@@ -192,10 +192,10 @@ func newFuzzFixture(t *testing.T, handler http.HandlerFunc) (*fixture, func()) {
 }
 
 // startFixture builds the fixture around a running upstream; the caller closes it.
-func startFixture(t testing.TB, handler http.HandlerFunc) *fixture {
-	t.Helper()
+func startFixture(tb testing.TB, handler http.HandlerFunc) *fixture {
+	tb.Helper()
 
-	f := &fixture{t: t, db: newMemDB()}
+	f := &fixture{t: tb, db: newMemDB()}
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.hits.Add(1)
@@ -205,12 +205,12 @@ func startFixture(t testing.TB, handler http.HandlerFunc) *fixture {
 
 	log, err := logger.New("error", "json", "stderr")
 	if err != nil {
-		t.Fatalf("logger: %v", err)
+		tb.Fatalf("logger: %v", err)
 	}
 
-	store, err := storage.NewFilesystemStore(filepath.Join(t.TempDir(), "blobs"))
+	store, err := storage.NewFilesystemStore(filepath.Join(tb.TempDir(), "blobs"))
 	if err != nil {
-		t.Fatalf("blob store: %v", err)
+		tb.Fatalf("blob store: %v", err)
 	}
 
 	f.svc = NewService(log, f.db, store)

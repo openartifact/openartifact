@@ -230,7 +230,12 @@ func TestFlatVersionsEncodings(t *testing.T) {
 
 	zipTag := strings.TrimPrefix(zipped.Header().Get("ETag"), "W/")
 	if zipTag != plain.Header().Get("ETag") || plain.Header().Get("Content-Type") != "application/json" {
-		t.Errorf("validators differ: %q vs %q, type %q", zipped.Header().Get("ETag"), plain.Header().Get("ETag"), plain.Header().Get("Content-Type"))
+		t.Errorf(
+			"validators differ: %q vs %q, type %q",
+			zipped.Header().Get("ETag"),
+			plain.Header().Get("ETag"),
+			plain.Header().Get("Content-Type"),
+		)
 	}
 }
 

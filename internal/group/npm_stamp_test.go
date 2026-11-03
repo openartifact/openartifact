@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -71,13 +72,7 @@ func (v *validatedMembers) setFailing(name string, failing bool) {
 func (v *validatedMembers) backend(denied ...string) Backend {
 	return Backend{
 		Authorize: func(_ *http.Request, m *models.Repository, _ string) bool {
-			for _, d := range denied {
-				if d == m.Name {
-					return false
-				}
-			}
-
-			return true
+			return !slices.Contains(denied, m.Name)
 		},
 		ServeMember: func(w http.ResponseWriter, r *http.Request, m *models.Repository, _ string) {
 			v.mu.Lock()
@@ -148,7 +143,12 @@ func TestNPMGroup_ValidatorFromMembersNeedsNoDocuments(t *testing.T) {
 
 	again := f.serveWith(v, "lib", nil)
 	if again.Code != http.StatusOK || !bytes.Equal(again.Body.Bytes(), first.Body.Bytes()) || again.Header().Get("ETag") != etag {
-		t.Fatalf("repeat = %d, etag %q, body differs: %v", again.Code, again.Header().Get("ETag"), !bytes.Equal(again.Body.Bytes(), first.Body.Bytes()))
+		t.Fatalf(
+			"repeat = %d, etag %q, body differs: %v",
+			again.Code,
+			again.Header().Get("ETag"),
+			!bytes.Equal(again.Body.Bytes(), first.Body.Bytes()),
+		)
 	}
 
 	if got := v.reads.Load(); got != 2 {
@@ -180,7 +180,10 @@ func TestNPMGroup_MemberChangeInvalidatesTheMerge(t *testing.T) {
 
 	// The hosted member publishes.
 	etag = after.Header().Get("ETag")
-	v.set("hosted", packument(t, "hosted", "lib", map[string]string{"1.0.0": "AAAA", "1.1.0": "AAA1"}, map[string]string{"latest": "1.1.0"}))
+	v.set(
+		"hosted",
+		packument(t, "hosted", "lib", map[string]string{"1.0.0": "AAAA", "1.1.0": "AAA1"}, map[string]string{"latest": "1.1.0"}),
+	)
 
 	published := f.serveWith(v, "lib", map[string]string{"If-None-Match": etag})
 	if published.Code != http.StatusOK || !strings.Contains(published.Body.String(), `"1.1.0"`) {
@@ -214,7 +217,11 @@ func TestNPMGroup_PartialMergeIsNotCachedUnderTheMembersValidators(t *testing.T)
 	}
 
 	if partial.Header().Get("ETag") != "" || partial.Header().Get("Cache-Control") != "no-store" {
-		t.Errorf("partial merge carries validators: etag %q, cache-control %q", partial.Header().Get("ETag"), partial.Header().Get("Cache-Control"))
+		t.Errorf(
+			"partial merge carries validators: etag %q, cache-control %q",
+			partial.Header().Get("ETag"),
+			partial.Header().Get("Cache-Control"),
+		)
 	}
 
 	v.setFailing("mirror", false)
@@ -252,7 +259,8 @@ func TestNPMGroup_CacheSeparatesMemberSetsAndVariants(t *testing.T) {
 
 	// A version manifest is cut from the merge and cached on its own.
 	manifest := f.serveWith(v, "lib/2.0.0", nil)
-	if manifest.Code != http.StatusOK || strings.Contains(manifest.Body.String(), `"versions"`) || manifest.Header().Get("ETag") == all.Header().Get("ETag") {
+	if manifest.Code != http.StatusOK || strings.Contains(manifest.Body.String(), `"versions"`) ||
+		manifest.Header().Get("ETag") == all.Header().Get("ETag") {
 		t.Errorf("version manifest = %d, etag %q: %s", manifest.Code, manifest.Header().Get("ETag"), manifest.Body.String())
 	}
 

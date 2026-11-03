@@ -286,7 +286,10 @@ func TestMetadataStamps(t *testing.T) {
 
 		stampMoves(t, "index: a project loses its last live file", index, func() {
 			s.exec(`UPDATE package_files SET deleted_at = now() WHERE repository_id = $1 AND filename = 'demo-1.0.tar.gz'`, s.repo)
-			s.exec(`UPDATE package_versions SET deleted_at = now() WHERE package_id = (SELECT id FROM packages WHERE repository_id = $1 AND name_key = 'demo')`, s.repo)
+			s.exec(
+				`UPDATE package_versions SET deleted_at = now() WHERE package_id = (SELECT id FROM packages WHERE repository_id = $1 AND name_key = 'demo')`,
+				s.repo,
+			)
 		})
 
 		if got := index(); got == before {

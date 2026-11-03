@@ -126,7 +126,7 @@ func (h *Handler) askMember(sess *mergeSession, mr *http.Request, m *models.Repo
 // validator in order, so it moves whenever any member's document does. ok is
 // false when a member gave no validator (it failed, or answers without one): the
 // merge then has to be identified by the documents themselves.
-func memberStamp(r *http.Request, members []*models.Repository, ask memberAsk, be Backend) (stamp string, ok bool) {
+func memberStamp(r *http.Request, members []*models.Repository, ask memberAsk, be Backend) (string, bool) {
 	mr := memberGetRequest(r)
 	if ask.prepare != nil {
 		ask.prepare(mr)

@@ -176,7 +176,13 @@ func TestNPMProxy_LargeRenderingServesEveryEncoding(t *testing.T) {
 
 		zipped := f.doWith("lib", map[string]string{"Accept-Encoding": "gzip"})
 		if zipped.Header().Get("Content-Encoding") != "gzip" || zipped.Body.Len() >= len(plain)/2 {
-			t.Fatalf("gzip request %d: encoding %q, %d bytes for %d", i, zipped.Header().Get("Content-Encoding"), zipped.Body.Len(), len(plain))
+			t.Fatalf(
+				"gzip request %d: encoding %q, %d bytes for %d",
+				i,
+				zipped.Header().Get("Content-Encoding"),
+				zipped.Body.Len(),
+				len(plain),
+			)
 		}
 
 		zr, err := gzip.NewReader(zipped.Body)
@@ -197,7 +203,13 @@ func TestNPMProxy_LargeRenderingServesEveryEncoding(t *testing.T) {
 	f.svc.Serve(head, httptest.NewRequestWithContext(t.Context(), http.MethodHead, "/", http.NoBody), f.repo, "lib")
 
 	if head.Code != http.StatusOK || head.Body.Len() != 0 || head.Header().Get("Content-Length") != strconv.Itoa(len(plain)) {
-		t.Errorf("HEAD = %d, %d body bytes, Content-Length %q, want %d", head.Code, head.Body.Len(), head.Header().Get("Content-Length"), len(plain))
+		t.Errorf(
+			"HEAD = %d, %d body bytes, Content-Length %q, want %d",
+			head.Code,
+			head.Body.Len(),
+			head.Header().Get("Content-Length"),
+			len(plain),
+		)
 	}
 
 	etag := f.doWith("lib", nil).Header().Get("ETag")
