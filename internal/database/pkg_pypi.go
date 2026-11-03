@@ -211,6 +211,32 @@ func (p *PyPIStore) ListPyPIPackageVersions(ctx context.Context, repoID, name st
 	return mapRowsErr(rows, pypiPackageFromRow)
 }
 
+// PyPIIndexStamp is a cheap validator of a repository's /simple/ root: it
+// changes exactly when a project gains its first or loses its last live
+// release.
+func (p *PyPIStore) PyPIIndexStamp(ctx context.Context, repoID string) (string, error) {
+	stamp, err := p.q.PyPIIndexStamp(ctx, repoID)
+	if err != nil {
+		return "", fmt.Errorf("failed to stamp pypi index: %w", err)
+	}
+
+	return stamp, nil
+}
+
+// PyPIProjectStamp is a cheap validator of what one project's pages show (the
+// simple page and the legacy JSON document): it returns the number of live
+// files, 0 when the project does not exist, and a stamp that changes whenever
+// a file is published, deleted, trashed or restored or a release's metadata is
+// rewritten. name is the normalised project name.
+func (p *PyPIStore) PyPIProjectStamp(ctx context.Context, repoID, name string) (string, int64, error) {
+	row, err := p.q.PyPIProjectStamp(ctx, dbsqlc.PyPIProjectStampParams{RepositoryID: repoID, NameKey: name})
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to stamp pypi project: %w", err)
+	}
+
+	return row.Stamp, row.Files, nil
+}
+
 // mapRowsErr converts rows with a decoding mapper; no rows give nil.
 func mapRowsErr[R, T any](rows []R, mapf func(R) (*T, error)) ([]*T, error) {
 	if len(rows) == 0 {

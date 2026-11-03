@@ -83,6 +83,48 @@ func (h *Handler) serveNPM(
 		},
 	}
 
+	tarballBase := h.publicBase(w, r) + "/repos/" + grp.Name
+
+	w.Header().Add("Vary", "Accept")
+
+	// The merge is a pure function of the members' documents, which each
+	// member names by a validator: the group's validator is derived from those
+	// without reading or merging anything, so a poll that changes nothing is a
+	// 304 (and a repeat of a merge seen before a cache hit) for the price of a
+	// validator probe per member.
+	stamp, validated := memberStamp(r, members, ask, be)
+	if !validated {
+		return h.mergeNPM(w, r, grp, p, members, ask, be, tarballBase, "")
+	}
+
+	key := stampKey(grp.ID, tarballBase, p, abbreviated, stamp)
+
+	if base.Revalidate(w, r, grp.Public, keyETag(key), packumentMaxAge) {
+		return true
+	}
+
+	if rendered, hit := base.CachedMerged(key); hit {
+		rendered.Serve(w, r)
+		return true
+	}
+
+	return h.mergeNPM(w, r, grp, p, members, ask, be, tarballBase, key)
+}
+
+// mergeNPM collects the members' packuments and merges them. vkey is the
+// cache key and validator derived from the members' validators, already sent
+// as the response's (see serveNPM); "" when the members gave none, and the
+// merge is then identified by the documents themselves.
+func (h *Handler) mergeNPM(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	p pkgnpm.Path,
+	members []*models.Repository,
+	ask memberAsk,
+	be Backend,
+	tarballBase, vkey string,
+) bool {
 	// Every member's packument is held whole until merged: bound how many
 	// merges run at once. The slot is taken only once a member starts
 	// delivering (not while it waits on its upstream) and freed before the
@@ -92,7 +134,9 @@ func (h *Handler) serveNPM(
 
 	c := h.collect(r, sess, members, ask, be)
 	if len(c.docs) == 0 {
+		dropValidators(w)
 		writeNoDocument(w, r, c.partial())
+
 		return true
 	}
 
@@ -101,12 +145,16 @@ func (h *Handler) serveNPM(
 		docs[i] = d.body
 	}
 
-	// The merge is a pure function of the members' documents, so its result is
-	// cached under a digest of them and serves as the validator: a poll that
-	// changes nothing neither parses nor rewrites a thousand-version packument
-	// again.
-	tarballBase := h.publicBase(w, r) + "/repos/" + grp.Name
-	key := mergeKey(grp.ID, tarballBase, p, docs)
+	// Without the members' validators the merge, a pure function of their
+	// documents, is cached under a digest of them, which then serves as the
+	// validator: a poll that changes nothing neither parses nor rewrites a
+	// thousand-version packument again, though every member has to deliver it.
+	validated := vkey != ""
+
+	key := vkey
+	if !validated {
+		key = mergeKey(grp.ID, tarballBase, p, docs)
+	}
 
 	rendered, err := base.MergedRendered(r.Context(), key, func(context.Context) (*base.Rendered, error) {
 		body, err := mergePackuments(tarballBase, p, docs)
@@ -114,26 +162,29 @@ func (h *Handler) serveNPM(
 			return nil, err
 		}
 
-		return &base.Rendered{Body: body, ContentType: "application/json"}, nil
+		// A merge that lacks a failed member must not stand in for the complete
+		// one under the members' validators.
+		return &base.Rendered{Body: body, ContentType: "application/json", Compact: true, Transient: validated && c.partial()}, nil
 	})
 
 	sess.release()
 
 	if errors.Is(err, errNoVersion) {
+		dropValidators(w)
 		http.NotFound(w, r)
+
 		return true
 	}
 
 	if err != nil {
+		dropValidators(w)
 		h.log.Errorw("failed to merge npm packuments", "group", grp.Name, "package", p.Package, "error", err)
 		http.Error(w, "member repository error", http.StatusBadGateway)
 
 		return true
 	}
 
-	w.Header().Add("Vary", "Accept")
-
-	if revalidateMerged(w, r, grp.Public, `"`+key[:32]+`"`, packumentMaxAge, c.partial()) {
+	if !validated && revalidateMerged(w, r, grp.Public, keyETag(key), packumentMaxAge, c.partial()) {
 		return true
 	}
 
@@ -142,28 +193,49 @@ func (h *Handler) serveNPM(
 	return true
 }
 
+// dropValidators takes the validators off a response that turned out to be an
+// error, not the document they were set for.
+func dropValidators(w http.ResponseWriter) {
+	w.Header().Del("ETag")
+	w.Header().Del("Cache-Control")
+}
+
+// keyETag is the entity-tag of the merge cached under key.
+func keyETag(key string) string { return `"` + key[:32] + `"` }
+
+// stampKey is the hex SHA-256 over what a merge is identified by when the
+// members' validators name their documents: the group, the origin and
+// repository its tarball URLs point at, what was asked for and the digest of the
+// members' validators (memberStamp).
+func stampKey(groupID, tarballBase string, p pkgnpm.Path, abbreviated bool, members string) string {
+	return hashFields(
+		[]byte("stamp"), []byte(groupID), []byte(tarballBase), []byte(strconv.Itoa(int(p.Kind))),
+		[]byte(p.Package), []byte(p.Version), []byte(strconv.FormatBool(abbreviated)), []byte(members),
+	)
+}
+
 // mergeKey is the hex SHA-256 over everything a merged document is built from:
 // the group, the origin and repository its tarball URLs point at, what was asked for, and the bytes of
 // every member document in order.
 func mergeKey(groupID, tarballBase string, p pkgnpm.Path, docs [][]byte) string {
+	fields := make([][]byte, 0, 6+len(docs))
+	fields = append(fields, []byte("docs"), []byte(groupID), []byte(tarballBase), []byte(strconv.Itoa(int(p.Kind))))
+	fields = append(fields, []byte(p.Package), []byte(p.Version))
+
+	return hashFields(append(fields, docs...)...)
+}
+
+// hashFields is the hex SHA-256 of fields, each prefixed by its length so no two
+// field lists hash alike.
+func hashFields(fields ...[]byte) string {
 	h := sha256.New()
 
 	var n [8]byte
 
-	field := func(b []byte) {
+	for _, b := range fields {
 		binary.BigEndian.PutUint64(n[:], uint64(len(b)))
 		h.Write(n[:])
 		h.Write(b)
-	}
-
-	field([]byte(groupID))
-	field([]byte(tarballBase))
-	field([]byte(strconv.Itoa(int(p.Kind))))
-	field([]byte(p.Package))
-	field([]byte(p.Version))
-
-	for _, d := range docs {
-		field(d)
 	}
 
 	return hex.EncodeToString(h.Sum(nil))

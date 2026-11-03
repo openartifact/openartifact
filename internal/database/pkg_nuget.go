@@ -169,6 +169,21 @@ func (p *NuGetStore) ListNuGetPackageVersions(ctx context.Context, repoID, packa
 	return mapRowsOrNil(rows, err, "list nuget package versions", nugetRowToModel)
 }
 
+// NuGetVersionsStamp is a cheap validator of the version list and registration
+// index of one package: it changes exactly when a live version is added or
+// removed.
+func (p *NuGetStore) NuGetVersionsStamp(ctx context.Context, repoID, packageID string) (string, error) {
+	stamp, err := p.q.NuGetVersionsStamp(ctx, dbsqlc.NuGetVersionsStampParams{
+		RepositoryID: repoID,
+		NameKey:      nugetKey(packageID),
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to stamp nuget versions: %w", err)
+	}
+
+	return stamp, nil
+}
+
 // SearchNuGetPackages pages over matching packages: skip/take count packages,
 // the total is the number of matching packages, and every live version of each
 // package on the page is returned (grouped by package id, oldest first).

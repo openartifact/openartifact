@@ -72,12 +72,17 @@ func BenchmarkNPMGroupPackument(b *testing.B) {
 
 type discardWriter struct {
 	header http.Header
+	code   int
 	n      int
 }
 
-func (w *discardWriter) Header() http.Header { return w.header }
-func (w *discardWriter) WriteHeader(int)     {}
+func (w *discardWriter) Header() http.Header  { return w.header }
+func (w *discardWriter) WriteHeader(code int) { w.code = code }
 func (w *discardWriter) Write(p []byte) (int, error) {
+	if w.code == 0 {
+		w.code = http.StatusOK
+	}
+
 	w.n += len(p)
 
 	return len(p), nil

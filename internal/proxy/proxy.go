@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/crypto"
@@ -183,7 +184,14 @@ type Service struct {
 	// maxCondaIndex caps a conda repodata file, plain or decompressed;
 	// DefaultMaxCondaIndex unless a test lowers it.
 	maxCondaIndex int64
+
+	// renderID tells this service's renderings apart in the process-wide render
+	// cache, whose entries are valid only for the store they were rendered from.
+	renderID uint64
 }
+
+// renderIDs numbers the services of the process.
+var renderIDs atomic.Uint64 //nolint:gochecknoglobals // process-wide counter
 
 // NewService creates the proxy service. Upstream requests use an SSRF-safe
 // client: blocked destination addresses are refused at dial time and on every
@@ -192,6 +200,7 @@ func NewService(log *logger.Logger, db ServiceStore, blobStore storage.BlobStore
 	client := upstreamClient(DefaultUpstreamStallTimeout)
 
 	return &Service{
+		renderID:  renderIDs.Add(1),
 		log:       log,
 		db:        db,
 		blobStore: blobStore,

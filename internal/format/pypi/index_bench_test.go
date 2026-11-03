@@ -17,6 +17,8 @@ import (
 	"github.com/openartifact/openartifact/internal/format/formattest"
 )
 
+// benchPyPIDB serves fixed rows; its stamps are constant-time, so the
+// benchmarks measure the handler, not the database.
 type benchPyPIDB struct {
 	*formattest.DB
 
@@ -30,6 +32,14 @@ func (d *benchPyPIDB) ListPyPIPackageNames(_ context.Context, _ string) ([]strin
 
 func (d *benchPyPIDB) ListPyPIPackageVersions(_ context.Context, _, _ string) ([]*models.PyPIPackage, error) {
 	return d.versions, nil
+}
+
+func (d *benchPyPIDB) PyPIIndexStamp(_ context.Context, _ string) (string, error) {
+	return strconv.Itoa(len(d.all)), nil
+}
+
+func (d *benchPyPIDB) PyPIProjectStamp(_ context.Context, _, _ string) (string, int64, error) {
+	return strconv.Itoa(len(d.versions)), int64(len(d.versions)), nil
 }
 
 func benchPyPIFile(project, version, ext string) *models.PyPIPackage {
@@ -92,6 +102,10 @@ func (w *discardResponseWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// benchServe measures the three requests a client makes against one document:
+// a plain GET, a GET accepting gzip (what pip sends) and a revalidation that
+// is answered 304. The response headers are reset per request, as a real
+// connection does.
 func benchServe(b *testing.B, db *benchPyPIDB, target string) {
 	b.Helper()
 
@@ -100,57 +114,77 @@ func benchServe(b *testing.B, db *benchPyPIDB, target string) {
 	router := chi.NewRouter()
 	router.Route("/repos/{name}", h.RegisterRepoRoutes)
 
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, target, http.NoBody)
-	w := &discardResponseWriter{header: http.Header{}}
+	probe := httptest.NewRecorder()
+	router.ServeHTTP(probe, httptest.NewRequestWithContext(context.Background(), http.MethodGet, target, http.NoBody))
 
-	b.ReportAllocs()
-
-	for b.Loop() {
-		router.ServeHTTP(w, req)
+	etag := probe.Header().Get("ETag")
+	if probe.Code != http.StatusOK || etag == "" {
+		b.Fatalf("probe: status %d, ETag %q", probe.Code, etag)
 	}
 
-	if w.n == 0 {
-		b.Fatal("no body written")
+	for _, tc := range []struct {
+		name   string
+		header map[string]string
+	}{
+		{"identity", nil},
+		{"gzip", map[string]string{"Accept-Encoding": "gzip"}},
+		{"304", map[string]string{"If-None-Match": etag}},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, target, http.NoBody)
+			for k, v := range tc.header {
+				req.Header.Set(k, v)
+			}
+
+			w := &discardResponseWriter{header: http.Header{}}
+
+			b.ReportAllocs()
+
+			for b.Loop() {
+				clear(w.header)
+				router.ServeHTTP(w, req)
+			}
+
+			if w.n == 0 && tc.name != "304" {
+				b.Fatal("no body written")
+			}
+		})
 	}
 }
 
-// BenchmarkHandleSimpleIndex renders the project list (GET /simple/).
+// BenchmarkHandleSimpleIndex serves the project list (GET /simple/) of
+// repositories with 200, 2000 and 10000 projects.
 func BenchmarkHandleSimpleIndex(b *testing.B) {
-	for _, n := range []int{100, 1000, 10000} {
-		db := &benchPyPIDB{DB: formattest.NewDB(), all: benchPyPIProjects(n)}
+	for _, projects := range []int{200, 2000, 10000} {
+		db := &benchPyPIDB{DB: formattest.NewDB(), all: benchPyPIProjects(projects * 2)}
 
-		b.Run(fmt.Sprintf("files=%d", n), func(b *testing.B) {
+		b.Run(fmt.Sprintf("projects=%d", projects), func(b *testing.B) {
 			benchServe(b, db, "/repos/myrepo/simple/")
 		})
 	}
 }
 
-// BenchmarkHandlePackageIndex renders one project's file list (GET /simple/{pkg}/).
+// BenchmarkHandlePackageIndex serves one project's file list (GET
+// /simple/{pkg}/) of a project with 10, 300 and 2000 releases (a wheel and an
+// sdist each).
 func BenchmarkHandlePackageIndex(b *testing.B) {
-	for _, n := range []int{100, 1000, 10000} {
-		db := &benchPyPIDB{DB: formattest.NewDB(), versions: benchPyPIVersions(n)}
+	for _, releases := range []int{10, 300, 2000} {
+		db := &benchPyPIDB{DB: formattest.NewDB(), versions: benchPyPIVersions(releases * 2)}
 
-		b.Run(fmt.Sprintf("files=%d", n), func(b *testing.B) {
+		b.Run(fmt.Sprintf("releases=%d", releases), func(b *testing.B) {
 			benchServe(b, db, "/repos/myrepo/simple/demo/")
 		})
 	}
 }
 
-// BenchmarkHandleJSON renders the JSON API document of one project.
+// BenchmarkHandleJSON serves the JSON API document of one project (GET
+// /json/{pkg}) with the same release counts.
 func BenchmarkHandleJSON(b *testing.B) {
-	for _, n := range []int{100, 1000, 10000} {
-		db := &benchPyPIDB{DB: formattest.NewDB(), versions: benchPyPIVersions(n)}
+	for _, releases := range []int{10, 300, 2000} {
+		db := &benchPyPIDB{DB: formattest.NewDB(), versions: benchPyPIVersions(releases * 2)}
 
-		b.Run(fmt.Sprintf("files=%d", n), func(b *testing.B) {
+		b.Run(fmt.Sprintf("releases=%d", releases), func(b *testing.B) {
 			benchServe(b, db, "/repos/myrepo/json/demo")
 		})
-	}
-}
-
-func BenchmarkNormalizePyPIName(b *testing.B) {
-	b.ReportAllocs()
-
-	for b.Loop() {
-		_ = normalizePyPIName("My_Example.Project_Name")
 	}
 }

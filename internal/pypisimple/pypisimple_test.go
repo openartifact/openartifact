@@ -7,6 +7,7 @@ package pypisimple
 import (
 	"net/url"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -26,6 +27,11 @@ func TestNormalizeName(t *testing.T) {
 		{"Foo_Bar.baz", "foo-bar-baz", true},
 		{"foo__bar--baz..qux", "foo-bar-baz-qux", true},
 		{"zope.interface", "zope-interface", true},
+		{"zope.Event", "zope-event", true},
+		{"Foo_Bar", "foo-bar", true},
+		{"foo_.bar", "foo-bar", true},
+		{"Foo-.-Bar", "foo-bar", true},
+		{"plain", "plain", true},
 		{"a", "a", true},
 		{"", "", false},
 		{"-", "-", false},
@@ -44,6 +50,47 @@ func TestNormalizeName(t *testing.T) {
 		if v := ValidName(got); v != tt.valid {
 			t.Errorf("ValidName(%q) = %v, want %v", got, v, tt.valid)
 		}
+	}
+}
+
+// referenceNormalizeName is the regular-expression form of the PEP 503
+// normalization NormalizeName replaced; the two must agree on every input.
+func referenceNormalizeName(name string) string {
+	return strings.ToLower(referenceSeparators.ReplaceAllString(name, "-"))
+}
+
+var referenceSeparators = regexp.MustCompile(`[-_.]+`)
+
+func TestNormalizeNameMatchesReference(t *testing.T) {
+	for _, in := range []string{
+		"", "a", "A", "-", "_", ".", "--", "-_.", "a-b", "a--b", "a_-b", "A.B_C-D", "Foo.Bar", "foo-bar", "foo-bar-",
+		"-foo", ".foo.", "__init__", "zope.interface", "ZOPE.Interface", "a---b___c...d", "-A-", "Z", "a-", "-a",
+		"abc123", "ABC123", "9.Z", "a b", "a/b", "a%2Fb", "\u212a", "\u212a-_K", "İ", "Straße_X", "ÄÖ.Ü", "日本_語", "\xff", "a\xff_B", "\xc3", "\xff-\xfe--",
+	} {
+		if got, want := NormalizeName(in), referenceNormalizeName(in); got != want {
+			t.Errorf("NormalizeName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// A name that is already normalized ASCII is returned without allocating.
+func TestNormalizeNameDoesNotAllocateWhenNormal(t *testing.T) {
+	name := strings.Clone("zope-interface2")
+
+	if n := testing.AllocsPerRun(100, func() { _ = NormalizeName(name) }); n != 0 {
+		t.Errorf("NormalizeName of a normalized name allocated %v times, want 0", n)
+	}
+}
+
+func BenchmarkNormalizeName(b *testing.B) {
+	for _, name := range []string{"requests", "My_Example.Project_Name"} {
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+
+			for b.Loop() {
+				_ = NormalizeName(name)
+			}
+		})
 	}
 }
 

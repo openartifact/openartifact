@@ -289,6 +289,8 @@ func TestUpstreamMetadata_BlobMissingFromStoreIsRefetchedOnce(t *testing.T) {
 				t.Fatalf("priming = %d", w.Code)
 			}
 
+			f.svc.forgetRenderings()
+
 			hits := f.hits.Load()
 
 			store.failures.Store(1)
@@ -318,6 +320,8 @@ func TestUpstreamMetadata_BlobStaysMissingIs500WithoutDetail(t *testing.T) {
 			if w := f.do(http.MethodGet, mc.get); w.Code != http.StatusOK {
 				t.Fatalf("priming = %d", w.Code)
 			}
+
+			f.svc.forgetRenderings()
 
 			store.failures.Store(1 << 20)
 

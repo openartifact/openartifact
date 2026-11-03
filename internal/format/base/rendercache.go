@@ -15,6 +15,8 @@ import (
 
 	"github.com/klauspost/compress/gzip"
 	"golang.org/x/sync/singleflight"
+
+	"github.com/openartifact/openartifact/internal/iocopy"
 )
 
 const (
@@ -24,6 +26,10 @@ const (
 
 	// minCompressBytes is the smallest body worth compressing.
 	minCompressBytes = 1024
+
+	// compactBytes is the size from which a Compact document is kept only in
+	// its gzip form (see Rendered.Compact).
+	compactBytes = 1 << 20
 )
 
 // Rendered is one immutable rendered metadata document. It is shared between
@@ -43,11 +49,50 @@ type Rendered struct {
 	// cache nor a client can keep serving it once the source recovers.
 	Transient bool
 
+	// Compact lets the cache keep a large (from compactBytes) document only
+	// in its gzip form, 5-10x smaller for JSON metadata, so a multi-megabyte
+	// document costs a fraction of its size in the byte budget and fits at all.
+	// A client that does not accept gzip is served by decompressing it on the
+	// fly, which is far cheaper than rendering again. Set it only when the
+	// producer never reads Body from the document Do returns: Body is nil there.
+	Compact bool
+
 	cache *RenderCache
 	key   string
 
 	gzOnce sync.Once
 	gz     []byte
+
+	// bodyLen is the length of the identity document of a compacted Rendered,
+	// whose Body is gone.
+	bodyLen int
+}
+
+// compacted reports that the identity form was dropped.
+func (r *Rendered) compacted() bool { return r.bodyLen > 0 }
+
+// gzipBytes compresses b into a new buffer.
+func gzipBytes(b []byte) []byte {
+	var buf bytes.Buffer
+
+	zw, _ := gzip.NewWriterLevel(&buf, gzip.DefaultCompression)
+	_, _ = zw.Write(b)
+	_ = zw.Close()
+
+	return buf.Bytes()
+}
+
+// compact returns the form of r the cache keeps: r itself, or for a large
+// Compact document a copy that holds the gzip form only.
+func (r *Rendered) compact() *Rendered {
+	if !r.Compact || r.Opaque || r.Transient || len(r.Body) < compactBytes {
+		return r
+	}
+
+	c := &Rendered{ContentType: r.ContentType, bodyLen: len(r.Body), gz: gzipBytes(r.Body)}
+	c.gzOnce.Do(func() {}) // the gzip form exists already
+
+	return c
 }
 
 // gzipped returns the gzip form of the body, compressed once and then reused
@@ -55,13 +100,7 @@ type Rendered struct {
 // cache budget.
 func (r *Rendered) gzipped() []byte {
 	r.gzOnce.Do(func() {
-		var buf bytes.Buffer
-
-		zw, _ := gzip.NewWriterLevel(&buf, gzip.DefaultCompression)
-		_, _ = zw.Write(r.Body)
-		_ = zw.Close()
-
-		r.gz = buf.Bytes()
+		r.gz = gzipBytes(r.Body)
 
 		if r.cache != nil {
 			r.cache.grow(r.key, r, int64(len(r.gz)))
@@ -79,8 +118,6 @@ func (r *Rendered) Serve(w http.ResponseWriter, req *http.Request) {
 	h := w.Header()
 	h.Set("Content-Type", r.ContentType)
 
-	body := r.Body
-
 	if r.Transient {
 		h.Del("ETag")
 		h.Set("Cache-Control", "no-store")
@@ -90,17 +127,42 @@ func (r *Rendered) Serve(w http.ResponseWriter, req *http.Request) {
 		h.Add("Vary", "Accept-Encoding")
 	}
 
-	if !r.Opaque && len(body) >= minCompressBytes && acceptsGzip(req) {
+	var (
+		body    = r.Body
+		length  = len(body)
+		inflate bool // body is the compacted gzip form of an identity response
+	)
+
+	switch {
+	case r.compacted() && acceptsGzip(req):
+		body = r.gz
+		length = len(body)
+
+		h.Set("Content-Encoding", "gzip")
+		weakenETag(h)
+	case r.compacted():
+		inflate = true
+		length = r.bodyLen
+	case !r.Opaque && len(body) >= minCompressBytes && acceptsGzip(req):
 		body = r.gzipped()
+		length = len(body)
 
 		h.Set("Content-Encoding", "gzip")
 		weakenETag(h)
 	}
 
-	h.Set("Content-Length", strconv.Itoa(len(body)))
+	h.Set("Content-Length", strconv.Itoa(length))
 	w.WriteHeader(http.StatusOK)
 
 	if req.Method == http.MethodHead {
+		return
+	}
+
+	if inflate {
+		if zr, err := gzip.NewReader(bytes.NewReader(r.gz)); err == nil {
+			_, _ = iocopy.Copy(w, zr)
+		}
+
 		return
 	}
 
@@ -145,6 +207,13 @@ func MergedRendered(ctx context.Context, key string, render func(ctx context.Con
 	return sharedRender.Do(ctx, mergedNS+key, render)
 }
 
+// CachedMerged returns the document MergedRendered holds under key, if any,
+// without rendering it: a caller that can name a document by a cheap validator
+// answers from the cache before collecting what the document is built from.
+func CachedMerged(key string) (*Rendered, bool) {
+	return sharedRender.Get(mergedNS + key)
+}
+
 // Get returns the cached document for key.
 func (c *RenderCache) Get(key string) (*Rendered, bool) {
 	c.mu.Lock()
@@ -171,7 +240,7 @@ func (c *RenderCache) Do(ctx context.Context, key string, render func(ctx contex
 		return r, nil
 	}
 
-	v, err, _ := c.flight.Do(key, func() (any, error) {
+	ch := c.flight.DoChan(key, func() (any, error) {
 		if r, ok := c.Get(key); ok {
 			return r, nil
 		}
@@ -181,23 +250,33 @@ func (c *RenderCache) Do(ctx context.Context, key string, render func(ctx contex
 			return nil, err
 		}
 
+		r = r.compact()
+
 		if !r.Transient {
 			c.put(key, r)
 		}
 
 		return r, nil
 	})
-	if err != nil {
-		return nil, err //nolint:wrapcheck // the render error is returned unchanged
+
+	// The render outlives a caller that gives up (others may wait on it), but
+	// that caller does not wait for it.
+	select {
+	case <-ctx.Done():
+		return nil, context.Cause(ctx)
+	case res := <-ch:
+		if res.Err != nil {
+			return nil, res.Err //nolint:wrapcheck // the render error is returned unchanged
+		}
+
+		r, _ := res.Val.(*Rendered)
+
+		return r, nil
 	}
-
-	r, _ := v.(*Rendered)
-
-	return r, nil
 }
 
 func (c *RenderCache) put(key string, r *Rendered) {
-	size := int64(len(r.Body))
+	size := int64(len(r.Body) + len(r.gz))
 
 	// A document that would flush a large share of the cache is not worth
 	// keeping; it is rendered per request instead.

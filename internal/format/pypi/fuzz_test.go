@@ -59,29 +59,9 @@ func fuzzCheckAcceptedIdentity(t *testing.T, name, version, filename string) {
 	}
 
 	dist, ok := splitPyPIFilename(filename, version)
-	if !ok || dist == "" || !strings.HasPrefix(filename, dist+"-") || normalizePyPIName(dist) != normalizePyPIName(name) {
+	if !ok || dist == "" || !strings.HasPrefix(filename, dist+"-") || pypisimple.NormalizeName(dist) != pypisimple.NormalizeName(name) {
 		t.Fatalf("accepted (%q, %q, %q) but its distribution is %q (%v)", name, version, filename, dist, ok)
 	}
-}
-
-// FuzzNormalizePyPIName checks the upload-side name normalization is
-// idempotent and agrees with the one the simple API serves.
-func FuzzNormalizePyPIName(f *testing.F) {
-	f.Add("Foo_Bar.baz")
-	f.Add("-._")
-	f.Add("\u212a\xff")
-	f.Add("")
-
-	f.Fuzz(func(t *testing.T, name string) {
-		norm := normalizePyPIName(name)
-		if again := normalizePyPIName(norm); again != norm {
-			t.Fatalf("normalizePyPIName is not idempotent: %q -> %q -> %q", name, norm, again)
-		}
-
-		if want := pypisimple.NormalizeName(name); norm != want {
-			t.Fatalf("normalizePyPIName(%q) = %q, but the simple API normalizes it to %q", name, norm, want)
-		}
-	})
 }
 
 func fuzzSign(n int) int {

@@ -428,6 +428,8 @@ func TestNPMProxy_PackumentRenderWaitsForASlot(t *testing.T) {
 		t.Fatalf("priming: status %d", w.Code)
 	}
 
+	f.svc.forgetRenderings()
+
 	f.svc.packuments = base.NewGate(1)
 	if err := f.svc.packuments.Acquire(t.Context()); err != nil {
 		t.Fatal(err)

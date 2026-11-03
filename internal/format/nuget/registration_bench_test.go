@@ -134,3 +134,88 @@ func BenchmarkRegistrationIndexCold(b *testing.B) {
 	db, bs := benchPackages(b, 20, 1<<20)
 	benchRegistration(b, nil, nil, func() (*HTTPHandler, http.Handler) { return newBenchRouter(b, db, bs) })
 }
+
+// benchGet serves url repeatedly with the given request headers. A 304 and a
+// 200 both count: the point is the cost of the path a restoring client hits.
+func benchGet(b *testing.B, router http.Handler, url string, header map[string]string, wantCode int) {
+	b.Helper()
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, url, http.NoBody)
+	for k, v := range header {
+		req.Header.Set(k, v)
+	}
+
+	w := &codeWriter{}
+	w.header = http.Header{}
+
+	b.ReportAllocs()
+
+	for b.Loop() {
+		router.ServeHTTP(w, req)
+	}
+
+	if w.code != wantCode {
+		b.Fatalf("status %d, want %d", w.code, wantCode)
+	}
+}
+
+type codeWriter struct {
+	discardWriter
+
+	code int
+}
+
+func (w *codeWriter) WriteHeader(c int) { w.code = c }
+
+func (w *codeWriter) Write(p []byte) (int, error) {
+	if w.code == 0 {
+		w.code = http.StatusOK
+	}
+
+	return w.discardWriter.Write(p)
+}
+
+const (
+	benchFlatURL = "/repos/myrepo/v3/package/contoso.lib/index.json"
+	benchRegURL  = "/repos/myrepo/v3/registration/contoso.lib/index.json"
+)
+
+func etagOf(b *testing.B, router http.Handler, url string) string {
+	b.Helper()
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, url, http.NoBody))
+
+	if rec.Header().Get("ETag") == "" {
+		b.Fatal("no ETag")
+	}
+
+	return rec.Header().Get("ETag")
+}
+
+// The benchmarks below guard the restore hot path: a package of 300 versions
+// served fresh (200 with gzip, as clients ask) and revalidated (304).
+
+func BenchmarkRegistration300Hit(b *testing.B) {
+	db, bs := benchPackages(b, 300, 256)
+	_, router := newBenchRouter(b, db, bs)
+	benchGet(b, router, benchRegURL, map[string]string{"Accept-Encoding": "gzip"}, http.StatusOK)
+}
+
+func BenchmarkRegistration300NotModified(b *testing.B) {
+	db, bs := benchPackages(b, 300, 256)
+	_, router := newBenchRouter(b, db, bs)
+	benchGet(b, router, benchRegURL, map[string]string{"If-None-Match": etagOf(b, router, benchRegURL)}, http.StatusNotModified)
+}
+
+func BenchmarkFlatVersions300Hit(b *testing.B) {
+	db, bs := benchPackages(b, 300, 256)
+	_, router := newBenchRouter(b, db, bs)
+	benchGet(b, router, benchFlatURL, map[string]string{"Accept-Encoding": "gzip"}, http.StatusOK)
+}
+
+func BenchmarkFlatVersions300NotModified(b *testing.B) {
+	db, bs := benchPackages(b, 300, 256)
+	_, router := newBenchRouter(b, db, bs)
+	benchGet(b, router, benchFlatURL, map[string]string{"If-None-Match": etagOf(b, router, benchFlatURL)}, http.StatusNotModified)
+}

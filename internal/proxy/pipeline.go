@@ -260,9 +260,29 @@ type renderedDoc struct {
 	render func(body []byte, res *resolution) ([]byte, string, error)
 }
 
+// renderError marks an error of a renderedDoc's render hook, as opposed to
+// one of loading the document, so both can be told apart after they were shared
+// between the requests of one render.
+type renderError struct{ err error }
+
+func (e renderError) Error() string { return e.err.Error() }
+func (e renderError) Unwrap() error { return e.err }
+
+// renderKey is the render-cache key of the rendering of d for a validator: the
+// validator covers the cached blob and everything the render hook depends on
+// (see renderedDoc.etag); the repository, the document and the content type the
+// cached copy was stored with qualify it.
+func (s *Service) renderKey(repo *models.Repository, d metaDoc, etag, contentType string) string {
+	return "proxy\x00" + strconv.FormatUint(s.renderID, 10) + "\x00" + repo.ID + "\x00" + d.key + "\x00" + etag + "\x00" + contentType
+}
+
 // serveRendered answers a request for rd: it resolves the cached document,
-// answers 304 from the validator before the document is even read, then reads
-// it under the document gate and renders it.
+// answers 304 from the validator before the document is even read, then serves
+// the rendering cached under that validator. A rendering is built once per
+// validator, reading the document under the document gate, and is kept
+// (gzipped, in the process-wide render cache) until the validator moves on: a
+// new upstream copy, another origin, or a change of the minimum age or of the
+// curation rules all change it.
 func (s *Service) serveRendered(w http.ResponseWriter, r *http.Request, repo *models.Repository, rd renderedDoc) {
 	res, err := s.resolveDoc(r.Context(), repo, rd.metaDoc)
 	if err != nil {
@@ -280,20 +300,35 @@ func (s *Service) serveRendered(w http.ResponseWriter, r *http.Request, repo *mo
 		h.Set("Warning", staleWarning)
 	}
 
-	if base.Revalidate(w, r, repo.Public, rd.etag(res.entry.BlobKey), rd.maxAge) {
+	etag := rd.etag(res.entry.BlobKey)
+	if base.Revalidate(w, r, repo.Public, etag, rd.maxAge) {
 		return
 	}
 
-	loaded, body, release, err := s.loadDoc(r.Context(), repo, rd.metaDoc, res)
+	rendered, err := base.MergedRendered(r.Context(), s.renderKey(repo, rd.metaDoc, etag, res.entry.ContentType),
+		func(ctx context.Context) (*base.Rendered, error) { return s.renderDoc(ctx, repo, rd, res) })
 	if err != nil {
+		if failed, ok := errors.AsType[renderError](err); ok {
+			s.failRender(w, r, repo, rd.metaDoc, failed.err)
+			return
+		}
+
 		s.failWithoutValidators(w, r, err)
+
 		return
 	}
 
-	if loaded.entry.BlobKey != res.entry.BlobKey {
-		// The cached blob was gone and the document refetched: the validator
-		// must describe the body actually served.
-		h.Set("ETag", rd.etag(loaded.entry.BlobKey))
+	rendered.Serve(w, r)
+}
+
+// renderDoc reads the cached document of res under the document gate and
+// renders it. When the cached blob was gone and the document refetched, the
+// rendering belongs to another validator than its key: it is served once,
+// without validator, and never cached.
+func (s *Service) renderDoc(ctx context.Context, repo *models.Repository, rd renderedDoc, res *resolution) (*base.Rendered, error) {
+	loaded, body, release, err := s.loadDoc(ctx, repo, rd.metaDoc, res)
+	if err != nil {
+		return nil, err
 	}
 
 	out, contentType, err := rd.render(body, loaded)
@@ -301,11 +336,15 @@ func (s *Service) serveRendered(w http.ResponseWriter, r *http.Request, repo *mo
 	release()
 
 	if err != nil {
-		s.failRender(w, r, repo, rd.metaDoc, err)
-		return
+		return nil, renderError{err}
 	}
 
-	writeBody(w, r, contentType, out)
+	return &base.Rendered{
+		Body:        out,
+		ContentType: contentType,
+		Compact:     true,
+		Transient:   loaded.entry.BlobKey != res.entry.BlobKey,
+	}, nil
 }
 
 // failRender answers a render hook's error (see renderedDoc.render).
