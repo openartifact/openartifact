@@ -8,12 +8,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"runtime"
 	"strconv"
 )
@@ -25,24 +23,6 @@ import (
 
 // ciListPageSize is the page size of the listings the CI commands walk.
 const ciListPageSize = 100
-
-var errCIUsage = errors.New("usage")
-
-// ciUsagef is a command-line error; ciFail prints it like every other CLI error.
-func ciUsagef(format string, args ...any) error {
-	return fmt.Errorf("%w: %s", errCIUsage, fmt.Sprintf(format, args...))
-}
-
-// ciFail reports err and exits non-zero. A usage error shows its text as is.
-func ciFail(err error) {
-	msg := err.Error()
-	if errors.Is(err, errCIUsage) {
-		msg = msg[len(errCIUsage.Error())+2:]
-	}
-
-	fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
-	os.Exit(1)
-}
 
 // ciPrint writes the result of a command: v as JSON under --format json, text
 // otherwise.
@@ -65,10 +45,6 @@ type versionInfo struct {
 
 func currentVersionInfo() versionInfo {
 	return versionInfo{Version: version, Go: runtime.Version(), OS: runtime.GOOS, Arch: runtime.GOARCH}
-}
-
-func handleVersion(outFmt string) {
-	ciPrint(outFmt, currentVersionInfo(), "oa version "+version)
 }
 
 // ciAPI is the JSON client of the CI commands. It returns errors instead of

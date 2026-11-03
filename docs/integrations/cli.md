@@ -18,8 +18,8 @@ go build -o bin/oa ./cmd/oa
 Release archives are named `oa_<version>_<os>_<arch>` and exist for linux, darwin and windows (amd64, arm64). Source: [`cmd/oa`](../../cmd/oa).
 
 ```sh
-oa version              # prints "oa version <version>" ("dev" for an untagged build)
-oa help                 # full command list (also: oa with no arguments, -h, --help)
+oa version              # prints "oa version <version>" ("dev" for an untagged build); also oa --version
+oa help                 # full command list (also: oa --help); oa help COMMAND = oa COMMAND --help
 ```
 
 ## Server, token and config file
@@ -30,11 +30,24 @@ oa help                 # full command list (also: oa with no arguments, -h, --h
 | API token | `--token TOKEN` | `OA_TOKEN` | value saved by `oa auth login` |
 | Output format | `--format table\|json` | n/a | `table` |
 
-Precedence: flag, then environment variable, then the config file. Global flags go **before** the command (`oa --format json repo list`).
+Precedence: flag, then environment variable, then the config file. The global flags go anywhere on the command line (`oa --format json repo list` and `oa repo list --format json` are the same), except where the command has a flag of that name itself (see [Flags](#flags)).
 
 The config file is `~/.config/oa/config.json` on every OS (it does not follow `XDG_CONFIG_HOME` or the platform config dir). It holds `{"server": "...", "token": "..."}`. The directory is created with mode `0700` and the file is written atomically with mode `0600`.
 
-Help: `-h` or `--help` anywhere after the command (`oa repo create --help`) prints the usage of that command and exits 0 without contacting the server. A name, id or path argument that starts with `-` is refused as a probable misplaced flag, before any request. Names starting with `-` (old repositories created before names had to start with a letter or digit): put them after `--`, which ends flag parsing, so `oa repo show -- -legacy2` and `oa repo delete --confirm -legacy2 -- -legacy2` work; flags go before the `--`. A flag the command does not know, or a `--format` other than `table` or `json`, is an error (exit 1). The global flags `--server`, `--token` and `--format` are accepted anywhere on the line (`oa repo list --format json`), except where the command has a flag of that name itself (`repo create`, `sbom generate`, `vex get`, `audit export` take `--format`; `auth login` takes `--server`). `oa search` takes its flags before or after the query.
+Help: `-h` or `--help` anywhere after the command (`oa repo create --help`) prints the usage of that command and exits 0 without contacting the server. `oa` on its own, or a command group without a subcommand (`oa repo`), prints the help to stderr and exits 1.
+
+### Flags
+
+`oa` follows the GNU convention (it is built on [cobra](https://github.com/spf13/cobra) and pflag):
+
+- **Long flags take two dashes**: `--format json`, `--confirm NAME`. A long flag with one dash is an error, not a guess: `oa repo list -format json` fails with `unknown flag -format: did you mean --format?` (exit 1, no request).
+- **One-letter flags** exist only for `-h` (help); `-f` (`--file`) and `-R` (`--recursive`) on `apply` and `diff`; `-o` (`--output`) on `apply`, `diff`, `export` and `audit export`; `-r` (`--repo`) on `trash`, `bundle add` and `search`; and `-y` (`--yes`) on `trash purge`. Every other flag is long only.
+- **Flags may come before or after the arguments** (`oa upload --flat repo f.bin` and `oa upload repo f.bin --flat`). Values can be given as `--flag value` or `--flag=value`.
+- **A name, id or path argument that starts with `-` is refused** as a probable misplaced flag, before any request. Names starting with `-` (old repositories created before names had to start with a letter or digit): put them after `--`, which ends flag parsing, so `oa repo show -- -legacy2` and `oa repo delete --confirm -legacy2 -- -legacy2` work; flags go before the `--`.
+- **Too many or too few arguments** is a usage error (exit 1) that names the expected arguments; extra arguments are never ignored.
+- A flag the command does not know is an error (exit 1) with a suggestion when a close flag exists, and so is a `--format` other than `table` or `json`.
+- `repo create`, `sbom generate`, `vex get` and `audit export` have a `--format` of their own (repository, SBOM, VEX or export format) and `auth login` has its own `--server`: after the command name the flag belongs to the command. To also choose the output format, put the global flag before the command: `oa --format json repo create r --format npm`.
+- `oa search` takes its flags before or after the query.
 
 `oa upload` reports the server's own text for a `409` (for example `artifact already exists`); `oa cleanup create` always sends `enabled` (default true); `oa vuln|secret quarantine ... --release[=false]` takes the bool form; `oa trash list --kind` with an unknown kind is an error (`400`); `oa audit export -o /dev/null` (or any device/pipe) writes directly; `oa vuln scan` prints `started; still running` when the server has only queued the scan.
 
@@ -72,6 +85,22 @@ API tokens cannot revoke tokens, which is why a password is needed. `oa auth log
 Webhook secrets are read from `--secret-file FILE` (`-` for stdin) or `OA_WEBHOOK_SECRET`, never from argv.
 
 For CI, skip login: create a token in the UI and set `OA_SERVER` / `OA_TOKEN`. See [authentication](../security/authentication.md) for token kinds and scopes.
+
+## Shell completion
+
+`oa completion bash|zsh|fish|powershell` prints a completion script. It completes commands, subcommands and flags, the values of flags with a fixed set (`--format`, `--kind`, `--scanner`, `--unit`, ...), file names for path arguments, and, from the server, the names of repositories, projects, groups, webhooks, storage backends, backups, GPG keys and API tokens.
+
+| Shell | Load in the current shell | Install for every session |
+|---|---|---|
+| bash (needs `bash-completion`) | `source <(oa completion bash)` | `oa completion bash > ~/.local/share/bash-completion/completions/oa` (one user), or `oa completion bash \| sudo tee /etc/bash_completion.d/oa` (Linux, all users), or `oa completion bash > "$(brew --prefix)/etc/bash_completion.d/oa"` (macOS with Homebrew) |
+| zsh | `source <(oa completion zsh)` | `oa completion zsh > "${fpath[1]}/_oa"` (Linux) or `oa completion zsh > "$(brew --prefix)/share/zsh/site-functions/_oa"` (macOS with Homebrew); enable completion once with `autoload -U compinit; compinit` in `~/.zshrc` |
+| fish | `oa completion fish \| source` | `oa completion fish > ~/.config/fish/completions/oa.fish` |
+| PowerShell | `oa completion powershell \| Out-String \| Invoke-Expression` | add that line to your profile (`$PROFILE`) |
+
+Start a new shell after installing. `--no-descriptions` leaves the descriptions out of the suggestions. The release archives of `oa` carry the generated scripts in `completions/` (`oa.bash`, `_oa`, `oa.fish`, `oa.ps1`), so a package or an install script can copy them without running `oa`.
+
+Names from the server use the same server and token as the command (`--server`, `--token`, `OA_SERVER`, `OA_TOKEN`, then the config file, so a signed-in `oa` completes without further setup). They are best effort: a request takes at most about two seconds, and when the server does not answer, rejects the token, or no token is configured, nothing is suggested. Completion never prompts, never writes anything and never prints the token. Repository names are listed up to 500 entries.
+
 
 ## Commands
 

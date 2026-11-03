@@ -11,7 +11,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,30 +22,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"golang.org/x/term"
 )
-
-const uploadUsage = "Usage: oa artifact upload " +
-	"[--presigned [--path P] [--content-type T] [--multipart] [--part-size SIZE] [--parallel N]] " +
-	"[--branch B] [--apk-repo R] [--arch A] <repo> <file>"
 
 // maxSinglePutBytes is the largest object one presigned PUT can carry (the S3
 // limit); anything bigger has to be uploaded in parts.
 const maxSinglePutBytes int64 = 5 << 30
 
-// uploadUsageError is the error for a malformed command line. It is a type
-// rather than an errors.New value because its text is the capitalized usage
-// line, which is shown to the user as is.
-type uploadUsageError struct{}
-
-func (uploadUsageError) Error() string { return uploadUsage }
-
 var (
-	errUploadUsage          error = uploadUsageError{}
-	errUploadNeedsPresigned       = errors.New("--path, --content-type, --multipart, --part-size and --parallel require --presigned")
-	errUploadParallel             = errors.New("--parallel must be between 1 and 16")
-	errUploadApkFlags             = errors.New("--branch, --apk-repo and --arch apply to .apk files only")
-	errUploadTarget               = errors.New("server returned an incomplete upload target")
+	errUploadNeedsPresigned = errors.New("--path, --content-type, --multipart, --part-size and --parallel require --presigned")
+	errUploadParallel       = errors.New("--parallel must be between 1 and 16")
+	errUploadApkFlags       = errors.New("--branch, --apk-repo and --arch apply to .apk files only")
+	errUploadTarget         = errors.New("server returned an incomplete upload target")
 )
 
 // uploadOptions is a parsed `oa artifact upload` command line.
@@ -68,14 +57,47 @@ type uploadOptions struct {
 	branch, apkRepo, arch string
 }
 
-// artifactUploadCommand runs `oa artifact upload`. Flags may appear before or
-// after the positional arguments.
-func artifactUploadCommand(client *Client, args []string) {
-	opts, err := parseUploadArgs(args, flag.ExitOnError, nil)
-	if err != nil {
-		dief("%v", err)
+// artifactUploadCmd builds `oa artifact upload`. run receives the validated
+// options (the command line is parsed and checked here, whatever run does).
+func artifactUploadCmd(a *app, run func(*Client, uploadOptions)) *cobra.Command {
+	var opts uploadOptions
+
+	cmd := &cobra.Command{
+		Use:   "upload <repo> <file>",
+		Short: "Upload a file to a hosted repository",
+		Long: "Upload one file to a hosted repository; the repository's format picks the upload endpoint. " +
+			"Flags may come before or after the arguments.\n\n" +
+			"--presigned uploads straight to the object store through a presigned URL (raw repositories); " +
+			"files above 5 GiB switch to it automatically, in parts. --path, --content-type, --multipart, " +
+			"--part-size and --parallel need --presigned. --branch, --apk-repo and --arch address the " +
+			"directory of an .apk upload.",
+		Example: "  oa artifact upload files ./release.tar.gz\n" +
+			"  oa artifact upload files ./disk.img --presigned --path images/disk.img --part-size 128M --parallel 8\n" +
+			"  oa artifact upload alpine ./pkg.apk --branch v3.20 --apk-repo community --arch aarch64",
+		Args:              usageArgs(2, 2),
+		ValidArgsFunction: positional(a.repoNames(), files),
 	}
 
+	bindUploadFlags(cmd.Flags(), &opts)
+	flagEnum(cmd, "parallel", "1", "2", "4", "8", "16")
+
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		opts.repo, opts.filePath = args[0], args[1]
+
+		if err := checkUploadOptions(cmd.Flags(), &opts); err != nil {
+			return err
+		}
+
+		run(a.client, opts)
+
+		return nil
+	}
+
+	return cmd
+}
+
+// runArtifactUpload uploads along the route the options select.
+func runArtifactUpload(client *Client, opts uploadOptions) {
 	opts, switched := routeUpload(opts, maxSinglePutBytes)
 	if switched {
 		fmt.Fprintf(os.Stderr, "note: %s is larger than 5 GiB; uploading it in parts through presigned URLs\n", opts.filePath)
@@ -89,64 +111,70 @@ func artifactUploadCommand(client *Client, args []string) {
 	artifactUpload(client, opts)
 }
 
-// parseUploadArgs parses the command line of `oa artifact upload`. output
-// receives flag errors and usage (nil: stderr).
-func parseUploadArgs(args []string, errorHandling flag.ErrorHandling, output io.Writer) (uploadOptions, error) {
-	fs := flag.NewFlagSet("artifact upload", errorHandling)
-	if output != nil {
-		fs.SetOutput(output)
+// partSizeValue is the --part-size flag: a size such as 128M or a byte count.
+type partSizeValue struct{ bytes *int64 }
+
+func (v partSizeValue) String() string {
+	if v.bytes == nil || *v.bytes == 0 {
+		return ""
 	}
 
-	var opts uploadOptions
+	return strconv.FormatInt(*v.bytes, 10)
+}
 
+func (v partSizeValue) Set(s string) error {
+	n, err := parsePartSize(s)
+	*v.bytes = n
+
+	return err
+}
+
+func (partSizeValue) Type() string { return "size" }
+
+// bindUploadFlags declares the flags of `oa artifact upload` on fs.
+func bindUploadFlags(fs *pflag.FlagSet, opts *uploadOptions) {
 	fs.BoolVar(&opts.presigned, "presigned", false, "Upload straight to the object store through a presigned URL (raw repositories)")
 	fs.StringVar(&opts.remotePath, "path", "", "Artifact path in the repository (--presigned; default: the file name)")
 	fs.StringVar(&opts.contentType, "content-type", "", "Content type (--presigned; default: detected by the server)")
 	fs.BoolVar(&opts.multipart, "multipart", false, "Upload in parts at any size (--presigned; automatic above 5 GiB)")
-	fs.Func(
+	fs.Var(
+		partSizeValue{&opts.partSize},
 		"part-size",
 		"Part size such as 128M, 1G or a byte count, 5M to 4000M (--presigned; implies --multipart; default: chosen by the server)",
-		func(s string) error {
-			n, err := parsePartSize(s)
-			opts.partSize = n
-
-			return err
-		},
 	)
 	fs.IntVar(&opts.parallel, "parallel", defaultUploadParallel, "Parts uploaded at the same time, 1 to 16 (--presigned, multipart)")
 
 	fs.StringVar(&opts.branch, "branch", "", "Alpine branch directory of an .apk upload (default edge)")
 	fs.StringVar(&opts.apkRepo, "apk-repo", "", "Alpine repository directory of an .apk upload (default main)")
 	fs.StringVar(&opts.arch, "arch", "", "Architecture directory of an .apk upload; needed for noarch packages")
+}
 
-	positional, err := parseInterspersed(fs, args)
-	if err != nil {
-		return uploadOptions{}, err
-	}
-
-	if len(positional) != 2 {
-		return uploadOptions{}, errUploadUsage
-	}
-
-	opts.repo, opts.filePath = positional[0], positional[1]
-
+// checkUploadOptions refuses flag combinations that do not make sense; fs is
+// the parsed flag set opts was bound to.
+func checkUploadOptions(fs *pflag.FlagSet, opts *uploadOptions) error {
 	if !opts.presigned {
-		for name := range setFlags(fs) {
-			if name != "presigned" && !isApkFlag(name) {
-				return uploadOptions{}, errUploadNeedsPresigned
+		needsPresigned := false
+
+		fs.Visit(func(f *pflag.Flag) {
+			if f.Name != "presigned" && !isApkFlag(f.Name) {
+				needsPresigned = true
 			}
+		})
+
+		if needsPresigned {
+			return errUploadNeedsPresigned
 		}
 	}
 
 	if (opts.branch != "" || opts.apkRepo != "" || opts.arch != "") && !isApkFile(opts.filePath) {
-		return uploadOptions{}, errUploadApkFlags
+		return errUploadApkFlags
 	}
 
 	if opts.parallel < 1 || opts.parallel > maxUploadParallel {
-		return uploadOptions{}, errUploadParallel
+		return errUploadParallel
 	}
 
-	return opts, nil
+	return nil
 }
 
 func isApkFlag(name string) bool { return name == "branch" || name == "apk-repo" || name == "arch" }

@@ -10,31 +10,28 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"github.com/spf13/cobra"
 )
 
-func handleArtifact(args []string, client *Client, outFmt string) {
-	if len(args) < 1 {
-		dief("Usage: oa artifact <list|upload|delete>")
-	}
-
-	switch args[0] {
-	case "list":
-		if len(args) < 2 {
-			dief("Usage: oa artifact list <repo>")
-		}
-
-		repoPackages(client, args[1], outFmt)
-	case "upload":
-		artifactUploadCommand(client, args[1:])
-	case "delete":
-		if len(args) < 3 {
-			dief("Usage: oa artifact delete <repo> <id>")
-		}
-
-		artifactDelete(client, args[1], args[2])
-	default:
-		dief("Unknown artifact subcommand: %s", args[0])
-	}
+func newArtifactCmd(a *app) *cobra.Command {
+	return parentCmd("artifact", "List, upload and delete packages in a repository",
+		&cobra.Command{
+			Use:               "list <repo>",
+			Short:             "List packages in a repository",
+			Args:              usageArgs(1, 1),
+			ValidArgsFunction: positional(a.repoNames()),
+			Run:               func(_ *cobra.Command, args []string) { repoPackages(a.client, args[0], a.outFmt) },
+		},
+		artifactUploadCmd(a, runArtifactUpload),
+		&cobra.Command{
+			Use:               "delete <repo> <id>",
+			Short:             "Delete a package by id",
+			Args:              usageArgs(2, 2),
+			ValidArgsFunction: positional(a.repoNames(), nothing),
+			Run:               func(_ *cobra.Command, args []string) { artifactDelete(a.client, args[0], args[1]) },
+		},
+	)
 }
 
 // artifactUpload stores one file in a hosted repository. The repository's

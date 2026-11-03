@@ -7,23 +7,18 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
 	"slices"
 	"strings"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 const (
-	bundleUsage = "Usage: oa bundle <create|add|seal|show> <name> <version> [flags]\n" +
-		"  oa bundle create <name> <version> [--description D] [--pipeline P]\n" +
-		"  oa bundle add <name> <version> --repo R --path P... | --from-build NAME/NUMBER [--repo R]...\n" +
-		"  oa bundle seal <name> <version> [--gpg-key K]\n" +
-		"  oa bundle show <name> <version>"
 	promoteUsage = "Usage: oa promote <name> <version> --stage S [--target-repo R] [--notes T]"
 
 	// maxItemsPerRequest is the most items the server takes in one add request.
@@ -134,92 +129,57 @@ func (o bundleOut) text() string {
 	return b.String()
 }
 
-// ciFlags builds a flag set whose errors and usage go to stderr.
-func ciFlags(name string) *flag.FlagSet {
-	f := flag.NewFlagSet(name, flag.ContinueOnError)
-	f.SetOutput(os.Stderr)
-
-	return f
-}
-
-// parseInterspersed parses fs over args allowing flags between and after the
-// positional arguments, and returns the positional ones.
-func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
-	var positional []string
-
-	for rest := args; ; {
-		if err := fs.Parse(rest); err != nil {
-			return nil, err
-		}
-
-		if n := len(rest) - fs.NArg(); n > 0 && rest[n-1] == "--" {
-			// "--" ends the flags: the rest is positional whatever it looks like.
-			return append(positional, fs.Args()...), nil
-		}
-
-		if fs.NArg() == 0 {
-			return positional, nil
-		}
-
-		positional = append(positional, fs.Arg(0))
-		rest = fs.Args()[1:]
-	}
-}
-
-func handleBundle(args []string, client *Client, outFmt string) {
-	if len(args) == 0 {
-		ciFail(ciUsagef("%s", bundleUsage))
-	}
-
-	api := newCIAPI(client)
-	ctx := context.Background()
-
-	var (
-		out bundleOut
-		err error
+func newBundleCmd(a *app) *cobra.Command {
+	return parentCmd("bundle", "Manage release bundles",
+		bundleCreateCmd(a),
+		bundleAddCmd(a),
+		bundleSealCmd(a),
+		bundleShowCmd(a),
 	)
-
-	switch args[0] {
-	case "create":
-		out, err = bundleCreateCmd(ctx, api, args[1:])
-	case "add":
-		out, err = bundleAddCmd(ctx, api, args[1:])
-	case "seal":
-		out, err = bundleSealCmd(ctx, api, args[1:])
-	case "show":
-		out, err = bundleShowCmd(ctx, api, args[1:])
-	default:
-		err = ciUsagef("unknown bundle subcommand %q\n%s", args[0], bundleUsage)
-	}
-
-	if errors.Is(err, flag.ErrHelp) {
-		return
-	}
-
-	if err != nil {
-		ciFail(err)
-	}
-
-	ciPrint(outFmt, out, out.text())
 }
 
-func bundleCreateCmd(ctx context.Context, api *ciAPI, args []string) (bundleOut, error) {
-	fs := ciFlags("bundle create")
-	description := fs.String("description", "", "Bundle description")
-	pipeline := fs.String("pipeline", "", "Promotion pipeline, by name (needed to promote the bundle later)")
+// bundleNameVersion completes `<name> <version>`: the names and versions are
+// the user's to choose, nothing to suggest.
+func bundleNameVersion() cobra.CompletionFunc {
+	return positional(nothing, nothing)
+}
 
-	pos, err := parseInterspersed(fs, args)
+// runBundle runs one bundle command body and prints its result like every CI command.
+func runBundle(a *app, fn func(ctx context.Context, api *ciAPI) (bundleOut, error)) error {
+	out, err := fn(context.Background(), newCIAPI(a.client))
 	if err != nil {
-		return bundleOut{}, err
+		return err
 	}
 
-	if len(pos) != 2 {
-		return bundleOut{}, ciUsagef("Usage: oa bundle create <name> <version> [--description D] [--pipeline P]")
+	ciPrint(a.outFmt, out, out.text())
+
+	return nil
+}
+
+func bundleCreateCmd(a *app) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:               "create <name> <version>",
+		Short:             "Create a draft release bundle",
+		Args:              usageArgs(2, 2),
+		ValidArgsFunction: bundleNameVersion(),
 	}
 
-	body := map[string]any{"name": pos[0], "version": pos[1], "description": *description}
-	if *pipeline != "" {
-		body["pipeline"] = *pipeline
+	description := cmd.Flags().String("description", "", "Bundle description")
+	pipeline := cmd.Flags().String("pipeline", "", "Promotion pipeline, by name (needed to promote the bundle later)")
+
+	cmd.RunE = func(_ *cobra.Command, args []string) error {
+		return runBundle(a, func(ctx context.Context, api *ciAPI) (bundleOut, error) {
+			return bundleCreate(ctx, api, args[0], args[1], *description, *pipeline)
+		})
+	}
+
+	return cmd
+}
+
+func bundleCreate(ctx context.Context, api *ciAPI, name, version, description, pipeline string) (bundleOut, error) {
+	body := map[string]any{"name": name, "version": version, "description": description}
+	if pipeline != "" {
+		body["pipeline"] = pipeline
 	}
 
 	var doc bundleDoc
@@ -238,51 +198,37 @@ type bundleAddOptions struct {
 	fromBuild     string
 }
 
-func parseBundleAddArgs(args []string) (bundleAddOptions, error) {
-	fs := ciFlags("bundle add")
-
-	var o bundleAddOptions
-
-	fs.Func("repo", "Repository of the artifacts (repeatable with --from-build to limit the search)", func(s string) error {
-		o.repos = append(o.repos, s)
-		return nil
-	})
-	fs.Func("path", "Artifact path in --repo (repeatable)", func(s string) error {
-		o.paths = append(o.paths, s)
-		return nil
-	})
+// bindBundleAddFlags declares the flags of `oa bundle add` on fs, storing into o.
+func bindBundleAddFlags(fs *pflag.FlagSet, o *bundleAddOptions) {
+	fs.StringArrayVarP(&o.repos, "repo", "r", nil, "Repository of the artifacts (repeatable with --from-build to limit the search)")
+	fs.StringArrayVar(&o.paths, "path", nil, "Artifact path in --repo (repeatable)")
 	fs.StringVar(
 		&o.fromBuild,
 		"from-build",
 		"",
 		"Add every artifact recorded for build NAME/NUMBER (properties "+propBuildName+" and "+propBuildNumber+")",
 	)
+}
 
-	pos, err := parseInterspersed(fs, args)
-	if err != nil {
-		return o, err
-	}
-
-	if len(pos) != 2 {
-		return o, ciUsagef("Usage: oa bundle add <name> <version> --repo R --path P... | --from-build NAME/NUMBER [--repo R]...")
-	}
-
-	o.name, o.version = pos[0], pos[1]
+// withArgs sets name and version from the positional arguments and checks that
+// the flags describe one of the two ways to add artifacts.
+func (o *bundleAddOptions) withArgs(args []string) error {
+	o.name, o.version = args[0], args[1]
 
 	switch {
 	case o.fromBuild != "" && len(o.paths) > 0:
-		return o, ciUsagef("--from-build and --path are exclusive")
+		return cliError("--from-build and --path are exclusive")
 	case o.fromBuild != "":
 		if i := strings.LastIndexByte(o.fromBuild, '/'); i <= 0 || i == len(o.fromBuild)-1 {
-			return o, ciUsagef("--from-build wants NAME/NUMBER, got %q", o.fromBuild)
+			return cliErrorf("--from-build wants NAME/NUMBER, got %q", o.fromBuild)
 		}
 	case len(o.paths) == 0:
-		return o, ciUsagef("give --path (with --repo) or --from-build")
+		return cliError("give --path (with --repo) or --from-build")
 	case len(o.repos) != 1:
-		return o, ciUsagef("--path needs exactly one --repo")
+		return cliError("--path needs exactly one --repo")
 	}
 
-	return o, nil
+	return nil
 }
 
 // bundleSource is an artifact to add to a bundle: a row of a repository's listing.
@@ -292,13 +238,37 @@ type bundleSource struct {
 	path string
 }
 
-func bundleAddCmd(ctx context.Context, api *ciAPI, args []string) (bundleOut, error) {
-	o, err := parseBundleAddArgs(args)
-	if err != nil {
-		return bundleOut{}, err
+func bundleAddCmd(a *app) *cobra.Command {
+	var o bundleAddOptions
+
+	cmd := &cobra.Command{
+		Use:   "add <name> <version>",
+		Short: "Add artifacts to a draft bundle, by path or by the build that produced them",
+		Long: "Add artifacts to a draft bundle: either --repo R with one or more --path P, or --from-build NAME/NUMBER " +
+			"(optionally limited to the repositories named by --repo).",
+		Args:              usageArgs(2, 2),
+		ValidArgsFunction: bundleNameVersion(),
 	}
 
-	var sources []bundleSource
+	bindBundleAddFlags(cmd.Flags(), &o)
+	flagValues(cmd, "repo", a.repoNames())
+
+	cmd.RunE = func(_ *cobra.Command, args []string) error {
+		if err := o.withArgs(args); err != nil {
+			return err
+		}
+
+		return runBundle(a, func(ctx context.Context, api *ciAPI) (bundleOut, error) { return bundleAdd(ctx, api, o) })
+	}
+
+	return cmd
+}
+
+func bundleAdd(ctx context.Context, api *ciAPI, o bundleAddOptions) (bundleOut, error) {
+	var (
+		sources []bundleSource
+		err     error
+	)
 
 	if o.fromBuild != "" {
 		i := strings.LastIndexByte(o.fromBuild, '/')
@@ -540,43 +510,55 @@ func buildArtifactIDs(ctx context.Context, api *ciAPI, repo, name, number string
 	return ids, nil
 }
 
-func bundleSealCmd(ctx context.Context, api *ciAPI, args []string) (bundleOut, error) {
-	fs := ciFlags("bundle seal")
-	gpgKey := fs.String("gpg-key", "", "Sign the manifest with this GPG key (id as the server lists it)")
-
-	pos, err := parseInterspersed(fs, args)
-	if err != nil {
-		return bundleOut{}, err
+func bundleSealCmd(a *app) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:               "seal <name> <version>",
+		Short:             "Seal a bundle (optionally sign its manifest)",
+		Args:              usageArgs(2, 2),
+		ValidArgsFunction: bundleNameVersion(),
 	}
 
-	if len(pos) != 2 {
-		return bundleOut{}, ciUsagef("Usage: oa bundle seal <name> <version> [--gpg-key K]")
+	gpgKey := cmd.Flags().String("gpg-key", "", "Sign the manifest with this GPG key (id as the server lists it)")
+
+	cmd.RunE = func(_ *cobra.Command, args []string) error {
+		return runBundle(a, func(ctx context.Context, api *ciAPI) (bundleOut, error) {
+			return bundleSeal(ctx, api, args[0], args[1], *gpgKey)
+		})
 	}
 
+	return cmd
+}
+
+func bundleSeal(ctx context.Context, api *ciAPI, name, version, gpgKey string) (bundleOut, error) {
 	var body any
-	if *gpgKey != "" {
-		body = map[string]string{"gpg_key_id": *gpgKey}
+	if gpgKey != "" {
+		body = map[string]string{"gpg_key_id": gpgKey}
 	}
 
 	var doc bundleDoc
-	if err := api.call(ctx, http.MethodPost, bundleAPIPath(pos[0], pos[1])+"/seal", body, &doc); err != nil {
+	if err := api.call(ctx, http.MethodPost, bundleAPIPath(name, version)+"/seal", body, &doc); err != nil {
 		return bundleOut{}, err
 	}
 
 	return api.bundleOut(doc), nil
 }
 
-func bundleShowCmd(ctx context.Context, api *ciAPI, args []string) (bundleOut, error) {
-	pos, err := parseInterspersed(ciFlags("bundle show"), args)
-	if err != nil {
-		return bundleOut{}, err
+func bundleShowCmd(a *app) *cobra.Command {
+	return &cobra.Command{
+		Use:               "show <name> <version>",
+		Short:             "Show a bundle and its items",
+		Args:              usageArgs(2, 2),
+		ValidArgsFunction: bundleNameVersion(),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return runBundle(a, func(ctx context.Context, api *ciAPI) (bundleOut, error) {
+				return bundleShow(ctx, api, args[0], args[1])
+			})
+		},
 	}
+}
 
-	if len(pos) != 2 {
-		return bundleOut{}, ciUsagef("Usage: oa bundle show <name> <version>")
-	}
-
-	base := bundleAPIPath(pos[0], pos[1])
+func bundleShow(ctx context.Context, api *ciAPI, name, version string) (bundleOut, error) {
+	base := bundleAPIPath(name, version)
 
 	var doc bundleDoc
 	if err := api.call(ctx, http.MethodGet, base, nil, &doc); err != nil {
@@ -622,37 +604,35 @@ func bundleShowCmd(ctx context.Context, api *ciAPI, args []string) (bundleOut, e
 	return out, nil
 }
 
-func handlePromote(args []string, client *Client, outFmt string) {
-	out, err := promoteCmd(context.Background(), newCIAPI(client), args, os.Stderr)
-	if errors.Is(err, flag.ErrHelp) {
-		return
+func newPromoteCmd(a *app) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:               "promote <name> <version> --stage S",
+		Short:             "Promote a sealed bundle to a pipeline stage",
+		Args:              usageArgs(2, 2),
+		ValidArgsFunction: bundleNameVersion(),
 	}
 
-	if err != nil {
-		ciFail(err)
+	stage := cmd.Flags().String("stage", "", "Pipeline stage to promote to (required)")
+	target := cmd.Flags().String("target-repo", "", "Repository to promote into (default: the one the stage fixes)")
+	notes := cmd.Flags().String("notes", "", "Promotion notes")
+
+	flagValues(cmd, "target-repo", a.repoNames())
+
+	cmd.RunE = func(_ *cobra.Command, args []string) error {
+		if *stage == "" {
+			return cliError(promoteUsage)
+		}
+
+		return runBundle(a, func(ctx context.Context, api *ciAPI) (bundleOut, error) {
+			return promote(ctx, api, args[0], args[1], *stage, *target, *notes)
+		})
 	}
 
-	ciPrint(outFmt, out, out.text())
+	return cmd
 }
 
-func promoteCmd(ctx context.Context, api *ciAPI, args []string, stderr io.Writer) (bundleOut, error) {
-	fs := flag.NewFlagSet("promote", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-
-	stage := fs.String("stage", "", "Pipeline stage to promote to (required)")
-	target := fs.String("target-repo", "", "Repository to promote into (default: the one the stage fixes)")
-	notes := fs.String("notes", "", "Promotion notes")
-
-	pos, err := parseInterspersed(fs, args)
-	if err != nil {
-		return bundleOut{}, err
-	}
-
-	if len(pos) != 2 || *stage == "" {
-		return bundleOut{}, ciUsagef("%s", promoteUsage)
-	}
-
-	base := bundleAPIPath(pos[0], pos[1])
+func promote(ctx context.Context, api *ciAPI, name, version, stage, target, notes string) (bundleOut, error) {
+	base := bundleAPIPath(name, version)
 
 	var report struct {
 		Promotion struct {
@@ -665,7 +645,7 @@ func promoteCmd(ctx context.Context, api *ciAPI, args []string, stderr io.Writer
 		Replaced int `json:"replaced"`
 	}
 
-	body := map[string]string{"to_stage": *stage, "target_repo": *target, "notes": *notes}
+	body := map[string]string{"to_stage": stage, "target_repo": target, "notes": notes}
 	if err := api.call(ctx, http.MethodPost, base+"/promote", body, &report); err != nil {
 		return bundleOut{}, err
 	}
@@ -675,7 +655,7 @@ func promoteCmd(ctx context.Context, api *ciAPI, args []string, stderr io.Writer
 		return bundleOut{}, err
 	}
 
-	targetName := *target
+	targetName := target
 	if targetName == "" {
 		targetName = api.repoName(ctx, report.Promotion.TargetRepoID)
 	}

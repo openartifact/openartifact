@@ -11,7 +11,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"math/rand/v2"
@@ -871,6 +870,24 @@ func TestParsePartSize(t *testing.T) {
 	}
 }
 
+// parseUploadArgs runs the real `artifact upload` command up to the point where
+// it would upload, and returns the options it validated.
+func parseUploadArgs(args []string) (uploadOptions, error) {
+	var got uploadOptions
+
+	cmd := artifactUploadCmd(&app{}, func(_ *Client, opts uploadOptions) { got = opts })
+	cmd.SetArgs(args)
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+
+	if err := cmd.Execute(); err != nil {
+		return uploadOptions{}, err
+	}
+
+	return got, nil
+}
+
 func TestParseUploadArgs(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -910,12 +927,12 @@ func TestParseUploadArgs(t *testing.T) {
 		{name: "parallel above 16", args: []string{"--presigned", "--parallel", "17", "files", "f.bin"}, wantErr: "--parallel must be between 1 and 16"},
 		{name: "part size out of range", args: []string{"--presigned", "--part-size", "4M", "files", "f.bin"}, wantErr: "5 MiB to 4000 MiB"},
 		{name: "part size malformed", args: []string{"--presigned", "--part-size", "big", "files", "f.bin"}, wantErr: "invalid part size"},
-		{name: "missing file", args: []string{"--presigned", "files"}, wantErr: "Usage: oa artifact upload"},
-		{name: "extra argument", args: []string{"files", "f.bin", "g.bin"}, wantErr: "Usage: oa artifact upload"},
-		{name: "unknown flag", args: []string{"--chunked", "files", "f.bin"}, wantErr: "flag provided but not defined"},
+		{name: "missing file", args: []string{"--presigned", "files"}, wantErr: "Usage: upload <repo> <file>"},
+		{name: "extra argument", args: []string{"files", "f.bin", "g.bin"}, wantErr: "Usage: upload <repo> <file>"},
+		{name: "unknown flag", args: []string{"--chunked", "files", "f.bin"}, wantErr: "unknown flag: --chunked"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := parseUploadArgs(tc.args, flag.ContinueOnError, io.Discard)
+			got, err := parseUploadArgs(tc.args)
 
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {

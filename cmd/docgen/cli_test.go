@@ -10,212 +10,158 @@ import (
 	"testing"
 )
 
-const sampleHelp = `OpenArtifact CLI vdev
+const rootHelp = `oa is the client.
+
+Reads OA_TOKEN too.
 
 Usage:
-  oa [--server URL] <command> [args]
-
-Global flags:
-  --server    Server URL  (default: http://localhost:8080, env: OA_SERVER)
+  oa [flags]
+  oa [command]
 
 Auth:
-  auth login [--username U]
-                                     Login (env OA_PASS)
-  auth token list                    List tokens
+  auth        Manage credentials
 
-Migration:
-  import nexus|artifactory --source-url URL  Import
+Repositories:
+  repo        Manage repositories
 
-System:
-  system info                        Show system information
+Utility:
+  completion  Generate the shell completion script
+  help        Help about any command
 
-  version                            Show CLI version
+Flags:
+  -h, --help            help for oa
+      --server string   Server URL (default http://localhost:8080, env OA_SERVER)
+      --version         Print the version
+
+Use "oa [command] --help" for more information about a command.
 `
 
-func TestParseCLIHelp(t *testing.T) {
+const createHelp = `Create a hosted repository.
+
+Install it for every session:
+
+  oa repo create x
+
+Usage:
+  oa repo create <name> --format <fmt> [flags]
+
+Aliases:
+  create, new
+
+Examples:
+  oa repo create r --format npm
+
+Flags:
+      --format string        Repository format (required)
+  -h, --help                 help for create
+      --public               Public repository
+      --trash-retention-days string   Days (default "x")
+
+Global Flags:
+      --server string   Server URL
+`
+
+func TestParseHelp(t *testing.T) {
 	t.Parallel()
 
-	h, err := parseCLIHelp(sampleHelp)
+	d, err := parseHelp(rootHelp)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if got := h.Usage.Lines; len(got) != 1 || got[0] != "oa [--server URL] <command> [args]" {
-		t.Errorf("usage = %q", got)
+	if !strings.HasPrefix(d.Desc, "oa is the client.") || !strings.Contains(d.Desc, "OA_TOKEN") {
+		t.Errorf("desc = %q", d.Desc)
 	}
 
-	if got := h.Global.Lines; len(got) != 1 || !strings.HasPrefix(got[0], "--server") {
-		t.Errorf("global = %q", got)
+	if !reflect.DeepEqual(d.UseLines, []string{"oa [flags]"}) {
+		t.Errorf("use lines = %q", d.UseLines)
 	}
 
 	var titles []string
-	for _, s := range h.Sections {
-		titles = append(titles, s.Title)
+	for _, g := range d.Groups {
+		titles = append(titles, g.Title)
 	}
 
-	if want := []string{"Auth", "Migration", "System", "Utility"}; !reflect.DeepEqual(titles, want) {
-		t.Errorf("titles = %v, want %v", titles, want)
+	if want := []string{"Auth", "Repositories", "Utility"}; !reflect.DeepEqual(titles, want) {
+		t.Errorf("groups = %v, want %v", titles, want)
 	}
 
-	// continuation lines keep their alignment relative to the dedented entry
-	if got := h.Sections[0].Lines[1]; !strings.HasPrefix(got, strings.Repeat(" ", 35)+"Login") {
-		t.Errorf("continuation = %q", got)
-	}
-}
-
-func TestParseCLIHelpErrors(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]string{
-		"empty":              "",
-		"no sections":        "Usage:\n  oa x\n\nGlobal flags:\n  --a  b\n",
-		"stray text":         "Usage:\n  oa x\n\nhello\n",
-		"no usage or global": "Auth:\n  auth login\n",
+	if got := d.Groups[2].Commands; len(got) != 2 || got[0].Name != "completion" || got[0].Short != "Generate the shell completion script" {
+		t.Errorf("utility commands = %+v", got)
 	}
 
-	for name, in := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			if _, err := parseCLIHelp(in); err == nil {
-				t.Fatal("want an error")
-			}
-		})
+	if len(d.Flags) != 2 || d.Flags[0].Name != "--server" || d.Flags[0].Value != "string" || d.Flags[1].Name != "--version" {
+		t.Errorf("flags = %+v", d.Flags)
 	}
 }
 
-func TestEntryPaths(t *testing.T) {
+func TestParseHelpLeaf(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		in   string
-		want [][]string
-	}{
-		{"repo list                          List repositories", [][]string{{"repo", "list"}}},
-		{"repo create <name> --format <fmt>", [][]string{{"repo", "create"}}},
-		{"auth token create --name N", [][]string{{"auth", "token", "create"}}},
-		{"webhook repo list <repo>", [][]string{{"webhook", "repo", "list"}}},
-		{"search <query> [--repo R]", [][]string{{"search"}}},
-		{"diff  -f FILE", [][]string{{"diff"}}},
-		{"import nexus|artifactory --source-url URL", [][]string{{"import", "nexus"}, {"import", "artifactory"}}},
-		{"dtrack show|test|pushes <repo>", [][]string{{"dtrack", "show"}, {"dtrack", "test"}, {"dtrack", "pushes"}}},
-		{"                                   continuation line", nil},
-		{"--server    Server URL", nil},
-		{"", nil},
-	}
-
-	for _, tc := range tests {
-		if got := entryPaths(tc.in); !reflect.DeepEqual(got, tc.want) {
-			t.Errorf("entryPaths(%q) = %v, want %v", tc.in, got, tc.want)
-		}
-	}
-}
-
-func TestParseFlagUsage(t *testing.T) {
-	t.Parallel()
-
-	in := "Usage of apply:\n" +
-		"  -R\tDescend into subdirectories\n" +
-		"  -f value\n" +
-		"    \tManifest file, directory or - for stdin (repeatable)\n" +
-		"  -o string\n" +
-		"    \tOutput format\n" +
-		"    \t(default: human readable)\n"
-
-	got, err := parseFlagUsage(in)
+	d, err := parseHelp(createHelp)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	want := []flagDoc{
-		{Name: "-R", Description: "Descend into subdirectories"},
-		{Name: "-f", Value: "value", Description: "Manifest file, directory or - for stdin (repeatable)"},
-		{Name: "-o", Value: "string", Description: "Output format (default: human readable)"},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %+v, want %+v", got, want)
+	// A description line that looks like a section heading stays description.
+	if !strings.Contains(d.Desc, "Install it for every session:") || len(d.Groups) != 0 {
+		t.Errorf("desc = %q, groups = %+v", d.Desc, d.Groups)
 	}
 
-	for name, bad := range map[string]string{
-		"header only": "Usage of x:\n",
-		"not usage":   "Error: nope\n",
-		"stray line":  "Usage of x:\nsomething else\n",
-		"odd flag":    "Usage of x:\n  -a b c\n",
-	} {
-		if _, err := parseFlagUsage(bad); err == nil {
-			t.Errorf("%s: want an error", name)
-		}
+	if !reflect.DeepEqual(d.Aliases, []string{"create", "new"}) || d.Examples != "oa repo create r --format npm" {
+		t.Errorf("aliases = %v, examples = %q", d.Aliases, d.Examples)
+	}
+
+	if len(d.Flags) != 3 || d.Flags[2].Name != "--trash-retention-days" || !strings.Contains(d.Flags[2].Desc, `(default "x")`) {
+		t.Errorf("flags = %+v", d.Flags)
+	}
+
+	if len(d.Inherited) != 1 || d.Inherited[0].Name != "--server" {
+		t.Errorf("inherited = %+v", d.Inherited)
 	}
 }
 
-func TestFlagListing(t *testing.T) {
+func TestParseHelpWithoutUsageFails(t *testing.T) {
 	t.Parallel()
 
-	flags, raw := flagListing("Usage of import:\n  -a\tdesc\nError: flag: help requested\n")
-	if raw != "" || len(flags) != 1 {
-		t.Fatalf("flags = %v raw = %q", flags, raw)
-	}
-
-	if flags, raw := flagListing("Error: Unknown repo subcommand: --help\n"); flags != nil || raw != "" {
-		t.Errorf("an error message must yield nothing, got %v %q", flags, raw)
-	}
-
-	if flags, raw := flagListing("Usage of x:\nfree text\n"); flags != nil || !strings.Contains(raw, "free text") {
-		t.Errorf("unparseable listing must be kept verbatim, got %v %q", flags, raw)
-	}
-}
-
-func TestRichUsage(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name, in, want string
-	}{
-		{"one line", "Error: Usage: oa auth <login>\n", ""},
-		{"multi line", "Error: Usage: oa trash <list>\n  oa trash purge <id>\n", "Usage: oa trash <list>\n  oa trash purge <id>"},
-		{"network", "Error: Get \"http://x\": dial tcp: connection refused\n", ""},
-		{"unknown command", "Unknown command: show\nOpenArtifact CLI vdev\n", ""},
-	}
-
-	for _, tc := range tests {
-		if got := richUsage(tc.in); got != tc.want {
-			t.Errorf("%s: richUsage = %q, want %q", tc.name, got, tc.want)
-		}
+	if _, err := parseHelp("nothing here\n"); err == nil {
+		t.Error("a help text without Usage must fail")
 	}
 }
 
 func TestEnvMentionsAndRender(t *testing.T) {
 	t.Parallel()
 
-	h, err := parseCLIHelp(sampleHelp)
+	root, err := parseHelp(rootHelp)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	probes := []cmdProbe{
-		{
-			Path:  []string{"import", "nexus"},
-			Flags: []flagDoc{{Name: "-source-user", Value: "string", Description: "user (or OA_IMPORT_USER)"}},
-		},
-		{
-			Path:  []string{"import", "artifactory"},
-			Flags: []flagDoc{{Name: "-source-user", Value: "string", Description: "user (or OA_IMPORT_USER)"}},
-		},
-		{Path: []string{"auth"}, Usage: "Usage: oa auth <login>\n  second line"},
+	create, err := parseHelp(createHelp)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	env := envMentions(h, probes)
+	create.Path, create.Short = []string{"repo", "create"}, "Create a repository"
 
-	want := map[string][]string{
-		"OA_SERVER":      {"`--server`"},
-		"OA_PASS":        {"`oa auth login`"},
-		"OA_IMPORT_USER": {"`oa import artifactory`", "`oa import nexus`"},
+	repo := &cmdDoc{
+		Path:     []string{"repo"},
+		Short:    "Manage repositories",
+		Desc:     "Manage repositories",
+		UseLines: []string{"oa repo"},
+		Kids:     []*cmdDoc{create},
 	}
+	auth := &cmdDoc{Path: []string{"auth"}, Short: "Manage credentials", Desc: "Manage credentials", UseLines: []string{"oa auth"}}
+	root.Kids = []*cmdDoc{auth, repo}
+
+	env := envMentions(root)
+	want := map[string][]string{"OA_SERVER": {"`--server`"}}
+
 	if !reflect.DeepEqual(env, want) {
 		t.Fatalf("env = %v, want %v", env, want)
 	}
 
-	page, err := renderCLI(h, probes)
+	page, err := renderCLI(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,11 +171,12 @@ func TestEnvMentionsAndRender(t *testing.T) {
 		"# CLI reference",
 		"(../integrations/cli.md)",
 		"## Auth\n",
-		"### `oa auth`\n",
-		"### `oa import nexus`\n",
-		"| `-source-user` | `string` | user (or OA_IMPORT_USER) |",
-		"Same flags as `oa import nexus`.",
-		"## Utility\n",
+		"## Repositories\n",
+		"### `oa repo`\n",
+		"#### `oa repo create`\n",
+		"Create a repository.\n",
+		"| `--format` | `string` | Repository format (required) |",
+		"Aliases: `create`, `new`.",
 		"| `OA_SERVER` | `--server` |",
 	} {
 		if !strings.Contains(out, w) {
@@ -237,11 +184,11 @@ func TestEnvMentionsAndRender(t *testing.T) {
 		}
 	}
 
-	if strings.Contains(out, "OpenArtifact CLI v") {
-		t.Error("version line must not appear")
+	if strings.Contains(out, "| `--help`") || strings.Contains(out, "`-h`") {
+		t.Error("the --help flag must not be documented")
 	}
 
-	if _, err := renderCLI(cliHelp{Global: helpSection{Lines: []string{"--x y"}}}, nil); err == nil {
-		t.Error("help without any OA_* variable must fail")
+	if _, err := renderCLI(&cmdDoc{}); err == nil {
+		t.Error("an empty tree must fail")
 	}
 }

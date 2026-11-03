@@ -5,32 +5,40 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/repotype"
+	"github.com/spf13/cobra"
 )
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SEARCH
-// ═══════════════════════════════════════════════════════════════════════════════
-
-func handleSearch(args []string, client *Client, outFmt string) {
-	if len(args) < 1 {
-		dief("Usage: oa search <query> [--repo R] [--fmt F]")
+func newSearchCmd(a *app) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "search <query>...",
+		Short: "Search repositories and packages",
+		Long: "Search repositories and packages by name. Several words are joined into one query; " +
+			"flags may come before or after the query.",
+		Args:              usageArgs(1, -1),
+		ValidArgsFunction: positionalRepeat(nothing),
 	}
 
-	fs := flag.NewFlagSet("search", flag.ExitOnError)
-	repoFilter := fs.String("repo", "", "Filter by repository")
-	fmtFilter := fs.String("fmt", "", "Filter by format")
-	limit := fs.Int("limit", 50, "Max results")
-	words, err := parseInterspersed(fs, args) // flags may follow the query
-	if err != nil {
-		dief("%v", err)
+	repo := cmd.Flags().StringP("repo", "r", "", "Filter by repository")
+	format := cmd.Flags().String("fmt", "", "Filter by format")
+	limit := cmd.Flags().Int("limit", 50, "Max results")
+
+	flagValues(cmd, "repo", a.repoNames())
+	flagEnum(cmd, "fmt", repotype.SortedNames()...)
+
+	cmd.Run = func(_ *cobra.Command, args []string) {
+		search(a.client, strings.Join(args, " "), *repo, *format, *limit, a.outFmt)
 	}
 
-	query := strings.Join(words, " ")
+	return cmd
+}
+
+func search(client *Client, query, repoFilter, fmtFilter string, limit int, outFmt string) {
 	if query == "" {
 		dief("query is required")
 	}
@@ -38,15 +46,15 @@ func handleSearch(args []string, client *Client, outFmt string) {
 	q := url.Values{}
 	q.Set("q", query)
 
-	if *repoFilter != "" {
-		q.Set("repo", *repoFilter)
+	if repoFilter != "" {
+		q.Set("repo", repoFilter)
 	}
 
-	if *fmtFilter != "" {
-		q.Set("format", *fmtFilter)
+	if fmtFilter != "" {
+		q.Set("format", fmtFilter)
 	}
 
-	q.Set("limit", strconv.Itoa(*limit))
+	q.Set("limit", strconv.Itoa(limit))
 
 	resp, err := client.do("GET", "/api/v1/search?"+q.Encode(), nil, "")
 	if err != nil {
@@ -65,11 +73,11 @@ func handleSearch(args []string, client *Client, outFmt string) {
 	repos := result.Repositories[:0:0]
 
 	for _, r := range result.Repositories {
-		if *fmtFilter != "" && r["format"] != *fmtFilter {
+		if fmtFilter != "" && r["format"] != fmtFilter {
 			continue
 		}
 
-		if len(repos) >= *limit {
+		if len(repos) >= limit {
 			break
 		}
 

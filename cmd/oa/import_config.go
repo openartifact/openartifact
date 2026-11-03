@@ -5,11 +5,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +16,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/openartifact/openartifact/internal/declarative"
@@ -331,14 +331,61 @@ func (r *mappingReport) print(w io.Writer, dir string) {
 
 var errImportConfigUsage = errors.New("invalid arguments")
 
-// handleImportConfig implements `oa import config [openartifact] ...`.
-func handleImportConfig(args []string, outFmt string) int {
-	opts, err := parseImportConfigFlags(args, os.Getenv, os.Stdin)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		return exitUsageError
+// newImportConfigCmd builds `oa import config`, the group of the configuration
+// migrations (one subcommand per source system).
+func newImportConfigCmd(a *app) *cobra.Command {
+	return parentCmd("config", "Migrate the configuration of another instance as manifests", importConfigOpenArtifactCmd(a))
+}
+
+// importConfigFlags are the flags of `oa import config openartifact`.
+type importConfigFlags struct {
+	sourceURL string
+	tokenFile string
+	dir       string
+	kinds     []string
+}
+
+func bindImportConfigFlags(fs *pflag.FlagSet, f *importConfigFlags) {
+	fs.StringVar(&f.sourceURL, "source-url", "", "base URL of the source OpenArtifact instance (or "+envSourceURL+")")
+	fs.StringVar(&f.tokenFile, "source-token-file", "", "file holding the source token, '-' for stdin (or "+envSourceToken+")")
+	fs.StringVar(&f.dir, "output", "", "directory to write the manifests and the mapping report to")
+	fs.StringArrayVar(&f.kinds, "kind", nil, "only this kind (repeatable); default: every kind, users included")
+}
+
+func importConfigOpenArtifactCmd(a *app) *cobra.Command {
+	var f importConfigFlags
+
+	cmd := &cobra.Command{
+		Use:   "openartifact --source-url URL --output DIR",
+		Short: "Write oa apply manifests and a mapping report from a 0.14 OpenArtifact",
+		Long: "Read the configuration of a running OpenArtifact instance and write it as declarative manifests " +
+			"that `oa apply -f DIR -R` takes, plus a mapping report that says per object whether it translated " +
+			"as it was, was approximated or was skipped. The source is only read. The source token comes from " +
+			"--source-token-file or " + envSourceToken + ".",
+		Args:              usageArgs(0, 0),
+		ValidArgsFunction: positional(),
+		RunE: func(*cobra.Command, []string) error {
+			opts, err := f.options(os.Getenv, os.Stdin)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "Error:", err)
+
+				return exitWith(exitUsageError)
+			}
+
+			return exitWith(runImportConfigCmd(opts, a.outFmt))
+		},
 	}
 
+	bindImportConfigFlags(cmd.Flags(), &f)
+
+	flagFiles(cmd, "source-token-file")
+	flagFiles(cmd, "output")
+	flagEnum(cmd, "kind", declKinds()...)
+
+	return cmd
+}
+
+func runImportConfigCmd(opts importConfigOptions, outFmt string) int {
 	ctx, stop := signalContext()
 	defer stop()
 
@@ -349,7 +396,7 @@ func handleImportConfig(args []string, outFmt string) int {
 		return reportError(err)
 	}
 
-	if outFmt == "json" {
+	if outFmt == formatJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 
@@ -365,44 +412,20 @@ func handleImportConfig(args []string, outFmt string) int {
 	return exitOK
 }
 
-func parseImportConfigFlags(args []string, getenv func(string) string, stdin io.Reader) (importConfigOptions, error) {
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		if args[0] != kindOpenArtifact {
-			return importConfigOptions{}, fmt.Errorf(
-				"%w: config import supports an openartifact source only, not %q",
-				errImportConfigUsage,
-				args[0],
-			)
-		}
-
-		args = args[1:]
-	}
-
-	var (
-		opts  importConfigOptions
-		kinds stringList
-		buf   bytes.Buffer
-	)
-
-	fs := flag.NewFlagSet("import config", flag.ContinueOnError)
-	fs.SetOutput(&buf)
-
-	sourceURL := fs.String("source-url", getenv(envSourceURL), "base URL of the source OpenArtifact instance")
-	tokenFile := fs.String("source-token-file", "", "file holding the source token, '-' for stdin (or OA_IMPORT_SOURCE_TOKEN)")
-
-	fs.StringVar(&opts.Dir, "output", "", "directory to write the manifests and the mapping report to")
-	fs.Var(&kinds, "kind", "only this kind (repeatable); default: every kind, users included")
-
-	if err := fs.Parse(args); err != nil {
-		return importConfigOptions{}, fmt.Errorf("%w: %s", errImportConfigUsage, strings.TrimSpace(buf.String()))
-	}
-
-	if opts.Dir == "" {
+// options validates the flags and resolves the source (URL, token) into the
+// options of the migration.
+func (f *importConfigFlags) options(getenv func(string) string, stdin io.Reader) (importConfigOptions, error) {
+	if f.dir == "" {
 		return importConfigOptions{}, fmt.Errorf("%w: --output is required", errImportConfigUsage)
 	}
 
+	sourceURL := f.sourceURL
+	if sourceURL == "" {
+		sourceURL = getenv(envSourceURL)
+	}
+
 	cfg := importConfig{}
-	if err := cfg.resolveSource(*sourceURL, *tokenFile, getenv, stdin); err != nil {
+	if err := cfg.resolveSource(sourceURL, f.tokenFile, getenv, stdin); err != nil {
 		return importConfigOptions{}, err
 	}
 
@@ -414,9 +437,10 @@ func parseImportConfigFlags(args []string, getenv func(string) string, stdin io.
 		)
 	}
 
-	opts.SourceURL = strings.TrimSuffix(cfg.SourceURL.String(), "/")
-	opts.Token = cfg.SourceToken
-	opts.Kinds = kinds
-
-	return opts, nil
+	return importConfigOptions{
+		Dir:       f.dir,
+		SourceURL: strings.TrimSuffix(cfg.SourceURL.String(), "/"),
+		Token:     cfg.SourceToken,
+		Kinds:     f.kinds,
+	}, nil
 }

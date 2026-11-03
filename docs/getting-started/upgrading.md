@@ -127,6 +127,32 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
+### Unreleased
+
+**What you must do**
+
+- If a script or CI job calls `oa` with a long flag that has one dash (`oa repo list -format json`, `oa repo delete r -confirm r`), write it with two dashes (`--format json`, `--confirm r`). The CLI no longer guesses: `-format` fails with `did you mean --format?` and exit 1, without sending a request. One-letter flags exist only for `-h`, `-f`/`-R` (`apply`, `diff`), `-o` (`apply`, `diff`, `export`, `audit export`), `-r` (`--repo`) and `-y` (`--yes`).
+- If a script passes more arguments than a command takes (`oa repo show a b`), remove them: extra arguments are now a usage error (exit 1) where they used to be ignored.
+- If a script reads the text of a flag or usage error, match the new wording (`unknown flag: --x`, `Usage: oa repo show <name> (see ...)`); the exit code is unchanged.
+- If a script gives `--format` after `repo create`, `sbom generate`, `vex get` or `audit export` and means the output format, put it before the command (`oa --format json repo create r --format npm`): after the command name `--format` is the command's own flag.
+- Optional: install shell completion (`oa completion bash|zsh|fish|powershell`, see [CLI](../integrations/cli.md#shell-completion)); the release archives of `oa` now include the scripts.
+
+**New features.**
+
+- **Shell completion.** `oa completion bash|zsh|fish|powershell` prints a completion script for commands, flags, flag values and file names, and completes repository, project, group, webhook, storage, backup, GPG key and token names from the server (best effort, about two seconds at most, nothing when the server or token is unavailable). The `oa` release archives carry the scripts in `completions/`.
+- **`oa --version`**, next to `oa version`.
+- **Flags anywhere.** Flags may come before or after the arguments of every command (`oa project create --display-name X p`, `oa upload repo f.bin --flat`); `-r` for `--repo` and `-y` for `--yes` are new short forms.
+
+**Behaviour changes.**
+
+- **`oa` is built on cobra and pflag** (GNU flag syntax). Commands, subcommands, aliases, flags, environment variables, the config file, stdin modes, prompts, output and exit codes are unchanged (1 for errors, `oa diff` 0/2/1), except as listed here. `--help` and `-h` print the help of the command, exit 0 and make no request; `oa` alone or a command group without a subcommand prints help to stderr and exits 1; an unknown subcommand is `unknown command "x" for "oa group"` with suggestions.
+- **Long flags need two dashes** (see above). A name, id or path argument that starts with `-` is refused with a hint, unless it follows a bare `--`.
+- **Argument counts are enforced.** Extra positional arguments fail with `Usage: oa COMMAND ARGS (see ...)` and no request; `oa delta get` without a destination and `oa import config` without `openartifact` are usage errors too.
+- **Import flag errors exit 1.** An unknown flag or a bad flag value on `oa import ...` exits 1 with the flag parser's message; it used to exit 2. A usage error such as a missing `--repo` still exits 2.
+- **`oa import` source defaults.** `--source-url` and `--source-user` show no default in `--help`; `OA_IMPORT_SOURCE_URL` and `OA_IMPORT_SOURCE_USER` still apply when the flag is absent or empty.
+- **`oa auth login --server`** applies only when given; otherwise the global `--server`, `OA_SERVER` or the saved server is used.
+- **`oa repo create` requires `--format`** and lists the accepted formats when it is missing; the CLI no longer sends names that start with `-` (see [Flags](../integrations/cli.md#flags)).
+
 ### 0.17.0
 
 **What you must do**

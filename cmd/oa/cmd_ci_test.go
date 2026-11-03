@@ -16,6 +16,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/spf13/pflag"
 )
 
 func TestRemotePath(t *testing.T) {
@@ -143,6 +145,50 @@ func TestExpandUploadFiles(t *testing.T) {
 	if _, err := expandUploadFiles([]string{dir + "/missing.jar"}); err == nil {
 		t.Error("a missing file must be refused")
 	}
+}
+
+// parseCIUploadArgs parses an `oa upload` command line the way the command does.
+func parseCIUploadArgs(args []string, output io.Writer) (ciUploadOptions, error) {
+	fs := pflag.NewFlagSet("upload", pflag.ContinueOnError)
+	fs.SetOutput(output)
+
+	var o ciUploadOptions
+
+	bindCIUploadFlags(fs, &o)
+
+	if err := fs.Parse(args); err != nil {
+		return ciUploadOptions{}, err
+	}
+
+	if fs.NArg() < 2 {
+		return ciUploadOptions{}, errors.New("want <repo> <file|glob>...")
+	}
+
+	err := o.withArgs(fs.Args())
+
+	return o, err
+}
+
+// parseBundleAddArgs parses an `oa bundle add` command line the way the command does.
+func parseBundleAddArgs(args []string) (bundleAddOptions, error) {
+	fs := pflag.NewFlagSet("bundle add", pflag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	var o bundleAddOptions
+
+	bindBundleAddFlags(fs, &o)
+
+	if err := fs.Parse(args); err != nil {
+		return o, err
+	}
+
+	if fs.NArg() != 2 {
+		return o, errors.New("want <name> <version>")
+	}
+
+	err := o.withArgs(fs.Args())
+
+	return o, err
 }
 
 func TestParseCIUploadArgs(t *testing.T) {
@@ -602,6 +648,6 @@ func TestContractCIBundle(t *testing.T) {
 			fail:  "write access to the target repository is required",
 		},
 		{name: "promote needs a stage", args: []string{"promote", "app", "1.0"}, fail: "Usage: oa promote"},
-		{name: "unknown bundle subcommand", args: []string{"bundle", "frob"}, fail: "unknown bundle subcommand"},
+		{name: "unknown bundle subcommand", args: []string{"bundle", "frob"}, fail: "unknown command"},
 	})
 }

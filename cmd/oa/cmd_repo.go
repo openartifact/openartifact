@@ -6,73 +6,59 @@ package main
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 
 	"github.com/openartifact/openartifact/internal/repotype"
+	"github.com/spf13/cobra"
 )
 
 var errRetention = errors.New("--trash-retention-days must be a non-negative integer or \"default\"")
 
+// hostedFormatNames are the formats a hosted repository can have, sorted.
+func hostedFormatNames() []string {
+	return slices.DeleteFunc(repotype.SortedNames(), func(f string) bool { return !repotype.HostedSupported(f) })
+}
+
 // listPageSize is the largest page the repository and package endpoints serve.
 const listPageSize = 100
 
-func handleRepo(args []string, client *Client, outFmt string) {
-	if len(args) < 1 {
-		dief("Usage: oa repo <list|create|show|update|delete|packages|members>")
-	}
-
-	switch args[0] {
-	case "list":
-		repoList(client, outFmt)
-	case "create":
-		if len(args) < 2 {
-			dief(
-				"Usage: oa repo create <name> [--format fmt] [--description D] [--public] " +
-					"[--trash-retention-days N] [--immutable-releases] [--sign-packages]",
-			)
-		}
-
-		repoCreate(client, operand(args[1]), args[2:], outFmt)
-	case "show":
-		if len(args) < 2 {
-			dief("Usage: oa repo show <name>")
-		}
-
-		repoShow(client, operand(args[1]), outFmt)
-	case "update":
-		if len(args) < 2 {
-			dief(
-				"Usage: oa repo update <name> [--description D] [--public[=false]] " +
-					"[--trash-retention-days N|default] [--immutable-releases[=false]] [--sign-packages[=false]]",
-			)
-		}
-
-		repoUpdate(client, operand(args[1]), args[2:])
-	case "delete":
-		if len(args) < 2 {
-			dief("Usage: oa repo delete <name> [--confirm <name>]")
-		}
-
-		repoDelete(client, operand(args[1]), args[2:])
-	case "packages":
-		if len(args) < 2 {
-			dief("Usage: oa repo packages <name>")
-		}
-
-		repoPackages(client, operand(args[1]), outFmt)
-	case "members":
-		if len(args) < 2 {
-			dief("Usage: oa repo members <name>")
-		}
-
-		repoMembers(client, operand(args[1]), outFmt)
-	default:
-		dief("Unknown repo subcommand: %s", args[0])
-	}
+func newRepoCmd(a *app) *cobra.Command {
+	return parentCmd("repo", "Manage repositories",
+		&cobra.Command{
+			Use:   "list",
+			Short: "List repositories",
+			Args:  usageArgs(0, 0),
+			Run:   func(*cobra.Command, []string) { repoList(a.client, a.outFmt) },
+		},
+		repoCreateCmd(a),
+		&cobra.Command{
+			Use:               "show <name>",
+			Short:             "Show repository details",
+			Args:              usageArgs(1, 1),
+			ValidArgsFunction: positional(a.repoNames()),
+			Run:               func(_ *cobra.Command, args []string) { repoShow(a.client, args[0], a.outFmt) },
+		},
+		repoUpdateCmd(a),
+		repoDeleteCmd(a),
+		&cobra.Command{
+			Use:               "packages <name>",
+			Short:             "List packages in a repository",
+			Args:              usageArgs(1, 1),
+			ValidArgsFunction: positional(a.repoNames()),
+			Run:               func(_ *cobra.Command, args []string) { repoPackages(a.client, args[0], a.outFmt) },
+		},
+		&cobra.Command{
+			Use:               "members <name>",
+			Short:             "List the member repositories of a group repository",
+			Args:              usageArgs(1, 1),
+			ValidArgsFunction: positional(a.repoNames()),
+			Run:               func(_ *cobra.Command, args []string) { repoMembers(a.client, args[0], a.outFmt) },
+		},
+	)
 }
 
 func repoList(client *Client, outFmt string) {
@@ -82,34 +68,61 @@ func repoList(client *Client, outFmt string) {
 		[]string{"name", "format", "repo_type", "description", "public"}, outFmt)
 }
 
-func repoCreate(client *Client, name string, args []string, outFmt string) {
-	fs := flag.NewFlagSet("repo create", flag.ExitOnError)
-	repoFmt := fs.String("format", "", "Repository format (required)")
-	desc := fs.String("description", "", "Description")
-	public := fs.Bool("public", false, "Public repository")
-	retention := fs.String(
+// repoCreateCmd defines its own --format (the repository format), which
+// shadows the global output format after the command name; put the global one
+// before the command (oa --format json repo create ...).
+func repoCreateCmd(a *app) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "create <name> --format <fmt>",
+		Short: "Create a repository",
+		Long: "Create a hosted repository. --format is required and names the package format.\n\n" +
+			"After the command name, --format is the repository format; to choose the output format " +
+			"put the global flag before the command: oa --format json repo create NAME --format npm.",
+		Args:              usageArgs(1, 1),
+		ValidArgsFunction: positional(nothing),
+	}
+
+	repoFmt := cmd.Flags().String("format", "", "Repository format (required)")
+	desc := cmd.Flags().String("description", "", "Description")
+	public := cmd.Flags().Bool("public", false, "Public repository")
+	retention := cmd.Flags().String(
 		"trash-retention-days",
 		"",
 		"Days deleted items stay in the trash (0 = delete immediately, default = server setting)",
 	)
-	immutable := fs.Bool("immutable-releases", false, "Block deleting or overwriting released versions")
-	signPkgs := fs.Bool("sign-packages", false, "Hosted rpm repositories: sign uploaded RPMs with the active GPG key")
-	_ = fs.Parse(args)
+	immutable := cmd.Flags().Bool("immutable-releases", false, "Block deleting or overwriting released versions")
+	signPkgs := cmd.Flags().Bool("sign-packages", false, "Hosted rpm repositories: sign uploaded RPMs with the active GPG key")
 
-	if *repoFmt == "" {
+	flagEnum(cmd, "format", hostedFormatNames()...)
+
+	cmd.Run = func(cmd *cobra.Command, args []string) {
+		repoCreate(a.client, args[0], a.outFmt, cmd.Flags().Changed, repoCreateFlags{
+			format: *repoFmt, description: *desc, public: *public, retention: *retention, immutable: *immutable, signPackages: *signPkgs,
+		})
+	}
+
+	return cmd
+}
+
+type repoCreateFlags struct {
+	format, description, retention  string
+	public, immutable, signPackages bool
+}
+
+func repoCreate(client *Client, name, outFmt string, changed func(string) bool, f repoCreateFlags) {
+	if f.format == "" {
 		dief("--format is required; one of: %s", repotype.HostedFormats())
 	}
 
-	set := setFlags(fs)
 	body := map[string]any{
 		"name":        name,
-		"format":      *repoFmt,
-		"description": *desc,
-		"public":      *public,
+		"format":      f.format,
+		"description": f.description,
+		"public":      f.public,
 	}
 
-	if set["trash-retention-days"] {
-		days, err := parseRetention(*retention)
+	if changed("trash-retention-days") {
+		days, err := parseRetention(f.retention)
 		if err != nil {
 			dief("%v", err)
 		}
@@ -119,12 +132,12 @@ func repoCreate(client *Client, name string, args []string, outFmt string) {
 		}
 	}
 
-	if set["immutable-releases"] {
-		body["immutable_releases"] = *immutable
+	if changed("immutable-releases") {
+		body["immutable_releases"] = f.immutable
 	}
 
-	if set["sign-packages"] {
-		body["sign_packages"] = *signPkgs
+	if changed("sign-packages") {
+		body["sign_packages"] = f.signPackages
 	}
 
 	result := sendJSON(client, "POST", "/api/v1/repositories", body, http.StatusCreated)
@@ -160,76 +173,88 @@ func repoShow(client *Client, name, outFmt string) {
 	_ = w.Flush()
 }
 
-// repoUpdate sends only the flags that were given: an omitted --public must
+// repoUpdateCmd sends only the flags that were given: an omitted --public must
 // not flip a public repository private.
-func repoUpdate(client *Client, name string, args []string) {
-	fs := flag.NewFlagSet("repo update", flag.ExitOnError)
-	desc := fs.String("description", "", "Description")
-	public := fs.Bool("public", false, "Public (--public=false to make private)")
-	retention := fs.String(
+func repoUpdateCmd(a *app) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:               "update <name>",
+		Short:             "Update a repository (only the flags you pass are sent)",
+		Args:              usageArgs(1, 1),
+		ValidArgsFunction: positional(a.repoNames()),
+	}
+
+	fl := cmd.Flags()
+	desc := fl.String("description", "", "Description")
+	public := fl.Bool("public", false, "Public (--public=false to make private)")
+	retention := fl.String(
 		"trash-retention-days",
 		"",
 		"Days deleted items stay in the trash (0 = delete immediately, default = server setting)",
 	)
-	immutable := fs.Bool(
+	immutable := fl.Bool(
 		"immutable-releases",
 		false,
 		"Block deleting or overwriting released versions (--immutable-releases=false to allow)",
 	)
-	mergeProxy := fs.Bool(
+	mergeProxy := fl.Bool(
 		"merge-proxy-versions",
 		false,
 		"Group repositories, administrators only: merge proxy members' versions of names a hosted member holds "+
 			"(--merge-proxy-versions=false restores hosted-wins)",
 	)
-	signPkgs := fs.Bool(
+	signPkgs := fl.Bool(
 		"sign-packages",
 		false,
 		"Hosted rpm repositories: sign uploaded RPMs with the active GPG key (--sign-packages=false to stop)",
 	)
-	_ = fs.Parse(args)
 
-	set := setFlags(fs)
-	body := map[string]any{}
+	flagEnum(cmd, "trash-retention-days", "default", "0", "7", "30")
 
-	if set["description"] {
-		body["description"] = *desc
-	}
+	cmd.Run = func(cmd *cobra.Command, args []string) {
+		set := cmd.Flags().Changed
+		body := map[string]any{}
 
-	if set["public"] {
-		body["public"] = *public
-	}
-
-	if set["trash-retention-days"] {
-		days, err := parseRetention(*retention)
-		if err != nil {
-			dief("%v", err)
+		if set("description") {
+			body["description"] = *desc
 		}
 
-		body["trash_retention_days"] = days
+		if set("public") {
+			body["public"] = *public
+		}
+
+		if set("trash-retention-days") {
+			days, err := parseRetention(*retention)
+			if err != nil {
+				dief("%v", err)
+			}
+
+			body["trash_retention_days"] = days
+		}
+
+		if set("immutable-releases") {
+			body["immutable_releases"] = *immutable
+		}
+
+		if set("merge-proxy-versions") {
+			body["merge_proxy_versions"] = *mergeProxy
+		}
+
+		if set("sign-packages") {
+			body["sign_packages"] = *signPkgs
+		}
+
+		if len(body) == 0 {
+			dief(
+				"nothing to update: pass --description, --public[=false], --trash-retention-days, " +
+					"--immutable-releases[=false], --sign-packages[=false] or --merge-proxy-versions[=false]",
+			)
+		}
+
+		sendJSON(a.client, "PATCH", "/api/v1/repository/"+escape(args[0]), body, http.StatusOK)
+		fmt.Printf("Repository '%s' updated.\n", args[0])
 	}
 
-	if set["immutable-releases"] {
-		body["immutable_releases"] = *immutable
-	}
-
-	if set["merge-proxy-versions"] {
-		body["merge_proxy_versions"] = *mergeProxy
-	}
-
-	if set["sign-packages"] {
-		body["sign_packages"] = *signPkgs
-	}
-
-	if len(body) == 0 {
-		dief(
-			"nothing to update: pass --description, --public[=false], --trash-retention-days, " +
-				"--immutable-releases[=false], --sign-packages[=false] or --merge-proxy-versions[=false]",
-		)
-	}
-
-	sendJSON(client, "PATCH", "/api/v1/repository/"+escape(name), body, http.StatusOK)
-	fmt.Printf("Repository '%s' updated.\n", name)
+	return cmd
 }
 
 // parseRetention maps --trash-retention-days to the API value: a non-negative
@@ -247,27 +272,40 @@ func parseRetention(v string) (any, error) {
 	return n, nil
 }
 
-// repoDelete deletes a repository. The server requires the repository name as
+// repoDeleteCmd deletes a repository. The server requires the repository name as
 // confirmation, so --confirm (or an interactive prompt) is mandatory; the
 // repository then waits in the trash for its retention period.
-func repoDelete(client *Client, name string, args []string) {
-	fs := flag.NewFlagSet("repo delete", flag.ExitOnError)
-	confirm := fs.String("confirm", "", "Repository name, as confirmation")
-	_ = fs.Parse(args)
-
-	confirmed, err := resolveRepoConfirm(name, *confirm, setFlags(fs)["confirm"], stdinIsTerminal(), stdinReader, stderrPrompt)
-	if err != nil {
-		dief("%v", err)
+func repoDeleteCmd(a *app) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:               "delete <name>",
+		Short:             "Delete a repository (moved to the trash; prompts for the name on a terminal)",
+		Args:              usageArgs(1, 1),
+		ValidArgsFunction: positional(a.repoNames()),
 	}
 
-	resp, err := client.do("DELETE", "/api/v1/repository/"+escape(name)+"?confirm="+url.QueryEscape(confirmed), nil, "")
-	if err != nil {
-		dief("%v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
+	confirm := cmd.Flags().String("confirm", "", "Repository name, as confirmation")
 
-	checkOK(resp, http.StatusOK, http.StatusNoContent)
-	fmt.Printf("Repository '%s' deleted (kept in the trash until its retention expires, unless retention is 0).\n", name)
+	flagValues(cmd, "confirm", a.repoNames())
+
+	cmd.Run = func(cmd *cobra.Command, args []string) {
+		name := args[0]
+
+		confirmed, err := resolveRepoConfirm(name, *confirm, cmd.Flags().Changed("confirm"), stdinIsTerminal(), stdinReader, stderrPrompt)
+		if err != nil {
+			dief("%v", err)
+		}
+
+		resp, err := a.client.do("DELETE", "/api/v1/repository/"+escape(name)+"?confirm="+url.QueryEscape(confirmed), nil, "")
+		if err != nil {
+			dief("%v", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		checkOK(resp, http.StatusOK, http.StatusNoContent)
+		fmt.Printf("Repository '%s' deleted (kept in the trash until its retention expires, unless retention is 0).\n", name)
+	}
+
+	return cmd
 }
 
 func repoPackages(client *Client, name, outFmt string) {

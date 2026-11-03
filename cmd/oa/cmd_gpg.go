@@ -7,20 +7,28 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"maps"
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 const gpgKeysPath = "/api/v1/admin/gpg/keys"
 
+// gpgAlgorithms are the key algorithms `gpg generate` offers (source: the GPG
+// key generation API, which cmd/oa must not import).
+//
+//nolint:gochecknoglobals // immutable lookup table
+var gpgAlgorithms = []string{"ed25519", "rsa4096"}
+
 // gpgActivateFlags registers --activate/--no-activate and returns a func that
 // yields the tri-state (nil when neither flag was given).
-func gpgActivateFlags(fs *flag.FlagSet) func() *bool {
+func gpgActivateFlags(fs *pflag.FlagSet) func() *bool {
 	on := fs.Bool("activate", false, "Make the key the active signing key")
 	off := fs.Bool("no-activate", false, "Do not activate the key")
 
@@ -39,31 +47,26 @@ func gpgActivateFlags(fs *flag.FlagSet) func() *bool {
 	}
 }
 
-func handleGPG(args []string, client *Client, outFmt string) {
-	if len(args) < 1 {
-		dief("Usage: oa gpg <list|import|generate|delete|activate|deactivate|export>")
-	}
+// gpgKeys completes a key reference by name.
+func (a *app) gpgKeys() completer {
+	return a.listNames(gpgKeysPath, "keys", "name")
+}
 
-	rest := args[1:]
-
-	switch args[0] {
-	case "list":
-		gpgList(client, outFmt)
-	case "import":
-		gpgImport(rest, client, outFmt)
-	case "generate":
-		gpgGenerate(rest, client, outFmt)
-	case "delete":
-		gpgDelete(rest, client)
-	case "activate":
-		gpgActivate(rest, client, outFmt)
-	case "deactivate":
-		gpgDeactivate(rest, client)
-	case "export":
-		gpgExport(rest, client)
-	default:
-		dief("Unknown gpg subcommand: %s", args[0])
-	}
+func newGPGCmd(a *app) *cobra.Command {
+	return parentCmd("gpg", "Manage GPG signing keys (admin)",
+		&cobra.Command{
+			Use:   "list",
+			Short: "List GPG keys",
+			Args:  usageArgs(0, 0),
+			Run:   func(*cobra.Command, []string) { gpgList(a.client, a.outFmt) },
+		},
+		gpgImportCmd(a),
+		gpgGenerateCmd(a),
+		gpgDeleteCmd(a),
+		gpgActivateCmd(a),
+		gpgDeactivateCmd(a),
+		gpgExportCmd(a),
+	)
 }
 
 // gpgFetchKeys returns the key list and the can_store_keys capability.
@@ -154,74 +157,94 @@ func gpgPrintResult(result map[string]any, outFmt, verb string) {
 	fmt.Printf("GPG key %s: %v\n", verb, result["fingerprint"])
 }
 
-func gpgImport(args []string, client *Client, outFmt string) {
-	fs := flag.NewFlagSet("gpg import", flag.ExitOnError)
-	keyFile := fs.String("key", "", "Armored private key file, or - for stdin")
-	name := fs.String("name", "", "Key name")
-	passStdin := fs.Bool("passphrase-stdin", false, "Read the key passphrase from stdin (env: OA_GPG_PASSPHRASE)")
-	activate := gpgActivateFlags(fs)
-	_ = fs.Parse(args)
-
-	if *keyFile == "" {
-		dief("--key is required")
+func gpgImportCmd(a *app) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "import --key <file|->",
+		Short: "Import a private key (passphrase: stdin or env OA_GPG_PASSPHRASE)",
+		Args:  usageArgs(0, 0),
 	}
 
-	if *passStdin && *keyFile == "-" {
-		dief("--passphrase-stdin cannot be combined with --key -")
-	}
+	keyFile := cmd.Flags().String("key", "", "Armored private key file, or - for stdin")
+	name := cmd.Flags().String("name", "", "Key name")
+	passStdin := cmd.Flags().Bool("passphrase-stdin", false, "Read the key passphrase from stdin (env: OA_GPG_PASSPHRASE)")
+	activate := gpgActivateFlags(cmd.Flags())
 
-	var (
-		data []byte
-		err  error
-	)
+	flagFiles(cmd, "key")
 
-	if *keyFile == "-" {
-		data, err = io.ReadAll(stdinReader)
-	} else {
-		data, err = os.ReadFile(*keyFile)
-	}
-
-	if err != nil {
-		dief("reading key: %v", err)
-	}
-
-	passphrase := os.Getenv("OA_GPG_PASSPHRASE")
-	if *passStdin {
-		line, rerr := readLine(stdinReader)
-		if rerr != nil && line == "" {
-			dief("reading passphrase from stdin: %v", rerr)
+	cmd.Run = func(*cobra.Command, []string) {
+		if *keyFile == "" {
+			dief("--key is required")
 		}
 
-		passphrase = line
+		if *passStdin && *keyFile == "-" {
+			dief("--passphrase-stdin cannot be combined with --key -")
+		}
+
+		var (
+			data []byte
+			err  error
+		)
+
+		if *keyFile == "-" {
+			data, err = io.ReadAll(stdinReader)
+		} else {
+			data, err = os.ReadFile(*keyFile)
+		}
+
+		if err != nil {
+			dief("reading key: %v", err)
+		}
+
+		passphrase := os.Getenv("OA_GPG_PASSPHRASE")
+		if *passStdin {
+			line, rerr := readLine(stdinReader)
+			if rerr != nil && line == "" {
+				dief("reading passphrase from stdin: %v", rerr)
+			}
+
+			passphrase = line
+		}
+
+		body := map[string]any{"name": *name, "private_key": string(data), "passphrase": passphrase}
+		if act := activate(); act != nil {
+			body["activate"] = *act
+		}
+
+		gpgPrintResult(sendJSON(a.client, "POST", gpgKeysPath, body, http.StatusCreated), a.outFmt, "imported")
 	}
 
-	body := map[string]any{"name": *name, "private_key": string(data), "passphrase": passphrase}
-	if a := activate(); a != nil {
-		body["activate"] = *a
-	}
-
-	gpgPrintResult(sendJSON(client, "POST", gpgKeysPath, body, http.StatusCreated), outFmt, "imported")
+	return cmd
 }
 
-func gpgGenerate(args []string, client *Client, outFmt string) {
-	fs := flag.NewFlagSet("gpg generate", flag.ExitOnError)
-	name := fs.String("name", "", "Key name")
-	algorithm := fs.String("algorithm", "ed25519", "Algorithm: ed25519|rsa4096")
-	userName := fs.String("user-name", "", "User ID name")
-	email := fs.String("email", "", "User ID email")
-	comment := fs.String("comment", "", "User ID comment")
-	activate := gpgActivateFlags(fs)
-	_ = fs.Parse(args)
-
-	body := map[string]any{
-		"name": *name, "algorithm": *algorithm,
-		"user_name": *userName, "email": *email, "comment": *comment,
-	}
-	if a := activate(); a != nil {
-		body["activate"] = *a
+func gpgGenerateCmd(a *app) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "generate",
+		Short: "Generate a signing key",
+		Args:  usageArgs(0, 0),
 	}
 
-	gpgPrintResult(sendJSON(client, "POST", gpgKeysPath+"/generate", body, http.StatusCreated), outFmt, "generated")
+	name := cmd.Flags().String("name", "", "Key name")
+	algorithm := cmd.Flags().String("algorithm", "ed25519", "Algorithm: ed25519|rsa4096")
+	userName := cmd.Flags().String("user-name", "", "User ID name")
+	email := cmd.Flags().String("email", "", "User ID email")
+	comment := cmd.Flags().String("comment", "", "User ID comment")
+	activate := gpgActivateFlags(cmd.Flags())
+
+	flagEnum(cmd, "algorithm", gpgAlgorithms...)
+
+	cmd.Run = func(*cobra.Command, []string) {
+		body := map[string]any{
+			"name": *name, "algorithm": *algorithm,
+			"user_name": *userName, "email": *email, "comment": *comment,
+		}
+		if act := activate(); act != nil {
+			body["activate"] = *act
+		}
+
+		gpgPrintResult(sendJSON(a.client, "POST", gpgKeysPath+"/generate", body, http.StatusCreated), a.outFmt, "generated")
+	}
+
+	return cmd
 }
 
 // gpgResolve maps an id, fingerprint or exact name to the key id.
@@ -256,111 +279,132 @@ func gpgResolve(client *Client, ref string) string {
 	return ""
 }
 
-// gpgKeyArg parses "<key> [flags]" with the key before or after the flags.
-func gpgKeyArg(fs *flag.FlagSet, args []string, usage string) string {
-	var ref string
-
-	if len(args) > 0 && !isFlagArg(args[0]) {
-		ref, args = args[0], args[1:]
+func gpgDeleteCmd(a *app) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:               "delete <key>",
+		Short:             "Delete a key (id, name or fingerprint)",
+		Args:              usageArgs(1, 1),
+		ValidArgsFunction: positional(a.gpgKeys()),
 	}
 
-	_ = fs.Parse(args)
+	force := cmd.Flags().Bool("force", false, "Delete even if the key is active or assigned")
 
-	if ref == "" && fs.NArg() > 0 {
-		ref = fs.Arg(0)
-	}
-
-	if ref == "" {
-		dief("Usage: %s", usage)
-	}
-
-	return ref
-}
-
-func gpgDelete(args []string, client *Client) {
-	fs := flag.NewFlagSet("gpg delete", flag.ExitOnError)
-	force := fs.Bool("force", false, "Delete even if the key is active or assigned")
-	ref := gpgKeyArg(fs, args, "oa gpg delete <id|name|fingerprint> [--force]")
-
-	path := gpgKeysPath + "/" + escape(gpgResolve(client, ref))
-	if *force {
-		path += "?force=true"
-	}
-
-	resp, err := client.do("DELETE", path, nil, "")
-	if err != nil {
-		dief("%v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode == http.StatusConflict && !*force {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-		if bytes.Contains(body, []byte("key_in_use")) {
-			dief("the key is active or assigned to a repository; deactivate it first or run again with --force")
+	cmd.Run = func(_ *cobra.Command, args []string) {
+		path := gpgKeysPath + "/" + escape(gpgResolve(a.client, args[0]))
+		if *force {
+			path += "?force=true"
 		}
 
-		resp.Body = io.NopCloser(bytes.NewReader(body))
+		resp, err := a.client.do("DELETE", path, nil, "")
+		if err != nil {
+			dief("%v", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode == http.StatusConflict && !*force {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+			if bytes.Contains(body, []byte("key_in_use")) {
+				dief("the key is active or assigned to a repository; deactivate it first or run again with --force")
+			}
+
+			resp.Body = io.NopCloser(bytes.NewReader(body))
+		}
+
+		checkOK(resp, http.StatusOK, http.StatusNoContent)
+		fmt.Println("GPG key deleted.")
 	}
 
-	checkOK(resp, http.StatusOK, http.StatusNoContent)
-	fmt.Println("GPG key deleted.")
+	return cmd
 }
 
-func gpgActivate(args []string, client *Client, outFmt string) {
-	fs := flag.NewFlagSet("gpg activate", flag.ExitOnError)
-	repo := fs.String("repository", "", "Repository to activate for (default: global)")
-	ref := gpgKeyArg(fs, args, "oa gpg activate <key> [--repository NAME]")
-
-	body := map[string]any{}
-	if *repo != "" {
-		body["repository"] = *repo
+func gpgActivateCmd(a *app) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:               "activate <key>",
+		Short:             "Make a key the signer (global or per deb/rpm repository)",
+		Args:              usageArgs(1, 1),
+		ValidArgsFunction: positional(a.gpgKeys()),
 	}
 
-	result := sendJSON(client, "PUT", gpgKeysPath+"/"+escape(gpgResolve(client, ref))+"/activate", body, http.StatusOK)
-	gpgPrintResult(result, outFmt, "activated")
+	repo := cmd.Flags().String("repository", "", "Repository to activate for (default: global)")
+
+	flagValues(cmd, "repository", a.repoNames())
+
+	cmd.Run = func(_ *cobra.Command, args []string) {
+		body := map[string]any{}
+		if *repo != "" {
+			body["repository"] = *repo
+		}
+
+		result := sendJSON(a.client, "PUT", gpgKeysPath+"/"+escape(gpgResolve(a.client, args[0]))+"/activate", body, http.StatusOK)
+		gpgPrintResult(result, a.outFmt, "activated")
+	}
+
+	return cmd
 }
 
-func gpgDeactivate(args []string, client *Client) {
-	fs := flag.NewFlagSet("gpg deactivate", flag.ExitOnError)
-	repo := fs.String("repository", "", "Repository to deactivate for (default: global)")
-	ref := gpgKeyArg(fs, args, "oa gpg deactivate <key> [--repository NAME]")
-
-	path := gpgKeysPath + "/" + escape(gpgResolve(client, ref)) + "/activate"
-	if *repo != "" {
-		path += "?repository=" + escape(*repo)
+func gpgDeactivateCmd(a *app) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:               "deactivate <key>",
+		Short:             "Stop using a key for signing",
+		Args:              usageArgs(1, 1),
+		ValidArgsFunction: positional(a.gpgKeys()),
 	}
 
-	deleteResource(client, path, "GPG key deactivated.")
+	repo := cmd.Flags().String("repository", "", "Repository to deactivate for (default: global)")
+
+	flagValues(cmd, "repository", a.repoNames())
+
+	cmd.Run = func(_ *cobra.Command, args []string) {
+		path := gpgKeysPath + "/" + escape(gpgResolve(a.client, args[0])) + "/activate"
+		if *repo != "" {
+			path += "?repository=" + escape(*repo)
+		}
+
+		deleteResource(a.client, path, "GPG key deactivated.")
+	}
+
+	return cmd
 }
 
-func gpgExport(args []string, client *Client) {
-	fs := flag.NewFlagSet("gpg export", flag.ExitOnError)
-	output := fs.String("output", "", "Write the public key to FILE (default: stdout)")
-	ref := gpgKeyArg(fs, args, "oa gpg export <key> [--output FILE]")
-
-	resp, err := client.do("GET", gpgKeysPath+"/"+escape(gpgResolve(client, ref))+"/export", nil, "")
-	if err != nil {
-		dief("%v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	checkOK(resp)
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		dief("reading export: %v", err)
+func gpgExportCmd(a *app) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:               "export <key>",
+		Short:             "Export the public key",
+		Args:              usageArgs(1, 1),
+		ValidArgsFunction: positional(a.gpgKeys()),
 	}
 
-	if *output == "" {
-		_, _ = os.Stdout.Write(data)
+	output := cmd.Flags().String("output", "", "Write the public key to FILE (default: stdout)")
 
-		return
+	flagFiles(cmd, "output")
+
+	cmd.Run = func(_ *cobra.Command, args []string) {
+		resp, err := a.client.do("GET", gpgKeysPath+"/"+escape(gpgResolve(a.client, args[0]))+"/export", nil, "")
+		if err != nil {
+			dief("%v", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		checkOK(resp)
+
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			dief("reading export: %v", err)
+		}
+
+		if *output == "" {
+			_, _ = os.Stdout.Write(data)
+
+			return
+		}
+
+		//nolint:gosec // public key, world-readable by design
+		if err := os.WriteFile(*output, data, 0o644); err != nil {
+			dief("writing %s: %v", *output, err)
+		}
+
+		fmt.Printf("Public key written to %s\n", *output)
 	}
 
-	//nolint:gosec // public key, world-readable by design
-	if err := os.WriteFile(*output, data, 0o644); err != nil {
-		dief("writing %s: %v", *output, err)
-	}
-
-	fmt.Printf("Public key written to %s\n", *output)
+	return cmd
 }

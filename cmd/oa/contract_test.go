@@ -148,6 +148,7 @@ func (cs *contractServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pattern := rctx.RoutePattern()
+	noteAPICall(r.Method, pattern)
 
 	cs.mu.Lock()
 	cs.reqs = append(cs.reqs, recorded{r.Method, pattern, r.URL.Query(), body})
@@ -1302,7 +1303,9 @@ func TestContractScans(t *testing.T) {
 			out:   "x1",
 		},
 		{
-			name: "license delete is gone", args: []string{"license", "delete", "r", "l1"}, fail: "Unknown license subcommand",
+			name: "license delete is gone",
+			args: []string{"license", "delete", "r", "l1"},
+			fail: "unknown command \"delete\" for \"oa license\"",
 		},
 	})
 }

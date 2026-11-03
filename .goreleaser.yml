@@ -8,6 +8,8 @@ before:
   hooks:
     # The server embeds web/dist; build the UI before compiling.
     - sh -c "cd web && bun install --frozen-lockfile && bun run build"
+    # Shell completion scripts of the oa archive (completions/), generated from the CLI at this commit.
+    - scripts/completions.sh
 
 builds:
   - id: openartifact
@@ -61,7 +63,12 @@ archives:
       - goos: windows
         formats: [zip]
     name_template: "oa_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    files: [LICENSE]
+    files:
+      - LICENSE
+      # bash, zsh, fish and PowerShell completion (docs/integrations/cli.md#shell-completion)
+      - src: completions/*
+        dst: completions
+        strip_parent: true
 
 checksum:
   name_template: SHA256SUMS

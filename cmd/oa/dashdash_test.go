@@ -104,7 +104,7 @@ func TestDoubleDashUploadPositionals(t *testing.T) {
 	dir := t.TempDir()
 	res := runOA(t, srv, "", "upload", "--target-path", "x/", "--", "-r", dir+"/-none*.bin")
 
-	if res.code == 0 || strings.Contains(res.stderr, "flag provided but not defined") {
+	if res.code == 0 || strings.Contains(res.stderr, "unknown shorthand flag") || strings.Contains(res.stderr, "unknown flag") {
 		t.Fatalf("-r after -- must be positional: code %d stderr %q", res.code, res.stderr)
 	}
 }
@@ -179,26 +179,5 @@ func TestValidFormatsStillWork(t *testing.T) {
 
 	if len(seen()) == 0 {
 		t.Fatal("no request")
-	}
-}
-
-func TestEndOfFlags(t *testing.T) {
-	cases := []struct {
-		name, command string
-		in, want      []string
-	}{
-		{"none", "repo", []string{"show", "x"}, []string{"show", "x"}},
-		{"name after", "repo", []string{"show", "--", "-x"}, []string{"show", "-x"}},
-		{"flags kept after names", "repo", []string{"delete", "--confirm", "-x", "--", "-x"}, []string{"delete", "-x", "--confirm", "-x"}},
-		{"parser keeps terminator", "upload", []string{"--flat", "--", "r", "-f"}, []string{"--flat", "--", "r", "-f"}},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got := strings.Join(endOfFlags(c.command, c.in), "\x00")
-			if got != strings.Join(c.want, "\x00") {
-				t.Fatalf("got %q want %q", got, c.want)
-			}
-		})
 	}
 }

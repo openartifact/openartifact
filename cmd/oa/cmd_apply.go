@@ -7,14 +7,14 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
-	"strings"
 
 	"github.com/openartifact/openartifact/internal/declarative"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // Exit codes of `oa diff` (apply uses 0 and 1).
@@ -24,21 +24,10 @@ const (
 	exitChanges = 2
 )
 
-// stringList is a repeatable string flag.
-type stringList []string
-
-func (s *stringList) String() string { return strings.Join(*s, ",") }
-
-func (s *stringList) Set(v string) error {
-	*s = append(*s, v)
-
-	return nil
-}
-
 // declFlags are the flags shared by apply and diff.
 type declFlags struct {
-	files        stringList
-	kinds        stringList
+	files        []string
+	kinds        []string
 	recursive    bool
 	prune        bool
 	pruneAll     bool
@@ -48,12 +37,13 @@ type declFlags struct {
 	output       string
 }
 
-func newDeclFlagSet(name string, f *declFlags, withApply bool) *flag.FlagSet {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-	fs.Var(&f.files, "f", "Manifest file, directory or - for stdin (repeatable)")
-	fs.BoolVar(&f.recursive, "R", false, "Descend into subdirectories of -f directories")
-	fs.Var(&f.kinds, "kind", "Only consider this kind (repeatable), e.g. Repository")
+// declKinds are the kind names `--kind` accepts, from the declarative registry.
+func declKinds() []string { return declarative.DefaultRegistry().Names() }
+
+func bindDeclFlags(fs *pflag.FlagSet, f *declFlags, withApply bool) {
+	fs.StringArrayVarP(&f.files, "file", "f", nil, "Manifest file, directory or - for stdin (repeatable)")
+	fs.BoolVarP(&f.recursive, "recursive", "R", false, "Descend into subdirectories of -f directories")
+	fs.StringArrayVar(&f.kinds, "kind", nil, "Only consider this kind (repeatable), e.g. Repository")
 	fs.BoolVar(&f.prune, "prune", false, "Delete objects previously applied by oa that are no longer in the manifests")
 	fs.BoolVar(
 		&f.pruneAll,
@@ -63,15 +53,51 @@ func newDeclFlagSet(name string, f *declFlags, withApply bool) *flag.FlagSet {
 			"(never seeded objects; Users and ServiceAccounts only with --kind User or --kind ServiceAccount)",
 	)
 	fs.BoolVar(&f.forceSecrets, "force-secrets", false, "Send every secret even if the server reports it as set")
-	fs.StringVar(&f.output, "o", "", "Output format: json (default: human readable)")
+	fs.StringVarP(&f.output, "output", "o", "", "Output format: json (default: human readable)")
 
 	if withApply {
 		fs.BoolVar(&f.continueErr, "continue-on-error", false, "Keep applying after a failure (exit status is still 1)")
 		fs.BoolVar(&f.validateOnly, "validate-only", false, "Validate the manifests offline and exit")
 	}
-
-	return fs
 }
+
+// declCmd builds `oa apply` (apply true) and `oa diff`: exit 0 when the server
+// matches the manifests, 2 when diff finds a difference, 1 on error.
+func declCmd(a *app, apply bool) *cobra.Command {
+	var f declFlags
+
+	cmd := &cobra.Command{
+		Args:              usageArgs(0, 0),
+		ValidArgsFunction: positional(),
+		RunE: func(*cobra.Command, []string) error {
+			return exitWith(runDecl(&f, a.client, a.outFmt, apply, os.Stdin, os.Stdout))
+		},
+	}
+
+	if apply {
+		cmd.Use = "apply -f FILE|DIR|-"
+		cmd.Short = "Apply declarative manifests to the server"
+		cmd.Long = "Apply the manifests given with -f (files, directories or - for stdin) so the server matches them.\n\n" +
+			"Exit status 0 on success, 1 on error."
+	} else {
+		cmd.Use = "diff -f FILE|DIR|-"
+		cmd.Short = "Show what apply would change"
+		cmd.Long = "Show what `oa apply` would change for the manifests given with -f.\n\n" +
+			"Exit status 0 when nothing changes, 2 when there are changes, 1 on error."
+	}
+
+	bindDeclFlags(cmd.Flags(), &f, apply)
+
+	flagFiles(cmd, "file")
+	flagEnum(cmd, "kind", declKinds()...)
+	flagEnum(cmd, "output", formatJSON)
+
+	return cmd
+}
+
+func newApplyCmd(a *app) *cobra.Command { return declCmd(a, true) }
+
+func newDiffCmd(a *app) *cobra.Command { return declCmd(a, false) }
 
 func declOptions(f *declFlags, client *Client, stdin io.Reader) declarative.Options {
 	return declarative.Options{
@@ -83,7 +109,7 @@ func declOptions(f *declFlags, client *Client, stdin io.Reader) declarative.Opti
 	}
 }
 
-// declJSON reports whether JSON output was requested by -o json or --format json.
+// declJSON reports whether JSON output was requested by -o/--output json or --format json.
 func declJSON(f *declFlags, globalFormat string) (bool, error) {
 	switch f.output {
 	case "":
@@ -115,24 +141,6 @@ func reportError(err error) int {
 
 func signalContext() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt)
-}
-
-// handleDecl implements `oa apply` (apply true) and `oa diff`: exit 0 when the
-// server matches the manifests, 2 when diff finds a difference, 1 on error.
-func handleDecl(args []string, client *Client, globalFormat string, apply bool) int {
-	name := "diff"
-	if apply {
-		name = "apply"
-	}
-
-	var f declFlags
-
-	fs := newDeclFlagSet(name, &f, apply)
-	if err := fs.Parse(args); err != nil {
-		return exitError
-	}
-
-	return runDecl(&f, client, globalFormat, apply, os.Stdin, os.Stdout)
 }
 
 func runDecl(f *declFlags, client *Client, globalFormat string, apply bool, stdin io.Reader, out io.Writer) int {
@@ -266,35 +274,49 @@ func noteAdoptions(plan *declarative.Plan, out io.Writer) {
 	}
 }
 
-// handleExport implements `oa export`.
-func handleExport(args []string, client *Client) int {
-	fs := flag.NewFlagSet("export", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+func newExportCmd(a *app) *cobra.Command {
+	var (
+		kinds       []string
+		dir         string
+		withMembers bool
+	)
 
-	var kinds stringList
-
-	fs.Var(&kinds, "kind", "Only export this kind (repeatable); User is exported only when named")
-
-	dir := fs.String("o", "", "Write one file per object into this directory (default: one YAML stream on stdout)")
-	withMembers := fs.Bool("with-members", false, "Include fields normally omitted, such as Group members")
-
-	if err := fs.Parse(args); err != nil {
-		return exitError
+	cmd := &cobra.Command{
+		Use:   "export",
+		Short: "Export the server configuration as manifests",
+		Long: "Export the server configuration as declarative manifests that `oa apply` takes: one YAML stream on " +
+			"stdout, or one file per object with --output DIR.",
+		Args:              usageArgs(0, 0),
+		ValidArgsFunction: positional(),
+		RunE: func(*cobra.Command, []string) error {
+			return exitWith(runExport(a.client, kinds, dir, withMembers))
+		},
 	}
 
+	cmd.Flags().StringArrayVar(&kinds, "kind", nil, "Only export this kind (repeatable); User is exported only when named")
+	cmd.Flags().StringVarP(&dir, "output", "o", "", "Write one file per object into this directory (default: one YAML stream on stdout)")
+	cmd.Flags().BoolVar(&withMembers, "with-members", false, "Include fields normally omitted, such as Group members")
+
+	flagEnum(cmd, "kind", declKinds()...)
+	flagFiles(cmd, "output")
+
+	return cmd
+}
+
+func runExport(client *Client, kinds []string, dir string, withMembers bool) int {
 	ctx, stop := signalContext()
 	defer stop()
 
 	docs, err := declarative.Export(ctx, declarative.ExportOptions{
 		Registry: declarative.DefaultRegistry(),
 		Client:   declarative.NewClient(client.baseURL, client.token, client.httpClient),
-		Kinds:    kinds, WithMembers: *withMembers,
+		Kinds:    kinds, WithMembers: withMembers,
 	})
 	if err != nil {
 		return reportError(err)
 	}
 
-	if *dir == "" {
+	if dir == "" {
 		if err := declarative.WriteStream(os.Stdout, docs); err != nil {
 			return reportError(err)
 		}
@@ -302,12 +324,12 @@ func handleExport(args []string, client *Client) int {
 		return exitOK
 	}
 
-	paths, err := declarative.WriteDir(*dir, docs)
+	paths, err := declarative.WriteDir(dir, docs)
 	if err != nil {
 		return reportError(err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Exported %d object(s) to %s\n", len(paths), *dir)
+	fmt.Fprintf(os.Stderr, "Exported %d object(s) to %s\n", len(paths), dir)
 
 	return exitOK
 }
