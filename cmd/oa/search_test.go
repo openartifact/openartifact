@@ -55,7 +55,7 @@ func TestSearchPrintsRepositoriesBeforePackages(t *testing.T) {
 
 	client := newClient(srv.URL, "")
 
-	table := captureStdout(t, func() { handleSearch([]string{"ui-kit"}, client, "table") })
+	table := captureStdout(t, func() { search(client, "ui-kit", "", "", 50, "table") })
 
 	ri := strings.Index(table, "ui-kit  ")
 	pi := strings.Index(table, "ui-kit-pkg")
@@ -64,17 +64,17 @@ func TestSearchPrintsRepositoriesBeforePackages(t *testing.T) {
 		t.Fatalf("repositories must precede packages:\n%s", table)
 	}
 
-	filtered := captureStdout(t, func() { handleSearch([]string{"--fmt", "deb", "ui-kit"}, client, "table") })
+	filtered := captureStdout(t, func() { search(client, "ui-kit", "", "deb", 50, "table") })
 	if strings.Contains(filtered, "UI components") || !strings.Contains(filtered, "ui-kit-deb") {
 		t.Fatalf("format filter not applied:\n%s", filtered)
 	}
 
-	limited := captureStdout(t, func() { handleSearch([]string{"--limit", "1", "ui-kit"}, client, "table") })
+	limited := captureStdout(t, func() { search(client, "ui-kit", "", "", 1, "table") })
 	if strings.Contains(limited, "ui-kit-deb") {
 		t.Fatalf("limit not applied:\n%s", limited)
 	}
 
-	js := captureStdout(t, func() { handleSearch([]string{"ui-kit"}, client, "json") })
+	js := captureStdout(t, func() { search(client, "ui-kit", "", "", 50, "json") })
 	if !strings.Contains(js, `"repositories"`) || !strings.Contains(js, `"results"`) ||
 		strings.Index(js, `"repositories"`) > strings.Index(js, `"results"`) {
 		t.Fatalf("json output: %s", js)

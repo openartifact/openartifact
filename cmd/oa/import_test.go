@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/pflag"
 )
 
 const (
@@ -23,6 +26,36 @@ const (
 	artiStamp  = "2023-07-15T08:30:00.000Z"
 	artiWant   = "2023-07-15T08:30:00Z"
 )
+
+// parseImportFlags parses `oa import` arguments (the source type first) the way
+// the import commands do.
+func parseImportFlags(args []string, getenv func(string) string, stdin io.Reader) (importConfig, error) {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return importConfig{}, errImportUsage
+	}
+
+	kind := args[0]
+	if kind != kindNexus && kind != kindArtifactory && kind != kindOpenArtifact {
+		return importConfig{}, fmt.Errorf("%w: unknown source type %q (want nexus, artifactory or openartifact)", errImportUsage, kind)
+	}
+
+	fs := pflag.NewFlagSet("import", pflag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	var f importFlags
+
+	bindImportFlags(fs, &f)
+
+	if err := fs.Parse(args[1:]); err != nil {
+		return importConfig{}, err
+	}
+
+	if fs.NArg() > 0 {
+		return importConfig{}, fmt.Errorf("%w: unexpected argument %q", errImportUsage, fs.Arg(0))
+	}
+
+	return f.config(kind, fs.Changed, getenv, stdin)
+}
 
 func parseCfg(t *testing.T, args ...string) importConfig {
 	t.Helper()
@@ -465,7 +498,7 @@ func TestParseImportFlags(t *testing.T) {
 			[]string{"nexus", "--source-url", "https://n.example", "--repo", "a", "--source-token", "x"},
 			"",
 			"",
-			"flag provided but not defined",
+			"unknown flag: --source-token",
 		},
 		{"userinfo url", []string{"nexus", "--source-url", "https://u:p@n.example", "--repo", "a"}, "", "", "must not embed credentials"},
 		{"plain http credentials", []string{"nexus", "--source-url", "http://n.example", "--repo", "a"}, "", "", "plain HTTP"},

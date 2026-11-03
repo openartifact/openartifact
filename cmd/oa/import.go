@@ -12,7 +12,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"hash"
 	"io"
@@ -26,6 +25,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var (
@@ -34,10 +36,6 @@ var (
 )
 
 const (
-	importUsage = "Usage: oa import <nexus|artifactory|openartifact> --source-url URL --repo SRC[:DST] [--repo ...] [flags]\n" +
-		"       oa import openartifact --source-url URL --all [--formats LIST] [flags]\n" +
-		"       oa import config openartifact --source-url URL --output DIR [flags]"
-
 	kindNexus        = "nexus"
 	kindArtifactory  = "artifactory"
 	kindOpenArtifact = "openartifact"
@@ -87,9 +85,12 @@ type importConfig struct {
 	retrier *retrier
 }
 
+// repoFlag is the repeatable --repo SRC[:DST] flag, a pflag.Value.
 type repoFlag []repoMapping
 
 func (r *repoFlag) String() string { return fmt.Sprint([]repoMapping(*r)) }
+
+func (r *repoFlag) Type() string { return "SRC[:DST]" }
 
 func (r *repoFlag) Set(v string) error {
 	src, dst, _ := strings.Cut(v, ":")
@@ -106,36 +107,35 @@ func (r *repoFlag) Set(v string) error {
 	return nil
 }
 
-// parseImportFlags parses the arguments after `oa import`. Source secrets come
-// from the environment or a file, never from argv.
-func parseImportFlags(args []string, getenv func(string) string, stdin io.Reader) (importConfig, error) {
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		return importConfig{}, fmt.Errorf("%w: %s", errImportUsage, importUsage)
-	}
+// importFlags are the flags of `oa import nexus|artifactory|openartifact`.
+type importFlags struct {
+	cfg       importConfig
+	repos     repoFlag
+	sourceURL string
+	user      string
+	tokenFile string
+	props     string
+	formats   string
+}
 
-	cfg := importConfig{Kind: args[0]}
-	if cfg.Kind != kindNexus && cfg.Kind != kindArtifactory && cfg.Kind != kindOpenArtifact {
-		return importConfig{}, fmt.Errorf("%w: unknown source type %q (want nexus, artifactory or openartifact)", errImportUsage, cfg.Kind)
-	}
+// bindImportFlags declares the flags of the import commands on fs. The source
+// URL and user fall back to their environment variables when not given (see
+// config); the token comes from --source-token-file or the environment.
+func bindImportFlags(fs *pflag.FlagSet, f *importFlags) {
+	cfg := &f.cfg
 
-	fs := flag.NewFlagSet("import", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-
-	var (
-		repos     repoFlag
-		sourceURL = fs.String("source-url", getenv(envSourceURL), "base URL of the source system")
-		user      = fs.String("source-user", getenv(envSourceUser), "source user name (or "+envSourceUser+")")
-		tokenFile = fs.String("source-token-file", "", "file holding the source token/password, '-' for stdin (or "+envSourceToken+")")
-		props     = fs.String(
-			"properties",
-			defaultPropertyPatterns,
-			"properties to copy: comma-separated keys or prefix* patterns, 'none' to disable",
-		)
+	fs.StringVar(&f.sourceURL, "source-url", "", "base URL of the source system (or "+envSourceURL+")")
+	fs.StringVar(&f.user, "source-user", "", "source user name (or "+envSourceUser+")")
+	fs.StringVar(&f.tokenFile, "source-token-file", "", "file holding the source token/password, '-' for stdin (or "+envSourceToken+")")
+	fs.StringVar(
+		&f.props,
+		"properties",
+		defaultPropertyPatterns,
+		"properties to copy: comma-separated keys or prefix* patterns, 'none' to disable",
 	)
+	fs.StringVar(&f.formats, "formats", "", "with --all: only repositories of these formats (comma-separated)")
 
-	formats := fs.String("formats", "", "with --all: only repositories of these formats (comma-separated)")
-
-	fs.Var(&repos, "repo", "repository to import as SRC or SRC:DST (repeatable)")
+	fs.Var(&f.repos, "repo", "repository to import as SRC or SRC:DST (repeatable)")
 	fs.BoolVar(&cfg.AllRepos, "all", false, "openartifact source: import every hosted repository, under the same name")
 	fs.BoolVar(&cfg.DryRun, "dry-run", false, "print the plan without writing anything")
 	fs.IntVar(&cfg.Concurrency, "concurrency", defaultImportConcurrency, "parallel transfers")
@@ -158,32 +158,38 @@ func parseImportFlags(args []string, getenv func(string) string, stdin io.Reader
 		defaultImportRetryMaxWait,
 		"longest wait between retries; a Retry-After above it is not waited out",
 	)
+}
 
-	if err := fs.Parse(args[1:]); err != nil {
-		return importConfig{}, err
+// config turns the parsed flags of an import from a source of the given kind
+// into the import configuration. changed tells whether a flag was given on the
+// command line. Source secrets come from the environment or a file, never from argv.
+func (f *importFlags) config(kind string, changed func(string) bool, getenv func(string) string, stdin io.Reader) (importConfig, error) {
+	cfg := f.cfg
+	cfg.Kind = kind
+	cfg.Repos = f.repos
+	cfg.SourceUser = f.user
+
+	if cfg.SourceUser == "" {
+		cfg.SourceUser = getenv(envSourceUser)
 	}
 
-	if fs.NArg() > 0 {
-		return importConfig{}, fmt.Errorf("%w: unexpected argument %q", errImportUsage, fs.Arg(0))
+	sourceURL := f.sourceURL
+	if sourceURL == "" {
+		sourceURL = getenv(envSourceURL)
 	}
 
-	cfg.Repos = repos
-	cfg.SourceUser = *user
-
-	propsSet := false
-
-	fs.Visit(func(f *flag.Flag) { propsSet = propsSet || f.Name == "properties" })
+	props := f.props
 
 	// An OpenArtifact source has no property conventions to filter by: all of
 	// an artifact's properties are its own.
-	if cfg.Kind == kindOpenArtifact && !propsSet {
-		*props = "*"
+	if cfg.Kind == kindOpenArtifact && !changed("properties") {
+		props = "*"
 	}
 
-	cfg.Properties = parsePropertyPatterns(*props)
+	cfg.Properties = parsePropertyPatterns(props)
 
-	if *formats != "" {
-		cfg.Formats = parsePropertyPatterns(*formats)
+	if f.formats != "" {
+		cfg.Formats = parsePropertyPatterns(f.formats)
 	}
 
 	if cfg.Kind == kindOpenArtifact {
@@ -195,7 +201,7 @@ func parseImportFlags(args []string, getenv func(string) string, stdin io.Reader
 		cfg.DebDist = cfg.DebDists[0]
 	}
 
-	if err := cfg.resolveSource(*sourceURL, *tokenFile, getenv, stdin); err != nil {
+	if err := cfg.resolveSource(sourceURL, f.tokenFile, getenv, stdin); err != nil {
 		return importConfig{}, err
 	}
 
@@ -305,21 +311,63 @@ func newImportSource(cfg importConfig, hc *http.Client) importSource {
 	return &nexusSource{http: h}
 }
 
-// handleImport implements `oa import` and returns the process exit code.
-func handleImport(args []string, client *Client, outFmt string) int {
-	if len(args) > 0 && args[0] == "config" {
-		return handleImportConfig(args[1:], outFmt)
+const importLong = "Import repositories from another artifact manager into this server.\n\n" +
+	"Every --repo SRC[:DST] maps one source repository to a destination repository (DST defaults to SRC); " +
+	"an openartifact source also takes --all for every hosted repository. The source credentials come from " +
+	"--source-user and --source-token-file (or " + envSourceUser + " and " + envSourceToken + "), never from the command line.\n\n" +
+	"Exit status 0 when everything was imported, 1 when some assets failed, 2 on a usage error."
+
+func newImportCmd(a *app) *cobra.Command {
+	return parentCmd("import", "Import from another artifact manager",
+		importSourceCmd(a, kindNexus, "Import from Nexus"),
+		importSourceCmd(a, kindArtifactory, "Import from Artifactory"),
+		importSourceCmd(a, kindOpenArtifact, "Import from a 0.14 OpenArtifact (--all for every hosted repository)"),
+		newImportConfigCmd(a),
+	)
+}
+
+// importSourceCmd builds `oa import <kind>`: one command per source system
+// sharing the flags.
+func importSourceCmd(a *app, kind, short string) *cobra.Command {
+	var f importFlags
+
+	cmd := &cobra.Command{
+		Use:               kind + " --source-url URL --repo SRC[:DST]...",
+		Short:             short,
+		Long:              importLong,
+		Args:              usageArgs(0, 0),
+		ValidArgsFunction: positional(),
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := f.config(kind, cmd.Flags().Changed, os.Getenv, os.Stdin)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "Error:", err)
+
+				return exitWith(exitImportUsage)
+			}
+
+			return exitWith(runImport(cfg, a.client, a.outFmt))
+		},
 	}
 
-	cfg, err := parseImportFlags(args, os.Getenv, os.Stdin)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		return 2
-	}
+	bindImportFlags(cmd.Flags(), &f)
 
+	flagEnum(cmd, "artifactory-listing", listingAQL, listingStorage)
+	flagFiles(cmd, "source-token-file")
+	flagFiles(cmd, "state-file")
+	flagValues(cmd, "repo", nothing)
+
+	return cmd
+}
+
+// exitImportUsage is the exit status of an import that could not start: bad
+// flags, no credentials, an unreachable state file.
+const exitImportUsage = 2
+
+// runImport imports and returns the process exit code.
+func runImport(cfg importConfig, client *Client, outFmt string) int {
 	if !cfg.DryRun && client.token == "" {
 		fmt.Fprintln(os.Stderr, "Error: not logged in; run `oa auth login` or set OA_TOKEN (an admin token is required)")
-		return 2
+		return exitImportUsage
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -333,7 +381,7 @@ func handleImport(args []string, client *Client, outFmt string) int {
 	imp, err := newImporter(cfg, newImportSource(cfg, newHTTPClient()), &importTarget{c: client}, progress)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
-		return 2
+		return exitImportUsage
 	}
 
 	defer imp.state.close()

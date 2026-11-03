@@ -7,9 +7,7 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
-	"io"
 	"io/fs"
 	"net/url"
 	"os"
@@ -20,10 +18,9 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/pathseg"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
-
-const ciUploadUsage = "Usage: oa upload <repo> <file|glob>... [--target-path P] [--flat] [--version V] [--property k=v]... " +
-	"[--build-name N] [--build-number M] [--build-url U] [--vcs-revision SHA]"
 
 // Property keys `oa upload` records for the build that produced an artifact;
 // `oa bundle add --from-build` selects on the first two.
@@ -78,63 +75,61 @@ func (o ciUploadOptions) props() map[string]string {
 	return p
 }
 
-// parseCIUploadArgs parses the command line of `oa upload`. Flags may appear
-// before, between and after the positional arguments.
-func parseCIUploadArgs(args []string, output io.Writer) (ciUploadOptions, error) {
-	flags := flag.NewFlagSet("upload", flag.ContinueOnError)
-	flags.SetOutput(output)
-
-	var o ciUploadOptions
-
-	flags.StringVar(
-		&o.targetPath,
-		"target-path",
-		"",
-		"Path in the repository; a trailing / makes it a directory (default: the file's path)",
-	)
-	flags.BoolVar(&o.flat, "flat", false, "Drop the local directories: upload every file by its name")
-	flags.StringVar(
+// bindCIUploadFlags declares the flags of `oa upload` on fs, storing into o.
+func bindCIUploadFlags(fs *pflag.FlagSet, o *ciUploadOptions) {
+	fs.StringVar(&o.targetPath, "target-path", "", "Path in the repository; a trailing / makes it a directory (default: the file's path)")
+	fs.BoolVar(&o.flat, "flat", false, "Drop the local directories: upload every file by its name")
+	fs.StringVar(
 		&o.version,
 		"version",
 		"",
 		"Package version, for the formats whose file does not say (composer: when composer.json has no \"version\")",
 	)
-	flags.Func("property", "Property k=v set on every uploaded artifact (repeatable)", func(s string) error {
+	fs.StringArrayVar(&o.properties, "property", nil, "Property k=v set on every uploaded artifact (repeatable)")
+	fs.StringVar(&o.buildName, "build-name", "", "Build name, recorded as property "+propBuildName)
+	fs.StringVar(&o.buildNumber, "build-number", "", "Build number, recorded as property "+propBuildNumber)
+	fs.StringVar(&o.buildURL, "build-url", "", "Build URL, recorded as property "+propBuildURL)
+	fs.StringVar(&o.vcsRevision, "vcs-revision", "", "Source revision, recorded as property "+propVCSRevision)
+}
+
+// withArgs sets the repository and the file patterns from the positional
+// arguments and checks the --property values.
+func (o *ciUploadOptions) withArgs(args []string) error {
+	for _, s := range o.properties {
 		if k, _, ok := strings.Cut(s, "="); !ok || k == "" {
-			return fmt.Errorf("%w: --property wants key=value, got %q", errCIUsage, s)
+			return cliErrorf("--property wants key=value, got %q", s)
 		}
-
-		o.properties = append(o.properties, s)
-
-		return nil
-	})
-	flags.StringVar(&o.buildName, "build-name", "", "Build name, recorded as property "+propBuildName)
-	flags.StringVar(&o.buildNumber, "build-number", "", "Build number, recorded as property "+propBuildNumber)
-	flags.StringVar(&o.buildURL, "build-url", "", "Build URL, recorded as property "+propBuildURL)
-	flags.StringVar(&o.vcsRevision, "vcs-revision", "", "Source revision, recorded as property "+propVCSRevision)
-
-	var positional []string
-
-	for rest := args; ; {
-		if err := flags.Parse(rest); err != nil {
-			return ciUploadOptions{}, err
-		}
-
-		if flags.NArg() == 0 {
-			break
-		}
-
-		positional = append(positional, flags.Arg(0))
-		rest = flags.Args()[1:]
 	}
 
-	if len(positional) < 2 {
-		return ciUploadOptions{}, ciUsagef("%s", ciUploadUsage)
+	o.repo, o.patterns = args[0], args[1:]
+
+	return nil
+}
+
+func newUploadCmd(a *app) *cobra.Command {
+	var o ciUploadOptions
+
+	cmd := &cobra.Command{
+		Use:   "upload <repo> <file|glob>...",
+		Short: "Upload files to a hosted repository and set build properties",
+		Long: "Upload files to a deb, ivy, maven, raw, rpm or sbt repository (and the other formats that take a " +
+			"package file) and set build properties on them.\n\n" +
+			"Quiet on stdout except for its result: one JSON document under --format json. Exits non-zero on the " +
+			"first failure with the reason on stderr.",
+		Args:              usageArgs(2, -1),
+		ValidArgsFunction: positionalRepeat(a.repoNames(), files),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if err := o.withArgs(args); err != nil {
+				return err
+			}
+
+			return runUploadCmd(a.client, a.outFmt, o)
+		},
 	}
 
-	o.repo, o.patterns = positional[0], positional[1:]
+	bindCIUploadFlags(cmd.Flags(), &o)
 
-	return o, nil
+	return cmd
 }
 
 // ciUploadedFile is one artifact `oa upload` stored.
@@ -154,24 +149,15 @@ type ciUploadResult struct {
 	Error    string           `json:"error,omitempty"`
 }
 
-func handleCIUpload(args []string, client *Client, outFmt string) {
-	o, err := parseCIUploadArgs(args, os.Stderr)
-	if errors.Is(err, flag.ErrHelp) {
-		return
-	}
-
-	if err != nil {
-		ciFail(err)
-	}
-
+func runUploadCmd(client *Client, outFmt string, o ciUploadOptions) error {
 	res, err := runCIUpload(context.Background(), newCIAPI(client), o)
 	if err != nil {
-		if outFmt == "json" {
+		if outFmt == formatJSON {
 			res.Error = err.Error()
 			printJSON(res)
 		}
 
-		ciFail(err)
+		return err
 	}
 
 	var text strings.Builder
@@ -181,6 +167,8 @@ func handleCIUpload(args []string, client *Client, outFmt string) {
 	}
 
 	ciPrint(outFmt, res, strings.TrimSuffix(text.String(), "\n"))
+
+	return nil
 }
 
 // uploadable reports whether `oa upload` can store into the format: the
@@ -229,7 +217,7 @@ func uploadToRepo(ctx context.Context, api *ciAPI, repo ciRepo, o ciUploadOption
 	}
 
 	if o.targetPath != "" && !pathAddressed(f) {
-		return res, ciUsagef(
+		return res, cliErrorf(
 			"--target-path does not apply to %s repositories: the server derives the address from the package",
 			repo.Format,
 		)
@@ -539,7 +527,7 @@ func globRegexp(pattern string) (*regexp.Regexp, error) {
 		case '[':
 			end := strings.IndexByte(pattern[i+1:], ']')
 			if end < 0 {
-				return nil, ciUsagef("glob %q has an unclosed [", pattern)
+				return nil, cliErrorf("glob %q has an unclosed [", pattern)
 			}
 
 			class := pattern[i+1 : i+1+end]

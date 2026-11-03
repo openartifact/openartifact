@@ -5,42 +5,42 @@
 package main
 
 import (
-	"flag"
 	"net/http"
+
+	"github.com/spf13/cobra"
 )
 
-// handleDTrack implements `oa dtrack`: the Dependency-Track integration of a
+// newDTrackCmd implements `oa dtrack`: the Dependency-Track integration of a
 // repository (docs/security/dependency-track.md). Global settings, including the
 // API key, are managed in the admin UI or through PUT /api/v1/admin/dependency-track.
-func handleDTrack(args []string, client *Client, outFmt string) {
-	if len(args) < 2 {
-		dief("Usage: oa dtrack <show|test|push|pushes> <repo> [--artifact-id ID]")
-	}
+func newDTrackCmd(a *app) *cobra.Command {
+	repos := []completer{a.repoNames()}
 
-	base := "/api/v1/repositories/" + escape(args[1]) + "/dependency-track"
-
-	switch args[0] {
-	case "show":
-		showGeneric(client, base, outFmt)
-	case "test":
-		result := sendJSON(client, http.MethodPost, base+"/test", nil)
-		printScanResult(result, outFmt, "Dependency-Track %v reachable.", "version")
-	case "push":
-		fs := flag.NewFlagSet("dtrack push", flag.ExitOnError)
-		artifactID := fs.String("artifact-id", "", "Artifact (name@version) to push")
-		_ = fs.Parse(args[2:])
-
+	push := leafCmd("push <repo>", "Push an artifact to Dependency-Track", 1, 1, repos, nil)
+	artifactID := push.Flags().String("artifact-id", "", "Artifact (name@version) to push")
+	push.Run = func(_ *cobra.Command, args []string) {
 		if *artifactID == "" {
 			dief("--artifact-id is required")
 		}
 
-		result := sendJSON(client, http.MethodPost, base+"/push", map[string]string{"artifact_id": *artifactID}, http.StatusAccepted)
-		printScanResult(result, outFmt, "Push of %v queued (%v).", "artifact_id", "state")
-	case "pushes":
-		listGeneric(client, base+"/pushes", "pushes",
-			[]string{"ARTIFACT", "STATE", "PROJECT", "VERSION", "COMPONENTS", "VEX APPLIED", "UPDATED"},
-			[]string{"artifact_id", "state", "project_name", "project_version", "components", "vex_applied", "updated_at"}, outFmt)
-	default:
-		dief("Unknown dtrack subcommand: %s", args[0])
+		result := sendJSON(a.client, http.MethodPost, repoPath(args[0], "dependency-track/push"),
+			map[string]string{"artifact_id": *artifactID}, http.StatusAccepted)
+		printScanResult(result, a.outFmt, "Push of %v queued (%v).", "artifact_id", "state")
 	}
+
+	return parentCmd("dtrack", "Dependency-Track integration of a repository",
+		leafCmd("show <repo>", "Show the Dependency-Track settings of a repository", 1, 1, repos, func(_ *cobra.Command, args []string) {
+			showGeneric(a.client, repoPath(args[0], "dependency-track"), a.outFmt)
+		}),
+		leafCmd("test <repo>", "Test the connection to Dependency-Track", 1, 1, repos, func(_ *cobra.Command, args []string) {
+			result := sendJSON(a.client, http.MethodPost, repoPath(args[0], "dependency-track/test"), nil)
+			printScanResult(result, a.outFmt, "Dependency-Track %v reachable.", "version")
+		}),
+		push,
+		leafCmd("pushes <repo>", "List the artifacts pushed to Dependency-Track", 1, 1, repos, func(_ *cobra.Command, args []string) {
+			listGeneric(a.client, repoPath(args[0], "dependency-track/pushes"), "pushes",
+				[]string{"ARTIFACT", "STATE", "PROJECT", "VERSION", "COMPONENTS", "VEX APPLIED", "UPDATED"},
+				[]string{"artifact_id", "state", "project_name", "project_version", "components", "vex_applied", "updated_at"}, a.outFmt)
+		}),
+	)
 }

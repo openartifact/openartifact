@@ -89,8 +89,20 @@ func TestBinaryImportGraphs(t *testing.T) {
 		// required are import paths that must be linked, so a guard on a
 		// feature cannot pass because the feature moved elsewhere.
 		required []string
+		// allowedExternal, when set, is the complete list of third-party
+		// import path prefixes the binary may link: a new dependency of the
+		// CLI is a decision, not a side effect of an import.
+		allowedExternal []string
 	}{
-		{name: "oa", pkg: "./cmd/oa", forbidden: append([]string{"github.com/jackc/pgx"}, serverOnly...)},
+		{
+			name: "oa", pkg: "./cmd/oa", forbidden: append([]string{"github.com/jackc/pgx"}, serverOnly...),
+			allowedExternal: []string{
+				// the command tree (mousetrap is cobra's Windows-only dependency)
+				"github.com/spf13/cobra", "github.com/spf13/pflag", "github.com/inconshreveable/mousetrap",
+				"go.yaml.in/yaml", "golang.org/x/sync", "golang.org/x/mod", "golang.org/x/sys", "golang.org/x/term",
+				"github.com/pelletier/go-toml",
+			},
+		},
 		{name: "resetpw", pkg: "./cmd/resetpw", forbidden: serverOnly},
 		{
 			name: "server", pkg: "./cmd/server", tags: releaseTags,
@@ -131,6 +143,10 @@ func TestBinaryImportGraphs(t *testing.T) {
 				if slices.Contains(tc.forbiddenExact, dep) {
 					t.Errorf("%s links %s (forbidden)", tc.pkg, dep)
 				}
+
+				if tc.allowedExternal != nil && isThirdParty(dep) && !hasPrefixIn(dep, tc.allowedExternal) {
+					t.Errorf("%s links %s, which is not in its allowed third-party list", tc.pkg, dep)
+				}
 			}
 
 			for _, dep := range tc.required {
@@ -140,4 +156,17 @@ func TestBinaryImportGraphs(t *testing.T) {
 			}
 		})
 	}
+}
+
+// isThirdParty reports whether an import path is outside the standard library
+// (its first element has a dot; the vendored copies of x/ packages that the
+// standard library carries live under vendor/) and outside this module.
+func isThirdParty(dep string) bool {
+	first, _, _ := strings.Cut(dep, "/")
+
+	return strings.Contains(first, ".") && !strings.HasPrefix(dep, "github.com/openartifact/openartifact")
+}
+
+func hasPrefixIn(dep string, prefixes []string) bool {
+	return slices.ContainsFunc(prefixes, func(p string) bool { return dep == p || strings.HasPrefix(dep, p+"/") })
 }

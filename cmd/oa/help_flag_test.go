@@ -14,35 +14,19 @@ import (
 	"testing"
 )
 
-// usageCommands returns every command listed in the usage text, as the leading
-// words of each entry ("repo create", "auth token revoke", "upload", ...).
+// usageCommands returns every command of the tree as its words ("repo create",
+// "auth token revoke", "upload", ...).
 func usageCommands(t *testing.T) [][]string {
 	t.Helper()
 
 	var cmds [][]string
 
-	for l := range strings.SplitSeq(usageText(), "\n") {
-		if !strings.HasPrefix(l, "  ") || strings.HasPrefix(l, "   ") {
-			continue
-		}
-
-		var words []string
-
-		for f := range strings.FieldsSeq(l) {
-			if strings.ContainsAny(f[:1], "<[-(") || len(words) == 3 {
-				break
-			}
-
-			words = append(words, strings.Split(f, "|")[0])
-		}
-
-		if len(words) > 0 && words[0] != "oa" {
-			cmds = append(cmds, words)
-		}
+	for _, c := range walkCommands(newRootCmd()) {
+		cmds = append(cmds, words(c))
 	}
 
-	if len(cmds) < 80 {
-		t.Fatalf("parsed only %d commands from the usage text", len(cmds))
+	if len(cmds) < 100 {
+		t.Fatalf("only %d commands in the tree", len(cmds))
 	}
 
 	return cmds
@@ -95,7 +79,7 @@ func TestEveryCommandHelpMakesNoRequest(t *testing.T) {
 	})
 
 	// Every spelling and position, on the command that once misbehaved.
-	for _, h := range []string{"--help", "-h", "-help"} {
+	for _, h := range []string{"--help", "-h"} {
 		for _, args := range [][]string{{"repo", "create", h}, {"repo", "create", h, "x"}, {"repo", "create", "x", h}, {"repo", h}, {h}} {
 			if res := runOA(t, srv, "", args...); res.code != 0 {
 				t.Errorf("oa %v: exit %d, stderr %q", args, res.code, res.stderr)
@@ -131,7 +115,6 @@ func TestFlagAsNameIsRefused(t *testing.T) {
 		{"repo", "members", "-x"},
 		{"group", "create", "--bogus"},
 		{"group", "show", "--bogus"},
-		{"project", "create", "--display-name", "X", "p"},
 		{"project", "show", "--bogus"},
 		{"user", "show", "-x"},
 		{"webhook", "show", "-x"},
@@ -186,26 +169,6 @@ func TestSearchFlagsAfterQuery(t *testing.T) {
 	for _, want := range []string{"q=zzcheck&", "format=rpm", "limit=3"} {
 		if !strings.Contains(got+"&", want) {
 			t.Errorf("query %q lacks %q", got, want)
-		}
-	}
-}
-
-func TestHoistGlobals(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{"repo list --format json", "--format json repo list"},
-		{"repo --server http://x list", "--server http://x repo list"},
-		{"--format json repo list --token=abc", "--format json --token=abc repo list"},
-		{"repo create r --format npm", "repo create r --format npm"},
-		{"audit export --format csv", "audit export --format csv"},
-		{"sbom generate r --format spdx --server s", "--server s sbom generate r --format spdx"},
-		{"auth login --server http://x", "auth login --server http://x"},
-		{"search q -- --format", "search q -- --format"},
-	}
-
-	for _, c := range cases {
-		got := strings.Join(hoistGlobals(strings.Fields(c.in)), " ")
-		if got != c.want {
-			t.Errorf("%q: got %q, want %q", c.in, got, c.want)
 		}
 	}
 }

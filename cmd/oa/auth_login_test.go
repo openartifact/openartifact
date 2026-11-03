@@ -6,9 +6,12 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -118,22 +121,57 @@ func TestSessionLoginTokenReturnsID(t *testing.T) {
 }
 
 func TestTolerantOfBadConfig(t *testing.T) {
-	cases := map[string]bool{
-		"auth login":                   true,
-		"--server http://x auth login": true,
-		"auth login --username a":      true,
-		"help":                         true,
-		"version":                      true,
-		"--help":                       true,
-		"":                             true,
-		"repo list":                    false,
-		"auth logout":                  false,
-		"--token t webhook list":       false,
+	srv := fakeAuthServer(t, false)
+
+	cases := []struct {
+		name string
+		args []string
+		ok   bool
+	}{
+		{"login", []string{"--server", srv.URL, "auth", "login", "--username", "admin", "--password-stdin"}, true},
+		{
+			"login with the local server flag",
+			[]string{"auth", "login", "--server", srv.URL, "--username", "admin", "--password-stdin"},
+			true,
+		},
+		{"version", []string{"version"}, true},
+		{"help", []string{"help"}, true},
+		{"repo list", []string{"repo", "list"}, false},
+		{"logout", []string{"auth", "logout"}, false},
+		{"token flag", []string{"--token", "t", "webhook", "list"}, false},
 	}
 
-	for in, want := range cases {
-		if got := tolerantOfBadConfig(strings.Fields(in)); got != want {
-			t.Errorf("tolerantOfBadConfig(%q) = %v, want %v", in, got, want)
-		}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("OA_SERVER", "")
+			t.Setenv("OA_TOKEN", "")
+
+			path := filepath.Join(home, ".config", "oa", "config.json")
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			withStdin(t, "bootstrap-pw\n")
+
+			var stderr bytes.Buffer
+
+			code := 0
+
+			captureStdout(t, func() { code = run(tc.args, os.Stdout, &stderr) })
+
+			if (code == 0) != tc.ok {
+				t.Fatalf("exit %d, stderr %q; want success=%v", code, stderr.String(), tc.ok)
+			}
+
+			if !tc.ok && !strings.Contains(stderr.String(), "loading config") {
+				t.Errorf("stderr = %q, want the config error", stderr.String())
+			}
+		})
 	}
 }

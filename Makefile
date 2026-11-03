@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 .PHONY: help build build-slim vet-tags run test test-integration test-coverage test-race clean lint fmt vet sec check deps \
-        docker-build docker-run docker-stop docker-up migrate web-build web-dev build-cli generate docs-gen docs-check deadcode dup dup-baseline bench bench-load
+        docker-build docker-run docker-stop docker-up migrate web-build web-dev build-cli completions generate docs-gen docs-check deadcode dup dup-baseline bench bench-load
 
 # Variables
 BINARY_NAME=openartifact
@@ -44,6 +44,7 @@ help:
 	@echo "  build           - Build the application (includes web)"
 	@echo "  build-slim      - Build the server without AI analysis and the MCP server (tags noai,nomcp) as bin/openartifact-slim"
 	@echo "  build-cli       - Build the CLI tool (bin/oa)"
+	@echo "  completions     - Write the oa shell completion scripts to completions/ (shipped in the release archives)"
 	@echo "  run             - Build and run the application"
 	@echo "  test            - Run unit tests with race detector"
 	@echo "  test-integration- Run integration tests"
@@ -94,6 +95,9 @@ build-cli:
 	@echo "Building CLI tool..."
 	$(BUILD_ENV) $(GO) build $(BUILD_FLAGS) -ldflags "-s -w -X main.version=$(VERSION)" -o bin/oa ./cmd/oa
 	@echo "Build complete: bin/oa"
+
+completions:
+	scripts/completions.sh
 
 run: build
 	@echo "Running $(BINARY_NAME)..."

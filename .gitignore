@@ -7,6 +7,8 @@
 /oa
 /openartifact
 /bin/
+# Shell completion scripts generated for release archives (scripts/completions.sh)
+/completions/
 
 # Go
 *.exe

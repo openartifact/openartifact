@@ -9,12 +9,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/pflag"
 
 	"github.com/openartifact/openartifact/internal/declarative"
 )
@@ -346,6 +350,35 @@ func TestClassifyConfigDoc(t *testing.T) {
 			t.Errorf("%s/%s = %q %v, want %q mentioning %q", c.doc.Kind, c.doc.Key, e.Status, e.Reasons, c.status, c.reason)
 		}
 	}
+}
+
+// parseImportConfigFlags parses `oa import config` arguments the way the
+// command does; the source type is optional (only openartifact exists).
+func parseImportConfigFlags(args []string, getenv func(string) string, stdin io.Reader) (importConfigOptions, error) {
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		if args[0] != kindOpenArtifact {
+			return importConfigOptions{}, fmt.Errorf(
+				"%w: config import supports an openartifact source only, not %q",
+				errImportConfigUsage,
+				args[0],
+			)
+		}
+
+		args = args[1:]
+	}
+
+	fs := pflag.NewFlagSet("import config", pflag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	var f importConfigFlags
+
+	bindImportConfigFlags(fs, &f)
+
+	if err := fs.Parse(args); err != nil {
+		return importConfigOptions{}, fmt.Errorf("%w: %w", errImportConfigUsage, err)
+	}
+
+	return f.options(getenv, stdin)
 }
 
 func TestParseImportConfigFlags(t *testing.T) {
