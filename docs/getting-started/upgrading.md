@@ -127,7 +127,13 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
-### Unreleased
+### 0.19.0
+
+**What you must do**
+
+- Nothing is required. The new migrations run at startup; the repository list fills in within a few seconds of the first start (see below).
+
+**Changes.**
 
 - **Uploads no longer leave temp files behind.** The PyPI, Debian, RPM, NuGet, Alpine and Ansible upload endpoints read the multipart body in one streaming pass into a single spool file. Before, a large upload (over 32 MiB for PyPI, Debian and RPM) left a full-size `multipart-*` file in the temp directory that nothing removed, and the endpoints held up to 128 MiB of the form in memory. An upload over its size limit is now answered with `413` by every one of these endpoints.
 - Go module paths of any length are served from a hosted Go repository. `@latest` and the `@v/...` files of a module whose path has one or two segments after the host (`example.com`, `example.com/mod`) were answered `404 repository not found` or with another format's document.
@@ -145,7 +151,6 @@ Newest first. Each version starts with **What you must do**; the text below it l
 - **Background tabs stop polling.** The backup list, the Dependency-Track push status and a running AI analysis skip their refresh while the browser tab is hidden.
 - **The repository list reads stored figures.** `GET /api/v1/repositories` (the web UI landing page) used to count packages, find the newest publication and add up the security counts of every artifact on each request: about 270 ms of database time and 299 000 buffers per page of 25 repositories on a database of 77 000 packages and 114 000 scan jobs; it now takes under a millisecond and about 70 buffers. Migration `011` adds `repo_stats`, one row per repository, and a background worker (`workers.repoStatsInterval`, `OPENARTIFACT_REPO_STATS_INTERVAL`, default 15 s) recomputes the rows of the repositories that changed. The response shape is unchanged. **The package count, the newest publication and the security counts now lag uploads, deletes, trash, restores and scans by at most the interval** (the size and the quota stay current); a repository whose row was never computed reads as zeros until the first pass, which runs at startup, so the list of a freshly upgraded server fills in within seconds to minutes depending on the number of repositories. The worker also recomputes every row older than one hour, which repairs drift that a restore from a database backup brings back. Nothing needs to be configured, and the new tables are rebuildable, so they are not journaled by the [recovery journal](../operations/disaster-recovery.md).
 - **Scans are marked as the latest per artifact and type.** `scan_jobs.is_latest` (migration `011`) marks the newest job of each artifact and scan type; a trigger keeps it, and the security views read it instead of electing the latest job per row. A summary of one repository no longer reads every vulnerability result of the instance. The repository list now counts only the latest secret and license scan of an artifact, as the findings pages do; before, a second scanner configuration counted its findings twice.
-
 - **Uploads are written once.** The server spools an upload while it hashes it and stores that file: on `filesystem` storage it is hard-linked into the blob root (the spool lives in `<storage.path>/spool`, on the same filesystem), on `s3`, `azure`, `gcs` and `oci` it is sent from the spool without a second copy and hash. Disk writes and hashing CPU per upload are halved or better. The `<storage.path>/spool` directory is new; leftovers older than an hour are removed at startup. The temporary space used by a running upload is the same as before (one copy of the body) but now sits on the blob filesystem when it is a `filesystem` store; make sure it has room for the concurrent uploads.
 - **Maven checksums.** A Maven file uploaded from now on has its SHA-256 and SHA-1 recorded; `GET <file>.md5` and `GET <file>.sha512` hash the stored file when asked (files uploaded before keep their recorded values). The artifact detail view shows no MD5 for a new file.
 
