@@ -20,7 +20,8 @@ func TestNewCompilesOnceAndMatches(t *testing.T) {
 
 	for range 8 {
 		wg.Go(func() {
-			if re() != re() {
+			first, second := re(), re()
+			if first != second {
 				t.Error("two calls returned different programs")
 			}
 
@@ -33,15 +34,14 @@ func TestNewCompilesOnceAndMatches(t *testing.T) {
 	wg.Wait()
 }
 
-func TestCheckReportsAnInvalidExpression(t *testing.T) {
-	// Not parallel: it reads the shared list of declared expressions.
-	if err := lazyre.Check(); err != nil {
-		t.Fatalf("Check() = %v with only valid expressions declared", err)
-	}
+func TestNewPanicsOnAnInvalidExpressionUnderTest(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("New accepted an invalid expression")
+		}
+	}()
 
 	lazyre.New(`(unclosed`)
-
-	if err := lazyre.Check(); err == nil {
-		t.Fatal("Check() accepted an invalid expression")
-	}
 }

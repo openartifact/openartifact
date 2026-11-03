@@ -312,8 +312,15 @@ func TestOpenAPISpecContentEncoding(t *testing.T) {
 			t.Fatalf("%s with gzip accepted: Content-Encoding %q", path, packed.Header().Get("Content-Encoding"))
 		}
 
-		if !strings.Contains(packed.Header().Get("Vary"), "Accept-Encoding") || packed.Header().Get("Content-Type") != plain.Header().Get("Content-Type") {
-			t.Errorf("%s: Vary %q, Content-Type %q (plain %q)", path, packed.Header().Get("Vary"), packed.Header().Get("Content-Type"), plain.Header().Get("Content-Type"))
+		if !strings.Contains(packed.Header().Get("Vary"), "Accept-Encoding") ||
+			packed.Header().Get("Content-Type") != plain.Header().Get("Content-Type") {
+			t.Errorf(
+				"%s: Vary %q, Content-Type %q (plain %q)",
+				path,
+				packed.Header().Get("Vary"),
+				packed.Header().Get("Content-Type"),
+				plain.Header().Get("Content-Type"),
+			)
 		}
 
 		zr, err := gzip.NewReader(packed.Body)

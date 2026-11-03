@@ -7,8 +7,9 @@ package composer
 import (
 	"errors"
 	"fmt"
-	"github.com/openartifact/openartifact/internal/lazyre"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/lazyre"
 )
 
 // MaxVersionLen is the longest version string (and normalized version) stored.

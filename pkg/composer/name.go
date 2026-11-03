@@ -11,8 +11,9 @@
 package composer
 
 import (
-	"github.com/openartifact/openartifact/internal/lazyre"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/lazyre"
 )
 
 // MaxNameLen is the longest "vendor/package" name.

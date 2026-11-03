@@ -226,7 +226,11 @@ func TestBinariesDoNotExecuteTemplates(t *testing.T) {
 				"text/template.(*state).evalField",
 			} {
 				if strings.Contains(symbols, " "+sym+"\n") {
-					t.Errorf("%s links %s: something sets a cobra help, usage or version template, or executes a text/template", tc.pkg, sym)
+					t.Errorf(
+						"%s links %s: something sets a cobra help, usage or version template, or executes a text/template",
+						tc.pkg,
+						sym,
+					)
 				}
 			}
 		})

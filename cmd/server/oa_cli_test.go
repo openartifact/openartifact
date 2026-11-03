@@ -28,7 +28,12 @@ func TestCLIArgs(t *testing.T) {
 		{name: "server subcommand", argv: []string{"openartifact", "rebuild", "x"}},
 		{name: "linked as oa", argv: []string{"oa", "apply", "-f", "a.yaml"}, wantArgs: []string{"apply", "-f", "a.yaml"}, wantCLI: true},
 		{name: "linked as oa by path", argv: []string{"/usr/local/bin/oa"}, wantArgs: []string{}, wantCLI: true},
-		{name: "oa subcommand", argv: []string{"/app/openartifact", "oa", "repo", "list"}, wantArgs: []string{"repo", "list"}, wantCLI: true},
+		{
+			name:     "oa subcommand",
+			argv:     []string{"/app/openartifact", "oa", "repo", "list"},
+			wantArgs: []string{"repo", "list"},
+			wantCLI:  true,
+		},
 		{name: "oa is only the first argument", argv: []string{"openartifact", "-config", "oa"}},
 		{name: "name that ends in oa", argv: []string{"/bin/koa", "version"}},
 	}

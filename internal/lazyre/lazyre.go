@@ -14,34 +14,24 @@
 //
 //	tagRE().MatchString(s)
 //
-// An invalid expression panics at its first use instead of at start, so every
-// package that declares one runs Check in a test.
+// An invalid expression panics at its first use instead of at start; New
+// compiles it at once when running under go test, which catches it there.
 package lazyre
 
 import (
 	"regexp"
 	"sync"
+	"testing"
 )
 
-//nolint:gochecknoglobals // the expressions declared by the packages linked into the binary; written during package initialisation only
-var declared []string
-
 // New returns a function that compiles expr on its first call and returns the
-// same *regexp.Regexp afterwards. It is safe for concurrent use.
+// same *regexp.Regexp afterwards. It is safe for concurrent use. Under go test
+// the expression is compiled at once, so an invalid one fails every test run of
+// the package that declares it, not a request.
 func New(expr string) func() *regexp.Regexp {
-	declared = append(declared, expr)
-
-	return sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(expr) })
-}
-
-// Check compiles every expression declared so far and returns the first error.
-// It is for tests: the compiled result is thrown away.
-func Check() error {
-	for _, expr := range declared {
-		if _, err := regexp.Compile(expr); err != nil {
-			return err
-		}
+	if testing.Testing() {
+		regexp.MustCompile(expr)
 	}
 
-	return nil
+	return sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(expr) })
 }

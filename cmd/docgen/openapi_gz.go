@@ -24,7 +24,7 @@ const apiSpecGzFile = "internal/api/openapi.json.gz"
 // rewrites a stale file; either way it reports whether the file was stale. It
 // compares the inflated content, not the bytes, so a different Go release that
 // compresses differently does not touch a current file.
-func syncSpecGzip(root string, write bool) (stale bool, err error) {
+func syncSpecGzip(root string, write bool) (bool, error) {
 	spec, err := os.ReadFile(filepath.Join(root, apiSpecFile))
 	if err != nil {
 		return false, err
