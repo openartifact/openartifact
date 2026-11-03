@@ -53,7 +53,7 @@ Promotion adds metadata rows that point at the same blobs. It costs the same for
 You need `oa` 0.10.0 or newer. Download the archive for the runner from the [GitHub releases](https://github.com/openartifact/openartifact/releases) and verify it against `SHA256SUMS`:
 
 ```sh
-V=0.17.0 OS=linux ARCH=amd64
+V=0.18.0 OS=linux ARCH=amd64
 base=https://github.com/openartifact/openartifact/releases/download/v$V
 curl -fsSLO "$base/oa_${V}_${OS}_${ARCH}.tar.gz"
 curl -fsSL  "$base/SHA256SUMS" | grep "oa_${V}_${OS}_${ARCH}.tar.gz" | sha256sum -c -
