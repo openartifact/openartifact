@@ -352,11 +352,13 @@ FROM (
            AND f.version_id IN (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = $1::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE $5::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = $1::uuid AND pk3.name ILIKE $5::text)
          ORDER BY pk.name, v.version, f.id LIMIT ($6::int + $7::int))
         UNION ALL
-        -- no q, or a broad one: filter the repository's files
-        (SELECT f.id, f.repository_id, f.version_id, f.filename, f.arch, f.attrs, f.size_bytes, f.blob_id, f.created_at, f.updated_at, pk.name AS pname, v.version AS pversion, pk.format AS pformat FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id
-         WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND ($2::text = '' OR NOT (SELECT narrow FROM qm)) AND ($3::text = '' OR EXISTS (SELECT 1 FROM packages pg WHERE pg.repository_id = $1::uuid AND pg.format = $3::text)) AND ($3::text = '' OR pk.format = $3::text) AND ($4::text = '' OR pk.name = $4::text)
-           AND ($2::text = '' OR pk.name ILIKE $5::text OR v.version ILIKE $5::text)
-         ORDER BY pk.name, v.version, f.id LIMIT ($6::int + $7::int))
+        -- no q, or a broad one: walk the repository's packages in name order (idx_packages_repo_name) and read each package's files by its version index, so the page stops at the limit instead of sorting every file. The OFFSET 0 fences keep the planner from flattening the two levels back into one hash join over the whole repository; the live-version test (a live file has a live version) lets the lateral side use idx_package_versions_pkg.
+        (SELECT x.id, x.repository_id, x.version_id, x.filename, x.arch, x.attrs, x.size_bytes, x.blob_id, x.created_at, x.updated_at, p.name AS pname, x.version AS pversion, p.format AS pformat
+         FROM (SELECT pk.id, pk.name, pk.format FROM packages pk WHERE pk.repository_id = $1::uuid AND ($2::text = '' OR NOT (SELECT narrow FROM qm)) AND ($3::text = '' OR pk.format = $3::text) AND ($4::text = '' OR pk.name = $4::text) ORDER BY pk.name OFFSET 0) p
+         CROSS JOIN LATERAL (SELECT f.id, f.repository_id, f.version_id, f.filename, f.arch, f.attrs, f.size_bytes, f.blob_id, f.created_at, f.updated_at, v.version FROM package_versions v JOIN package_files f ON f.version_id = v.id
+              WHERE v.package_id = p.id AND v.deleted_at IS NULL AND f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed
+                AND ($2::text = '' OR p.name ILIKE $5::text OR v.version ILIKE $5::text) OFFSET 0) x
+         ORDER BY p.name, x.version, x.id LIMIT ($6::int + $7::int))
     ) f
     UNION ALL
     -- proxy cache: one row per cached upstream file of a proxy repository (any format); name = filename = upstream-relative path; the blob is resolved by sha256 and wins over the recorded size.

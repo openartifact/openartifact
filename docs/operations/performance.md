@@ -145,7 +145,12 @@ Read and write timeouts default to 0 so large uploads and downloads are never cu
 - `group=package` (the command palette) returns each package once, with its latest version, and counts packages.
 - File-name lookups for deb, rpm and PyPI downloads use `(repository_id, filename)` indexes.
 - The proxy cache eviction deletes expired entries in batches of 2000 and skips the table scan entirely when nothing expired more than an hour ago.
-- The repository package listing (`GET /api/v1/repositories/{name}/packages`) counts the matching rows only when the page is full (or past the end); a short page, the common case for small repositories, derives `total` from the page itself. Large repositories still pay one `COUNT` per full page.
+- The repository package listing (`GET /api/v1/repositories/{name}/packages`) counts the matching rows only when the page is full (or past the end); a short page, the common case for small repositories, derives `total` from the page itself. A full page counts at most 10000 matching files: beyond that `total` is a lower bound and `total_exact` is `false` (show it as "10000+"; `has_more` still tells whether the listing goes on), so a broad `q` on a huge repository reads 10000 rows instead of every match.
+- The package detail reads the files of a version by `version_id` (`idx_package_files_version`); the sort-by-name listing walks `packages (repository_id, name)` and stops at the page limit.
+- `package_files` keeps one unique index for paths, `uq_package_files_path (repository_id, path text_pattern_ops)`: it serves equality, `ON CONFLICT (repository_id, path)` and `LIKE 'dir/%'` prefix listings. `idx_package_files_repository` also carries `id`, `deleted_at`, `arch` and `listed`, so the ETag stamp queries of helm, conda and cargo are index-only scans.
+- The orphan-blob collector deletes unreferenced blobs in chunks of 100 under one transaction and one anti-join per chunk, still taking each blob's advisory lock before the re-check.
+- Go `@v/list` checks the quarantine state of all versions with one query.
+- PostgreSQL's JIT compiler (`jit`, on by default) only pays off for long analytical queries; the catalog and security summaries are 100-300 ms queries where compilation costs 15-20 ms per run. `jit = off` (`ALTER DATABASE openartifact SET jit = off`) is recommended for deployments with large repositories.
 - The npm worker computes the `latest` dist-tag from version numbers and a deprecation flag read in SQL, so a publish does not load every manifest of the package.
 - A group request resolves its members with one query instead of one per member.
 

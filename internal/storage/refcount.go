@@ -67,6 +67,13 @@ func SafeDeleteBlob(ctx context.Context, db SafeDeleteBlobStore, blobStore BlobS
 	return nil
 }
 
+// orphanDeleteChunk is how many orphan blobs one batched delete handles.
+const orphanDeleteChunk = 100
+
+type blobBatchDeleter interface {
+	DeleteBlobsIfUnreferenced(ctx context.Context, shas []string) (int, error)
+}
+
 type blobDeleter interface {
 	DeleteBlobIfUnreferenced(ctx context.Context, sha256 string) (bool, error)
 }
@@ -242,6 +249,43 @@ func collectOrphanWindow(
 		removed int
 		errs    []error
 	)
+
+	// Preferred path: one transaction and one anti-join per chunk (the lock
+	// and recheck protocol of DeleteBlobIfUnreferenced, for many blobs). A
+	// chunk that fails is retried blob by blob below, so one poisoned blob
+	// still cannot hold back the rest.
+	if bd, ok := db.(blobBatchDeleter); ok {
+		var rest []string
+
+		valid := make([]string, 0, len(shas))
+
+		for _, sha := range shas {
+			if err := ValidateBlobID(sha); err != nil {
+				rest = append(rest, sha) // reported per blob below
+
+				continue
+			}
+
+			valid = append(valid, sha)
+		}
+
+		for chunk := range slices.Chunk(valid, orphanDeleteChunk) {
+			if ctx.Err() != nil {
+				break
+			}
+
+			n, err := bd.DeleteBlobsIfUnreferenced(ctx, chunk)
+			if err != nil {
+				rest = append(rest, chunk...)
+
+				continue
+			}
+
+			removed += n
+		}
+
+		shas = rest
+	}
 
 	for _, sha := range shas {
 		if err := ctx.Err(); err != nil {

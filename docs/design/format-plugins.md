@@ -96,16 +96,15 @@ CREATE TABLE package_files (
     deleted_at     timestamptz,
     deleted_by     text
 );
-CREATE UNIQUE INDEX uq_package_files_path       ON package_files (repository_id, path) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX uq_package_files_path       ON package_files (repository_id, path text_pattern_ops) WHERE deleted_at IS NULL;   -- equality, ON CONFLICT (repository_id, path) and prefix listing
 CREATE INDEX idx_package_files_listing          ON package_files (repository_id, created_at DESC, id) WHERE deleted_at IS NULL AND listed;
 CREATE INDEX idx_package_files_version          ON package_files (version_id);
-CREATE INDEX idx_package_files_repository       ON package_files (repository_id);   -- the repository's FK cascade; the partial indexes cannot serve it
+CREATE INDEX idx_package_files_repository       ON package_files (repository_id) INCLUDE (id, deleted_at, arch, listed);   -- the repository's FK cascade; covers the ETag stamp queries (index-only)
 CREATE INDEX idx_package_files_filename         ON package_files (repository_id, filename) WHERE deleted_at IS NULL;
 CREATE INDEX idx_package_files_blob             ON package_files (blob_id) WHERE blob_id IS NOT NULL;   -- full: a trashed row still pins its blob
 CREATE INDEX idx_package_files_trash            ON package_files (repository_id, deleted_at) WHERE deleted_at IS NOT NULL;
 CREATE INDEX idx_package_files_sha1             ON package_files ((checksums->>'sha1'))   WHERE checksums ? 'sha1'   AND deleted_at IS NULL;  -- likewise md5 and shasum
 CREATE INDEX idx_package_files_unit             ON package_files (repository_id, unit_key) WHERE unit_key IS NOT NULL AND deleted_at IS NULL;
-CREATE INDEX idx_package_files_path_prefix      ON package_files (repository_id, path text_pattern_ops) WHERE deleted_at IS NULL AND path IS NOT NULL;  -- raw prefix listing
 
 -- Mutable named pointers to versions (npm dist-tags; the next format with channels).
 CREATE TABLE package_tags (

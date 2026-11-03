@@ -74,7 +74,7 @@ type PackageListResponse struct {
 	// ceiling on a huge repository): show it as "N+". Absent with Total.
 	TotalExact *bool `json:"total_exact,omitempty"`
 	Page       int   `json:"page"`
-	Limit int  `json:"limit"`
+	Limit      int   `json:"limit"`
 	// HasMore: the listing continues after this page.
 	HasMore bool `json:"has_more"`
 	// NextCursor, set whenever HasMore is true on the newest-first listing,
