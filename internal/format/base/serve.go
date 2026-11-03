@@ -6,6 +6,7 @@ package base
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -142,4 +143,54 @@ func notModifiedSince(r *http.Request, modified time.Time) bool {
 	}
 
 	return !modified.Truncate(time.Second).After(since)
+}
+
+// ServeBlobOptions shapes the response of ServeBlob.
+type ServeBlobOptions struct {
+	// ContentType is the Content-Type of the response.
+	ContentType string
+
+	// Size is the blob size in bytes.
+	Size int64
+
+	// ETag is the quoted strong entity-tag, empty for none. A matching
+	// If-None-Match is answered 304 and If-Range is evaluated against it.
+	ETag string
+
+	// ModTime is the Last-Modified time, zero for none.
+	ModTime time.Time
+}
+
+// ServeBlob serves a stored blob the way http.ServeContent serves a file:
+// single and multiple byte Range requests (206 with Content-Range, 416 when
+// unsatisfiable), If-Range, If-None-Match and If-Modified-Since, Accept-Ranges,
+// Content-Length, and no body for HEAD. Headers the caller set on w beforehand
+// (Docker-Content-Digest, X-Checksum-Sha256...) are kept.
+//
+// The blob is opened up front when the request cannot be answered without its
+// bytes from the start, so an unreadable blob is returned as an error before
+// anything is written and the caller answers it in its own error format; with
+// a Range or a validator the open is deferred to the first read, and a blob
+// that disappears in between aborts the response.
+func ServeBlob(w http.ResponseWriter, r *http.Request, store storage.BlobStore, id string, o ServeBlobOptions) error {
+	seeker := storage.NewBlobSeeker(r.Context(), store, id, o.Size)
+	defer func() { _ = seeker.Close() }()
+
+	if r.Method != http.MethodHead && r.Header.Get("Range") == "" && r.Header.Get("If-None-Match") == "" &&
+		r.Header.Get("If-Modified-Since") == "" {
+		if err := seeker.Open(); err != nil {
+			return fmt.Errorf("open blob %s: %w", id, err)
+		}
+	}
+
+	h := w.Header()
+	h.Set("Content-Type", o.ContentType)
+
+	if o.ETag != "" {
+		h.Set("ETag", o.ETag)
+	}
+
+	http.ServeContent(w, r, "", o.ModTime, seeker)
+
+	return nil
 }

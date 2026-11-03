@@ -62,14 +62,14 @@ Paths are relative to `HOST/repos/raw/REPO`.
 | Method and path | Result |
 |---|---|
 | `PUT /<path>` | upload, `201` with JSON |
-| `GET /<path>` | the file, with `Content-Type`, `Content-Length` and `X-Checksum-Sha256` |
+| `GET /<path>` | the file, with `Content-Type`, `Content-Length`, `ETag`, `Last-Modified` and `X-Checksum-Sha256`; `Range` and conditional requests are honoured |
 | `HEAD /<path>` | the same headers only |
 | `GET /` or `GET /<prefix>/` | JSON list of files under the prefix: `path`, `size`, `content_type`, `sha256`, `created_at`, `updated_at` |
 | `DELETE /<path>` | delete; the file goes to the [trash](../operations/trash.md), and `GET` is `404` afterwards |
 
 A repository with retention 0 skips the trash on delete.
 
-Hosted raw `GET` sends no `ETag` and never answers `304`. Every conditional request gets `200` with the body. `Range` requests are not honoured: the whole file is returned with `200` and no `Accept-Ranges`.
+Hosted raw `GET` and `HEAD` send a strong `ETag` (the file's sha256 in quotes), `Last-Modified` and `Accept-Ranges: bytes`. `If-None-Match` and `If-Modified-Since` are answered `304` without the body. `Range` (one or several byte ranges, also `bytes=-N`) is answered `206` with `Content-Range`, `416` when the range lies outside the file, and `If-Range` falls back to the whole file when the validator no longer matches. A resumed `curl -C -` therefore continues instead of starting over.
 
 ## Proxy
 

@@ -22,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/iocopy"
+	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
@@ -66,7 +67,48 @@ func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStor
 // PUT is not registered here: the subrouter's PUT "/*" is shared with the npm
 // publish route, so the caller dispatches with IsUploadPath and HandlePut.
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
-	r.Get("/*", h.dispatchGet)
+	r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
+		h.dispatchGet(w, r, urlparams.Vars(r)["*"])
+	})
+}
+
+// Guard is chi middleware for the shared /repos/{name} subrouter. A GOPROXY
+// request ("<module>/@v/<file>", "<module>/@latest") has as many path
+// segments as the module path has, so it has the shape of routes other
+// formats register (terraform's /{mod}/{system}/{version}, npm's
+// /{pkg}/{version}) and chi would pick those over the catch-all. Requests of
+// that form for a Go repository are served here, whatever their depth;
+// everything else passes on untouched. The router must run it before the
+// per-format routes.
+func (h *HTTPHandler) Guard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		_, tail := middleware.RepoAndPath(r.URL.Path)
+		tail = strings.TrimPrefix(tail, "/")
+
+		if _, ok := splitModuleTail(tail); !ok {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		rctx := chi.RouteContext(r.Context())
+		if rctx == nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		repo, err := h.ResolveRepo(r.Context(), rctx.URLParam("name"))
+		if err != nil || repo == nil || repo.Format != "go" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		h.dispatchGet(w, r, tail)
+	})
 }
 
 // IsUploadPath reports whether a /repos/{name}/ request tail is a GOPROXY
@@ -130,8 +172,8 @@ func setModuleVars(r *http.Request, module, version string) {
 	}
 }
 
-func (h *HTTPHandler) dispatchGet(w http.ResponseWriter, r *http.Request) {
-	tail, ok := splitModuleTail(urlparams.Vars(r)["*"])
+func (h *HTTPHandler) dispatchGet(w http.ResponseWriter, r *http.Request, rawTail string) {
+	tail, ok := splitModuleTail(rawTail)
 	if !ok {
 		http.NotFound(w, r)
 		return

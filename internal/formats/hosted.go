@@ -97,7 +97,8 @@ func (h npmPublishing) PutClaim() plugin.PutClaim {
 }
 
 // goHosted is the GOPROXY handler: it claims the PUT of a module upload on the
-// shared route.
+// shared route, and its guard serves the module GETs whose depth would match
+// another format's route.
 type goHosted struct {
 	*formatgomod.HTTPHandler
 
