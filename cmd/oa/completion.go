@@ -26,32 +26,24 @@ const (
 )
 
 // A completer suggests values for one positional argument or one flag value.
-// toComplete is what the user has typed of it so far.
-type completer func(cmd *cobra.Command, toComplete string) ([]string, cobra.ShellCompDirective)
+// args are the positionals typed before it (a cleanup policy id needs the
+// repository), toComplete what the user has typed of it so far.
+type completer = cobra.CompletionFunc
 
 // enum completes from a fixed list.
 func enum(values ...string) completer {
-	return func(_ *cobra.Command, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return filterPrefix(values, toComplete), cobra.ShellCompDirectiveNoFileComp
 	}
 }
 
-// enumCompletion is enum as the signature cobra's flag completion registry wants.
-func enumCompletion(values ...string) cobra.CompletionFunc {
-	c := enum(values...)
-
-	return func(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return c(cmd, toComplete)
-	}
-}
-
 // files completes file and directory names (the shell's own completion).
-func files(*cobra.Command, string) ([]string, cobra.ShellCompDirective) {
+func files(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return nil, cobra.ShellCompDirectiveDefault
 }
 
 // nothing suggests nothing, and no file names either.
-func nothing(*cobra.Command, string) ([]string, cobra.ShellCompDirective) {
+func nothing(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return nil, cobra.ShellCompDirectiveNoFileComp
 }
 
@@ -73,12 +65,12 @@ func positionalFrom(comps []completer, repeat bool) cobra.CompletionFunc {
 
 		switch {
 		case n < len(comps):
-			return comps[n](cmd, toComplete)
+			return comps[n](cmd, args, toComplete)
 		case repeat && len(comps) > 0:
-			return comps[len(comps)-1](cmd, toComplete)
+			return comps[len(comps)-1](cmd, args, toComplete)
 		}
 
-		return nothing(cmd, toComplete)
+		return nothing(cmd, args, toComplete)
 	}
 }
 
@@ -86,9 +78,7 @@ func positionalFrom(comps []completer, repeat bool) cobra.CompletionFunc {
 // exist is a programming error.
 func flagValues(cmd *cobra.Command, name string, c completer) {
 	mustRegister(
-		cmd.RegisterFlagCompletionFunc(name, func(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			return c(cmd, toComplete)
-		}),
+		cmd.RegisterFlagCompletionFunc(name, c),
 	)
 }
 
@@ -120,8 +110,14 @@ func filterPrefix(values []string, prefix string) []string {
 // timeout; any failure (no token, unreachable server, bad response) yields no
 // suggestion, silently. It never prompts and never prints anything.
 func (a *app) listNames(path, listKey, field string) completer {
-	return func(cmd *cobra.Command, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return filterPrefix(a.fetchNames(cmd, path, listKey, field), toComplete), cobra.ShellCompDirectiveNoFileComp
+	return a.listNamesAt(func([]string) string { return path }, listKey, field)
+}
+
+// listNamesAt is listNames where the endpoint depends on the positionals
+// already typed (cleanup policies of the repository named first).
+func (a *app) listNamesAt(path func(args []string) string, listKey, field string) completer {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return filterPrefix(a.fetchNames(cmd, path(args), listKey, field), toComplete), cobra.ShellCompDirectiveNoFileComp
 	}
 }
 
