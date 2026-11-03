@@ -323,7 +323,7 @@ type ciKeySet struct {
 
 // VerifySignature implements gooidc.KeySet.
 func (k *ciKeySet) VerifySignature(ctx context.Context, raw string) ([]byte, error) {
-	jws, err := jose.ParseSigned(raw, ciAlgorithms)
+	jws, err := jose.ParseSignedCompact(raw, ciAlgorithms)
 	if err != nil {
 		return nil, fmt.Errorf("malformed jwt: %w", err)
 	}

@@ -85,7 +85,7 @@ x-openartifact-env: &openartifact-env
 
 services:
   postgres:
-    image: docker.io/postgres:18-alpine@sha256:898c60cb390d1085bc97bdd6a1ae968757421df394b071848b52b1c09c89d6a5
+    image: docker.io/postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -191,7 +191,7 @@ services:
   # required with this profile (without it the Collector exits and restarts).
   # Config: docker/otel-collector.yaml.
   otel-collector:
-    image: docker.io/otel/opentelemetry-collector-contrib:0.163.2@sha256:7f22d2a6748110ffb6a59bc0df448bccbf501cdb667d610ede4c61d3863d5849
+    image: docker.io/otel/opentelemetry-collector-contrib:0.164.0@sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b
     profiles: [otel-collector]
     restart: unless-stopped
     networks:
