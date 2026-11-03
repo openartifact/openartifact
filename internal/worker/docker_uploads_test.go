@@ -19,7 +19,7 @@ import (
 )
 
 // fakeUploadStore is the sweeper's database: stale is what DeleteStaleDockerUploads
-// returns, listed the ids of the chunk rows that exist.
+// returns, listed the ids of the sessions that exist.
 type fakeUploadStore struct {
 	stale     []string
 	listed    map[string]bool
@@ -33,7 +33,7 @@ func (f *fakeUploadStore) DeleteStaleDockerUploads(_ context.Context, cutoff tim
 	return f.stale, nil
 }
 
-func (f *fakeUploadStore) ExistingDockerUploadChunkIDs(_ context.Context, ids []string) ([]string, error) {
+func (f *fakeUploadStore) ExistingDockerUploadIDs(_ context.Context, ids []string) ([]string, error) {
 	if f.lookupErr != nil {
 		return nil, f.lookupErr
 	}
@@ -49,13 +49,16 @@ func (f *fakeUploadStore) ExistingDockerUploadChunkIDs(_ context.Context, ids []
 	return known, nil
 }
 
-// putChunk stores a chunk object in dir through the dir chunk store, last
-// modified age ago.
-func putChunk(t *testing.T, dir string, age time.Duration) string {
+// putUpload stores an upload with a byte of data in dir through the dir upload
+// store, last modified age ago.
+func putUpload(t *testing.T, dir string, age time.Duration) string {
 	t.Helper()
 
 	id := uuid.NewString()
-	if _, err := storage.NewDirChunkStore(dir).PutChunk(context.Background(), id, strings.NewReader("x")); err != nil {
+
+	err := storage.NewDirUploadStore(dir).AppendUpload(context.Background(), id, storage.UploadPosition{}, strings.NewReader("x"),
+		func(context.Context, string, int64) error { return nil })
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -67,25 +70,26 @@ func putChunk(t *testing.T, dir string, age time.Duration) string {
 	return id
 }
 
-func chunkExists(dir, id string) bool {
+func uploadExists(dir, id string) bool {
 	_, err := os.Stat(filepath.Join(dir, id))
 
 	return !errors.Is(err, os.ErrNotExist)
 }
 
-// FMTA-12: abandoned upload sessions lose their row; a chunk object older than
-// the ttl that no session lists is removed, one a session lists and a fresh one
-// are kept.
-func TestDockerUploadSweeper_RemovesOrphanChunks(t *testing.T) {
+// FMTA-12: abandoned upload sessions lose their row and their data; an upload
+// older than the ttl that no session owns is removed, one a session owns and a
+// fresh one are kept.
+func TestDockerUploadSweeper_RemovesOrphanUploads(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
 
-	orphan := putChunk(t, dir, 48*time.Hour)
-	listed := putChunk(t, dir, 48*time.Hour)
-	fresh := putChunk(t, dir, time.Hour)
+	orphan := putUpload(t, dir, 48*time.Hour)
+	owned := putUpload(t, dir, 48*time.Hour)
+	fresh := putUpload(t, dir, time.Hour)
+	abandoned := putUpload(t, dir, time.Hour) // its session row is stale: the data goes with it
 
-	store := &fakeUploadStore{stale: []string{uuid.NewString()}, listed: map[string]bool{listed: true}}
-	s := NewDockerUploadSweeper(store, storage.NewDirChunkStore(dir), 24*time.Hour, testLogger(t))
+	store := &fakeUploadStore{stale: []string{abandoned}, listed: map[string]bool{owned: true}}
+	s := NewDockerUploadSweeper(store, storage.NewDirUploadStore(dir), 24*time.Hour, testLogger(t))
 	s.Sweep(context.Background(), now)
 
 	if want := now.Add(-24 * time.Hour); !store.got.Equal(want) {
@@ -95,31 +99,31 @@ func TestDockerUploadSweeper_RemovesOrphanChunks(t *testing.T) {
 	for name, c := range map[string]struct {
 		id         string
 		wantExists bool
-	}{"orphan": {orphan, false}, "listed": {listed, true}, "fresh": {fresh, true}} {
-		if got := chunkExists(dir, c.id); got != c.wantExists {
-			t.Errorf("%s chunk exists=%v, want %v", name, got, c.wantExists)
+	}{"orphan": {orphan, false}, "owned": {owned, true}, "fresh": {fresh, true}, "abandoned": {abandoned, false}} {
+		if got := uploadExists(dir, c.id); got != c.wantExists {
+			t.Errorf("%s upload exists=%v, want %v", name, got, c.wantExists)
 		}
 	}
 }
 
-// A chunk right at the ttl boundary is kept until it is really older than it.
-func TestDockerUploadSweeperKeepsChunksYoungerThanTTL(t *testing.T) {
+// An upload right at the ttl boundary is kept until it is really older than it.
+func TestDockerUploadSweeperKeepsUploadsYoungerThanTTL(t *testing.T) {
 	dir := t.TempDir()
-	young, old := putChunk(t, dir, 23*time.Hour), putChunk(t, dir, 25*time.Hour)
+	young, old := putUpload(t, dir, 23*time.Hour), putUpload(t, dir, 25*time.Hour)
 
-	s := NewDockerUploadSweeper(&fakeUploadStore{}, storage.NewDirChunkStore(dir), 24*time.Hour, testLogger(t))
+	s := NewDockerUploadSweeper(&fakeUploadStore{}, storage.NewDirUploadStore(dir), 24*time.Hour, testLogger(t))
 	s.Sweep(context.Background(), time.Now())
 
-	if !chunkExists(dir, young) {
-		t.Error("a chunk younger than the ttl was removed")
+	if !uploadExists(dir, young) {
+		t.Error("an upload younger than the ttl was removed")
 	}
 
-	if chunkExists(dir, old) {
-		t.Error("a chunk older than the ttl survived")
+	if uploadExists(dir, old) {
+		t.Error("an upload older than the ttl survived")
 	}
 }
 
-// Foreign files in the directory are never touched: only uuid-named chunks are
+// Foreign files in the directory are never touched: only uuid-named uploads are
 // candidates.
 func TestDockerUploadSweeperIgnoresForeignFiles(t *testing.T) {
 	dir := t.TempDir()
@@ -134,7 +138,7 @@ func TestDockerUploadSweeperIgnoresForeignFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := NewDockerUploadSweeper(&fakeUploadStore{}, storage.NewDirChunkStore(dir), 24*time.Hour, testLogger(t))
+	s := NewDockerUploadSweeper(&fakeUploadStore{}, storage.NewDirUploadStore(dir), 24*time.Hour, testLogger(t))
 	s.Sweep(context.Background(), time.Now())
 
 	if _, err := os.Stat(foreign); err != nil {
@@ -142,16 +146,16 @@ func TestDockerUploadSweeperIgnoresForeignFiles(t *testing.T) {
 	}
 }
 
-// A failed row lookup deletes nothing: a chunk whose row could not be checked
-// may belong to a live upload.
-func TestDockerUploadSweeperKeepsChunksWhenTheRowLookupFails(t *testing.T) {
+// A failed session lookup deletes nothing: an upload whose session could not be
+// checked may belong to a live push.
+func TestDockerUploadSweeperKeepsUploadsWhenTheSessionLookupFails(t *testing.T) {
 	dir := t.TempDir()
-	orphan := putChunk(t, dir, 72*time.Hour)
+	orphan := putUpload(t, dir, 72*time.Hour)
 
 	store := &fakeUploadStore{lookupErr: errors.New("database down")}
-	NewDockerUploadSweeper(store, storage.NewDirChunkStore(dir), time.Hour, testLogger(t)).Sweep(context.Background(), time.Now())
+	NewDockerUploadSweeper(store, storage.NewDirUploadStore(dir), time.Hour, testLogger(t)).Sweep(context.Background(), time.Now())
 
-	if !chunkExists(dir, orphan) {
-		t.Error("chunk removed although the row lookup failed")
+	if !uploadExists(dir, orphan) {
+		t.Error("upload removed although the session lookup failed")
 	}
 }

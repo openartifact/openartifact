@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -26,7 +27,7 @@ import (
 // call panics, which keeps the fake honest about what the handlers touch.
 type fakeDB struct {
 	testHandlerStore
-	chunkRows
+	uploadLeases
 
 	repo   *models.Repository
 	upload *models.DockerUpload
@@ -73,16 +74,45 @@ func (f *fakeDB) GetDockerUpload(_ context.Context, repositoryID, uploadUUID str
 	return f.upload, nil
 }
 
-func (f *fakeDB) AppendDockerUploadChunk(
-	_ context.Context, repositoryID, uploadUUID, chunkID string, oldOffset, newOffset int64,
+func (f *fakeDB) uploadKey(repositoryID, uploadUUID string) string {
+	return repositoryID + "|" + uploadUUID
+}
+
+func (f *fakeDB) AcquireDockerUploadLease(
+	_ context.Context, repositoryID, uploadUUID, token string, ttl time.Duration,
+) (*models.DockerUpload, error) {
+	if !f.uploadMatches(repositoryID, uploadUUID) || !f.acquire(f.uploadKey(repositoryID, uploadUUID), token, ttl) {
+		return nil, nil
+	}
+
+	row := *f.upload
+
+	return &row, nil
+}
+
+func (f *fakeDB) RenewDockerUploadLease(_ context.Context, repositoryID, uploadUUID, token string, ttl time.Duration) (bool, error) {
+	return f.renew(f.uploadKey(repositoryID, uploadUUID), token, ttl), nil
+}
+
+func (f *fakeDB) ReleaseDockerUploadLease(_ context.Context, repositoryID, uploadUUID, token string) error {
+	f.release(f.uploadKey(repositoryID, uploadUUID), token)
+
+	return nil
+}
+
+func (f *fakeDB) AdvanceDockerUpload(
+	_ context.Context, repositoryID, uploadUUID, token string,
+	oldOffset, newOffset int64, hashState []byte, stageState string, ttl time.Duration, keepLease bool,
 ) (bool, error) {
-	if !f.uploadMatches(repositoryID, uploadUUID) || f.upload.Offset != oldOffset {
+	if !f.uploadMatches(repositoryID, uploadUUID) {
+		return false, nil
+	}
+
+	if !f.advance(f.uploadKey(repositoryID, uploadUUID), f.upload, token, oldOffset, newOffset, hashState, stageState, ttl, keepLease) {
 		return false, nil
 	}
 
 	f.offset = newOffset
-	f.upload.Offset = newOffset
-	f.append(repositoryID, uploadUUID, chunkID, newOffset-oldOffset)
 
 	return true, nil
 }
@@ -109,17 +139,13 @@ func (f *fakeDB) CreateDockerBlob(_ context.Context, blob *models.DockerBlob) er
 	return nil
 }
 
-func (f *fakeDB) ListDockerUploadChunks(_ context.Context, repositoryID, uploadUUID string) ([]models.DockerUploadChunk, error) {
-	return f.list(repositoryID, uploadUUID), nil
-}
-
 func (f *fakeDB) DeleteDockerUpload(_ context.Context, repositoryID, uploadUUID string) error {
 	if !f.uploadMatches(repositoryID, uploadUUID) {
 		return nil
 	}
 
 	f.deletedUpload = true
-	f.drop(repositoryID, uploadUUID)
+	f.drop(f.uploadKey(repositoryID, uploadUUID))
 
 	return nil
 }
@@ -200,34 +226,50 @@ func TestHandleUploadChunk_StreamsAndAccumulatesOffset(t *testing.T) {
 		}
 	}
 
-	// The chunk rows must list one chunk object per PATCH, in order, holding
-	// exactly the streamed bytes.
-	rows := db.list("repo-1", uid)
-	if len(rows) != len(chunks) {
-		t.Fatalf("chunk rows = %d, want %d", len(rows), len(chunks))
+	// The session holds one upload object with exactly the streamed bytes, and
+	// the digest state it recorded is the sha256 of them.
+	ids := uploadObjects(t, h)
+	if len(ids) != 1 || ids[0] != uid {
+		t.Fatalf("upload objects = %v, want the one of session %s", ids, uid)
 	}
 
-	var stored strings.Builder
-
-	for i, row := range rows {
-		rc, err := h.chunks.OpenChunk(context.Background(), row.ChunkID)
-		if err != nil {
-			t.Fatalf("open chunk %d: %v", i, err)
-		}
-
-		data, err := io.ReadAll(rc)
-		_ = rc.Close()
-
-		if err != nil || int64(len(data)) != row.Size || string(data) != chunks[i] {
-			t.Fatalf("chunk %d = %q (%v), row size %d, want %q", i, data, err, row.Size, chunks[i])
-		}
-
-		stored.Write(data)
+	object, err := h.uploads.CompleteUpload(
+		context.Background(),
+		uid,
+		storage.UploadPosition{State: db.upload.StageState, Offset: db.upload.Offset},
+	)
+	if err != nil {
+		t.Fatalf("complete upload: %v", err)
 	}
 
-	if stored.String() != assembled.String() {
-		t.Fatalf("chunks = %q, want %q", stored.String(), assembled.String())
+	rc, err := h.uploads.OpenUpload(context.Background(), uid, object.Version)
+	if err != nil {
+		t.Fatalf("open upload: %v", err)
 	}
+
+	data, err := io.ReadAll(rc)
+	_ = rc.Close()
+
+	if err != nil || string(data) != assembled.String() {
+		t.Fatalf("upload object = %q (%v), want %q", data, err, assembled.String())
+	}
+
+	session := &uploadSession{upload: db.upload}
+
+	digest, err := session.resumeDigest()
+	if err != nil {
+		t.Fatalf("resume digest: %v", err)
+	}
+
+	if got, want := hex.EncodeToString(digest.Sum(nil)), sha256Hex(assembled.String()); got != want {
+		t.Fatalf("recorded digest state = %s, want sha256 of the streamed bytes %s", got, want)
+	}
+}
+
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+
+	return hex.EncodeToString(sum[:])
 }
 
 func TestHandleCompleteBlobUpload_MonolithicBodyAndDigest(t *testing.T) {

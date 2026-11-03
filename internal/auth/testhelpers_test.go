@@ -411,7 +411,23 @@ func (m *tokenMockDB) CreateDockerUpload(_ context.Context, _ *models.DockerUplo
 func (m *tokenMockDB) GetDockerUpload(_ context.Context, _, _ string) (*models.DockerUpload, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) AppendDockerUploadChunk(_ context.Context, _, _, _ string, _, _ int64) (bool, error) {
+func (m *tokenMockDB) AcquireDockerUploadLease(_ context.Context, _, _, _ string, _ time.Duration) (*models.DockerUpload, error) {
+	return nil, nil
+}
+func (m *tokenMockDB) RenewDockerUploadLease(_ context.Context, _, _, _ string, _ time.Duration) (bool, error) {
+	return true, nil
+}
+func (m *tokenMockDB) ReleaseDockerUploadLease(_ context.Context, _, _, _ string) error { return nil }
+
+func (m *tokenMockDB) AdvanceDockerUpload(
+	_ context.Context,
+	_, _, _ string,
+	_, _ int64,
+	_ []byte,
+	_ string,
+	_ time.Duration,
+	_ bool,
+) (bool, error) {
 	return true, nil
 }
 func (m *tokenMockDB) DeleteDockerUpload(_ context.Context, _, _ string) error { return nil }

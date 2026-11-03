@@ -141,7 +141,7 @@ func TestDockerChunkedUpload_AlternatesBetweenReplicas(t *testing.T) {
 
 	var rows int
 	if err := harness.DB.QueryRowContext(t.Context(),
-		`SELECT (SELECT count(*) FROM docker_uploads) + (SELECT count(*) FROM docker_upload_chunks)`).Scan(&rows); err != nil || rows != 0 {
+		`SELECT count(*) FROM docker_uploads`).Scan(&rows); err != nil || rows != 0 {
 		t.Fatalf("upload rows left = %d, %v, want none", rows, err)
 	}
 }

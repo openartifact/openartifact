@@ -19,7 +19,7 @@ func dockerFormat() plugin.Format {
 		ID: "docker",
 		NewHosted: func(d *plugin.Deps) (plugin.Hosted, error) {
 			h := formatdocker.NewHTTPHandler(d.Log, d.DB, d.Served)
-			h.SetChunkStore(storage.ChunksFor(d.Blobs, d.DockerUploadDir))
+			h.SetUploadStore(storage.UploadsFor(d.Blobs, d.DockerUploadDir))
 
 			if d.DockerAuthorizer != nil {
 				h.SetAuthorizer(d.DockerAuthorizer)

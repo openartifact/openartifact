@@ -460,15 +460,14 @@ type DockerUpload struct {
 	Offset       int64     `db:"offset" json:"offset"`
 	CreatedAt    time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
-}
-
-// Chunks (blob store objects) of an in-progress blob upload session, in upload order
-type DockerUploadChunk struct {
-	ChunkID   string    `db:"chunk_id" json:"chunk_id"`
-	UploadID  string    `db:"upload_id" json:"upload_id"`
-	Seq       int32     `db:"seq" json:"seq"`
-	SizeBytes int64     `db:"size_bytes" json:"size_bytes"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	// Marshalled sha256 state of the first "offset" bytes; NULL while the offset is 0
+	HashState []byte `db:"hash_state" json:"hash_state"`
+	// Opaque blob store token of the upload object (multipart parts, committed blocks); empty for a store that needs none
+	StageState string `db:"stage_state" json:"stage_state"`
+	// Token of the request currently working on the session; NULL when idle
+	LeaseToken *string `db:"lease_token" json:"lease_token"`
+	// When the lease expires if its holder dies; NULL when idle
+	LeaseUntil *time.Time `db:"lease_until" json:"lease_until"`
 }
 
 // FIRST EPSS scores (probability and percentile) keyed by upper-case CVE id; generation is the import that last saw the row.

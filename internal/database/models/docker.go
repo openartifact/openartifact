@@ -33,19 +33,17 @@ type DockerBlob struct {
 
 // DockerUpload tracks an in-progress chunked blob upload.
 type DockerUpload struct {
-	ID           string    `db:"id"`
-	RepositoryID string    `db:"repository_id"`
-	UploadUUID   string    `db:"upload_uuid"`
-	Offset       int64     `db:"offset"`
-	CreatedAt    time.Time `db:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at"`
-}
-
-// DockerUploadChunk is one chunk (an object of the blob store) of an upload
-// session.
-type DockerUploadChunk struct {
-	ChunkID string `db:"chunk_id"`
-	Size    int64  `db:"size_bytes"`
+	ID           string `db:"id"`
+	RepositoryID string `db:"repository_id"`
+	UploadUUID   string `db:"upload_uuid"`
+	Offset       int64  `db:"offset"`
+	// HashState is the marshalled sha256 state of the first Offset bytes; empty
+	// while Offset is 0.
+	HashState []byte `db:"hash_state"`
+	// StageState is the opaque blob store token of the upload object.
+	StageState string    `db:"stage_state"`
+	CreatedAt  time.Time `db:"created_at"`
+	UpdatedAt  time.Time `db:"updated_at"`
 }
 
 // DockerManifest stores an OCI or Docker v2 image manifest.

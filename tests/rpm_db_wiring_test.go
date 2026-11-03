@@ -1493,10 +1493,31 @@ func (m *MockDatabase) GetDockerUpload(ctx context.Context, repositoryID, upload
 	return nil, nil
 }
 
-func (m *MockDatabase) AppendDockerUploadChunk(
+func (m *MockDatabase) AcquireDockerUploadLease(
 	ctx context.Context,
-	repositoryID, uploadUUID, chunkID string,
+	repositoryID, uploadUUID, token string,
+	ttl time.Duration,
+) (*models.DockerUpload, error) {
+	return nil, nil
+}
+func (m *MockDatabase) RenewDockerUploadLease(
+	ctx context.Context,
+	repositoryID, uploadUUID, token string,
+	ttl time.Duration,
+) (bool, error) {
+	return true, nil
+}
+func (m *MockDatabase) ReleaseDockerUploadLease(ctx context.Context, repositoryID, uploadUUID, token string) error {
+	return nil
+}
+func (m *MockDatabase) AdvanceDockerUpload(
+	ctx context.Context,
+	repositoryID, uploadUUID, token string,
 	oldOffset, newOffset int64,
+	hashState []byte,
+	stageState string,
+	ttl time.Duration,
+	keepLease bool,
 ) (bool, error) {
 	return true, nil
 }

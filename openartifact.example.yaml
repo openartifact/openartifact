@@ -268,8 +268,8 @@ workers:
   # read; 0 disables).
   proxyUpstreamStallTimeout: 60s
   # Abandoned docker blob uploads idle longer than dockerUploadTtl are deleted
-  # with their chunks (0 disables the sweeper). Chunks of in-progress uploads
-  # live in the blob store, so any replica can take any request of a push.
+  # with their data (0 disables the sweeper). An in-progress upload is one
+  # object of the blob store, so any replica can take any request of a push.
   # dockerUploadDir is used only by the oci storage backend, which cannot hold
   # them: there it must be shared by all replicas (or run one).
   dockerUploadTtl: 24h

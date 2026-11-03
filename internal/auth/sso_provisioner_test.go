@@ -513,7 +513,23 @@ func (m *provMockDB) CreateDockerUpload(_ context.Context, _ *models.DockerUploa
 func (m *provMockDB) GetDockerUpload(_ context.Context, _, _ string) (*models.DockerUpload, error) {
 	return nil, nil
 }
-func (m *provMockDB) AppendDockerUploadChunk(_ context.Context, _, _, _ string, _, _ int64) (bool, error) {
+func (m *provMockDB) AcquireDockerUploadLease(_ context.Context, _, _, _ string, _ time.Duration) (*models.DockerUpload, error) {
+	return nil, nil
+}
+func (m *provMockDB) RenewDockerUploadLease(_ context.Context, _, _, _ string, _ time.Duration) (bool, error) {
+	return true, nil
+}
+func (m *provMockDB) ReleaseDockerUploadLease(_ context.Context, _, _, _ string) error { return nil }
+
+func (m *provMockDB) AdvanceDockerUpload(
+	_ context.Context,
+	_, _, _ string,
+	_, _ int64,
+	_ []byte,
+	_ string,
+	_ time.Duration,
+	_ bool,
+) (bool, error) {
 	return true, nil
 }
 func (m *provMockDB) DeleteDockerUpload(_ context.Context, _, _ string) error { return nil }

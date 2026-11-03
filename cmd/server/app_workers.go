@@ -210,9 +210,9 @@ func (a *app) startHousekeepingWorkers() {
 	a.start(w.cleanup.Start)
 	a.start(w.dockerGC.Start)
 
-	// Abandoned docker blob uploads: idle sessions and their chunks.
+	// Abandoned docker blob uploads: idle sessions and their data.
 	w.dockerUploadSweeper = worker.NewDockerUploadSweeper(
-		db, storage.ChunksFor(a.store.blobs, dockerUploadDir(cfg)), cfg.Workers.DockerUploadTTL, log)
+		db, storage.UploadsFor(a.store.blobs, dockerUploadDir(cfg)), cfg.Workers.DockerUploadTTL, log)
 	a.start(w.dockerUploadSweeper.Start)
 
 	// Initialize webhook dispatcher

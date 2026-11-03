@@ -14,8 +14,8 @@ import (
 // uploadID is the session UUID of an upload Location.
 func uploadID(loc string) string { return loc[strings.LastIndex(loc, "/")+1:] }
 
-// chunkCount is how many chunk objects the registry's chunk store holds.
-func (g *registry) chunkCount() int { return len(chunkObjects(g.t, g.h)) }
+// uploadCount is how many uploads the registry's upload store holds.
+func (g *registry) uploadCount() int { return len(uploadObjects(g.t, g.h)) }
 
 // A session belongs to the repository that opened it: no other repository can
 // read, extend, complete or cancel it, and it keeps working for its owner.
@@ -48,7 +48,7 @@ func TestUploadSession_NotUsableFromAnotherRepository(t *testing.T) {
 		})
 	}
 
-	if got := g.chunkCount(); got != 1 {
+	if got := g.uploadCount(); got != 1 {
 		t.Fatalf("chunk objects = %d, want the owner's one; foreign requests must not touch it", got)
 	}
 
@@ -97,7 +97,7 @@ func TestCancelUpload_DiscardsStateAndReleasesQuota(t *testing.T) {
 
 	g.do(http.MethodPatch, loc, strings.Repeat("x", 300))
 
-	if g.chunkCount() != 1 {
+	if g.uploadCount() != 1 {
 		t.Fatal("no chunk object after PATCH")
 	}
 
@@ -105,7 +105,7 @@ func TestCancelUpload_DiscardsStateAndReleasesQuota(t *testing.T) {
 		t.Fatalf("cancel = %d, want 204; body=%s", rec.Code, rec.Body.String())
 	}
 
-	if g.chunkCount() != 0 {
+	if g.uploadCount() != 0 {
 		t.Error("chunk objects survived cancel")
 	}
 
@@ -155,8 +155,8 @@ func TestCompleteUpload_DigestMismatchDiscardsSession(t *testing.T) {
 				t.Fatalf("complete = %d %s, want 400 DIGEST_INVALID", rec.Code, rec.Body.String())
 			}
 
-			if g.chunkCount() != 0 || len(db.uploads) != 0 || len(db.blobs) != 0 {
-				t.Errorf("leftovers: chunks=%d sessions=%d blobs=%d", g.chunkCount(), len(db.uploads), len(db.blobs))
+			if g.uploadCount() != 0 || len(db.uploads) != 0 || len(db.blobs) != 0 {
+				t.Errorf("leftovers: chunks=%d sessions=%d blobs=%d", g.uploadCount(), len(db.uploads), len(db.blobs))
 			}
 
 			assertUsage(t, "after mismatch", db.usage("reg"), 0, 0)
@@ -184,42 +184,60 @@ func TestCompleteUpload_FinalChunkOverQuotaReleasesEverything(t *testing.T) {
 
 	assertDenied(t, g.do(http.MethodPut, loc+"?digest="+digestOf(layer), string(layer[60:])))
 
-	if g.chunkCount() != 0 || len(db.uploads) != 0 || len(db.blobs) != 0 {
-		t.Errorf("leftovers: chunks=%d sessions=%d blobs=%d", g.chunkCount(), len(db.uploads), len(db.blobs))
+	if g.uploadCount() != 0 || len(db.uploads) != 0 || len(db.blobs) != 0 {
+		t.Errorf("leftovers: chunks=%d sessions=%d blobs=%d", g.uploadCount(), len(db.uploads), len(db.blobs))
 	}
 
 	assertUsage(t, "after refusal", db.usage("reg"), 0, 0)
 }
 
-// A session whose chunks cannot be read back ends with 404 BLOB_UPLOAD_UNKNOWN
-// so the client restarts the push: a chunk object that is gone, and a session
-// the rows of which do not add up to its offset (opened by a server that kept
-// the bytes on its own disk).
+// A session whose data cannot be trusted ends with 404 BLOB_UPLOAD_UNKNOWN so
+// the client restarts the push: an upload object that is gone, and a session
+// that has an offset but no digest state for it (opened by a release that kept
+// the chunks in separate objects).
 func TestCompleteUpload_UnreadableSessionIsUnknown(t *testing.T) {
-	t.Run("chunk object lost", func(t *testing.T) {
+	t.Run("upload object lost", func(t *testing.T) {
 		g := newRegistry(t, newRegFakeDB("reg"))
 		loc := startUpload(t, g, "reg/app")
 		g.do(http.MethodPatch, loc, "abc")
 
-		for _, id := range chunkObjects(t, g.h) {
-			if err := g.h.chunks.DeleteChunk(context.Background(), id); err != nil {
+		for _, id := range uploadObjects(t, g.h) {
+			if err := g.h.uploads.DeleteUpload(context.Background(), id); err != nil {
 				t.Fatal(err)
 			}
 		}
 
-		rec := g.do(http.MethodPut, loc+"?digest="+digestOf([]byte("abcdef")), "def")
-		if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "BLOB_UPLOAD_UNKNOWN") {
-			t.Fatalf("complete = %d %s, want 404 BLOB_UPLOAD_UNKNOWN", rec.Code, rec.Body.String())
+		for _, method := range []string{http.MethodPatch, http.MethodPut} {
+			rec := g.do(method, loc+"?digest="+digestOf([]byte("abcdef")), "def")
+			if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "BLOB_UPLOAD_UNKNOWN") {
+				t.Fatalf("%s = %d %s, want 404 BLOB_UPLOAD_UNKNOWN", method, rec.Code, rec.Body.String())
+			}
 		}
 	})
 
-	t.Run("offset without chunk rows", func(t *testing.T) {
+	t.Run("offset without digest state", func(t *testing.T) {
 		db := newRegFakeDB("reg")
 		g := newRegistry(t, db)
 		loc := startUpload(t, g, "reg/app")
 		db.uploads[scoped("id-reg", uploadID(loc))].Offset = 3
 
-		rec := g.do(http.MethodPut, loc+"?digest="+digestOf([]byte("abcdef")), "def")
+		for _, method := range []string{http.MethodPatch, http.MethodPut} {
+			rec := g.do(method, loc+"?digest="+digestOf([]byte("abcdef")), "def")
+			if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "BLOB_UPLOAD_UNKNOWN") {
+				t.Fatalf("%s = %d %s, want 404 BLOB_UPLOAD_UNKNOWN", method, rec.Code, rec.Body.String())
+			}
+		}
+	})
+
+	t.Run("digest state of another position", func(t *testing.T) {
+		db := newRegFakeDB("reg")
+		g := newRegistry(t, db)
+		loc := startUpload(t, g, "reg/app")
+		g.do(http.MethodPatch, loc, "abcdef")
+
+		db.uploads[scoped("id-reg", uploadID(loc))].Offset = 3 // state covers 6 bytes
+
+		rec := g.do(http.MethodPut, loc+"?digest="+digestOf([]byte("abcdef")), "")
 		if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "BLOB_UPLOAD_UNKNOWN") {
 			t.Fatalf("complete = %d %s, want 404 BLOB_UPLOAD_UNKNOWN", rec.Code, rec.Body.String())
 		}

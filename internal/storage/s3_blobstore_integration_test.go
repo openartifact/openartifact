@@ -429,20 +429,20 @@ func TestS3MultipartAbort(t *testing.T) {
 		t.Fatalf("stagingMultipartIDs(future) = %v, %v; want the open upload", ids, err)
 	}
 
-	if err := s.abortStagingMultipart(ctx, key); err != nil {
+	if err := s.abortKeyMultipart(ctx, key); err != nil {
 		t.Fatal(err)
 	}
 
 	if ids, _ := s.stagingMultipartIDs(ctx, time.Now().Add(time.Hour)); slices.Contains(ids, id) {
-		t.Fatal("abortStagingMultipart left the upload open")
+		t.Fatal("abortKeyMultipart left the upload open")
 	}
 
 	if err := s.abortMultipart(ctx, key, handle); err != nil {
 		t.Fatalf("aborting an already aborted upload = %v, want nil", err)
 	}
 
-	if err := s.abortStagingMultipart(ctx, key); err != nil {
-		t.Fatalf("abortStagingMultipart with nothing open = %v", err)
+	if err := s.abortKeyMultipart(ctx, key); err != nil {
+		t.Fatalf("abortKeyMultipart with nothing open = %v", err)
 	}
 
 	// An upload for another key sharing the prefix is left alone.
@@ -453,12 +453,12 @@ func TestS3MultipartAbort(t *testing.T) {
 
 	t.Cleanup(func() { _ = s.DeleteStaging(ctx, other) })
 
-	if err := s.abortStagingMultipart(ctx, key); err != nil {
+	if err := s.abortKeyMultipart(ctx, key); err != nil {
 		t.Fatal(err)
 	}
 
 	if ids, _ := s.stagingMultipartIDs(ctx, time.Now().Add(time.Hour)); !slices.Contains(ids, other) {
-		t.Fatal("abortStagingMultipart aborted an unrelated upload")
+		t.Fatal("abortKeyMultipart aborted an unrelated upload")
 	}
 }
 

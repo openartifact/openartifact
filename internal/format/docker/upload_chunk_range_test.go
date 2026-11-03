@@ -24,7 +24,7 @@ func TestHandleUploadChunk_RejectsNonContiguousRange(t *testing.T) {
 
 	db := &fakeDB{
 		repo:   &models.Repository{ID: "repo-1", Format: "docker"},
-		upload: &models.DockerUpload{Offset: 10},
+		upload: &models.DockerUpload{Offset: 10, HashState: hashStateOf(t, "0123456789")},
 	}
 	h, _ := newTestHandler(t, db)
 
@@ -51,12 +51,26 @@ func TestHandleUploadChunk_RejectsNonContiguousRange(t *testing.T) {
 	}
 
 	// The offset must be untouched and no chunk stored.
-	if db.offset != 0 {
-		t.Fatalf("offset = %d, want 0 (AppendDockerUploadChunk must not be called)", db.offset)
+	if db.offset != 0 || db.upload.Offset != 10 {
+		t.Fatalf("offset = %d / %d, want the session untouched at 10", db.offset, db.upload.Offset)
 	}
 
-	if ids := chunkObjects(t, h); len(ids) != 0 {
-		t.Fatalf("expected no chunk to be stored on a rejected range, found %v", ids)
+	if ids := uploadObjects(t, h); len(ids) != 0 {
+		t.Fatalf("expected nothing to be stored on a rejected range, found %v", ids)
+	}
+
+	// The lease is given back: the client's next request is not refused as in use.
+	again := withChiVars(
+		httptest.NewRequestWithContext(context.Background(), http.MethodPatch, "/v2/myrepo/blobs/uploads/"+uid, strings.NewReader("x")),
+		map[string]string{"name": "myrepo", "uuid": uid},
+	)
+	again.Header.Set("Content-Range", "50-50")
+
+	rec = httptest.NewRecorder()
+	h.handleUploadChunk(rec, again)
+
+	if rec.Code != http.StatusRequestedRangeNotSatisfiable {
+		t.Fatalf("second request = %d, want 416 again (the lease must have been released)", rec.Code)
 	}
 }
 

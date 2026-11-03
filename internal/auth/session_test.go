@@ -256,7 +256,23 @@ func (m *sessionMockDB) CreateDockerUpload(_ context.Context, _ *models.DockerUp
 func (m *sessionMockDB) GetDockerUpload(_ context.Context, _, _ string) (*models.DockerUpload, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) AppendDockerUploadChunk(_ context.Context, _, _, _ string, _, _ int64) (bool, error) {
+func (m *sessionMockDB) AcquireDockerUploadLease(_ context.Context, _, _, _ string, _ time.Duration) (*models.DockerUpload, error) {
+	return nil, nil
+}
+func (m *sessionMockDB) RenewDockerUploadLease(_ context.Context, _, _, _ string, _ time.Duration) (bool, error) {
+	return true, nil
+}
+func (m *sessionMockDB) ReleaseDockerUploadLease(_ context.Context, _, _, _ string) error { return nil }
+
+func (m *sessionMockDB) AdvanceDockerUpload(
+	_ context.Context,
+	_, _, _ string,
+	_, _ int64,
+	_ []byte,
+	_ string,
+	_ time.Duration,
+	_ bool,
+) (bool, error) {
 	return true, nil
 }
 func (m *sessionMockDB) DeleteDockerUpload(_ context.Context, _, _ string) error { return nil }

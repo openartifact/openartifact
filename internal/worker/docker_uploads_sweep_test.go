@@ -33,46 +33,46 @@ func (c *countingUploadStore) DeleteStaleDockerUploads(context.Context, time.Tim
 	return nil, nil
 }
 
-// A database failure aborts the sweep before it touches the chunks: the rows
+// A database failure aborts the sweep before it touches the uploads: the rows
 // are the source of truth for which sessions are gone.
-func TestDockerUploadSweeperLeavesChunksWhenTheDatabaseFails(t *testing.T) {
+func TestDockerUploadSweeperLeavesUploadsWhenTheDatabaseFails(t *testing.T) {
 	dir := t.TempDir()
-	orphan := putChunk(t, dir, 72*time.Hour)
+	orphan := putUpload(t, dir, 72*time.Hour)
 
 	NewDockerUploadSweeper(
 		&errUploadStore{},
-		storage.NewDirChunkStore(dir),
+		storage.NewDirUploadStore(dir),
 		time.Hour,
 		testLogger(t),
 	).Sweep(context.Background(), time.Now())
 
-	if !chunkExists(dir, orphan) {
-		t.Error("chunk removed although the session delete failed")
+	if !uploadExists(dir, orphan) {
+		t.Error("upload removed although the session delete failed")
 	}
 }
 
-// A missing chunk directory is not an error: nothing was ever uploaded.
+// A missing upload directory is not an error: nothing was ever uploaded.
 func TestDockerUploadSweeperToleratesMissingDirectory(t *testing.T) {
-	chunks := storage.NewDirChunkStore(filepath.Join(t.TempDir(), "absent"))
+	uploads := storage.NewDirUploadStore(filepath.Join(t.TempDir(), "absent"))
 
-	NewDockerUploadSweeper(&fakeUploadStore{}, chunks, time.Hour, testLogger(t)).Sweep(context.Background(), time.Now())
+	NewDockerUploadSweeper(&fakeUploadStore{}, uploads, time.Hour, testLogger(t)).Sweep(context.Background(), time.Now())
 }
 
-// Start sweeps right away, a disabled sweeper (no chunk store or ttl) never
+// Start sweeps right away, a disabled sweeper (no upload store or ttl) never
 // touches the store, and Stop returns for both.
 func TestDockerUploadSweeperStart(t *testing.T) {
 	t.Run("sweeps at startup and stops", func(t *testing.T) {
 		store := &countingUploadStore{}
-		s := NewDockerUploadSweeper(store, storage.NewDirChunkStore(t.TempDir()), time.Hour, testLogger(t))
+		s := NewDockerUploadSweeper(store, storage.NewDirUploadStore(t.TempDir()), time.Hour, testLogger(t))
 
 		s.Start()
 		pollUntil(t, "the startup sweep", func() bool { return store.calls.Load() >= 1 })
 		s.Stop()
 	})
 
-	for name, chunks := range map[string]storage.ChunkStore{
-		"no chunk store": nil,
-		"no ttl":         storage.NewDirChunkStore("x"),
+	for name, uploads := range map[string]storage.UploadStore{
+		"no upload store": nil,
+		"no ttl":          storage.NewDirUploadStore("x"),
 	} {
 		t.Run("disabled: "+name, func(t *testing.T) {
 			store := &countingUploadStore{}
@@ -82,7 +82,7 @@ func TestDockerUploadSweeperStart(t *testing.T) {
 				ttl = 0
 			}
 
-			s := NewDockerUploadSweeper(store, chunks, ttl, testLogger(t))
+			s := NewDockerUploadSweeper(store, uploads, ttl, testLogger(t))
 
 			s.Start()
 			s.Stop()

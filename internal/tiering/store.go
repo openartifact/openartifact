@@ -81,7 +81,7 @@ var (
 	_ storage.Presigner             = (*Store)(nil)
 	_ storage.StagingStore          = (*Store)(nil)
 	_ storage.MultipartStagingStore = (*Store)(nil)
-	_ storage.ChunkStore            = (*Store)(nil)
+	_ storage.UploadStore           = (*Store)(nil)
 )
 
 // NewStore creates the tiered store. tracker and reg may be nil.
@@ -676,10 +676,39 @@ func (s *Store) PromoteStaging(ctx context.Context, id, sha, version string, met
 		return storage.ErrPresignNotSupported
 	}
 
+	return s.promote(ctx, sha, metadata,
+		func() error { return st.PromoteStaging(ctx, id, sha, version, metadata) },
+		func() (io.ReadCloser, error) { return st.OpenStaging(ctx, id, version) })
+}
+
+// PromoteUpload implements storage.UploadStore; the rest of the upload calls go
+// to the primary store unchanged. The completed upload becomes the blob on the
+// tier it belongs on, exactly as PromoteStaging does for a staged object.
+func (s *Store) PromoteUpload(ctx context.Context, id, sha, version string, metadata map[string]string) error {
+	up, ok := s.reg.Primary().(storage.UploadStore)
+	if !ok || !up.UploadsSupported() {
+		return storage.ErrUploadsNotSupported
+	}
+
+	return s.promote(ctx, sha, metadata,
+		func() error { return up.PromoteUpload(ctx, id, sha, version, metadata) },
+		func() (io.ReadCloser, error) { return up.OpenUpload(ctx, id, version) })
+}
+
+// promote makes a verified object of the primary store (staged or uploaded) the
+// blob sha: promoteOnPrimary links or copies it in place, open streams it to a
+// cold tier.
+func (s *Store) promote(
+	ctx context.Context,
+	sha string,
+	metadata map[string]string,
+	promoteOnPrimary func() error,
+	open func() (io.ReadCloser, error),
+) error {
 	snap := s.reg.Snapshot()
 
 	if !snap.HasCold() {
-		return st.PromoteStaging(ctx, id, sha, version, metadata)
+		return promoteOnPrimary()
 	}
 
 	target, err := s.placedTier(ctx, snap, sha)
@@ -688,9 +717,9 @@ func (s *Store) PromoteStaging(ctx context.Context, id, sha, version string, met
 	}
 
 	if target.Primary() {
-		err = st.PromoteStaging(ctx, id, sha, version, metadata)
+		err = promoteOnPrimary()
 	} else {
-		err = promoteToTier(ctx, st, target, id, sha, version, metadata)
+		err = promoteToTier(ctx, open, target, sha, metadata)
 	}
 
 	if err != nil {
@@ -700,15 +729,22 @@ func (s *Store) PromoteStaging(ctx context.Context, id, sha, version string, met
 	return s.settleWrite(ctx, sha, target)
 }
 
-// promoteToTier makes the verified staging object the blob sha on a cold tier.
-func promoteToTier(ctx context.Context, st storage.StagingStore, target *Tier, id, sha, version string, metadata map[string]string) error {
+// promoteToTier makes the verified object open reads the blob sha on a cold
+// tier.
+func promoteToTier(
+	ctx context.Context,
+	open func() (io.ReadCloser, error),
+	target *Tier,
+	sha string,
+	metadata map[string]string,
+) error {
 	if ok, err := target.Store.Exists(ctx, sha); err != nil {
 		return fmt.Errorf("check blob on tier %s: %w", target.Name, err)
 	} else if ok {
 		return nil
 	}
 
-	rc, err := st.OpenStaging(ctx, id, version)
+	rc, err := open()
 	if err != nil {
 		return err //nolint:wrapcheck // ErrStagingNotFound and ErrStagingChanged are matched by callers
 	}

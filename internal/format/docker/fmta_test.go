@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -128,22 +129,27 @@ func TestRegistry_ManifestBodyIsCapped(t *testing.T) {
 	}
 }
 
-// FMTA-11, across replicas: a PATCH that lost the race for the session's offset
-// (another replica appended first) does not join the upload and leaves no chunk
-// behind, so the blob is exactly the bytes the winning requests sent.
-func TestHandleUploadChunk_LosingTheOffsetRaceDropsTheChunk(t *testing.T) {
+// FMTA-11, across replicas: a PATCH whose lease was taken over (another replica
+// moved the session while this one was writing) does not join the upload: the
+// answer is 409 and the session stays where the winner left it.
+func TestHandleUploadChunk_LosingTheSessionAnswersConflict(t *testing.T) {
 	uid := uuid.New().String()
 
 	inner := &fakeDB{
 		repo:   &models.Repository{ID: "repo-1", Format: "docker"},
-		upload: &models.DockerUpload{RepositoryID: "repo-1", UploadUUID: uid, Offset: 5},
+		upload: &models.DockerUpload{RepositoryID: "repo-1", UploadUUID: uid},
 	}
-	inner.append("repo-1", uid, "winner-0", 5)
 
-	// Another replica appends between this request's read of the offset and its
-	// own append.
+	// Another replica takes the lease over and appends between this request's
+	// start and the moment it records its own position.
 	db := &racingDB{fakeDB: inner, rival: func() {
-		_, _ = inner.AppendDockerUploadChunk(context.Background(), "repo-1", uid, "winner-1", 5, 8)
+		key := inner.uploadKey("repo-1", uid)
+		inner.drop(key)
+		inner.acquire(key, "rival", time.Minute)
+
+		if !inner.advance(key, inner.upload, "rival", 0, 3, nil, "", time.Minute, false) {
+			t.Error("the rival could not advance the session")
+		}
 	}}
 	h, _ := newTestHandler(t, db)
 
@@ -158,31 +164,69 @@ func TestHandleUploadChunk_LosingTheOffsetRaceDropsTheChunk(t *testing.T) {
 		t.Fatalf("status = %d %s, want 409 BLOB_UPLOAD_INVALID", rec.Code, rec.Body.String())
 	}
 
-	if got := len(inner.list("repo-1", uid)); got != 2 {
-		t.Fatalf("chunk rows = %d, want the two winners only", got)
-	}
-
-	if ids := chunkObjects(t, h); len(ids) != 0 {
-		t.Fatalf("chunk objects left behind: %v", ids)
+	if inner.upload.Offset != 3 {
+		t.Fatalf("offset = %d, want the winner's 3", inner.upload.Offset)
 	}
 }
 
-// racingDB runs rival right before the first append of a PATCH.
+// A request that finds the session in use by another one is told to query the
+// status and resume, with the current Range; it writes nothing.
+func TestHandleUploadChunk_SessionInUseAnswersConflict(t *testing.T) {
+	uid := uuid.New().String()
+
+	db := &fakeDB{
+		repo:   &models.Repository{ID: "repo-1", Format: "docker"},
+		upload: &models.DockerUpload{RepositoryID: "repo-1", UploadUUID: uid, Offset: 7},
+	}
+	db.hold(db.uploadKey("repo-1", uid))
+
+	h, _ := newTestHandler(t, db)
+
+	for _, method := range []string{http.MethodPatch, http.MethodPut} {
+		req := withChiVars(
+			httptest.NewRequestWithContext(
+				context.Background(),
+				method,
+				"/v2/myrepo/blobs/uploads/"+uid+"?digest="+digestOf([]byte("x")),
+				strings.NewReader("world"),
+			),
+			map[string]string{"name": "myrepo", "uuid": uid},
+		)
+		rec := httptest.NewRecorder()
+
+		if method == http.MethodPut {
+			h.handleCompleteBlobUpload(rec, req)
+		} else {
+			h.handleUploadChunk(rec, req)
+		}
+
+		if rec.Code != http.StatusConflict || rec.Header().Get("Range") != "0-6" {
+			t.Fatalf("%s = %d Range %q, want 409 with Range 0-6", method, rec.Code, rec.Header().Get("Range"))
+		}
+	}
+
+	if ids := uploadObjects(t, h); len(ids) != 0 || db.upload.Offset != 7 {
+		t.Fatalf("a refused request changed the session: objects %v, offset %d", ids, db.upload.Offset)
+	}
+}
+
+// racingDB runs rival right before the first position update of a request.
 type racingDB struct {
 	*fakeDB
 
 	rival func()
 }
 
-func (d *racingDB) AppendDockerUploadChunk(
-	ctx context.Context, repositoryID, uploadUUID, chunkID string, oldOffset, newOffset int64,
+func (d *racingDB) AdvanceDockerUpload(
+	ctx context.Context, repositoryID, uploadUUID, token string,
+	oldOffset, newOffset int64, hashState []byte, stageState string, ttl time.Duration, keepLease bool,
 ) (bool, error) {
 	if d.rival != nil {
 		d.rival()
 		d.rival = nil
 	}
 
-	return d.fakeDB.AppendDockerUploadChunk(ctx, repositoryID, uploadUUID, chunkID, oldOffset, newOffset)
+	return d.fakeDB.AdvanceDockerUpload(ctx, repositoryID, uploadUUID, token, oldOffset, newOffset, hashState, stageState, ttl, keepLease)
 }
 
 // FMTA-16: an empty upload reports 0-0, never 0--1.
