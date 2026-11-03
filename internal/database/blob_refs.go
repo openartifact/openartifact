@@ -287,6 +287,8 @@ func (p *BlobRefStore) deleteBlobChunk(ctx context.Context, keys []string) (int,
 // deleteUnreferencedBlobsSQL removes the blobs rows of $1 that no table
 // references and queues their bytes like enqueueBlobDeletionSQL does (keep the
 // two in sync).
+//
+//nolint:gochecknoglobals // built once, read-only
 var deleteUnreferencedBlobsSQL = `WITH gone AS (
     DELETE FROM blobs b WHERE b.sha256 = ANY($1::text[]) AND ` + blobUnreferencedExpr + `
     RETURNING b.sha256
@@ -298,7 +300,7 @@ SET queued_at = now(),
     deleted_xid = (pg_current_xact_id()::text)::bigint,
     not_before = EXCLUDED.not_before,
     claimed_until = NULL,
-    attempts = 0` //nolint:gochecknoglobals // built once, read-only
+    attempts = 0`
 
 // EnsureBlob ensures the global blobs table has a row for sha256 (creating
 // it if it does not exist yet) and returns its

@@ -218,7 +218,7 @@ func TestCollectOrphanBlobsDeletesInBatches(t *testing.T) {
 
 	shas = append(shas, "not-a-sha")
 
-	db := &batchOrphanDB{orphanDB: orphanDB{shas: shas}}
+	db := &batchOrphanDB{orphanDB{shas: shas}, nil, false}
 	blobs := &deleteRecorder{}
 
 	removed, err := CollectOrphanBlobs(context.Background(), db, blobs, time.Hour, 500)
@@ -241,7 +241,7 @@ func TestCollectOrphanBlobsBatchFailureFallsBackPerBlob(t *testing.T) {
 	good := strings.Repeat("a", 64)
 	live := strings.Repeat("b", 64)
 
-	db := &batchOrphanDB{orphanDB: orphanDB{shas: []string{good, live}, refCountOf: map[string]int{live: 1}}, failAll: true}
+	db := &batchOrphanDB{orphanDB{shas: []string{good, live}, refCountOf: map[string]int{live: 1}}, nil, true}
 	blobs := &deleteRecorder{}
 
 	if _, err := CollectOrphanBlobs(context.Background(), db, blobs, time.Hour, 500); err != nil {

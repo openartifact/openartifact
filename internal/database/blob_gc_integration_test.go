@@ -21,7 +21,8 @@ func seedOldBlob(t *testing.T, s *quotaSeeder, n int) string {
 	t.Helper()
 
 	sha := fmt.Sprintf("%064x", n)
-	s.exec(`INSERT INTO blobs (sha256, size_bytes, blob_key, created_at) VALUES ($1::varchar, 1, $1::text, now() - interval '3 hours')`, sha)
+	s.exec(`INSERT INTO blobs (sha256, size_bytes, blob_key, created_at)
+	        VALUES ($1::varchar, 1, $1::text, now() - interval '3 hours')`, sha)
 
 	return sha
 }
@@ -44,7 +45,10 @@ func TestDeleteBlobsIfUnreferenced(t *testing.T) {
 	s.helm(fileBlob)
 
 	metaSHA := seedOldBlob(t, s, 1)
-	s.exec(`INSERT INTO repository_metadata (repository_id, path, blob_sha256, blob_size) VALUES ($1, 'index.yaml', $2, 1)`, s.repo, metaSHA)
+	s.exec(
+		`INSERT INTO repository_metadata (repository_id, path, blob_sha256, blob_size) VALUES ($1, 'index.yaml', $2, 1)`,
+		s.repo, metaSHA,
+	)
 
 	orphans := []string{seedOldBlob(t, s, 2), seedOldBlob(t, s, 3)}
 	ghost := strings.Repeat("f", 64) // no blobs row at all
@@ -157,11 +161,7 @@ func TestDeleteBlobsIfUnreferencedNeverTakesAReferencedBlob(t *testing.T) {
 	for i := 0; i < n; i += 2 {
 		referenced[i] = true
 
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			err := pg.WithBlobLock(ctx, shas[i], func(ctx context.Context) error {
 				id, err := pg.UpsertBlob(ctx, shas[i], shas[i], 1)
 				if err != nil {
@@ -181,19 +181,15 @@ func TestDeleteBlobsIfUnreferencedNeverTakesAReferencedBlob(t *testing.T) {
 			if err != nil {
 				errs <- fmt.Errorf("upload %d: %w", i, err)
 			}
-		}()
+		})
 	}
 
 	for range 3 {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			if _, err := pg.DeleteBlobsIfUnreferenced(ctx, shas); err != nil {
 				errs <- fmt.Errorf("batch delete: %w", err)
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -209,7 +205,10 @@ func TestDeleteBlobsIfUnreferencedNeverTakesAReferencedBlob(t *testing.T) {
 				t.Errorf("blob %d is referenced by a package file but its row is gone", i)
 			}
 
-			if got := s.queryID(`SELECT count(*)::text FROM package_files f JOIN blobs b ON b.id = f.blob_id WHERE b.sha256 = $1`, sha); got != "1" {
+			if got := s.queryID(
+				`SELECT count(*)::text FROM package_files f JOIN blobs b ON b.id = f.blob_id WHERE b.sha256 = $1`,
+				sha,
+			); got != "1" {
 				t.Errorf("blob %d: %s package files reference it, want 1", i, got)
 			}
 		}

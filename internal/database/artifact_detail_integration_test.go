@@ -137,7 +137,15 @@ func detailCases(f *detailFixture) []detailCase {
 		{"go", f.goRepo, f.goFiles[0], true, func(d *models.ComponentDetail) bool {
 			return d.Info["module_path"] == "example.com/m" && d.DepsDecoder == "go-mod" && len(d.Deps) > 0
 		}},
-		// The file list is the listed files of the version: the unlisted go.mod stays out.
+		{"unlisted file resolves nothing", f.goRepo, f.goFiles[1], false, nil},
+		{"id is scoped to its repository", f.mavenRepo, f.npmFile[0], false, nil},
+	}
+}
+
+// detailFileCases are the expectations on the file list of the detail: the
+// listed files of the version, so the unlisted go.mod stays out.
+func detailFileCases(f *detailFixture) []detailCase {
+	return []detailCase{
 		{"go files", f.goRepo, f.goFiles[0], true, func(d *models.ComponentDetail) bool {
 			return len(d.Files) == 1 && d.Files[0].ID == f.goFiles[0] && d.Files[0].Filename == "v1.0.0.zip" &&
 				d.Files[0].Size == 5 && d.Files[0].SHA256 == strings.Repeat("c", 64)
@@ -145,8 +153,6 @@ func detailCases(f *detailFixture) []detailCase {
 		{"npm files", f.npmRepo, f.npmFile[0], true, func(d *models.ComponentDetail) bool {
 			return len(d.Files) == 1 && d.Files[0].ID == f.npmFile[0] && d.Files[0].SHA256 == strings.Repeat("a", 64)
 		}},
-		{"unlisted file resolves nothing", f.goRepo, f.goFiles[1], false, nil},
-		{"id is scoped to its repository", f.mavenRepo, f.npmFile[0], false, nil},
 	}
 }
 
@@ -165,7 +171,7 @@ func TestArtifactDetailReadsGenericTables(t *testing.T) {
 	f.seedMaven(t)
 	f.seedGo(t)
 
-	cases := detailCases(f)
+	cases := append(detailCases(f), detailFileCases(f)...)
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
