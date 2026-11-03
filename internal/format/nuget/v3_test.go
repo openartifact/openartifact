@@ -38,6 +38,9 @@ type memDB struct {
 	raceCreate bool
 	// groupWrites counts SetNuGetDependencyGroups calls that stored a value.
 	groupWrites int
+	// created numbers row ids; unlike len(pkgs) it never reuses one after a
+	// delete, as the real store does not.
+	created int
 }
 
 func (d *memDB) find(id, version string) *models.NuGetPackage {
@@ -55,7 +58,8 @@ func (d *memDB) CreateNuGetPackage(_ context.Context, p *models.NuGetPackage) er
 		return database.ErrDuplicate
 	}
 
-	p.ID = fmt.Sprintf("nuget-%d", len(d.pkgs)+1)
+	d.created++
+	p.ID = fmt.Sprintf("nuget-%d", d.created)
 	p.CreatedAt = time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC).Add(time.Duration(len(d.pkgs)) * time.Minute)
 	d.pkgs = append(d.pkgs, p)
 
@@ -95,6 +99,24 @@ func (d *memDB) ListNuGetPackageVersions(_ context.Context, _, id string) ([]*mo
 	}
 
 	return out, nil
+}
+
+// NuGetVersionsStamp mirrors the database stamp: the live count and a hash of
+// the row ids.
+func (d *memDB) NuGetVersionsStamp(_ context.Context, _, id string) (string, error) {
+	n, sum := 0, uint64(0)
+
+	for _, p := range d.pkgs {
+		if p.PackageID == id {
+			n++
+
+			for _, c := range []byte(p.ID) {
+				sum += uint64(c) * 1099511628211
+			}
+		}
+	}
+
+	return fmt.Sprintf("%d:%d", n, sum), nil
 }
 
 func (d *memDB) CountFileDownload(fileID string) {

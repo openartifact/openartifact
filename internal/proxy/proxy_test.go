@@ -146,7 +146,7 @@ func (d *memDB) entry(repoID, key string) *models.ProxyCacheEntry {
 }
 
 type fixture struct {
-	t        *testing.T
+	t        testing.TB
 	svc      *Service
 	db       *memDB
 	repo     *models.Repository
@@ -156,7 +156,7 @@ type fixture struct {
 
 // newFixture serves upstream through a maven proxy repository. handler is
 // wrapped to count upstream requests.
-func newFixture(t *testing.T, handler http.HandlerFunc) *fixture {
+func newFixture(t testing.TB, handler http.HandlerFunc) *fixture {
 	t.Helper()
 	t.Setenv(allowPrivateEnv, "true") // httptest upstreams are loopback
 
@@ -192,7 +192,7 @@ func newFuzzFixture(t *testing.T, handler http.HandlerFunc) (*fixture, func()) {
 }
 
 // startFixture builds the fixture around a running upstream; the caller closes it.
-func startFixture(t *testing.T, handler http.HandlerFunc) *fixture {
+func startFixture(t testing.TB, handler http.HandlerFunc) *fixture {
 	t.Helper()
 
 	f := &fixture{t: t, db: newMemDB()}

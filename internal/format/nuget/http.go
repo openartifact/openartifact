@@ -75,6 +75,7 @@ type HTTPStore interface {
 	CountFileDownload(fileID string)
 	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
 	ListNuGetPackageVersions(ctx context.Context, repoID string, packageID string) ([]*models.NuGetPackage, error)
+	NuGetVersionsStamp(ctx context.Context, repoID string, packageID string) (string, error)
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
 	SearchNuGetPackages(ctx context.Context, repoID string, query string, skip int, take int) ([]*models.NuGetPackage, int, error)
 	SetNuGetDependencyGroups(ctx context.Context, repoID string, packageID string, version string, groups []byte) error
@@ -108,7 +109,7 @@ func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 	// dotnet nuget push appends a slash to the PackagePublish URL of the service index.
 	r.Put("/v3/package/", h.handlePushPackage)
 	r.Delete("/v3/package/{id}/{version}", h.handleDeletePackage)
-	r.Get("/v3/package/{id}/index.json", base.Compress(h.handleVersionIndex))
+	r.Get("/v3/package/{id}/index.json", h.handleVersionIndex)
 	r.Get("/v3/package/{id}/{version}/{filename}", h.handleDownloadPackage)
 	r.Get("/v3/registration/{id}/index.json", h.handleRegistrationIndex)
 	// {versionfile} is "<version>.json"; a chi parameter would stop at the
@@ -156,7 +157,7 @@ func (h *HTTPHandler) resolveRepoInfo(w http.ResponseWriter, r *http.Request) *m
 // repoBaseURL is the repository's root URL as the client reached it (BASE_URL
 // when set, else the request's origin). NuGet clients take the service index
 // @ids as full URLs, so every URL built from it is absolute and its document's
-// validator must carry it (registrationETag).
+// validator must carry it (versionsETag).
 func (h *HTTPHandler) repoBaseURL(w http.ResponseWriter, r *http.Request) string {
 	return h.PublicBase(w, r) + "/repos/" + urlparams.Vars(r)["name"]
 }
@@ -576,11 +577,38 @@ func (h *HTTPHandler) handleDeletePackage(w http.ResponseWriter, r *http.Request
 }
 
 // sortedVersions returns the packages ordered by version, oldest first.
+// Each version is parsed once, not on every comparison; unparsable ones sort
+// first, in string order (pkgnuget.CompareStrings).
 func sortedVersions(pkgs []*models.NuGetPackage) []*models.NuGetPackage {
-	out := slices.Clone(pkgs)
-	slices.SortStableFunc(out, func(a, b *models.NuGetPackage) int {
-		return pkgnuget.CompareStrings(a.Version, b.Version)
+	type keyed struct {
+		pkg *models.NuGetPackage
+		ver pkgnuget.Version
+		ok  bool
+	}
+
+	keys := make([]keyed, len(pkgs))
+	for i, p := range pkgs {
+		v, err := pkgnuget.ParseVersion(p.Version)
+		keys[i] = keyed{pkg: p, ver: v, ok: err == nil}
+	}
+
+	slices.SortStableFunc(keys, func(a, b keyed) int {
+		switch {
+		case !a.ok && !b.ok:
+			return strings.Compare(a.pkg.Version, b.pkg.Version)
+		case !a.ok:
+			return -1
+		case !b.ok:
+			return 1
+		}
+
+		return a.ver.Compare(b.ver)
 	})
+
+	out := make([]*models.NuGetPackage, len(keys))
+	for i, k := range keys {
+		out[i] = k.pkg
+	}
 
 	return out
 }
@@ -603,32 +631,60 @@ func latestVersion(pkgs []*models.NuGetPackage) *models.NuGetPackage {
 // (GET {base}/{id}/index.json), the first request `dotnet restore` makes for a
 // package.
 func (h *HTTPHandler) handleVersionIndex(w http.ResponseWriter, r *http.Request) {
-	repoID := h.resolveRepo(w, r)
-	if repoID == "" {
+	repo := h.resolveRepoInfo(w, r)
+	if repo == nil {
 		return
 	}
 
 	packageID := strings.ToLower(urlparams.Vars(r)["id"])
 
-	pkgs, err := h.DB.ListNuGetPackageVersions(r.Context(), repoID, packageID)
+	stamp, ok := h.versionsStamp(w, r, repo.ID, packageID)
+	if !ok {
+		return
+	}
+
+	// The list holds version strings only, so no origin takes part.
+	etag := versionsETag("flat", repo.ID, "", packageID, stamp)
+
+	h.ServeRendered(w, r, repo.Public, etag, etag, registrationMaxAge, func(ctx context.Context) (*base.Rendered, error) {
+		pkgs, err := h.DB.ListNuGetPackageVersions(ctx, repo.ID, packageID)
+		if err != nil {
+			return nil, fmt.Errorf("list nuget versions: %w", err)
+		}
+
+		versions := make([]string, 0, len(pkgs))
+		for _, p := range sortedVersions(pkgs) {
+			versions = append(versions, p.Version)
+		}
+
+		body, err := json.Marshal(map[string]any{"versions": versions})
+		if err != nil {
+			return nil, fmt.Errorf("encode version list: %w", err)
+		}
+
+		return &base.Rendered{Body: append(body, '\n'), ContentType: "application/json"}, nil
+	}, "failed to render nuget version list", "id", packageID)
+}
+
+// versionsStamp fingerprints the live versions of one package. It writes the
+// response and returns false when the stamp fails or the package has no
+// version.
+func (h *HTTPHandler) versionsStamp(w http.ResponseWriter, r *http.Request, repoID, packageID string) (string, bool) {
+	stamp, err := h.DB.NuGetVersionsStamp(r.Context(), repoID, packageID)
 	if err != nil {
-		h.Log.Errorw("failed to list nuget versions", "id", packageID, "error", err)
+		h.Log.Errorw("failed to stamp nuget versions", "id", packageID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
-		return
+		return "", false
 	}
 
-	if len(pkgs) == 0 {
+	// The stamp is "<count>:<hash>".
+	if strings.HasPrefix(stamp, "0:") {
 		http.NotFound(w, r)
-		return
+		return "", false
 	}
 
-	versions := make([]string, 0, len(pkgs))
-	for _, p := range sortedVersions(pkgs) {
-		versions = append(versions, p.Version)
-	}
-
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"versions": versions})
+	return stamp, true
 }
 
 type packageFile int
@@ -784,21 +840,19 @@ func (h *HTTPHandler) catalogEntry(ctx context.Context, baseURL, packageID strin
 // registration index before revalidating.
 const registrationMaxAge = 60
 
-// registrationETag identifies the registration index of one package: it
-// changes when a version is added, removed or republished and never because of
-// download counters. Rows are immutable and a republish is a new row with a new
-// id, so the ids identify the content. baseURL is the repository root the URLs
-// of the document are built on, origin included: a document for one origin must
-// never revalidate (or be served from the render cache) for another.
-func registrationETag(repoID, baseURL, packageID string, pkgs []*models.NuGetPackage) string {
-	buf := make([]byte, 0, 64+len(pkgs)*48)
+// versionsETag identifies a document built from the live versions of one
+// package (kind names the document): it changes when a version is added,
+// removed or republished and never because of download counters. Rows are
+// immutable and a republish is a new row with a new id, so the stamp (count and
+// hash of the ids) identifies the content. baseURL is the repository root the
+// URLs of the document are built on, origin included, or "" for a document
+// without URLs: a document for one origin must never revalidate (or be served
+// from the render cache) for another.
+func versionsETag(kind, repoID, baseURL, packageID, stamp string) string {
+	buf := make([]byte, 0, 64+len(kind)+len(repoID)+len(baseURL)+len(packageID)+len(stamp))
 
-	for _, s := range []string{repoID, baseURL, packageID} {
+	for _, s := range []string{kind, repoID, baseURL, packageID, stamp} {
 		buf = append(append(buf, s...), 0)
-	}
-
-	for _, v := range pkgs {
-		buf = append(append(append(append(buf, v.ID...), 0), v.Version...), 0)
 	}
 
 	sum := sha256.Sum256(buf)
@@ -814,26 +868,23 @@ func (h *HTTPHandler) handleRegistrationIndex(w http.ResponseWriter, r *http.Req
 
 	packageID := strings.ToLower(urlparams.Vars(r)["id"])
 
-	pkgs, err := h.DB.ListNuGetPackageVersions(r.Context(), repo.ID, packageID)
-	if err != nil {
-		h.Log.Errorw("failed to list nuget versions", "id", packageID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if len(pkgs) == 0 {
-		http.NotFound(w, r)
+	stamp, ok := h.versionsStamp(w, r, repo.ID, packageID)
+	if !ok {
 		return
 	}
 
 	baseURL := h.repoBaseURL(w, r)
 
-	// The validator comes from the rows already loaded, before any dependency
-	// groups are resolved or JSON is built.
-	etag := registrationETag(repo.ID, baseURL, packageID, pkgs)
+	// Revalidation is answered from the stamp alone: no row is loaded, no
+	// dependency group is resolved and no JSON is built.
+	etag := versionsETag("registration", repo.ID, baseURL, packageID, stamp)
 
 	h.ServeRendered(w, r, repo.Public, etag, etag, registrationMaxAge, func(ctx context.Context) (*base.Rendered, error) {
+		pkgs, err := h.DB.ListNuGetPackageVersions(ctx, repo.ID, packageID)
+		if err != nil {
+			return nil, fmt.Errorf("list nuget versions: %w", err)
+		}
+
 		return h.renderRegistrationIndex(ctx, baseURL, packageID, pkgs)
 	}, "failed to render nuget registration", "id", packageID)
 }

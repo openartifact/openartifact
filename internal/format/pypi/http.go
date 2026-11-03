@@ -7,17 +7,12 @@ package pypi
 import (
 	"context"
 	"crypto/md5" //nolint:gosec // required by protocol specification
-	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	htmlesc "html"
 	"io"
 	"mime"
 	"net/http"
-	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -31,13 +26,13 @@ import (
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/presign"
+	"github.com/openartifact/openartifact/internal/pypisimple"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
-	"github.com/openartifact/openartifact/pkg/pyversion"
 )
 
 // HTTPStore is the part of the database HTTPHandler needs.
@@ -53,6 +48,8 @@ type HTTPStore interface {
 	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
 	ListPyPIPackageNames(ctx context.Context, repoID string) ([]string, error)
 	ListPyPIPackageVersions(ctx context.Context, repoID string, name string) ([]*models.PyPIPackage, error)
+	PyPIIndexStamp(ctx context.Context, repoID string) (string, error)
+	PyPIProjectStamp(ctx context.Context, repoID string, name string) (string, int64, error)
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
 	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
 }
@@ -70,12 +67,14 @@ func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStor
 }
 
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
-	r.Get("/simple/", base.Compress(h.handleSimpleIndex))
-	r.Get("/simple/{package}/", base.Compress(h.handlePackageIndex))
+	// The three metadata routes serve a render-cached document that carries its
+	// own gzip form (base.Rendered), so none is wrapped in base.Compress.
+	r.Get("/simple/", h.handleSimpleIndex)
+	r.Get("/simple/{package}/", h.handlePackageIndex)
 	r.Get("/files/{filename}", h.handleDownload)
 	r.Post("/legacy/", h.handleUpload)
 	r.Delete("/files/{filename}", h.handleDelete)
-	r.Get("/json/{package}", base.Compress(h.handleJSON))
+	r.Get("/json/{package}", h.handleJSON)
 }
 
 func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
@@ -95,14 +94,6 @@ const (
 	// larger parts spill to disk.
 	uploadFormMemory = 32 << 20
 )
-
-var pypiNameSeparators = regexp.MustCompile(`[-_.]+`)
-
-// normalizePyPIName is the PEP 503 normalization: runs of "-", "_" and "." become
-// a single "-", lowercased.
-func normalizePyPIName(name string) string {
-	return strings.ToLower(pypiNameSeparators.ReplaceAllString(name, "-"))
-}
 
 // pypiFileExtensions are the multi-part file endings stripped before a
 // filename is split into distribution and version.
@@ -124,7 +115,7 @@ func validateUploadIdentity(name, version, filename string) error {
 	}
 
 	dist, ok := splitPyPIFilename(filename, version)
-	if !ok || normalizePyPIName(dist) != normalizePyPIName(name) {
+	if !ok || pypisimple.NormalizeName(dist) != pypisimple.NormalizeName(name) {
 		return errPyPIFilenameMismatch
 	}
 
@@ -170,132 +161,6 @@ func splitPyPIFilename(filename, version string) (string, bool) {
 	dist, found := strings.CutSuffix(stem, "-"+version)
 
 	return dist, found && dist != ""
-}
-
-// simpleIndexMaxAge is how long shared caches may reuse a public repository's
-// simple index pages before revalidating.
-const simpleIndexMaxAge = 60
-
-// serveSimplePage writes a simple-index HTML page. The page is a pure function
-// of the repository's rows, so a hash of the body is its validator: a matching
-// If-None-Match saves the transfer.
-func serveSimplePage(w http.ResponseWriter, r *http.Request, repoPublic bool, page string) {
-	sum := sha256.Sum256([]byte(page))
-
-	if base.Revalidate(w, r, repoPublic, `"`+hex.EncodeToString(sum[:16])+`"`, simpleIndexMaxAge) {
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(w, page)
-}
-
-func (h *HTTPHandler) handleSimpleIndex(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-
-	repo, err := h.ResolveRepo(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if repo == nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	storedNames, err := h.DB.ListPyPIPackageNames(r.Context(), repo.ID)
-	if err != nil {
-		h.Log.Errorw("failed to list packages", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	// Stored names are distinct but not necessarily normalized (legacy rows),
-	// so two of them can collapse to one project.
-	seen := make(map[string]bool, len(storedNames))
-	uniqueNames := make([]string, 0, len(storedNames))
-
-	for _, name := range storedNames {
-		normalized := normalizePyPIName(name)
-		if !seen[normalized] {
-			seen[normalized] = true
-			uniqueNames = append(uniqueNames, normalized)
-		}
-	}
-
-	// Generate HTML
-	var html strings.Builder
-	html.WriteString("<!DOCTYPE html>\n<html><body>\n")
-
-	for _, name := range uniqueNames {
-		fmt.Fprintf(&html, `<a href="%s/">%s</a>`+"\n",
-			htmlesc.EscapeString(url.PathEscape(name)), htmlesc.EscapeString(name))
-	}
-
-	html.WriteString("</body></html>\n")
-
-	serveSimplePage(w, r, repo.Public, html.String())
-}
-
-func (h *HTTPHandler) handlePackageIndex(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-	pkgName := vars["package"]
-
-	repo, err := h.ResolveRepo(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if repo == nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	// Normalize the package name for lookup
-	normalizedName := normalizePyPIName(pkgName)
-
-	versions, err := h.DB.ListPyPIPackageVersions(r.Context(), repo.ID, normalizedName)
-	if err != nil {
-		h.Log.Errorw("failed to list package versions", "pkg", pkgName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if len(versions) == 0 {
-		http.NotFound(w, r)
-		return
-	}
-
-	// Generate HTML with links to files
-	var html strings.Builder
-	html.WriteString("<!DOCTYPE html>\n<html><body>\n")
-
-	for _, pkg := range versions {
-		// Relative to the page URL ".../simple/<pkg>/" (PEP 503): no origin.
-		fileURL := htmlesc.EscapeString("../../files/" + url.PathEscape(pkg.Filename))
-		fmt.Fprintf(&html, `<a href="%s#sha256=%s"`, fileURL, htmlesc.EscapeString(pkg.SHA256Digest))
-
-		if pkg.RequiresPython != "" {
-			fmt.Fprintf(&html, ` data-requires-python="%s"`, htmlesc.EscapeString(pkg.RequiresPython))
-		}
-
-		fmt.Fprintf(&html, ">%s</a>\n", htmlesc.EscapeString(pkg.Filename))
-	}
-
-	html.WriteString("</body></html>\n")
-
-	serveSimplePage(w, r, repo.Public, html.String())
 }
 
 func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
@@ -478,7 +343,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Normalize package name
-	normalizedName := normalizePyPIName(name)
+	normalizedName := pypisimple.NormalizeName(name)
 
 	blobKey := fmt.Sprintf("pypi/%s/%s", repoID, filename)
 
@@ -666,101 +531,6 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}))
 
 	w.WriteHeader(http.StatusOK)
-}
-
-func (h *HTTPHandler) handleJSON(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-	pkgName := vars["package"]
-
-	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
-	if repoID == "" {
-		return
-	}
-
-	// Normalize the package name for lookup
-	normalizedName := normalizePyPIName(pkgName)
-
-	versions, err := h.DB.ListPyPIPackageVersions(r.Context(), repoID, normalizedName)
-	if err != nil {
-		h.Log.Errorw("failed to list package versions", "pkg", pkgName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if len(versions) == 0 {
-		http.NotFound(w, r)
-		return
-	}
-
-	// The legacy JSON API is consumed by tools that do not resolve references,
-	// so its file URLs are absolute (and, with no ETag, never cached).
-	publicBase := h.PublicBase(w, r)
-
-	// Build JSON response
-	releases := make(map[string][]map[string]any)
-
-	for _, pkg := range versions {
-		fileURL := fmt.Sprintf("%s/repos/%s/files/%s", publicBase, url.PathEscape(repoName), url.PathEscape(pkg.Filename))
-
-		fileInfo := map[string]any{
-			"filename": pkg.Filename,
-			"url":      fileURL,
-			"digests": map[string]string{
-				"sha256": pkg.SHA256Digest,
-			},
-		}
-		if pkg.MD5Digest != "" {
-			if digests, ok := fileInfo["digests"].(map[string]string); ok {
-				digests["md5"] = pkg.MD5Digest
-			}
-		}
-
-		releases[pkg.Version] = append(releases[pkg.Version], fileInfo)
-	}
-
-	// info describes the highest version by PEP 440 order; the query orders
-	// versions as strings, where 9.0.0 sorts above 10.0.0.
-	firstPkg := versions[0]
-
-	for _, pkg := range versions[1:] {
-		if pyversion.Compare(pkg.Version, firstPkg.Version) > 0 {
-			firstPkg = pkg
-		}
-	}
-
-	info := map[string]any{
-		"name":    firstPkg.Name,
-		"version": firstPkg.Version,
-	}
-	if firstPkg.Summary != "" {
-		info["summary"] = firstPkg.Summary
-	}
-
-	if firstPkg.Author != "" {
-		info["author"] = firstPkg.Author
-	}
-
-	if firstPkg.AuthorEmail != "" {
-		info["author_email"] = firstPkg.AuthorEmail
-	}
-
-	if firstPkg.License != "" {
-		info["license"] = firstPkg.License
-	}
-
-	response := map[string]any{
-		"info":     info,
-		"releases": releases,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	if encErr := json.NewEncoder(w).Encode(response); encErr != nil {
-		_ = encErr // response header already written
-	}
 }
 
 // uploadLicenses returns the licenses a policy is enforced on: the ones the

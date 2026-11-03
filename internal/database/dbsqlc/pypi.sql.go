@@ -193,3 +193,56 @@ func (q *Queries) ListPyPIPackageVersions(ctx context.Context, arg ListPyPIPacka
 	}
 	return items, nil
 }
+
+const pyPIIndexStamp = `-- name: PyPIIndexStamp :one
+SELECT (count(*)::text || ':' || COALESCE(sum(uuid_hash_extended(p.id, 0)), 0)::text)::text AS stamp
+FROM packages p
+WHERE p.repository_id = $1
+  AND EXISTS (SELECT 1 FROM package_versions v WHERE v.package_id = p.id AND v.deleted_at IS NULL)
+`
+
+// Fingerprint of the /simple/ root: the count and an order-independent hash of
+// the IDs of the projects that have a live release, the set ListPyPIPackageNames
+// returns. A project's name never changes, so the stamp moves exactly when a
+// project appears or loses its last live release. No blob or file row is read.
+func (q *Queries) PyPIIndexStamp(ctx context.Context, repositoryID string) (string, error) {
+	row := q.db.QueryRow(ctx, pyPIIndexStamp, repositoryID)
+	var stamp string
+	err := row.Scan(&stamp)
+	return stamp, err
+}
+
+const pyPIProjectStamp = `-- name: PyPIProjectStamp :one
+SELECT count(*)::bigint AS files,
+       (count(*)::text || ':' || COALESCE(sum(uuid_hash_extended(f.id, 0)), 0)::text || ':' ||
+        COALESCE(extract(epoch FROM max(v.updated_at))::text, ''))::text AS stamp
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+WHERE p.repository_id = $1 AND p.name_key = $2
+`
+
+type PyPIProjectStampParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	NameKey      string `db:"name_key" json:"name_key"`
+}
+
+type PyPIProjectStampRow struct {
+	Files int64  `db:"files" json:"files"`
+	Stamp string `db:"stamp" json:"stamp"`
+}
+
+// Fingerprint of the project page, the legacy JSON document and the files
+// ListPyPIPackageVersions returns for one project: the number of live files
+// (0 = no such project), an order-independent hash of their IDs and the latest
+// update of their releases. A file never changes once stored (a republish is a
+// new file, trash and restore change membership), and the release metadata the
+// JSON "info" shows is rewritten only together with a new file or through
+// SetVersionMetadata, which moves the release's updated_at. Downloads touch the
+// file's updated_at, not the release's, so they leave the stamp alone.
+func (q *Queries) PyPIProjectStamp(ctx context.Context, arg PyPIProjectStampParams) (PyPIProjectStampRow, error) {
+	row := q.db.QueryRow(ctx, pyPIProjectStamp, arg.RepositoryID, arg.NameKey)
+	var i PyPIProjectStampRow
+	err := row.Scan(&i.Files, &i.Stamp)
+	return i, err
+}

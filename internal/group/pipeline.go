@@ -5,6 +5,8 @@
 package group
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"strconv"
@@ -114,6 +116,54 @@ func (h *Handler) askMember(sess *mergeSession, mr *http.Request, m *models.Repo
 	h.log.Warnw("group member failed to serve a document", "group_member", m.Name, "path", path, "status", cw.code())
 
 	return answer{member: m, failed: true}
+}
+
+// memberStamp identifies the merge of the members' documents by the members'
+// own validators, without reading a single document: every member is asked for
+// the document with If-None-Match: *, which a member that has it answers 304
+// with its current ETag (the members' handlers revalidate before they render),
+// and a member that has none answers 404. The digest covers each member and its
+// validator in order, so it moves whenever any member's document does. ok is
+// false when a member gave no validator (it failed, or answers without one): the
+// merge then has to be identified by the documents themselves.
+func memberStamp(r *http.Request, members []*models.Repository, ask memberAsk, be Backend) (stamp string, ok bool) {
+	mr := memberGetRequest(r)
+	if ask.prepare != nil {
+		ask.prepare(mr)
+	}
+
+	mr.Header.Set("If-None-Match", "*")
+
+	sum := sha256.New()
+	found := 0
+
+	for _, m := range members {
+		if ask.first > 0 && found >= ask.first {
+			break
+		}
+
+		cw := newCaptureWriter(0)
+		be.ServeMember(cw, mr, m, ask.path(m))
+
+		var etag string
+
+		switch cw.code() {
+		case http.StatusNotModified:
+			if etag = cw.header.Get("ETag"); etag == "" {
+				return "", false
+			}
+
+			found++
+		case http.StatusNotFound:
+			etag = "-"
+		default:
+			return "", false
+		}
+
+		sum.Write([]byte(strconv.Itoa(len(m.ID)) + ":" + m.ID + strconv.Itoa(len(etag)) + ":" + etag))
+	}
+
+	return hex.EncodeToString(sum.Sum(nil)), true
 }
 
 // collection is what asking the members of a group for one document yielded.

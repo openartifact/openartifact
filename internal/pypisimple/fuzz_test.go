@@ -777,6 +777,10 @@ func FuzzNormalizeName(f *testing.F) {
 			t.Fatalf("NormalizeName is not idempotent: %q -> %q -> %q", name, norm, again)
 		}
 
+		if want := referenceNormalizeName(name); norm != want {
+			t.Fatalf("NormalizeName(%q) = %q, the regular-expression form gives %q", name, norm, want)
+		}
+
 		if ValidName(norm) && (strings.Contains(norm, "/") || strings.Contains(norm, "..")) {
 			t.Fatalf("valid name %q (from %q) is not a plain path segment", norm, name)
 		}

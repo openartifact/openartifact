@@ -11,19 +11,84 @@
 package pypisimple
 
 import (
-	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // maxNameLen bounds a project name accepted from a client.
 const maxNameLen = 256
 
-var nameSeparators = regexp.MustCompile(`[-_.]+`)
+func isNameSeparator(c byte) bool { return c == '-' || c == '_' || c == '.' }
 
 // NormalizeName is the PEP 503 normalization: runs of "-", "_" and "." become
-// a single "-" and the name is lowercased.
+// a single "-" and the name is lowercased (Unicode-aware, as strings.ToLower).
+// A name that is already normalized ASCII, what pip sends, is returned as is
+// without allocating.
 func NormalizeName(name string) string {
-	return strings.ToLower(nameSeparators.ReplaceAllString(name, "-"))
+	clean, ascii, afterSeparator := true, true, false
+
+	for i := range len(name) {
+		c := name[i]
+
+		switch {
+		case c >= utf8.RuneSelf:
+			ascii = false
+		case isNameSeparator(c):
+			// Only a single "-" is already normal.
+			if c != '-' || afterSeparator {
+				clean = false
+			}
+
+			afterSeparator = true
+
+			continue
+		case c >= 'A' && c <= 'Z':
+			clean = false
+		}
+
+		afterSeparator = false
+	}
+
+	if clean && ascii {
+		return name
+	}
+
+	// The separators are ASCII and never occur inside a multi-byte sequence, so
+	// the runs can be collapsed byte-wise; invalid UTF-8 passes through to
+	// ToLower exactly as it does through a regular-expression replacement.
+	var b strings.Builder
+
+	b.Grow(len(name))
+
+	afterSeparator = false
+
+	for i := range len(name) {
+		c := name[i]
+
+		if isNameSeparator(c) {
+			if !afterSeparator {
+				b.WriteByte('-')
+			}
+
+			afterSeparator = true
+
+			continue
+		}
+
+		afterSeparator = false
+
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+
+		b.WriteByte(c)
+	}
+
+	if ascii {
+		return b.String()
+	}
+
+	return strings.ToLower(b.String())
 }
 
 // ValidName reports whether a normalized project name is safe to use as a path

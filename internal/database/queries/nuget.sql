@@ -39,6 +39,18 @@ JOIN blobs b ON b.id = f.blob_id
 WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(name_key)
 ORDER BY v.version DESC;
 
+-- name: NuGetVersionsStamp :one
+-- Fingerprint of the live versions of one package: their count and an
+-- order-independent hash of their file IDs (see HelmIndexStamp). A file is
+-- immutable (a republish is a new file) and trash/restore changes membership,
+-- so the stamp changes exactly when the version list or the registration index
+-- would. It reads ids only: no blob join and no metadata.
+SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(f.id::text, 0)), 0)::text)::text AS stamp
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(name_key);
+
 -- name: SearchNuGetPackagesCount :one
 -- Counts matching packages (not versions). The query is lower-cased and
 -- LIKE-escaped by the caller; name_key is the lower-cased package id.

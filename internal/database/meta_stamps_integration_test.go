@@ -9,6 +9,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -75,6 +76,65 @@ func TestMetadataStamps(t *testing.T) {
 		}
 	})
 
+	t.Run("nuget", func(t *testing.T) {
+		s := newQuotaSeeder(t, pg, "stamp-nuget", "nuget")
+		stamp := func(id string) func() string {
+			return func() string {
+				v, err := pg.NuGetVersionsStamp(ctx, s.repo, id)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				return v
+			}
+		}
+		add := func(id, version string) {
+			p := &models.NuGetPackage{
+				RepositoryID: s.repo, PackageID: id, Version: version, BlobKey: langSHA("nuget" + id + version),
+				PackageSize: 5, DependencyGroups: []byte("[]"),
+			}
+			if err := pg.CreateNuGetPackage(ctx, p); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		demo := stamp("Demo")
+		other := stamp("other")()
+
+		stampMoves(t, "first version", demo, func() { add("demo", "1.0.0") })
+
+		one := demo()
+		stampMoves(t, "second version", demo, func() { add("demo", "1.1.0") })
+
+		if got := stamp("other")(); got != other {
+			t.Errorf("another package's stamp moved: %q -> %q", other, got)
+		}
+
+		if err := pg.IncrementNuGetDownloadCount(ctx, s.repo, "demo", "1.1.0"); err != nil {
+			t.Fatal(err)
+		}
+
+		two := demo()
+
+		stampMoves(t, "delete a version", demo, func() {
+			if err := pg.DeleteNuGetPackage(ctx, s.repo, "demo", "1.1.0"); err != nil {
+				t.Fatal(err)
+			}
+		})
+
+		if got := demo(); got != one {
+			t.Errorf("stamp after delete = %q, want the single-version stamp %q", got, one)
+		}
+
+		if one == two {
+			t.Error("one and two versions share a stamp")
+		}
+
+		if empty := stamp("missing")(); !strings.HasPrefix(empty, "0:") {
+			t.Errorf("stamp of an unknown package = %q, want a zero count", empty)
+		}
+	})
+
 	t.Run("conda", func(t *testing.T) {
 		s := newQuotaSeeder(t, pg, "stamp-conda", "conda")
 		stamp := func(platform string) func() string {
@@ -128,6 +188,113 @@ func TestMetadataStamps(t *testing.T) {
 		specs, err := pg.ListRubyGemSpecs(ctx, s.repo)
 		if err != nil || len(specs) != 0 {
 			t.Errorf("ListRubyGemSpecs after yank = %v, %v; want none", specs, err)
+		}
+	})
+
+	t.Run("pypi", func(t *testing.T) {
+		s := newQuotaSeeder(t, pg, "stamp-pypi", "pypi")
+
+		index := func() string {
+			v, err := pg.PyPIIndexStamp(ctx, s.repo)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			return v
+		}
+		project := func(name string) (string, int64) {
+			v, n, err := pg.PyPIProjectStamp(ctx, s.repo, name)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			return v, n
+		}
+		page := func() string { v, _ := project("demo"); return v }
+		add := func(name, version, filename string) *models.PyPIPackage {
+			p := &models.PyPIPackage{
+				RepositoryID: s.repo, Name: name, Version: version, Filename: filename, PackageType: "sdist",
+				BlobKey: langSHA("pypi-" + filename), SHA256Digest: langSHA("pypi-" + filename), SizeBytes: 5, Summary: "first",
+			}
+			if err := pg.CreatePyPIPackage(ctx, p); err != nil {
+				t.Fatal(err)
+			}
+
+			return p
+		}
+
+		if _, n := project("demo"); n != 0 {
+			t.Fatalf("files of an unknown project = %d, want 0", n)
+		}
+
+		stampMoves(t, "index: first release of a project", index, func() { add("demo", "1.0", "demo-1.0.tar.gz") })
+		stampMoves(t, "index: a second project", index, func() { add("other", "1.0", "other-1.0.tar.gz") })
+
+		if _, n := project("demo"); n != 1 {
+			t.Fatalf("files of demo = %d, want 1", n)
+		}
+
+		// A new release of a known project changes its page, not the project list.
+		listed := index()
+
+		var second *models.PyPIPackage
+
+		stampMoves(t, "page: a further release", page, func() { second = add("demo", "2.0", "demo-2.0.tar.gz") })
+
+		if got := index(); got != listed {
+			t.Errorf("a new release of a known project moved the index stamp: %q -> %q", listed, got)
+		}
+
+		if _, n := project("demo"); n != 2 {
+			t.Fatalf("files of demo = %d, want 2", n)
+		}
+
+		// Another project's files are not part of this page's stamp.
+		stable := page()
+
+		add("other", "2.0", "other-2.0.tar.gz")
+
+		if got := page(); got != stable {
+			t.Errorf("a file of another project moved the page stamp: %q -> %q", stable, got)
+		}
+
+		// Counting a download is not a change of any document.
+		if err := pg.q.IncrementFileDownloads(ctx, second.ID); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := page(); got != stable {
+			t.Errorf("a download moved the page stamp: %q -> %q", stable, got)
+		}
+
+		stampMoves(t, "page: release metadata edit", page, func() {
+			s.exec(`UPDATE package_versions SET metadata = metadata || '{"summary":"edited"}'::jsonb, updated_at = now()
+				WHERE package_id = (SELECT id FROM packages WHERE repository_id = $1 AND name_key = 'demo') AND version = '2.0'`, s.repo)
+		})
+
+		// Trashing a file moves the page stamp; trashing the last file of every
+		// release removes the project from the list.
+		stampMoves(t, "page: trash a file", page, func() {
+			s.exec(`UPDATE package_files SET deleted_at = now() WHERE repository_id = $1 AND filename = 'demo-2.0.tar.gz'`, s.repo)
+		})
+
+		if _, n := project("demo"); n != 1 {
+			t.Fatalf("files of demo after trash = %d, want 1", n)
+		}
+
+		before := index()
+
+		stampMoves(t, "index: a project loses its last live file", index, func() {
+			s.exec(`UPDATE package_files SET deleted_at = now() WHERE repository_id = $1 AND filename = 'demo-1.0.tar.gz'`, s.repo)
+			s.exec(`UPDATE package_versions SET deleted_at = now() WHERE package_id = (SELECT id FROM packages WHERE repository_id = $1 AND name_key = 'demo')`, s.repo)
+		})
+
+		if got := index(); got == before {
+			t.Error("index stamp unchanged")
+		}
+
+		if _, n := project("demo"); n != 0 {
+			t.Fatalf("files of demo after the last one is trashed = %d, want 0", n)
 		}
 	})
 

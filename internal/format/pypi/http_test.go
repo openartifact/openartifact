@@ -335,22 +335,6 @@ func TestUploadLicensePolicyNoEnforceableLicenseAdmitted(t *testing.T) {
 	}
 }
 
-// FMTA-7: PEP 503 normalization collapses runs of separators.
-func TestNormalizePyPIName(t *testing.T) {
-	for in, want := range map[string]string{
-		"Foo_Bar":    "foo-bar",
-		"foo__bar":   "foo-bar",
-		"foo_.bar":   "foo-bar",
-		"Foo-.-Bar":  "foo-bar",
-		"zope.Event": "zope-event",
-		"plain":      "plain",
-	} {
-		if got := normalizePyPIName(in); got != want {
-			t.Errorf("normalizePyPIName(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func uploadAs(t *testing.T, h *HTTPHandler, name, version, filename string) int {
 	t.Helper()
 
