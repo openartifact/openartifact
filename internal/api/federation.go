@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
@@ -18,6 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/federation"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -25,7 +25,7 @@ import (
 
 // peerNameRe bounds peer and token names: they appear in logs, metrics labels
 // and the UI.
-var peerNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
+var peerNameRe = lazyre.New(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 
 const (
 	maxPEMBytes            = 64 << 10
@@ -360,7 +360,7 @@ func strOrEmpty(s *string) string {
 // validate checks the fields that are present; a message is returned for the
 // first invalid one.
 func (b *peerBody) validate(ctx context.Context) string {
-	if b.Name != nil && !peerNameRe.MatchString(*b.Name) {
+	if b.Name != nil && !peerNameRe().MatchString(*b.Name) {
 		return "name must be 1-63 characters: letters, digits, '.', '_' or '-', starting with a letter or digit"
 	}
 
@@ -621,7 +621,7 @@ func (h *FederationHandler) handleCreateToken(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if !peerNameRe.MatchString(body.Name) {
+	if !peerNameRe().MatchString(body.Name) {
 		writeError(
 			w,
 			http.StatusBadRequest,

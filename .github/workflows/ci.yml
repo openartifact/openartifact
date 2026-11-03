@@ -456,10 +456,9 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           cid="$(docker create "$IMAGE_TAG")"
           trap 'docker rm "$cid" >/dev/null' EXIT
-          for f in /app/openartifact /usr/local/bin/oa; do
-            docker cp "$cid:$f" "$RUNNER_TEMP/size-probe"
-            echo "- $f: $(stat -c %s "$RUNNER_TEMP/size-probe" | numfmt --to=iec --format=%.1f)" >> "$GITHUB_STEP_SUMMARY"
-          done
+          # /usr/local/bin/oa is a link to this binary (the server also runs the oa CLI).
+          docker cp "$cid:/app/openartifact" "$RUNNER_TEMP/size-probe"
+          echo "- /app/openartifact: $(stat -c %s "$RUNNER_TEMP/size-probe" | numfmt --to=iec --format=%.1f)" >> "$GITHUB_STEP_SUMMARY"
 
       # --- image ---------------------------------------------------------
       - name: Trivy image scan (SARIF)

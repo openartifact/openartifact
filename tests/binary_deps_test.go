@@ -6,6 +6,7 @@ package integration_test
 
 import (
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -40,7 +41,8 @@ func goListDeps(t *testing.T, tags, pkg string) []string {
 	return strings.Fields(string(out))
 }
 
-// TestBinaryImportGraphs keeps the small binaries small: the CLI and the
+// TestBinaryImportGraphs keeps the small binaries small: the CLI (cmd/oa, the
+// package internal/oacli that the server also embeds) and the
 // password-reset tool must not link the server stack, and the server must not
 // link golang.org/x/net/trace (gRPC's debug tracing, dropped by the
 // grpcnotrace build tag), which pulls html/template and makes the linker keep
@@ -107,7 +109,8 @@ func TestBinaryImportGraphs(t *testing.T) {
 		{
 			name: "server", pkg: "./cmd/server", tags: releaseTags,
 			forbidden: []string{"golang.org/x/net/trace"},
-			required:  []string{aiPkg, module + "internal/mcp", "github.com/modelcontextprotocol/go-sdk/mcp"},
+			// internal/oacli: the server answers as `oa`, so the image needs no second binary.
+			required: []string{aiPkg, module + "internal/mcp", "github.com/modelcontextprotocol/go-sdk/mcp", module + "internal/oacli"},
 		},
 		{
 			name: "server-slim", pkg: "./cmd/server", tags: slimTags,
@@ -121,7 +124,7 @@ func TestBinaryImportGraphs(t *testing.T) {
 				"github.com/yosida95/uritemplate",
 			},
 			forbiddenExact: []string{aiPkg},
-			required:       []string{aiPkg + "/manifest"},
+			required:       []string{aiPkg + "/manifest", module + "internal/oacli"},
 		},
 	}
 
@@ -152,6 +155,78 @@ func TestBinaryImportGraphs(t *testing.T) {
 			for _, dep := range tc.required {
 				if !linked[dep] {
 					t.Errorf("%s (tags %q) does not link %s", tc.pkg, tc.tags, dep)
+				}
+			}
+		})
+	}
+}
+
+// linkedSymbols builds one main package like the release (CGO off, -trimpath,
+// symbol table kept) and returns the symbols of the binary, one per line.
+func linkedSymbols(t *testing.T, tags, pkg string) string {
+	t.Helper()
+
+	gobin, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("go toolchain not on PATH")
+	}
+
+	bin := filepath.Join(t.TempDir(), "main")
+	args := []string{"build", "-trimpath", "-ldflags", "-w", "-o", bin}
+
+	if tags != "" {
+		args = append(args, "-tags", tags)
+	}
+
+	args = append(args, pkg)
+
+	build := exec.CommandContext(t.Context(), gobin, args...)
+	build.Dir = ".."
+	build.Env = append(build.Environ(), "CGO_ENABLED=0")
+
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+
+	nm := exec.CommandContext(t.Context(), gobin, "tool", "nm", bin)
+
+	out, err := nm.Output()
+	if err != nil {
+		t.Fatalf("go tool nm: %v", err)
+	}
+
+	return string(out)
+}
+
+// TestBinariesDoNotExecuteTemplates keeps text/template execution out of oa
+// and the server, which embeds the CLI (`openartifact oa`). Execution calls
+// reflect.Value.MethodByName with a run-time name, which switches the linker
+// to keep every exported method of every reachable type: about 1.9 MB of the
+// CLI, and more of the server. Cobra reaches it only through SetHelpTemplate,
+// SetUsageTemplate and SetVersionTemplate (its default output is written in
+// Go), so a command that needs custom output uses SetHelpFunc or SetUsageFunc.
+func TestBinariesDoNotExecuteTemplates(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("builds the binaries")
+	}
+
+	for _, tc := range []struct{ name, tags, pkg string }{
+		{"oa", "", "./cmd/oa"},
+		{"server", "grpcnotrace", "./cmd/server"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			symbols := linkedSymbols(t, tc.tags, tc.pkg)
+
+			for _, sym := range []string{
+				"text/template.(*Template).Execute",
+				"text/template.(*state).evalField",
+			} {
+				if strings.Contains(symbols, " "+sym+"\n") {
+					t.Errorf("%s links %s: something sets a cobra help, usage or version template, or executes a text/template", tc.pkg, sym)
 				}
 			}
 		})

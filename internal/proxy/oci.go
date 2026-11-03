@@ -17,7 +17,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/iocopy"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/ocipath"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
@@ -47,8 +47,8 @@ const (
 )
 
 var (
-	tagRE    = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$`)
-	digestRE = regexp.MustCompile(`^(?:sha256:[a-f0-9]{64}|sha512:[a-f0-9]{128})$`)
+	tagRE    = lazyre.New(`^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$`)
+	digestRE = lazyre.New(`^(?:sha256:[a-f0-9]{64}|sha512:[a-f0-9]{128})$`)
 
 	// errUpstreamDenied is the upstream refusing (401/403) a request that
 	// carried the credentials it asked for: for a pull-through cache that is
@@ -127,7 +127,7 @@ func (s *Service) serveOCIManifest(
 	up ociUpstream,
 ) {
 	ref := req.Ref
-	if !digestRE.MatchString(ref) && !tagRE.MatchString(ref) {
+	if !digestRE().MatchString(ref) && !tagRE().MatchString(ref) {
 		ocipath.WriteError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest not found")
 		return
 	}
@@ -149,7 +149,7 @@ func (s *Service) serveOCIBlob(
 	up ociUpstream,
 ) {
 	digest := req.Ref
-	if !digestRE.MatchString(digest) {
+	if !digestRE().MatchString(digest) {
 		ocipath.WriteError(w, http.StatusBadRequest, "DIGEST_INVALID", "invalid digest")
 		return
 	}
@@ -296,7 +296,7 @@ func writeOCIEntry(w http.ResponseWriter, req ocipath.Request, res *resolution, 
 	h := w.Header()
 
 	digest := req.Ref
-	if !digestRE.MatchString(digest) {
+	if !digestRE().MatchString(digest) {
 		digest = "sha256:" + entry.BlobKey
 	}
 
@@ -348,7 +348,7 @@ func (s *Service) fetchOCIManifest(
 ) (*models.ProxyCacheEntry, error) {
 	target := up.base + "/v2/" + up.name + "/manifests/" + ref
 
-	if !digestRE.MatchString(ref) {
+	if !digestRE().MatchString(ref) {
 		prior, err := s.db.GetProxyCacheEntry(ctx, repo.ID, key)
 		if err != nil {
 			s.log.Errorw("failed to read proxy cache entry", "repo", repo.Name, "path", key, "error", err)
@@ -364,7 +364,7 @@ func (s *Service) fetchOCIManifest(
 	}
 
 	spec := ociSpec{manifest: true, limit: min(maxManifestBody, s.maxBody)}
-	if digestRE.MatchString(ref) {
+	if digestRE().MatchString(ref) {
 		spec.digest = ref
 	}
 
@@ -663,5 +663,5 @@ func (d *digester) matches(digest string) bool {
 // the OCI path, so it has no metadata rule.
 var DockerHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	// Blobs and manifests addressed by digest; tags move.
-	Immutable: func(key string) bool { return digestRE.MatchString(keyName(key)) },
+	Immutable: func(key string) bool { return digestRE().MatchString(keyName(key)) },
 }

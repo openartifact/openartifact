@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"regexp"
 	"slices"
 	"time"
 
@@ -19,6 +18,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/tiering"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -37,8 +37,8 @@ const tierNameMsg = "name must be 1-64 characters: letters, digits, '.', '_' or 
 
 var (
 	// storage_tiers.name is varchar(64).
-	tierNameRe      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
-	storageFormatRe = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
+	tierNameRe      = lazyre.New(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+	storageFormatRe = lazyre.New(`^[a-z][a-z0-9_-]{0,31}$`)
 
 	errTierValidation = errors.New("tier validation")
 )
@@ -225,7 +225,7 @@ func (h *AdminTieringHandler) handleCreateTier(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if !tierNameRe.MatchString(body.Name) {
+	if !tierNameRe().MatchString(body.Name) {
 		writeError(w, http.StatusBadRequest, "validation_failed", tierNameMsg)
 		return
 	}
@@ -342,7 +342,7 @@ func (h *AdminTieringHandler) handleUpdateTier(w http.ResponseWriter, r *http.Re
 // for an invalid one.
 func applyTierPatch(t *models.StorageTier, name *string, rank *int, promote *bool) string {
 	if name != nil {
-		if !tierNameRe.MatchString(*name) {
+		if !tierNameRe().MatchString(*name) {
 			return tierNameMsg
 		}
 
@@ -432,7 +432,7 @@ func policyErr(msg string) error { return errors.Join(errTierValidation, validat
 // toModel validates the body against the known tiers and converts it. id,
 // timestamps and (when unset) the position are left for the caller.
 func (b *tierPolicyBody) toModel(tiers []*models.StorageTier) (*models.StoragePolicy, error) {
-	if !storageBackendNameRe.MatchString(b.Name) {
+	if !storageBackendNameRe().MatchString(b.Name) {
 		return nil, policyErr("name must be 1-128 characters: letters, digits, '.', '_' or '-'")
 	}
 
@@ -512,7 +512,7 @@ func validatePolicyConditions(p *models.StoragePolicy) error {
 	}
 
 	for _, f := range p.Formats {
-		if !storageFormatRe.MatchString(f) {
+		if !storageFormatRe().MatchString(f) {
 			return policyErr("formats must be lower-case format names such as docker or maven")
 		}
 	}

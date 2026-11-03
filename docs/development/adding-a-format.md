@@ -35,8 +35,8 @@ Optional, only when the format needs it:
 
 - `models.TrashKind<Name>`, when the API names the kind.
 - `internal/presign/paths.go`, for the presigned blob paths of a proxy.
-- The `oa import` source: `cmd/oa/import_fmt_<format>.go` and `import_source.go`.
-- `cmd/oa/cmd_ci_upload.go`, for `oa ci upload`.
+- The `oa import` source: `internal/oacli/import_fmt_<format>.go` and `import_source.go`.
+- `internal/oacli/cmd_ci_upload.go`, for `oa ci upload`.
 - `restUploadHandlers()` in `cmd/server/app_routes.go`, for a REST upload endpoint in `internal/api`.
 
 ## Worked example: a hypothetical `swift`

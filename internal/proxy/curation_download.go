@@ -8,13 +8,13 @@ import (
 	"errors"
 	"net/http"
 	"path"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/artifactpath"
 	"github.com/openartifact/openartifact/internal/curation"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/ocipath"
 	pkgapk "github.com/openartifact/openartifact/pkg/apk"
 	pkgconan "github.com/openartifact/openartifact/pkg/conan"
@@ -131,7 +131,7 @@ func mavenDownloadCoordinates(key string) (string, string, bool) {
 	return strings.Join(segs[:n-3], ".") + ":" + artifact, version, true
 }
 
-var mavenSnapshotPrefix = regexp.MustCompile(`^\d{8}\.\d{6}-\d+[-.]`)
+var mavenSnapshotPrefix = lazyre.New(`^\d{8}\.\d{6}-\d+[-.]`)
 
 // mavenFileVersion reports whether rest (a file name below "<artifact>-")
 // begins with version, or in a SNAPSHOT directory with a timestamped build of
@@ -148,7 +148,7 @@ func mavenFileVersion(rest, version string) bool {
 
 	tail, ok := strings.CutPrefix(rest, base+"-")
 
-	return ok && mavenSnapshotPrefix.MatchString(tail)
+	return ok && mavenSnapshotPrefix().MatchString(tail)
 }
 
 // ivyDownloadCoordinates reads key like the hosted ivy and sbt repositories do

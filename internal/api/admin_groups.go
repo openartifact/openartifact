@@ -6,7 +6,6 @@ package api
 
 import (
 	"net/http"
-	"regexp"
 	"strconv"
 	"time"
 
@@ -18,11 +17,12 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-var groupNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{2,64}$`)
+var groupNameRe = lazyre.New(`^[a-zA-Z0-9_-]{2,64}$`)
 
 // AdminGroupsStore is the part of the database AdminGroupsHandler needs.
 type AdminGroupsStore interface {
@@ -75,7 +75,7 @@ func (h *AdminGroupsHandler) handleCreate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if !groupNameRe.MatchString(body.Name) {
+	if !groupNameRe().MatchString(body.Name) {
 		writeError(w, http.StatusBadRequest, "validation_failed", "group name must be 2-64 alphanumeric/dash/underscore characters")
 		return
 	}
@@ -142,7 +142,7 @@ func (h *AdminGroupsHandler) handlePatch(w http.ResponseWriter, r *http.Request)
 	}
 
 	if body.Name != nil {
-		if !groupNameRe.MatchString(*body.Name) {
+		if !groupNameRe().MatchString(*body.Name) {
 			writeError(w, http.StatusBadRequest, "validation_failed", "group name must be 2-64 alphanumeric/dash/underscore characters")
 			return
 		}

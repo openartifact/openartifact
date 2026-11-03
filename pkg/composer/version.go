@@ -7,7 +7,7 @@ package composer
 import (
 	"errors"
 	"fmt"
-	"regexp"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"strings"
 )
 
@@ -22,17 +22,17 @@ var ErrInvalidVersion = errors.New("invalid version")
 const modifierRe = `[._-]?(?:(stable|beta|b|RC|alpha|a|patch|pl|p)((?:[.-]?\d+)*)?)?([.-]?dev)?`
 
 var (
-	aliasRe       = regexp.MustCompile(`^([^,\s]+) +as +([^,\s]+)$`)
-	stabilityRe   = regexp.MustCompile(`(?i)@(?:stable|RC|beta|alpha|dev)$`)
-	buildRe       = regexp.MustCompile(`^([^,\s+]+)\+[^\s]+$`)
-	classicalRe   = regexp.MustCompile(`(?i)^v?(\d{1,5})(\.\d+)?(\.\d+)?(\.\d+)?` + modifierRe + `$`)
-	datetimeRe    = regexp.MustCompile(`(?i)^v?(\d{4}(?:[.:-]?\d{2}){1,6}(?:[.:-]?\d{1,3}){0,2})` + modifierRe + `$`)
-	devBranchRe   = regexp.MustCompile(`(?i)(.*?)[.-]?dev$`)
-	numericBrchRe = regexp.MustCompile(`(?i)^v?(\d+)(\.(?:\d+|[xX*]))?(\.(?:\d+|[xX*]))?(\.(?:\d+|[xX*]))?$`)
-	nonDigitRe    = regexp.MustCompile(`\D`)
+	aliasRe       = lazyre.New(`^([^,\s]+) +as +([^,\s]+)$`)
+	stabilityRe   = lazyre.New(`(?i)@(?:stable|RC|beta|alpha|dev)$`)
+	buildRe       = lazyre.New(`^([^,\s+]+)\+[^\s]+$`)
+	classicalRe   = lazyre.New(`(?i)^v?(\d{1,5})(\.\d+)?(\.\d+)?(\.\d+)?` + modifierRe + `$`)
+	datetimeRe    = lazyre.New(`(?i)^v?(\d{4}(?:[.:-]?\d{2}){1,6}(?:[.:-]?\d{1,3}){0,2})` + modifierRe + `$`)
+	devBranchRe   = lazyre.New(`(?i)(.*?)[.-]?dev$`)
+	numericBrchRe = lazyre.New(`(?i)^v?(\d+)(\.(?:\d+|[xX*]))?(\.(?:\d+|[xX*]))?(\.(?:\d+|[xX*]))?$`)
+	nonDigitRe    = lazyre.New(`\D`)
 	// publishedRe is what an uploaded version may be made of: it ends up in a
 	// URL path, a JSON document and a file name.
-	publishedRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+/~#-]*$`)
+	publishedRe = lazyre.New(`^[A-Za-z0-9][A-Za-z0-9._+/~#-]*$`)
 )
 
 // phpTrim is the character set of PHP's trim().
@@ -47,11 +47,11 @@ func Normalize(version string) (string, error) {
 	version = strings.Trim(version, phpTrim)
 	orig := version
 
-	if m := aliasRe.FindStringSubmatch(version); m != nil {
+	if m := aliasRe().FindStringSubmatch(version); m != nil {
 		version = m[1]
 	}
 
-	if loc := stabilityRe.FindStringIndex(version); loc != nil {
+	if loc := stabilityRe().FindStringIndex(version); loc != nil {
 		version = version[:loc[0]]
 	}
 
@@ -64,7 +64,7 @@ func Normalize(version string) (string, error) {
 		return "dev-" + version[4:], nil
 	}
 
-	if m := buildRe.FindStringSubmatch(version); m != nil {
+	if m := buildRe().FindStringSubmatch(version); m != nil {
 		version = m[1]
 	}
 
@@ -72,7 +72,7 @@ func Normalize(version string) (string, error) {
 		return n, nil
 	}
 
-	if m := devBranchRe.FindStringSubmatch(version); m != nil {
+	if m := devBranchRe().FindStringSubmatch(version); m != nil {
 		if n := normalizeBranch(m[1]); !strings.Contains(n, "dev-") {
 			return n, nil
 		}
@@ -90,11 +90,11 @@ func normalizeNumeric(version string) (string, bool) {
 		found bool
 	)
 
-	if m := classicalRe.FindStringSubmatch(version); m != nil {
+	if m := classicalRe().FindStringSubmatch(version); m != nil {
 		out = m[1] + orDefault(m[2], ".0") + orDefault(m[3], ".0") + orDefault(m[4], ".0")
 		stab, found = m[5:], true
-	} else if m := datetimeRe.FindStringSubmatch(version); m != nil {
-		out = nonDigitRe.ReplaceAllString(m[1], ".")
+	} else if m := datetimeRe().FindStringSubmatch(version); m != nil {
+		out = nonDigitRe().ReplaceAllString(m[1], ".")
 		stab, found = m[2:], true
 	}
 
@@ -147,7 +147,7 @@ func expandStability(s string) string {
 func normalizeBranch(name string) string {
 	name = strings.Trim(name, phpTrim)
 
-	m := numericBrchRe.FindStringSubmatch(name)
+	m := numericBrchRe().FindStringSubmatch(name)
 	if m == nil {
 		return "dev-" + name
 	}
@@ -179,7 +179,7 @@ func IsDev(normalized string) bool {
 // flags ("@dev") or characters that do not belong in a URL path, and a
 // non-empty branch name after "dev-".
 func NormalizePublished(version string) (string, error) {
-	if len(version) > MaxVersionLen || !publishedRe.MatchString(version) {
+	if len(version) > MaxVersionLen || !publishedRe().MatchString(version) {
 		return "", fmt.Errorf("%w: %q", ErrInvalidVersion, version)
 	}
 

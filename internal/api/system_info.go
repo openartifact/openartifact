@@ -7,17 +7,17 @@ package api
 import (
 	"context"
 	"net/http"
-	"regexp"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/storage"
 )
 
-var releaseVersionRe = regexp.MustCompile(`^v?(\d+)\.(\d+)\.\d+$`)
+var releaseVersionRe = lazyre.New(`^v?(\d+)\.(\d+)\.\d+$`)
 
 const (
 	// healthCacheTTL bounds how often the DB and storage are probed, so
@@ -104,7 +104,7 @@ func docsURL(base, version string) string {
 
 	base = strings.TrimRight(base, "/") + "/"
 
-	if m := releaseVersionRe.FindStringSubmatch(version); m != nil {
+	if m := releaseVersionRe().FindStringSubmatch(version); m != nil {
 		return base + "v" + m[1] + "." + m[2] + "/"
 	}
 

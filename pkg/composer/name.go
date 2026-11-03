@@ -11,7 +11,7 @@
 package composer
 
 import (
-	"regexp"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"strings"
 )
 
@@ -21,11 +21,11 @@ const MaxNameLen = 255
 // nameRe is the package name grammar of Composer's schema: lower-case
 // "vendor/package", each part made of letters and digits joined by single "_",
 // "." or "-" separators (the package part also accepts "--").
-var nameRe = regexp.MustCompile(`^[a-z0-9]([_.-]?[a-z0-9]+)*/[a-z0-9](([_.]|-{1,2})?[a-z0-9]+)*$`)
+var nameRe = lazyre.New(`^[a-z0-9]([_.-]?[a-z0-9]+)*/[a-z0-9](([_.]|-{1,2})?[a-z0-9]+)*$`)
 
 // ValidName reports whether name is a valid Composer package name.
 func ValidName(name string) bool {
-	return len(name) <= MaxNameLen && nameRe.MatchString(name)
+	return len(name) <= MaxNameLen && nameRe().MatchString(name)
 }
 
 // MetadataName parses the file name of a p2 document ("package.json" or

@@ -6,9 +6,9 @@ package proxy
 
 import (
 	"path"
-	"regexp"
 	"strings"
 
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"golang.org/x/mod/module"
 )
 
@@ -127,7 +127,7 @@ func pypiCoordinates(key string) (string, string, bool) {
 
 var (
 	mavenExts     = [...]string{".jar", ".war", ".aar", ".pom", ".zip"} //nolint:gochecknoglobals // constant table
-	mavenSnapshot = regexp.MustCompile(`^\d{8}\.\d{6}-\d+$`)
+	mavenSnapshot = lazyre.New(`^\d{8}\.\d{6}-\d+$`)
 )
 
 // mavenCoordinates parses "<group path>/<artifact>/<version>/<artifact>-<version>[-<classifier>].<ext>".
@@ -189,7 +189,7 @@ func mavenVersionMatches(rest, version string) bool {
 	// "<yyyymmdd.hhmmss>-<build>" then an optional "-classifier".
 	parts := strings.SplitN(tail, "-", 3)
 
-	return len(parts) >= 2 && mavenSnapshot.MatchString(parts[0]+"-"+parts[1])
+	return len(parts) >= 2 && mavenSnapshot().MatchString(parts[0]+"-"+parts[1])
 }
 
 // cargoCoordinates parses "api/v1/crates/<crate>/<version>/download".
@@ -207,9 +207,9 @@ func cargoCoordinates(key string) (string, string, bool) {
 }
 
 var (
-	gemVersionRe = regexp.MustCompile(`^\d+(\.[0-9A-Za-z]+)*$`)
+	gemVersionRe = lazyre.New(`^\d+(\.[0-9A-Za-z]+)*$`)
 	// semverRe matches a (possibly v-prefixed) MAJOR.MINOR.PATCH[-pre][+build].
-	semverRe = regexp.MustCompile(`^v?\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)
+	semverRe = lazyre.New(`^v?\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)
 )
 
 // rubygemsCoordinates parses "gems/<name>-<version>[-<platform>].gem". The
@@ -228,7 +228,7 @@ func rubygemsCoordinates(key string) (string, string, bool) {
 
 	parts := strings.Split(stem, "-")
 	for i := 1; i < len(parts); i++ {
-		if !gemVersionRe.MatchString(parts[i]) {
+		if !gemVersionRe().MatchString(parts[i]) {
 			continue
 		}
 
@@ -299,7 +299,7 @@ func helmCoordinates(key string) (string, string, bool) {
 	}
 
 	for i := 1; i < len(stem)-1; i++ {
-		if stem[i] == '-' && semverRe.MatchString(stem[i+1:]) {
+		if stem[i] == '-' && semverRe().MatchString(stem[i+1:]) {
 			return stem[:i], stem[i+1:], true
 		}
 	}

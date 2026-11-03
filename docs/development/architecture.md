@@ -37,7 +37,8 @@ Top-level directories:
 | Path | Contents |
 |---|---|
 | `cmd/server` | The `openartifact` binary: startup and shutdown (`app.go`, `app_*.go`), HTTP chain (`app_http.go`), route wiring (`app_routes.go`), roles, health, rebuild |
-| `cmd/oa` | CLI client (`oa`) |
+| `cmd/oa` | The `oa` binary: a thin `main` around `internal/oacli` |
+| `internal/oacli` | CLI client: command tree, HTTP client, importers. The server binary embeds it too (`openartifact oa ...`) |
 | `cmd/resetpw` | Admin password reset tool |
 | `cmd/docgen` | Generates `docs/reference/` and checks `.env.example` and the example YAML |
 | `cmd/genformats` | Generates `web/src/lib/formats.generated.ts` and `clientsetup.generated.ts` |

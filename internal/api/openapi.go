@@ -18,8 +18,24 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-//go:embed openapi.json
-var openapiSpec []byte
+// openapiSpecGz is openapi.json, the source the handlers and the web client
+// are written against, gzip-compressed: the document is 834 KB and compresses
+// to a tenth of that. `make docs-gen` (cmd/docgen) regenerates it and
+// TestEmbeddedSpecIsCurrent fails when it is stale.
+//
+//go:embed openapi.json.gz
+var openapiSpecGz []byte
+
+// openapiSpec returns the embedded document, inflated.
+func openapiSpec() ([]byte, error) {
+	zr, err := gzip.NewReader(bytes.NewReader(openapiSpecGz))
+	if err != nil {
+		return nil, err
+	}
+	defer zr.Close()
+
+	return io.ReadAll(zr)
+}
 
 // The Scalar API reference is served from the binary: no CDN, so it works in
 // air-gapped installs and under a strict CSP. scalarBundle is the standalone
@@ -76,6 +92,56 @@ type OpenAPIHandler struct {
 	yamlOnce sync.Once
 	specYAML []byte
 	yamlErr  error
+
+	jsonGz, yamlGz gzipVariant
+}
+
+// gzipVariant is the gzip form of one rendered document, made on the first
+// request from a client that accepts gzip and kept: the spec is about 800 KB
+// of text and every client that fetches it (code generators, the web client)
+// accepts gzip.
+type gzipVariant struct {
+	once sync.Once
+	data []byte
+	err  error
+}
+
+func (g *gzipVariant) of(plain []byte) ([]byte, error) {
+	g.once.Do(func() {
+		var buf bytes.Buffer
+
+		zw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+		if _, g.err = zw.Write(plain); g.err == nil {
+			g.err = zw.Close()
+		}
+
+		g.data = buf.Bytes()
+	})
+
+	return g.data, g.err
+}
+
+// writeSpec answers with plain, or with its gzip form when the client accepts it.
+func writeSpec(w http.ResponseWriter, r *http.Request, contentType string, plain []byte, gz *gzipVariant) {
+	hd := w.Header()
+	hd.Set("Content-Type", contentType)
+	hd.Set("X-Content-Type-Options", "nosniff")
+	hd.Add("Vary", "Accept-Encoding")
+
+	if acceptsGzip(r) {
+		if packed, err := gz.of(plain); err == nil {
+			hd.Set("Content-Encoding", "gzip")
+			_, _ = w.Write(packed)
+
+			return
+		}
+	}
+
+	_, _ = w.Write(plain)
+}
+
+func acceptsGzip(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept-Encoding"), "gzip")
 }
 
 // NewOpenAPIHandler returns a handler stamping version into the spec. The
@@ -100,8 +166,14 @@ func (h *OpenAPIHandler) RegisterRoutes(router chi.Router) {
 // and the description stamped into info, rendered once.
 func (h *OpenAPIHandler) patchedSpec() ([]byte, error) {
 	h.patchOnce.Do(func() {
+		raw, err := openapiSpec()
+		if err != nil {
+			h.specErr = err
+			return
+		}
+
 		var doc map[string]any
-		if err := json.Unmarshal(openapiSpec, &doc); err != nil {
+		if err := json.Unmarshal(raw, &doc); err != nil {
 			h.specErr = err
 			return
 		}
@@ -129,8 +201,7 @@ func (h *OpenAPIHandler) handleSpec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(out)
+	writeSpec(w, r, "application/json", out, &h.jsonGz)
 }
 
 // renderYAML converts the patched JSON spec to YAML once.
@@ -161,9 +232,7 @@ func (h *OpenAPIHandler) handleSpecYAML(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/yaml")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	_, _ = w.Write(out)
+	writeSpec(w, r, "application/yaml", out, &h.yamlGz)
 }
 
 // docsOr404 reports whether the API reference is enabled, answering 404 when not.
@@ -221,7 +290,7 @@ func (h *OpenAPIHandler) handleScalarBundle(w http.ResponseWriter, r *http.Reque
 	hd.Set("Cache-Control", "public, max-age=31536000, immutable")
 	hd.Add("Vary", "Accept-Encoding")
 
-	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+	if acceptsGzip(r) {
 		hd.Set("Content-Encoding", "gzip")
 		_, _ = w.Write(scalarBundle)
 

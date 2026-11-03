@@ -17,6 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	formatgomod "github.com/openartifact/openartifact/internal/format/gomod"
 	"github.com/openartifact/openartifact/internal/formats"
+	"github.com/openartifact/openartifact/internal/oacli"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -40,6 +41,12 @@ func versionLine() string {
 }
 
 func main() {
+	// The oa CLI shares this executable (see cliArgs); it needs neither the
+	// format registry nor the server's flags.
+	if args, ok := cliArgs(os.Args); ok {
+		os.Exit(oacli.Main(version, args))
+	}
+
 	// Every subcommand reads what the formats register: the hooks of the
 	// libraries and the lifecycles.
 	formats.Register()

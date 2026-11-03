@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
@@ -25,12 +24,13 @@ import (
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-var slugRe = regexp.MustCompile(`^[a-z0-9_-]{1,64}$`)
+var slugRe = lazyre.New(`^[a-z0-9_-]{1,64}$`)
 
 // AdminSSOStore is the part of the database AdminSSOHandler needs.
 type AdminSSOStore interface {
@@ -227,7 +227,7 @@ func (h *AdminSSOHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 	body := in.SSOProvider
 
-	if !slugRe.MatchString(body.Slug) {
+	if !slugRe().MatchString(body.Slug) {
 		writeError(w, http.StatusBadRequest, "validation_failed", "slug must match ^[a-z0-9_-]{1,64}$")
 		return
 	}

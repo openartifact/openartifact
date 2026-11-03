@@ -72,18 +72,17 @@ RUN COMMIT_SHORT="$(printf '%.7s' "${COMMIT}")"; \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT_SHORT} -X main.buildTime=${BUILD_TIME_RFC3339}" \
     -o openartifact ./cmd/server
 
-# The oa CLI ships in the image so GitOps hooks (Helm Job, Argo CD PostSync)
-# can run `oa apply` without a second image; see docs/integrations/declarative.md.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
-    -ldflags "-s -w -X main.version=${VERSION}" \
-    -o oa ./cmd/oa
-
 # Data directories for the runtime image. The final stage has no shell, so
 # they are prepared here and copied in with ownership. The scanner cache holds
 # the Trivy / Grype vulnerability databases (OPENARTIFACT_SCANNER_CACHE_DIR);
 # /rootfs/scanners stays empty and backs SCANNERS=none.
+# The oa CLI ships in the image so GitOps hooks (Helm Job, Argo CD PostSync)
+# can run `oa apply` without a second image (docs/integrations/declarative.md).
+# It is the server binary itself, which runs the CLI when it is started as oa:
+# /usr/local/bin/oa is a link to it (a second executable would add 10 MB).
 RUN mkdir -p /rootfs/var/lib/artifacts /rootfs/var/lib/openartifact/backups \
-    /rootfs/var/cache/openartifact/scanners /rootfs/scanners
+    /rootfs/var/cache/openartifact/scanners /rootfs/scanners /rootfs/usr/local/bin && \
+    ln -s /app/openartifact /rootfs/usr/local/bin/oa
 
 # ---- Scanner binaries (static, digest-pinned) -------------------------------
 # Selected by the SCANNERS build argument; only the chosen stage is used.
@@ -132,7 +131,8 @@ LABEL org.opencontainers.image.title="OpenArtifact" \
 WORKDIR /app
 
 COPY --from=builder --chown=10001:10001 /app/openartifact /app/openartifact
-COPY --from=builder /app/oa /usr/local/bin/oa
+# The oa link: a directory copy keeps it a link, so the image holds one binary.
+COPY --from=builder /rootfs/usr/local/bin/ /usr/local/bin/
 
 # Data directories (blobs + backups), owned by the fixed runtime uid/gid so
 # bind mounts and the chart's fsGroup stay predictable.

@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -33,6 +32,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/federation"
 	"github.com/openartifact/openartifact/internal/iocopy"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/quarantine"
@@ -44,7 +44,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-var repoNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$`)
+var repoNameRe = lazyre.New(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$`)
 
 const (
 	// maxListPage bounds the page number so (page-1)*limit cannot overflow.
@@ -686,7 +686,7 @@ func (h *RepositoriesHandler) createRepository(
 		return
 	}
 
-	if !repoNameRe.MatchString(body.Name) {
+	if !repoNameRe().MatchString(body.Name) {
 		writeError(
 			w, http.StatusBadRequest, "validation_failed",
 			"name must be 1-100 characters: letters, digits, hyphen or underscore, starting with a letter or digit",

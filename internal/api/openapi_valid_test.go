@@ -59,7 +59,7 @@ func TestOpenAPISpecIsValid31(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	spec, err := jsonschema.UnmarshalJSON(bytes.NewReader(openapiSpec))
+	spec, err := jsonschema.UnmarshalJSON(bytes.NewReader(mustOpenAPISpec(t)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestOpenAPISpecIsValid31(t *testing.T) {
 		OpenAPI string `json:"openapi"`
 	}
 
-	if err := json.Unmarshal(openapiSpec, &head); err != nil {
+	if err := json.Unmarshal(mustOpenAPISpec(t), &head); err != nil {
 		t.Fatal(err)
 	}
 
@@ -80,7 +80,7 @@ func TestOpenAPISpecIsValid31(t *testing.T) {
 		t.Errorf("openapi = %q, want 3.1.x", head.OpenAPI)
 	}
 
-	if bytes.Contains(openapiSpec, []byte(`"nullable"`)) {
+	if bytes.Contains(mustOpenAPISpec(t), []byte(`"nullable"`)) {
 		t.Error("openapi.json still uses the 3.0 `nullable` keyword")
 	}
 }

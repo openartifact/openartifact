@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"reflect"
-	"regexp"
 	"strings"
 	"time"
 
@@ -24,6 +23,7 @@ import (
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -33,7 +33,7 @@ import (
 
 const storageTestTimeout = 10 * time.Second
 
-var storageBackendNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
+var storageBackendNameRe = lazyre.New(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
 
 // AdminStorageStore is the part of the database AdminStorageHandler needs.
 type AdminStorageStore interface {
@@ -101,7 +101,7 @@ func reservedStorageBackendName(name string) bool {
 // validStorageBackendName writes the 400 for a malformed or reserved name.
 func validStorageBackendName(w http.ResponseWriter, name string) bool {
 	switch {
-	case !storageBackendNameRe.MatchString(name):
+	case !storageBackendNameRe().MatchString(name):
 		writeError(w, http.StatusBadRequest, "validation_failed", "name must be 1-128 characters: letters, digits, '.', '_' or '-'")
 	case reservedStorageBackendName(name):
 		writeError(w, http.StatusBadRequest, "validation_failed", "name '"+name+"' is reserved")
