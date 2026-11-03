@@ -17,6 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/httpx"
 )
 
 func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func(http.Handler) http.Handler {
@@ -28,7 +29,7 @@ func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// RBAC ran first: the principal is known. Attach the request to the
 			// context so the events handlers record carry it too.
-			req := audit.Request{ID: r.Header.Get("X-Request-ID")}
+			req := audit.Request{ID: requestIDOf(r.Header)}
 
 			actor := "anonymous"
 			if p := PrincipalFromContext(r.Context()); p != nil && !p.IsAnonymous {
@@ -38,7 +39,7 @@ func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func
 
 			r = r.WithContext(audit.WithRequest(r.Context(), req))
 
-			wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+			wrapped := httpx.WrapStatus(w)
 			next.ServeHTTP(wrapped, r)
 
 			if r.Method != http.MethodPost && r.Method != http.MethodPut && r.Method != http.MethodPatch && r.Method != http.MethodDelete {
@@ -65,14 +66,14 @@ func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func
 			// refused for a missing confirmation did not); a rejected request
 			// did not.
 			if action == "" ||
-				((strings.HasPrefix(action, "auth.") || action == "repository.deleted") && wrapped.statusCode >= http.StatusBadRequest) {
+				((strings.HasPrefix(action, "auth.") || action == "repository.deleted") && wrapped.Status() >= http.StatusBadRequest) {
 				action = audit.ActionHTTPRequest
 			}
 			clientIP := ClientIP(r, proxies)
 
-			details := fmt.Sprintf(`{"method":"%s","path":"%s","status":%d}`, r.Method, routeTemplate, wrapped.statusCode)
-			if wrapped.statusCode >= 400 {
-				details = fmt.Sprintf(`{"method":"%s","path":"%s","status":%d,"error":true}`, r.Method, routeTemplate, wrapped.statusCode)
+			details := fmt.Sprintf(`{"method":"%s","path":"%s","status":%d}`, r.Method, routeTemplate, wrapped.Status())
+			if wrapped.Status() >= 400 {
+				details = fmt.Sprintf(`{"method":"%s","path":"%s","status":%d,"error":true}`, r.Method, routeTemplate, wrapped.Status())
 			}
 
 			ev := audit.AuditEvent{
@@ -80,7 +81,7 @@ func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func
 				Actor:     actor,
 				Details:   details,
 				IPAddress: &clientIP,
-				Status:    wrapped.statusCode,
+				Status:    wrapped.Status(),
 				Method:    r.Method,
 			}
 			if routeTemplate != "unknown" {
@@ -185,14 +186,14 @@ func AuthAuditMiddleware(
 			case authEndpointNone, authEndpointSSO:
 			}
 
-			wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+			wrapped := httpx.WrapStatus(w)
 			next.ServeHTTP(wrapped, r)
 
 			clientIP := ClientIP(r, proxies)
 			ev := audit.AuditEvent{
 				IPAddress: &clientIP,
-				RequestID: r.Header.Get("X-Request-ID"),
-				Status:    wrapped.statusCode,
+				RequestID: requestIDOf(r.Header),
+				Status:    wrapped.Status(),
 			}
 
 			newSession := newSessionCookie(w.Header())
@@ -207,10 +208,10 @@ func AuthAuditMiddleware(
 					ev.Action = audit.ActionAuthLoginFailed
 					ev.Outcome = audit.OutcomeFailure
 					ev.Actor = attempted
-					ev.Details = fmt.Sprintf("login failed (status %d)", wrapped.statusCode)
+					ev.Details = fmt.Sprintf("login failed (status %d)", wrapped.Status())
 				}
 			case authEndpointLogout:
-				if wrapped.statusCode >= http.StatusBadRequest {
+				if wrapped.Status() >= http.StatusBadRequest {
 					return
 				}
 
@@ -226,7 +227,7 @@ func AuthAuditMiddleware(
 					ev.Action = audit.ActionAuthLoginFailed
 					ev.Outcome = audit.OutcomeFailure
 					ev.ActorType = "sso"
-					ev.Details = fmt.Sprintf("sso callback failed (status %d)", wrapped.statusCode)
+					ev.Details = fmt.Sprintf("sso callback failed (status %d)", wrapped.Status())
 				}
 			case authEndpointNone:
 				return
@@ -234,7 +235,7 @@ func AuthAuditMiddleware(
 
 			// Rate-limited attempts are not audited: one row per rejected
 			// request would let an attacker flood the audit table.
-			if wrapped.statusCode == http.StatusTooManyRequests {
+			if wrapped.Status() == http.StatusTooManyRequests {
 				return
 			}
 

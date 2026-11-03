@@ -5,9 +5,24 @@
 package middleware
 
 import (
+	"io"
 	"mime"
 	"net/http"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/httpx"
+)
+
+// Shared, read-only header values (see SecurityHeadersMiddleware).
+//
+//nolint:gochecknoglobals // immutable constants
+var (
+	nosniffValue     = []string{"nosniff"}
+	frameDenyValue   = []string{"DENY"}
+	noReferrerValue  = []string{"no-referrer"}
+	baselineCSPValue = []string{"frame-ancestors 'none'"}
+	artifactCSPValue = []string{"sandbox; default-src 'none'; frame-ancestors 'none'"}
+	hstsValue        = []string{"max-age=31536000; includeSubDomains"}
 )
 
 // SecurityHeadersMiddleware sets baseline hardening headers on every response.
@@ -18,10 +33,14 @@ func SecurityHeadersMiddleware(hsts bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h := w.Header()
-			h.Set("X-Content-Type-Options", "nosniff")
-			h.Set("X-Frame-Options", "DENY")
-			h.Set("Content-Security-Policy", "frame-ancestors 'none'")
-			h.Set("Referrer-Policy", "no-referrer")
+			// The values are constants: sharing one single-element slice per
+			// header instead of allocating a fresh one per request. The slices
+			// have len == cap, so Header.Add appends into a copy and Header.Set
+			// replaces them; nothing may modify them in place.
+			h["X-Content-Type-Options"] = nosniffValue
+			h["X-Frame-Options"] = frameDenyValue
+			h["Referrer-Policy"] = noReferrerValue
+			h["Content-Security-Policy"] = baselineCSPValue
 			// Browser page loads of SPA routes under /repos/ are answered by the
 			// SPA (see RBACMiddleware), not by an artifact handler: they need
 			// scripts and must render, so they keep the baseline CSP.
@@ -30,11 +49,11 @@ func SecurityHeadersMiddleware(hsts bool) func(http.Handler) http.Handler {
 				// app origin: sandbox them (opaque origin, no scripts, no
 				// cookies/API access) and force a download for any type a
 				// browser would render actively.
-				h.Set("Content-Security-Policy", "sandbox; default-src 'none'; frame-ancestors 'none'")
+				h["Content-Security-Policy"] = artifactCSPValue
 				w = &artifactWriter{ResponseWriter: w}
 			}
 			if hsts {
-				h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+				h["Strict-Transport-Security"] = hstsValue
 			}
 			next.ServeHTTP(w, r)
 		})
@@ -106,16 +125,36 @@ func (a *artifactWriter) WriteHeader(code int) {
 }
 
 func (a *artifactWriter) Write(b []byte) (int, error) {
-	if !a.wroteHeader {
-		// Decide the disposition before net/http sniffs and commits headers.
-		if a.Header().Get("Content-Type") == "" {
-			a.Header().Set("Content-Disposition", "attachment")
-		}
+	a.commit()
 
-		a.WriteHeader(http.StatusOK)
+	return a.ResponseWriter.Write(b) //nolint:wrapcheck // transparent writer wrapper
+}
+
+// commit writes the implicit 200 of a handler that sent a body without
+// WriteHeader, after deciding the disposition net/http would otherwise commit
+// together with a sniffed type.
+func (a *artifactWriter) commit() {
+	if a.wroteHeader {
+		return
 	}
 
-	return a.ResponseWriter.Write(b)
+	if a.Header().Get("Content-Type") == "" {
+		a.Header().Set("Content-Disposition", "attachment")
+	}
+
+	a.WriteHeader(http.StatusOK)
 }
+
+// ReadFrom keeps sendfile(2) reachable for artifact downloads: the response
+// writer underneath serves a file through its own ReadFrom, which a wrapper
+// that only embeds http.ResponseWriter hides.
+func (a *artifactWriter) ReadFrom(r io.Reader) (int64, error) {
+	a.commit()
+
+	return httpx.ReadFrom(a.ResponseWriter, r) //nolint:wrapcheck // transparent writer wrapper
+}
+
+// Flush forwards to the underlying writer when it can flush.
+func (a *artifactWriter) Flush() { httpx.Flush(a.ResponseWriter) }
 
 func (a *artifactWriter) Unwrap() http.ResponseWriter { return a.ResponseWriter }

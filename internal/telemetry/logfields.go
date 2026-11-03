@@ -9,6 +9,7 @@ import (
 
 	"go.opentelemetry.io/contrib/bridges/otelzap"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -31,6 +32,22 @@ func LogFields(ctx context.Context) []any {
 		"trace_id", sc.TraceID().String(),
 		"span_id", sc.SpanID().String(),
 		zapcore.Field{Key: "context", Type: zapcore.SkipType, Interface: ctx},
+	}
+}
+
+// LogFieldsZap is LogFields as typed zap fields, for callers that log through
+// the desugared logger and so skip boxing every value into an interface. The
+// fields are the ones LogFields names; nil when ctx has no valid span.
+func LogFieldsZap(ctx context.Context) []zap.Field {
+	sc := trace.SpanContextFromContext(ctx)
+	if !sc.IsValid() {
+		return nil
+	}
+
+	return []zap.Field{
+		zap.String("trace_id", sc.TraceID().String()),
+		zap.String("span_id", sc.SpanID().String()),
+		{Key: "context", Type: zapcore.SkipType, Interface: ctx},
 	}
 }
 

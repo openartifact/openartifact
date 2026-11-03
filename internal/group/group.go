@@ -12,11 +12,13 @@ import (
 	"net/http"
 
 	"context"
+	"io"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	"github.com/openartifact/openartifact/internal/format/base"
 	formatnix "github.com/openartifact/openartifact/internal/format/nix"
+	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -276,6 +278,21 @@ func (p *probeWriter) Write(b []byte) (int, error) {
 	}
 
 	return p.real.Write(b)
+}
+
+// ReadFrom keeps sendfile(2) reachable for artifacts a hosted member streams
+// through the group: once committed the body goes to the real writer's own
+// ReadFrom; a passed-over attempt drains and discards it, like Write does.
+func (p *probeWriter) ReadFrom(r io.Reader) (int64, error) {
+	if !p.wroteHeader {
+		p.WriteHeader(http.StatusOK)
+	}
+
+	if !p.committed {
+		return io.Copy(io.Discard, r) //nolint:wrapcheck // transparent writer wrapper
+	}
+
+	return httpx.ReadFrom(p.real, r) //nolint:wrapcheck // transparent writer wrapper
 }
 
 // Flush forwards to the real writer once the attempt has committed.

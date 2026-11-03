@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/metrics"
 )
 
@@ -18,7 +19,7 @@ func MetricsMiddleware(reg *metrics.Registry) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
-			wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+			wrapped := httpx.WrapStatus(w)
 
 			// The middleware wraps the router from outside, where chi has not
 			// created its route context yet. Seed one: chi reuses it and fills
@@ -37,12 +38,12 @@ func MetricsMiddleware(reg *metrics.Registry) func(http.Handler) http.Handler {
 			}
 
 			path := PathLabel(pattern, r)
-			statusStr := strconv.Itoa(wrapped.statusCode)
+			statusStr := statusLabel(wrapped.Status())
 			reg.HTTPRequestsTotal.WithLabelValues(methodLabel(r.Method), path, statusStr).Inc()
 			reg.HTTPRequestDurationSeconds.WithLabelValues(methodLabel(r.Method), path).Observe(duration.Seconds())
 
 			if format, ok := uploadFormat(r, pattern); ok {
-				reg.CountUpload(format, metrics.UploadResult(wrapped.statusCode))
+				reg.CountUpload(format, metrics.UploadResult(wrapped.Status()))
 			}
 		})
 	}
@@ -58,4 +59,26 @@ func methodLabel(m string) string {
 	}
 
 	return "OTHER"
+}
+
+// statusLabels holds the label of every valid status code, so the per-request
+// label is a table lookup and not an allocation.
+//
+//nolint:gochecknoglobals // immutable lookup table
+var statusLabels = func() [600]string {
+	var t [600]string
+
+	for i := range t {
+		t[i] = strconv.Itoa(i)
+	}
+
+	return t
+}()
+
+func statusLabel(code int) string {
+	if code >= 0 && code < len(statusLabels) {
+		return statusLabels[code]
+	}
+
+	return strconv.Itoa(code)
 }

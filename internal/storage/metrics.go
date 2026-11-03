@@ -7,10 +7,12 @@ package storage
 import (
 	"context"
 	"io"
+	"os"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/telemetry"
 )
@@ -168,6 +170,42 @@ func (c *countingReadCloser) Read(p []byte) (int, error) {
 	}
 
 	return n, err
+}
+
+// WriteTo sends the rest of the blob to w. A blob on the local filesystem goes
+// to a destination with ReadFrom (the net/http response) as the *os.File
+// itself, which is what lets the kernel move it with sendfile(2) instead of
+// copying it through user space; this wrapper would otherwise hide the file.
+// The bytes are counted like the Read path counts them.
+func (c *countingReadCloser) WriteTo(w io.Writer) (int64, error) {
+	var (
+		n   int64
+		err error
+	)
+
+	if f, ok := c.ReadCloser.(*os.File); ok {
+		if rf, ok := w.(io.ReaderFrom); ok {
+			n, err = rf.ReadFrom(f)
+			c.done(n, err)
+
+			return n, err //nolint:wrapcheck // transparent reader wrapper
+		}
+	}
+
+	n, err = iocopy.Copy(struct{ io.Writer }{w}, struct{ io.Reader }{c.ReadCloser})
+	c.done(n, err)
+
+	return n, err //nolint:wrapcheck // transparent reader wrapper
+}
+
+// done accounts n bytes moved by WriteTo; like Read, only a complete transfer
+// is added to the byte counter.
+func (c *countingReadCloser) done(n int64, err error) {
+	c.count += n
+
+	if err == nil {
+		c.reg.BlobBytesTotal.WithLabelValues("get").Add(float64(c.count))
+	}
 }
 
 // PresignGet forwards to the wrapped store when it can sign download URLs.

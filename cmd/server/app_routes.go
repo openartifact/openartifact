@@ -90,6 +90,8 @@ func (a *app) newAuthedRouter() {
 	authedAPI.Use(importmeta.Middleware(w.evaluator))
 	authedAPI.Use(middleware.CSRFMiddleware(a.cfg.BaseURL, w.trustedProxies))
 	authedAPI.Use(middleware.AuditMiddleware(a.auditLogger, w.trustedProxies))
+	// Innermost, so the audit layer's status writer is the one handlers see.
+	authedAPI.Use(middleware.CompressAPI)
 
 	w.authed = authedAPI
 }
