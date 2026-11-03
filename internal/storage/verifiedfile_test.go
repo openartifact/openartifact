@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // fileReader is a VerifiedFile over a file, like base.SpoolReader.
@@ -155,7 +156,11 @@ func TestFilesystemPutVerifiedFileKeepsExistingBlob(t *testing.T) {
 	store := newTestFilesystemStore(t)
 	src := newFileReader(t, t.TempDir(), []byte("already stored"))
 
-	if _, err := store.Put(context.Background(), bytes.NewReader([]byte("already stored")), map[string]string{"owner": "first"}); err != nil {
+	if _, err := store.Put(
+		context.Background(),
+		bytes.NewReader([]byte("already stored")),
+		map[string]string{"owner": "first"},
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -238,5 +243,51 @@ func TestCountingReaderCountsFileTakenOver(t *testing.T) {
 
 	if cr.written() != 5 {
 		t.Fatalf("written = %d, want 5", cr.written())
+	}
+}
+
+func TestSpoolDirFor(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	spool := filepath.Join(root, FilesystemSpoolDir)
+
+	if err := os.MkdirAll(spool, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	stale := filepath.Join(spool, "oa-spool-stale")
+	fresh := filepath.Join(spool, "oa-spool-fresh")
+
+	for _, p := range []string{stale, fresh} {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := SpoolDirFor(StorageConfig{Type: "filesystem", Path: root}); got != spool {
+		t.Fatalf("filesystem spool dir = %q, want %q", got, spool)
+	}
+
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatal("a stale spool survived the startup sweep")
+	}
+
+	if _, err := os.Stat(fresh); err != nil {
+		t.Fatal("a recent spool was swept")
+	}
+
+	own := filepath.Join(root, "own")
+	if got := SpoolDirFor(StorageConfig{Type: "s3", SpoolPath: own}); got != own {
+		t.Fatalf("s3 spool dir = %q, want %q", got, own)
+	}
+
+	if got := SpoolDirFor(StorageConfig{Type: "s3"}); got != "" {
+		t.Fatalf("s3 without a spool path = %q, want the OS temp dir", got)
 	}
 }

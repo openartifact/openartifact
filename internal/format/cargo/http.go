@@ -316,7 +316,7 @@ func (h *HTTPHandler) publishLicenses(
 	metadata map[string]any,
 ) ([]string, bool) {
 	res, err := licensemeta.Read(r.Context(), "cargo", name+"-"+version+".crate", func() (io.ReadCloser, error) {
-		return io.NopCloser(crate.Reader()), nil
+		return crate.Reader(), nil
 	})
 
 	switch {

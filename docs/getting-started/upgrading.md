@@ -140,6 +140,9 @@ Newest first. Each version starts with **What you must do**; the text below it l
 - Docker blob uploads in progress during the upgrade answer `404 BLOB_UPLOAD_UNKNOWN`, and the client starts that push again (`docker push` does so on its own). Upgrade all replicas together if you push through several: a replica of the old release cannot continue an upload a new one started.
 - A request that works on a Docker upload takes a short lease on its row. A second request for the same upload, on any replica, gets `409 BLOB_UPLOAD_INVALID` with the current `Range` until the first one finishes or its lease runs out (two minutes without a sign of life). The upload sweeper aborts the multipart upload of an expired session, so its parts stop costing storage.
 
+- **Uploads are written once.** The server spools an upload while it hashes it and stores that file: on `filesystem` storage it is hard-linked into the blob root (the spool lives in `<storage.path>/spool`, on the same filesystem), on `s3`, `azure`, `gcs` and `oci` it is sent from the spool without a second copy and hash. Disk writes and hashing CPU per upload are halved or better. The `<storage.path>/spool` directory is new; leftovers older than an hour are removed at startup. The temporary space used by a running upload is the same as before (one copy of the body) but now sits on the blob filesystem when it is a `filesystem` store; make sure it has room for the concurrent uploads.
+- **Maven checksums.** A Maven file uploaded from now on has its SHA-256 and SHA-1 recorded; `GET <file>.md5` and `GET <file>.sha512` hash the stored file when asked (files uploaded before keep their recorded values). The artifact detail view shows no MD5 for a new file.
+
 ### 0.18.0
 
 **What you must do**

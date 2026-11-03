@@ -240,8 +240,13 @@ type SpoolReader struct {
 	spool *Spool
 }
 
+// Close does nothing: the reader owns no resource, the Spool does. It lets the
+// reader stand in for an opened blob (io.ReadCloser with ReadAt and Seek), so
+// code that wants random access uses the spool file itself, not a copy.
+func (r *SpoolReader) Close() error { return nil }
+
 // VerifiedFile implements storage.VerifiedFile.
-func (r *SpoolReader) VerifiedFile() (path, sha256 string, size int64, ok bool) {
+func (r *SpoolReader) VerifiedFile() (string, string, int64, bool) {
 	if r.spool.file == nil {
 		return "", "", 0, false
 	}

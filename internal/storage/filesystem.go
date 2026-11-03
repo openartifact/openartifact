@@ -43,10 +43,20 @@ const FilesystemSpoolDir = "spool"
 
 // SpoolDirFor returns the directory upload spools should be created in for the
 // configured storage, creating it and removing spools a crashed process left
-// behind. It is empty (the OS temp dir) for every backend but the filesystem
-// one: only there can a spool become the blob without being copied.
+// behind. On the filesystem backend it is a directory of the blob root, the
+// only place where a spool can become the blob without being copied; the other
+// backends use their configured spool path, or the OS temp dir when none is set.
 func SpoolDirFor(cfg StorageConfig) string {
-	if (cfg.Type != "filesystem" && cfg.Type != "") || cfg.Path == "" {
+	if cfg.Type != "filesystem" && cfg.Type != "" {
+		dir, err := prepareSpoolDir(cfg.SpoolPath)
+		if err != nil {
+			return ""
+		}
+
+		return dir
+	}
+
+	if cfg.Path == "" {
 		return ""
 	}
 
@@ -160,7 +170,7 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 
 	// A spool that was hashed on its way in is linked into place instead of
 	// being written and hashed a second time.
-	if path, sha, size, ok := verifiedFileOf(data); ok && (metadata["sha256"] == "" || metadata["sha256"] == sha) {
+	if path, sha, size, ok := verifiedFileMatching(data, metadata["sha256"]); ok {
 		return fs.putVerified(path, sha, size, metadata)
 	}
 

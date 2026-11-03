@@ -222,12 +222,12 @@ func TestHandleGet_ArtifactChecksumsDerivedFromBlob(t *testing.T) {
 	sha512Sum := sha512.Sum512(data)
 
 	db := &mavenQuarantineDB{
-		mavenMockDB: mavenMockDB{repo: &models.Repository{ID: "repo-1", Name: "myrepo"}},
 		art: &models.MavenArtifact{
 			ID: "a1", RepoPath: "com/example/app/1.0/app-1.0.jar", SHA256: sha256Hex,
 			SHA1: hex.EncodeToString(sha1Sum[:]),
 		},
 	}
+	db.repo = &models.Repository{ID: "repo-1", Name: "myrepo"}
 
 	log, err := logger.New("info", "json", "stdout")
 	if err != nil {
@@ -244,7 +244,12 @@ func TestHandleGet_ArtifactChecksumsDerivedFromBlob(t *testing.T) {
 		".sha256": sha256Hex,
 		".sha512": hex.EncodeToString(sha512Sum[:]),
 	} {
-		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/repos/myrepo/com/example/app/1.0/app-1.0.jar"+suffix, nil)
+		req := httptest.NewRequestWithContext(
+			context.Background(),
+			http.MethodGet,
+			"/repos/myrepo/com/example/app/1.0/app-1.0.jar"+suffix,
+			nil,
+		)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 

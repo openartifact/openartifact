@@ -112,9 +112,10 @@ func openVerified(data io.Reader, want, dir, pattern string) (*os.File, int64, f
 // sweep removes it: anything younger may belong to a live Put.
 const staleSpoolAge = time.Hour
 
-// spoolPatterns match the spool files of the S3, Azure and OCI backends.
+// spoolPatterns match the spool files of the S3, Azure and OCI backends and the
+// upload spools of the handlers (base.Spool).
 func spoolPatterns() []string {
-	return []string{"s3-put-*.tmp", "azure-put-*.tmp", "oci-put-*.tmp"}
+	return []string{"s3-put-*.tmp", "azure-put-*.tmp", "oci-put-*.tmp", "oa-spool-*"}
 }
 
 // prepareSpoolDir creates the configured spool directory and removes the
