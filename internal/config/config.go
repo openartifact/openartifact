@@ -1105,6 +1105,10 @@ func (c *Config) validateProxyWorkers() error {
 		return errNegativeStallTimeout
 	}
 
+	if c.Workers.RepoStatsInterval <= 0 {
+		return errRepoStatsInterval
+	}
+
 	return nil
 }
 
@@ -1140,10 +1144,6 @@ func (c *Config) Validate() error {
 
 	if c.Workers.DockerGCGracePeriod < 0 {
 		return errNegativeDockerGCGrace
-	}
-
-	if c.Workers.RepoStatsInterval <= 0 {
-		return errRepoStatsInterval
 	}
 
 	if err := c.validateProxyWorkers(); err != nil {
