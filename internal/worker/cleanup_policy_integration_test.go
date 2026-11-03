@@ -518,7 +518,8 @@ func TestCleanupCycleRunsOnlyDuePolicies(t *testing.T) {
 
 	s.exec(`UPDATE cleanup_policies SET created_at = now() - interval '3 days'`)
 	s.exec(`UPDATE cleanup_policies SET enabled = false WHERE id = $1`, disabled.ID)
-	s.exec(`UPDATE cleanup_policies SET last_run_at = now() - interval '1 hour' WHERE id = $1`, recent.ID)
+	// Just ran: the daily schedule (02:00) cannot have fired since, at any time of day.
+	s.exec(`UPDATE cleanup_policies SET last_run_at = now() WHERE id = $1`, recent.ID)
 
 	// Orphan collection and quota reconcile are throttled out of this cycle.
 	s.w.lastOrphanGC, s.w.lastQuotaReconcileAt = time.Now(), time.Now()
