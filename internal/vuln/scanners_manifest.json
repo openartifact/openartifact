@@ -17,18 +17,18 @@
       }
     },
     "grype": {
-      "version": "0.121.0",
+      "version": "0.121.1",
       "binary": "grype",
       "platforms": {
         "linux/amd64": {
-          "path": "anchore/grype/releases/download/v0.121.0/grype_0.121.0_linux_amd64.tar.gz",
-          "archive_sha256": "64e07133d3486115de647a66581461dccf5c732748a0a3119077395565f15519",
-          "binary_sha256": "bd511334178bc3002eb9eb58880f89e01e35f7fed7cfbe671171127a8afa3596"
+          "path": "anchore/grype/releases/download/v0.121.1/grype_0.121.1_linux_amd64.tar.gz",
+          "archive_sha256": "bc3ea3f9e6fd56ac781c08c6c5e614271b79f438200757f6932085c19b0a4657",
+          "binary_sha256": "497a3587a0a9fbce68888dffc7cb80670ddf92d827ca49939e430a02168e7c91"
         },
         "linux/arm64": {
-          "path": "anchore/grype/releases/download/v0.121.0/grype_0.121.0_linux_arm64.tar.gz",
-          "archive_sha256": "86f570f75ca947ea3dd6486309232bcff6d78e44ba081ae75ab14eab72be3dae",
-          "binary_sha256": "e81fd2b6669c5a9ab7fee756e63e769cc40163310c11e546420b4d93e2118543"
+          "path": "anchore/grype/releases/download/v0.121.1/grype_0.121.1_linux_arm64.tar.gz",
+          "archive_sha256": "33670612aad351c48cf3c37f4a85d8b043d1b64b21e6034e675bb00b956d78c1",
+          "binary_sha256": "11ce78fe1ee658ac519f53c3f04b110203d2f1ea3ab98a14c88cc92523a2a8ca"
         }
       }
     }

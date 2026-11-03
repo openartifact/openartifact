@@ -13,7 +13,7 @@ ARG SCANNERS=none
 
 # ---- Frontend build stage ---------------------------------------------------
 # Builds the Vue 3 SPA so web/dist/ is populated before Go's //go:embed runs.
-FROM --platform=$BUILDPLATFORM docker.io/oven/bun:1-alpine@sha256:629e17411f1f129dbec3af78d5af9c9f2a937435c80349437206c6b0b7422373 AS web-builder
+FROM --platform=$BUILDPLATFORM docker.io/oven/bun:1-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS web-builder
 
 WORKDIR /web
 
@@ -29,7 +29,7 @@ COPY web/ ./
 # precompress.js gzips dist/ once so the binary embeds each asset a single time.
 RUN bunx vite build && bun scripts/precompress.js
 # ---- Backend build stage ----------------------------------------------------
-FROM --platform=$BUILDPLATFORM docker.io/golang:1.27.3-alpine@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS builder
+FROM --platform=$BUILDPLATFORM docker.io/golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS builder
 
 WORKDIR /app
 
@@ -87,7 +87,7 @@ RUN mkdir -p /rootfs/var/lib/artifacts /rootfs/var/lib/openartifact/backups \
 # ---- Scanner binaries (static, digest-pinned) -------------------------------
 # Selected by the SCANNERS build argument; only the chosen stage is used.
 FROM docker.io/aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c AS trivy-src
-FROM docker.io/anchore/grype:v0.121.0@sha256:621d56d1d68106b787022c81546f7e0a36202a25d1239f0c20195fab8c16f7ea AS grype-src
+FROM docker.io/anchore/grype:v0.121.1@sha256:6b06708b036f74b2cd70e94b706b4586af96d1932e6ac46255940b2e39dd44a9 AS grype-src
 
 FROM scratch AS scanners-none
 COPY --from=builder /rootfs/scanners/ /scanners/
@@ -105,9 +105,9 @@ COPY --from=grype-src /grype /scanners/grype
 FROM scanners-${SCANNERS} AS scanners
 
 # ---- Runtime bases (shell-less, digest-pinned) ------------------------------
-FROM dhi.io/static:20250419-debian13@sha256:66e3dac42874997512a34ac68b59fa424a261394618b6ba0642454522aef4565 AS runtime-dhi
+FROM dhi.io/static:20250419-debian13@sha256:4749130e822c145dbdf9ca11ec0cc2f694b5fe687fd74268a2b62160e6726f39 AS runtime-dhi
 LABEL org.opencontainers.image.base.name="dhi.io/static:20250419-debian13"
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 AS runtime-distroless
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329 AS runtime-distroless
 LABEL org.opencontainers.image.base.name="gcr.io/distroless/static-debian13:nonroot"
 
 # ---- Runtime stage ----------------------------------------------------------
