@@ -13,7 +13,7 @@ ARG SCANNERS=none
 
 # ---- Frontend build stage ---------------------------------------------------
 # Builds the Vue 3 SPA so web/dist/ is populated before Go's //go:embed runs.
-FROM --platform=$BUILDPLATFORM docker.io/oven/bun:1-alpine@sha256:629e17411f1f129dbec3af78d5af9c9f2a937435c80349437206c6b0b7422373 AS web-builder
+FROM --platform=$BUILDPLATFORM docker.io/oven/bun:1-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS web-builder
 
 WORKDIR /web
 
