@@ -20,6 +20,11 @@ const (
 	// maxPackageQueryLen bounds the q search term of the package listing.
 	maxPackageQueryLen = 200
 
+	// packageTotalCap is the number of matching files the listing counts exactly;
+	// beyond it the total is a lower bound (total_exact false), so a broad search
+	// on a huge repository does not read every match just to number the pages.
+	packageTotalCap = 10000
+
 	packageSortCreated = "created"
 	packageSortName    = "name"
 
@@ -207,16 +212,27 @@ func (h *RepositoriesHandler) packageVersions(
 		opts.After, opts.NoTotal, opts.Page, opts.Limit = params.cursor, true, 1, params.limit+1
 	}
 
+	if params.cursor == nil {
+		opts.TotalCap = packageTotalCap
+	}
+
 	components, total, err := h.listComponents(ctx, repo.ID, opts)
 	if err != nil {
 		return nil, err
 	}
 
+	exact := opts.TotalExact(total)
+
 	hasMore := false
 	if params.cursor != nil && len(components) > params.limit {
 		components, hasMore = components[:params.limit], true
 	} else if params.cursor == nil {
-		hasMore = params.page*params.limit < total
+		// A lower bound lies past the end of this page by construction.
+		hasMore = !exact || params.page*params.limit < total
+
+		if !exact {
+			total = opts.CountCeiling()
+		}
 	}
 
 	ids := make([]string, len(components))
@@ -252,7 +268,7 @@ func (h *RepositoriesHandler) packageVersions(
 
 	resp := &responses.PackageListResponse{Page: params.page, Limit: params.limit, HasMore: hasMore, Packages: packages}
 	if params.cursor == nil {
-		resp.Total = &total
+		resp.Total, resp.TotalExact = &total, &exact
 	}
 
 	if hasMore && len(components) > 0 && params.sortKey != packageSortName {

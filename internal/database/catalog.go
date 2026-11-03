@@ -405,7 +405,15 @@ func (p *CatalogStore) componentTotal(ctx context.Context, repoID string, opts C
 		return offset + pageRows, nil
 	}
 
+	ceiling := opts.CountCeiling()
+
+	countCap := 0
+	if ceiling > 0 {
+		countCap = ceiling + 1
+	}
+
 	total, err := p.q.CountRepoComponents(ctx, dbsqlc.CountRepoComponentsParams{
+		CountCap:     toInt32(countCap),
 		RepoID:       repoID,
 		FormatFilter: opts.Format,
 		NameFilter:   opts.Name,
@@ -414,6 +422,10 @@ func (p *CatalogStore) componentTotal(ctx context.Context, repoID string, opts C
 	})
 	if err != nil {
 		return 0, fmt.Errorf("failed to count packages: %w", err)
+	}
+
+	if ceiling > 0 && int(total) > ceiling {
+		return ceiling + 1, nil
 	}
 
 	return int(total), nil

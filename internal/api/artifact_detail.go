@@ -13,14 +13,11 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/api/responses"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
 )
 
 const (
-	// maxDetailFiles bounds the files listed for one package version.
-	maxDetailFiles = 200
 	// maxDetailDependencies bounds the dependencies listed for one package version.
 	maxDetailDependencies = 500
 )
@@ -67,9 +64,9 @@ func (h *RepositoriesHandler) packageDetailResponse(
 	repo *models.Repository,
 	d *models.ComponentDetail,
 ) (*responses.PackageDetailResponse, error) {
-	files, err := h.versionFiles(ctx, repo.ID, d)
-	if err != nil {
-		return nil, err
+	files := make([]responses.PackageFileResponse, len(d.Files))
+	for i, f := range d.Files {
+		files[i] = responses.PackageFileResponse{ID: f.ID, Filename: f.Filename, Arch: f.Arch, Size: f.Size, SHA256: f.SHA256}
 	}
 
 	rollup, _, err := h.db.ListRepoPackageRollup(ctx, models.PackageRollupOptions{
@@ -95,36 +92,6 @@ func (h *RepositoriesHandler) packageDetailResponse(
 	}
 
 	return resp, nil
-}
-
-// versionFiles lists the rows that share the package name and version of d: the
-// files of one version. The listing's substring filter narrows the read, the
-// exact version match is made here.
-func (h *RepositoriesHandler) versionFiles(
-	ctx context.Context,
-	repoID string,
-	d *models.ComponentDetail,
-) ([]responses.PackageFileResponse, error) {
-	components, _, err := h.listComponents(ctx, repoID, database.ComponentListOptions{
-		Format: d.Format, Name: d.Name, Query: d.Version, Page: 1, Limit: maxDetailFiles,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	files := []responses.PackageFileResponse{}
-
-	for _, c := range components {
-		if c.Version != d.Version {
-			continue
-		}
-
-		files = append(files, responses.PackageFileResponse{
-			ID: c.ID, Filename: c.Filename, Arch: c.Arch, Size: c.PackageSize, SHA256: c.SHA256,
-		})
-	}
-
-	return files, nil
 }
 
 func metadataEntries(info map[string]string) []responses.PackageMetadataEntry {

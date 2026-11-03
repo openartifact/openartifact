@@ -12,20 +12,20 @@ import (
 
 const countRepoComponents = `-- name: CountRepoComponents :one
 WITH qm AS MATERIALIZED (
-    SELECT CASE WHEN char_length($4::text) >= 3 THEN (SELECT count(*) <= 2000 FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = $1::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE $5::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = $1::uuid AND pk3.name ILIKE $5::text) m LIMIT 2001) c) ELSE false END AS narrow
+    SELECT CASE WHEN char_length($4::text) >= 3 THEN (SELECT count(*) <= 2000 FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = $1::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE $6::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = $1::uuid AND pk3.name ILIKE $6::text) m LIMIT 2001) c) ELSE false END AS narrow
 )
 SELECT (
     -- generic files without name/q filter: package_files alone (index-only scan of idx_package_files_listing)
-    (SELECT COUNT(*) FROM package_files f WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $2::text = '' AND $3::text = '' AND $4::text = '')
-    + (SELECT COUNT(*) FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $3::text <> '' AND ($2::text = '' OR pk.format = $2::text) AND pk.name = $3::text AND ($4::text = '' OR pk.name ILIKE $5::text OR v.version ILIKE $5::text))
+    (SELECT COUNT(*) FROM (SELECT 1 FROM package_files f WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $2::text = '' AND $3::text = '' AND $4::text = '' LIMIT NULLIF($5::int, 0)) c)
+    + (SELECT COUNT(*) FROM (SELECT 1 FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $3::text <> '' AND ($2::text = '' OR pk.format = $2::text) AND pk.name = $3::text AND ($4::text = '' OR pk.name ILIKE $6::text OR v.version ILIKE $6::text) LIMIT NULLIF($5::int, 0)) c)
     -- a narrow q (see qm): from the trigram indexes of the version and the package name
-    + (SELECT COUNT(*) FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $3::text = '' AND $4::text <> '' AND (SELECT narrow FROM qm) AND ($2::text = '' OR pk.format = $2::text) AND f.version_id IN (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = $1::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE $5::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = $1::uuid AND pk3.name ILIKE $5::text))
+    + (SELECT COUNT(*) FROM (SELECT 1 FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $3::text = '' AND $4::text <> '' AND (SELECT narrow FROM qm) AND ($2::text = '' OR pk.format = $2::text) AND f.version_id IN (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = $1::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE $6::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = $1::uuid AND pk3.name ILIKE $6::text) LIMIT NULLIF($5::int, 0)) c)
     -- a format filter, or a broad q (a format the repository has no package of is skipped by the EXISTS)
-    + (SELECT COUNT(*) FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $3::text = '' AND ($2::text <> '' OR $4::text <> '') AND ($4::text = '' OR NOT (SELECT narrow FROM qm)) AND ($2::text = '' OR EXISTS (SELECT 1 FROM packages pg WHERE pg.repository_id = $1::uuid AND pg.format = $2::text)) AND ($2::text = '' OR pk.format = $2::text) AND ($4::text = '' OR pk.name ILIKE $5::text OR v.version ILIKE $5::text))
+    + (SELECT COUNT(*) FROM (SELECT 1 FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $3::text = '' AND ($2::text <> '' OR $4::text <> '') AND ($4::text = '' OR NOT (SELECT narrow FROM qm)) AND ($2::text = '' OR EXISTS (SELECT 1 FROM packages pg WHERE pg.repository_id = $1::uuid AND pg.format = $2::text)) AND ($2::text = '' OR pk.format = $2::text) AND ($4::text = '' OR pk.name ILIKE $6::text OR v.version ILIKE $6::text) LIMIT NULLIF($5::int, 0)) c)
     -- proxy cache
-    + (SELECT COUNT(*) FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id WHERE r.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL AND ($2::text = '' OR $2::text = r.format) AND ($3::text = '' OR t.cache_key = $3::text) AND ($4::text = '' OR strpos(lower(t.cache_key), lower($4::text)) > 0))
+    + (SELECT COUNT(*) FROM (SELECT 1 FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id WHERE r.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL AND ($2::text = '' OR $2::text = r.format) AND ($3::text = '' OR t.cache_key = $3::text) AND ($4::text = '' OR strpos(lower(t.cache_key), lower($4::text)) > 0) LIMIT NULLIF($5::int, 0)) c)
     -- docker tags
-    + (SELECT COUNT(*) FROM docker_tags t WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'docker') AND ($3::text = '' OR (CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END) = $3::text) AND ($4::text = '' OR strpos(lower((CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END)), lower($4::text)) > 0 OR strpos(lower(t.name), lower($4::text)) > 0))
+    + (SELECT COUNT(*) FROM (SELECT 1 FROM docker_tags t WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'docker') AND ($3::text = '' OR (CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END) = $3::text) AND ($4::text = '' OR strpos(lower((CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END)), lower($4::text)) > 0 OR strpos(lower(t.name), lower($4::text)) > 0) LIMIT NULLIF($5::int, 0)) c)
 )::bigint
 `
 
@@ -34,6 +34,7 @@ type CountRepoComponentsParams struct {
 	FormatFilter string `db:"format_filter" json:"format_filter"`
 	NameFilter   string `db:"name_filter" json:"name_filter"`
 	Q            string `db:"q" json:"q"`
+	CountCap     int32  `db:"count_cap" json:"count_cap"`
 	QPattern     string `db:"q_pattern" json:"q_pattern"`
 }
 
@@ -43,6 +44,7 @@ func (q *Queries) CountRepoComponents(ctx context.Context, arg CountRepoComponen
 		arg.FormatFilter,
 		arg.NameFilter,
 		arg.Q,
+		arg.CountCap,
 		arg.QPattern,
 	)
 	var column_1 int64
@@ -238,6 +240,11 @@ type ListRepoComponentsRow struct {
 // cursor in the listing order.
 // The condition is sargable on idx_package_files_listing and its siblings, so a
 // deep page starts at the cursor instead of walking page_offset rows.
+//
+// CountRepoComponents takes count_cap: with a value above zero every branch stops
+// counting after that many rows, so the result is at most six times the cap
+// (a lower bound once it exceeds it) and a broad q on a huge repository reads
+// cap rows instead of every match; zero counts exactly.
 //
 // ListRepoComponentsByName is ListRepoComponents in (name, version, id) order
 // instead of newest first: its stage 1 sorts the repository's files by that

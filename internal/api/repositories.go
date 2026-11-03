@@ -1568,11 +1568,13 @@ func (h *RepositoriesHandler) listComponents(
 	repoID string,
 	opts database.ComponentListOptions,
 ) ([]*models.Component, int, error) {
-	if opts.Name == "" && opts.Query == "" && !opts.SortByName && opts.After == nil {
+	plain := opts.Name == "" && opts.Query == "" && !opts.SortByName && opts.After == nil
+
+	searcher, ok := h.db.(database.ComponentSearcher)
+	if plain && (!ok || opts.TotalCap == 0) {
 		return h.db.ListComponentsByRepo(ctx, repoID, opts.Format, opts.Page, opts.Limit)
 	}
 
-	searcher, ok := h.db.(database.ComponentSearcher)
 	if !ok {
 		return nil, 0, errListFilterUnsupported
 	}

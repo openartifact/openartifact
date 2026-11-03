@@ -18,14 +18,14 @@
 -- listing); blob_key is a proxy cache entry's blob, by sha256.
 
 -- name: GetRepoComponentDetail :one
-SELECT p.id::uuid AS id, p.format::text AS format, p.name::text AS name, p.version::text AS version,
+SELECT p.id::uuid AS id, COALESCE(p.version_id::text, '')::text AS version_id, p.format::text AS format, p.name::text AS name, p.version::text AS version,
        p.arch::text AS arch, p.filename::text AS filename,
        p.created_at::timestamptz AS created_at, p.updated_at::timestamptz AS updated_at,
        COALESCE(COALESCE(bi.sha256, bs.sha256), '')::text AS sha256,
        COALESCE(p.pref_size, bi.size_bytes, bs.size_bytes, p.fb_size, 0)::bigint AS size_bytes,
        p.doc::jsonb AS doc, p.info::jsonb AS info
 FROM (
-    SELECT f.id::uuid AS id, pk.format::text AS format, pk.name::text AS name, v.version::text AS version, f.arch::text AS arch,
+    SELECT f.id::uuid AS id, f.version_id::uuid AS version_id, pk.format::text AS format, pk.name::text AS name, v.version::text AS version, f.arch::text AS arch,
            f.filename::text AS filename, f.created_at::timestamptz AS created_at, f.updated_at::timestamptz AS updated_at,
            f.blob_id::uuid AS blob_id, NULL::text AS blob_key, f.size_bytes::bigint AS pref_size, NULL::bigint AS fb_size,
            jsonb_build_object(
@@ -50,7 +50,7 @@ FROM (
     WHERE f.deleted_at IS NULL AND f.listed AND f.repository_id = sqlc.arg(repo_id)::uuid AND f.id = sqlc.arg(id)::uuid
     UNION ALL
     -- proxy cache: a cached upstream file of a proxy repository
-    SELECT t.id::uuid, r.format::text, t.cache_key::text, ''::text, ''::text,
+    SELECT t.id::uuid, NULL::uuid, r.format::text, t.cache_key::text, ''::text, ''::text,
            t.cache_key::text, t.created_at::timestamptz, t.updated_at::timestamptz,
            NULL::uuid, t.blob_key::text, NULL::bigint, t.size_bytes::bigint,
            NULL::jsonb,
@@ -60,7 +60,7 @@ FROM (
       AND t.status_code = 200 AND t.blob_key IS NOT NULL
     UNION ALL
     -- docker: one row per tag; the manifest is the file
-    SELECT t.id::uuid, 'docker'::text, (CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)::text, t.name::text, ''::text,
+    SELECT t.id::uuid, NULL::uuid, 'docker'::text, (CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)::text, t.name::text, ''::text,
            t.manifest_digest::text, t.created_at::timestamptz, t.updated_at::timestamptz,
            dm.blob_id::uuid, NULL::text, COALESCE(dm.size, 0)::bigint, NULL::bigint,
            NULL::jsonb,
@@ -73,3 +73,19 @@ FROM (
 LEFT JOIN LATERAL (SELECT sha256, size_bytes FROM blobs WHERE id = p.blob_id) AS bi ON true
 LEFT JOIN LATERAL (SELECT sha256, size_bytes FROM blobs WHERE sha256 = p.blob_key) AS bs ON true
 LIMIT 1;
+
+-- The listed live files of one package version (the file list of the package
+-- detail page), newest first like the listing. Reads package_files by
+-- idx_package_files_version instead of re-running the catalog listing.
+-- package_size follows the listing rule: the size the row records, else the blob's.
+
+-- name: ListVersionFiles :many
+SELECT f.id::uuid AS id, f.filename::text AS filename, f.arch::text AS arch,
+       COALESCE(f.size_bytes, b.size_bytes, 0)::bigint AS size_bytes,
+       COALESCE(b.sha256, '')::text AS sha256
+FROM package_files f
+LEFT JOIN blobs b ON b.id = f.blob_id
+WHERE f.version_id = sqlc.arg(version_id)::uuid AND f.repository_id = sqlc.arg(repo_id)::uuid
+  AND f.deleted_at IS NULL AND f.listed
+ORDER BY f.created_at DESC, f.id
+LIMIT sqlc.arg(max_files)::int;

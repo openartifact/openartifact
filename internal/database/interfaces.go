@@ -110,8 +110,29 @@ type ComponentListOptions struct {
 	After *ComponentCursor
 	// NoTotal skips counting the matching rows; the returned total is then 0.
 	NoTotal bool
-	Page    int
-	Limit   int
+	// TotalCap, when above zero, bounds the counting of the matching rows: the
+	// total is exact up to CountCeiling and the lower bound CountCeiling+1
+	// beyond it (see TotalExact). Zero counts every row.
+	TotalCap int
+	Page     int
+	Limit    int
+}
+
+// CountCeiling is the number of rows the total counts exactly: TotalCap, but
+// never less than the rows up to the end of the requested page, so that a deep
+// page still knows whether the listing goes on. Zero means no ceiling.
+func (o ComponentListOptions) CountCeiling() int {
+	if o.TotalCap <= 0 {
+		return 0
+	}
+
+	return max(o.TotalCap, o.Page*o.Limit)
+}
+
+// TotalExact reports whether a total returned for these options is the exact
+// number of matching rows rather than the lower bound CountCeiling+1.
+func (o ComponentListOptions) TotalExact(total int) bool {
+	return o.CountCeiling() == 0 || total <= o.CountCeiling()
 }
 
 // ComponentCursor is a position in the newest-first package listing, the
