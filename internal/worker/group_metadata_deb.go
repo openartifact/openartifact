@@ -20,13 +20,13 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/klauspost/compress/gzip"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repotype"
-	"github.com/klauspost/compress/gzip"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -471,7 +471,7 @@ type debIndex struct {
 	texts []string
 	// size is the uncompressed size, the sum of the texts' lengths.
 	size int64
-	gz []byte
+	gz   []byte
 	// reusedGz is set instead of gz when the index is byte for byte the one the
 	// group published last: the stored compressed file is kept and only its
 	// Release entry is carried over.

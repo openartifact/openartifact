@@ -178,7 +178,7 @@ func benchRPMWorkerPackages(n int) []pkgrpm.Package {
 }
 
 // BenchmarkRPMBuildMetadata is the pure core of RPMetadataWorker.Regenerate:
-// primary/filelists/other XML, gzip+xz compression, repomd.xml (unsigned).
+// primary/filelists/other XML, gzip compression, repomd.xml (unsigned).
 func BenchmarkRPMBuildMetadata(b *testing.B) {
 	w := &RPMetadataWorker{db: &benchWorkerDB{}}
 
