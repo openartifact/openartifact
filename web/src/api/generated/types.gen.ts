@@ -496,7 +496,7 @@ export type Repository = {
 };
 
 /**
- * Catalog figures of a repository. Only present in the repository list (GET /api/v1/repositories).
+ * Catalog figures of a repository. Only present in the repository list (GET /api/v1/repositories). The size and the quota are current; the package count, the newest publication and the security counts are recomputed in the background after a change and lag it by at most the repo stats interval (workers.repoStatsInterval, 15 seconds by default).
  */
 export type RepositoryStats = {
     /**

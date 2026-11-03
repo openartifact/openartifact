@@ -63,6 +63,7 @@ type workerSet struct {
 	trashPurge          *worker.TrashPurgeWorker
 	osvMirror           *worker.OSVMirrorWorker
 	auditRetention      *worker.AuditRetentionWorker
+	repoStats           *worker.RepoStatsWorker
 	exploitFeeds        *worker.ExploitFeedsWorker
 	// exploit marks findings with the KEV and EPSS signals; it is never nil.
 	exploit *exploit.Enricher
@@ -244,6 +245,12 @@ func (a *app) startHousekeepingWorkers() {
 	w.auditRetention = worker.NewAuditRetentionWorker(db, log, cfg.Audit.RetentionDays, cfg.Audit.PurgeInterval, cfg.Audit.PurgeBatchSize).
 		WithMetrics(reg)
 	a.start(w.auditRetention.Start)
+
+	// Repository list figures: recomputes the package count, newest publication
+	// and security counts of the repositories that changed, one replica at a time
+	// (advisory lock). The list lags the data by about the interval.
+	w.repoStats = worker.NewRepoStatsWorker(db, log, cfg.Workers.RepoStatsInterval)
+	a.start(w.repoStats.Start)
 }
 
 // startStorageWorkers starts the tier mover, the blob deletion sweeper and

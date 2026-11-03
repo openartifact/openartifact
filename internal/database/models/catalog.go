@@ -43,8 +43,13 @@ type RepoQuotaUsage struct {
 	UsedBytes  int64
 }
 
-// RepoStats are the catalog figures of one repository.
+// RepoStats are the catalog figures of one repository. Everything but the size
+// and the quota is a stored rollup that lags the data by at most the repo stats
+// reconcile interval.
 type RepoStats struct {
+	// PackageCount is the number of distinct package names, as the package
+	// listing names them.
+	PackageCount int64
 	// SizeBytes is the stored size, from the quota counter kept up to date on
 	// every upload (it equals Quota.UsedBytes).
 	SizeBytes       int64

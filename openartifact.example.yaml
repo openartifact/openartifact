@@ -257,6 +257,12 @@ workers:
   # period longer than your slowest push and the longest-lived digest pin.
   dockerGcInterval: 1h
   dockerGcGracePeriod: 24h
+  # The repository list shows per repository the package count, the newest
+  # publication and the security counts. They are stored and recomputed in the
+  # background for the repositories that changed; repoStatsInterval is the pause
+  # between passes (must be positive). The list lags uploads, deletes and scans by
+  # about this long; the stored size and quota are always current.
+  repoStatsInterval: 15s
   # Docker proxy repositories: manifests and blobs addressed by digest are
   # evicted from the proxy cache after proxyDockerDigestTtl without a pull (a
   # pull in the second half of the period renews them) and fetched from the

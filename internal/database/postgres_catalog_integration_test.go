@@ -136,7 +136,9 @@ func TestCatalogRepositoryStats(t *testing.T) {
 	f, base := seedCatalog(t)
 	ctx := context.Background()
 
-	stats, err := f.pg.RepoCatalogStats(ctx, []string{f.repo}, true)
+	reconcileRepoStats(t, f.pg)
+
+	stats, err := f.pg.RepoCatalogStats(ctx, []string{f.repo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,9 +152,8 @@ func TestCatalogRepositoryStats(t *testing.T) {
 		t.Fatalf("last published %v", s.LastPublishedAt)
 	}
 
-	counts, err := f.pg.CountRepoPackageNames(ctx, []string{f.repo})
-	if err != nil || counts[f.repo] != 2 {
-		t.Fatalf("counts %v err %v", counts, err)
+	if s.PackageCount != 2 {
+		t.Fatalf("package count %d, want 2", s.PackageCount)
 	}
 }
 
@@ -209,8 +210,9 @@ func TestCatalogHostedBranchSkipsTrashedRepository(t *testing.T) {
 		t.Fatalf("recent of a trashed repository = %v, err %v; want none", recent, err)
 	}
 
-	counts, err := f.pg.CountRepoPackageNames(ctx, []string{f.repo})
-	if err != nil || counts[f.repo] != 0 {
-		t.Fatalf("counts %v err %v; want none", counts, err)
+	reconcileRepoStats(t, f.pg)
+
+	if s := repoStatsOf(t, f.pg, f.repo); s.PackageCount != 0 || s.LastPublishedAt != nil {
+		t.Fatalf("stats of a trashed repository %+v; want none", s)
 	}
 }

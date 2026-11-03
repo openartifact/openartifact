@@ -32,13 +32,8 @@ type repositoriesListMockDB struct {
 	countCalled bool
 }
 
-// CountRepoPackageNames is not exercised by the tests.
-func (*repositoriesListMockDB) CountRepoPackageNames(context.Context, []string) (map[string]int64, error) {
-	return map[string]int64{}, nil
-}
-
 // RepoCatalogStats is not exercised by the tests.
-func (*repositoriesListMockDB) RepoCatalogStats(context.Context, []string, bool) (map[string]models.RepoStats, error) {
+func (*repositoriesListMockDB) RepoCatalogStats(context.Context, []string) (map[string]models.RepoStats, error) {
 	return map[string]models.RepoStats{}, nil
 }
 

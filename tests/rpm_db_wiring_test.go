@@ -130,13 +130,8 @@ type MockDatabase struct {
 	quotaReleaseCalls int   // releases ever made
 }
 
-// CountRepoPackageNames is not exercised by the tests.
-func (*MockDatabase) CountRepoPackageNames(context.Context, []string) (map[string]int64, error) {
-	return map[string]int64{}, nil
-}
-
 // RepoCatalogStats is not exercised by the tests.
-func (*MockDatabase) RepoCatalogStats(context.Context, []string, bool) (map[string]models.RepoStats, error) {
+func (*MockDatabase) RepoCatalogStats(context.Context, []string) (map[string]models.RepoStats, error) {
 	return map[string]models.RepoStats{}, nil
 }
 

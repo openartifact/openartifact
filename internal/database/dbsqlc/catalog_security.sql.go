@@ -98,49 +98,120 @@ func (q *Queries) ArtifactSecurityByPath(ctx context.Context, arg ArtifactSecuri
 	return items, nil
 }
 
+const repoCatalogStats = `-- name: RepoCatalogStats :many
+SELECT r.id::uuid AS repository_id,
+       COALESCE(q.max_size_bytes, 0)::bigint AS max_size_bytes,
+       COALESCE(q.current_size_bytes, 0)::bigint AS current_size_bytes,
+       COALESCE(s.package_count, 0)::bigint AS package_count,
+       s.last_published_at AS last_published_at,
+       COALESCE(s.vuln_critical, 0)::bigint AS critical,
+       COALESCE(s.vuln_high, 0)::bigint AS high,
+       COALESCE(s.vuln_medium, 0)::bigint AS medium,
+       COALESCE(s.vuln_low, 0)::bigint AS low,
+       COALESCE(s.secrets, 0)::bigint AS secrets,
+       COALESCE(s.license_violations, 0)::bigint AS license_violations,
+       COALESCE(s.quarantined, 0)::bigint AS quarantined,
+       s.scanned_at AS scanned_at
+FROM repositories r
+LEFT JOIN storage_quotas q ON q.repository_id = r.id
+LEFT JOIN repo_stats s ON s.repository_id = r.id
+WHERE r.id = ANY($1::uuid[])
+`
+
+type RepoCatalogStatsRow struct {
+	RepositoryID      string     `db:"repository_id" json:"repository_id"`
+	MaxSizeBytes      int64      `db:"max_size_bytes" json:"max_size_bytes"`
+	CurrentSizeBytes  int64      `db:"current_size_bytes" json:"current_size_bytes"`
+	PackageCount      int64      `db:"package_count" json:"package_count"`
+	LastPublishedAt   *time.Time `db:"last_published_at" json:"last_published_at"`
+	Critical          int64      `db:"critical" json:"critical"`
+	High              int64      `db:"high" json:"high"`
+	Medium            int64      `db:"medium" json:"medium"`
+	Low               int64      `db:"low" json:"low"`
+	Secrets           int64      `db:"secrets" json:"secrets"`
+	LicenseViolations int64      `db:"license_violations" json:"license_violations"`
+	Quarantined       int64      `db:"quarantined" json:"quarantined"`
+	ScannedAt         *time.Time `db:"scanned_at" json:"scanned_at"`
+}
+
+// What the repository list shows per repository: the stored size and quota (the
+// counters kept up to date on every upload) and the figures of repo_stats (see
+// the repo stats worker; a repository it has not reached yet reads as zeros).
+func (q *Queries) RepoCatalogStats(ctx context.Context, repoIds []string) ([]RepoCatalogStatsRow, error) {
+	rows, err := q.db.Query(ctx, repoCatalogStats, repoIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RepoCatalogStatsRow{}
+	for rows.Next() {
+		var i RepoCatalogStatsRow
+		if err := rows.Scan(
+			&i.RepositoryID,
+			&i.MaxSizeBytes,
+			&i.CurrentSizeBytes,
+			&i.PackageCount,
+			&i.LastPublishedAt,
+			&i.Critical,
+			&i.High,
+			&i.Medium,
+			&i.Low,
+			&i.Secrets,
+			&i.LicenseViolations,
+			&i.Quarantined,
+			&i.ScannedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const repoSecurityCounts = `-- name: RepoSecurityCounts :many
 
-WITH vuln AS (
-    SELECT DISTINCT ON (sj.artifact_ref_id)
-           ref.repository_id, vr.critical_count, vr.high_count, vr.medium_count, vr.low_count, vr.quarantined
+WITH latest AS (
+    SELECT ref.repository_id, sj.id AS job_id, sj.scan_type
     FROM artifact_refs ref
-    JOIN scan_jobs sj ON sj.artifact_ref_id = ref.id AND sj.scan_type = 'vuln'
-    JOIN vuln_results vr ON vr.scan_job_id = sj.id
+    JOIN scan_jobs sj ON sj.artifact_ref_id = ref.id AND sj.is_latest
     WHERE ref.repository_id = ANY($1::uuid[])
-    ORDER BY sj.artifact_ref_id, sj.created_at DESC
+      AND sj.scan_type IN ('vuln', 'secret', 'license')
 ), vuln_agg AS (
-    SELECT repository_id,
-           SUM(critical_count)::bigint AS critical, SUM(high_count)::bigint AS high,
-           SUM(medium_count)::bigint AS medium, SUM(low_count)::bigint AS low,
-           COUNT(*) FILTER (WHERE quarantined)::bigint AS quarantined
-    FROM vuln
-    GROUP BY repository_id
+    SELECT l.repository_id,
+           SUM(vr.critical_count)::bigint AS critical, SUM(vr.high_count)::bigint AS high,
+           SUM(vr.medium_count)::bigint AS medium, SUM(vr.low_count)::bigint AS low,
+           COUNT(*) FILTER (WHERE vr.quarantined)::bigint AS quarantined
+    FROM latest l
+    JOIN vuln_results vr ON vr.scan_job_id = l.job_id
+    WHERE l.scan_type = 'vuln'
+    GROUP BY l.repository_id
 ), secret_agg AS (
-    SELECT ref.repository_id,
+    SELECT l.repository_id,
            SUM(sr.finding_count)::bigint AS secrets,
            COUNT(*) FILTER (WHERE sr.quarantined)::bigint AS quarantined
-    FROM artifact_refs ref
-    JOIN scan_jobs sj ON sj.artifact_ref_id = ref.id AND sj.scan_type = 'secret'
-    JOIN secret_results sr ON sr.scan_job_id = sj.id
-    WHERE ref.repository_id = ANY($1::uuid[])
-    GROUP BY ref.repository_id
+    FROM latest l
+    JOIN secret_results sr ON sr.scan_job_id = l.job_id
+    WHERE l.scan_type = 'secret'
+    GROUP BY l.repository_id
 ), license_agg AS (
-    SELECT ref.repository_id,
+    SELECT l.repository_id,
            COUNT(*) FILTER (WHERE lr.quarantined)::bigint AS quarantined
-    FROM artifact_refs ref
-    JOIN scan_jobs sj ON sj.artifact_ref_id = ref.id AND sj.scan_type = 'license'
-    JOIN license_results lr ON lr.scan_job_id = sj.id
-    WHERE ref.repository_id = ANY($1::uuid[])
-    GROUP BY ref.repository_id
+    FROM latest l
+    JOIN license_results lr ON lr.scan_job_id = l.job_id
+    WHERE l.scan_type = 'license'
+    GROUP BY l.repository_id
 ), scanned AS (
-    SELECT DISTINCT ON (ref.repository_id) ref.repository_id, sj.completed_at AS scanned_at
+    SELECT ref.repository_id, MAX(sj.completed_at)::timestamptz AS scanned_at
     FROM artifact_refs ref
     JOIN scan_jobs sj ON sj.artifact_ref_id = ref.id
     WHERE ref.repository_id = ANY($1::uuid[])
       AND sj.scan_type IN ('vuln', 'secret', 'license')
       AND sj.status IN ('completed', 'partial')
       AND sj.completed_at IS NOT NULL
-    ORDER BY ref.repository_id, sj.completed_at DESC
+    GROUP BY ref.repository_id
 )
 SELECT r.id::uuid AS repository_id,
        COALESCE(v.critical, 0)::bigint AS critical,
@@ -172,7 +243,8 @@ type RepoSecurityCountsRow struct {
 }
 
 // Security and quota aggregates of the repository catalog: the stats of
-// GET /api/v1/repositories and the per-version columns of the package listing.
+// GET /api/v1/repositories (stored in repo_stats, see RepoSecurityCounts) and
+// the per-version columns of the package listing.
 //
 // A scan of one artifact can exist more than once per type: scan_jobs is unique
 // on (artifact_ref_id, scan_type, scanner) and the scanner column is the
@@ -183,7 +255,9 @@ type RepoSecurityCountsRow struct {
 // "Flagged" means a critical or high vulnerability, a secret finding, or a
 // quarantined result of any type; the same rule, as a predicate, is
 // FlaggedArtifactPredicate in internal/database/catalog_sql.go.
-// One row per requested repository (all zero for one never scanned).
+// One row per requested repository (all zero for one never scanned): the scan
+// figures the repo stats worker stores in repo_stats. The list endpoint never
+// runs it. Only the latest job of each type counts (scan_jobs.is_latest).
 func (q *Queries) RepoSecurityCounts(ctx context.Context, repoIds []string) ([]RepoSecurityCountsRow, error) {
 	rows, err := q.db.Query(ctx, repoSecurityCounts, repoIds)
 	if err != nil {
@@ -203,45 +277,6 @@ func (q *Queries) RepoSecurityCounts(ctx context.Context, repoIds []string) ([]R
 			&i.LicenseViolations,
 			&i.Quarantined,
 			&i.ScannedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const repoStorageUsage = `-- name: RepoStorageUsage :many
-SELECT repository_id::uuid AS repository_id, max_size_bytes, current_size_bytes, warn_threshold_percent
-FROM storage_quotas
-WHERE repository_id = ANY($1::uuid[])
-`
-
-type RepoStorageUsageRow struct {
-	RepositoryID         string `db:"repository_id" json:"repository_id"`
-	MaxSizeBytes         int64  `db:"max_size_bytes" json:"max_size_bytes"`
-	CurrentSizeBytes     int64  `db:"current_size_bytes" json:"current_size_bytes"`
-	WarnThresholdPercent int32  `db:"warn_threshold_percent" json:"warn_threshold_percent"`
-}
-
-// The storage quota rows (one per repository, kept up to date on every upload).
-func (q *Queries) RepoStorageUsage(ctx context.Context, repoIds []string) ([]RepoStorageUsageRow, error) {
-	rows, err := q.db.Query(ctx, repoStorageUsage, repoIds)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []RepoStorageUsageRow{}
-	for rows.Next() {
-		var i RepoStorageUsageRow
-		if err := rows.Scan(
-			&i.RepositoryID,
-			&i.MaxSizeBytes,
-			&i.CurrentSizeBytes,
-			&i.WarnThresholdPercent,
 		); err != nil {
 			return nil, err
 		}
