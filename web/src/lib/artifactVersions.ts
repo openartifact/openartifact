@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { PackageItem } from '../api/repositories'
+import { compareText } from './intl'
 
 /** Version strings that mark a pre-release; matched anywhere after a separator. */
 const PRERELEASE = /[-.](rc|alpha|beta|snapshot|preview|dev|pre)(?![a-z])/i
@@ -122,5 +123,5 @@ export function worstCount(counts: SeverityCounts | null | undefined): number {
 
 /** Orders version strings by their numeric parts (1.10.0 after 1.9.0), then as text. */
 export function compareVersionStrings(a: string, b: string): number {
-  return a.localeCompare(b, 'en', { numeric: true, sensitivity: 'base' })
+  return compareText(a, b)
 }

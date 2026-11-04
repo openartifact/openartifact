@@ -93,6 +93,7 @@ import { useAttestation } from '../../../composables/useAttestation'
 import { useDocsLink } from '../../../composables/useDocsLink'
 import { absoluteUrl, verifySnippet } from '../../../lib/attestation'
 import { t } from '../../../i18n'
+import { saveBlob } from '../../../lib/download'
 
 const { key, problem, message, loading, rows, rowsError, load, toggle } = useAttestation()
 const docsUrl = useDocsLink('settings-attestation')
@@ -101,13 +102,6 @@ const keyUrl = computed(() => absoluteUrl(key.value?.public_key_url ?? '', windo
 const snippet = computed(() => verifySnippet(keyUrl.value))
 
 function downloadPem(): void {
-  const url = URL.createObjectURL(new Blob([key.value?.public_key_pem ?? ''], { type: 'application/x-pem-file' }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'attestation-key.pem'
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
+  saveBlob(new Blob([key.value?.public_key_pem ?? ''], { type: 'application/x-pem-file' }), 'attestation-key.pem')
 }
 </script>

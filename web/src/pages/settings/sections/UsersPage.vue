@@ -123,6 +123,7 @@ import { matchesUser, userCounts, type StatusFilter } from '../../../lib/users'
 import { useToastStore } from '../../../stores/toast'
 import { t, tp } from '../../../i18n'
 import { compareText } from '../../../lib/intl'
+import { compareTimestamps } from '../../../lib/datetime'
 
 type UserItem = User & { id: string }
 
@@ -166,7 +167,7 @@ const { list, all, refresh } = useLocalList({
   match: (u, f) => matchesUser(u, f.q, f.status),
   compare: (a, b, sort) => {
     const key = sort === 'created_at' ? 'created_at' : 'username'
-    return key === 'username' ? compareText(a.username, b.username) : String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
+    return key === 'username' ? compareText(a.username, b.username) : compareTimestamps(a.created_at, b.created_at)
   },
 })
 const counts = computed(() => (all.value.length ? userCounts(all.value) : null))

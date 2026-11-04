@@ -43,5 +43,6 @@
   "search.empty.hint": "Essayez un nom plus court, retirez un filtre ou collez la somme de contrôle d'un fichier. Rien de publié pour l'instant ? Les commandes de publication se trouvent sur l'Accueil, sous Connecter un client.",
   "search.empty.checksum.title": "Aucun fichier n'a cette somme de contrôle",
   "search.empty.checksum.hint": "Les sommes de contrôle sont recherchées dans les dépôts auxquels vous avez accès en lecture. Vérifiez le condensat ou recherchez plutôt par nom.",
+  "search.loadFailed": "Impossible de charger les dépôts et les paquets récents",
   "search.recent.title": "Publiés récemment"
 }

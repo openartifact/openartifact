@@ -43,5 +43,6 @@
   "search.empty.hint": "Versuchen Sie einen kürzeren Namen, entfernen Sie einen Filter oder fügen Sie eine Datei-Prüfsumme ein. Noch nichts veröffentlicht? Die Befehle zum Veröffentlichen stehen unter Start bei „Client verbinden“.",
   "search.empty.checksum.title": "Keine Datei hat diese Prüfsumme",
   "search.empty.checksum.hint": "Prüfsummen werden in den Repositories gesucht, die Sie lesen dürfen. Prüfen Sie den Digest oder suchen Sie stattdessen nach Namen.",
+  "search.loadFailed": "Repositories und zuletzt veröffentlichte Pakete konnten nicht geladen werden",
   "search.recent.title": "Kürzlich veröffentlicht"
 }

@@ -11,7 +11,7 @@ import { t } from '../i18n'
  * Loads the federation status of `repo` and re-reads it every `intervalMs` while the page is
  * visible. A new request is only scheduled after the previous one settled, a response that
  * arrives after the repository changed or a newer read is dropped, and the timer and the
- * visibility listener go away with the owning scope. A failed poll keeps the last good status.
+ * visibility listener (attached only inside an effect scope) go away with the owning scope. A failed poll keeps the last good status.
  */
 export function useFederationStatus(repo: () => string, intervalMs: number = FEDERATION_POLL_MS) {
   const status: Ref<FederationStatus | null> = ref(null)
@@ -78,7 +78,10 @@ export function useFederationStatus(repo: () => string, intervalMs: number = FED
     if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
   }
 
-  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
+  // Only a scope can remove the listener on its own; outside one the caller owns the lifetime
+  // through `stop()`, and a listener nobody can see being left behind is not attached.
+  const scoped = getCurrentScope() !== undefined
+  if (scoped && typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
   watch(
     repo,
     () => {
@@ -88,7 +91,7 @@ export function useFederationStatus(repo: () => string, intervalMs: number = FED
     },
     { immediate: true },
   )
-  if (getCurrentScope()) onScopeDispose(stop)
+  if (scoped) onScopeDispose(stop)
 
   return { status, loading, error, reload: load, apply, stop }
 }

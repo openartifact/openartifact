@@ -43,5 +43,6 @@
   "search.empty.hint": "Tente um nome mais curto, remova um filtro ou cole o checksum de um arquivo. Nada publicado ainda? Os comandos de publicação estão em Início, em Conectar um cliente.",
   "search.empty.checksum.title": "Nenhum arquivo tem este checksum",
   "search.empty.checksum.hint": "Os checksums são buscados nos repositórios que você pode ler. Confira o digest ou busque por nome.",
+  "search.loadFailed": "Não foi possível carregar os repositórios e os pacotes recentes",
   "search.recent.title": "Publicados recentemente"
 }

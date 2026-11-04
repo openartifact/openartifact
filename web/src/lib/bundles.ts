@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { t } from '../i18n'
+import { t, type TranslationKey } from '../i18n'
 import type {
   Bundle,
   BundleItemInput,
@@ -13,6 +13,7 @@ import type {
   PromotionStatus,
 } from '../api/bundles'
 import type { BadgeVariant } from './scanStatus'
+import { compareTimestamps } from './datetime'
 
 export function bundleStateVariant(state: BundleState): BadgeVariant {
   switch (state) {
@@ -71,6 +72,17 @@ export type BundleNotice =
   /** The bundle reached the last stage of its pipeline. */
   | 'finalStage'
   | 'archived'
+
+export const NOTICE_TEXT: Record<BundleNotice, TranslationKey> = {
+  noItems: 'bundles.notice.noItems',
+  unsigned: 'bundles.notice.unsigned',
+  noPipeline: 'bundles.notice.noPipeline',
+  pipelineUnavailable: 'bundles.notice.pipelineUnavailable',
+  finalStage: 'bundles.notice.finalStage',
+  archived: 'bundles.notice.archived',
+}
+/** Notices styled as warnings; the others are informational. */
+export const NOTICE_WARN = new Set<BundleNotice>(['noItems', 'unsigned', 'pipelineUnavailable'])
 
 export interface BundleStatus {
   primary: BundleAction | null
@@ -152,7 +164,7 @@ export function lifecycleSteps(bundle: Bundle, pipeline: Pipeline | undefined, p
     const done = i <= reached
     const last = promotions
       .filter((p) => p.status === 'success' && p.to_stage === stage.name)
-      .sort((a, b) => b.started_at.localeCompare(a.started_at))[0]
+      .sort((a, b) => compareTimestamps(b.started_at, a.started_at))[0]
     steps.push({
       id: `stage:${stage.name}`,
       kind: 'stage',

@@ -43,5 +43,6 @@
   "search.empty.hint": "Prueba con un nombre más corto, quita un filtro o pega la suma de comprobación de un archivo. ¿Aún no has publicado nada? Los comandos para publicar están en Inicio, en Conectar un cliente.",
   "search.empty.checksum.title": "Ningún archivo tiene esta suma de comprobación",
   "search.empty.checksum.hint": "Las sumas de comprobación se buscan en los repositorios que puedes leer. Revisa el resumen o busca por nombre.",
+  "search.loadFailed": "No se pudieron cargar los repositorios ni los paquetes recientes",
   "search.recent.title": "Publicados recientemente"
 }

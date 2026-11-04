@@ -83,6 +83,7 @@ import { getApkKey, replaceApkKey } from '../../api/apk'
 import { useSigningKey } from '../../composables/useSigningKey'
 import { INPUT_CLASS } from '../../lib/formClasses'
 import { t } from '../../i18n'
+import { saveBlob } from '../../lib/download'
 
 const props = defineProps<{ repo: string }>()
 
@@ -97,11 +98,6 @@ const signing = reactive(useSigningKey({
 /** Saves the PEM as `<key name>`, the file clients keep in /etc/apk/keys. */
 function download(): void {
   if (!signing.key) return
-  const url = URL.createObjectURL(new Blob([signing.key.public_key], { type: 'application/x-pem-file' }))
-  const a = document.createElement('a')
-  a.href = url
-  a.download = signing.key.key_name
-  a.click()
-  URL.revokeObjectURL(url)
+  saveBlob(new Blob([signing.key.public_key], { type: 'application/x-pem-file' }), signing.key.key_name)
 }
 </script>

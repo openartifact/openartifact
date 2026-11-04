@@ -4,6 +4,7 @@
 
 import type { ChecksumHit, PackageGroup } from '../api/search'
 import { artifactPath } from './artifactPath'
+import { compareTimestamps } from './datetime'
 import { checksumAlgorithm, effectiveMode, normalizeChecksum, type SearchMode } from './checksum'
 
 export interface SearchFilters {
@@ -106,7 +107,7 @@ export function distinctVersions(items: readonly { id: string; version: string; 
       byVersion.set(it.version, { id: it.version, version: it.version, created_at: it.created_at })
     }
   }
-  return [...byVersion.values()].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+  return [...byVersion.values()].sort((a, b) => compareTimestamps(b.created_at, a.created_at))
 }
 
 export type SearchRow = PackageRow | ChecksumRow

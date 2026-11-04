@@ -43,4 +43,29 @@ describe('PackagesPage start screen', () => {
     expect(w.text()).toContain('Nothing here yet')
     w.unmount()
   })
+
+  it('shows an error with a retry instead of the empty-registry hint when the lists fail to load', async () => {
+    setActivePinia(createPinia())
+    let failing = true
+    spyOn(globalThis, 'fetch').mockImplementation((async (input: unknown) => {
+      const url = String(input)
+      if (failing) return new Response(JSON.stringify({ error: 'database down' }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+      if (url.includes('/packages/recent')) return json({ packages: [pkg('ui-kit', '1.0.0', 'web')] })
+      return json({ repositories: [], total: 0 })
+    }) as never)
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:rest(.*)*', component: PackagesPage }] })
+    await router.push('/packages')
+    await router.isReady()
+    const w = mount(PackagesPage, { attachTo: document.body, global: { plugins: [router] } })
+    await flushPromises()
+    expect(w.find('[data-testid="search-load-error"]').text()).toContain('database down')
+    expect(w.text()).not.toContain('Nothing here yet')
+
+    failing = false
+    await w.find('[data-testid="search-load-error"] button').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="search-load-error"]').exists()).toBe(false)
+    expect(w.findAll('[data-testid="search-example"]')).toHaveLength(1)
+    w.unmount()
+  })
 })
