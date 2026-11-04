@@ -112,6 +112,9 @@ type RepositoriesHandler struct {
 	// tasks runs the detached orphan-blob collections started by repository
 	// deletes; they are cancelled at server shutdown.
 	tasks *bgtask.Runner
+
+	// orphanCursor is where those collections resume in the blobs table.
+	orphanCursor storage.OrphanCursor
 }
 
 func NewRepositoriesHandler(db RepositoriesStore, log *logger.Logger, evaluator *auth.Evaluator) *RepositoriesHandler {
@@ -1527,7 +1530,7 @@ const maxOrphanPasses = 100
 // deletes) and is best-effort: failures are logged and retried by the cleanup
 // worker's periodic pass.
 func (h *RepositoriesHandler) collectOrphansAsync() {
-	collectOrphansAsync(h.tasks, h.db, h.blobStore, h.log)
+	collectOrphansAsync(h.tasks, h.db, h.blobStore, &h.orphanCursor, h.log)
 }
 
 // collectOrphansAsyncStore is the part of the database collectOrphansAsync needs.
@@ -1536,15 +1539,23 @@ type collectOrphansAsyncStore interface {
 }
 
 // collectOrphansAsync starts the detached orphan-blob sweep on tasks (shared by
-// repository delete and the trash purge). A nil store is a no-op.
-func collectOrphansAsync(tasks *bgtask.Runner, db collectOrphansAsyncStore, store storage.BlobStore, log *logger.Logger) {
+// repository delete and the trash purge). cur is the calling handler's own
+// position in the blobs table: its sweeps continue where its previous one
+// stopped and never move another caller's. A nil store is a no-op.
+func collectOrphansAsync(
+	tasks *bgtask.Runner,
+	db collectOrphansAsyncStore,
+	store storage.BlobStore,
+	cur *storage.OrphanCursor,
+	log *logger.Logger,
+) {
 	if store == nil {
 		return
 	}
 
 	tasks.Go(func(ctx context.Context) {
 		for range maxOrphanPasses {
-			removed, err := storage.CollectOrphanBlobs(ctx, db, store, storage.OrphanMinAge, storage.OrphanBatch)
+			removed, err := storage.CollectOrphanBlobs(ctx, db, store, cur, storage.OrphanMinAge, storage.OrphanBatch)
 			if err != nil {
 				log.Warnw("orphan blob collection after repository delete failed", "removed", removed, "error", err)
 				return

@@ -721,3 +721,83 @@ func TestReclaimMetadataBlobKeepsBytesReferencedAgain(t *testing.T) {
 		t.Fatalf("sweep = %+v exists=%v, want the referenced metadata blob kept", st, r.exists(sha))
 	}
 }
+
+// A blobs row of the same content as a generated metadata file is a live
+// ordinary blob: reclaiming the metadata must leave both its bytes and its row,
+// so no row is left pointing at deleted bytes. Once the row itself is an
+// orphan, the collector removes it and the bytes go through the queue.
+func TestReclaimMetadataBlobLeavesAnUnreferencedBlobsRowIntact(t *testing.T) {
+	r := newDeletionRig(t)
+	ctx := context.Background()
+
+	sha := r.upload("metadata identical to a raw upload")
+
+	if err := storage.ReclaimMetadataBlob(ctx, r.pg, r.store, sha); err != nil {
+		t.Fatalf("ReclaimMetadataBlob: %v", err)
+	}
+
+	if st := r.sweep(r.sweeper); st.Deleted != 0 || !r.exists(sha) {
+		t.Fatalf("sweep = %+v exists=%v, want the bytes of the live blobs row kept", st, r.exists(sha))
+	}
+
+	if _, _, found, err := r.pg.GetBlobPlacement(ctx, sha); err != nil || !found {
+		t.Fatalf("blobs row after reclaim: found=%v err=%v, want it intact", found, err)
+	}
+
+	if left, err := r.pg.CountBlobDeletions(ctx); err != nil || left != 0 {
+		t.Fatalf("queue left %d (err %v), want the reclaim's entry settled", left, err)
+	}
+
+	removed, err := storage.CollectOrphanBlobs(ctx, r.pg, r.store, &storage.OrphanCursor{}, 0, storage.OrphanBatch)
+	if err != nil || removed != 1 {
+		t.Fatalf("CollectOrphanBlobs = %d, %v; want the orphan row removed", removed, err)
+	}
+
+	if st := r.sweep(r.sweeper); st.Deleted != 1 || r.exists(sha) {
+		t.Fatalf("sweep after the orphan collection = %+v exists=%v, want the bytes deleted", st, r.exists(sha))
+	}
+}
+
+// The orphan sweep counts the blobs it removed: one a repository_metadata row
+// references is never listed, so it is neither deleted nor counted.
+func TestCollectOrphanBlobsSweepCountsRemovedBlobs(t *testing.T) {
+	r := newDeletionRig(t)
+	ctx := context.Background()
+
+	orphan1 := r.upload("orphan one")
+	orphan2 := r.upload("orphan two")
+	kept := r.upload("referenced metadata")
+
+	system := models.SystemProjectID
+	repo := &models.Repository{Name: "orphan-meta-repo", Format: "maven", RepoType: "hosted", ProjectID: &system}
+
+	if err := r.pg.CreateRepository(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := r.pg.GetDB().ExecContext(ctx,
+		`INSERT INTO repository_metadata (repository_id, path, blob_sha256, blob_size) VALUES ($1, 'g/a/maven-metadata.xml', $2, 19)`,
+		repo.ID, kept); err != nil {
+		t.Fatalf("insert repository_metadata: %v", err)
+	}
+
+	var cur storage.OrphanCursor
+
+	removed, err := storage.CollectOrphanBlobsSweep(ctx, r.pg, r.store, &cur, 0, storage.OrphanBatch, 5)
+	if err != nil || removed != 2 {
+		t.Fatalf("CollectOrphanBlobsSweep = %d, %v; want exactly the two orphans", removed, err)
+	}
+
+	if st := r.sweep(r.sweeper); st.Deleted != 2 {
+		t.Fatalf("sweep = %+v, want both orphans' bytes deleted", st)
+	}
+
+	if r.exists(orphan1) || r.exists(orphan2) || !r.exists(kept) {
+		t.Errorf("bytes after the sweep: orphan1=%v orphan2=%v referenced=%v; want only the referenced blob left",
+			r.exists(orphan1), r.exists(orphan2), r.exists(kept))
+	}
+
+	if again, err := storage.CollectOrphanBlobsSweep(ctx, r.pg, r.store, &cur, 0, storage.OrphanBatch, 5); err != nil || again != 0 {
+		t.Errorf("second sweep = %d, %v; want nothing left to remove", again, err)
+	}
+}

@@ -87,9 +87,10 @@ type CleanupWorker struct {
 
 	workers *formatlifecycle.Workers // the metadata workers the format lifecycles notify
 
-	lastOrphanGC         time.Time // only touched from the tick goroutine
-	lastNixPendingSweep  time.Time // only touched from the tick goroutine
-	lastQuotaReconcileAt time.Time // only touched from the tick goroutine
+	orphanCursor         storage.OrphanCursor // the scheduled sweep's own position in the blobs table
+	lastOrphanGC         time.Time            // only touched from the tick goroutine
+	lastNixPendingSweep  time.Time            // only touched from the tick goroutine
+	lastQuotaReconcileAt time.Time            // only touched from the tick goroutine
 }
 
 func NewCleanupWorker(db CleanupStore, blobStore storage.BlobStore, log *logger.Logger) *CleanupWorker {
@@ -188,7 +189,8 @@ func (w *CleanupWorker) collectOrphansIfDue(ctx context.Context, now time.Time) 
 		defer release()
 	}
 
-	removed, err := storage.CollectOrphanBlobsSweep(ctx, w.db, w.blobStore, storage.OrphanMinAge, storage.OrphanBatch, orphanMaxWindows)
+	removed, err := storage.CollectOrphanBlobsSweep(
+		ctx, w.db, w.blobStore, &w.orphanCursor, storage.OrphanMinAge, storage.OrphanBatch, orphanMaxWindows)
 	if err != nil {
 		w.log.Warnw("orphan blob collection failed", "removed", removed, "error", err)
 	}

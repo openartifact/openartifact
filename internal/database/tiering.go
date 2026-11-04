@@ -412,7 +412,10 @@ func (p *TieringStore) FinishStorageTierMove(ctx context.Context, sha256 string)
 // non-nil error aborts the flip. The mover uses it to prove the target copy
 // still exists: every path that removes a copy (uploaders settling a race,
 // SafeDeleteBlob) does so under the same lock, so a copy confirmed here cannot
-// vanish before the flip commits.
+// vanish before the flip commits. verify runs while the flip holds a blob-lock
+// slot (see core.lockSlots), so like a WithBlobLocks callback it MUST NOT take
+// another blob lock or delete a blob: a nested acquisition can deadlock once
+// the concurrent holders fill the slots.
 func (p *TieringStore) FlipBlobPlacement(
 	ctx context.Context,
 	sha256, from, to string,
@@ -431,8 +434,8 @@ func (p *TieringStore) FlipBlobPlacement(
 
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('blob:' || $1, 0))`, sha256); err != nil {
-		return 0, fmt.Errorf("acquire blob lock: %w", err)
+	if err := lockBlobs(ctx, tx, []string{sha256}); err != nil {
+		return 0, err
 	}
 
 	if verify != nil {

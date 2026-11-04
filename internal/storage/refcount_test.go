@@ -21,15 +21,18 @@ type orphanDB struct {
 	CollectOrphanBlobsStore
 
 	shas       []string
+	next       string   // the cursor the listing reports back
+	gotAfter   []string // the cursor of every listing call
 	gotMinAge  time.Duration
 	gotLimit   int
 	refCountOf map[string]int
 }
 
-func (d *orphanDB) ListUnreferencedBlobs(_ context.Context, minAge time.Duration, _ string, _, limit int) ([]string, string, error) {
+func (d *orphanDB) ListUnreferencedBlobs(_ context.Context, minAge time.Duration, after string, _, limit int) ([]string, string, error) {
 	d.gotMinAge, d.gotLimit = minAge, limit
+	d.gotAfter = append(d.gotAfter, after)
 
-	return d.shas, "", nil
+	return d.shas, d.next, nil
 }
 
 func (d *orphanDB) BlobReferenceCount(_ context.Context, sha string) (int, error) {
@@ -63,13 +66,13 @@ func TestCollectOrphanBlobsSurvivesPoisonedBlob(t *testing.T) {
 	db := &orphanDB{shas: []string{good1, bad, live, good2}, refCountOf: map[string]int{live: 1}}
 	store := &deleteRecorder{failOn: bad}
 
-	removed, err := CollectOrphanBlobs(context.Background(), db, store, OrphanMinAge, OrphanBatch)
+	removed, err := CollectOrphanBlobs(context.Background(), db, store, &OrphanCursor{}, OrphanMinAge, OrphanBatch)
 	if err == nil || !strings.Contains(err.Error(), bad) {
 		t.Fatalf("err = %v, want the failure for %s", err, bad)
 	}
 
-	if removed != 3 { // good1, live (left alone but not an error), good2
-		t.Errorf("removed = %d, want 3", removed)
+	if removed != 2 { // good1 and good2: live is kept (referenced again) and bad failed
+		t.Errorf("removed = %d, want 2", removed)
 	}
 
 	if got := strings.Join(store.deleted, ","); got != good1+","+good2 {
@@ -82,7 +85,7 @@ func TestCollectOrphanBlobsSurvivesPoisonedBlob(t *testing.T) {
 }
 
 func TestCollectOrphanBlobsNoopWithoutLister(t *testing.T) {
-	removed, err := CollectOrphanBlobs(context.Background(), nil, &deleteRecorder{}, time.Hour, 10)
+	removed, err := CollectOrphanBlobs(context.Background(), nil, &deleteRecorder{}, &OrphanCursor{}, time.Hour, 10)
 	if removed != 0 || err != nil {
 		t.Errorf("removed=%d err=%v; want a no-op", removed, err)
 	}
@@ -218,10 +221,10 @@ func TestCollectOrphanBlobsDeletesInBatches(t *testing.T) {
 
 	shas = append(shas, "not-a-sha")
 
-	db := &batchOrphanDB{orphanDB{shas: shas}, nil, false}
+	db := &batchOrphanDB{shas: shas}
 	blobs := &deleteRecorder{}
 
-	removed, err := CollectOrphanBlobs(context.Background(), db, blobs, time.Hour, 500)
+	removed, err := CollectOrphanBlobs(context.Background(), db, blobs, &OrphanCursor{}, time.Hour, 500)
 	if err == nil || !errors.Is(err, ErrInvalidBlobID) {
 		t.Fatalf("err = %v, want the invalid id reported", err)
 	}
@@ -241,14 +244,124 @@ func TestCollectOrphanBlobsBatchFailureFallsBackPerBlob(t *testing.T) {
 	good := strings.Repeat("a", 64)
 	live := strings.Repeat("b", 64)
 
-	db := &batchOrphanDB{orphanDB{shas: []string{good, live}, refCountOf: map[string]int{live: 1}}, nil, true}
+	db := &batchOrphanDB{shas: []string{good, live}, refCountOf: map[string]int{live: 1}, failAll: true}
 	blobs := &deleteRecorder{}
 
-	if _, err := CollectOrphanBlobs(context.Background(), db, blobs, time.Hour, 500); err != nil {
+	removed, err := CollectOrphanBlobs(context.Background(), db, blobs, &OrphanCursor{}, time.Hour, 500)
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	if len(blobs.deleted) != 1 || blobs.deleted[0] != good {
 		t.Errorf("deleted = %v, want only the unreferenced blob", blobs.deleted)
 	}
+
+	if removed != 1 {
+		t.Errorf("removed = %d, want 1: the referenced blob was kept, not removed", removed)
+	}
+}
+
+// queueOrphanDB is an orphanDB with the deferred-deletion path: a blob a row
+// references again by the time it is processed is kept, which the database
+// reports as false.
+type queueOrphanDB struct {
+	orphanDB
+
+	kept map[string]bool
+}
+
+func (d *queueOrphanDB) DeleteBlobIfUnreferenced(_ context.Context, sha string) (bool, error) {
+	return !d.kept[sha], nil
+}
+
+// The count of a pass is the blobs the database really removed: one that got
+// referenced between the listing and the delete is kept and not counted.
+func TestCollectOrphanBlobsCountsOnlyRealRemovals(t *testing.T) {
+	gone1 := strings.Repeat("a", 64)
+	again := strings.Repeat("b", 64)
+	gone2 := strings.Repeat("c", 64)
+
+	db := &queueOrphanDB{shas: []string{gone1, again, gone2}, kept: map[string]bool{again: true}}
+
+	removed, err := CollectOrphanBlobs(context.Background(), db, &deleteRecorder{}, &OrphanCursor{}, time.Hour, 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if removed != 2 {
+		t.Errorf("removed = %d, want 2 (the re-referenced blob is kept)", removed)
+	}
+}
+
+// Every owner sweeps from its own position: a pass of one cursor does not move
+// another's, and a cursor continues exactly where its own last pass stopped.
+func TestOrphanCursorsAreIndependent(t *testing.T) {
+	db := &orphanDB{next: "m"}
+
+	var scheduled, afterDelete OrphanCursor
+
+	if _, err := CollectOrphanBlobsSweep(context.Background(), db, &deleteRecorder{}, &scheduled, time.Hour, 10, 3); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := CollectOrphanBlobs(context.Background(), db, &deleteRecorder{}, &afterDelete, time.Hour, 10); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := CollectOrphanBlobs(context.Background(), db, &deleteRecorder{}, &scheduled, time.Hour, 10); err != nil {
+		t.Fatal(err)
+	}
+
+	// scheduled: "", m, m (three windows), then m again; afterDelete: its own first window.
+	if got, want := strings.Join(db.gotAfter, ","), ",m,m,,m"; got != want {
+		t.Errorf("listing cursors = %q, want %q", got, want)
+	}
+}
+
+// A pass cut short by shutdown has not worked through its window; the cursor
+// stays put so the window is redone, not skipped until the next wrap.
+func TestOrphanCursorStaysWhenThePassIsCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	db := &cancelOrphanDB{shas: []string{strings.Repeat("a", 64)}, next: "m", cancel: cancel}
+
+	var cur OrphanCursor
+
+	if _, err := CollectOrphanBlobs(ctx, db, &deleteRecorder{}, &cur, time.Hour, 10); err == nil {
+		t.Fatal("expected the cancelled pass to report an error")
+	}
+
+	if _, err := CollectOrphanBlobs(context.Background(), db, &deleteRecorder{}, &cur, time.Hour, 10); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := strings.Join(db.gotAfter, ","), ","; got != want {
+		t.Errorf("listing cursors = %q, want the interrupted window listed again (%q)", got, want)
+	}
+
+	if _, err := CollectOrphanBlobs(context.Background(), db, &deleteRecorder{}, &cur, time.Hour, 10); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := strings.Join(db.gotAfter, ","), ",,m"; got != want {
+		t.Errorf("listing cursors = %q, want %q: a finished window advances the cursor", got, want)
+	}
+}
+
+// cancelOrphanDB cancels its context the first time it lists, like a shutdown
+// arriving during a pass.
+type cancelOrphanDB struct {
+	orphanDB
+
+	cancel context.CancelFunc
+}
+
+func (d *cancelOrphanDB) ListUnreferencedBlobs(
+	ctx context.Context, minAge time.Duration, after string, scan, limit int,
+) ([]string, string, error) {
+	if d.cancel != nil {
+		d.cancel()
+		d.cancel = nil
+	}
+
+	return d.orphanDB.ListUnreferencedBlobs(ctx, minAge, after, scan, limit)
 }
