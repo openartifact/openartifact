@@ -448,3 +448,27 @@ func TestDeclarativeExportDownloadsYAML(t *testing.T) {
 		t.Fatalf("unknown kind: code=%d", bad.Code)
 	}
 }
+
+// leakyBackend answers every request with a 500 whose body carries internal text.
+type leakyBackend struct{}
+
+func (leakyBackend) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	http.Error(w, "pq: relation secret_table does not exist at 10.0.0.7:5432", http.StatusInternalServerError)
+}
+
+func TestDeclarativeExportFailureDoesNotLeakUpstreamText(t *testing.T) {
+	t.Parallel()
+
+	h := newDeclRouter(t, leakyBackend{}, true)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(
+		context.Background(), http.MethodGet, "/api/v1/admin/declarative/export?kind=Webhook", http.NoBody))
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body)
+	}
+
+	if strings.Contains(rec.Body.String(), "secret_table") || strings.Contains(rec.Body.String(), "10.0.0.7") {
+		t.Fatalf("response leaks upstream text: %s", rec.Body)
+	}
+}

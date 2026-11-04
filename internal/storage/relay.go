@@ -342,7 +342,7 @@ func (r *relay) CompleteMultipart(ctx context.Context, id, _ string, size, partS
 
 	meta, err := r.readMeta(id)
 	if err != nil {
-		return fmt.Errorf("%w: unknown upload: %w", ErrMultipartIncomplete, err)
+		return fmt.Errorf("%w: unknown upload", ErrMultipartIncomplete)
 	}
 
 	if meta.Size != size || meta.PartSize != partSize {
