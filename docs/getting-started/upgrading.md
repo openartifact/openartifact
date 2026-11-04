@@ -127,6 +127,24 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
+### 0.19.1
+
+**What you must do**
+
+- Nothing is required. Migration `014` runs at startup and adds journal triggers to `release_bundles`, `release_bundle_items` and `promotion_pipelines`; their existing rows are written to the journal by the next reconcile.
+
+**Changes.**
+
+- **Release bundles survive `openartifact rebuild`.** Bundles, their items and promotion pipelines are now journaled, so a rebuild from storage restores them and the blobs they pin are no longer collected as orphans. See [Rebuild from storage](../operations/rebuild-from-storage.md).
+- **Blob locking.** A blob lock lost while its work was running (for example a session killed by `idle_in_transaction_session_timeout`) is now reported as an error instead of success, and lock transactions no longer time out on that server setting. Docker referrer attaches no longer take blob locks inside the slot lock, which could deadlock the server under concurrent attaches.
+- **Orphan blob collection** counts only blobs it actually deleted, and the scheduled sweep, trash purge and repository delete each keep their own scan position, so no window is skipped.
+- **Trash and tiers.** The retention purge re-checks that an item is still expired before deleting it. A storage tier or backend that still has old copies queued for deletion can no longer be deleted.
+- **Hardening against oversized uploads and upstream documents.** RubyGems gemspecs, Terraform and Ansible archives, xz dictionaries and zstd windows (Pacman, Nix, Debian, RPM), and upstream Debian `Packages` indexes are capped. An RPM upstream document over its size cap is now an error instead of being silently truncated.
+- **RBAC.** A request with an empty repository name (`/repos//…`, `/v2//…`) is answered `404`, and a percent-encoded repository name segment `400`.
+- **Caching.** Files served by a proxy repository carry `Cache-Control` and `Vary: Authorization` (`public` only for anonymous reads of public repositories). A corrupt cached metadata render is answered `500` instead of an empty `200`.
+- **Error responses.** Declarative plan/export failures and presigned multipart upload errors no longer include upstream or filesystem error text.
+- **Web UI.** The package start page shows an error with a retry when its lists fail to load; numbers and sorting follow the selected language; downloads of keys and attestations no longer get cancelled by some browsers.
+
 ### 0.19.0
 
 **What you must do**
