@@ -76,6 +76,13 @@ type core struct {
 	// every connection were pinned by a lock holder waiting for one, the pool
 	// would deadlock. Keeping holders at half the pool leaves the rest for
 	// their callbacks. nil means the pool is unbounded.
+	//
+	// The bound holds only if a callback does not itself take a slot: inside a
+	// WithBlobLocks callback or a FlipBlobPlacement verify, never call
+	// WithBlobLock(s), SafeDeleteBlob, DeleteBlobIfUnreferenced or
+	// FlipBlobPlacement. A nested holder waits for a slot while holding one, and
+	// once the concurrent outer holders fill the slots none of them can proceed.
+	// Do the delete after the callback returns.
 	lockSlots chan struct{}
 }
 

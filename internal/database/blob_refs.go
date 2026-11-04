@@ -19,7 +19,9 @@ import (
 type BlobRefStore struct{ *core }
 
 // acquireLockSlot reserves one of the blob-lock slots (see lockSlots) and
-// returns the function that gives it back.
+// returns the function that gives it back. It blocks until a slot is free, so
+// it MUST NOT be called while the caller (or a callback it runs for) already
+// holds a slot.
 func (p *core) acquireLockSlot(ctx context.Context) (func(), error) {
 	if p.lockSlots == nil {
 		return func() {}, nil
@@ -42,11 +44,31 @@ func (p *BlobRefStore) WithBlobLock(ctx context.Context, sha256 string, fn func(
 	return p.WithBlobLocks(ctx, []string{sha256}, fn)
 }
 
+// ErrBlobLockLost is returned by WithBlobLocks when fn returned nil but the
+// lock transaction could not be committed: its session ended while fn ran
+// (connection loss, a failover, pg_terminate_backend), which releases the
+// advisory locks, so fn may have run without the exclusion it relied on.
+var ErrBlobLockLost = errors.New("blob lock lost while its holder ran")
+
 // WithBlobLocks is WithBlobLock for several blobs at once: all locks are taken
 // on ONE transaction connection, in sorted order (so two callers locking
 // overlapping sets cannot deadlock each other), and held until fn returns.
 // Taking them through nested WithBlobLock calls instead would pin one pooled
 // connection per lock and let concurrent callers exhaust the pool.
+//
+// fn does its database work on other pooled connections (the lock transaction
+// itself stays idle), so it MUST NOT take another blob lock or delete a blob
+// (WithBlobLock(s), SafeDeleteBlob, DeleteBlobIfUnreferenced, FlipBlobPlacement):
+// every one of those holds one of the bounded lock slots (see core.lockSlots)
+// and a nested acquisition inside a holder can deadlock once the concurrent
+// holders fill the slots, each waiting for a slot of its own.
+//
+// The lock transaction never writes. When fn returned nil but the transaction
+// cannot be committed, the lock was lost during fn: ErrBlobLockLost is
+// returned, wrapping the commit error. fn's own work is already committed by
+// then and is not undone, so a caller must treat that as a failed operation
+// and clean up the way it does for any other failure (SafeDeleteBlob keeps a
+// blob a committed row references), never as proof that nothing was written.
 func (p *BlobRefStore) WithBlobLocks(ctx context.Context, shas []string, fn func(ctx context.Context) error) error {
 	keys := slices.Clone(shas)
 	slices.Sort(keys)
@@ -65,22 +87,39 @@ func (p *BlobRefStore) WithBlobLocks(ctx context.Context, shas []string, fn func
 
 	defer func() { _ = tx.Rollback() }()
 
-	for _, sha := range keys {
-		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('blob:' || $1, 0))`, sha); err != nil {
-			return fmt.Errorf("acquire blob lock: %w", err)
-		}
+	if err := lockBlobs(ctx, tx, keys); err != nil {
+		return err
 	}
 
 	if err := fn(ctx); err != nil {
 		return err
 	}
 
-	// The lock transaction writes nothing; fn has already committed its own
-	// work. If the session was killed meanwhile (idle_in_transaction_session_timeout
-	// on a long upload), failing here would make the caller delete a blob a
-	// committed row now references, so report it instead of returning an error.
 	if err := tx.Commit(); err != nil {
-		p.log.Warnw("blob lock transaction ended before fn returned; the lock may have been lost", "error", err)
+		return fmt.Errorf("%w: %w", ErrBlobLockLost, err)
+	}
+
+	return nil
+}
+
+// lockBlobs takes the transaction-scoped advisory lock of every key, in the
+// order given (callers pass them sorted and unique, so overlapping sets cannot
+// deadlock). The first statement also turns off idle_in_transaction_session_timeout
+// for the transaction: a lock transaction is idle while its holder works on
+// other connections (an upload's database work, a placement verify against the
+// object store), so a server that sets the timeout would kill the session and
+// silently drop the lock halfway through.
+func lockBlobs(ctx context.Context, tx *sql.Tx, keys []string) error {
+	for i, sha := range keys {
+		query := `SELECT pg_advisory_xact_lock(hashtextextended('blob:' || $1, 0))`
+		if i == 0 {
+			query = `SELECT set_config('idle_in_transaction_session_timeout', '0', true), ` +
+				`pg_advisory_xact_lock(hashtextextended('blob:' || $1, 0))`
+		}
+
+		if _, err := tx.ExecContext(ctx, query, sha); err != nil {
+			return fmt.Errorf("acquire blob lock: %w", err)
+		}
 	}
 
 	return nil
@@ -106,8 +145,8 @@ func (p *BlobRefStore) DeleteBlobIfUnreferenced(ctx context.Context, sha256 stri
 
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('blob:' || $1, 0))`, sha256); err != nil {
-		return false, fmt.Errorf("acquire blob lock: %w", err)
+	if err := lockBlobs(ctx, tx, []string{sha256}); err != nil {
+		return false, err
 	}
 
 	referenced, err := blobReferenced(ctx, tx, sha256)
@@ -213,12 +252,13 @@ func (p *BlobRefStore) ListUnreferencedBlobs(
 	return out, next, nil
 }
 
-// blobBatchLockChunk bounds how many blob advisory locks one batched delete
-// holds in its transaction.
-const blobBatchLockChunk = 100
+// BlobBatchLockChunk bounds how many blob advisory locks one batched delete
+// holds in its transaction. A DeleteBlobsIfUnreferenced call of at most this
+// many blobs is a single transaction, which commits or removes nothing.
+const BlobBatchLockChunk = 100
 
 // DeleteBlobsIfUnreferenced is DeleteBlobIfUnreferenced for many blobs: per
-// chunk of blobBatchLockChunk, ONE transaction takes the blobs' advisory locks
+// chunk of BlobBatchLockChunk, ONE transaction takes the blobs' advisory locks
 // (sorted, the order WithBlobLocks uses, so no deadlock with an uploader), then
 // one statement re-checks the references, deletes the blobs rows still
 // unreferenced and queues their bytes for deletion. The check runs after the
@@ -226,7 +266,9 @@ const blobBatchLockChunk = 100
 // about to reference is never removed. It returns how many blobs were
 // removed. An error (a foreign key a table outside the reference list holds,
 // for example) fails the chunk it happened in as a whole: the caller retries
-// those blobs one by one to isolate the offender.
+// those blobs one by one to isolate the offender. The count returned with an
+// error covers the chunks that committed before the failing one (none for a
+// call of at most BlobBatchLockChunk blobs).
 func (p *BlobRefStore) DeleteBlobsIfUnreferenced(ctx context.Context, shas []string) (int, error) {
 	keys := slices.Clone(shas)
 	slices.Sort(keys)
@@ -234,7 +276,7 @@ func (p *BlobRefStore) DeleteBlobsIfUnreferenced(ctx context.Context, shas []str
 
 	removed := 0
 
-	for chunk := range slices.Chunk(keys, blobBatchLockChunk) {
+	for chunk := range slices.Chunk(keys, BlobBatchLockChunk) {
 		n, err := p.deleteBlobChunk(ctx, chunk)
 		if err != nil {
 			return removed, err
@@ -260,10 +302,8 @@ func (p *BlobRefStore) deleteBlobChunk(ctx context.Context, keys []string) (int,
 
 	defer func() { _ = tx.Rollback() }()
 
-	for _, sha := range keys {
-		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('blob:' || $1, 0))`, sha); err != nil {
-			return 0, fmt.Errorf("acquire blob lock: %w", err)
-		}
+	if err := lockBlobs(ctx, tx, keys); err != nil {
+		return 0, err
 	}
 
 	res, err := tx.ExecContext(ctx, deleteUnreferencedBlobsSQL, keys, BlobDeletionScopeAll, p.deletionGraceSeconds())

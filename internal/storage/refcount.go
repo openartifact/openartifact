@@ -34,9 +34,24 @@ type SafeDeleteBlobStore interface {
 // Callers MUST delete their own DB row referencing the blob BEFORE calling
 // this function, otherwise BlobReferenceCount will still see that row and
 // the blob will never be removed from storage.
+//
+// SafeDeleteBlob takes one of the database's bounded blob-lock slots, so it
+// MUST NOT be called from inside a WithBlobLock(s) callback or a
+// FlipBlobPlacement verify (see database.WithBlobLocks); do it after the
+// callback returns.
 func SafeDeleteBlob(ctx context.Context, db SafeDeleteBlobStore, blobStore BlobStore, sha256 string) error {
+	_, err := safeDeleteBlob(ctx, db, blobStore, sha256)
+
+	return err
+}
+
+// safeDeleteBlob is SafeDeleteBlob that also reports whether the blob was
+// handed to deletion (true) or kept because a row still references it (false).
+// Only the orphan collector needs the answer, to count what it really removed;
+// every other caller releases a blob it has no use for the outcome of.
+func safeDeleteBlob(ctx context.Context, db SafeDeleteBlobStore, blobStore BlobStore, sha256 string) (bool, error) {
 	if err := ValidateBlobID(sha256); err != nil {
-		return err
+		return false, err
 	}
 
 	// Preferred path: check + blobs-row delete + queueing the bytes for
@@ -45,30 +60,31 @@ func SafeDeleteBlob(ctx context.Context, db SafeDeleteBlobStore, blobStore BlobS
 	// deletion sweeper, once the grace period has passed and no running backup
 	// can still need them.
 	if d, ok := db.(blobDeleter); ok {
-		_, err := d.DeleteBlobIfUnreferenced(ctx, sha256)
-
-		return err
+		return d.DeleteBlobIfUnreferenced(ctx, sha256)
 	}
 
 	// Databases without the queue (test doubles) delete the bytes right away.
 	count, err := db.BlobReferenceCount(ctx, sha256)
 	if err != nil {
-		return fmt.Errorf("failed to check blob reference count: %w", err)
+		return false, fmt.Errorf("failed to check blob reference count: %w", err)
 	}
 
 	if count > 0 {
-		return nil
+		return false, nil
 	}
 
 	if err := blobStore.Delete(ctx, sha256); err != nil {
-		return fmt.Errorf("failed to delete blob from storage: %w", err)
+		return false, fmt.Errorf("failed to delete blob from storage: %w", err)
 	}
 
-	return nil
+	return true, nil
 }
 
-// orphanDeleteChunk is how many orphan blobs one batched delete handles.
-const orphanDeleteChunk = 100
+// orphanDeleteChunk is how many orphan blobs one batched delete handles. It is
+// the database's batch size, so one call is one transaction: it removes all of
+// its blobs or none, and a failed call can be retried blob by blob without
+// counting a blob twice.
+const orphanDeleteChunk = database.BlobBatchLockChunk
 
 type blobBatchDeleter interface {
 	DeleteBlobsIfUnreferenced(ctx context.Context, shas []string) (int, error)
@@ -86,6 +102,12 @@ type blobLocker interface {
 // takes, so an uploader can store a blob and insert its referencing row
 // without a concurrent SafeDeleteBlob removing the blob in between. When the
 // database does not support locking, fn runs unguarded.
+//
+// fn MUST NOT take another blob lock or call SafeDeleteBlob: each holds one of
+// the database's bounded lock slots, and a nested acquisition can deadlock once
+// concurrent holders fill them (see database.WithBlobLocks). With the Postgres
+// database an error wrapping database.ErrBlobLockLost means fn returned nil but
+// its lock was lost while it ran; treat it as a failed operation.
 func WithBlobLock(ctx context.Context, db any, sha256 string, fn func(ctx context.Context) error) error {
 	if l, ok := db.(blobLocker); ok {
 		return l.WithBlobLock(ctx, sha256, fn)
@@ -136,14 +158,17 @@ const OrphanMinAge = time.Hour
 // examines, so the cost of a pass does not grow with the table.
 const OrphanScanWindow = 20000
 
-// orphanCursor is where the next CollectOrphanBlobs call resumes (a sha256, ""
-// = from the start). It is shared by every caller in the process, so each pass
-// -- scheduled, after a trash purge or after a repository delete -- continues
-// the sweep instead of rescanning the oldest rows, and a blob that cannot be
-// removed is simply scanned past.
-var orphanCursor struct { //nolint:gochecknoglobals // process-wide sweep position shared by every orphan collection caller
-	sync.Mutex
-
+// OrphanCursor is one caller's position in its sweep of the blobs table: where
+// its next CollectOrphanBlobs call resumes (the zero value starts at the
+// beginning). Every caller that sweeps (the scheduled cleanup, the trash purge,
+// a repository delete) owns its own, so one caller's passes neither move
+// another's position nor leave it a stretch of the table behind: each cursor
+// continues its sweep window by window, a blob that cannot be removed is
+// scanned past, and a window a pass could not finish (shutdown) is redone, not
+// skipped. A cursor is safe for concurrent use; passes sharing one run one at a
+// time, the later one continuing where the earlier stopped.
+type OrphanCursor struct {
+	mu    sync.Mutex
 	after string
 }
 
@@ -158,10 +183,11 @@ type CollectOrphanBlobsStore interface {
 // CollectOrphanBlobs deletes blobs (storage object + blobs row) that no
 // package row references any more — e.g. after a repository delete cascaded
 // its package rows away. Only blobs older than minAge are considered. It
-// returns the number removed; databases without ListUnreferencedBlobs
-// support are a no-op. One call examines at most OrphanScanWindow blobs rows
-// starting at a process-wide cursor and advances it (wrapping to the start at
-// the end of the table), so a full sweep takes several calls.
+// returns the number of blobs it handed to deletion (one a row still
+// references again by now is left alone and not counted); databases without
+// ListUnreferencedBlobs support are a no-op. One call examines at most
+// OrphanScanWindow blobs rows starting at cur and advances it (wrapping to the
+// start at the end of the table), so a full sweep takes several calls.
 //
 // A blob that cannot be removed (storage error, invalid id) does not stop the
 // pass: the remaining blobs are still processed and every failure is returned
@@ -170,10 +196,11 @@ func CollectOrphanBlobs(
 	ctx context.Context,
 	db CollectOrphanBlobsStore,
 	blobStore BlobStore,
+	cur *OrphanCursor,
 	minAge time.Duration,
 	batch int,
 ) (int, error) {
-	removed, _, err := collectOrphanWindow(ctx, db, blobStore, minAge, batch)
+	removed, _, err := collectOrphanWindow(ctx, db, blobStore, cur, minAge, batch)
 
 	return removed, err
 }
@@ -184,13 +211,14 @@ type CollectOrphanBlobsSweepStore interface {
 }
 
 // CollectOrphanBlobsSweep runs up to maxWindows consecutive CollectOrphanBlobs
-// windows and stops early once the cursor wrapped past the end of the blobs
-// table, i.e. every blob was examined once. The scheduled sweep uses it so
-// that a large table is covered within one tick, in bounded steps.
+// windows and stops early once cur wrapped past the end of the blobs table,
+// i.e. every blob was examined once. The scheduled sweep uses it so that a
+// large table is covered within one tick, in bounded steps.
 func CollectOrphanBlobsSweep(
 	ctx context.Context,
 	db CollectOrphanBlobsSweepStore,
 	blobStore BlobStore,
+	cur *OrphanCursor,
 	minAge time.Duration,
 	batch, maxWindows int,
 ) (int, error) {
@@ -199,7 +227,7 @@ func CollectOrphanBlobsSweep(
 	var errs []error
 
 	for range maxWindows {
-		removed, next, err := collectOrphanWindow(ctx, db, blobStore, minAge, batch)
+		removed, next, err := collectOrphanWindow(ctx, db, blobStore, cur, minAge, batch)
 		total += removed
 
 		if err != nil {
@@ -219,11 +247,16 @@ type collectOrphanWindowStore interface {
 	SafeDeleteBlobStore
 }
 
-// collectOrphanWindow does one window and reports the cursor it left behind.
+// collectOrphanWindow does one window from cur and reports the cursor it left
+// behind. cur stays locked for the whole window, so concurrent passes on the
+// same cursor take consecutive windows instead of scanning one twice, and it
+// only advances once the window was worked through: a pass cut short by ctx
+// leaves it where it was.
 func collectOrphanWindow(
 	ctx context.Context,
 	db collectOrphanWindowStore,
 	blobStore BlobStore,
+	cur *OrphanCursor,
 	minAge time.Duration,
 	batch int,
 ) (int, string, error) {
@@ -232,19 +265,26 @@ func collectOrphanWindow(
 		return 0, "", nil
 	}
 
-	orphanCursor.Lock()
-	after := orphanCursor.after
-	orphanCursor.Unlock()
+	cur.mu.Lock()
+	defer cur.mu.Unlock()
 
-	shas, next, err := l.ListUnreferencedBlobs(ctx, minAge, after, OrphanScanWindow, batch)
+	shas, next, err := l.ListUnreferencedBlobs(ctx, minAge, cur.after, OrphanScanWindow, batch)
 	if err != nil {
 		return 0, "", err
 	}
 
-	orphanCursor.Lock()
-	orphanCursor.after = next
-	orphanCursor.Unlock()
+	removed, errs := deleteOrphans(ctx, db, blobStore, shas)
 
+	if ctx.Err() == nil {
+		cur.after = next
+	}
+
+	return removed, next, errors.Join(errs...)
+}
+
+// deleteOrphans hands the listed orphans to deletion and returns how many were
+// really removed, with one error per blob that could not be.
+func deleteOrphans(ctx context.Context, db collectOrphanWindowStore, blobStore BlobStore, shas []string) (int, []error) {
 	var (
 		removed int
 		errs    []error
@@ -275,13 +315,11 @@ func collectOrphanWindow(
 			}
 
 			n, err := bd.DeleteBlobsIfUnreferenced(ctx, chunk)
+			removed += n // what committed before a failure still counts
+
 			if err != nil {
 				rest = append(rest, chunk...)
-
-				continue
 			}
-
-			removed += n
 		}
 
 		shas = rest
@@ -294,16 +332,19 @@ func collectOrphanWindow(
 			break
 		}
 
-		if err := SafeDeleteBlob(ctx, db, blobStore, sha); err != nil {
+		deleted, err := safeDeleteBlob(ctx, db, blobStore, sha)
+		if err != nil {
 			errs = append(errs, fmt.Errorf("collect orphan blob %s: %w", sha, err))
 
 			continue
 		}
 
-		removed++
+		if deleted {
+			removed++
+		}
 	}
 
-	return removed, next, errors.Join(errs...)
+	return removed, errs
 }
 
 // ReclaimMetadataBlobStore is the part of the database ReclaimMetadataBlob needs.

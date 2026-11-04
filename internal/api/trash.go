@@ -65,6 +65,9 @@ type TrashHandler struct {
 	// purges; they are cancelled at server shutdown.
 	tasks *bgtask.Runner
 	db    TrashOps
+
+	// orphanCursor is where those collections resume in the blobs table.
+	orphanCursor storage.OrphanCursor
 }
 
 func NewTrashHandler(db TrashOps, log *logger.Logger, evaluator *auth.Evaluator) *TrashHandler {
@@ -511,7 +514,7 @@ func (h *TrashHandler) purgeBatch(ctx context.Context, store database.TrashOps, 
 func (h *TrashHandler) afterPurge(ctx context.Context, res *models.TrashPurgeResult) {
 	if res.Kind == models.TrashKindRepository {
 		h.reclaimMetadataBlobs(ctx, res.RepositoryName, res.MetadataBlobSHA256)
-		collectOrphansAsync(h.tasks, h.db, h.blobStore, h.log)
+		collectOrphansAsync(h.tasks, h.db, h.blobStore, &h.orphanCursor, h.log)
 
 		return
 	}

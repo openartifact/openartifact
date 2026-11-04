@@ -92,6 +92,10 @@ type TrashPurgeWorker struct {
 	publisher webhook.Publisher
 	reg       *metrics.Registry
 
+	// orphanCursor is the position of this worker's orphan sweeps in the blobs
+	// table, independent of the cleanup worker's and the API handlers'.
+	orphanCursor storage.OrphanCursor
+
 	// lock takes the cluster-wide purge lock. It is a field so tests can
 	// simulate another replica holding it.
 	lock func(ctx context.Context) (release func(), acquired bool, err error)
@@ -382,7 +386,7 @@ func (w *TrashPurgeWorker) sweepOrphans(ctx context.Context, stats *PurgeStats) 
 	}
 
 	for range trashPurgeMaxOrphanPasses {
-		removed, err := storage.CollectOrphanBlobs(ctx, w.db, w.blobStore, storage.OrphanMinAge, storage.OrphanBatch)
+		removed, err := storage.CollectOrphanBlobs(ctx, w.db, w.blobStore, &w.orphanCursor, storage.OrphanMinAge, storage.OrphanBatch)
 		stats.OrphansRemoved += removed
 
 		if err != nil {
