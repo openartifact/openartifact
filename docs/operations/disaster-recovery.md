@@ -114,7 +114,7 @@ The blob store is intact, PostgreSQL is gone, unreachable, or holds wrong data (
 |---|---|---|---|
 | **A. Point-in-time recovery** | Everything, to the second: users, tokens, permissions, settings, the trash | 5 minutes or less | Base backup size plus WAL since it |
 | **B. Restore a dump or OpenArtifact backup, then `rebuild`** | Everything in the dump; `rebuild` adds the packages written since | The dump interval for configuration and users; the journal lag for packages | Dump restore time plus one `rebuild` pass |
-| **C. `rebuild` alone** | Repositories and packages, for every format the [sidecar records](rebuild-from-storage.md) cover | The journal lag | One pass over the blob store |
+| **C. `rebuild` alone** | Repositories, packages and release bundles, for every format the [sidecar records](rebuild-from-storage.md) cover | The journal lag | One pass over the blob store |
 
 ### A. Point-in-time recovery
 

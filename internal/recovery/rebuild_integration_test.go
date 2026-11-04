@@ -489,3 +489,86 @@ func TestRebuildTouchesPackagesAndRepositories(t *testing.T) {
 		)
 	}
 }
+
+// TestRebuildRestoresReleaseBundles: a sealed release bundle, its items and its
+// pipeline survive a rebuild. The items pin their blobs by sha256 (a pinned
+// blob is never collected), so losing them would let the blob GC delete the
+// bytes of a sealed release once the package row is gone. The user columns are
+// not journaled (users are not), so the rows restore into a database without
+// them.
+func TestRebuildRestoresReleaseBundles(t *testing.T) {
+	store := newFSStore(t)
+	src := newTestDB(t)
+	j := newTestJournal(t, src, store)
+
+	a := seedRaw(t, src, store, "raw-rel", "rel.bin", []byte("release payload"))
+
+	var userID, pipelineID, bundleID, refID string
+
+	if err := src.QueryRowContext(context.Background(),
+		`INSERT INTO auth_users (username) VALUES ('releaser') RETURNING id`).Scan(&userID); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+
+	if err := src.QueryRowContext(context.Background(),
+		`INSERT INTO promotion_pipelines (name, stages, creator_id) VALUES ('p', '["dev","prod"]', $1) RETURNING id`,
+		userID).Scan(&pipelineID); err != nil {
+		t.Fatalf("insert pipeline: %v", err)
+	}
+
+	if err := src.QueryRowContext(context.Background(),
+		`INSERT INTO release_bundles (name, version, state, pipeline_id, current_stage, sealed_at, gpg_signature, creator_id, sealer_id)
+		 VALUES ('app', '1.0', 'sealed', $1, 'dev', now(), 'sig', $2, $2) RETURNING id`,
+		pipelineID, userID).Scan(&bundleID); err != nil {
+		t.Fatalf("insert bundle: %v", err)
+	}
+
+	if err := src.QueryRowContext(context.Background(),
+		`INSERT INTO artifact_refs (repository_id, artifact_path, format, sha256) VALUES ($1, 'rel.bin', 'raw', $2) RETURNING id`,
+		a.repoID, a.sha).Scan(&refID); err != nil {
+		t.Fatalf("insert artifact ref: %v", err)
+	}
+
+	mustExec(t, src,
+		`INSERT INTO release_bundle_items (bundle_id, source_repo_id, artifact_ref_id, sha256, artifact_path, format, size_bytes, adder_id)
+		 VALUES ($1, $2, $3, $4, 'rel.bin', 'raw', 15, $5)`,
+		bundleID, a.repoID, refID, a.sha, userID)
+	drain(t, j)
+
+	dst := newTestDB(t)
+
+	rep := runRebuild(t, dst, store, RebuildOptions{})
+	if rep.ExitCode() != ExitOK {
+		t.Fatalf("exit code %d: %+v %+v", rep.ExitCode(), rep.Failures, rep.Unrecoverable)
+	}
+
+	for _, table := range []string{"promotion_pipelines", "release_bundles", "release_bundle_items"} {
+		if tr := tableReport(rep, table); tr.Inserted != 1 {
+			t.Fatalf("%s report = %+v, want one inserted row", table, tr)
+		}
+	}
+
+	const bundle = `SELECT b.state || '|' || b.current_stage || '|' || b.gpg_signature || '|' || p.name || '|' ||
+		COALESCE(b.creator_id::text, 'NULL') || '|' || COALESCE(b.sealer_id::text, 'NULL')
+		FROM release_bundles b JOIN promotion_pipelines p ON p.id = b.pipeline_id WHERE b.id = $1`
+
+	if got := mustString(t, dst, bundle, bundleID); got != "sealed|dev|sig|p|NULL|NULL" {
+		t.Fatalf("restored bundle = %q", got)
+	}
+
+	// The item points at the restored blob, so the blob stays pinned.
+	if n := mustCount(t, dst,
+		`SELECT count(*) FROM release_bundle_items rbi JOIN blobs b ON b.sha256 = rbi.sha256
+		 WHERE rbi.bundle_id = $1 AND rbi.artifact_ref_id = $2 AND rbi.adder_id IS NULL`, bundleID, refID); n != 1 {
+		t.Fatalf("restored item pins %d blobs, want 1", n)
+	}
+
+	// Bundle changes after the rebuild are journaled again.
+	jd := newTestJournal(t, dst, store)
+	mustExec(t, dst, `UPDATE release_bundles SET state = 'archived', archived_at = now() WHERE id = $1`, bundleID)
+	drain(t, jd)
+
+	if got := trackedSha(t, jd, "release_bundles", bundleID); got == "" {
+		t.Fatal("a change to the rebuilt bundle was not journaled")
+	}
+}
