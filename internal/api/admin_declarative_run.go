@@ -228,7 +228,7 @@ func (h *AdminDeclarativeRunHandler) writePrepareError(w http.ResponseWriter, er
 	}
 
 	h.log.Warnw("declarative: planning failed", "error", err)
-	writeError(w, http.StatusBadGateway, "plan_failed", err.Error())
+	writeError(w, http.StatusBadGateway, "plan_failed", "planning the manifest failed; see the server log")
 }
 
 func problemOf(err error) declarativeProblem {
@@ -334,7 +334,7 @@ func (h *AdminDeclarativeRunHandler) handleExport(w http.ResponseWriter, r *http
 		}
 
 		h.log.Warnw("declarative: export failed", "error", err)
-		writeError(w, http.StatusBadGateway, "export_failed", err.Error())
+		writeError(w, http.StatusBadGateway, "export_failed", "exporting the server state failed; see the server log")
 
 		return
 	}
