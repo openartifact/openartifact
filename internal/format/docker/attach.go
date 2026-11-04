@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -70,6 +71,13 @@ type ReferrerResult struct {
 // type and the SlotKeys annotations): an identical referrer is left alone
 // (Created false) and one with other content replaces the older (its layer blob
 // is left to registry GC).
+//
+// Locking: the layer and config blobs are committed first, each under its own
+// blob lock. The referrer manifest is then stored and the slot decided under
+// the manifest blob's lock and a per-slot lock taken together on one
+// connection, so two attaches of one slot (on any replica) never both see an
+// empty slot. No blob lock is taken inside that section (see attachLocked);
+// the replaced referrer's content blob is reclaimed after it.
 func (h *HTTPHandler) AttachReferrer(ctx context.Context, repo *models.Repository, req ReferrerRequest) (*ReferrerResult, error) {
 	subject, err := h.db.GetDockerManifest(ctx, repo.ID, req.Image, req.SubjectDigest)
 	if err != nil {
@@ -92,25 +100,85 @@ func (h *HTTPHandler) AttachReferrer(ctx context.Context, repo *models.Repositor
 	manifestHex := hex.EncodeToString(sum[:])
 	digest := "sha256:" + manifestHex
 
-	// One writer per slot, across replicas.
+	existing, err := h.db.ListDockerManifestsBySubject(ctx, repo.ID, req.Image, req.SubjectDigest)
+	if err != nil {
+		return nil, fmt.Errorf("list referrers: %w", err)
+	}
+
+	// An identical referrer is left alone without any blob or lock work. The
+	// check is repeated under the slot lock, where it is authoritative.
+	if slices.ContainsFunc(existing, func(m *models.DockerManifest) bool { return m.Digest == digest }) {
+		return &ReferrerResult{Digest: digest}, nil
+	}
+
+	// The layer and the config are committed before the slot is locked. Each
+	// takes (and releases) its own blob lock, and no blob lock may be taken
+	// while another is held: a holder pins a connection and one of the bounded
+	// lock slots, so concurrent attaches that each held the slot lock while
+	// waiting for a blob lock would exhaust the slots and deadlock.
+	if err := h.ensureBlob(ctx, repo, req.Image, layerDigest, req.ArtifactType, req.Content); err != nil {
+		return nil, err
+	}
+
+	if err := h.ensureBlob(ctx, repo, req.Image, emptyConfigDigest, mediaTypeOCIEmpty, []byte("{}")); err != nil {
+		return nil, err
+	}
+
+	res, err := h.commitReferrer(ctx, repo, req, body, digest, manifestHex)
+	if err != nil {
+		return nil, err
+	}
+
+	// The replaced referrer's rows are gone (committed by commitReferrer); its
+	// content blob is reclaimed outside the lock, which takes a blob lock of its
+	// own. A concurrent upload of the same bytes holds that lock while it
+	// inserts its row, so the reference check in SafeDeleteBlob stays exact.
+	if res.Replaced != "" {
+		if err := h.reclaimManifestBlob(ctx, res.Replaced); err != nil {
+			return nil, fmt.Errorf("remove replaced referrer: %w", err)
+		}
+	}
+
+	return res, nil
+}
+
+// referrerSlotKey names the lock that gives one slot (subject, artifact type
+// and the SlotKeys annotations) a single writer, across replicas. It is a hash
+// of the slot, in the lock space of blob sha256s, so it cannot clash with a blob
+// but for a deliberate collision, which only adds contention.
+func referrerSlotKey(repoID string, req ReferrerRequest) string {
 	slot := sha256.Sum256(
 		[]byte(
-			"referrer\x00" + repo.ID + "\x00" + req.Image + "\x00" + req.SubjectDigest + "\x00" + req.ArtifactType + "\x00" + slotValue(
+			"referrer\x00" + repoID + "\x00" + req.Image + "\x00" + req.SubjectDigest + "\x00" + req.ArtifactType + "\x00" + slotValue(
 				req.Annotations,
 				req.SlotKeys,
 			),
 		),
 	)
 
+	return hex.EncodeToString(slot[:])
+}
+
+// commitReferrer stores the referrer manifest's bytes and, under the slot lock
+// and the manifest blob's lock taken together on one connection, decides the
+// slot (attachLocked). Nothing in the locked section takes a blob lock again.
+func (h *HTTPHandler) commitReferrer(
+	ctx context.Context,
+	repo *models.Repository,
+	req ReferrerRequest,
+	body []byte,
+	digest, manifestHex string,
+) (*ReferrerResult, error) {
 	var res *ReferrerResult
 
-	err = storage.WithBlobLock(ctx, h.db, hex.EncodeToString(slot[:]), func(ctx context.Context) error {
-		var inner error
+	err := h.commitManifest(ctx, manifestHex, mediaTypeOCIManifest, body, []string{referrerSlotKey(repo.ID, req)},
+		func(ctx context.Context) error {
+			var inner error
 
-		res, inner = h.attachLocked(ctx, repo, req, body, digest, manifestHex, layerDigest)
+			res, inner = h.attachLocked(ctx, repo, req, body, digest, manifestHex)
 
-		return inner
-	})
+			return inner
+		})
 	if err != nil {
 		return nil, err
 	}
@@ -118,8 +186,13 @@ func (h *HTTPHandler) AttachReferrer(ctx context.Context, repo *models.Repositor
 	return res, nil
 }
 
+// attachLocked runs with the slot lock and the manifest blob's lock held, so it
+// may only do database row work: no blob store write and no call that takes a
+// blob lock (ensureBlob, SafeDeleteBlob, ...). It inserts the referrer, drops
+// the rows of the older referrer of the same slot (the caller reclaims its
+// content blob once the locks are released) and reports what it did.
 func (h *HTTPHandler) attachLocked(ctx context.Context, repo *models.Repository, req ReferrerRequest, body []byte,
-	digest, manifestHex, layerDigest string,
+	digest, manifestHex string,
 ) (*ReferrerResult, error) {
 	existing, err := h.db.ListDockerManifestsBySubject(ctx, repo.ID, req.Image, req.SubjectDigest)
 	if err != nil {
@@ -138,22 +211,14 @@ func (h *HTTPHandler) attachLocked(ctx context.Context, repo *models.Repository,
 		}
 	}
 
-	if err := h.ensureBlob(ctx, repo, req.Image, layerDigest, req.ArtifactType, req.Content); err != nil {
-		return nil, err
-	}
-
-	if err := h.ensureBlob(ctx, repo, req.Image, emptyConfigDigest, mediaTypeOCIEmpty, []byte("{}")); err != nil {
-		return nil, err
-	}
-
-	if err := h.storeReferrerManifest(ctx, repo, req, body, digest, manifestHex); err != nil {
+	if err := h.insertReferrerManifest(ctx, repo, req, body, digest, manifestHex); err != nil {
 		return nil, err
 	}
 
 	res := &ReferrerResult{Digest: digest, Created: true}
 
 	if replace != nil {
-		if err := h.hardDeleteManifest(ctx, repo.ID, req.Image, replace.Digest, replace.Size); err != nil {
+		if err := h.deleteManifestRows(ctx, repo.ID, req.Image, replace.Digest, replace.Size); err != nil {
 			return nil, fmt.Errorf("remove replaced referrer: %w", err)
 		}
 
@@ -282,7 +347,10 @@ func (h *HTTPHandler) ensureBlob(ctx context.Context, repo *models.Repository, i
 	return err
 }
 
-func (h *HTTPHandler) storeReferrerManifest(
+// insertReferrerManifest reserves the quota of the referrer manifest and records
+// its row. The manifest's bytes are already in the store and the caller holds
+// its lock (commitReferrer).
+func (h *HTTPHandler) insertReferrerManifest(
 	ctx context.Context,
 	repo *models.Repository,
 	req ReferrerRequest,
@@ -324,7 +392,7 @@ func (h *HTTPHandler) storeReferrerManifest(
 		UpdatedAt:     now,
 	}
 
-	if err := h.storeManifest(ctx, manifest, manifestHex, mediaTypeOCIManifest, body); err != nil {
+	if err := h.insertManifest(ctx, manifest, manifestHex, mediaTypeOCIManifest, size); err != nil {
 		if reserved {
 			h.releaseQuota(ctx, repo.ID, size, 1)
 		}

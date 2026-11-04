@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -296,5 +297,67 @@ func TestSeekerBlobRewindsBeforeEveryAttempt(t *testing.T) {
 	data, _ := io.ReadAll(r)
 	if string(data) != "payload" {
 		t.Fatalf("read %q after Open; want the whole content", data)
+	}
+}
+
+// The extra locks of CommitBlobsUnder are taken with the blobs' locks, before
+// commit, and are all still held while it runs; the bytes are written before
+// any of them is taken, as in CommitBlobs.
+func TestCommitBlobsUnderHoldsTheExtraLocksWithTheBlobs(t *testing.T) {
+	db := &lockDB{}
+	store := newMemStore(db)
+	slot := strings.Repeat("01", 32)
+
+	var heldAtCommit bool
+
+	err := CommitBlobsUnder(context.Background(), db, store, []Blob{BytesBlob(testSHA, []byte("one"), nil)}, []string{slot},
+		func(context.Context, []string) error {
+			heldAtCommit = db.held()
+
+			return nil
+		})
+	if err != nil {
+		t.Fatalf("CommitBlobsUnder: %v", err)
+	}
+
+	if !heldAtCommit {
+		t.Error("commit ran without the locks held")
+	}
+
+	if want := []string{slot, testSHA}; !slices.Equal(db.taken, want) {
+		t.Errorf("locks taken = %v; want %v (the slot's and the blob's, sorted)", db.taken, want)
+	}
+
+	if len(store.puts) != 1 || store.puts[0].locked {
+		t.Errorf("puts = %+v; want one Put, before the locks", store.puts)
+	}
+}
+
+// With no blobs, only the extra locks are taken; with neither, commit runs unguarded.
+func TestCommitBlobsUnderWithoutBlobs(t *testing.T) {
+	db := &lockDB{}
+	store := newMemStore(db)
+	slot := strings.Repeat("01", 32)
+
+	var heldAtCommit bool
+
+	if err := CommitBlobsUnder(context.Background(), db, store, nil, []string{slot},
+		func(context.Context, []string) error { heldAtCommit = db.held(); return nil }); err != nil {
+		t.Fatalf("CommitBlobsUnder: %v", err)
+	}
+
+	if !heldAtCommit || !slices.Equal(db.taken, []string{slot}) {
+		t.Errorf("held %v, locks taken %v; want only the extra lock, held", heldAtCommit, db.taken)
+	}
+
+	db.taken = nil
+
+	if err := CommitBlobsUnder(context.Background(), db, store, nil, nil,
+		func(context.Context, []string) error { heldAtCommit = db.held(); return nil }); err != nil {
+		t.Fatalf("CommitBlobsUnder: %v", err)
+	}
+
+	if heldAtCommit || len(db.taken) != 0 {
+		t.Errorf("held %v, locks taken %v; want no lock at all", heldAtCommit, db.taken)
 	}
 }
