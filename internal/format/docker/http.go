@@ -658,27 +658,53 @@ func (h *HTTPHandler) storeManifest(
 	digestHex, contentType string,
 	body []byte,
 ) error {
+	return h.commitManifest(ctx, digestHex, contentType, body, nil, func(ctx context.Context) error {
+		return h.insertManifest(ctx, manifest, digestHex, contentType, int64(len(body)))
+	})
+}
+
+// commitManifest stores the manifest bytes and runs commit under the manifest
+// blob's lock plus the lock of every extraLocks key (see storage.CommitBlobsUnder).
+// commit must not take a blob lock itself: locks nested in commit pin one
+// connection and lock slot per level and can deadlock the pool.
+func (h *HTTPHandler) commitManifest(
+	ctx context.Context,
+	digestHex, contentType string,
+	body []byte,
+	extraLocks []string,
+	commit func(ctx context.Context) error,
+) error {
 	blob := storage.BytesBlob(digestHex, body, map[string]string{
 		"sha256":       digestHex,
 		"content-type": contentType,
 	})
 
-	return storage.CommitBlob(ctx, h.db, h.blobStore, blob, func(ctx context.Context, _ string) error {
-		// The blobs row is keyed by the sha256 computed above from the pushed
-		// bytes, never by a value the store or client reports.
-		blobID, err := h.db.EnsureBlob(ctx, digestHex, contentType, int64(len(body)))
-		if err != nil {
-			return fmt.Errorf("ensure manifest blob row: %w", err)
-		}
+	return storage.CommitBlobsUnder(ctx, h.db, h.blobStore, []storage.Blob{blob}, extraLocks,
+		func(ctx context.Context, _ []string) error { return commit(ctx) })
+}
 
-		manifest.BlobID = blobID
+// insertManifest records the blobs row of the manifest's content and the
+// manifest row itself. The caller holds the manifest blob's lock (commitManifest).
+func (h *HTTPHandler) insertManifest(
+	ctx context.Context,
+	manifest *models.DockerManifest,
+	digestHex, contentType string,
+	size int64,
+) error {
+	// The blobs row is keyed by the sha256 computed from the pushed bytes,
+	// never by a value the store or client reports.
+	blobID, err := h.db.EnsureBlob(ctx, digestHex, contentType, size)
+	if err != nil {
+		return fmt.Errorf("ensure manifest blob row: %w", err)
+	}
 
-		if err := h.db.CreateDockerManifest(ctx, manifest); err != nil {
-			return fmt.Errorf("create manifest: %w", err)
-		}
+	manifest.BlobID = blobID
 
-		return nil
-	})
+	if err := h.db.CreateDockerManifest(ctx, manifest); err != nil {
+		return fmt.Errorf("create manifest: %w", err)
+	}
+
+	return nil
 }
 
 // reserveManifest reserves quota for a manifest the image does not hold yet
@@ -829,6 +855,17 @@ func (h *HTTPHandler) handleDeleteManifest(w http.ResponseWriter, r *http.Reques
 // (size bytes, one artifact) is released only when this call removed the row;
 // a soft delete keeps it until the trash purge.
 func (h *HTTPHandler) hardDeleteManifest(ctx context.Context, repoID, image, digest string, size int64) error {
+	if err := h.deleteManifestRows(ctx, repoID, image, digest, size); err != nil {
+		return err
+	}
+
+	return h.reclaimManifestBlob(ctx, digest)
+}
+
+// deleteManifestRows removes a manifest row and the tags pointing at it and
+// releases its quota usage. It takes no blob lock, so a caller that holds one
+// may run it; the content blob is left for reclaimManifestBlob, which does.
+func (h *HTTPHandler) deleteManifestRows(ctx context.Context, repoID, image, digest string, size int64) error {
 	if err := h.db.DeleteDockerTagsByDigest(ctx, repoID, image, digest); err != nil {
 		return fmt.Errorf("delete tags of manifest: %w", err)
 	}
@@ -840,9 +877,14 @@ func (h *HTTPHandler) hardDeleteManifest(ctx context.Context, repoID, image, dig
 
 	h.releaseQuota(ctx, repoID, size, 1)
 
-	// Reclaim the manifest's content blob from storage only if no other
-	// docker_manifests row (a trashed copy included) or any other format table
-	// still references it.
+	return nil
+}
+
+// reclaimManifestBlob removes the manifest's content blob from storage only if
+// no other docker_manifests row (a trashed copy included) or any other format
+// table still references it. It takes the blob's lock (SafeDeleteBlob), so it
+// must not run inside another blob lock.
+func (h *HTTPHandler) reclaimManifestBlob(ctx context.Context, digest string) error {
 	if err := storage.SafeDeleteBlob(ctx, h.db, h.blobStore, manifestBlobKey(digest)); err != nil {
 		return fmt.Errorf("delete manifest blob from store: %w", err)
 	}

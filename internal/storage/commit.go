@@ -121,6 +121,12 @@ func CommitBlob(
 // exactly as when the Put used to run under the lock.
 //
 // commit MUST NOT write blobs itself: a Put inside it would pin the lock again.
+// For the same reason commit MUST NOT take a blob lock of its own (WithBlobLock,
+// CommitBlob, SafeDeleteBlob, ...): every lock holder pins a connection and one
+// of the bounded lock slots (database lockSlots), so enough concurrent callers
+// nesting a second lock would hold every slot while waiting for one. A caller
+// that needs another lock for the duration of commit names it in
+// CommitBlobsUnder, which takes all of them on one connection.
 func CommitBlobs(
 	ctx context.Context,
 	db any,
@@ -128,12 +134,31 @@ func CommitBlobs(
 	blobs []Blob,
 	commit func(ctx context.Context, keys []string) error,
 ) error {
-	if len(blobs) == 0 {
+	return CommitBlobsUnder(ctx, db, store, blobs, nil, commit)
+}
+
+// CommitBlobsUnder is CommitBlobs that also holds the lock of every key in
+// extraLocks while commit runs. The keys are not blobs: they name something
+// else commit must serialize on (a per-slot lock between writers of one
+// logical row) and live in the same lock space as blob sha256s, so a key is
+// best a hash of a name no blob content has; a collision with a blob only adds
+// contention. All locks (the blobs' and the extra ones) are taken together, in
+// sorted order, on one connection, so a caller needing both a logical lock and
+// a blob lock never nests one lock inside the other.
+func CommitBlobsUnder(
+	ctx context.Context,
+	db any,
+	store BlobStore,
+	blobs []Blob,
+	extraLocks []string,
+	commit func(ctx context.Context, keys []string) error,
+) error {
+	if len(blobs) == 0 && len(extraLocks) == 0 {
 		return commit(ctx, nil)
 	}
 
 	keys := make([]string, len(blobs))
-	shas := make([]string, len(blobs))
+	shas := make([]string, len(blobs), len(blobs)+len(extraLocks))
 
 	for i, b := range blobs {
 		shas[i] = b.SHA256
@@ -158,7 +183,7 @@ func CommitBlobs(
 		}
 	}
 
-	return WithBlobLocks(ctx, db, shas, func(ctx context.Context) error {
+	return WithBlobLocks(ctx, db, append(shas, extraLocks...), func(ctx context.Context) error {
 		for i, b := range blobs {
 			key, exists, err := lookup(ctx, store, b)
 			if err != nil {

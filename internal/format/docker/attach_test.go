@@ -9,9 +9,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/quota"
 )
 
@@ -199,5 +201,136 @@ func TestFindReferrerMatchesAnnotations(t *testing.T) {
 
 	if got, _ = g.h.FindReferrer(context.Background(), repo, "", subject, testBundleType, map[string]string{"kind": "vex"}); got != "" {
 		t.Errorf("find for another kind = %q; want none", got)
+	}
+}
+
+var errNestedBlobLock = errors.New("blob lock taken while another is held")
+
+// lockGuardDB is a regFakeDB whose blob locks model the database's bounded lock
+// slots: every lock holder owns one, so a lock taken while another is held is
+// refused (the real pool deadlocks once concurrent holders all wait for a
+// second slot). It records the lock set held while manifest rows are written.
+// It is single-goroutine, like the registry fake it wraps.
+type lockGuardDB struct {
+	*regFakeDB
+
+	held      []string            // lock set of the section being run
+	nested    []string            // every lock attempt made while holding another
+	writes    map[string][]string // "create|delete <manifest digest>" -> locks held
+	reclaimed []string            // blobs SafeDeleteBlob was asked to delete
+}
+
+func newLockGuardDB(repoNames ...string) *lockGuardDB {
+	return &lockGuardDB{regFakeDB: newRegFakeDB(repoNames...), writes: map[string][]string{}}
+}
+
+func (d *lockGuardDB) acquire(op string, keys []string) error {
+	if len(d.held) > 0 {
+		d.nested = append(d.nested, op+" while holding "+strings.Join(d.held, ","))
+		return errNestedBlobLock
+	}
+
+	d.held = slices.Sorted(slices.Values(keys))
+
+	return nil
+}
+
+func (d *lockGuardDB) WithBlobLocks(ctx context.Context, shas []string, fn func(ctx context.Context) error) error {
+	if err := d.acquire("WithBlobLocks("+strings.Join(shas, ",")+")", shas); err != nil {
+		return err
+	}
+
+	defer func() { d.held = nil }()
+
+	return fn(ctx)
+}
+
+func (d *lockGuardDB) WithBlobLock(ctx context.Context, sha string, fn func(ctx context.Context) error) error {
+	return d.WithBlobLocks(ctx, []string{sha}, fn)
+}
+
+func (d *lockGuardDB) DeleteBlobIfUnreferenced(ctx context.Context, sha string) (bool, error) {
+	if err := d.acquire("DeleteBlobIfUnreferenced("+sha+")", []string{sha}); err != nil {
+		return false, err
+	}
+
+	defer func() { d.held = nil }()
+
+	refs, err := d.BlobReferenceCount(ctx, sha)
+	if err != nil {
+		return false, err
+	}
+
+	if refs == 0 {
+		d.reclaimed = append(d.reclaimed, sha)
+	}
+
+	return refs == 0, nil
+}
+
+func (d *lockGuardDB) CreateDockerManifest(ctx context.Context, m *models.DockerManifest) error {
+	d.writes["create "+m.Digest] = slices.Clone(d.held)
+
+	return d.regFakeDB.CreateDockerManifest(ctx, m)
+}
+
+func (d *lockGuardDB) DeleteDockerManifest(ctx context.Context, repoID, image, digest string) error {
+	d.writes["delete "+digest] = slices.Clone(d.held)
+
+	return d.regFakeDB.DeleteDockerManifest(ctx, repoID, image, digest)
+}
+
+// AttachReferrer must never take a blob lock while holding one: the slot lock
+// and the manifest blob's lock are taken together, and the layer, the config
+// and the replaced referrer's content blob are committed and reclaimed outside
+// them. A nested lock holds a lock slot while waiting for another, which
+// deadlocks the pool once enough attaches run at the same time.
+func TestAttachReferrerNeverNestsBlobLocks(t *testing.T) {
+	db := newLockGuardDB("reg")
+	g := newRegistry(t, db)
+	subject := g.pushImage("1.0")
+	repo := db.repos["reg"]
+
+	first, err := g.h.AttachReferrer(context.Background(), repo, attachReq(subject, `{"v":1}`))
+	if err != nil {
+		t.Fatalf("first attach: %v (nested locks: %v)", err, db.nested)
+	}
+
+	next, err := g.h.AttachReferrer(context.Background(), repo, attachReq(subject, `{"v":2}`))
+	if err != nil || next.Replaced != first.Digest {
+		t.Fatalf("replacing attach = %+v, %v; want it to replace %s (nested locks: %v)", next, err, first.Digest, db.nested)
+	}
+
+	if len(db.nested) != 0 {
+		t.Fatalf("blob locks were nested: %v", db.nested)
+	}
+
+	// The referrer rows are written, and the replaced one removed, under the
+	// manifest's own lock and ONE more lock: the slot's, the same for both.
+	slotOf := func(digest string) string {
+		t.Helper()
+
+		held := db.writes["create "+digest]
+		if len(held) != 2 || !slices.Contains(held, manifestBlobKey(digest)) {
+			t.Fatalf("create %s ran under locks %v; want the slot lock and the manifest's", digest, held)
+		}
+
+		return slices.DeleteFunc(slices.Clone(held), func(k string) bool { return k == manifestBlobKey(digest) })[0]
+	}
+
+	slot := slotOf(first.Digest)
+	if got := slotOf(next.Digest); got != slot {
+		t.Errorf("the replacing attach locked slot %s; the first locked %s", got, slot)
+	}
+
+	// The replaced row goes in the replacing attach's critical section.
+	want := slices.Sorted(slices.Values([]string{slot, manifestBlobKey(next.Digest)}))
+	if held := db.writes["delete "+first.Digest]; !slices.Equal(held, want) {
+		t.Errorf("the replaced referrer was removed under locks %v; want %v", held, want)
+	}
+
+	// Its content blob is reclaimed once the locks are released.
+	if !slices.Contains(db.reclaimed, manifestBlobKey(first.Digest)) {
+		t.Errorf("replaced referrer's blob was not reclaimed: %v", db.reclaimed)
 	}
 }
