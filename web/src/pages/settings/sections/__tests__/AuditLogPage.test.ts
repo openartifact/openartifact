@@ -27,7 +27,9 @@ function serve(pages: Record<string, Page>): void {
   urls = []
   spy = spyOn(globalThis, 'fetch').mockImplementation((async (input: RequestInfo | URL) => {
     const url = new URL(String(input), 'http://localhost')
-    urls.push(url)
+    // Only the audit list counts: requests of other components still alive
+    // in the test process (timers of earlier tests) must not shift the order.
+    if (url.pathname === '/api/v1/admin/audit') urls.push(url)
     return new Response(JSON.stringify(pages[url.searchParams.get('cursor') ?? ''] ?? { data: [], has_more: false }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
