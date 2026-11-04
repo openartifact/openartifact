@@ -28,11 +28,14 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
 var (
 	errImportUsage  = errors.New("invalid arguments")
 	errImportVerify = errors.New("verification failed")
+	errImportPath   = errors.New("unsafe asset path")
 )
 
 const (
@@ -759,6 +762,13 @@ func (im *importer) selectAssets(repo sourceRepo, assets []sourceAsset) []source
 	for _, a := range assets {
 		if !strings.HasPrefix(a.Path, im.cfg.PathPrefix) || !importable(repo.Format, a.Path) {
 			im.rep.add(func(r *importReport) { r.Ignored++ })
+			continue
+		}
+
+		// The source names the path that becomes part of destination URLs: a
+		// "..", empty or backslash segment would address another repository.
+		if !pathseg.Path(a.Path) {
+			im.rep.fail(repo.Name, a.Path, errImportPath)
 			continue
 		}
 

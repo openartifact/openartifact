@@ -116,7 +116,10 @@ var classifiers = []classifier{
 	{ReasonDependency, isDependency},
 	{ReasonUnreachable, isNetworkError},
 	{ReasonInvalidResponse, isBadResponse},
-	{ReasonInvalidUnit, func(err error) bool { return errors.Is(err, ErrInvalid) || errors.Is(err, errUnitKindMismatch) }},
+	{ReasonInvalidUnit, func(err error) bool {
+		return errors.Is(err, ErrInvalid) || errors.Is(err, errUnitKindMismatch) ||
+			errors.Is(err, errUnitKeyMismatch)
+	}},
 	{ReasonUnreachable, func(err error) bool { return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) }},
 }
 

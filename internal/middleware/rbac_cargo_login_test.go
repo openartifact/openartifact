@@ -85,16 +85,3 @@ func TestCargoLoginChallengeUsesDerivedOrigin(t *testing.T) {
 		})
 	}
 }
-
-// The configured BaseURL (the MCP challenge's resource_metadata) plays no part
-// in Cargo's login_url: with no override the request's origin is used even
-// though BaseURL holds the localhost default.
-func TestCargoLoginChallengeIgnoresConfiguredBaseURL(t *testing.T) {
-	t.Parallel()
-
-	w := cargoChallenge(t, RBACConfig{BaseURL: "http://localhost:8080"}, nil, nil)
-
-	require.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Header().Values("WWW-Authenticate"), `Cargo login_url="http://a.example/login"`)
-	assert.Contains(t, w.Header().Get("Vary"), "X-Forwarded-Host")
-}

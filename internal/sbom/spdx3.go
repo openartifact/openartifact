@@ -210,7 +210,9 @@ func (b *spdx3Builder) vulnerabilities(in *Input, root string, now time.Time) {
 func spdx3VexDetails(assess map[string]any, f Finding, ts time.Time) {
 	switch f.Status {
 	case models.VEXNotAffected:
-		assess["security_justificationType"] = spdx3Justification(f.Justification)
+		if j := spdx3Justification(f.Justification); j != "" {
+			assess["security_justificationType"] = j
+		}
 
 		if f.Impact != "" {
 			assess["security_impactStatement"] = spdxSafe(f.Impact)

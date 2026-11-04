@@ -98,9 +98,14 @@ func (g *Generator) docID(kind, suffix string) string {
 }
 
 // splitArtifactID splits "name@version" on the LAST '@' after position 0 so
-// scoped names such as "@babel/core@7.0.0" keep their scope.
+// scoped names such as "@babel/core@7.0.0" keep their scope. An id with no
+// version ("name", "name@") is version "unknown", the name without the "@".
 func splitArtifactID(artifactID string) (string, string) {
 	if i := strings.LastIndex(artifactID, "@"); i > 0 {
+		if i == len(artifactID)-1 {
+			return artifactID[:i], "unknown"
+		}
+
 		return artifactID[:i], artifactID[i+1:]
 	}
 

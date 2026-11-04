@@ -38,6 +38,9 @@ const (
 	npmMaxPublishBody = 200 << 20
 	// npmMaxManifest bounds the package.json read out of a tarball.
 	npmMaxManifest = 8 << 20
+	// npmMaxScan bounds how much of a tarball's decompressed stream is scanned
+	// for the manifest, so a gzip bomb cannot stall the import.
+	npmMaxScan = 1 << 30
 )
 
 var (
@@ -268,7 +271,7 @@ func npmReadManifest(tgz io.Reader) (map[string]json.RawMessage, error) {
 
 	defer func() { _ = zr.Close() }()
 
-	tr := tar.NewReader(zr)
+	tr := tar.NewReader(io.LimitReader(zr, npmMaxScan))
 
 	for {
 		hdr, err := tr.Next()

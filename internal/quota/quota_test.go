@@ -118,3 +118,31 @@ func TestWriteExceeded(t *testing.T) {
 		t.Errorf("ErrExceeded = %q, want the trash hint", ErrExceeded)
 	}
 }
+
+type deadlineReleaseDB struct {
+	reserveMockDB
+
+	deadlineSet bool
+}
+
+func (db *deadlineReleaseDB) DecrementStorageUsage(ctx context.Context, _ string, _ int64, _ int) error {
+	_, db.deadlineSet = ctx.Deadline()
+
+	return ctx.Err()
+}
+
+// TestReleaseNIsBounded pins that the release, although detached from a
+// cancelled request, carries a deadline so a hung database cannot block forever.
+func TestReleaseNIsBounded(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	db := &deadlineReleaseDB{}
+	if err := ReleaseN(ctx, db, "repo", 1, 1); err != nil {
+		t.Fatalf("ReleaseN: %v", err)
+	}
+
+	if !db.deadlineSet {
+		t.Fatal("release context has no deadline")
+	}
+}

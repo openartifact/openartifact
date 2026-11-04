@@ -501,7 +501,11 @@ Blob downloads (pulls) are redirected, as with distribution's S3 `redirect` opti
 
 ## Stored secrets
 
-The server encrypts credentials kept in the database with AES-256-GCM. The key comes from the environment variable `OPENARTIFACT_SECRET_KEY` only, not from YAML. It must be at least 16 bytes. Stored values look like `enc:v1:<base64 nonce+ciphertext>`.
+The server encrypts credentials kept in the database with AES-256-GCM. The key comes from the environment variable `OPENARTIFACT_SECRET_KEY` only, not from YAML. It must be at least 16 bytes. Stored values look like `enc:v2:<base64 nonce+ciphertext>`.
+
+The AES-256 key is derived from `OPENARTIFACT_SECRET_KEY` with HKDF-SHA256 (fixed salt and context string, so the same secret yields the same key on every replica). HKDF does not slow down guessing, so use a high-entropy value such as the `openssl` command below, not a human-chosen passphrase. Values written by earlier releases carry the `enc:v1:` prefix (key = plain SHA-256 of the secret). They stay readable with no migration, and the server rewrites them as `enc:v2:` the next time each record is saved.
+
+**Rollback:** a release that predates `enc:v2:` cannot read `enc:v2:` values. After upgrading, rolling back to such a release makes every secret written or re-saved since the upgrade unreadable until you re-enter it. Take a database backup before upgrading, and keep it if you may roll back.
 
 Generate a key and set the same one on every replica:
 
@@ -522,8 +526,8 @@ Encrypted fields:
 Rules:
 
 - Without the key, the server starts but stores these values as plaintext and logs a warning (`OPENARTIFACT_SECRET_KEY not set ...`). A key shorter than 16 bytes aborts startup.
-- The API rejects a credential that itself starts with `enc:v1:` (`400 validation_failed`). A submitted value is always plaintext and always sealed, so a create or update cannot replay a stored ciphertext to read it back.
-- Values without the `enc:v1:` prefix are read as plaintext. Enabling the key later therefore keeps old rows working, and the server re-encrypts them when they are saved again.
+- The API rejects a credential that itself starts with `enc:v1:` or `enc:v2:` (`400 validation_failed`). A submitted value is always plaintext and always sealed, so a create or update cannot replay a stored ciphertext to read it back.
+- Values without an `enc:v1:` or `enc:v2:` prefix are read as plaintext. Enabling the key later therefore keeps old rows working, and the server re-encrypts them when they are saved again.
 - Changing or losing the key makes existing ciphertexts unreadable. Restore the old key, or re-enter the secrets.
 
 ### Storage backend records

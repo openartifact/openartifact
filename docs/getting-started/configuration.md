@@ -73,7 +73,7 @@ These variables are read directly from the environment and have no YAML key:
 
 Details:
 
-- **`OPENARTIFACT_SECRET_KEY`** is hashed to an AES-256-GCM key. It protects webhook secrets, upstream passwords, SSO client secrets, AI keys, storage credentials and the generated SAML key. Unset, they are stored in plaintext and a warning is logged. A key shorter than 16 bytes aborts startup. Changing or losing the key makes existing encrypted values (`enc:v1:`) unreadable.
+- **`OPENARTIFACT_SECRET_KEY`** is turned into an AES-256-GCM key with HKDF-SHA256 (new values are written as `enc:v2:`; legacy `enc:v1:` values stay readable; an older release cannot read `enc:v2:`, see [stored secrets](../operations/storage.md#stored-secrets)). It protects webhook secrets, upstream passwords, SSO client secrets, AI keys, storage credentials and the generated SAML key. Unset, they are stored in plaintext and a warning is logged. A key shorter than 16 bytes aborts startup. Changing or losing the key makes existing encrypted values (`enc:v1:` and `enc:v2:`) unreadable.
 - **`METRICS_AUTH_TOKEN` and `METRICS_ALLOW_ANONYMOUS`.** With neither set, `/metrics` answers `401` and a warning is logged. See [monitoring](../operations/monitoring.md).
 - **`MIGRATE_ON_START`.** Any other value, including `0` or `FALSE`, keeps migrations on.
 - **`OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS`** is case-insensitive. Cloud metadata addresses (`169.254.0.0/16`, `fd00:ec2::/16`) stay blocked. See [webhooks](../operations/webhooks.md) and [proxy repositories](../repositories/hosted-proxy-group.md).

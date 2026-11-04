@@ -32,7 +32,9 @@ func TestNext(t *testing.T) {
 		{"0 9 * * 7", time.Date(2026, 3, 15, 9, 0, 0, 0, time.UTC)},
 		{"30 14 * * *", time.Date(2026, 3, 11, 14, 30, 0, 0, time.UTC)},
 		{"0 0 29 2 *", time.Date(2028, 2, 29, 0, 0, 0, 0, time.UTC)},
-		{"0 0 13 * 5", time.Date(2026, 3, 13, 0, 0, 0, 0, time.UTC)}, // dom OR dow
+		{"0 0 13 * 5", time.Date(2026, 3, 13, 0, 0, 0, 0, time.UTC)},   // dom OR dow
+		{"0 0 */2 * 1", time.Date(2026, 3, 23, 0, 0, 0, 0, time.UTC)},  // "*/n" is a wildcard: dom AND dow (odd Mondays)
+		{"0 0 13 * */2", time.Date(2026, 6, 13, 0, 0, 0, 0, time.UTC)}, // 13th AND Sun/Tue/Thu/Sat (Saturday)
 	}
 
 	for _, c := range cases {

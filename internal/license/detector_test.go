@@ -332,7 +332,7 @@ func TestEvaluatePolicy_ExpressionSeparatorsSlashSemicolonPipe(t *testing.T) {
 // separators.
 func TestSPDXIdentifiersKeepWholeIdentifiers(t *testing.T) {
 	for expr, want := range map[string][]string{
-		"GPL-2.0-only WITH Classpath-exception-2.0":      {"gpl-2.0-only with classpath-exception-2.0", "gpl-2.0", "classpath-exception-2.0"},
+		"GPL-2.0-only WITH Classpath-exception-2.0":      {"gpl-2.0-only with classpath-exception-2.0", "gpl-2.0"},
 		"LicenseRef-Acme.Custom-1.0/MIT":                 {"licenseref-acme.custom-1.0/mit", "licenseref-acme.custom-1.0", "mit"},
 		"DocumentRef-spdx-tool-1.2:LicenseRef-MyLicense": {"documentref-spdx-tool-1.2:licenseref-mylicense", "documentref-spdx-tool-1.2:licenseref-mylicense"},
 		"Apache-2.0 OR GPL-2.0+":                         {"apache-2.0 or gpl-2.0", "apache-2.0", "gpl-2.0"},
@@ -341,5 +341,23 @@ func TestSPDXIdentifiersKeepWholeIdentifiers(t *testing.T) {
 		if got := spdxIdentifiers(expr); !slices.Equal(got, want) {
 			t.Errorf("spdxIdentifiers(%q) = %q, want %q", expr, got, want)
 		}
+	}
+}
+
+// The exception after WITH is not a license: an AND expression must not need it
+// on the allow list.
+func TestEvaluatePolicyWithException(t *testing.T) {
+	t.Parallel()
+
+	d := NewDetector(nil)
+	policy := &models.LicensePolicy{Enabled: true, AllowedLicenses: []string{"GPL-2.0-only", "MIT"}}
+
+	if ok, v := d.EvaluatePolicy([]string{"GPL-2.0-only WITH Classpath-exception-2.0 AND MIT"}, policy); !ok {
+		t.Errorf("violations = %v, want none", v)
+	}
+
+	denied := &models.LicensePolicy{Enabled: true, DeniedLicenses: []string{"Classpath-exception-2.0"}}
+	if ok, _ := d.EvaluatePolicy([]string{"GPL-2.0-only WITH Classpath-exception-2.0"}, denied); !ok {
+		t.Error("an exception must not be matched as a denied license")
 	}
 }

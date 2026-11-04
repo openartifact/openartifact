@@ -55,13 +55,10 @@ type RBACConfig struct {
 	// any non-navigation request. When nil, those paths get full RBAC
 	// evaluation like every other /repos/ path.
 	SPAHandler http.Handler
-	// BaseURL is the configured public URL of the server (the localhost default
-	// when BASE_URL was not set); the MCP challenge's resource_metadata points
-	// at it.
-	BaseURL string
 	// ClientBaseURL is BASE_URL as an explicit override of the origin handed to
 	// package clients, "" when it was not set. Cargo's WWW-Authenticate login_url
-	// is built on it, else on the request's origin (see internal/publicurl).
+	// is built on it, else on the request's origin (see internal/publicurl); the
+	// MCP challenge's resource_metadata points at it and is omitted when empty.
 	ClientBaseURL string
 	// MCPBearerVerifier accepts OIDC access tokens on the MCP endpoint in
 	// addition to API tokens; nil accepts API tokens only.

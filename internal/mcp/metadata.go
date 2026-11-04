@@ -18,6 +18,7 @@ import (
 	oaauth "github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
+	"github.com/openartifact/openartifact/internal/publicurl"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -50,15 +51,16 @@ type MetadataHandler struct {
 	now     func() time.Time
 }
 
-// NewMetadataHandler creates the handler. baseURL is BASE_URL; when empty the
-// resource identifier is derived from the request.
+// NewMetadataHandler creates the handler. baseURL is the operator's BASE_URL
+// (config.ClientBaseURL), "" when unset: the resource identifier is then derived
+// from the request.
 func NewMetadataHandler(db MetadataStore, log *logger.Logger, baseURL, mcpPath string) *MetadataHandler {
 	return &MetadataHandler{db: db, log: log, baseURL: baseURL, mcpPath: mcpPath, now: time.Now}
 }
 
 func (h *MetadataHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	meta := &oauthex.ProtectedResourceMetadata{
-		Resource:               h.resource(r),
+		Resource:               h.resource(w, r),
 		AuthorizationServers:   h.authorizationServers(r.Context()),
 		BearerMethodsSupported: []string{"header"},
 		ResourceName:           "OpenArtifact MCP",
@@ -68,17 +70,11 @@ func (h *MetadataHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	auth.ProtectedResourceMetadataHandler(meta).ServeHTTP(w, r)
 }
 
-func (h *MetadataHandler) resource(r *http.Request) string {
-	if h.baseURL != "" {
-		return middleware.MCPResourceURL(h.baseURL, h.mcpPath)
-	}
-
-	scheme := "http"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
-		scheme = "https"
-	}
-
-	return scheme + "://" + r.Host + h.mcpPath
+// resource is the MCP resource identifier: BASE_URL plus the mount path, or
+// the request's origin (honouring forwarded headers only from trusted proxies,
+// see internal/publicurl) when BASE_URL is unset.
+func (h *MetadataHandler) resource(w http.ResponseWriter, r *http.Request) string {
+	return middleware.MCPResourceURL(publicurl.Resolve(w, r, h.baseURL), h.mcpPath)
 }
 
 func (h *MetadataHandler) authorizationServers(ctx context.Context) []string {

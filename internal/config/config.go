@@ -454,7 +454,7 @@ type ServerConfig struct {
 	// made to spool or buffer an unbounded body. 0 disables the cap.
 	MaxBodyBytes int64 `yaml:"maxBodyBytes"`
 	// ShutdownTimeout is how many seconds in-flight requests get to finish
-	// during a graceful shutdown.
+	// during a graceful shutdown. Must be at least 1: 0 would leave them no time.
 	ShutdownTimeout int `yaml:"shutdownTimeout"`
 	// ShutdownDelay is how many seconds the server keeps serving, reporting
 	// not ready on /ready, after a shutdown signal and before it stops

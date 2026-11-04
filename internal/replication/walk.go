@@ -26,7 +26,8 @@ type idStream interface {
 	// peek returns the smallest id not yet popped; ok is false at the end.
 	peek(ctx context.Context) (id string, ok bool, err error)
 	// pop consumes the id peek returned.
-	pop()
+	// ctx bounds any page fetch a merged stream needs to find its head.
+	pop(ctx context.Context)
 }
 
 // listStream streams the ids a store lists, page by page.
@@ -57,7 +58,7 @@ func (s *listStream) peek(ctx context.Context) (string, bool, error) {
 	return s.buf[0], true, nil
 }
 
-func (s *listStream) pop() { s.buf = s.buf[1:] }
+func (s *listStream) pop(context.Context) { s.buf = s.buf[1:] }
 
 // dbStream streams the ids of the blobs table (keyset pages).
 type dbStream struct {
@@ -91,7 +92,7 @@ func (s *dbStream) peek(ctx context.Context) (string, bool, error) {
 	return s.buf[0], true, nil
 }
 
-func (s *dbStream) pop() { s.buf = s.buf[1:] }
+func (s *dbStream) pop(context.Context) { s.buf = s.buf[1:] }
 
 // mergeStream merges sorted streams into one, dropping duplicates (a blob can
 // be on two tiers while it moves).
@@ -121,16 +122,16 @@ func (m *mergeStream) min(ctx context.Context) (string, bool, error) {
 
 func (m *mergeStream) peek(ctx context.Context) (string, bool, error) { return m.min(ctx) }
 
-func (m *mergeStream) pop() {
+func (m *mergeStream) pop(ctx context.Context) {
 	// Every part's head was peeked by min; drop the ones equal to the smallest.
-	best, ok, err := m.min(context.Background())
+	best, ok, err := m.min(ctx)
 	if err != nil || !ok {
 		return
 	}
 
 	for _, p := range m.parts {
-		if id, ok, _ := p.peek(context.Background()); ok && id == best {
-			p.pop()
+		if id, ok, _ := p.peek(ctx); ok && id == best {
+			p.pop(ctx)
 		}
 	}
 }
@@ -151,7 +152,7 @@ func skipThrough(ctx context.Context, s idStream, cursor string) error {
 			return nil
 		}
 
-		s.pop()
+		s.pop(ctx)
 	}
 }
 
@@ -282,14 +283,14 @@ func (w *walker) next(ctx context.Context, n int) ([]item, bool, error) {
 		switch {
 		case pok && (!rok || pid <= rid):
 			items = append(items, item{id: pid, fromDB: fromDB})
-			w.p.pop()
+			w.p.pop(ctx)
 
 			if rok && rid == pid {
-				w.r.pop()
+				w.r.pop(ctx)
 			}
 		default:
 			items = append(items, item{id: rid})
-			w.r.pop()
+			w.r.pop(ctx)
 		}
 
 		w.cursor = items[len(items)-1].id

@@ -300,8 +300,16 @@ func (e *Engine) drain(ctx context.Context, pc *pullCtx, prog *Progress) (err er
 			prog.OldestPending = &t
 		}
 
+		start := prog.Cursor
+
 		if err := e.applyPage(ctx, pc, lr.Entries, prog); err != nil {
 			return err
+		}
+
+		// A page that says more follows but moved the cursor nowhere would be
+		// asked for again for ever.
+		if lr.More && prog.Cursor == start {
+			return fmt.Errorf("%w: the peer log promises more entries after %d but sent none", errPeerResponse, start)
 		}
 
 		if !lr.More {
@@ -325,6 +333,12 @@ func (e *Engine) applyPage(ctx context.Context, pc *pullCtx, entries []Entry, pr
 			return err //nolint:wrapcheck // cancellation passes through
 		}
 
+		// The cursor only moves forward: a peer entry at or before it would
+		// rewind the pull into re-reading the same page for ever.
+		if entry.Seq <= prog.Cursor {
+			return fmt.Errorf("%w: log entry %d is not after the cursor %d", errPeerResponse, entry.Seq, prog.Cursor)
+		}
+
 		res, err := e.applyEntry(ctx, pc, entry)
 		if err != nil {
 			if herr := e.handleUnitError(ctx, pc, entry, err); herr != nil {
@@ -332,6 +346,9 @@ func (e *Engine) applyPage(ctx context.Context, pc *pullCtx, entries []Entry, pr
 			}
 
 			res = outcomeDeferred
+		} else {
+			// Failures count pulls in a row: a unit that applied starts over.
+			e.clearFailure(pc.peer.ID, entry.UnitKey)
 		}
 
 		e.countResult(pc, res)

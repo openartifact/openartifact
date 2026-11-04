@@ -7,6 +7,7 @@
 package mcp
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -126,7 +127,7 @@ func TestLimiterSweepsIdleBuckets(t *testing.T) {
 	now := time.Now()
 	l.now = func() time.Time { return now }
 
-	for i := range limiterSweepSize {
+	for i := range limiterMaxBuckets {
 		l.allow(string(rune('a'+i%26)) + strings.Repeat("k", i))
 	}
 
@@ -134,8 +135,28 @@ func TestLimiterSweepsIdleBuckets(t *testing.T) {
 
 	l.allow("fresh")
 
-	if len(l.buckets) >= limiterSweepSize {
+	if len(l.buckets) >= limiterMaxBuckets {
 		t.Fatalf("idle buckets must be dropped, %d remain", len(l.buckets))
+	}
+}
+
+func TestLimiterNeverExceedsItsCap(t *testing.T) {
+	l := newLimiter(10)
+	now := time.Now()
+	l.now = func() time.Time { return now }
+
+	// Every caller is active (not refilled) and the sweep window has not
+	// elapsed: the table must still stay within the cap.
+	l.lastSweep = now
+
+	for i := range 2 * limiterMaxBuckets {
+		if !l.allow(strconv.Itoa(i)) {
+			t.Fatalf("first request of caller %d must be allowed", i)
+		}
+
+		if len(l.buckets) > limiterMaxBuckets {
+			t.Fatalf("%d buckets after %d callers, cap is %d", len(l.buckets), i+1, limiterMaxBuckets)
+		}
 	}
 }
 

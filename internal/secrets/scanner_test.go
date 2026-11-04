@@ -268,13 +268,9 @@ func TestScanText_RedactedValue(t *testing.T) {
 		t.Fatal("expected to find secret")
 	}
 
-	redacted := findings[0].RedactedValue
-	if len(redacted) < 4 {
-		t.Errorf("expected redacted value to have at least 4 chars, got %d", len(redacted))
-	}
-
-	if redacted[len(redacted)-4:] != "****" {
-		t.Errorf("expected redacted value to end with ****, got %s", redacted)
+	// Nothing of the secret is kept: not a prefix, not its length.
+	if redacted := findings[0].RedactedValue; redacted != "****" {
+		t.Errorf("RedactedValue = %q, want %q", redacted, "****")
 	}
 }
 
@@ -289,13 +285,8 @@ func TestScanText_RedactedValue_ShortSecret(t *testing.T) {
 		t.Fatal("expected to find secret")
 	}
 
-	redacted := findings[0].RedactedValue
-	if len(redacted) < 4 {
-		t.Errorf("expected redacted value to have at least 4 chars, got %d", len(redacted))
-	}
-
-	if redacted[len(redacted)-4:] != "****" {
-		t.Errorf("expected redacted value to end with ****, got %s", redacted)
+	if redacted := findings[0].RedactedValue; redacted != "****" {
+		t.Errorf("RedactedValue = %q, want %q", redacted, "****")
 	}
 }
 

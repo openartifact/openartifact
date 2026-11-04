@@ -189,7 +189,7 @@ func newStack(t *testing.T, mutate func(*stackOptions)) *stack {
 	st.addUser("reader", targetReadOnly, []string{targetReadOnly})
 	st.addUser("admin", targetAdmin, nil)
 
-	rbacCfg := middleware.RBACConfig{MCPPath: "/mcp", BaseURL: opts.baseURL, MCPBearerVerifier: opts.bearerVerify}
+	rbacCfg := middleware.RBACConfig{MCPPath: "/mcp", ClientBaseURL: opts.baseURL, MCPBearerVerifier: opts.bearerVerify}
 
 	router := chi.NewRouter()
 	router.Use(OriginMiddleware("/mcp", opts.baseURL, opts.origins))

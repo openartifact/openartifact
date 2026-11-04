@@ -18,6 +18,9 @@ import (
 
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/publicurl"
+	"github.com/openartifact/openartifact/pkg/logger"
+	"go.uber.org/zap"
 )
 
 type resourceMetadata struct {
@@ -107,6 +110,52 @@ func TestProtectedResourceMetadataDerivesResourceWithoutBaseURL(t *testing.T) {
 
 	if meta.Resource != "http://registry.internal:8080/mcp" {
 		t.Fatalf("resource = %q", meta.Resource)
+	}
+}
+
+type noProviders struct{}
+
+func (noProviders) ListEnabledSSOProviders(context.Context) ([]*models.SSOProvider, error) {
+	return nil, nil
+}
+
+func TestProtectedResourceMetadataResource(t *testing.T) {
+	trustAll := func(*http.Request) bool { return true }
+
+	tests := []struct {
+		name    string
+		baseURL string
+		trusted func(*http.Request) bool
+		want    string
+	}{
+		{"BASE_URL wins over the request", "https://oa.example.com/", nil, "https://oa.example.com/mcp"},
+		{"BASE_URL with a path prefix", "https://oa.example.com/artifacts", nil, "https://oa.example.com/artifacts/mcp"},
+		{"unset: forwarded headers ignored from an untrusted peer", "", nil, "http://registry.internal:8080/mcp"},
+		{"unset: forwarded headers from a trusted proxy", "", trustAll, "https://oa.public.example/mcp"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := publicurl.Middleware(tc.baseURL, "http://localhost:8080", tc.trusted)(
+				NewMetadataHandler(noProviders{}, &logger.Logger{SugaredLogger: zap.NewNop().Sugar()}, tc.baseURL, "/mcp"))
+
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/.well-known/oauth-protected-resource/mcp", nil)
+			req.Host = "registry.internal:8080"
+			req.Header.Set("X-Forwarded-Host", "oa.public.example")
+			req.Header.Set("X-Forwarded-Proto", "https")
+
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			var meta resourceMetadata
+			if err := json.Unmarshal(rec.Body.Bytes(), &meta); err != nil {
+				t.Fatalf("invalid metadata %q: %v", rec.Body.String(), err)
+			}
+
+			if meta.Resource != tc.want {
+				t.Fatalf("resource = %q, want %q", meta.Resource, tc.want)
+			}
+		})
 	}
 }
 

@@ -93,6 +93,8 @@ type Dispatcher struct {
 	started  atomic.Bool
 	ctx      context.Context //nolint:containedctx // lifecycle context for in-flight deliveries; cancelled by Stop
 	cancel   context.CancelFunc
+	// writeTimeout bounds each delivery status write.
+	writeTimeout time.Duration
 }
 
 const (
@@ -111,6 +113,9 @@ const (
 	defaultAttemptTimeout = 30 * time.Second
 	// claimBatch bounds the deliveries claimed per retry-loop tick.
 	claimBatch = 100
+	// defaultWriteTimeout is the limit of one delivery status write; it fits
+	// Stop's grace period.
+	defaultWriteTimeout = 10 * time.Second
 	// DefaultPollInterval is how often the retry loop claims due deliveries.
 	DefaultPollInterval = 30 * time.Second
 )
@@ -128,6 +133,7 @@ func NewDispatcher(db DispatcherStore, log *logger.Logger) *Dispatcher {
 		doneCh:         make(chan struct{}),
 		ctx:            ctx,
 		cancel:         cancel,
+		writeTimeout:   defaultWriteTimeout,
 	}
 }
 
@@ -272,9 +278,7 @@ func (d *Dispatcher) process(delivery *models.WebhookDelivery) {
 		delivery.Status = "failed"
 		delivery.NextRetryAt = nil
 
-		if err := d.db.UpdateWebhookDelivery(context.Background(), delivery); err != nil {
-			d.log.Errorw("failed to update webhook delivery", "webhook_id", wh.ID, "error", err)
-		}
+		d.saveDelivery(wh.ID, delivery)
 
 		d.log.Infow("webhook disabled; delivery dropped", "webhook_id", wh.ID, "delivery_id", delivery.ID)
 
@@ -451,9 +455,7 @@ func (d *Dispatcher) deliver(wh *models.Webhook, delivery *models.WebhookDeliver
 
 		delivery.DeliveredAt = &now
 		delivery.NextRetryAt = nil
-		if err := d.db.UpdateWebhookDelivery(context.Background(), delivery); err != nil {
-			d.log.Errorw("failed to update webhook delivery", "webhook_id", wh.ID, "error", err)
-		}
+		d.saveDelivery(wh.ID, delivery)
 
 		d.log.Infow("webhook delivered successfully", "webhook_id", wh.ID, "status", resp.StatusCode)
 
@@ -480,14 +482,26 @@ func (d *Dispatcher) markFailed(delivery *models.WebhookDelivery, wh *models.Web
 		delivery.Status = "failed"
 	}
 
-	if err := d.db.UpdateWebhookDelivery(context.Background(), delivery); err != nil {
-		d.log.Errorw("failed to update webhook delivery", "webhook_id", wh.ID, "error", err)
-	}
+	d.saveDelivery(wh.ID, delivery)
 
 	if delivery.Status == "failed" {
 		d.log.Warnw("webhook delivery failed permanently", "webhook_id", wh.ID, "attempts", delivery.AttemptCount)
 	} else {
 		d.log.Infow("webhook delivery scheduled for retry", "webhook_id", wh.ID, "attempts", delivery.AttemptCount)
+	}
+}
+
+// saveDelivery persists the outcome of an attempt. It is detached from the
+// dispatcher's cancellation, so the result of an attempt that finished (or was
+// cut short) during shutdown is still recorded rather than left to a duplicate
+// redelivery, but bounded by writeTimeout so a stuck database cannot hold a
+// worker, and with it Stop, forever.
+func (d *Dispatcher) saveDelivery(webhookID string, delivery *models.WebhookDelivery) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(d.ctx), d.writeTimeout)
+	defer cancel()
+
+	if err := d.db.UpdateWebhookDelivery(ctx, delivery); err != nil {
+		d.log.Errorw("failed to update webhook delivery", "webhook_id", webhookID, "error", err)
 	}
 }
 
