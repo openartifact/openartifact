@@ -151,6 +151,24 @@ func (r *Rendered) Serve(w http.ResponseWriter, req *http.Request) {
 		weakenETag(h)
 	}
 
+	// Open the decompressor before the status line: an unreadable compacted
+	// copy must be an error response, not a 200 with an empty body.
+	var zr *gzip.Reader
+
+	if inflate && req.Method != http.MethodHead {
+		var err error
+
+		if zr, err = gzip.NewReader(bytes.NewReader(r.gz)); err != nil {
+			h.Del("ETag")
+			h.Del("Content-Length")
+			h.Del("Content-Encoding")
+			h.Set("Cache-Control", "no-store")
+			http.Error(w, "internal error", http.StatusInternalServerError)
+
+			return
+		}
+	}
+
 	h.Set("Content-Length", strconv.Itoa(length))
 	w.WriteHeader(http.StatusOK)
 
@@ -158,10 +176,8 @@ func (r *Rendered) Serve(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if inflate {
-		if zr, err := gzip.NewReader(bytes.NewReader(r.gz)); err == nil {
-			_, _ = iocopy.Copy(w, zr)
-		}
+	if zr != nil {
+		_, _ = iocopy.Copy(w, zr)
 
 		return
 	}

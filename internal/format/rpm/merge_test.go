@@ -7,6 +7,7 @@ package rpm
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -364,5 +365,31 @@ func TestMergeModulesFirstSourceWins(t *testing.T) {
 
 	if !strings.HasPrefix(got, "---\n") {
 		t.Errorf("each document must start with ---:\n%s", got)
+	}
+}
+
+func TestOpenMetadataRejectsOversizedDocument(t *testing.T) {
+	var gz bytes.Buffer
+
+	zw := gzip.NewWriter(&gz)
+	_, _ = zw.Write(bytes.Repeat([]byte("x"), 100))
+	_ = zw.Close()
+
+	read := func(limit int64) ([]byte, error) {
+		rc, err := openMetadata(io.NopCloser(bytes.NewReader(gz.Bytes())), "primary.xml.gz", limit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = rc.Close() }()
+
+		return io.ReadAll(rc)
+	}
+
+	if got, err := read(100); err != nil || len(got) != 100 {
+		t.Fatalf("document at the limit: len=%d err=%v", len(got), err)
+	}
+
+	if _, err := read(50); !errors.Is(err, errDocumentTooLarge) {
+		t.Fatalf("oversized document: err=%v, want errDocumentTooLarge", err)
 	}
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/ulikunitz/xz"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/openartifact/openartifact/internal/limitio"
 	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
@@ -56,6 +57,8 @@ func (i PackageInfo) NEVRA() string {
 }
 
 // errTruncatedDocument reports an upstream XML document that ends inside an element.
+var errDocumentTooLarge = errors.New("rpm: upstream metadata document exceeds the size limit")
+
 var errTruncatedDocument = errors.New("rpm: parsing upstream metadata: document ends inside an element")
 
 // ScanPackages reads the <package> elements of a primary, filelists or other
@@ -305,6 +308,13 @@ func ParseRepomd(r io.Reader) (map[string]string, error) {
 // OpenMetadata wraps r according to the extension of the file name it was
 // fetched as (.gz, .xz, .zst, .bz2 or none). Closing the result closes r.
 func OpenMetadata(r io.ReadCloser, name string) (io.ReadCloser, error) {
+	return openMetadata(r, name, maxUpstreamDocument)
+}
+
+// openMetadata is OpenMetadata with the decompressed-size limit as a
+// parameter. A document over the limit fails the read with
+// errDocumentTooLarge instead of ending as a silently shortened one.
+func openMetadata(r io.ReadCloser, name string, limit int64) (io.ReadCloser, error) {
 	var (
 		dec  io.Reader
 		stop func()
@@ -337,7 +347,7 @@ func OpenMetadata(r io.ReadCloser, name string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("rpm: opening %s: %w", name, err)
 	}
 
-	return &decompressed{Reader: io.LimitReader(dec, maxUpstreamDocument), src: r, stop: stop}, nil
+	return &decompressed{Reader: limitio.Capped(dec, limit+1, errDocumentTooLarge), src: r, stop: stop}, nil
 }
 
 type decompressed struct {
