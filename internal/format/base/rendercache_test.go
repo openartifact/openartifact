@@ -246,3 +246,19 @@ func TestRenderCacheDoesNotKeepTransientRenderings(t *testing.T) {
 		t.Errorf("headers = %v; want no ETag and no-store", rec.Header())
 	}
 }
+
+func TestServeCorruptCompactedCopyIsAnError(t *testing.T) {
+	r := &Rendered{ContentType: "application/json", bodyLen: 64, gz: []byte("not gzip")}
+	rec := httptest.NewRecorder()
+	rec.Header().Set("ETag", `"x"`)
+
+	r.Serve(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+
+	if rec.Header().Get("ETag") != "" || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("error response kept validators: %v", rec.Header())
+	}
+}

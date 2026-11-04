@@ -34,7 +34,6 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/format/terraform"
-	"github.com/openartifact/openartifact/internal/httpcache"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/pathseg"
@@ -358,7 +357,7 @@ func (s *Service) serveResolved(
 		return
 	}
 
-	writeEntry(w, r, entry, rc)
+	writeEntry(w, r, repo.Public, entry, rc)
 }
 
 func (s *Service) writeResolveError(w http.ResponseWriter, r *http.Request, err error) {
@@ -389,7 +388,10 @@ func (s *Service) failWithoutValidators(w http.ResponseWriter, r *http.Request, 
 	s.writeResolveError(w, r, err)
 }
 
-func writeEntry(w http.ResponseWriter, r *http.Request, entry *models.ProxyCacheEntry, body io.Reader) {
+// writeEntry streams a cached blob. Like every metadata answer it carries
+// Cache-Control and Vary: Authorization from the shared policy (base.Revalidate):
+// only an anonymous read of a public repository is shared-cacheable.
+func writeEntry(w http.ResponseWriter, r *http.Request, repoPublic bool, entry *models.ProxyCacheEntry, body io.Reader) {
 	etag := `"` + entry.BlobKey + `"`
 	h := w.Header()
 
@@ -399,10 +401,8 @@ func writeEntry(w http.ResponseWriter, r *http.Request, entry *models.ProxyCache
 	}
 
 	h.Set("Content-Type", ct)
-	h.Set("ETag", etag)
 
-	if httpcache.ETagMatches(r.Header.Get("If-None-Match"), etag) {
-		w.WriteHeader(http.StatusNotModified)
+	if base.Revalidate(w, r, repoPublic, etag, 0) {
 		return
 	}
 
