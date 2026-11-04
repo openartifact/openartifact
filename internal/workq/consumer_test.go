@@ -241,6 +241,41 @@ func TestConsumerRetryKeepsTheRequest(t *testing.T) {
 	}
 }
 
+// A request a full worker keeps refusing is claimed again every lease; the
+// consumer must remember its give-up once, not once per claim, and release it
+// once at shutdown.
+func TestConsumerRepeatedRetriesAreRememberedOnce(t *testing.T) {
+	fb := &fakeBackend{}
+	c := newConsumer(fb, testLog(t))
+	c.Handle("dtrack:push", func(context.Context, Request) Result { return Retry })
+
+	ctx := context.Background()
+
+	for range 50 {
+		fb.mu.Lock()
+		fb.queue = []Request{{Kind: "dtrack:push", Key: "a", RequestedAt: time.Now()}}
+		fb.mu.Unlock()
+
+		c.tick(ctx, []string{"dtrack:push"})
+	}
+
+	c.Flush(ctx)
+
+	c.mu.Lock()
+	remembered := len(c.gaveUp)
+	c.mu.Unlock()
+
+	if remembered != 1 {
+		t.Fatalf("%d give-ups remembered for one request, want 1", remembered)
+	}
+
+	c.Release(ctx)
+
+	if n := len(fb.releasedRefs()); n != 1 {
+		t.Fatalf("released %d claims, want 1", n)
+	}
+}
+
 func TestConsumerSettleOfAnUnclaimedKeyIsIgnored(t *testing.T) {
 	fb := &fakeBackend{}
 	c := newConsumer(fb, testLog(t))

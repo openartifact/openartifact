@@ -184,6 +184,40 @@ func TestDeleteStorageTierIfUnusedRefusesBlobsAndMoves(t *testing.T) {
 	}
 }
 
+// After a move the old copy is queued for deletion on the backend it left; the
+// sweeper can only delete it while the backend is still configured, so the tier
+// and the backend must stay until the queue has drained.
+func TestStorageBackendBusyWhileRetiredCopiesAreQueued(t *testing.T) {
+	f := newTierFixture(t)
+	ctx := context.Background()
+	sha := f.addBlob(t, "retired", 10, time.Hour)
+
+	if err := f.pg.EnqueueBlobDeletion(ctx, sha, f.cold); err != nil {
+		t.Fatalf("EnqueueBlobDeletion: %v", err)
+	}
+
+	cold, _ := f.pg.GetStorageTierByName(ctx, "cold")
+	if reason, err := f.pg.DeleteStorageTierIfUnused(ctx, cold.ID); err != nil || !strings.Contains(reason, "retired") {
+		t.Fatalf("DeleteStorageTierIfUnused with a queued retired copy = %q, %v, want the retired-copies reason", reason, err)
+	}
+
+	if got, _ := f.pg.GetStorageTierByName(ctx, "cold"); got == nil {
+		t.Fatal("the tier was deleted with a retired copy still queued on its backend")
+	}
+
+	if reason, err := f.pg.StorageBackendBusyReason(ctx, f.cold); err != nil || reason == "" {
+		t.Errorf("StorageBackendBusyReason = %q, %v, want busy", reason, err)
+	}
+
+	if _, err := f.pg.GetDB().ExecContext(ctx, `DELETE FROM blob_deletions`); err != nil {
+		t.Fatal(err)
+	}
+
+	if reason, err := f.pg.DeleteStorageTierIfUnused(ctx, cold.ID); err != nil || reason != "" {
+		t.Errorf("DeleteStorageTierIfUnused once drained = %q, %v", reason, err)
+	}
+}
+
 func TestFlipBlobPlacement(t *testing.T) {
 	f := newTierFixture(t)
 	ctx := context.Background()

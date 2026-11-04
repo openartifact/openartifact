@@ -17,6 +17,7 @@ import (
 	"github.com/ulikunitz/xz"
 
 	"github.com/openartifact/openartifact/internal/limitio"
+	"github.com/openartifact/openartifact/pkg/xzlimit"
 )
 
 // Sentinel errors for deb file parsing.
@@ -155,7 +156,7 @@ func extractControlFile(raw []byte, ext string) (*ControlFile, error) {
 		}
 
 	case strings.HasSuffix(ext, ".xz"):
-		if err := checkXZDictCap(raw); err != nil {
+		if err := xzlimit.CheckDictCap(raw); err != nil {
 			return nil, fmt.Errorf("failed to decompress %s: %w", ext, err)
 		}
 
@@ -171,7 +172,7 @@ func extractControlFile(raw []byte, ext string) (*ControlFile, error) {
 
 	case strings.HasSuffix(ext, ".zst"):
 		zr, err := zstd.NewReader(bytes.NewReader(raw),
-			zstd.WithDecoderMaxWindow(maxControlDictSize), zstd.WithDecoderConcurrency(1))
+			zstd.WithDecoderMaxWindow(xzlimit.MaxDictSize), zstd.WithDecoderConcurrency(1))
 		if err != nil {
 			return nil, fmt.Errorf("failed to decompress %s: %w", ext, err)
 		}

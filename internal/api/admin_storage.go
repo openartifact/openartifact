@@ -37,7 +37,6 @@ var storageBackendNameRe = lazyre.New(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
 
 // AdminStorageStore is the part of the database AdminStorageHandler needs.
 type AdminStorageStore interface {
-	CountBlobsOnStorageBackend(ctx context.Context, backendID string) (int64, error)
 	CreateStorageBackend(ctx context.Context, backend *models.StorageBackend) error
 	DeleteStorageBackend(ctx context.Context, id string) error
 	GetStorageBackend(ctx context.Context, name string) (*models.StorageBackend, error)
@@ -640,16 +639,16 @@ func (h *AdminStorageHandler) handleDelete(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	inUse, err := h.db.CountBlobsOnStorageBackend(r.Context(), backend.ID)
+	reason, err := h.db.StorageBackendBusyReason(r.Context(), backend.ID)
 	if err != nil {
-		h.log.Errorw("failed to count blobs on storage backend", "error", err)
+		h.log.Errorw("failed to check storage backend usage", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to delete storage backend")
 
 		return
 	}
 
-	if inUse > 0 {
-		writeError(w, http.StatusConflict, "conflict", "storage backend still holds blobs")
+	if reason != "" {
+		writeError(w, http.StatusConflict, "conflict", reason)
 		return
 	}
 

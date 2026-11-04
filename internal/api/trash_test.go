@@ -188,6 +188,11 @@ func (db *fakeTrashDB) PurgeTrash(context.Context, models.TrashKind, string) (*m
 	return db.purgeRes, db.purgeErr
 }
 
+// PurgeExpiredTrash is the retention worker's path; the API never takes it.
+func (db *fakeTrashDB) PurgeExpiredTrash(context.Context, models.TrashKind, string) (*models.TrashPurgeResult, error) {
+	return nil, errors.New("fakeTrashDB: PurgeExpiredTrash is not an API path")
+}
+
 func (db *fakeTrashDB) RegenKeys(context.Context, models.TrashKind, string) (string, string, error) {
 	return db.regenA, db.regenB, nil
 }

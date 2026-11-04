@@ -2,21 +2,45 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-package deb
+// Package xzlimit guards the ulikunitz/xz decoder against streams that declare
+// an oversized dictionary: it allocates whatever the header asks for, up to
+// 4 GiB, before reading any data.
+package xzlimit
 
 import (
+	"bufio"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
+
+	"github.com/ulikunitz/xz"
 )
 
-// maxControlDictSize bounds the LZ window (xz dictionary / zstd window) a
-// control archive may declare. The decoders allocate it up front, so a tiny
-// crafted stream could otherwise demand gigabytes; 64 MiB covers `xz -9`.
-const maxControlDictSize = 64 << 20
+// MaxDictSize bounds the LZ window (xz dictionary / zstd window) an untrusted
+// stream may declare. The decoders allocate it up front, so a tiny crafted
+// stream could otherwise demand gigabytes; 64 MiB covers `xz -9`.
+const MaxDictSize = 64 << 20
 
-// ErrXZDictTooLarge is returned for an xz stream declaring an oversized dictionary.
-var ErrXZDictTooLarge = errors.New("xz dictionary size exceeds limit")
+// maxHeaderPeek covers the stream header plus the largest block header
+// ((255+1)*4 bytes).
+const maxHeaderPeek = xzStreamHeaderLen + 1024
+
+// NewReader returns an xz decoder over br after rejecting a stream whose first
+// block declares a dictionary above MaxDictSize. Nothing is consumed by the
+// check; br only has to be at least maxHeaderPeek bytes large.
+func NewReader(br *bufio.Reader) (io.Reader, error) {
+	head, _ := br.Peek(maxHeaderPeek) // a short peek is left for the decoder to reject
+
+	if err := CheckDictCap(head); err != nil {
+		return nil, err
+	}
+
+	return xz.NewReader(br)
+}
+
+// ErrDictTooLarge is returned for an xz stream declaring an oversized dictionary.
+var ErrDictTooLarge = errors.New("xz dictionary size exceeds limit")
 
 var errXZHeader = errors.New("invalid xz block header")
 
@@ -25,11 +49,11 @@ const (
 	xzFilterLZMA2     = 0x21
 )
 
-// checkXZDictCap reads the first block header of an xz stream and rejects it
-// when its LZMA2 filter declares a dictionary larger than maxControlDictSize. (The
+// CheckDictCap reads the first block header of an xz stream and rejects it
+// when its LZMA2 filter declares a dictionary larger than MaxDictSize. (The
 // ulikunitz/xz reader raises its dictionary to whatever the stream declares.)
 // Anything it cannot parse is left to the decoder to reject.
-func checkXZDictCap(raw []byte) error {
+func CheckDictCap(raw []byte) error {
 	if len(raw) < xzStreamHeaderLen+2 {
 		return nil
 	}
@@ -84,8 +108,8 @@ func checkXZDictCap(raw []byte) error {
 		pos += int(propLen)                  //nolint:gosec // propLen <= len(hdr) checked above
 
 		if id == xzFilterLZMA2 && len(props) == 1 {
-			if c := lzma2DictSize(props[0]); c > maxControlDictSize {
-				return fmt.Errorf("%w: %d bytes", ErrXZDictTooLarge, c)
+			if c := lzma2DictSize(props[0]); c > MaxDictSize {
+				return fmt.Errorf("%w: %d bytes", ErrDictTooLarge, c)
 			}
 		}
 	}

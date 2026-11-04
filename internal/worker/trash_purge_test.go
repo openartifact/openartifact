@@ -79,7 +79,13 @@ func (d *trashPurgeDB) ListExpiredTrash(_ context.Context, limit int) ([]models.
 	return append([]models.TrashRef(nil), d.expired[:min(limit, len(d.expired))]...), nil
 }
 
-func (d *trashPurgeDB) PurgeTrash(_ context.Context, kind models.TrashKind, id string) (*models.TrashPurgeResult, error) {
+// PurgeTrash is the manual, unconditional purge: the retention worker must
+// never take it.
+func (d *trashPurgeDB) PurgeTrash(context.Context, models.TrashKind, string) (*models.TrashPurgeResult, error) {
+	return nil, errTrashPurgeFake
+}
+
+func (d *trashPurgeDB) PurgeExpiredTrash(_ context.Context, kind models.TrashKind, id string) (*models.TrashPurgeResult, error) {
 	ref := models.TrashRef{Kind: kind, ID: id}
 
 	d.mu.Lock()

@@ -5,6 +5,7 @@
 package nix
 
 import (
+	"bufio"
 	"compress/bzip2"
 	"compress/gzip"
 	"context"
@@ -15,7 +16,6 @@ import (
 	"strings"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/ulikunitz/xz"
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -27,6 +27,7 @@ import (
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/nix"
+	"github.com/openartifact/openartifact/pkg/xzlimit"
 )
 
 // maxNarBytes bounds one uploaded NAR file. It is spooled to a temporary file
@@ -39,6 +40,10 @@ const maxAuxBytes = 64 << 20
 
 // maxUploadSigs bounds the signatures an uploader can attach to one path.
 const maxUploadSigs = 32
+
+// maxZstdWindow bounds the zstd window a narinfo body may declare; the decoder
+// allocates it up front.
+const maxZstdWindow = 64 << 20
 
 // errUnsupportedEncoding is returned for a narinfo whose Content-Encoding the
 // server cannot decode.
@@ -233,14 +238,14 @@ func readEncoded(r *http.Request) ([]byte, error) {
 
 		rd = zr
 	case "xz":
-		xr, err := xz.NewReader(rd)
+		xr, err := xzlimit.NewReader(bufio.NewReaderSize(rd, 64<<10))
 		if err != nil {
 			return nil, fmt.Errorf("xz: %w", err)
 		}
 
 		rd = xr
 	case "zstd":
-		zr, err := zstd.NewReader(rd)
+		zr, err := zstd.NewReader(rd, zstd.WithDecoderMaxWindow(maxZstdWindow), zstd.WithDecoderConcurrency(1))
 		if err != nil {
 			return nil, fmt.Errorf("zstd: %w", err)
 		}

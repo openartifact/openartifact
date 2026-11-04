@@ -85,8 +85,10 @@ type Consumer struct {
 	settled []settlement
 	// gaveUp are the claims of work that settled not done: no longer renewed,
 	// so the request is retried once the lease lapses (the retry backoff), or
-	// at once after Release.
-	gaveUp []ref
+	// at once after Release. A set, forgotten when the request is claimed again
+	// or finished: a request that keeps being retried (a full worker queue)
+	// would otherwise add one entry per lease for as long as the process runs.
+	gaveUp map[ref]struct{}
 
 	wake   chan struct{}
 	cancel context.CancelFunc
@@ -107,7 +109,7 @@ func newConsumer(store backend, log *logger.Logger) *Consumer {
 	return &Consumer{
 		store: store, log: log,
 		poll: DefaultPollInterval, lease: DefaultLease, batch: DefaultBatch,
-		handlers: map[string]Handler{}, held: map[ref]time.Time{},
+		handlers: map[string]Handler{}, held: map[ref]time.Time{}, gaveUp: map[ref]struct{}{},
 		wake: make(chan struct{}, 1), done: make(chan struct{}),
 	}
 }
@@ -188,11 +190,15 @@ func (c *Consumer) Flush(ctx context.Context) {
 	for _, f := range out {
 		if !f.done {
 			c.mu.Lock()
-			c.gaveUp = append(c.gaveUp, f.ref)
+			c.gaveUp[f.ref] = struct{}{}
 			c.mu.Unlock()
 
 			continue
 		}
+
+		c.mu.Lock()
+		delete(c.gaveUp, f.ref)
+		c.mu.Unlock()
 
 		if err := c.store.finish(ctx, f.ref, f.upTo); err != nil {
 			c.log.Warnw("worker request: could not delete the finished request; it will be handled again",
@@ -209,8 +215,12 @@ func (c *Consumer) Release(ctx context.Context) {
 	c.Flush(ctx)
 
 	c.mu.Lock()
-	out := c.gaveUp
-	c.gaveUp = nil
+	out := make([]ref, 0, len(c.gaveUp)+len(c.held))
+	for r := range c.gaveUp {
+		out = append(out, r)
+	}
+
+	c.gaveUp = map[ref]struct{}{}
 
 	for r := range c.held {
 		out = append(out, r)
@@ -324,6 +334,8 @@ func (c *Consumer) handle(ctx context.Context, r Request) {
 	// Held before the handler runs: work that finishes at once settles a key
 	// that must already be held.
 	c.mu.Lock()
+	delete(c.gaveUp, k)
+
 	if r.RequestedAt.After(c.held[k]) {
 		c.held[k] = r.RequestedAt
 	}

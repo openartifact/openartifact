@@ -286,7 +286,7 @@ Error cases:
 
 ### Changing storage backends that tiers use
 
-- `DELETE /api/v1/admin/storage/{name}` answers `409 conflict` for a backend that is a tier, or the source or target of an in-flight move. The database also refuses to delete a backend that still holds blobs.
+- `DELETE /api/v1/admin/storage/{name}` answers `409 conflict` for a backend that is a tier, holds blobs, or is the source or target of an in-flight move. It also refuses a backend (and `DELETE` of its tier) while a retired copy on it is still queued for deletion (the grace period of `blobDeletion`); delete it once the queue has drained.
 - `PATCH /api/v1/admin/storage/{name}` answers `409 conflict` when it would change the `kind` or `config` of a backend that holds blobs, serves a tier or is named by a move. Renaming stays allowed.
 
 ## Admin UI

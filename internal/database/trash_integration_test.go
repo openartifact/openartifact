@@ -643,3 +643,164 @@ func TestPruneMavenMetadataKeepsNeighbours(t *testing.T) {
 		}
 	}
 }
+
+// TestPurgeExpiredTrashRechecksExpiry: the retention worker lists expired items
+// and purges them later; PurgeExpiredTrash must judge expiry again at purge
+// time, so an item that was restored and trashed anew, or whose repository's
+// retention was raised, in between is kept, while an expired one goes. The
+// manual PurgeTrash stays unconditional.
+func TestPurgeExpiredTrashRechecksExpiry(t *testing.T) {
+	registerFixtures(t)
+
+	pg := newQuotaTestDB(t, 8)
+	pg.SetTrashRetentionDays(7)
+
+	ctx := context.Background()
+	s := newQuotaSeeder(t, pg, "purge-expiry-recheck", "maven")
+
+	s.maven(s.blob(1))
+	id := mavenArtifactID(t, s, "g/a1/1.0/a-1.0.jar")
+
+	repo, err := pg.GetRepositoryByNameUncached(ctx, "purge-expiry-recheck")
+	if err != nil || repo == nil {
+		t.Fatalf("GetRepositoryByNameUncached = %v, %v", repo, err)
+	}
+
+	setRetention := func(days int) {
+		t.Helper()
+
+		repo.TrashRetentionDays = new(days)
+		if err := pg.UpdateRepository(ctx, repo); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	setRetention(1)
+
+	if soft, err := pg.TrashRows(ctx, s.repo, models.TrashKindMaven, []string{id}, "x"); err != nil || !soft {
+		t.Fatalf("TrashRows = %v, %v", soft, err)
+	}
+
+	s.exec(`UPDATE package_files SET deleted_at = now() - interval '25 hours' WHERE id = $1`, id)
+
+	refs, err := pg.ListExpiredTrash(ctx, 10)
+	if err != nil || len(refs) != 1 || refs[0].ID != id {
+		t.Fatalf("ListExpiredTrash = %v, %v; want the item", refs, err)
+	}
+
+	stillTrashed := func(what string) {
+		t.Helper()
+
+		if _, err := pg.GetTrashItem(ctx, models.TrashKindMaven, id); err != nil {
+			t.Fatalf("%s: the item is gone: %v", what, err)
+		}
+	}
+
+	// Restored and trashed again after the listing: a fresh window.
+	if _, err := pg.RestoreTrash(ctx, models.TrashKindMaven, id); err != nil {
+		t.Fatal(err)
+	}
+
+	if soft, err := pg.TrashRows(ctx, s.repo, models.TrashKindMaven, []string{id}, "x"); err != nil || !soft {
+		t.Fatalf("re-trash: %v, %v", soft, err)
+	}
+
+	if _, err := pg.PurgeExpiredTrash(ctx, models.TrashKindMaven, id); !errors.Is(err, ErrTrashNotFound) {
+		t.Fatalf("PurgeExpiredTrash of a re-trashed item = %v, want ErrTrashNotFound", err)
+	}
+
+	stillTrashed("re-trashed")
+
+	// Retention raised after the listing.
+	s.exec(`UPDATE package_files SET deleted_at = now() - interval '25 hours' WHERE id = $1`, id)
+	setRetention(30)
+
+	if _, err := pg.PurgeExpiredTrash(ctx, models.TrashKindMaven, id); !errors.Is(err, ErrTrashNotFound) {
+		t.Fatalf("PurgeExpiredTrash with extended retention = %v, want ErrTrashNotFound", err)
+	}
+
+	stillTrashed("extended retention")
+
+	// Expired for real: purged.
+	setRetention(1)
+
+	res, err := pg.PurgeExpiredTrash(ctx, models.TrashKindMaven, id)
+	if err != nil || res == nil || res.ID != id {
+		t.Fatalf("PurgeExpiredTrash of an expired item = %+v, %v", res, err)
+	}
+
+	if _, err := pg.GetTrashItem(ctx, models.TrashKindMaven, id); !errors.Is(err, ErrTrashNotFound) {
+		t.Fatalf("expired item survived the purge: %v", err)
+	}
+}
+
+// TestPurgeTrashIgnoresTheRetentionWindow: the manual purge (API) stays
+// unconditional, unlike the retention worker's PurgeExpiredTrash.
+func TestPurgeTrashIgnoresTheRetentionWindow(t *testing.T) {
+	registerFixtures(t)
+
+	pg := newQuotaTestDB(t, 8)
+	pg.SetTrashRetentionDays(7)
+
+	ctx := context.Background()
+	s := newQuotaSeeder(t, pg, "purge-manual", "maven")
+
+	s.maven(s.blob(1))
+	id2 := mavenArtifactID(t, s, "g/a1/1.0/a-1.0.jar")
+
+	if soft, err := pg.TrashRows(ctx, s.repo, models.TrashKindMaven, []string{id2}, "x"); err != nil || !soft {
+		t.Fatalf("TrashRows(second) = %v, %v", soft, err)
+	}
+
+	if _, err := pg.PurgeTrash(ctx, models.TrashKindMaven, id2); err != nil {
+		t.Fatalf("manual PurgeTrash of a fresh item: %v", err)
+	}
+}
+
+// TestPurgeExpiredTrashRepositoryRechecksExpiry is the repository variant:
+// the cascade delete must not run for a repository whose window has not passed.
+func TestPurgeExpiredTrashRepositoryRechecksExpiry(t *testing.T) {
+	registerFixtures(t)
+
+	pg := newQuotaTestDB(t, 8)
+	pg.SetTrashRetentionDays(7)
+
+	ctx := context.Background()
+	s := newQuotaSeeder(t, pg, "purge-expiry-repo", "maven")
+
+	s.maven(s.blob(1))
+
+	if soft, err := pg.TrashRepository(ctx, s.repo, "x"); err != nil || !soft {
+		t.Fatalf("TrashRepository = %v, %v", soft, err)
+	}
+
+	// Trashed just now with the 7 day default: not expired.
+	if _, err := pg.PurgeExpiredTrash(ctx, models.TrashKindRepository, s.repo); !errors.Is(err, ErrTrashNotFound) {
+		t.Fatalf("PurgeExpiredTrash of a fresh trashed repository = %v, want ErrTrashNotFound", err)
+	}
+
+	if n := countRows(t, pg, `SELECT COUNT(*) FROM repositories WHERE id = $1`, s.repo); n != 1 {
+		t.Fatal("repository was purged before its retention elapsed")
+	}
+
+	// Past the default window but the repository's own retention is longer.
+	s.exec(`UPDATE repositories SET deleted_at = now() - interval '8 days', trash_retention_days = 30 WHERE id = $1`, s.repo)
+
+	if _, err := pg.PurgeExpiredTrash(ctx, models.TrashKindRepository, s.repo); !errors.Is(err, ErrTrashNotFound) {
+		t.Fatalf("PurgeExpiredTrash with extended retention = %v, want ErrTrashNotFound", err)
+	}
+
+	if n := countRows(t, pg, `SELECT COUNT(*) FROM repositories WHERE id = $1`, s.repo); n != 1 {
+		t.Fatal("repository was purged despite its longer retention")
+	}
+
+	s.exec(`UPDATE repositories SET trash_retention_days = 1 WHERE id = $1`, s.repo)
+
+	if _, err := pg.PurgeExpiredTrash(ctx, models.TrashKindRepository, s.repo); err != nil {
+		t.Fatalf("PurgeExpiredTrash of an expired repository: %v", err)
+	}
+
+	if n := countRows(t, pg, `SELECT COUNT(*) FROM repositories WHERE id = $1`, s.repo); n != 0 {
+		t.Fatal("expired repository survived the purge")
+	}
+}

@@ -16,9 +16,8 @@ import (
 	"strings"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/ulikunitz/xz"
-
 	"github.com/openartifact/openartifact/internal/limitio"
+	"github.com/openartifact/openartifact/pkg/xzlimit"
 )
 
 // Package compressions, the extension of the package file after ".pkg.tar.".
@@ -107,7 +106,7 @@ func openCompressed(r io.Reader) (io.Reader, string, func(), error) {
 
 		return zr, CompressionZstd, zr.Close, nil
 	case bytes.HasPrefix(head, []byte{0xfd, '7', 'z', 'X', 'Z', 0x00}):
-		xr, xerr := xz.NewReader(br)
+		xr, xerr := xzlimit.NewReader(br)
 		if xerr != nil {
 			return nil, "", nil, fmt.Errorf("%w: %w", ErrNotPackage, xerr)
 		}

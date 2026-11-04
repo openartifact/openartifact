@@ -91,6 +91,13 @@ type TrashOps interface {
 	// still referenced, e.g. by a release bundle.
 	PurgeTrash(ctx context.Context, kind models.TrashKind, id string) (*models.TrashPurgeResult, error)
 
+	// PurgeExpiredTrash is PurgeTrash for the retention worker: it removes the
+	// item only if its retention window has passed at the time of the purge,
+	// judged inside the purge's own lock/statement. ErrTrashNotFound also
+	// covers an item that was restored, re-trashed (fresh deleted_at) or whose
+	// repository's retention was raised since ListExpiredTrash listed it.
+	PurgeExpiredTrash(ctx context.Context, kind models.TrashKind, id string) (*models.TrashPurgeResult, error)
+
 	// RegenKeys returns what the metadata workers key a refresh by for an item,
 	// as the format's storage.Trash.RegenKeys fragment reads it: (group_id,
 	// artifact_id) for a Maven artifact, (package id, "") for an npm version and
@@ -400,36 +407,63 @@ func (p *TrashStore) ListTrash(ctx context.Context, f models.TrashFilter) ([]*mo
 	return items, total, nil
 }
 
-// getTrashItem loads one trashed row; lock adds FOR UPDATE.
+// trashLookup selects how getTrashItem reads a row.
+type trashLookup uint8
+
+const (
+	// lookupLock adds FOR UPDATE.
+	lookupLock trashLookup = 1 << iota
+	// lookupExpired only matches a row whose retention window has passed now
+	// (the expression ListExpiredTrash filters by).
+	lookupExpired
+)
+
+// expiredCond is the condition that the item aliased alias is past its
+// retention; $1 is the server default retention.
+func expiredCond(alias string) string {
+	return " AND " + fmt.Sprintf(purgeAtExpr, alias) + " <= now()"
+}
+
+// getTrashItem loads one trashed row, optionally locked and/or only if expired.
 func (p *TrashStore) getTrashItem(
 	ctx context.Context,
 	q trashQuerier,
 	kind models.TrashKind,
 	id string,
-	lock bool,
+	mode trashLookup,
 ) (*models.TrashItem, error) {
 	var query string
 
+	// build returns the extra WHERE clause for the row aliased alias and the
+	// locking clause.
+	build := func(alias string) (string, string) {
+		where := " AND " + alias + ".id = $2::uuid"
+		if mode&lookupExpired != 0 {
+			where += expiredCond(alias)
+		}
+
+		lock := ""
+		if mode&lookupLock != 0 {
+			lock = " FOR UPDATE OF " + alias
+		}
+
+		return where, lock
+	}
+
 	if kind == models.TrashKindRepository {
-		query = repoItemSelect(" AND r.id = $2::uuid")
-		if lock {
-			query += " FOR UPDATE OF r"
-		}
+		w, lock := build("r")
+		query = repoItemSelect(w) + lock
 	} else if spec, ok := dockerSpecByKind(kind); ok {
-		query = spec.itemSelect(" AND t.id = $2::uuid")
-		if lock {
-			query += " FOR UPDATE OF t"
-		}
+		w, lock := build("t")
+		query = spec.itemSelect(w) + lock
 	} else {
 		formats := genericFormats(kind)
 		if kind == "" || len(formats) == 0 {
 			return nil, fmt.Errorf("%w: %s", ErrTrashUnknownKind, kind)
 		}
 
-		query = filesItemSelect(formats, " AND f.id = $2::uuid")
-		if lock {
-			query += " FOR UPDATE OF f"
-		}
+		w, lock := build("f")
+		query = filesItemSelect(formats, w) + lock
 	}
 
 	it, err := scanTrashItem(q.QueryRowContext(ctx, query, p.trashDefault(), id))
@@ -446,7 +480,7 @@ func (p *TrashStore) getTrashItem(
 
 // GetTrashItem implements TrashOps.
 func (p *TrashStore) GetTrashItem(ctx context.Context, kind models.TrashKind, id string) (*models.TrashItem, error) {
-	return p.getTrashItem(ctx, p.db, kind, id, false)
+	return p.getTrashItem(ctx, p.db, kind, id, 0)
 }
 
 // TrashedRepositoryByName returns the repository in the trash that holds name
@@ -490,7 +524,7 @@ func (p *TrashStore) RestoreTrash(ctx context.Context, kind models.TrashKind, id
 
 	defer func() { _ = tx.Rollback() }()
 
-	item, err := p.getTrashItem(ctx, tx, kind, id, true)
+	item, err := p.getTrashItem(ctx, tx, kind, id, lookupLock)
 	if err != nil {
 		return nil, err
 	}
@@ -522,7 +556,7 @@ func (p *TrashStore) restoreRepository(ctx context.Context, id string) (*models.
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
-	item, err := p.getTrashItem(ctx, p.db, models.TrashKindRepository, id, false)
+	item, err := p.getTrashItem(ctx, p.db, models.TrashKindRepository, id, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -583,8 +617,19 @@ func (p *TrashStore) restoreRepository(ctx context.Context, id string) (*models.
 
 // PurgeTrash implements TrashOps.
 func (p *TrashStore) PurgeTrash(ctx context.Context, kind models.TrashKind, id string) (*models.TrashPurgeResult, error) {
+	return p.purgeTrash(ctx, kind, id, 0)
+}
+
+// PurgeExpiredTrash implements TrashOps.
+func (p *TrashStore) PurgeExpiredTrash(ctx context.Context, kind models.TrashKind, id string) (*models.TrashPurgeResult, error) {
+	return p.purgeTrash(ctx, kind, id, lookupExpired)
+}
+
+// purgeTrash purges one item; with lookupExpired it only matches an item whose
+// retention has passed at the moment of the purge.
+func (p *TrashStore) purgeTrash(ctx context.Context, kind models.TrashKind, id string, mode trashLookup) (*models.TrashPurgeResult, error) {
 	if kind == models.TrashKindRepository {
-		return p.purgeRepository(ctx, id)
+		return p.purgeRepository(ctx, id, mode)
 	}
 
 	tx, err := p.db.BeginTx(ctx, nil)
@@ -594,7 +639,7 @@ func (p *TrashStore) PurgeTrash(ctx context.Context, kind models.TrashKind, id s
 
 	defer func() { _ = tx.Rollback() }()
 
-	item, err := p.getTrashItem(ctx, tx, kind, id, true)
+	item, err := p.getTrashItem(ctx, tx, kind, id, mode|lookupLock)
 	if err != nil {
 		return nil, err
 	}
@@ -621,13 +666,23 @@ func (p *TrashStore) PurgeTrash(ctx context.Context, kind models.TrashKind, id s
 	return res, nil
 }
 
-func (p *TrashStore) purgeRepository(ctx context.Context, id string) (*models.TrashPurgeResult, error) {
+func (p *TrashStore) purgeRepository(ctx context.Context, id string, mode trashLookup) (*models.TrashPurgeResult, error) {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
-	item, err := p.getTrashItem(ctx, p.db, models.TrashKindRepository, id, false)
+	item, err := p.getTrashItem(ctx, p.db, models.TrashKindRepository, id, mode)
 	if err != nil {
 		return nil, err
+	}
+
+	// The DELETE re-checks expiry: the repository may have been restored and
+	// trashed again since the lookup above.
+	args := []any{id}
+	expired := ""
+
+	if mode&lookupExpired != 0 {
+		expired = ` AND deleted_at + make_interval(days => COALESCE(trash_retention_days, $2::int)) <= now()`
+		args = append(args, p.trashDefault())
 	}
 
 	// One statement: every sub-statement sees the same snapshot, so the
@@ -640,10 +695,10 @@ func (p *TrashStore) purgeRepository(ctx context.Context, id string) (*models.Tr
 	)
 
 	if err := p.db.QueryRowContext(ctx,
-		`WITH del AS (DELETE FROM repositories WHERE id = $1::uuid AND deleted_at IS NOT NULL RETURNING id)
+		`WITH del AS (DELETE FROM repositories WHERE id = $1::uuid AND deleted_at IS NOT NULL`+expired+` RETURNING id)
 		 SELECT (SELECT COUNT(*) FROM del),
 		        COALESCE((SELECT string_agg(DISTINCT blob_sha256, ',') FROM repository_metadata WHERE repository_id = $1::uuid), '')`,
-		id).Scan(&deleted, &shas); err != nil {
+		args...).Scan(&deleted, &shas); err != nil {
 		return nil, fmt.Errorf("purge repository: %w", err)
 	}
 

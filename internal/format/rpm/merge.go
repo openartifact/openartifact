@@ -5,6 +5,7 @@
 package rpm
 
 import (
+	"bufio"
 	"bytes"
 	"compress/bzip2"
 	"compress/gzip"
@@ -18,11 +19,11 @@ import (
 	"strings"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/ulikunitz/xz"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/openartifact/openartifact/internal/limitio"
 	"github.com/openartifact/openartifact/internal/pathseg"
+	"github.com/openartifact/openartifact/pkg/xzlimit"
 )
 
 // maxUpstreamDocument caps the decompressed size of one upstream repodata
@@ -329,7 +330,7 @@ func openMetadata(r io.ReadCloser, name string, limit int64) (io.ReadCloser, err
 			dec, stop = gr, func() { _ = gr.Close() }
 		}
 	case strings.HasSuffix(name, ".xz"):
-		dec, err = xz.NewReader(r)
+		dec, err = xzlimit.NewReader(bufio.NewReaderSize(r, 64<<10))
 	case strings.HasSuffix(name, ".zst"):
 		var zr *zstd.Decoder
 

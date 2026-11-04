@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-package deb
+package xzlimit
 
 import (
 	"bytes"
@@ -33,18 +33,18 @@ func xzWithDict(t *testing.T, dictCap int) []byte {
 	return buf.Bytes()
 }
 
-func TestCheckXZDictCap(t *testing.T) {
-	if err := checkXZDictCap(xzWithDict(t, 8<<20)); err != nil {
+func TestCheckDictCap(t *testing.T) {
+	if err := CheckDictCap(xzWithDict(t, 8<<20)); err != nil {
 		t.Errorf("8 MiB dictionary rejected: %v", err)
 	}
 
-	err := checkXZDictCap(xzWithDict(t, 512<<20))
-	if !errors.Is(err, ErrXZDictTooLarge) {
-		t.Errorf("512 MiB dictionary: err = %v, want ErrXZDictTooLarge", err)
+	err := CheckDictCap(xzWithDict(t, 512<<20))
+	if !errors.Is(err, ErrDictTooLarge) {
+		t.Errorf("512 MiB dictionary: err = %v, want ErrDictTooLarge", err)
 	}
 
 	// Truncated or non-xz input is left for the decoder to reject.
-	if err := checkXZDictCap([]byte("not xz")); err != nil {
+	if err := CheckDictCap([]byte("not xz")); err != nil {
 		t.Errorf("garbage: %v", err)
 	}
 }
