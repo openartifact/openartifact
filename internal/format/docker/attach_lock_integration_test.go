@@ -159,8 +159,10 @@ const attachDeadline = 30 * time.Second
 // instant: a blob an uploader has stored but not yet referenced is only safe
 // behind its blob lock.
 func (w *attachLockWorld) collectOrphansUntilDone(ctx context.Context) error {
+	var cursor storage.OrphanCursor
+
 	for ctx.Err() == nil {
-		if _, err := storage.CollectOrphanBlobs(ctx, w.pg, w.store, 0, storage.OrphanBatch); err != nil && ctx.Err() == nil {
+		if _, err := storage.CollectOrphanBlobs(ctx, w.pg, w.store, &cursor, 0, storage.OrphanBatch); err != nil && ctx.Err() == nil {
 			return fmt.Errorf("collect orphan blobs: %w", err)
 		}
 
