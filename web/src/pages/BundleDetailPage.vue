@@ -102,89 +102,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </template>
 
         <template #panel-promotions>
-          <ListTable
-            :columns="promotionColumns"
-            :caption="t('bundles.tab.promotions')"
-            :rows="detail.promotions.value"
-            :total="detail.promotions.value.length"
-            :limit="Math.max(detail.promotions.value.length, 1)"
-            :empty-title="t('bundles.promotions.empty')"
-            :empty-hint="t('bundles.promotions.emptyHint')"
-          >
-            <template #cell-stages="{ row }">
-              <span class="font-mono text-xs">{{ row.from_stage || t('bundles.noStage') }} → {{ row.to_stage }}</span>
-            </template>
-            <template #cell-status="{ row }">
-              <StatusBadge :label="promotionLabel(row.status)" :variant="promotionVariant(row.status)" />
-              <p v-if="row.error_message" class="mt-1 max-w-xs text-xs text-danger">{{ row.error_message }}</p>
-            </template>
-            <template #cell-by="{ row }">{{ row.promoted_by }}</template>
-            <template #cell-items="{ row }"><span class="tabular-nums">{{ row.item_count }}</span></template>
-            <template #cell-started="{ row }"><RelativeTime :value="row.started_at" /></template>
-            <template #cell-notes="{ row }"><span class="block truncate text-sm text-muted" :title="row.notes">{{ row.notes || '—' }}</span></template>
-          </ListTable>
+          <BundlePromotionsTable :promotions="detail.promotions.value" />
         </template>
 
         <template #panel-security>
-          <ListTable
-            :columns="scanColumns"
-            :caption="t('bundles.tab.security')"
-            :rows="scans.rows.value"
-            :loading="scans.loading.value"
-            row-key="repo"
-            :total="scans.rows.value.length"
-            :limit="Math.max(scans.rows.value.length, 1)"
-          >
-            <template #cell-repo="{ row }">
-              <router-link :to="{ path: '/security', query: { type: 'vuln', repo: row.repo } }" class="text-primary hover:underline">{{ row.repo }}</router-link>
-            </template>
-            <template #cell-total="{ row }">
-              <span v-if="row.failed" class="text-xs text-warning">{{ t('bundles.scans.failed') }}</span>
-              <span v-else class="tabular-nums">{{ row.total }}</span>
-            </template>
-            <template #cell-critical="{ row }">
-              <span v-if="!row.failed" class="tabular-nums" :class="row.critical > 0 ? 'font-medium text-danger' : ''">{{ row.critical }}</span>
-            </template>
-            <template #cell-high="{ row }"><span v-if="!row.failed" class="tabular-nums">{{ row.high }}</span></template>
-          </ListTable>
+          <BundleScansTable :rows="scans.rows.value" :loading="scans.loading.value" />
         </template>
 
         <template #panel-verification>
-          <section class="rounded-lg border border-border bg-surface p-4 sm:p-5" :aria-label="t('bundles.tab.verification')">
-            <dl class="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm" data-testid="verification">
-              <dt class="text-muted">{{ t('bundles.verify.signature') }}</dt>
-              <dd class="flex flex-wrap items-center gap-2 text-foreground">
-                <template v-if="bundle.gpg_key_id">
-                  <span>{{ t('bundles.signed') }}</span>
-                  <span class="break-all font-mono text-xs text-muted">{{ bundle.gpg_key_id }}</span>
-                  <CopyButton :text="bundle.gpg_key_id" :label="t('bundles.verify.copyKey')" />
-                </template>
-                <span v-else>{{ bundle.state === 'draft' ? t('bundles.verify.signedAtSeal') : t('bundles.notSigned') }}</span>
-              </dd>
-              <template v-if="bundle.sealed_at">
-                <dt class="text-muted">{{ t('bundles.verify.sealed') }}</dt>
-                <dd class="text-foreground"><RelativeTime :value="bundle.sealed_at" /> · {{ bundle.sealed_by }}</dd>
-              </template>
-              <template v-if="bundle.archived_at">
-                <dt class="text-muted">{{ t('bundles.verify.archived') }}</dt>
-                <dd class="text-foreground"><RelativeTime :value="bundle.archived_at" /> · {{ bundle.archived_by }}</dd>
-              </template>
-              <dt class="text-muted">{{ t('bundles.verify.manifest') }}</dt>
-              <dd class="flex flex-wrap gap-2">
-                <template v-if="bundle.state !== 'draft'">
-                  <AppButton variant="secondary" size="sm" class="max-md:h-11" data-testid="download-manifest" @click="downloadManifest">
-                    <ArrowDownTrayIcon class="h-4 w-4" aria-hidden="true" />
-                    {{ t('bundles.action.manifest') }}
-                  </AppButton>
-                  <AppButton v-if="bundle.gpg_signature" variant="secondary" size="sm" class="max-md:h-11" data-testid="download-signature" @click="downloadSignature">
-                    <ArrowDownTrayIcon class="h-4 w-4" aria-hidden="true" />
-                    {{ t('bundles.action.signature') }}
-                  </AppButton>
-                </template>
-                <span v-else class="text-muted">{{ t('bundles.verify.manifestAtSeal') }}</span>
-              </dd>
-            </dl>
-          </section>
+          <BundleVerificationPanel :bundle="bundle" :name="name" :version="version" />
         </template>
       </AppTabs>
     </div>
@@ -246,37 +172,36 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowDownTrayIcon, PlusIcon } from '@heroicons/vue/24/outline'
+import { PlusIcon } from '@heroicons/vue/24/outline'
 import AppButton from '../components/AppButton.vue'
 import BundleItemsDrawer from '../components/bundles/BundleItemsDrawer.vue'
 import BundleLifecycle from '../components/bundles/BundleLifecycle.vue'
 import BundleMoreMenu, { type MoreMenuItem } from '../components/bundles/BundleMoreMenu.vue'
 import BundlePromoteDrawer from '../components/bundles/BundlePromoteDrawer.vue'
+import BundlePromotionsTable from '../components/bundles/BundlePromotionsTable.vue'
+import BundleScansTable from '../components/bundles/BundleScansTable.vue'
 import BundleSealDrawer from '../components/bundles/BundleSealDrawer.vue'
+import BundleVerificationPanel from '../components/bundles/BundleVerificationPanel.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import FormatBadge from '../components/FormatBadge.vue'
 import PageHeader from '../components/PageHeader.vue'
 import ShortSha from '../components/ShortSha.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import AppTabs from '../components/ui/AppTabs.vue'
-import CopyButton from '../components/ui/CopyButton.vue'
 import RowActions from '../components/ui/RowActions.vue'
 import { TrashIcon } from '@heroicons/vue/20/solid'
 import ListTable, { type ListColumn } from '../components/ui/ListTable.vue'
-import RelativeTime from '../components/ui/RelativeTime.vue'
 import StateBlock from '../components/ui/StateBlock.vue'
 import {
   addBundleItems,
   archiveBundle,
   deleteBundle,
   listBundleItems,
-  manifestUrl,
   removeBundleItem,
-  signatureUrl,
   type BundleItem,
 } from '../api/bundles'
-import { downloadAttachment } from '../api/client'
 import { useBundleDetail } from '../composables/useBundleDetail'
+import { useBundleDownloads } from '../composables/useBundleDownloads'
 import { useBundleScans } from '../composables/useBundleScans'
 import { useLocalList } from '../composables/useLocalList'
 import type { TabDef } from '../composables/useUrlTab'
@@ -284,16 +209,15 @@ import {
   bundleStateLabel,
   bundleStateVariant,
   bundleStatus,
+  NOTICE_TEXT,
+  NOTICE_WARN,
   lifecycleSteps,
   promotableStages,
-  promotionLabel,
-  promotionVariant,
-  type BundleNotice,
   type BundleStatus,
 } from '../lib/bundles'
 import { formatBytes } from '../lib/quota'
 import { useToastStore } from '../stores/toast'
-import { t, tp, type TranslationKey } from '../i18n'
+import { t, tp } from '../i18n'
 
 const route = useRoute()
 const router = useRouter()
@@ -334,16 +258,6 @@ const status = computed<BundleStatus>(() =>
 )
 const steps = computed(() => (bundle.value ? lifecycleSteps(bundle.value, detail.pipeline.value, detail.promotions.value) : []))
 
-const NOTICE_TEXT: Record<BundleNotice, TranslationKey> = {
-  noItems: 'bundles.notice.noItems',
-  unsigned: 'bundles.notice.unsigned',
-  noPipeline: 'bundles.notice.noPipeline',
-  pipelineUnavailable: 'bundles.notice.pipelineUnavailable',
-  finalStage: 'bundles.notice.finalStage',
-  archived: 'bundles.notice.archived',
-}
-const NOTICE_WARN = new Set<BundleNotice>(['noItems', 'unsigned', 'pipelineUnavailable'])
-
 const tabs = computed<TabDef[]>(() => {
   const critical = scans.critical.value
   return [
@@ -367,21 +281,6 @@ const itemColumns = computed<ListColumn[]>(() => [
   { key: 'size', label: t('bundles.items.column.size'), align: 'end' },
   ...(bundle.value?.state === 'draft' ? [{ key: 'actions', label: t('common.actions'), actions: true }] : []),
 ])
-const promotionColumns = computed<ListColumn[]>(() => [
-  { key: 'stages', label: t('bundles.promotions.column.stages') },
-  { key: 'status', label: t('bundles.promotions.column.status') },
-  { key: 'by', label: t('bundles.promotions.column.by'), dropOrder: 2 },
-  { key: 'items', label: t('bundles.promotions.column.items'), align: 'end' },
-  { key: 'started', label: t('bundles.promotions.column.started') },
-  { key: 'notes', label: t('bundles.promotions.column.notes'), grow: true, dropOrder: 1 },
-])
-const scanColumns = computed<ListColumn[]>(() => [
-  { key: 'repo', label: t('bundles.scans.column.repo') },
-  { key: 'total', label: t('bundles.scans.column.total'), align: 'end' },
-  { key: 'critical', label: t('bundles.scans.critical'), align: 'end' },
-  { key: 'high', label: t('bundles.scans.high'), align: 'end' },
-])
-
 // Secondary actions: the primary one is on the page, the rest hides behind the menu.
 const menuItems = computed<MoreMenuItem[]>(() => {
   const b = bundle.value
@@ -408,15 +307,7 @@ function onMenu(id: string): void {
   else if (id === 'delete') deleteOpen.value = true
 }
 
-async function download(url: string, fallback: string): Promise<void> {
-  try {
-    await downloadAttachment(url, fallback)
-  } catch (err) {
-    toasts.error(err instanceof Error ? err.message : t('bundles.action.downloadFailed'))
-  }
-}
-const downloadManifest = (): Promise<void> => download(manifestUrl(name.value, version.value), `${name.value}-${version.value}.manifest.json`)
-const downloadSignature = (): Promise<void> => download(signatureUrl(name.value, version.value), `${name.value}-${version.value}.manifest.asc`)
+const { downloadManifest, downloadSignature } = useBundleDownloads(() => name.value, () => version.value)
 
 // Removing an item from a draft is reversible: the toast offers to put it back.
 async function removeItem(item: BundleItem): Promise<void> {

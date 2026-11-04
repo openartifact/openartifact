@@ -24,27 +24,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <template v-else-if="repo && effective">
       <!-- Effective configuration -->
-      <div class="rounded-lg border border-border p-4 space-y-1.5" data-testid="dt-effective">
-        <div class="flex items-center gap-2">
-          <h4 class="text-xs font-semibold text-foreground">{{ t('adm.dt.effective') }}</h4>
-          <StatusBadge :label="t(`adm.dt.source.${effective.source ?? 'none'}`)" variant="neutral" />
-          <StatusBadge :label="effective.ready ? t('adm.dt.ready') : t('adm.dt.notReady')" :variant="effective.ready ? 'success' : 'warning'" />
-        </div>
-        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
-          <dt class="text-muted">{{ t('adm.dt.baseUrl') }}</dt>
-          <dd class="font-mono text-foreground break-all">{{ effective.base_url || '—' }}</dd>
-          <dt class="text-muted">{{ t('adm.dt.apiKey') }}</dt>
-          <dd class="text-foreground">{{ effective.api_key_set ? t('adm.dt.apiKeyStored') : t('adm.dt.apiKeyNone') }}</dd>
-          <dt class="text-muted">{{ t('adm.dt.projectName') }}</dt>
-          <dd class="font-mono text-foreground">{{ effective.project_name || '—' }}</dd>
-          <dt class="text-muted">{{ t('adm.dt.projectVersion') }}</dt>
-          <dd class="font-mono text-foreground">{{ effective.project_version || '—' }}</dd>
-          <dt class="text-muted">{{ t('adm.dt.autoPush') }}</dt>
-          <dd class="text-foreground">{{ effective.auto_push ? t('adm.dt.on') : t('adm.dt.off') }}</dd>
-          <dt class="text-muted">{{ t('adm.dt.pushVex') }}</dt>
-          <dd class="text-foreground">{{ effective.push_vex ? t('adm.dt.on') : t('adm.dt.off') }}</dd>
-        </dl>
-      </div>
+      <DependencyTrackEffective :effective="effective" />
 
       <!-- Override form -->
       <form class="rounded-lg border border-border p-4 space-y-4" @submit.prevent="saveOverride()">
@@ -104,38 +84,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div class="space-y-2">
         <h4 class="text-xs font-semibold text-foreground">{{ t('adm.dt.pushes') }}</h4>
         <p v-if="pushes.length === 0" class="text-sm text-muted">{{ t('adm.dt.noPushes') }}</p>
-        <TableScroller v-else class="rounded-lg border border-border">
-          <table class="w-full text-xs" data-testid="dt-pushes">
-            <thead class="bg-surface-hover/50 text-muted text-left">
-              <tr>
-                <th scope="col" class="px-3 py-2 font-medium">{{ t('adm.dt.col.artifact') }}</th>
-                <th scope="col" class="px-3 py-2 font-medium">{{ t('adm.dt.col.state') }}</th>
-                <th scope="col" class="px-3 py-2 font-medium">{{ t('adm.dt.col.detail') }}</th>
-                <th scope="col" data-drop-order="6" class="px-3 py-2 font-medium">{{ t('adm.dt.col.project') }}</th>
-                <th scope="col" data-drop-order="5" class="px-3 py-2 font-medium">{{ t('adm.dt.col.components') }}</th>
-                <th scope="col" data-drop-order="4" class="px-3 py-2 font-medium">{{ t('adm.dt.col.vex') }}</th>
-                <th scope="col" data-drop-order="3" class="px-3 py-2 font-medium">{{ t('adm.dt.col.bomPushed') }}</th>
-                <th scope="col" data-drop-order="2" class="px-3 py-2 font-medium">{{ t('adm.dt.col.vexPushed') }}</th>
-                <th scope="col" data-drop-order="1" class="px-3 py-2 font-medium">{{ t('adm.dt.col.updated') }}</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-border">
-              <tr v-for="p in pushes" :key="p.artifact_id" class="group/row">
-                <td class="truncate px-3 py-2 font-mono text-foreground" :class="GROW_CELL" :title="p.artifact_id">{{ p.artifact_id }}</td>
-                <td class="px-3 py-2"><StatusBadge :label="stateLabel(p.state)" :variant="stateVariant(p.state)" /></td>
-                <td class="px-3 py-2 text-foreground break-words max-w-xs">{{ p.detail || '—' }}</td>
-                <td class="px-3 py-2 font-mono text-foreground">
-                  {{ p.project_name ? `${p.project_name} ${p.project_version ?? ''}`.trim() : '—' }}
-                </td>
-                <td class="px-3 py-2 text-foreground">{{ p.components ?? 0 }}</td>
-                <td class="px-3 py-2 text-foreground">{{ p.vex_applied ?? 0 }} / {{ p.vex_statements ?? 0 }}</td>
-                <td class="px-3 py-2 text-muted whitespace-nowrap">{{ formatDateTime(p.bom_pushed_at) }}</td>
-                <td class="px-3 py-2 text-muted whitespace-nowrap">{{ formatDateTime(p.vex_pushed_at) }}</td>
-                <td class="px-3 py-2 text-muted whitespace-nowrap">{{ formatDateTime(p.updated_at) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </TableScroller>
+        <DependencyTrackPushesTable v-else :pushes="pushes" />
       </div>
     </template>
   </section>
@@ -145,10 +94,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import AppButton from '../../../components/AppButton.vue'
 import AppToggle from '../../../components/AppToggle.vue'
-import StatusBadge from '../../../components/StatusBadge.vue'
-import TableScroller from '../../../components/ui/TableScroller.vue'
-import { GROW_CELL } from '../../../components/ui/tableStyles'
+import DependencyTrackEffective from './DependencyTrackEffective.vue'
 import DependencyTrackFields from './DependencyTrackFields.vue'
+import DependencyTrackPushesTable from './DependencyTrackPushesTable.vue'
 import DependencyTrackTestResult from './DependencyTrackTestResult.vue'
 import { useToastStore } from '../../../stores/toast'
 import { listAllRepositories } from '../../../api/repositories'
@@ -166,7 +114,6 @@ import type {
   DependencyTrackPush,
   DependencyTrackTest,
 } from '../../../api/dependencyTrack'
-import { formatDateTime } from '../../../lib/datetime'
 import { MONO_INPUT_CLASS } from '../../../lib/formClasses'
 import { skipWhileHidden } from '../../../lib/visibility'
 import { t } from '../../../i18n'
@@ -215,18 +162,6 @@ function toTri(v: boolean | null | undefined): Tri {
 }
 function fromTri(v: Tri): boolean | null {
   return v === 'inherit' ? null : v === 'on'
-}
-
-function stateLabel(state: DependencyTrackPush['state']): string {
-  return t(`adm.dt.state.${state ?? 'queued'}`)
-}
-function stateVariant(state: DependencyTrackPush['state']): 'success' | 'warning' | 'neutral' | 'danger' {
-  switch (state) {
-    case 'done': return 'success'
-    case 'failed': return 'danger'
-    case 'skipped': return 'neutral'
-    default: return 'warning'
-  }
 }
 
 function applyRepo(res: DependencyTrackRepository): void {

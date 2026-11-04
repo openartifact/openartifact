@@ -28,7 +28,7 @@ export function formatBytes(bytes: number): string {
   if (bytes >= 1024 ** 3) return `${formatOneDecimal(bytes / 1024 ** 3)} GB`
   if (bytes >= 1024 ** 2) return `${formatOneDecimal(bytes / 1024 ** 2)} MB`
   if (bytes >= 1024) return `${formatOneDecimal(bytes / 1024)} KB`
-  return `${bytes} B`
+  return `${formatNumber(bytes)} B`
 }
 
 /** {@link formatBytes}, or an em dash for a missing or zero size. */

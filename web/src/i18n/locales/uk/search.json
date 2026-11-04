@@ -34,9 +34,9 @@
   "search.count.packages": "Знайдено пакетів: {total}",
   "search.count.checksum": "Знайдено файлів: {total}",
   "search.versionCount_one": "{n} версія",
+  "search.versionCount_other": "{count} версії",
   "search.versionCount_few": "{count} версії",
   "search.versionCount_many": "{count} версій",
-  "search.versionCount_other": "{count} версії",
   "search.showVersions": "Показати версії {name}",
   "search.hideVersions": "Сховати версії {name}",
   "search.versionsLoading": "Завантаження версій",
@@ -45,5 +45,6 @@
   "search.empty.hint": "Спробуйте коротшу назву, приберіть фільтр або вставте контрольну суму файлу. Ще нічого не опубліковано? Команди для публікації є на Головній у розділі «Підключити клієнт».",
   "search.empty.checksum.title": "Жоден файл не має цієї контрольної суми",
   "search.empty.checksum.hint": "Контрольні суми шукаються в репозиторіях, які ви можете читати. Перевірте дайджест або шукайте за назвами.",
+  "search.loadFailed": "Не вдалося завантажити репозиторії та нещодавні пакети",
   "search.recent.title": "Нещодавно опубліковані"
 }

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { t } from '../i18n'
+import { saveBlob } from '../lib/download'
 
 export class ApiError extends Error {
   status: number
@@ -302,17 +303,7 @@ export async function downloadBlob(path: string, filename: string): Promise<void
   const res = await send(path, {})
   if (!res.ok) throw await apiError(res)
 
-  const url = URL.createObjectURL(await res.blob())
-  try {
-    const link = document.createElement('a')
-    link.href = url
-    link.download = filename
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-  } finally {
-    URL.revokeObjectURL(url)
-  }
+  saveBlob(await res.blob(), filename)
 }
 
 /**

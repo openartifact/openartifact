@@ -115,9 +115,11 @@ function onAfterLeave(): void {
 const panel = ref<{ $el: HTMLElement } | null>(null)
 watch(
   () => props.open,
-  (open) => {
-    // After the dialog's own focus trap has picked its first control.
-    if (open) setTimeout(() => panel.value?.$el.querySelector<HTMLElement>('[data-autofocus]')?.focus(), 0)
+  (open, _was, onCleanup) => {
+    if (!open) return
+    // After the dialog's own focus trap has picked its first control; dropped if it closes or unmounts first.
+    const timer = setTimeout(() => panel.value?.$el.querySelector<HTMLElement>('[data-autofocus]')?.focus(), 0)
+    onCleanup(() => clearTimeout(timer))
   },
   { immediate: true },
 )

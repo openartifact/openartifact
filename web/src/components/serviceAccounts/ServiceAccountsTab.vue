@@ -83,6 +83,7 @@ import { useLocalList } from '../../composables/useLocalList'
 import { useUrlFlag } from '../../composables/useUrlFlag'
 import { enumParam, strParam } from '../../composables/useUrlState'
 import { compareText } from '../../lib/intl'
+import { compareTimestamps } from '../../lib/datetime'
 import { accountPath, matchesAccount, type StatusFilter } from '../../lib/serviceAccounts'
 import { useToastStore } from '../../stores/toast'
 import { t, tp } from '../../i18n'
@@ -107,7 +108,7 @@ const { list, refresh } = useLocalList({
   limit: 25,
   load: async () => (await listAllServiceAccounts()).items,
   match: (a, f) => matchesAccount(a, f.q, f.status),
-  compare: (a, b, sort) => (sort === 'created_at' ? String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')) : compareText(a.name, b.name)),
+  compare: (a, b, sort) => (sort === 'created_at' ? compareTimestamps(a.created_at, b.created_at) : compareText(a.name, b.name)),
 })
 
 function rowActions(row: ServiceAccountItem): RowAction[] {

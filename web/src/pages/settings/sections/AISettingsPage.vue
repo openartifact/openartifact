@@ -63,49 +63,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
         </div>
 
-        <!-- Provider Picker -->
-        <div class="bg-surface rounded-xl border border-border p-5 space-y-3">
-          <div>
-            <h2 class="text-sm font-semibold text-foreground">{{ t('adm.ai.provider') }}</h2>
-            <p class="text-caption text-muted mt-0.5">{{ t('adm.ai.providerHint') }}</p>
-          </div>
-          <div class="grid grid-cols-2 gap-2" role="radiogroup" :aria-label="t('adm.ai.provider')">
-            <button
-              v-for="(meta, key) in PROVIDERS"
-              :key="key"
-              type="button"
-              role="radio"
-              :aria-checked="form.provider === key"
-              :tabindex="form.enabled ? 0 : -1"
-              class="relative text-left p-3 rounded-lg border overflow-hidden transition-all focus-visible:ring-2 focus-visible:ring-primary"
-              :class="form.provider === key
-                ? 'border-primary bg-primary-soft/40 ring-1 ring-primary/30'
-                : 'border-border bg-surface hover:bg-surface-hover cursor-pointer'"
-              @click="selectProvider(key)"
-            >
-              <span class="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg" :style="{ background: aiProviderColor(String(key)) }" />
-              <div class="pl-3 flex items-start gap-2.5">
-                <div class="w-7 h-7 rounded-md flex items-center justify-center shrink-0 mt-0.5" :style="{ background: tint(aiProviderColor(String(key)), 12) }">
-                  <svg
-                    v-if="aiBrandIcon(String(key))"
-                    class="w-4 h-4"
-                    :style="{ color: aiProviderColor(String(key)) }"
-                    aria-hidden="true"
-                    :viewBox="aiBrandIcon(String(key))!.viewBox"
-                    fill="currentColor"
-                  >
-                    <path :d="aiBrandIcon(String(key))!.path" />
-                  </svg>
-                  <component v-else :is="meta.icon" class="w-4 h-4" :style="{ color: aiProviderColor(String(key)) }" aria-hidden="true" />
-                </div>
-                <div class="min-w-0">
-                  <p class="text-xs font-semibold text-foreground leading-tight">{{ meta.label }}</p>
-                  <p class="text-caption text-muted leading-snug mt-0.5">{{ meta.desc }}</p>
-                </div>
-              </div>
-            </button>
-          </div>
-        </div>
+        <AIProviderPicker :providers="PROVIDERS" :selected="form.provider" :enabled="form.enabled" @select="selectProvider" />
 
         <!-- Configuration Fields -->
         <div class="bg-surface rounded-xl border border-border p-5 space-y-4">
@@ -241,60 +199,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
       </div>
 
-      <!-- Test Result Panel -->
-      <Transition
-        enter-active-class="transition-all duration-300 ease-out"
-        enter-from-class="opacity-0 -translate-y-2"
-        enter-to-class="opacity-100 translate-y-0"
-        leave-active-class="transition-all duration-200 ease-in"
-        leave-from-class="opacity-100 translate-y-0"
-        leave-to-class="opacity-0 -translate-y-1"
-      >
-        <div
-          v-if="testResult !== null"
-          class="rounded-xl border p-4"
-          role="status"
-          :class="testResult.ok ? 'border-success/30 bg-success-soft' : 'border-danger/30 bg-danger-soft'"
-        >
-          <div class="flex items-start gap-3">
-            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5" :class="testResult.ok ? 'bg-success/20' : 'bg-danger/20'">
-              <CheckCircleIcon v-if="testResult.ok" class="w-4 h-4 text-success" aria-hidden="true" />
-              <ExclamationCircleIcon v-else class="w-4 h-4 text-danger" aria-hidden="true" />
-            </div>
-            <div class="min-w-0 flex-1">
-              <p class="text-sm font-semibold" :class="testResult.ok ? 'text-success' : 'text-danger'">
-                {{ testResult.ok ? t('adm.ai.testOk') : t('adm.ai.testFailed') }}
-              </p>
-              <p v-if="testResult.error" class="text-xs mt-0.5 font-mono break-all" :class="testResult.ok ? 'text-success/80' : 'text-danger/80'">
-                {{ testResult.error }}
-              </p>
-              <div v-if="testResult.ok && testResult.models && testResult.models.length > 0" class="flex flex-wrap gap-1.5 mt-2">
-                <button
-                  v-for="m in testResult.models"
-                  :key="m"
-                  type="button"
-                  class="inline-flex items-center px-2 py-0.5 rounded-md bg-success/15 text-success text-caption font-mono font-medium border border-success/20 hover:bg-success/25 transition-colors"
-                  :title="`${t('adm.ai.useModel')} ${m}`"
-                  @click="form.model = m"
-                >
-                  {{ m }}
-                </button>
-              </div>
-              <p v-if="testResult.ok && testResult.models && testResult.models.length > 0" class="text-caption text-success/70 mt-1.5">
-                {{ t('adm.ai.pickModelHint') }}
-              </p>
-            </div>
-            <button
-              type="button"
-              :aria-label="t('common.close')"
-              class="shrink-0 p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover/60 transition-colors"
-              @click="testResult = null"
-            >
-              <XMarkIcon class="w-4 h-4" aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-      </Transition>
+      <AITestResult :result="testResult" @use-model="form.model = $event" @close="testResult = null" />
     </template>
   </div>
 </template>
@@ -302,16 +207,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import SectionActions from '../../../components/SectionActions.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
-import type { Component } from 'vue'
 import {
   ArrowPathIcon,
   CheckIcon,
-  CheckCircleIcon,
-  ExclamationCircleIcon,
-  XMarkIcon,
-  SparklesIcon,
-  CloudIcon,
-  PuzzlePieceIcon,
 } from '@heroicons/vue/24/outline'
 import { useToastStore } from '../../../stores/toast'
 import { getAIConfig, saveAIConfig, testAIConfig } from '../../../api/adminAi'
@@ -320,52 +218,13 @@ import AppButton from '../../../components/AppButton.vue'
 import AppToggle from '../../../components/AppToggle.vue'
 import EmptyState from '../../../components/EmptyState.vue'
 import { ApiError, isFeatureUnavailable } from '../../../api/client'
-import { aiProviderColor, tint } from '../../../lib/brandColors'
+import { buildAIProviders } from '../../../lib/aiProviders'
+import AIProviderPicker from './AIProviderPicker.vue'
+import AITestResult from './AITestResult.vue'
 import { MONO_INPUT_CLASS } from '../../../lib/formClasses'
-import { aiBrandIcon } from '../../../lib/brandIcons'
 import { t } from '../../../i18n'
 
-interface ProviderMeta {
-  label: string
-  desc: string
-  icon?: Component
-  defaultUrl: string
-  defaultModels: string[]
-}
-
-function buildProviders(): Record<string, ProviderMeta> {
-  return {
-  openai: {
-    label: 'OpenAI',
-    desc: 'GPT-4o, GPT-4o-mini, o1',
-    icon: SparklesIcon,
-    defaultUrl: 'https://api.openai.com/v1',
-    defaultModels: ['gpt-4o', 'gpt-4o-mini', 'o1-mini'],
-  },
-  azure: {
-    label: 'Azure OpenAI',
-    desc: t('adm.ai.provider.azure.desc'),
-    icon: CloudIcon,
-    defaultUrl: 'https://{resource}.openai.azure.com/openai/deployments/{deployment}',
-    defaultModels: ['gpt-4o', 'gpt-35-turbo'],
-  },
-  ollama: {
-    label: 'Ollama',
-    desc: t('adm.ai.provider.ollama.desc'),
-    defaultUrl: 'http://localhost:11434/v1',
-    defaultModels: ['llama3.2', 'mistral', 'codellama'],
-  },
-  custom: {
-    label: t('adm.ai.provider.custom.label'),
-    desc: t('adm.ai.provider.custom.desc'),
-    icon: PuzzlePieceIcon,
-    defaultUrl: '',
-    defaultModels: [],
-  },
-  }
-}
-
-const PROVIDERS = computed(buildProviders)
+const PROVIDERS = computed(buildAIProviders)
 
 const toasts = useToastStore()
 

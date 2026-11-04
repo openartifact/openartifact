@@ -114,6 +114,7 @@ import {
   type SbomPackage,
 } from '../../lib/sbomGraph'
 import { t, tp } from '../../i18n'
+import { saveBlob } from '../../lib/download'
 
 const props = defineProps<{
   packages: SbomPackage[]
@@ -171,12 +172,6 @@ function exportSvg(): void {
   const raw = new XMLSerializer()
     .serializeToString(el)
     .replace(/rgb\(var\((--color-[a-z-]+)\)\)/g, (_m, name: string) => `rgb(${root.getPropertyValue(name).trim().replace(/\s+/g, ',')})`)
-  const url = URL.createObjectURL(new Blob([raw], { type: 'image/svg+xml;charset=utf-8' }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `${props.fileName}.svg`
-  link.click()
-  // Revoking in the same tick can cancel the download in some browsers.
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  saveBlob(new Blob([raw], { type: 'image/svg+xml;charset=utf-8' }), `${props.fileName}.svg`)
 }
 </script>

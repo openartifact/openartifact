@@ -34,9 +34,9 @@
   "search.count.packages": "Znaleziono pakiety: {total}",
   "search.count.checksum": "Znaleziono pliki: {total}",
   "search.versionCount_one": "{n} wersja",
+  "search.versionCount_other": "{count} wersji",
   "search.versionCount_few": "{count} wersje",
   "search.versionCount_many": "{count} wersji",
-  "search.versionCount_other": "{count} wersji",
   "search.showVersions": "Pokaż wersje: {name}",
   "search.hideVersions": "Ukryj wersje: {name}",
   "search.versionsLoading": "Wczytywanie wersji",
@@ -45,5 +45,6 @@
   "search.empty.hint": "Spróbuj krótszej nazwy, usuń filtr lub wklej sumę kontrolną pliku. Nic jeszcze nie opublikowano? Polecenia publikowania są na pulpicie w sekcji Połącz klienta.",
   "search.empty.checksum.title": "Żaden plik nie ma tej sumy kontrolnej",
   "search.empty.checksum.hint": "Sumy kontrolne są wyszukiwane w repozytoriach, które możesz czytać. Sprawdź skrót lub szukaj raczej nazw.",
+  "search.loadFailed": "Nie udało się wczytać repozytoriów i ostatnich pakietów",
   "search.recent.title": "Ostatnio opublikowane"
 }

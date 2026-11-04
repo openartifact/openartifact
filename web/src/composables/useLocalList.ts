@@ -31,27 +31,47 @@ export interface LocalList<S extends Schema, Row> {
 export function useLocalList<S extends Schema, Row>(opts: LocalListOptions<S, Row>): LocalList<S, Row> {
   const all = shallowRef<Row[]>([])
   let cache: Row[] | null = null
+  let pending: Promise<Row[]> | null = null
+  // Bumped by `refresh`: a load started before it is superseded and must not fill the cache.
+  let generation = 0
+
+  async function rows(): Promise<Row[]> {
+    while (!cache) {
+      const mine = generation
+      pending ??= opts.load()
+      const loading = pending
+      let loaded: Row[]
+      try {
+        loaded = await loading
+      } finally {
+        if (pending === loading) pending = null
+      }
+      if (mine !== generation) continue // superseded by a refresh: wait for the newer load
+      cache = loaded
+      all.value = loaded
+    }
+    return cache
+  }
 
   const list = useListQuery<S, Row>({
     ...opts,
     paging: 'page',
     async fetch(req) {
-      if (!cache) {
-        cache = await opts.load()
-        all.value = cache
-      }
-      let rows = opts.match ? cache.filter((r) => opts.match!(r, req.filters)) : [...cache]
+      const loaded = await rows()
+      let matched = opts.match ? loaded.filter((r) => opts.match!(r, req.filters)) : [...loaded]
       if (opts.compare && req.sort) {
         const sign = req.dir === 'desc' ? -1 : 1
-        rows = rows.sort((a, b) => sign * opts.compare!(a, b, req.sort))
+        matched = matched.sort((a, b) => sign * opts.compare!(a, b, req.sort))
       }
       const start = (req.page - 1) * req.limit
-      return { rows: rows.slice(start, start + req.limit), total: rows.length }
+      return { rows: matched.slice(start, start + req.limit), total: matched.length }
     },
   })
 
   async function refresh(): Promise<void> {
+    generation++
     cache = null
+    pending = null
     await list.reload()
   }
 

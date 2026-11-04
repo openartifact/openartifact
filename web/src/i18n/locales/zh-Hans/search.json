@@ -42,5 +42,6 @@
   "search.empty.hint": "请尝试更短的名称、移除筛选条件，或粘贴文件校验和。还没有发布内容？发布命令见主页的“连接客户端”。",
   "search.empty.checksum.title": "没有文件具有此校验和",
   "search.empty.checksum.hint": "校验和仅在您有读取权限的仓库中查找。请检查摘要，或改为搜索名称。",
+  "search.loadFailed": "无法加载仓库和最近的软件包",
   "search.recent.title": "最近发布"
 }

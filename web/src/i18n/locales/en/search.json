@@ -43,5 +43,6 @@
   "search.empty.hint": "Try a shorter name, remove a filter, or paste a file checksum. Nothing published yet? The commands to publish are on Home under Connect a client.",
   "search.empty.checksum.title": "No file has this checksum",
   "search.empty.checksum.hint": "Checksums are looked up in the repositories you can read. Check the digest, or search names instead.",
+  "search.loadFailed": "Could not load repositories and recent packages",
   "search.recent.title": "Recently published"
 }

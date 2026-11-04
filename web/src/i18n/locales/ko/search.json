@@ -42,5 +42,6 @@
   "search.empty.hint": "더 짧은 이름을 입력하거나, 필터를 제거하거나, 파일 체크섬을 붙여넣어 보세요. 게시된 항목이 아직 없나요? 게시 명령은 홈의 클라이언트 연결에 있습니다.",
   "search.empty.checksum.title": "이 체크섬을 가진 파일이 없습니다",
   "search.empty.checksum.hint": "체크섬은 읽을 수 있는 저장소에서 조회합니다. 다이제스트를 확인하거나 이름으로 검색해 보세요.",
+  "search.loadFailed": "저장소와 최근 패키지를 불러오지 못했습니다",
   "search.recent.title": "최근 게시됨"
 }

@@ -45,7 +45,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <tbody>
               <tr v-for="e in status.ecosystems" :key="e.ecosystem" class="border-t border-border" :data-testid="`osv-eco-${e.ecosystem}`">
                 <td class="py-1.5 pr-4 font-medium text-foreground">{{ e.ecosystem }}</td>
-                <td class="py-1.5 pr-4">{{ e.populated ? e.advisories.toLocaleString() : '—' }}</td>
+                <td class="py-1.5 pr-4">{{ e.populated ? formatNumber(e.advisories) : '—' }}</td>
                 <td class="py-1.5 pr-4" :title="formatDateTime(e.last_imported_at)">
                   {{ e.last_imported_at ? timeAgo(e.last_imported_at) : t('security.osv.never') }}
                 </td>
@@ -78,6 +78,7 @@ import { onMounted, ref } from 'vue'
 import { getOsvMirrorStatus } from '../../api/security'
 import type { OsvMirrorStatus } from '../../api/generated/types.gen'
 import { formatDateTime, timeAgo } from '../../lib/datetime'
+import { formatNumber } from '../../lib/intl'
 import { t, tp } from '../../i18n'
 
 const status = ref<OsvMirrorStatus | null>(null)

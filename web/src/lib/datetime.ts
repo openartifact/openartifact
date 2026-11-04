@@ -13,6 +13,13 @@ function toDate(value: DateInput): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+/** Orders two RFC 3339 timestamps (UTC, as the API writes them) oldest first; missing sorts as oldest. */
+export function compareTimestamps(a: string | null | undefined, b: string | null | undefined): number {
+  const x = a ?? ''
+  const y = b ?? ''
+  return x < y ? -1 : x > y ? 1 : 0
+}
+
 export function formatDate(value: DateInput, fallback = '—'): string {
   const d = toDate(value)
   return d ? d.toLocaleDateString(formatLocale(), { dateStyle: 'medium' }) : fallback

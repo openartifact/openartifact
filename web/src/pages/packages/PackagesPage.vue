@@ -10,7 +10,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <SearchControls :list="list" :mode="mode" :auto-checksum="autoChecksum" :repos="repoNames" @update:mode="setMode" />
 
-    <div v-if="plan.kind === 'idle'" class="rounded-lg border border-border bg-surface" data-testid="search-start">
+    <div v-if="plan.kind === 'idle' && loadError" class="rounded-lg border border-border bg-surface" data-testid="search-load-error">
+      <StateBlock variant="error" :title="t('search.loadFailed')" :hint="loadError">
+        <template #action>
+          <AppButton variant="secondary" @click="loadSupport">{{ t('ui.state.retry') }}</AppButton>
+        </template>
+      </StateBlock>
+    </div>
+    <div v-else-if="plan.kind === 'idle'" class="rounded-lg border border-border bg-surface" data-testid="search-start">
       <StateBlock variant="empty" :title="t('search.start.title')" :hint="examples.length > 0 ? t('search.start.hintExamples') : t('search.start.hint')">
         <template v-if="examples.length > 0" #action>
           <router-link
@@ -34,7 +41,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </template>
       </StateBlock>
     </div>
-    <section v-if="plan.kind === 'idle' && recent.length > 0" class="mt-6" aria-labelledby="pk-recent">
+    <section v-if="plan.kind === 'idle' && !loadError && recent.length > 0" class="mt-6" aria-labelledby="pk-recent">
       <h2 id="pk-recent" class="mb-2 text-base font-semibold">{{ t('search.recent.title') }}</h2>
       <RecentPackages :items="recent" />
     </section>
@@ -66,17 +73,20 @@ import { t } from '../../i18n'
 
 const { list, plan, mode, autoChecksum, setMode } = useSearch()
 
-// Both lists are conveniences (repository filter, start screen): a failure leaves them empty.
+// Both lists feed the start screen (repository filter, examples and recent packages); search itself works without them.
 const repoNames = ref<string[]>([])
 const recent = ref<RecentPackage[]>([])
+const loadError = ref('')
 // Names to try, taken from what was published last: the search starts from something that exists.
 const examples = computed(() => [...new Map(recent.value.map((p) => [p.name, p])).values()].slice(0, 3))
-onMounted(() => {
-  listRepositoryPage({ sort: 'name', limit: 100 })
-    .then((p) => void (repoNames.value = p.repositories.map((r) => r.name)))
-    .catch(() => undefined)
-  listRecentPackages({ mine: false, limit: 5 })
-    .then((p) => void (recent.value = p))
-    .catch(() => undefined)
-})
+
+async function loadSupport(): Promise<void> {
+  loadError.value = ''
+  const [repos, latest] = await Promise.allSettled([listRepositoryPage({ sort: 'name', limit: 100 }), listRecentPackages({ mine: false, limit: 5 })])
+  if (repos.status === 'fulfilled') repoNames.value = repos.value.repositories.map((r) => r.name)
+  if (latest.status === 'fulfilled') recent.value = latest.value
+  const failed = [repos, latest].find((r) => r.status === 'rejected')
+  if (failed) loadError.value = failed.reason instanceof Error ? failed.reason.message : t('search.loadFailed')
+}
+onMounted(() => void loadSupport())
 </script>

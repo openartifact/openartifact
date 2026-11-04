@@ -103,93 +103,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </template>
     </ListTable>
 
-    <!-- Import -->
-    <AdminDialog drawer max-width="max-w-xl" :open="importOpen" :eyebrow="t('adm.gpg.eyebrow')" :title="t('admin.gpg.import')" @close="closeImport">
-      <form id="gpg-import-form" class="space-y-5" autocomplete="off" @submit.prevent="submitImport">
-        <FormField id="gpg-import-name" :label="`${t('adm.gpg.name')} (${t('common.optional')})`" :hint="t('adm.gpg.nameHint')">
-          <input id="gpg-import-name" v-model="importForm.name" type="text" :class="inputClass" />
-        </FormField>
-        <FormField id="gpg-armored" :label="t('adm.gpg.armored')">
-          <textarea
-            id="gpg-armored"
-            v-model="importForm.privateKey"
-            rows="10"
-            required
-            spellcheck="false"
-            autocomplete="off"
-            class="w-full px-3 py-2 border border-border-strong rounded-lg text-xs font-mono bg-surface-hover/40 text-foreground focus:ring-2 focus:ring-primary/50"
-          />
-        </FormField>
-        <div>
-          <label for="gpg-armored-file" class="block text-sm font-medium text-foreground mb-1.5">{{ t('adm.gpg.armoredFile') }}</label>
-          <input
-            id="gpg-armored-file"
-            type="file"
-            accept=".asc,.gpg,.key,.pgp,text/plain"
-            class="block w-full text-sm text-muted"
-            @change="loadKeyFile"
-          />
-        </div>
-        <FormField
-          v-if="passphraseNeeded"
-          id="gpg-passphrase"
-          :label="t('adm.gpg.passphrase')"
-          :hint="t('adm.gpg.passphraseRequired')"
-        >
-          <input
-            id="gpg-passphrase"
-            v-model="importForm.passphrase"
-            type="password"
-            required
-            autocomplete="new-password"
-            :class="inputClass"
-          />
-        </FormField>
-        <label class="flex items-center gap-2 text-sm text-foreground">
-          <input v-model="importForm.activate" type="checkbox" class="rounded border-border-strong text-primary focus:ring-primary/50" />
-          {{ t('adm.gpg.makeActive') }}
-        </label>
-      </form>
-      <template #footer>
-        <AppButton variant="secondary" size="sm" @click="closeImport">{{ t('common.cancel') }}</AppButton>
-        <AppButton variant="primary" size="sm" type="submit" form="gpg-import-form" :loading="busy">
-          {{ t('admin.gpg.import') }}
-        </AppButton>
-      </template>
-    </AdminDialog>
+    <GpgImportDialog :open="importOpen" :busy="busy" @close="importOpen = false" @done="onImported" />
 
-    <!-- Generate -->
-    <AdminDialog drawer max-width="max-w-xl" :open="generateOpen" :eyebrow="t('adm.gpg.eyebrow')" :title="t('admin.gpg.generate')" @close="closeGenerate">
-      <form id="gpg-generate-form" class="space-y-5" @submit.prevent="submitGenerate">
-        <FormField id="gpg-name" :label="`${t('adm.gpg.name')} (${t('common.optional')})`" :hint="t('adm.gpg.nameHint')">
-          <input id="gpg-name" v-model="genForm.name" type="text" :class="inputClass" />
-        </FormField>
-        <FormField id="gpg-algorithm" :label="t('adm.gpg.algorithm')">
-          <select id="gpg-algorithm" v-model="genForm.algorithm" :class="inputClass">
-            <option v-for="algo in ALGORITHMS" :key="algo" :value="algo">{{ algo }}</option>
-          </select>
-        </FormField>
-        <FormField id="gpg-user-name" :label="`${t('adm.gpg.userName')} (${t('common.optional')})`">
-          <input id="gpg-user-name" v-model="genForm.userName" type="text" :class="inputClass" />
-        </FormField>
-        <FormField id="gpg-email" :label="`${t('adm.gpg.email')} (${t('common.optional')})`">
-          <input id="gpg-email" v-model="genForm.email" type="email" :class="inputClass" />
-        </FormField>
-        <FormField id="gpg-comment" :label="`${t('adm.gpg.comment')} (${t('common.optional')})`">
-          <input id="gpg-comment" v-model="genForm.comment" type="text" :class="inputClass" />
-        </FormField>
-        <label class="flex items-center gap-2 text-sm text-foreground">
-          <input v-model="genForm.activate" type="checkbox" class="rounded border-border-strong text-primary focus:ring-primary/50" />
-          {{ t('adm.gpg.makeActive') }}
-        </label>
-      </form>
-      <template #footer>
-        <AppButton variant="secondary" size="sm" @click="closeGenerate">{{ t('common.cancel') }}</AppButton>
-        <AppButton variant="primary" size="sm" type="submit" form="gpg-generate-form" :loading="busy">
-          {{ t('admin.gpg.generate') }}
-        </AppButton>
-      </template>
-    </AdminDialog>
+    <GpgGenerateDialog :open="generateOpen" :busy="busy" @close="generateOpen = false" @done="onGenerated" />
 
     <!-- Activate for one repository -->
     <AdminDialog :open="repoTarget !== null" :eyebrow="t('adm.gpg.eyebrow')" :title="t('adm.gpg.activateRepo')" :description="repoTarget?.name" @close="repoTarget = null">
@@ -223,6 +139,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import GpgGenerateDialog from './GpgGenerateDialog.vue'
+import GpgImportDialog from './GpgImportDialog.vue'
 import AdminDialog from '../../../components/AdminDialog.vue'
 import AppButton from '../../../components/AppButton.vue'
 import ConfirmDialog from '../../../components/ConfirmDialog.vue'
@@ -238,21 +156,16 @@ import {
   deactivateGpgKey,
   deleteGpgKey,
   exportGpgKey,
-  generateGpgKey,
-  importGpgKey,
   listGpgKeys,
-  type GpgAlgorithm,
   type GpgKey,
 } from '../../../api/gpg'
 import { listAllRepositories } from '../../../api/repositories'
 import { ApiError } from '../../../api/client'
+import { errorMessage, inputClass } from '../../../lib/gpgForm'
 import { formatDate } from '../../../lib/datetime'
 import { useToastStore } from '../../../stores/toast'
 import { t, tDynamic } from '../../../i18n'
 
-const ALGORITHMS: GpgAlgorithm[] = ['ed25519', 'rsa4096']
-const inputClass =
-  'w-full px-3 py-2 border border-border-strong rounded-lg text-sm bg-surface-hover/40 text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50'
 
 const toasts = useToastStore()
 
@@ -298,10 +211,6 @@ function sourceLabel(source: GpgKey['source']): string {
   return source ? tDynamic(`adm.gpg.source.${source}`) : ''
 }
 
-function errorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error ? err.message : fallback
-}
-
 async function load(): Promise<void> {
   loading.value = true
   loadError.value = ''
@@ -328,94 +237,27 @@ async function copyFingerprint(fingerprint: string | undefined): Promise<void> {
   }
 }
 
-// ---- import (private key material lives only in this form) ----
+// ---- import / generate (the dialogs own their form state) ----
 
-const emptyImport = () => ({ name: '', privateKey: '', passphrase: '', activate: false })
 const importOpen = ref(false)
-const importForm = ref(emptyImport())
-const passphraseNeeded = ref(false)
+const generateOpen = ref(false)
 
 function openImport(): void {
-  importForm.value = emptyImport()
-  passphraseNeeded.value = false
   importOpen.value = true
 }
 
-function closeImport(): void {
-  importOpen.value = false
-  importForm.value = emptyImport()
-  passphraseNeeded.value = false
-}
-
-async function loadKeyFile(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (file) importForm.value.privateKey = await file.text()
-  input.value = ''
-}
-
-async function submitImport(): Promise<void> {
-  if (busy.value) return
-  busy.value = true
-  const { name, privateKey, passphrase, activate } = importForm.value
-  try {
-    await importGpgKey({
-      name: name.trim() || undefined,
-      private_key: privateKey,
-      passphrase: passphrase || undefined,
-      activate: activate || undefined,
-    })
-    toasts.success(t('adm.gpg.imported'))
-    closeImport()
-    await load()
-  } catch (err) {
-    importForm.value.passphrase = ''
-    if (err instanceof ApiError && err.code === 'passphrase_required') {
-      passphraseNeeded.value = true
-    } else {
-      toasts.error(errorMessage(err, t('adm.gpg.importFailed')))
-    }
-  } finally {
-    busy.value = false
-  }
-}
-
-// ---- generate ----
-
-const emptyGenerate = () => ({ name: '', algorithm: 'ed25519' as GpgAlgorithm, userName: '', email: '', comment: '', activate: false })
-const generateOpen = ref(false)
-const genForm = ref(emptyGenerate())
-
 function openGenerate(): void {
-  genForm.value = emptyGenerate()
   generateOpen.value = true
 }
 
-function closeGenerate(): void {
-  generateOpen.value = false
+async function onImported(): Promise<void> {
+  importOpen.value = false
+  await load()
 }
 
-async function submitGenerate(): Promise<void> {
-  if (busy.value) return
-  busy.value = true
-  const f = genForm.value
-  try {
-    await generateGpgKey({
-      name: f.name.trim() || undefined,
-      algorithm: f.algorithm,
-      user_name: f.userName.trim() || undefined,
-      email: f.email.trim() || undefined,
-      comment: f.comment.trim() || undefined,
-      activate: f.activate || undefined,
-    })
-    toasts.success(t('adm.gpg.generated'))
-    closeGenerate()
-    await load()
-  } catch (err) {
-    toasts.error(errorMessage(err, t('adm.gpg.generateFailed')))
-  } finally {
-    busy.value = false
-  }
+async function onGenerated(): Promise<void> {
+  generateOpen.value = false
+  await load()
 }
 
 // ---- activate / deactivate ----

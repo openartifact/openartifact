@@ -187,6 +187,7 @@ import {
 import { TrashIcon, UsersIcon } from '@heroicons/vue/20/solid'
 import RowActions, { type RowAction } from '../../../components/ui/RowActions.vue'
 import { compareText } from '../../../lib/intl'
+import { compareTimestamps } from '../../../lib/datetime'
 
 const toasts = useToastStore()
 
@@ -234,7 +235,7 @@ const { list, all, refresh: load } = useLocalList({
   match: (g, f) => !f.q.trim() || (g.name ?? '').toLowerCase().includes(f.q.trim().toLowerCase()),
   compare: (a, b, sort) => {
     const key = sort === 'created_at' ? 'created_at' : 'name'
-    return key === 'name' ? compareText(a.name, b.name) : String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
+    return key === 'name' ? compareText(a.name, b.name) : compareTimestamps(a.created_at, b.created_at)
   },
 })
 

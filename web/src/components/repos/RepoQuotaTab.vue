@@ -247,20 +247,12 @@ import {
 } from '@heroicons/vue/24/outline'
 import AppButton from '../AppButton.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
-import { formatBytes, formatOneDecimal } from '../../lib/quota'
+import { formatBytes, formatOneDecimal, SIZE_UNITS, splitBytes, toBytes, type SizeUnit } from '../../lib/quota'
 
 // ─── Props ─────────────────────────────────────────────────────────────────────
 
 const props = defineProps<{ repoName: string }>()
 const emit = defineEmits<{ changed: [] }>()
-
-// ─── Constants ─────────────────────────────────────────────────────────────────
-
-const SIZE_UNITS = [
-  { label: 'MB', bytes: 1024 * 1024 },
-  { label: 'GB', bytes: 1024 * 1024 * 1024 },
-  { label: 'TB', bytes: 1024 * 1024 * 1024 * 1024 },
-]
 
 // ─── State ─────────────────────────────────────────────────────────────────────
 
@@ -273,7 +265,7 @@ const showForm = ref(false)
 const removeModal = ref(false)
 
 const formSize = ref<number>(10)
-const formUnit = ref<string>('GB')
+const formUnit = ref<SizeUnit>('GB')
 
 // ─── Computed ──────────────────────────────────────────────────────────────────
 
@@ -303,23 +295,14 @@ function barColor(pct: number): string {
 
 
 function bytesFromForm(): number {
-  const unit = SIZE_UNITS.find((u) => u.label === formUnit.value)
-  return (formSize.value || 0) * (unit?.bytes ?? 1024 * 1024 * 1024)
+  return toBytes(formSize.value, formUnit.value)
 }
 
 function populateForm(q: RepoQuota): void {
-  const bytes = q.max_size_bytes
-  if (bytes <= 0) return
-  if (bytes >= 1024 * 1024 * 1024 * 1024) {
-    formSize.value = parseFloat((bytes / (1024 * 1024 * 1024 * 1024)).toFixed(2))
-    formUnit.value = 'TB'
-  } else if (bytes >= 1024 * 1024 * 1024) {
-    formSize.value = parseFloat((bytes / (1024 * 1024 * 1024)).toFixed(2))
-    formUnit.value = 'GB'
-  } else {
-    formSize.value = parseFloat((bytes / (1024 * 1024)).toFixed(2))
-    formUnit.value = 'MB'
-  }
+  if (q.max_size_bytes <= 0) return
+  const split = splitBytes(q.max_size_bytes)
+  formSize.value = split.value
+  formUnit.value = split.unit
 }
 
 // ─── API ───────────────────────────────────────────────────────────────────────
