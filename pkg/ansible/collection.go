@@ -21,6 +21,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/openartifact/openartifact/internal/iocopy"
+	"github.com/openartifact/openartifact/internal/limitio"
 )
 
 // Limits on what Read accepts from an untrusted artifact.
@@ -35,6 +36,10 @@ const (
 	// archive, which Read has to decompress and hash.
 	MaxUncompressedBytes = 4 << 30
 
+	// tarOverheadSlack is what tar framing (headers, padding, PAX and GNU
+	// extension records) may add to the file data of a maxEntries archive.
+	tarOverheadSlack = 1<<20 + maxEntries*2048
+
 	manifestName = "MANIFEST.json"
 	filesName    = "FILES.json"
 	runtimeName  = "meta/runtime.yml"
@@ -43,6 +48,10 @@ const (
 // ErrInvalid marks an artifact that is not a valid collection; its message
 // says what is wrong and is meant for the publisher.
 var ErrInvalid = errors.New("invalid collection")
+
+// errTooLarge stops a tar stream that inflates past what the limits allow,
+// including bytes no entry accounts for (extension headers).
+var errTooLarge = errors.New("tar stream too large")
 
 func invalid(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, args...))
@@ -102,7 +111,7 @@ type archive struct {
 // the checksum FILES.json lists. An error wraps ErrInvalid when the artifact is
 // at fault, and is an I/O error otherwise.
 func Read(r io.Reader) (*Collection, error) {
-	arc, err := scan(r)
+	arc, err := scan(r, MaxUncompressedBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +157,7 @@ func cleanName(name string) (string, bool) {
 
 // scan reads the archive once: it keeps the three documents and hashes every
 // regular file.
-func scan(r io.Reader) (*archive, error) {
+func scan(r io.Reader, limit int64) (*archive, error) {
 	zr, err := gzip.NewReader(r)
 	if err != nil {
 		return nil, invalid("not a gzip-compressed tar archive: %v", err)
@@ -156,7 +165,7 @@ func scan(r io.Reader) (*archive, error) {
 	defer func() { _ = zr.Close() }()
 
 	arc := &archive{sums: map[string]string{}}
-	tr := tar.NewReader(zr)
+	tr := tar.NewReader(limitio.Capped(zr, limit+tarOverheadSlack, errTooLarge))
 	entries := 0
 
 	var total int64
@@ -167,6 +176,10 @@ func scan(r io.Reader) (*archive, error) {
 			return arc, nil
 		}
 
+		if errors.Is(err, errTooLarge) {
+			return nil, invalid("contents larger than %d bytes", limit)
+		}
+
 		if err != nil {
 			return nil, invalid("unreadable tar archive: %v", err)
 		}
@@ -175,14 +188,14 @@ func scan(r io.Reader) (*archive, error) {
 			return nil, invalid("more than %d entries", maxEntries)
 		}
 
-		if err := arc.entry(tr, hdr, &total); err != nil {
+		if err := arc.entry(tr, hdr, &total, limit); err != nil {
 			return nil, err
 		}
 	}
 }
 
 // entry records one tar entry.
-func (a *archive) entry(tr *tar.Reader, hdr *tar.Header, total *int64) error {
+func (a *archive) entry(tr *tar.Reader, hdr *tar.Header, total *int64, limit int64) error {
 	name, ok := cleanName(hdr.Name)
 	if !ok {
 		return invalid("entry %q has an unsafe name", hdr.Name)
@@ -196,8 +209,8 @@ func (a *archive) entry(tr *tar.Reader, hdr *tar.Header, total *int64) error {
 		return invalid("entry %q is not a regular file or directory", hdr.Name)
 	}
 
-	if *total += hdr.Size; *total > MaxUncompressedBytes {
-		return invalid("contents larger than %d bytes", int64(MaxUncompressedBytes))
+	if *total += hdr.Size; *total > limit {
+		return invalid("contents larger than %d bytes", limit)
 	}
 
 	if _, dup := a.sums[name]; dup {
@@ -234,6 +247,10 @@ func (a *archive) entry(tr *tar.Reader, hdr *tar.Header, total *int64) error {
 	}
 
 	if _, err := iocopy.Copy(dst, tr); err != nil {
+		if errors.Is(err, errTooLarge) {
+			return invalid("contents larger than %d bytes", limit)
+		}
+
 		return invalid("unreadable tar archive: %v", err)
 	}
 

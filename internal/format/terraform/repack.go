@@ -172,7 +172,7 @@ func repackTarGz(out *errWriter, src io.Reader, compressed int64, plan *repackPl
 	gw := gzip.NewWriter(out)
 	tw := tar.NewWriter(gw)
 	set := newEntrySet(archiveLimits{expanded: maxModuleExpanded}, compressed)
-	tr := tar.NewReader(gz)
+	tr := newCappedTarReader(gz, set.limits.expanded)
 	kept := 0
 
 	for {
@@ -182,7 +182,7 @@ func repackTarGz(out *errWriter, src io.Reader, compressed int64, plan *repackPl
 		}
 
 		if err != nil {
-			return malformed("not a readable tar archive: %v", err)
+			return tarReadError(err)
 		}
 
 		name, keep, err := planTarEntry(set, plan, hdr)

@@ -263,10 +263,6 @@ func (m *MockDatabase) CreateRepositoryWithMembers(ctx context.Context, repo *mo
 	return m.CreateRepository(ctx, repo)
 }
 
-func (m *MockDatabase) CountBlobsOnStorageBackend(_ context.Context, _ string) (int64, error) {
-	return 0, nil
-}
-
 func (m *MockDatabase) StorageBackendBusyReason(_ context.Context, _ string) (string, error) {
 	return "", nil
 }

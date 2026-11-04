@@ -685,3 +685,28 @@ func TestGuardClaimsOnlyNixRepositories(t *testing.T) {
 		t.Error("a request for a repository of another format was claimed")
 	}
 }
+
+// TestReadEncodedBoundsDecoderMemory: a narinfo body whose compression header
+// asks the decoder for a huge window is refused instead of allocating it.
+func TestReadEncodedBoundsDecoderMemory(t *testing.T) {
+	var xzBuf bytes.Buffer
+
+	xw, _ := xz.NewWriter(&xzBuf)
+	_, _ = xw.Write([]byte("StorePath: x\n"))
+	_ = xw.Close()
+
+	hugeXZ := xzBuf.Bytes()
+	hugeXZ[16] = 0x28 // LZMA2 dictionary-size property: 4 GiB - 1
+
+	// Zstd frame: no single-segment flag, 128 MiB window, one empty last block.
+	hugeZstd := []byte{0x28, 0xb5, 0x2f, 0xfd, 0x00, 17 << 3, 0x01, 0x00, 0x00}
+
+	for enc, body := range map[string][]byte{"xz": hugeXZ, "zstd": hugeZstd} {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/x.narinfo", bytes.NewReader(body))
+		req.Header.Set("Content-Encoding", enc)
+
+		if _, err := readEncoded(req); err == nil {
+			t.Errorf("%s: oversized decoder window accepted", enc)
+		}
+	}
+}

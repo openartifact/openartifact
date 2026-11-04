@@ -258,11 +258,13 @@ func (w *TrashPurgeWorker) purgeExpired(ctx context.Context, stats *PurgeStats) 
 
 // purgeOne removes one expired item and runs the follow-up cleanup.
 func (w *TrashPurgeWorker) purgeOne(ctx context.Context, ref models.TrashRef, stats *PurgeStats) {
-	res, err := w.store.PurgeTrash(ctx, ref.Kind, ref.ID)
+	// The listing may be minutes old by now: the store re-checks expiry.
+	res, err := w.store.PurgeExpiredTrash(ctx, ref.Kind, ref.ID)
 
 	switch {
 	case errors.Is(err, database.ErrTrashNotFound):
-		// Restored or purged by someone else since it was listed.
+		// Restored, re-trashed, given a longer retention or purged by someone
+		// else since it was listed.
 		return
 	case err != nil && ctx.Err() != nil:
 		// Interrupted; the caller reports the cancellation.

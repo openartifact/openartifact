@@ -193,12 +193,17 @@ func (p *TieringStore) DeleteStorageTierIfUnused(ctx context.Context, tierID str
 }
 
 func storageBackendBusy(ctx context.Context, q rowQuerier, backendID string, includeTier bool) (string, error) {
-	var blobs, moves, tier bool
+	var blobs, moves, tier, retired bool
 
+	// blob_deletions.scope is the backend id of a retired copy still queued for
+	// deletion (a text column with no foreign key). The sweeper needs the
+	// backend to reach those bytes: without it the row can never be served.
 	err := q.QueryRowContext(ctx, `SELECT
 		EXISTS(SELECT 1 FROM blobs WHERE storage_backend_id = $1),
 		EXISTS(SELECT 1 FROM storage_tier_moves WHERE from_backend_id = $1 OR to_backend_id = $1),
-		$2::boolean AND EXISTS(SELECT 1 FROM storage_tiers WHERE backend_id = $1)`, backendID, includeTier).Scan(&blobs, &moves, &tier)
+		$2::boolean AND EXISTS(SELECT 1 FROM storage_tiers WHERE backend_id = $1),
+		EXISTS(SELECT 1 FROM blob_deletions WHERE scope = $1::uuid::text)`,
+		backendID, includeTier).Scan(&blobs, &moves, &tier, &retired)
 	if err != nil {
 		return "", fmt.Errorf("check storage backend usage: %w", err)
 	}
@@ -210,6 +215,8 @@ func storageBackendBusy(ctx context.Context, q rowQuerier, backendID string, inc
 		return "storage backend is named by a tier move (in progress or journaled)", nil
 	case tier:
 		return "storage backend is used by a storage tier", nil
+	case retired:
+		return "storage backend still holds retired copies waiting for deletion", nil
 	}
 
 	return "", nil

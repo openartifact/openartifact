@@ -16,6 +16,7 @@ import (
 	"github.com/ulikunitz/xz"
 
 	"github.com/openartifact/openartifact/pkg/rpm"
+	"github.com/openartifact/openartifact/pkg/xzlimit"
 )
 
 func testPackages() []rpm.Package {
@@ -391,5 +392,20 @@ func TestOpenMetadataRejectsOversizedDocument(t *testing.T) {
 
 	if _, err := read(50); !errors.Is(err, errDocumentTooLarge) {
 		t.Fatalf("oversized document: err=%v, want errDocumentTooLarge", err)
+	}
+}
+
+func TestOpenMetadataRejectsHugeXZDictionary(t *testing.T) {
+	var xzb bytes.Buffer
+
+	xw, _ := xz.NewWriter(&xzb)
+	_, _ = xw.Write([]byte("<metadata/>"))
+	_ = xw.Close()
+
+	raw := xzb.Bytes()
+	raw[16] = 0x28 // LZMA2 dictionary-size property: 4 GiB - 1
+
+	if _, err := OpenMetadata(io.NopCloser(bytes.NewReader(raw)), "x-primary.xml.xz"); !errors.Is(err, xzlimit.ErrDictTooLarge) {
+		t.Fatalf("err = %v, want xzlimit.ErrDictTooLarge", err)
 	}
 }

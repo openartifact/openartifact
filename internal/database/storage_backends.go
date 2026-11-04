@@ -8,7 +8,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -104,17 +103,6 @@ func (p *StorageBackendStore) UpdateStorageBackendStatus(ctx context.Context, id
 		StatusMessage: message,
 		ID:            id,
 	})
-}
-
-// CountBlobsOnStorageBackend returns how many blobs are recorded on a storage backend.
-func (p *StorageBackendStore) CountBlobsOnStorageBackend(ctx context.Context, backendID string) (int64, error) {
-	var n int64
-
-	if err := p.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM blobs WHERE storage_backend_id = $1`, backendID).Scan(&n); err != nil {
-		return 0, fmt.Errorf("failed to count blobs on storage backend: %w", err)
-	}
-
-	return n, nil
 }
 
 // StorageBackendBusyReason reports why a backend's kind or config must not

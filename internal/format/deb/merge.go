@@ -15,8 +15,23 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ulikunitz/xz"
+	"github.com/openartifact/openartifact/internal/limitio"
+	"github.com/openartifact/openartifact/pkg/xzlimit"
 )
+
+const (
+	// maxPackagesLine bounds one line of an upstream Packages file; a hostile
+	// upstream could otherwise send one enormous line.
+	maxPackagesLine = 4 << 20
+
+	// maxIndexBytes bounds the decompressed size of one upstream Packages
+	// index. The largest real ones are a few hundred MiB.
+	maxIndexBytes int64 = 4 << 30
+)
+
+// ErrIndexTooLarge is returned for an upstream Packages index (or a line of
+// it) over the size limits.
+var ErrIndexTooLarge = errors.New("deb: upstream index exceeds size limit")
 
 // Stanza is one package entry of a Packages file read from an upstream index:
 // the identifying fields a merge keys on plus the verbatim text.
@@ -35,7 +50,8 @@ type Stanza struct {
 // names are matched case-insensitively (apt does). A stanza without a Package
 // field is skipped; fn returning an error stops the scan with it.
 func ScanPackages(r io.Reader, fn func(Stanza) error) error {
-	br := bufio.NewReaderSize(r, 64<<10)
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64<<10), maxPackagesLine)
 
 	var (
 		cur  Stanza
@@ -59,33 +75,34 @@ func ScanPackages(r io.Reader, fn func(Stanza) error) error {
 		return fn(cur)
 	}
 
-	for {
-		line, err := br.ReadString('\n')
-		if line != "" {
-			trimmed := strings.TrimRight(line, "\r\n")
+	for sc.Scan() {
+		trimmed := strings.TrimRight(sc.Text(), "\r\n")
 
-			if strings.TrimSpace(trimmed) == "" {
-				if ferr := flush(); ferr != nil {
-					return ferr
-				}
-			} else {
-				seen = true
-
-				buf.WriteString(trimmed)
-				buf.WriteByte('\n')
-
-				cur.setField(trimmed)
+		if strings.TrimSpace(trimmed) == "" {
+			if err := flush(); err != nil {
+				return err
 			}
+
+			continue
 		}
 
-		if errors.Is(err, io.EOF) {
-			return flush()
-		}
+		seen = true
 
-		if err != nil {
-			return fmt.Errorf("deb: reading Packages: %w", err)
-		}
+		buf.WriteString(trimmed)
+		buf.WriteByte('\n')
+
+		cur.setField(trimmed)
 	}
+
+	if err := sc.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			err = fmt.Errorf("%w: line over %d bytes", ErrIndexTooLarge, maxPackagesLine)
+		}
+
+		return fmt.Errorf("deb: reading Packages: %w", err)
+	}
+
+	return flush()
 }
 
 // setField records line when it is one of the fields a stanza is keyed on.
@@ -301,17 +318,23 @@ func (r UpstreamRelease) HasIndex(comp, arch string) bool {
 // DecompressIndex wraps r according to the extension of the Packages path it
 // was fetched from (.xz, .gz or none). Closing the result closes r.
 func DecompressIndex(r io.ReadCloser, path string) (io.ReadCloser, error) {
+	return decompressIndex(r, path, maxIndexBytes)
+}
+
+// decompressIndex is DecompressIndex with the decompressed size limit a
+// parameter; reading past it fails with ErrIndexTooLarge.
+func decompressIndex(r io.ReadCloser, path string, limit int64) (io.ReadCloser, error) {
 	switch {
 	case strings.HasSuffix(path, ".xz"):
 		// The xz decoder reads its input a byte at a time; unbuffered that is
 		// one read syscall per byte of a blob file.
-		xr, err := xz.NewReader(bufio.NewReaderSize(r, 64<<10))
+		xr, err := xzlimit.NewReader(bufio.NewReaderSize(r, 64<<10))
 		if err != nil {
 			_ = r.Close()
 			return nil, fmt.Errorf("deb: xz index: %w", err)
 		}
 
-		return readCloser{Reader: xr, closer: r}, nil
+		return readCloser{Reader: limitio.Capped(xr, limit, ErrIndexTooLarge), closer: r}, nil
 	case strings.HasSuffix(path, ".gz"):
 		gr, err := gzip.NewReader(r)
 		if err != nil {
@@ -319,7 +342,7 @@ func DecompressIndex(r io.ReadCloser, path string) (io.ReadCloser, error) {
 			return nil, fmt.Errorf("deb: gzip index: %w", err)
 		}
 
-		return readCloser{Reader: gr, closer: multiCloser{gr, r}}, nil
+		return readCloser{Reader: limitio.Capped(gr, limit, ErrIndexTooLarge), closer: multiCloser{gr, r}}, nil
 	}
 
 	return r, nil

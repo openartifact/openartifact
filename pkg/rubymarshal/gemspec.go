@@ -162,10 +162,46 @@ func DecodeSpecification(data []byte) (*Specification, error) {
 		return nil, fmt.Errorf("%w: gemspec payload is not an array (got %T)", ErrInvalid, inner)
 	}
 
-	return specificationFromArray(array), nil
+	return specificationFromArray(array)
 }
 
-func specificationFromArray(array []any) *Specification {
+// Limits on what specificationFromArray materialises from a decoded gemspec
+// array. Marshal object links ('@') return the SAME already-decoded value, so
+// a few KB of attacker-controlled metadata.gz can describe a graph that is
+// tiny as a DAG but enormous when walked as a tree (one Gem::Requirement whose
+// clause array is ~1M links, referenced from ~1M dependency slots). Every
+// walk here is therefore bounded by element counts and a shared byte budget,
+// far above anything a real gemspec reaches (hundreds of dependencies, a
+// handful of clauses, a few KB of text).
+const (
+	maxSpecDependencies = 10_000
+	maxSpecListItems    = 1_000 // authors, licenses
+	maxSpecClauses      = 64    // clauses of one Gem::Requirement
+	maxSpecStringBytes  = 1 << 20
+)
+
+// specBudget tracks the string bytes still available to one specification.
+type specBudget struct {
+	remaining int
+}
+
+func (b *specBudget) charge(n int) error {
+	if n > b.remaining {
+		return fmt.Errorf("%w: gemspec text exceeds %d bytes", ErrInvalid, maxSpecStringBytes)
+	}
+
+	b.remaining -= n
+
+	return nil
+}
+
+func (b *specBudget) chargeString(v any) (string, error) {
+	s := asString(v)
+
+	return s, b.charge(len(s))
+}
+
+func specificationFromArray(array []any) (*Specification, error) {
 	get := func(i int) any {
 		if i < len(array) {
 			return array[i]
@@ -174,16 +210,35 @@ func specificationFromArray(array []any) *Specification {
 		return nil
 	}
 
-	spec := &Specification{
-		Name:        asString(get(2)),
-		Version:     decodeGemVersion(get(3)),
-		Platform:    asString(get(8)),
-		Summary:     asString(get(5)),
-		Email:       asString(get(11)),
-		Description: asString(get(13)),
-		Homepage:    asString(get(14)),
-		Authors:     asStringSlice(get(12)),
-		Licenses:    asStringSlice(get(17)),
+	budget := &specBudget{remaining: maxSpecStringBytes}
+	spec := &Specification{}
+
+	for _, f := range []struct {
+		dst *string
+		val any
+	}{
+		{&spec.Name, get(2)},
+		{&spec.Version, decodeGemVersion(get(3))},
+		{&spec.Platform, get(8)},
+		{&spec.Summary, get(5)},
+		{&spec.Email, get(11)},
+		{&spec.Description, get(13)},
+		{&spec.Homepage, get(14)},
+	} {
+		var err error
+		if *f.dst, err = budget.chargeString(f.val); err != nil {
+			return nil, err
+		}
+	}
+
+	var err error
+
+	if spec.Authors, err = asStringSlice(get(12), budget); err != nil {
+		return nil, err
+	}
+
+	if spec.Licenses, err = asStringSlice(get(17), budget); err != nil {
+		return nil, err
 	}
 
 	if spec.Platform == "" {
@@ -191,14 +246,23 @@ func specificationFromArray(array []any) *Specification {
 	}
 
 	if depsVal, ok := get(9).([]any); ok {
+		if len(depsVal) > maxSpecDependencies {
+			return nil, fmt.Errorf("%w: %d dependencies exceeds maximum %d", ErrInvalid, len(depsVal), maxSpecDependencies)
+		}
+
 		for _, dv := range depsVal {
-			if dep, ok := dependencyFromValue(dv); ok {
+			dep, ok, err := dependencyFromValue(dv, budget)
+			if err != nil {
+				return nil, err
+			}
+
+			if ok {
 				spec.Dependencies = append(spec.Dependencies, dep)
 			}
 		}
 	}
 
-	return spec
+	return spec, nil
 }
 
 // encodeRequirement builds a Gem::Requirement UserMarshal from a
@@ -267,21 +331,29 @@ func asString(v any) string {
 	return s
 }
 
-func asStringSlice(v any) []string {
+func asStringSlice(v any, budget *specBudget) ([]string, error) {
 	arr, ok := v.([]any)
 	if !ok {
-		return nil
+		return nil, nil
+	}
+
+	if len(arr) > maxSpecListItems {
+		return nil, fmt.Errorf("%w: %d list entries exceeds maximum %d", ErrInvalid, len(arr), maxSpecListItems)
 	}
 
 	out := make([]string, 0, len(arr))
 
 	for _, e := range arr {
 		if s, ok := e.(string); ok {
+			if err := budget.charge(len(s)); err != nil {
+				return nil, err
+			}
+
 			out = append(out, s)
 		}
 	}
 
-	return out
+	return out, nil
 }
 
 func decodeGemVersion(v any) string {
@@ -298,10 +370,10 @@ func decodeGemVersion(v any) string {
 	return asString(arr[0])
 }
 
-func dependencyFromValue(v any) (Dependency, bool) {
+func dependencyFromValue(v any, budget *specBudget) (Dependency, bool, error) {
 	obj, ok := v.(*Object)
 	if !ok || obj.Class != "Gem::Dependency" {
-		return Dependency{}, false
+		return Dependency{}, false, nil
 	}
 
 	name, _ := obj.IVar("name")
@@ -317,27 +389,41 @@ func dependencyFromValue(v any) (Dependency, bool) {
 		depType = string(sym)
 	}
 
-	return Dependency{
-		Name:        asString(name),
-		Requirement: decodeRequirement(reqVal),
-		Type:        depType,
-	}, true
+	depName, err := budget.chargeString(name)
+	if err != nil {
+		return Dependency{}, false, err
+	}
+
+	requirement, err := decodeRequirement(reqVal, budget)
+	if err != nil {
+		return Dependency{}, false, err
+	}
+
+	if err := budget.charge(len(depType)); err != nil {
+		return Dependency{}, false, err
+	}
+
+	return Dependency{Name: depName, Requirement: requirement, Type: depType}, true, nil
 }
 
-func decodeRequirement(v any) string {
+func decodeRequirement(v any, budget *specBudget) (string, error) {
 	um, ok := v.(*UserMarshal)
 	if !ok || um.Class != "Gem::Requirement" {
-		return ""
+		return "", nil
 	}
 
 	payload, ok := um.Payload.([]any)
 	if !ok || len(payload) == 0 {
-		return ""
+		return "", nil
 	}
 
 	clauses, ok := payload[0].([]any)
 	if !ok {
-		return ""
+		return "", nil
+	}
+
+	if len(clauses) > maxSpecClauses {
+		return "", fmt.Errorf("%w: %d requirement clauses exceeds maximum %d", ErrInvalid, len(clauses), maxSpecClauses)
 	}
 
 	parts := make([]string, 0, len(clauses))
@@ -355,8 +441,14 @@ func decodeRequirement(v any) string {
 			continue
 		}
 
+		// Charge before building: op+" "+ver and the ", " joiner are the
+		// bytes this clause adds to the result.
+		if err := budget.charge(len(op) + 1 + len(ver) + 2); err != nil {
+			return "", err
+		}
+
 		parts = append(parts, op+" "+ver)
 	}
 
-	return strings.Join(parts, ", ")
+	return strings.Join(parts, ", "), nil
 }

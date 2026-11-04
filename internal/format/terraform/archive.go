@@ -17,6 +17,8 @@ import (
 	"path"
 	"slices"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/limitio"
 )
 
 const (
@@ -406,7 +408,7 @@ func readTarGz(src io.Reader, set *entrySet) error {
 	}
 	defer func() { _ = gz.Close() }()
 
-	tr := tar.NewReader(gz)
+	tr := newCappedTarReader(gz, set.limits.expanded)
 
 	for {
 		hdr, err := tr.Next()
@@ -415,7 +417,7 @@ func readTarGz(src io.Reader, set *entrySet) error {
 		}
 
 		if err != nil {
-			return malformed("not a readable tar archive: %v", err)
+			return tarReadError(err)
 		}
 
 		if err := addTarEntry(set, hdr); err != nil {
@@ -431,6 +433,32 @@ func readTarGz(src io.Reader, set *entrySet) error {
 	}
 
 	return nil
+}
+
+// errTarTooLarge is reported when a tar stream inflates past what its limits
+// could allow, however its entries are named or sized.
+var errTarTooLarge = malformed("archive expands to more than the allowed size")
+
+// tarOverheadSlack is what the tar framing (headers, padding, PAX and GNU
+// extension records) of a maxEntries archive may add to the entry data.
+const tarOverheadSlack = 1<<20 + maxEntries*2048
+
+// newCappedTarReader reads a tar from the inflated gzip stream, failing once
+// the stream is larger than expanded plus the tar framing. Entries that are
+// not counted (root-named, global or extension headers) are consumed by
+// tar.Reader.Next without ever reaching the entrySet, so the stream itself has
+// to be bounded.
+func newCappedTarReader(gz io.Reader, expanded int64) *tar.Reader {
+	return tar.NewReader(limitio.Capped(gz, expanded+tarOverheadSlack, errTarTooLarge))
+}
+
+// tarReadError turns a tar.Reader failure into the archive error to report.
+func tarReadError(err error) error {
+	if errors.Is(err, errTarTooLarge) {
+		return errTarTooLarge
+	}
+
+	return malformed("not a readable tar archive: %v", err)
 }
 
 func addTarEntry(set *entrySet, hdr *tar.Header) error {

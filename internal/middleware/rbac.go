@@ -165,6 +165,17 @@ func RBACMiddleware(cfg RBACConfig, db RBACMiddlewareStore, evaluator *auth.Eval
 				return
 			}
 
+			// A request under /repos/ or /v2/ that names no repository
+			// (/repos//x) would be evaluated against the empty repository
+			// name, which every catch-all filter (".*") matches, and then be
+			// routed to a handler with an empty {name}. No repository can
+			// have that name, so there is nothing to authorize.
+			if namesNoRepository(r, scope) {
+				httpx.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not_found", "code": "not_found"})
+
+				return
+			}
+
 			// A project token's service account is a repository credential
 			// only: it gets no /api/v1 list endpoint, not even a filtered one.
 			if (((scope.anyAuthenticated || scope.bundles) && principal.ServiceProjectID == "") || isDockerRootless(r)) &&
@@ -198,6 +209,14 @@ func RBACMiddleware(cfg RBACConfig, db RBACMiddlewareStore, evaluator *auth.Eval
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// namesNoRepository reports a /repos/ or /v2/ request whose scope has an empty
+// repository: the registry ping and catalog name none by design and are
+// excluded.
+func namesNoRepository(r *http.Request, scope routeScope) bool {
+	return scope.repoName == "" && !isDockerRootless(r) &&
+		(strings.HasPrefix(r.URL.Path, "/repos/") || strings.HasPrefix(r.URL.Path, "/v2/"))
 }
 
 // serveStaticOrSPA serves static assets and SPA page loads without
@@ -313,8 +332,9 @@ func isSPANavigation(r *http.Request) bool {
 
 // hasAmbiguousPath reports whether the URL could make the RBAC decision and the
 // router/handler disagree about which repository is addressed: any ".." path
-// segment (decoded or not), and an encoded "/" or "\" inside the segments that
-// name the repository of a /repos/ or /v2/ request.
+// segment (decoded or not), an encoded "/" or "\" inside the segments that
+// name the repository of a /repos/ or /v2/ request, and any percent-escape in
+// the segment that names it (repository names have none).
 func hasAmbiguousPath(u *url.URL) bool {
 	escaped := u.EscapedPath()
 
@@ -323,22 +343,34 @@ func hasAmbiguousPath(u *url.URL) bool {
 	}
 
 	if strings.HasPrefix(u.Path, "/v2/") {
-		return hasEncodedSeparator(escaped)
+		after, _ := strings.CutPrefix(escaped, "/v2/")
+
+		return hasEncodedSeparator(escaped) || strings.Contains(firstSegment(after), "%")
 	}
 
 	if after, ok := strings.CutPrefix(escaped, "/repos/"); ok {
 		segs := strings.SplitN(after, "/", 3)
 
-		if hasEncodedSeparator(segs[0]) {
+		// A repository name is plain ([A-Za-z0-9_-]), so a percent-escape in
+		// the segment that selects it can only make RBAC (which reads the
+		// decoded path) and chi (which routes on the escaped one, so the
+		// handler reads "a%62c") name different repositories.
+		if strings.Contains(segs[0], "%") {
 			return true
 		}
 
-		if len(segs) > 1 && repotype.Isolated(segs[0]) && hasEncodedSeparator(segs[1]) {
+		if len(segs) > 1 && repotype.Isolated(segs[0]) && (hasEncodedSeparator(segs[1]) || strings.Contains(segs[1], "%")) {
 			return true
 		}
 	}
 
 	return false
+}
+
+func firstSegment(s string) string {
+	seg, _, _ := strings.Cut(s, "/")
+
+	return seg
 }
 
 func hasEncodedSeparator(s string) bool {

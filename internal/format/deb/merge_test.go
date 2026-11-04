@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/ulikunitz/xz"
+
+	"github.com/openartifact/openartifact/pkg/xzlimit"
 )
 
 const packagesFixture = "Package: foo\nVersion: 1.0-1\nArchitecture: amd64\nFilename: pool/main/f/foo/foo_1.0-1_amd64.deb\nSize: 10\nSHA256: aa\nDescription: first\n" +
@@ -250,5 +252,70 @@ func TestParseReleaseChecksumsDropsIncompleteEntries(t *testing.T) {
 	got := ParseReleaseChecksums([]byte(doc))
 	if len(got) != 1 || got["a"].SHA256 != "h1" {
 		t.Errorf("entries = %v, want only a: b's sizes disagree and c has no SHA1", got)
+	}
+}
+
+// TestDecompressIndexRejectsOversizedOutput: an index inflating past the limit
+// is an error, not a silent truncation, for both compressions.
+func TestDecompressIndexRejectsOversizedOutput(t *testing.T) {
+	plain := []byte(strings.Repeat("Package: p\nVersion: 1\n\n", 200))
+
+	var gzBuf, xzBuf bytes.Buffer
+
+	gw := gzip.NewWriter(&gzBuf)
+	_, _ = gw.Write(plain)
+	_ = gw.Close()
+
+	xw, _ := xz.NewWriter(&xzBuf)
+	_, _ = xw.Write(plain)
+	_ = xw.Close()
+
+	for path, data := range map[string][]byte{"Packages.gz": gzBuf.Bytes(), "Packages.xz": xzBuf.Bytes()} {
+		rc, err := decompressIndex(io.NopCloser(bytes.NewReader(data)), path, int64(len(plain)-1))
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+
+		_, err = io.ReadAll(rc)
+		_ = rc.Close()
+
+		if !errors.Is(err, ErrIndexTooLarge) {
+			t.Errorf("%s: err = %v, want ErrIndexTooLarge", path, err)
+		}
+
+		rc, _ = decompressIndex(io.NopCloser(bytes.NewReader(data)), path, int64(len(plain))+1)
+
+		out, err := io.ReadAll(rc)
+		_ = rc.Close()
+
+		if err != nil || !bytes.Equal(out, plain) {
+			t.Errorf("%s: index under the limit: %d bytes, err %v", path, len(out), err)
+		}
+	}
+}
+
+// TestDecompressIndexRejectsHugeXZDictionary: a stream header declaring a
+// 4 GiB dictionary is refused before the decoder allocates it.
+func TestDecompressIndexRejectsHugeXZDictionary(t *testing.T) {
+	var xzBuf bytes.Buffer
+
+	xw, _ := xz.NewWriter(&xzBuf)
+	_, _ = xw.Write([]byte(packagesFixture))
+	_ = xw.Close()
+
+	raw := xzBuf.Bytes()
+	raw[16] = 0x28 // LZMA2 dictionary-size property: 4 GiB - 1
+
+	if _, err := DecompressIndex(io.NopCloser(bytes.NewReader(raw)), "Packages.xz"); !errors.Is(err, xzlimit.ErrDictTooLarge) {
+		t.Fatalf("err = %v, want xzlimit.ErrDictTooLarge", err)
+	}
+}
+
+func TestScanPackagesRejectsHugeLine(t *testing.T) {
+	doc := "Package: foo\nDescription: " + strings.Repeat("x", maxPackagesLine) + "\n\n"
+
+	err := ScanPackages(strings.NewReader(doc), func(Stanza) error { return nil })
+	if !errors.Is(err, ErrIndexTooLarge) {
+		t.Fatalf("err = %v, want ErrIndexTooLarge", err)
 	}
 }
