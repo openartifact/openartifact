@@ -127,7 +127,7 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
-### Unreleased
+### 0.19.2
 
 **What you must do**
 
