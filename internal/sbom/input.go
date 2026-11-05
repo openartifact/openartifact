@@ -70,7 +70,9 @@ func newInput(format, artifactID string, metadata map[string]any) *Input {
 	in.Licenses = classifyLicenses(license.NewDetector(nil).DetectFromMetadata(metadata))
 
 	deps, _ := metadata["dependencies"].([]any)
-	seen := map[string]struct{}{}
+	// The subject's own purl is its CycloneDX bom-ref: a dependency naming the
+	// subject itself must not become a second component with the same ref.
+	seen := map[string]struct{}{in.PURL: {}}
 
 	for _, d := range deps {
 		m, ok := d.(map[string]any)

@@ -213,7 +213,9 @@ func (g *Generator) conanSibling(ctx context.Context, repoID, reference, file st
 // addPackageDeps appends the dependencies read from the package file; an entry
 // the properties already list (same purl) keeps its richer property data.
 func (in *Input) addPackageDeps(res pkgdeps.Result) {
-	seen := make(map[string]struct{}, len(in.Deps))
+	seen := make(map[string]struct{}, len(in.Deps)+1)
+	seen[in.PURL] = struct{}{}
+
 	for _, d := range in.Deps {
 		seen[d.PURL] = struct{}{}
 	}

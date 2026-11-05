@@ -63,7 +63,7 @@ const (
 	maxServerBodyBytes = int64(1) << 50
 )
 
-// validateLimits rejects negative or absurd server timeouts and size caps.
+// validateLimits rejects negative or absurd server timeouts (and a zero shutdownTimeout) and size caps.
 func (s ServerConfig) validateLimits() error {
 	for _, t := range []struct {
 		name string
@@ -73,12 +73,17 @@ func (s ServerConfig) validateLimits() error {
 		{"writeTimeout", s.WriteTimeout},
 		{"readHeaderTimeout", s.ReadHeaderTimeout},
 		{"idleTimeout", s.IdleTimeout},
-		{"shutdownTimeout", s.ShutdownTimeout},
 		{"shutdownDelay", s.ShutdownDelay},
 	} {
 		if t.v < 0 || t.v > maxServerSeconds {
 			return fmt.Errorf("%w: server.%s=%d, want 0..%d seconds", errInvalidServerLimit, t.name, t.v, maxServerSeconds)
 		}
+	}
+
+	// 0 would hand the graceful shutdown an already-expired deadline.
+	if s.ShutdownTimeout < 1 || s.ShutdownTimeout > maxServerSeconds {
+		return fmt.Errorf("%w: server.shutdownTimeout=%d, want 1..%d seconds",
+			errInvalidServerLimit, s.ShutdownTimeout, maxServerSeconds)
 	}
 
 	if s.MaxHeaderBytes != 0 && (s.MaxHeaderBytes < minMaxHeaderBytes || s.MaxHeaderBytes > maxMaxHeaderBytes) {

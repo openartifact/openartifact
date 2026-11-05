@@ -66,12 +66,11 @@ func (e *exporter) exportAccessControl(ctx context.Context, tw *tar.Writer, mani
 // non-empty instance) is kept as is and only mapped, so the assignments that
 // follow bind to it.
 func (e *Engine) restorePermissionTargets(ctx context.Context, r io.Reader, st *restoreState) error {
-	targets, err := decodeSlice[*models.PermissionTarget](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode permission targets: %w", err)
-	}
+	for t, decodeErr := range decodeEach[*models.PermissionTarget](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode permission targets: %w", decodeErr)
+		}
 
-	for _, t := range targets {
 		oldID := t.ID
 
 		existing, err := e.db.GetPermissionTargetByName(ctx, t.Name)
@@ -101,12 +100,11 @@ func (e *Engine) restorePermissionTargets(ctx context.Context, r io.Reader, st *
 // through the id remaps; an assignment whose target or principal was not
 // restored counts as a failure instead of silently dropping a grant.
 func (e *Engine) restorePermissionAssignments(ctx context.Context, r io.Reader, st *restoreState) error {
-	assignments, err := decodeSlice[*models.PermissionAssignment](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode permission assignments: %w", err)
-	}
+	for a, decodeErr := range decodeEach[*models.PermissionAssignment](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode permission assignments: %w", decodeErr)
+		}
 
-	for _, a := range assignments {
 		targetID, ok := st.targetIDMap[a.PermissionTargetID]
 		if !ok {
 			e.restoreWarn("skipping permission assignment: target not restored", "target_id", a.PermissionTargetID)
@@ -169,12 +167,11 @@ func (e *Engine) restorePermissionAssignments(ctx context.Context, r io.Reader, 
 // again from the identity provider's claims, and restoring them as manual
 // memberships would make them permanent.
 func (e *Engine) restoreUserGroups(ctx context.Context, r io.Reader, st *restoreState) error {
-	memberships, err := decodeSlice[*models.UserGroup](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode user group memberships: %w", err)
-	}
+	for m, decodeErr := range decodeEach[*models.UserGroup](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode user group memberships: %w", decodeErr)
+		}
 
-	for _, m := range memberships {
 		if m.SSOManaged {
 			continue
 		}
@@ -211,12 +208,11 @@ func (e *Engine) restoreUserGroups(ctx context.Context, r io.Reader, st *restore
 // restoreStorageQuotas reapplies per-repository limits (usage is recounted
 // from the restored rows afterwards).
 func (e *Engine) restoreStorageQuotas(ctx context.Context, r io.Reader, st *restoreState) error {
-	quotas, err := decodeSlice[*models.StorageQuota](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode storage quotas: %w", err)
-	}
+	for q, decodeErr := range decodeEach[*models.StorageQuota](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode storage quotas: %w", decodeErr)
+		}
 
-	for _, q := range quotas {
 		repoID, ok := st.repoIDMap[q.RepositoryID]
 		if !ok {
 			e.restoreWarn("skipping storage quota: repository not restored", "repo_id", q.RepositoryID)

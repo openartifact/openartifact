@@ -39,7 +39,7 @@ func (a *app) setupMCP() {
 		RateLimitPerMinute: cfg.MCP.RateLimitPerMinute,
 		AITriggerPerMinute: cfg.MCP.AITriggerPerMinute,
 	}
-	if cfg.BaseURL != "" {
+	if cfg.BaseURLSet {
 		opts.ResourceMetadataURL = middleware.ProtectedResourceMetadataURL(cfg.BaseURL, cfg.MCP.HTTPPath)
 	}
 
@@ -72,7 +72,7 @@ func (a *app) configureMCPAuth(rbacCfg *middleware.RBACConfig) {
 
 	// OIDC access tokens are audience-bound to the canonical MCP resource URI,
 	// which needs a configured public base URL.
-	if cfg.BaseURL != "" {
+	if cfg.BaseURLSet {
 		resource := middleware.MCPResourceURL(cfg.BaseURL, cfg.MCP.HTTPPath)
 		rbacCfg.MCPBearerVerifier = func(ctx context.Context, token string) (*models.User, error) {
 			return auth.VerifyOIDCAccessToken(ctx, db, cfg.BaseURL, token, resource)
@@ -121,7 +121,7 @@ func (a *app) registerMCPMetadata(router chi.Router) {
 	}
 
 	cfg := a.cfg
-	metadata := aimcp.NewMetadataHandler(a.db, a.log, cfg.BaseURL, cfg.MCP.HTTPPath)
+	metadata := aimcp.NewMetadataHandler(a.db, a.log, cfg.ClientBaseURL(), cfg.MCP.HTTPPath)
 	router.Handle("/.well-known/oauth-protected-resource", metadata)
 	router.Handle("/.well-known/oauth-protected-resource"+cfg.MCP.HTTPPath, metadata)
 }

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -179,19 +180,21 @@ func TestWithLock_NeverOverlaps(t *testing.T) {
 
 	for range 4 {
 		wg.Go(func() {
-			err := tool.withLock(context.Background(), func() error {
-				if inside.Add(1) > 1 {
-					overlaps.Add(1)
+			for range 25 {
+				err := tool.withLock(context.Background(), func() error {
+					if inside.Add(1) > 1 {
+						overlaps.Add(1)
+					}
+
+					// Yield so the others get to find the lock taken.
+					runtime.Gosched()
+					inside.Add(-1)
+
+					return nil
+				})
+				if err != nil {
+					t.Error(err)
 				}
-
-				// Hold long enough for the others to find the lock taken.
-				time.Sleep(20 * time.Millisecond)
-				inside.Add(-1)
-
-				return nil
-			})
-			if err != nil {
-				t.Error(err)
 			}
 		})
 	}

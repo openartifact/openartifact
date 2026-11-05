@@ -164,7 +164,6 @@ func (a *app) setupAuthorization() error {
 		AllowAnonymousRead:  cfg.Auth.AllowAnonymousRead,
 		MCPPath:             cfg.MCP.HTTPPath,
 		SPAHandler:          w.spaHandler,
-		BaseURL:             cfg.BaseURL,
 		ClientBaseURL:       cfg.ClientBaseURL(),
 	}
 

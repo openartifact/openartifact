@@ -245,7 +245,7 @@ curl -sS -X POST HOST/api/v1/repositories/REPO/secrets/scan -H 'Authorization: B
 | `GET …/secrets/scans/export[?flagged=true]`, `GET …/secrets/scans/{id}/export` | findings of all (or flagged) scans of the repository, or of one scan, as [SARIF, CSV or JSON](#exporting-findings-sarif-csv-json); never a secret value |
 | `POST …/secrets/scans/{id}/quarantine` | `{"quarantined":true\|false}`; applies to the scan's `artifact_id` |
 
-The result has `scan_status` `clean` or `flagged`, `finding_count` and `findings`. Findings never contain the secret: `type`, `description`, `severity`, `redacted_value` (at most the first eighth of the value, up to four characters, then `****`) and a `line_hint` around the match with every detected secret in the window masked (secrets that touch or overlap are masked as one `****`).
+The result has `scan_status` `clean` or `flagged`, `finding_count` and `findings`. Findings never contain the secret: `type`, `description`, `severity`, `redacted_value` (always `****`: no part of the value and not its length) and a `line_hint` around the match with every detected secret in the window masked (secrets that touch or overlap are masked as one `****`).
 
 A text or a metadata object yields at most 1000 findings each: when it holds more matches, the findings of the rules the scanner tries first (`aws_access_key`, `aws_secret_key`, `github_token` and so on, in the built-in order; within a rule, the first matches in text order) are reported, the rest are dropped, still masked in the hints, and the server logs `secret scan findings truncated`. Fix the secrets you are shown and scan again to see the others. The scan itself takes time linear in the size of the text.
 

@@ -293,16 +293,31 @@ func joinsLicenses(expr string) bool {
 }
 
 // spdxIdentifiers returns the normalized license identifiers of an SPDX
-// expression, dropping parentheses and the AND/OR/WITH operators.
+// expression, dropping parentheses, the AND/OR/WITH operators and the
+// exception that follows WITH.
 func spdxIdentifiers(expr string) []string {
 	fields := expressionFields(expr)
 
 	ids := make([]string, 0, len(fields)+1)
 	ids = append(ids, normalizeID(expr)) // the whole string, for plain (even odd) names
 
+	afterWith := false
+
 	for _, f := range fields {
 		switch strings.ToUpper(f) {
-		case "AND", "OR", "WITH":
+		case "AND", "OR":
+			continue
+		case "WITH":
+			afterWith = true
+
+			continue
+		}
+
+		// The word after WITH is an exception, not a license: it must not have to
+		// be on the allow list ("A WITH X AND B") nor can it be denied as one.
+		if afterWith {
+			afterWith = false
+
 			continue
 		}
 

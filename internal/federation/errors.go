@@ -31,6 +31,7 @@ var (
 	errDependencyMissing   = errors.New("dependency is not available at the peer")
 	errBlobDigestMismatch  = errors.New("blob digest mismatch at the peer")
 	errUnitKindMismatch    = errors.New("unit content kind differs from the log kind")
+	errUnitKeyMismatch     = errors.New("unit key differs from the one requested")
 	errPullPanic           = errors.New("federation: pull panicked")
 	errPartialShort        = errors.New("partial blob is shorter than its recorded length")
 	errBadContentRange     = errors.New("malformed Content-Range")

@@ -14,9 +14,10 @@ import (
 )
 
 const (
-	// limiterSweepSize is the number of tracked callers above which idle
-	// entries are dropped; limiterSweepEvery spaces the sweeps out.
-	limiterSweepSize  = 4096
+	// limiterMaxBuckets caps the number of tracked callers: at the cap idle
+	// entries are dropped (at most once per limiterSweepEvery) and, if none
+	// is idle, the fullest bucket is evicted.
+	limiterMaxBuckets = 4096
 	limiterSweepEvery = time.Minute
 )
 
@@ -71,18 +72,39 @@ func (l *limiter) retryAfter() time.Duration {
 	return time.Minute / time.Duration(l.perMinute)
 }
 
-// sweep drops buckets that have refilled completely (idle callers) once the
-// table is large, so unbounded distinct callers cannot grow it forever.
+// sweep makes room for one more bucket once the table is at its cap: it drops
+// buckets that have refilled completely (idle callers) and, when that frees
+// nothing, evicts the fullest bucket (the least recently active caller), so
+// the table never exceeds limiterMaxBuckets.
 func (l *limiter) sweep(now time.Time) {
-	if len(l.buckets) < limiterSweepSize || now.Sub(l.lastSweep) < limiterSweepEvery {
+	if len(l.buckets) < limiterMaxBuckets {
 		return
 	}
 
-	l.lastSweep = now
+	dropIdle := now.Sub(l.lastSweep) >= limiterSweepEvery
+	if dropIdle {
+		l.lastSweep = now
+	}
+
+	var (
+		fullest   string
+		fullestAt = -1.0
+	)
 
 	for k, b := range l.buckets {
-		if b.TokensAt(now) >= float64(l.perMinute) {
+		tokens := b.TokensAt(now)
+		if dropIdle && tokens >= float64(l.perMinute) {
 			delete(l.buckets, k)
+
+			continue
 		}
+
+		if tokens > fullestAt {
+			fullest, fullestAt = k, tokens
+		}
+	}
+
+	if len(l.buckets) >= limiterMaxBuckets {
+		delete(l.buckets, fullest)
 	}
 }

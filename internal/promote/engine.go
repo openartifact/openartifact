@@ -137,6 +137,13 @@ func (e *Engine) Promote(ctx context.Context, p Params) (*Report, error) {
 		return nil, err
 	}
 
+	// The reservation commits on its own, outside tx (it must be atomic across
+	// concurrent uploads), so a crash between here and the commit leaves it
+	// charged while the copied rows roll back. That drift is self-healing: the
+	// reservation's quota_pending entry is dropped once it is older than the
+	// reserve TTL and the cleanup worker's periodic reconcile
+	// (ReconcileAllStorageUsage, every quotaReconcileInterval) rewrites the
+	// counters from the rows. Failures the process survives are refunded below.
 	if err := e.charge(ctx, p.Target.ID, total); err != nil {
 		return nil, err
 	}
@@ -326,7 +333,8 @@ func (e *Engine) refund(ctx context.Context, repoID string, u Usage) {
 		return
 	}
 
-	if err := quota.ReleaseN(context.WithoutCancel(ctx), e.db, repoID, u.Bytes, u.Artifacts); err != nil {
+	// ReleaseN is detached from ctx cancellation and bounded by its own timeout.
+	if err := quota.ReleaseN(ctx, e.db, repoID, u.Bytes, u.Artifacts); err != nil {
 		e.log.Errorw("promote: release quota reservation", "repo_id", repoID, "error", err)
 	}
 }

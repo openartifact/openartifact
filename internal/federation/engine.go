@@ -355,6 +355,13 @@ func (e *Engine) applyFetched(ctx context.Context, pc *pullCtx, key string, dept
 		return 0, err
 	}
 
+	if ur.Entry.UnitKey != key {
+		return outcomeDeferred, deferred(
+			"invalid_unit",
+			fmt.Errorf("%w: asked for unit %s, the peer answered with %s", errUnitKeyMismatch, key, ur.Entry.UnitKey),
+		)
+	}
+
 	if err := e.checkStamp(ur.Entry.Stamp); err != nil {
 		return outcomeDeferred, err
 	}

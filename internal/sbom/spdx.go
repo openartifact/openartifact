@@ -7,8 +7,12 @@ package sbom
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/url"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -94,25 +98,38 @@ func spdxLicenseExpr(entries []licenseEntry, extracted *[]spdxExtracted) string 
 			continue
 		}
 
-		id := licenseRefID(e.Name)
+		id := extractedLicenseID(e.Name, extracted)
 
 		exprs = append(exprs, id)
-
-		known := false
-
-		for _, x := range *extracted {
-			if x.LicenseID == id {
-				known = true
-				break
-			}
-		}
-
-		if !known {
-			*extracted = append(*extracted, spdxExtracted{LicenseID: id, ExtractedText: spdxSafe(e.Name), Name: spdxSafe(e.Name)})
-		}
 	}
 
 	return joinExpressions(exprs)
+}
+
+// extractedLicenseID returns the LicenseRef id of a free-form license name and
+// records the name in extracted on first use. Different names can sanitize to the
+// same id ("GPL v2" and "GPL/v2", or two names with no ASCII letter at all); the
+// later name then gets a hash suffix so it never takes over the earlier one's text.
+func extractedLicenseID(name string, extracted *[]spdxExtracted) string {
+	safe := spdxSafe(name)
+	base := licenseRefID(name)
+	id := base
+
+	for n := 0; ; n++ {
+		i := slices.IndexFunc(*extracted, func(x spdxExtracted) bool { return x.LicenseID == id })
+		if i < 0 {
+			*extracted = append(*extracted, spdxExtracted{LicenseID: id, ExtractedText: safe, Name: safe})
+
+			return id
+		}
+
+		if (*extracted)[i].Name == safe {
+			return id
+		}
+
+		sum := sha256.Sum256([]byte(name + "\x00" + strconv.Itoa(n)))
+		id = base + "-" + hex.EncodeToString(sum[:4])
+	}
 }
 
 // licenseRefID derives a valid SPDX LicenseRef id (letters, digits, '.', '-')

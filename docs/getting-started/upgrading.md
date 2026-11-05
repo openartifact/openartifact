@@ -127,6 +127,27 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
+### Unreleased
+
+**What you must do**
+
+- Check that `server.shutdownTimeout` (`SERVER_SHUTDOWN_TIMEOUT`) is not `0`. It must now be at least 1 and `0` is rejected at startup; it used to give the graceful shutdown an already-expired deadline.
+- If you use the [MCP server](../integrations/mcp.md) with OIDC access tokens, set `BASE_URL`. Without it, OIDC tokens on the MCP endpoint are no longer accepted (API tokens always work).
+- Before upgrading, take a database backup and keep it until you are sure you will not roll back: new secrets are written as `enc:v2:` (see below) and an older release cannot read them.
+
+**Changes.**
+
+- **Stored secrets use `enc:v2`.** New and re-saved secrets are encrypted with a key derived from `OPENARTIFACT_SECRET_KEY` with HKDF-SHA256 and written with the prefix `enc:v2:`. Existing `enc:v1:` values stay readable with no migration, and each is rewritten as `enc:v2:` the next time its record is saved. The secret key itself is unchanged; use a high-entropy value (`openssl rand -base64 32`). **Rollback warning:** earlier releases cannot read `enc:v2:` values. After a rollback, every secret written or re-saved since the upgrade (webhook secrets, upstream passwords, SSO client secrets, AI keys, storage credentials, signing and SAML private keys) is unreadable until you restore the pre-upgrade database backup or re-enter it. See [Stored secrets](../operations/storage.md).
+- **MCP without `BASE_URL`.** The protected-resource metadata, the `WWW-Authenticate` `resource_metadata` challenge and the OIDC audience no longer use the `http://localhost:8080` default when `BASE_URL` is unset. The metadata resource is derived from the request (`X-Forwarded-*` only from trusted proxies).
+- **Secret scan findings** show `redacted_value` as `****` only; it used to keep up to the first four characters. Findings stored before the upgrade keep their old value until the artifact is rescanned.
+- **Backups.** Lists are read in full (they were silently cut at 100,000 rows) and a table that cannot be read in full fails the backup. Storage backend and OIDC config secrets are removed at any nesting depth, including keys named `creds`, `connStr` and `conn_str`; a config row that is not a JSON object fails the backup instead of being dropped. A Docker repository with 1,000,000 or more tags fails the backup. Restore streams each table and inserts as it reads, so a damaged table can leave the records before the damage inserted.
+- **Cron schedules** with a stepped wildcard in a day field (`*/2` in day-of-month or day-of-week) now follow Vixie cron: the field counts as a wildcard, so `0 0 */2 * 1` runs on odd days that are Mondays instead of on either.
+- **Webhooks and quotas.** Delivery-status writes and quota refunds after a cancelled request are bounded by a timeout, so shutdown no longer waits on a stuck database.
+- **Federation.** A peer that sends a log page that does not advance, an entry behind the cursor, or an entry for a different unit than requested is rejected (`invalid_response`, `invalid_unit`) instead of looping or applying the wrong unit. A unit's failure count resets after it applies.
+- **SBOM and licenses.** Distinct free-form license names that sanitise to the same SPDX id no longer share one extracted license; an empty SPDX 3 justification is omitted; an artifact id ending in `@` is read as unversioned; a dependency equal to the subject no longer duplicates its `bom-ref`; `WITH` exceptions are no longer checked against license allow and deny lists.
+- **`oa import`** refuses asset paths from the source that contain `..`, empty segments or backslashes (recorded as failures) instead of writing them to the destination URL, and caps the decompressed npm tarball scan at 1 GiB.
+- **MCP rate limiter** keeps its bucket table within a hard cap.
+
 ### 0.19.1
 
 **What you must do**

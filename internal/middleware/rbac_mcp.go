@@ -121,8 +121,8 @@ func gateMCP(
 	if principal.IsAnonymous {
 		challenge := `Bearer realm="` + AuthRealm + `"`
 
-		if cfg.BaseURL != "" {
-			challenge += `, resource_metadata="` + ProtectedResourceMetadataURL(cfg.BaseURL, cfg.MCPPath) + `"`
+		if cfg.ClientBaseURL != "" {
+			challenge += `, resource_metadata="` + ProtectedResourceMetadataURL(cfg.ClientBaseURL, cfg.MCPPath) + `"`
 		}
 
 		if r.Header.Get("Authorization") != "" {

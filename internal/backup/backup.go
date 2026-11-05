@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -35,16 +36,18 @@ import (
 // ErrMissingBlobSHA256 reports a backed-up record without its blob sha256.
 var ErrMissingBlobSHA256 = errors.New("record has no blob sha256")
 
-// bulkListLimit caps single-call DB list methods that have no true cursor
-// pagination (a large fixed page rather than looping). Tables genuinely too
-// big for this would need real pagination added to the store.
-const bulkListLimit = 100000
+// listPageSize is the page size of the paginated table reads of an export:
+// listAll walks a table page by page until it is exhausted, so no table is cut
+// at a fixed row count.
+const listPageSize = 1000
 
 // maxManifestSize bounds the manifest entry read into memory from an
 // untrusted archive.
 const maxManifestSize = 16 << 20
 
-// maxTableSize bounds a single JSON table entry decoded from an archive.
+// maxTableSize bounds how much of one JSON table entry a restore reads from an
+// archive. The entry is decoded as a stream, record by record, so this bounds
+// the work on an untrusted archive, not the memory of a restore.
 const maxTableSize = 2 << 30
 
 // maxBlobEntrySize bounds one blob entry spooled to disk from an untrusted
@@ -98,49 +101,85 @@ func (e *Engine) restoreMissingUser(st *restoreState, oldUserID, msg string, kv 
 	e.restoreWarn(msg, kv...)
 }
 
-// redactOIDCSecret blanks client_secret inside an OIDC config JSON blob.
-func redactOIDCSecret(raw json.RawMessage) json.RawMessage {
+// errUnredactableConfig reports a stored JSON config that is not an object, so
+// its credential fields cannot be found and removed.
+var errUnredactableConfig = errors.New("config is not a JSON object")
+
+// redactJSONSecrets returns the JSON object raw without every member, at any
+// depth (nested objects, objects inside arrays), whose key isSecret reports.
+// An empty or null config is returned as is. A config that is not a JSON object
+// is an error: the archive must neither carry it unredacted nor silently lose
+// it, so the backup fails.
+func redactJSONSecrets(raw []byte, isSecret func(key string) bool) ([]byte, error) {
 	if len(raw) == 0 {
-		return raw
+		return raw, nil
 	}
 
-	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return nil
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, fmt.Errorf("%w: %w", errUnredactableConfig, err)
 	}
 
-	delete(m, "client_secret")
+	switch v.(type) {
+	case nil:
+		return raw, nil
+	case map[string]any:
+	default:
+		return nil, errUnredactableConfig
+	}
 
-	out, err := json.Marshal(m)
+	dropSecretKeys(v, isSecret)
+
+	out, err := json.Marshal(v)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("marshal redacted config: %w", err)
 	}
 
-	return out
+	return out, nil
 }
 
-// redactedStorageConfig drops credential-looking keys from a storage backend
-// JSON config so backups never carry cloud secrets.
-func redactedStorageConfig(raw []byte) []byte {
-	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return nil
-	}
+// dropSecretKeys deletes, in place, the members of every object under v whose
+// key isSecret reports.
+func dropSecretKeys(v any, isSecret func(key string) bool) {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, child := range t {
+			if isSecret(k) {
+				delete(t, k)
+				continue
+			}
 
-	for k := range m {
-		lk := strings.ToLower(k)
-		if strings.Contains(lk, "secret") || strings.Contains(lk, "key") || strings.Contains(lk, "password") ||
-			strings.Contains(lk, "token") {
-			delete(m, k)
+			dropSecretKeys(child, isSecret)
+		}
+	case []any:
+		for _, child := range t {
+			dropSecretKeys(child, isSecret)
 		}
 	}
+}
 
-	out, err := json.Marshal(m)
-	if err != nil {
-		return nil
-	}
+// redactOIDCSecret blanks client_secret (and any other secret member) inside an
+// OIDC config JSON blob.
+func redactOIDCSecret(raw json.RawMessage) (json.RawMessage, error) {
+	return redactJSONSecrets(raw, func(key string) bool {
+		return strings.Contains(strings.ToLower(key), "secret")
+	})
+}
 
-	return out
+// redactedStorageConfig drops credential-looking keys, at any depth (including
+// the free-form options map), from a storage backend JSON config so backups
+// never carry cloud secrets. Keys containing secret, key, password, token,
+// cred, connstr or conn_str (any case) are credentials: access/secret/account/
+// HMAC keys, passwords, tokens (SAS), credential blobs and connection strings.
+func redactedStorageConfig(raw []byte) ([]byte, error) {
+	return redactJSONSecrets(raw, func(key string) bool {
+		lk := strings.ToLower(key)
+
+		return slices.ContainsFunc(
+			[]string{"secret", "key", "password", "token", "cred", "connstr", "conn_str"},
+			func(part string) bool { return strings.Contains(lk, part) },
+		)
+	})
 }
 
 // EngineStore is the part of the database Engine needs.
@@ -512,7 +551,11 @@ type packageExport struct {
 // Repository settings trash_retention_days and immutable_releases round-trip
 // through models.Repository.
 func (e *exporter) exportMetadata(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
-	repos, err := e.db.ListRepositories(ctx, 1, bulkListLimit, "")
+	repos, err := listAll("repositories", func(page int) ([]*models.Repository, int, error) {
+		rows, err := e.db.ListRepositories(ctx, page, listPageSize, "")
+
+		return rows, unknownTotal, err
+	})
 	if err != nil {
 		return fmt.Errorf("failed to list repositories: %w", err)
 	}
@@ -521,7 +564,9 @@ func (e *exporter) exportMetadata(ctx context.Context, tw *tar.Writer, manifest 
 		return err
 	}
 
-	users, _, err := e.db.ListUsers(ctx, 1, bulkListLimit)
+	users, err := listAll("users", func(page int) ([]*models.User, int, error) {
+		return e.db.ListUsers(ctx, page, listPageSize)
+	})
 	if err != nil {
 		return fmt.Errorf("failed to list users: %w", err)
 	}
@@ -677,7 +722,11 @@ func (e *exporter) exportDockerTables(ctx context.Context, repo *models.Reposito
 	manifests, err := e.db.ListDockerManifestsByRepo(ctx, id)
 	collectRepoList(pkg, &pkg.dockerManifests, "docker manifests", id, manifests, err)
 
-	tags, err := e.db.ListDockerTagsByRepo(ctx, id, bulkListLimit)
+	tags, err := e.db.ListDockerTagsByRepo(ctx, id, maxDockerTagsPerRepo)
+	if err == nil && len(tags) >= maxDockerTagsPerRepo {
+		err = fmt.Errorf("%w: %d docker tags or more", errListTruncated, maxDockerTagsPerRepo)
+	}
+
 	collectRepoList(pkg, &pkg.dockerTags, "docker tags", id, tags, err)
 }
 
@@ -707,8 +756,69 @@ func (e *exporter) exportRepoScopedTables(ctx context.Context, repo *models.Repo
 	vulns, err := e.db.ListVulnScanResults(ctx, id, false)
 	collectRepoList(pkg, &pkg.vulnResults, "vuln scan results", id, vulns, err)
 
-	analyses, _, err := e.db.ListAIAnalyses(ctx, id, "", false, bulkListLimit, 0)
+	analyses, err := listAll("ai analyses", func(page int) ([]*models.AIAnalysis, int, error) {
+		return e.db.ListAIAnalyses(ctx, id, "", false, listPageSize, (page-1)*listPageSize)
+	})
 	collectRepoList(pkg, &pkg.aiAnalyses, "ai analyses", id, analyses, err)
+}
+
+// maxDockerTagsPerRepo is the most docker tags one repository's export reads:
+// the store lists them in one call without an offset, so a repository at the
+// limit fails the backup (errListTruncated) instead of silently losing tags.
+const maxDockerTagsPerRepo = 1_000_000
+
+// errListTruncated reports a table read that returned fewer rows than the table
+// holds. A backup missing rows must fail rather than complete.
+var errListTruncated = errors.New("list is incomplete")
+
+// unknownTotal is the total a list call returns when the store reports none.
+const unknownTotal = -1
+
+// listAll reads a whole table through list, one page (1-based) of listPageSize
+// rows at a time, until a page comes back short. list returns the table's total
+// row count with each page, or unknownTotal when the store has none; a total
+// the pages do not add up to means rows were skipped or repeated and fails the
+// read (errListTruncated) instead of exporting a partial table.
+func listAll[T any](what string, list func(page int) ([]T, int, error)) ([]T, error) {
+	var all []T
+
+	for page := 1; ; page++ {
+		rows, total, err := list(page)
+		if err != nil {
+			return nil, err
+		}
+
+		all = append(all, rows...)
+
+		if len(rows) < listPageSize {
+			if total != unknownTotal && len(all) != total {
+				return nil, fmt.Errorf("%s: %w: read %d of %d rows", what, errListTruncated, len(all), total)
+			}
+
+			return all, nil
+		}
+	}
+}
+
+// redactEach replaces every non-nil element of rows with a copy that redact
+// has edited, so the redaction never touches the listed rows themselves. The
+// first redaction failure fails the export: a row that cannot be redacted must
+// not be archived as it is, nor silently dropped.
+func redactEach[T any](rows []*T, redact func(*T) error) error {
+	for i, p := range rows {
+		if p == nil {
+			continue
+		}
+
+		c := *p
+		if err := redact(&c); err != nil {
+			return fmt.Errorf("redact secrets: %w", err)
+		}
+
+		rows[i] = &c
+	}
+
+	return nil
 }
 
 // writeListedTable writes a listed global table. A failed list call fails the
@@ -724,19 +834,22 @@ func writeListedTable[T any](e *exporter, tw *tar.Writer, manifest *BackupManife
 // exportGlobalTables backs up tables with no repository scope.
 func (e *exporter) exportGlobalTables(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
 	sso, err := e.db.ListAllSSOProviders(ctx)
-	for i, p := range sso {
-		if p != nil {
-			c := *p
-			c.OIDCConfig = redactOIDCSecret(c.OIDCConfig)
-			sso[i] = &c
-		}
+	if err == nil {
+		err = redactEach(sso, func(p *models.SSOProvider) error {
+			cfg, err := redactOIDCSecret(p.OIDCConfig)
+			p.OIDCConfig = cfg
+
+			return err
+		})
 	}
 
 	if err := writeListedTable(e, tw, manifest, "sso_providers", sso, err); err != nil {
 		return err
 	}
 
-	tokens, _, err := e.db.ListAllTokens(ctx, 1, bulkListLimit)
+	tokens, err := listAll("tokens", func(page int) ([]*models.Token, int, error) {
+		return e.db.ListAllTokens(ctx, page, listPageSize)
+	})
 	// Project tokens belong to service accounts that are not part of the
 	// archive (users are exported without them); they are reissued after a restore.
 	tokens = slices.DeleteFunc(tokens, func(t *models.Token) bool { return t.ProjectID != nil })
@@ -746,12 +859,13 @@ func (e *exporter) exportGlobalTables(ctx context.Context, tw *tar.Writer, manif
 	}
 
 	backends, err := e.db.ListStorageBackends(ctx)
-	for i, b := range backends {
-		if b != nil {
-			c := *b
-			c.Config = redactedStorageConfig(c.Config)
-			backends[i] = &c
-		}
+	if err == nil {
+		err = redactEach(backends, func(b *models.StorageBackend) error {
+			cfg, err := redactedStorageConfig(b.Config)
+			b.Config = cfg
+
+			return err
+		})
 	}
 
 	if err := writeListedTable(e, tw, manifest, "storage_backends", backends, err); err != nil {
@@ -772,7 +886,9 @@ func (e *exporter) exportGlobalTables(ctx context.Context, tw *tar.Writer, manif
 
 // exportBundles backs up release bundles with their items and promotions.
 func (e *exporter) exportBundles(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
-	bundles, _, err := e.db.ListReleaseBundles(ctx, "", "", 1, bulkListLimit)
+	bundles, err := listAll("release bundles", func(page int) ([]*models.ReleaseBundle, int, error) {
+		return e.db.ListReleaseBundles(ctx, "", "", page, listPageSize)
+	})
 	if err := writeListedTable(e, tw, manifest, "release_bundles", bundles, err); err != nil {
 		return err
 	}
@@ -1220,21 +1336,58 @@ func (e *Engine) restoreSteps() map[string]restoreFunc {
 	}
 }
 
-// decodeSlice reads a JSON array of T from r. A JSON null element decodes to a
-// nil pointer for pointer element types; those are dropped here so no restore
-// step dereferences one (a tampered or truncated archive must not panic the
-// restore half-applied).
-func decodeSlice[T any](r io.Reader) ([]T, error) {
-	var items []T
-	if err := json.NewDecoder(io.LimitReader(r, maxTableSize)).Decode(&items); err != nil {
-		return nil, fmt.Errorf("failed to decode: %w", err)
+// errNotJSONArray reports a table entry that is not a JSON array.
+var errNotJSONArray = errors.New("table is not a JSON array")
+
+// decodeEach streams the elements of a JSON array of T from r, so a restore
+// holds one record in memory instead of the whole table. A failure (a
+// malformed, truncated or non-array entry) is yielded once as the error and
+// ends the sequence. A null table (an empty list is written as null) has no
+// elements. A JSON null element decodes to a nil pointer for pointer element
+// types; those are skipped so no restore step dereferences one (a tampered or
+// truncated archive must not panic the restore half-applied).
+func decodeEach[T any](r io.Reader) iter.Seq2[T, error] {
+	return func(yield func(T, error) bool) {
+		var zero T
+
+		dec := json.NewDecoder(io.LimitReader(r, maxTableSize))
+
+		tok, err := dec.Token()
+		if err != nil {
+			yield(zero, fmt.Errorf("failed to decode: %w", err))
+			return
+		}
+
+		if tok == nil {
+			return
+		}
+
+		if d, ok := tok.(json.Delim); !ok || d != '[' {
+			yield(zero, fmt.Errorf("failed to decode: %w", errNotJSONArray))
+			return
+		}
+
+		for dec.More() {
+			var item T
+			if err := dec.Decode(&item); err != nil {
+				yield(zero, fmt.Errorf("failed to decode: %w", err))
+				return
+			}
+
+			if v := reflect.ValueOf(item); v.Kind() == reflect.Pointer && v.IsNil() {
+				continue
+			}
+
+			if !yield(item, nil) {
+				return
+			}
+		}
+
+		// The closing bracket: its absence is a truncated entry.
+		if _, err := dec.Token(); err != nil {
+			yield(zero, fmt.Errorf("failed to decode: %w", err))
+		}
 	}
-
-	return slices.DeleteFunc(items, func(item T) bool {
-		v := reflect.ValueOf(item)
-
-		return v.Kind() == reflect.Pointer && v.IsNil()
-	}), nil
 }
 
 // repoScoped returns the restore step of a table whose rows each belong to one
@@ -1251,12 +1404,11 @@ func repoScoped[T any](
 	create func(context.Context, T) error,
 ) restoreFunc {
 	return func(ctx context.Context, r io.Reader, st *restoreState) error {
-		items, err := decodeSlice[T](r)
-		if err != nil {
-			return fmt.Errorf("failed to decode %s: %w", label, err)
-		}
+		for item, decodeErr := range decodeEach[T](r) {
+			if decodeErr != nil {
+				return fmt.Errorf("failed to decode %s: %w", label, decodeErr)
+			}
 
-		for _, item := range items {
 			id := repoID(item)
 
 			if *id == "" && allowGlobal {
@@ -1291,12 +1443,11 @@ func repoScoped[T any](
 // always generates a fresh server-side id (see postgres.go), so every
 // subsequent table referencing a repository must go through repoIDMap.
 func (e *Engine) restoreRepositories(ctx context.Context, r io.Reader, st *restoreState) error {
-	repos, err := decodeSlice[*models.Repository](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode repositories: %w", err)
-	}
+	for repo, decodeErr := range decodeEach[*models.Repository](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode repositories: %w", decodeErr)
+		}
 
-	for _, repo := range repos {
 		oldID := repo.ID
 
 		// These names shadow the SPA pages and the isolated /repos/<marker>/ routes.
@@ -1333,12 +1484,11 @@ func (e *Engine) restoreRepositories(ctx context.Context, r io.Reader, st *resto
 // fresh server-side id, needed downstream for tokens.user_id and
 // projects.owner_id/project_members.user_id.
 func (e *Engine) restoreUsers(ctx context.Context, r io.Reader, st *restoreState) error {
-	users, err := decodeSlice[*models.User](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode users: %w", err)
-	}
+	for user, decodeErr := range decodeEach[*models.User](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode users: %w", decodeErr)
+		}
 
-	for _, user := range users {
 		oldID := user.ID
 		if _, err := e.db.CreateUser(ctx, user); err != nil {
 			if database.IsUniqueViolation(err) {
@@ -1363,12 +1513,11 @@ func (e *Engine) restoreUsers(ctx context.Context, r io.Reader, st *restoreState
 
 // restoreGroups restores groups from JSON data.
 func (e *Engine) restoreGroups(ctx context.Context, r io.Reader, st *restoreState) error {
-	groups, err := decodeSlice[*models.Group](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode groups: %w", err)
-	}
+	for group, decodeErr := range decodeEach[*models.Group](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode groups: %w", decodeErr)
+		}
 
-	for _, group := range groups {
 		oldID := group.ID
 
 		created, err := e.db.CreateGroup(ctx, group)
@@ -1389,12 +1538,11 @@ func (e *Engine) restoreGroups(ctx context.Context, r io.Reader, st *restoreStat
 // Both ends are remapped through repoIDMap; a member whose repository was not
 // restored is counted as a failure rather than silently shortening the group.
 func (e *Engine) restoreGroupMembers(ctx context.Context, r io.Reader, st *restoreState) error {
-	records, err := decodeSlice[groupMemberRecord](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode repository group members: %w", err)
-	}
+	for rec, decodeErr := range decodeEach[groupMemberRecord](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode repository group members: %w", decodeErr)
+		}
 
-	for _, rec := range records {
 		groupID, gok := st.repoIDMap[rec.GroupRepoID]
 		memberID, mok := st.repoIDMap[rec.MemberRepoID]
 
@@ -1464,12 +1612,11 @@ func (e *Engine) restoreDockerManifest(ctx context.Context, m *models.DockerMani
 }
 
 func (e *Engine) restoreSSOProviders(ctx context.Context, r io.Reader, _ *restoreState) error {
-	items, err := decodeSlice[*models.SSOProvider](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode sso providers: %w", err)
-	}
+	for it, decodeErr := range decodeEach[*models.SSOProvider](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode sso providers: %w", decodeErr)
+		}
 
-	for _, it := range items {
 		if err := e.db.CreateSSOProvider(ctx, it); err != nil {
 			e.restoreWarn("failed to restore sso provider", "slug", it.Slug, "error", err)
 		}
@@ -1481,12 +1628,11 @@ func (e *Engine) restoreSSOProviders(ctx context.Context, r io.Reader, _ *restor
 // restoreTokens remaps UserID (a raw FK, unlike the username-resolved
 // creator/promoter/adder fields elsewhere) via userIDMap.
 func (e *Engine) restoreTokens(ctx context.Context, r io.Reader, st *restoreState) error {
-	items, err := decodeSlice[*models.Token](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode tokens: %w", err)
-	}
+	for it, decodeErr := range decodeEach[*models.Token](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode tokens: %w", decodeErr)
+		}
 
-	for _, it := range items {
 		newUserID, ok := st.userIDMap[it.UserID]
 		if !ok {
 			e.restoreMissingUser(st, it.UserID, "skipping token: source user not restored", "user_id", it.UserID, "name", it.Name)
@@ -1504,12 +1650,11 @@ func (e *Engine) restoreTokens(ctx context.Context, r io.Reader, st *restoreStat
 }
 
 func (e *Engine) restoreStorageBackends(ctx context.Context, r io.Reader, _ *restoreState) error {
-	items, err := decodeSlice[*models.StorageBackend](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode storage backends: %w", err)
-	}
+	for it, decodeErr := range decodeEach[*models.StorageBackend](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode storage backends: %w", decodeErr)
+		}
 
-	for _, it := range items {
 		if err := e.db.CreateStorageBackend(ctx, it); err != nil {
 			if database.IsUniqueViolation(err) {
 				// The migrations seed a backend (local); a fresh target already
@@ -1529,12 +1674,11 @@ func (e *Engine) restoreStorageBackends(ctx context.Context, r io.Reader, _ *res
 // best-effort basis: stages are opaque JSONB with no live FK, so a stale id
 // (source repo not restored) is left as-is rather than blocking the restore.
 func (e *Engine) restorePromotionPipelines(ctx context.Context, r io.Reader, st *restoreState) error {
-	items, err := decodeSlice[*models.PromotionPipeline](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode promotion pipelines: %w", err)
-	}
+	for it, decodeErr := range decodeEach[*models.PromotionPipeline](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode promotion pipelines: %w", decodeErr)
+		}
 
-	for _, it := range items {
 		oldID := it.ID
 
 		for i := range it.Stages {
@@ -1555,12 +1699,11 @@ func (e *Engine) restorePromotionPipelines(ctx context.Context, r io.Reader, st 
 }
 
 func (e *Engine) restoreReleaseBundles(ctx context.Context, r io.Reader, st *restoreState) error {
-	items, err := decodeSlice[*models.ReleaseBundle](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode release bundles: %w", err)
-	}
+	for it, decodeErr := range decodeEach[*models.ReleaseBundle](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode release bundles: %w", decodeErr)
+		}
 
-	for _, it := range items {
 		oldID := it.ID
 
 		if it.PipelineID != nil {
@@ -1583,12 +1726,11 @@ func (e *Engine) restoreReleaseBundles(ctx context.Context, r io.Reader, st *res
 }
 
 func (e *Engine) restoreReleaseBundleItems(ctx context.Context, r io.Reader, st *restoreState) error {
-	items, err := decodeSlice[*models.ReleaseBundleItem](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode release bundle items: %w", err)
-	}
+	for it, decodeErr := range decodeEach[*models.ReleaseBundleItem](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode release bundle items: %w", decodeErr)
+		}
 
-	for _, it := range items {
 		newBundleID, ok := st.bundleIDMap[it.BundleID]
 		if !ok {
 			e.restoreWarn("skipping release bundle item: source bundle not restored", "bundle_id", it.BundleID, "sha256", it.SHA256)
@@ -1613,12 +1755,11 @@ func (e *Engine) restoreReleaseBundleItems(ctx context.Context, r io.Reader, st 
 }
 
 func (e *Engine) restoreBundlePromotions(ctx context.Context, r io.Reader, st *restoreState) error {
-	items, err := decodeSlice[*models.BundlePromotion](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode bundle promotions: %w", err)
-	}
+	for it, decodeErr := range decodeEach[*models.BundlePromotion](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode bundle promotions: %w", decodeErr)
+		}
 
-	for _, it := range items {
 		newBundleID, ok := st.bundleIDMap[it.BundleID]
 		if !ok {
 			e.restoreWarn("skipping bundle promotion: source bundle not restored", "bundle_id", it.BundleID)
@@ -1643,12 +1784,15 @@ func (e *Engine) restoreBundlePromotions(ctx context.Context, r io.Reader, st *r
 }
 
 func (e *Engine) restoreProjects(ctx context.Context, r io.Reader, st *restoreState) error {
-	items, err := decodeSlice[*models.Project](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode projects: %w", err)
+	for it, decodeErr := range decodeEach[*models.Project](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode projects: %w", decodeErr)
+		}
+
+		e.createRestoredProject(ctx, it, st)
 	}
 
-	e.createRestoredProjects(ctx, items, st)
+	e.moveRestoredReposToProjects(ctx, st)
 
 	return nil
 }
@@ -1656,34 +1800,31 @@ func (e *Engine) restoreProjects(ctx context.Context, r io.Reader, st *restoreSt
 // systemProjectName is the name of the built-in system project.
 const systemProjectName = "system"
 
-func (e *Engine) createRestoredProjects(ctx context.Context, items []*models.Project, st *restoreState) {
-	for _, it := range items {
-		oldID := it.ID
+// createRestoredProject recreates one project and records its id remap.
+func (e *Engine) createRestoredProject(ctx context.Context, it *models.Project, st *restoreState) {
+	oldID := it.ID
 
-		if it.OwnerID != nil {
-			if newOwnerID, ok := st.userIDMap[*it.OwnerID]; ok {
-				it.OwnerID = &newOwnerID
-			} else {
-				it.OwnerID = nil
-			}
+	if it.OwnerID != nil {
+		if newOwnerID, ok := st.userIDMap[*it.OwnerID]; ok {
+			it.OwnerID = &newOwnerID
+		} else {
+			it.OwnerID = nil
 		}
-
-		// The built-in system project exists in every database and grants
-		// nothing: map it to itself instead of recreating it.
-		if oldID == models.SystemProjectID || it.Name == systemProjectName {
-			st.projectIDMap[oldID] = models.SystemProjectID
-			continue
-		}
-
-		if err := e.db.CreateProject(ctx, it); err != nil {
-			e.restoreWarn("failed to restore project", "name", it.Name, "error", err)
-			continue
-		}
-
-		st.projectIDMap[oldID] = it.ID
 	}
 
-	e.moveRestoredReposToProjects(ctx, st)
+	// The built-in system project exists in every database and grants
+	// nothing: map it to itself instead of recreating it.
+	if oldID == models.SystemProjectID || it.Name == systemProjectName {
+		st.projectIDMap[oldID] = models.SystemProjectID
+		return
+	}
+
+	if err := e.db.CreateProject(ctx, it); err != nil {
+		e.restoreWarn("failed to restore project", "name", it.Name, "error", err)
+		return
+	}
+
+	st.projectIDMap[oldID] = it.ID
 }
 
 // moveRestoredReposToProjects puts restored repositories back into their
@@ -1707,12 +1848,11 @@ func (e *Engine) moveRestoredReposToProjects(ctx context.Context, st *restoreSta
 }
 
 func (e *Engine) restoreProjectMembers(ctx context.Context, r io.Reader, st *restoreState) error {
-	items, err := decodeSlice[*models.ProjectMember](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode project members: %w", err)
-	}
+	for it, decodeErr := range decodeEach[*models.ProjectMember](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode project members: %w", decodeErr)
+		}
 
-	for _, it := range items {
 		e.restoreProjectMember(ctx, st, it.ProjectID, it.UserID, it.Role)
 	}
 
@@ -1744,12 +1884,11 @@ func (e *Engine) restoreProjectMember(ctx context.Context, st *restoreState, old
 // restoreProjectQuotas restores the project storage ceilings; the usage
 // counters are rebuilt from the repositories by reconcileQuotaUsage.
 func (e *Engine) restoreProjectQuotas(ctx context.Context, r io.Reader, st *restoreState) error {
-	items, err := decodeSlice[*models.ProjectQuota](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode project quotas: %w", err)
-	}
+	for it, decodeErr := range decodeEach[*models.ProjectQuota](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode project quotas: %w", decodeErr)
+		}
 
-	for _, it := range items {
 		newProjectID, ok := st.projectIDMap[it.ProjectID]
 		if !ok || newProjectID == models.SystemProjectID {
 			continue
@@ -1765,12 +1904,11 @@ func (e *Engine) restoreProjectQuotas(ctx context.Context, r io.Reader, st *rest
 
 // restoreProjectCleanupPolicies restores the project default cleanup policies.
 func (e *Engine) restoreProjectCleanupPolicies(ctx context.Context, r io.Reader, st *restoreState) error {
-	items, err := decodeSlice[*models.CleanupPolicy](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode project cleanup policies: %w", err)
-	}
+	for it, decodeErr := range decodeEach[*models.CleanupPolicy](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode project cleanup policies: %w", decodeErr)
+		}
 
-	for _, it := range items {
 		newProjectID, ok := st.projectIDMap[it.ProjectID]
 		if !ok || newProjectID == models.SystemProjectID {
 			continue
@@ -1788,12 +1926,11 @@ func (e *Engine) restoreProjectCleanupPolicies(ctx context.Context, r io.Reader,
 }
 
 func (e *Engine) restoreProjectGroups(ctx context.Context, r io.Reader, st *restoreState) error {
-	items, err := decodeSlice[*models.ProjectGroup](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode project groups: %w", err)
-	}
+	for it, decodeErr := range decodeEach[*models.ProjectGroup](r) {
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode project groups: %w", decodeErr)
+		}
 
-	for _, it := range items {
 		newProjectID, ok := st.projectIDMap[it.ProjectID]
 		if !ok {
 			e.restoreWarn("skipping project group: source project not restored", "project_id", it.ProjectID)

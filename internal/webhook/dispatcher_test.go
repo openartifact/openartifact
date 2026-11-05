@@ -457,3 +457,60 @@ func TestDeliveryDoesNotFollowRedirects(t *testing.T) {
 		t.Fatalf("status = %d, want 307", delivery.ResponseStatus)
 	}
 }
+
+// stuckWriteDB blocks every delivery status write until its context ends.
+type stuckWriteDB struct {
+	disabledWebhookDB
+
+	writing chan struct{}
+}
+
+func (db *stuckWriteDB) UpdateWebhookDelivery(ctx context.Context, _ *models.WebhookDelivery) error {
+	db.writing <- struct{}{}
+	<-ctx.Done()
+
+	return ctx.Err()
+}
+
+// TestStopReturnsWhenStatusWriteHangs pins that a delivery status write is
+// bounded: a database that never answers must not hold a worker, and so Stop,
+// for longer than the write timeout.
+func TestStopReturnsWhenStatusWriteHangs(t *testing.T) {
+	log, err := logger.New("error", "json", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db := &stuckWriteDB{writing: make(chan struct{}, 1)}
+	db.wh = &models.Webhook{ID: "wh", Enabled: false, MaxRetries: 3}
+
+	d := NewDispatcher(db, log)
+	d.writeTimeout = 50 * time.Millisecond
+	d.Start()
+
+	if !d.enqueue(&models.WebhookDelivery{ID: "d", WebhookID: "wh", EventType: "artifact.uploaded"}) {
+		t.Fatal("delivery not queued")
+	}
+
+	deadline := time.After(10 * time.Second)
+
+	select {
+	case <-db.writing:
+	case <-deadline:
+		t.Fatal("status write never started")
+	}
+
+	stopped := make(chan struct{})
+
+	go func() {
+		d.Stop()
+		close(stopped)
+	}()
+
+	// Stop alone would wait out its 10s grace on a stuck write.
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop blocked on a hanging status write")
+	}
+}

@@ -17,7 +17,7 @@ import (
 // Schedule is a parsed cron expression.
 type Schedule struct {
 	minute, hour, dom, month, dow uint64 // bitmasks
-	domAny, dowAny                bool   // field was "*" (or "*/n" with full range start)
+	domAny, dowAny                bool   // field has a "*" or "*/n" item (Vixie cron: no OR rule)
 }
 
 // descriptor expands an @descriptor into its 5-field form.
@@ -116,10 +116,9 @@ func parseField(field string, lo, hi int) (uint64, bool, error) {
 
 		switch {
 		case rangePart == "*":
-			start, end = lo, hi
-			if !hasStep {
-				star = true
-			}
+			// "*/n" counts as a wildcard too (Vixie cron): a starred day field
+			// switches the day-of-month/day-of-week OR rule off.
+			start, end, star = lo, hi, true
 		case strings.Contains(rangePart, "-"):
 			a, b, _ := strings.Cut(rangePart, "-")
 

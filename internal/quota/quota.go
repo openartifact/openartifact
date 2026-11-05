@@ -11,9 +11,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 )
+
+// releaseTimeout bounds the detached database call of ReleaseN.
+const releaseTimeout = 30 * time.Second
 
 // ErrExceeded is returned by Enforce when storing the artifact would exceed the
 // repository's size or artifact-count limit.
@@ -119,7 +123,13 @@ func ReleaseN(ctx context.Context, db ReleaseNStore, repoID string, size int64, 
 		return nil
 	}
 
-	if err := db.DecrementStorageUsage(context.WithoutCancel(ctx), repoID, size, count); err != nil {
+	// Detached so a cancelled request still returns its reservation, but
+	// bounded so a stuck database cannot hold the caller forever; a release
+	// that fails is repaired by the periodic usage reconcile.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+	defer cancel()
+
+	if err := db.DecrementStorageUsage(ctx, repoID, size, count); err != nil {
 		return fmt.Errorf("release quota: %w", err)
 	}
 

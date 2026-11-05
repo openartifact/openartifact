@@ -179,7 +179,7 @@ func (s *Scanner) ScanText(text string) []models.SecretFinding {
 			Type:          h.pattern.Name,
 			Description:   h.pattern.Description,
 			Severity:      h.pattern.Severity,
-			RedactedValue: redactValue(text[h.sp.start:h.sp.end]),
+			RedactedValue: redactedValue,
 			LineHint:      getLineHint(text, h.sp.start, h.sp.end, masked),
 		})
 	}
@@ -199,16 +199,10 @@ func (s *Scanner) ScanMetadata(metadata map[string]any) []models.SecretFinding {
 	return s.ScanText(string(metadataJSON))
 }
 
-// redactValue masks a secret, keeping at most an eighth of it (max 4 bytes,
-// cut on a rune boundary) so a finding never reveals a useful prefix.
-func redactValue(value string) string {
-	n := min(len(value)/8, 4)
-	for n > 0 && !utf8.RuneStart(value[n]) {
-		n--
-	}
-
-	return value[:n] + "****"
-}
+// redactedValue is the RedactedValue of every finding: the secret itself and
+// every part of it, including its length, stay out of the stored result. The
+// finding's Type says what kind of secret it is.
+const redactedValue = "****"
 
 // hintWindow is the byte range of the text a line hint is built from: the match
 // plus up to 50 bytes either side, cut at the line boundaries and widened to

@@ -117,6 +117,7 @@ func TestServerLimitsValidation(t *testing.T) {
 		{"negative write", func(s *ServerConfig) { s.WriteTimeout = -1 }, true},
 		{"negative header", func(s *ServerConfig) { s.ReadHeaderTimeout = -5 }, true},
 		{"negative idle", func(s *ServerConfig) { s.IdleTimeout = -1 }, true},
+		{"zero shutdown", func(s *ServerConfig) { s.ShutdownTimeout = 0 }, true},
 		{"negative shutdown", func(s *ServerConfig) { s.ShutdownTimeout = -1 }, true},
 		{"negative delay", func(s *ServerConfig) { s.ShutdownDelay = -1 }, true},
 		{"huge idle", func(s *ServerConfig) { s.IdleTimeout = maxServerSeconds + 1 }, true},
