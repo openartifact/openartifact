@@ -14,6 +14,7 @@ OpenArtifact is one Go binary with the web UI embedded. It needs PostgreSQL (the
 |---|---|
 | [Docker Compose](#docker-compose) | Trying it out and small single-host installs. Builds the image from the checkout and bundles PostgreSQL. |
 | [Helm](#helm) | Kubernetes, with an optional CloudNativePG database, high availability and Ingress or Gateway API. |
+| [AWS with Terraform](#aws-with-terraform) | AWS, with ECS Fargate or an existing EKS cluster, S3, RDS PostgreSQL and an HTTPS load balancer. |
 | [Release binary or source build](#binary-and-build-from-source) | Bare metal, VMs and systemd, with your own PostgreSQL. |
 
 ## Docker Compose
@@ -257,6 +258,54 @@ Key points from the [chart README](https://github.com/openartifact/helm-charts/b
 - Set `baseUrl` to the public URL and `config.trustedProxies` to your ingress controller's CIDR.
 - Any server variable can be set through `env` or `secrets.extra`.
 - First-login password: find the `OPENARTIFACT BOOTSTRAP` block in the pod logs (`kubectl -n openartifact logs <pod>`), see [Read the generated password](#read-the-generated-password).
+
+## AWS with Terraform
+
+To run OpenArtifact on AWS, use the [terraform-aws-openartifact](https://github.com/openartifact/terraform-aws-openartifact) module. It works with Terraform and OpenTofu 1.11 or newer.
+
+Pick one of two paths:
+
+- **ECS Fargate.** The root module runs OpenArtifact as an ECS service behind the load balancer.
+- **Existing EKS cluster.** The `//modules/eks` submodule installs the [Helm](#helm) chart on your cluster and grants S3 access with EKS Pod Identity.
+
+Both paths create:
+
+- an S3 bucket encrypted with a KMS key, for package blobs;
+- an RDS PostgreSQL database whose master password AWS manages;
+- Secrets Manager secrets for `OPENARTIFACT_SECRET_KEY` and `AUTH_HMAC_KEY`;
+- an Application Load Balancer with HTTPS.
+
+Call the module with your network and certificate:
+
+```hcl
+module "openartifact" {
+  source  = "openartifact/openartifact/aws"
+  version = "~> 0.1"
+
+  name                 = "openartifact"
+  vpc_id                = "vpc-0123456789abcdef0"
+  private_subnet_ids    = ["subnet-0aaa", "subnet-0bbb"]
+  public_subnet_ids     = ["subnet-0ccc", "subnet-0ddd"]
+  certificate_arn       = "arn:aws:acm:eu-west-1:111122223333:certificate/EXAMPLE"
+  allowed_ingress_cidrs = ["10.0.0.0/8"]
+  image_tag             = "0.19.2"
+}
+```
+
+Run `terraform init && terraform apply`, then open the load balancer address. The module is on the [Terraform Registry](https://registry.terraform.io/modules/openartifact/openartifact/aws). To use an unreleased commit, set `source = "git::https://github.com/openartifact/terraform-aws-openartifact.git?ref=vX.Y.Z"` and drop `version`.
+
+The snippet is for the ECS path. For the EKS path, use this source instead:
+
+```hcl
+source  = "openartifact/openartifact/aws//modules/eks"
+version = "~> 0.1"
+```
+
+The EKS module takes different inputs: the cluster name, the VPC, the database subnets, the security groups of your workloads, the namespace and the chart version. The repository README lists every input and output of both modules.
+
+OpenArtifact reaches S3 through the task role (ECS) or the pod identity (EKS). The module sets no access keys, so `STORAGE_ACCESS_KEY` stays unset and the server uses the AWS default credential chain.
+
+Keep the `OPENARTIFACT_SECRET_KEY` secret: if it is lost, stored upstream passwords and signing keys cannot be read. See [First login](#first-login) for the admin password.
 
 ## Binary and build from source
 

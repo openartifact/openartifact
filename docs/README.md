@@ -14,7 +14,7 @@ These pages are also published, one version per release, at <https://openartifac
 
 | Page | Contents |
 |---|---|
-| [Installation](getting-started/installation.md) | Docker Compose, Helm, release binaries and source builds; first login and password reset; installing the web UI as an app (PWA) |
+| [Installation](getting-started/installation.md) | Docker Compose, Helm, AWS with Terraform, release binaries and source builds; first login and password reset; installing the web UI as an app (PWA) |
 | [Your first repository](getting-started/first-repository.md) | Create a hosted repository, make an access token, publish and install one package |
 | [Web UI](getting-started/web-ui.md) | The seven areas, the Ctrl/Cmd+K command palette, the settings hub, the artifact page and where the old URLs went |
 | [Configuration](getting-started/configuration.md) | How settings load, the common settings with env var, YAML key and default; the complete list is the generated [configuration reference](reference/config.md) |
