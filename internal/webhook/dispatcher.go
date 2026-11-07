@@ -427,18 +427,14 @@ func (d *Dispatcher) deliver(wh *models.Webhook, delivery *models.WebhookDeliver
 
 			return
 		}
-		signature := computeHMAC(payloadJSON, []byte(secret))
-		req.Header.Set("X-Hub-Signature-256", "sha256="+signature)
+		key := []byte(secret)
+		req.Header.Set("X-Hub-Signature-256", "sha256="+computeHMAC(key, payloadJSON))
 
+		// V2 signs "<timestamp>.<delivery id>.<body>".
 		ts := strconv.FormatInt(time.Now().Unix(), 10)
-		signed := make([]byte, 0, len(ts)+len(delivery.ID)+len(payloadJSON)+2)
-		signed = append(signed, ts...)
-		signed = append(signed, '.')
-		signed = append(signed, delivery.ID...)
-		signed = append(signed, '.')
-		signed = append(signed, payloadJSON...)
+		dot := []byte{'.'}
 		req.Header.Set(headerTimestamp, ts)
-		req.Header.Set(headerSignatureV2, "sha256="+computeHMAC(signed, []byte(secret)))
+		req.Header.Set(headerSignatureV2, "sha256="+computeHMAC(key, []byte(ts), dot, []byte(delivery.ID), dot, payloadJSON))
 	}
 
 	// Make the request
@@ -522,10 +518,12 @@ func (d *Dispatcher) saveDelivery(webhookID string, delivery *models.WebhookDeli
 	}
 }
 
-// computeHMAC computes HMAC-SHA256 signature.
-func computeHMAC(data, secret []byte) string {
+// computeHMAC computes the hex HMAC-SHA256 of the concatenation of parts.
+func computeHMAC(secret []byte, parts ...[]byte) string {
 	h := hmac.New(sha256.New, secret)
-	h.Write(data)
+	for _, p := range parts {
+		h.Write(p)
+	}
 
 	return hex.EncodeToString(h.Sum(nil))
 }

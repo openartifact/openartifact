@@ -631,7 +631,7 @@ func TestDeliverUsesPayloadFormat(t *testing.T) {
 				t.Errorf("receiver got %q (%s), want %q (%s)", gotBody, gotCT, wantBody, wantCT)
 			}
 
-			if want := "sha256=" + computeHMAC(gotBody, []byte("s3cret")); gotSig != want {
+			if want := "sha256=" + computeHMAC([]byte("s3cret"), gotBody); gotSig != want {
 				t.Errorf("signature = %q, want %q (over the format's body)", gotSig, want)
 			}
 

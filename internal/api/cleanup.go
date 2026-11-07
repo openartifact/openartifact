@@ -345,18 +345,7 @@ func (h *CleanupHandler) handleRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.runner.TriggerPolicy(ctx, id); err != nil {
-		switch {
-		case errors.Is(err, worker.ErrPolicyNotFound):
-			writeError(w, http.StatusNotFound, "not_found", "cleanup policy not found")
-		case errors.Is(err, worker.ErrPolicyBusy):
-			writeError(w, http.StatusConflict, "conflict", "cleanup policy is already running")
-		case errors.Is(err, worker.ErrCleanupStopping):
-			writeError(w, http.StatusServiceUnavailable, "unavailable", "server is shutting down")
-		default:
-			h.log.Errorw("run cleanup policy: trigger failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to start cleanup policy")
-		}
-
+		h.writeTriggerError(w, err)
 		return
 	}
 
@@ -368,6 +357,30 @@ func (h *CleanupHandler) handleRun(w http.ResponseWriter, r *http.Request) {
 		"message":   "cleanup policy run started",
 		"policy_id": id,
 	})
+}
+
+// writeTriggerError answers a failed TriggerPolicy: the errors the caller may
+// see by their status, anything else as an internal error.
+func (h *CleanupHandler) writeTriggerError(w http.ResponseWriter, err error) {
+	known := []struct {
+		err          error
+		status       int
+		code, detail string
+	}{
+		{worker.ErrPolicyNotFound, http.StatusNotFound, "not_found", "cleanup policy not found"},
+		{worker.ErrPolicyBusy, http.StatusConflict, "conflict", "cleanup policy is already running"},
+		{worker.ErrCleanupStopping, http.StatusServiceUnavailable, "unavailable", "server is shutting down"},
+	}
+
+	for _, m := range known {
+		if errors.Is(err, m.err) {
+			writeError(w, m.status, m.code, m.detail)
+			return
+		}
+	}
+
+	h.log.Errorw("run cleanup policy: trigger failed", "error", err)
+	writeError(w, http.StatusInternalServerError, "internal_error", "failed to start cleanup policy")
 }
 
 // cleanupPreviewResponse is what a dry run of a cleanup policy reports.
