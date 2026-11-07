@@ -174,7 +174,6 @@ func (m *sessionMockDB) GetUserByID(_ context.Context, _ string) (*models.User, 
 func (m *sessionMockDB) GetUserByUsername(_ context.Context, _ string) (*models.User, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) UpdateUser(_ context.Context, _ *models.User) error { return nil }
 func (m *sessionMockDB) ListUsers(_ context.Context, _, _ int) ([]*models.User, int, error) {
 	return nil, 0, nil
 }

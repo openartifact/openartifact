@@ -36,6 +36,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/pglock"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -2139,7 +2140,7 @@ func TestEngineTombstoneGCRemovesOnlyExpiredTombstones(t *testing.T) {
 	a.eng.TombstoneRetention = 30 * 24 * time.Hour
 
 	// Another replica is running the collection: this one skips it.
-	release, locked, err := tryLock(context.Background(), a.db, "federation:gc")
+	release, locked, err := pglock.Try(context.Background(), a.db, "federation:gc")
 	if err != nil || !locked {
 		t.Fatalf("take the gc lock: %v (locked %v)", err, locked)
 	}

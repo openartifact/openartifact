@@ -927,7 +927,7 @@ type captureUpdateDB struct {
 	updated *models.Repository
 }
 
-func (c *captureUpdateDB) UpdateRepository(_ context.Context, repo *models.Repository) error {
+func (c *captureUpdateDB) UpdateRepositorySettings(_ context.Context, repo *models.Repository, _ database.RepositorySettingsChange) error {
 	cp := *repo
 	c.updated = &cp
 

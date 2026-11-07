@@ -79,6 +79,20 @@ func (p *RepositoryStore) MoveRepositoryToProject(ctx context.Context, repoID, t
 		return err
 	}
 
+	if err := moveRepositoryTx(ctx, tx, repoID, toProjectID); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit repository move: %w", err)
+	}
+
+	return nil
+}
+
+// moveRepositoryTx moves a repository and its storage usage to another project
+// inside tx.
+func moveRepositoryTx(ctx context.Context, tx *sql.Tx, repoID, toProjectID string) error {
 	// The repository's usage follows it to the target project's ceiling.
 	if err := moveRepositoryUsage(ctx, tx, repoID, toProjectID); err != nil {
 		return err
@@ -96,10 +110,6 @@ func (p *RepositoryStore) MoveRepositoryToProject(ctx context.Context, repoID, t
 
 	if n, err := res.RowsAffected(); err != nil || n != 1 {
 		return ErrRepositoryNotFound
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit repository move: %w", err)
 	}
 
 	return nil
@@ -197,9 +207,25 @@ func (p *RepositoryStore) createRepository(ctx context.Context, repo *models.Rep
 	return nil
 }
 
-// UpdateRepositoryAndMembers updates the repository row and replaces its group
-// members in one transaction, so a failure of either leaves neither applied.
-func (p *RepositoryStore) UpdateRepositoryAndMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error {
+// RepositorySettingsChange is what UpdateRepositorySettings changes besides the
+// repository row's settings.
+type RepositorySettingsChange struct {
+	// ReplaceMembers replaces the group's members with MemberIDs (which may be
+	// empty, clearing the group).
+	ReplaceMembers bool
+	MemberIDs      []string
+	// MoveToProjectID, when set, moves the repository (and its usage) to that
+	// project in the same transaction.
+	MoveToProjectID string
+}
+
+// UpdateRepositorySettings writes the settings of repo, optionally moves it to
+// another project and replaces its group members, all in one transaction: a
+// failure leaves the repository untouched. The row's project_id is never taken
+// from repo (a stale snapshot must not revert a concurrent transfer); only
+// change.MoveToProjectID changes it. The project move fails with
+// ErrProjectQuotaExceeded or ErrRepositoryNotFound.
+func (p *RepositoryStore) UpdateRepositorySettings(ctx context.Context, repo *models.Repository, change RepositorySettingsChange) error {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
@@ -210,12 +236,20 @@ func (p *RepositoryStore) UpdateRepositoryAndMembers(ctx context.Context, repo *
 
 	defer func() { _ = tx.Rollback() }()
 
-	if err := updateRepositoryRow(ctx, tx, repo); err != nil {
+	if change.MoveToProjectID != "" {
+		if err := moveRepositoryTx(ctx, tx, repo.ID, change.MoveToProjectID); err != nil {
+			return err
+		}
+	}
+
+	if err := updateRepositoryRow(ctx, tx, repo, false); err != nil {
 		return err
 	}
 
-	if err := replaceGroupMembersTx(ctx, tx, repo.ID, memberIDs); err != nil {
-		return err
+	if change.ReplaceMembers {
+		if err := replaceGroupMembersTx(ctx, tx, repo.ID, change.MemberIDs); err != nil {
+			return err
+		}
 	}
 
 	if err := tx.Commit(); err != nil {

@@ -107,29 +107,6 @@ func (q *Queries) ListStorageBackends(ctx context.Context) ([]StorageBackend, er
 	return items, nil
 }
 
-const updateStorageBackend = `-- name: UpdateStorageBackend :exec
-UPDATE storage_backends SET name = $1, kind = $2, config = $3, updated_at = $4 WHERE id = $5
-`
-
-type UpdateStorageBackendParams struct {
-	Name      string          `db:"name" json:"name"`
-	Kind      string          `db:"kind" json:"kind"`
-	Config    json.RawMessage `db:"config" json:"config"`
-	UpdatedAt time.Time       `db:"updated_at" json:"updated_at"`
-	ID        string          `db:"id" json:"id"`
-}
-
-func (q *Queries) UpdateStorageBackend(ctx context.Context, arg UpdateStorageBackendParams) error {
-	_, err := q.db.Exec(ctx, updateStorageBackend,
-		arg.Name,
-		arg.Kind,
-		arg.Config,
-		arg.UpdatedAt,
-		arg.ID,
-	)
-	return err
-}
-
 const updateStorageBackendStatus = `-- name: UpdateStorageBackendStatus :exec
 UPDATE storage_backends SET status = $1, status_message = $2, last_checked_at = now() WHERE id = $3
 `

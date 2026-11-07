@@ -311,8 +311,11 @@ const { downloadManifest, downloadSignature } = useBundleDownloads(() => name.va
 
 // Removing an item from a draft is reversible: the toast offers to put it back.
 async function removeItem(item: BundleItem): Promise<void> {
+  // The toast outlives the route: pin the bundle the item came out of.
+  const bundleName = name.value
+  const bundleVersion = version.value
   try {
-    await removeBundleItem(name.value, version.value, item.sha256)
+    await removeBundleItem(bundleName, bundleVersion, item.sha256)
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('bundles.items.removeFailed'))
     return
@@ -321,17 +324,17 @@ async function removeItem(item: BundleItem): Promise<void> {
     level: 'success',
     title: t('bundles.items.removed'),
     description: item.artifact_path,
-    action: { label: t('bundles.items.undo'), run: () => void restoreItem(item) },
+    action: { label: t('bundles.items.undo'), run: () => void restoreItem(bundleName, bundleVersion, item) },
   })
   await items.refresh()
 }
 
-async function restoreItem(item: BundleItem): Promise<void> {
+async function restoreItem(bundleName: string, bundleVersion: string, item: BundleItem): Promise<void> {
   try {
-    await addBundleItems(name.value, version.value, [
+    await addBundleItems(bundleName, bundleVersion, [
       { source_repo_id: item.source_repo_id, sha256: item.sha256, artifact_path: item.artifact_path, format: item.format, size_bytes: item.size_bytes },
     ])
-    await items.refresh()
+    if (bundleName === name.value && bundleVersion === version.value) await items.refresh()
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('bundles.items.addFailed'))
   }

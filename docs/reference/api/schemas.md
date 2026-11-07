@@ -582,6 +582,7 @@ One curation rule of a proxy repository. Package and version patterns are globs 
 | `grace_period_seconds` | integer (int64) | yes | - |
 | `manifests` | array of [DockerGCManifest](#dockergcmanifest) | yes | - |
 | `manifests_deleted` | integer | yes | Untagged manifests deleted (would be, in a dry run) |
+| `manifests_missing_body` | integer | yes | Manifests whose body is missing from storage; while any exists, no blob of the repository is swept |
 | `repository` | string | yes | - |
 | `truncated` | boolean | yes | manifests/blobs are capped at 1000 entries each |
 

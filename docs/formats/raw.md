@@ -35,7 +35,7 @@ curl -fsS -u <USERNAME>:<TOKEN> -T file.bin HOST/repos/raw/REPO/path/to/file.bin
 ```
 
 - The limit is 5 GiB; larger bodies are `413`. The server hashes the body into a temporary file while it receives it.
-- An empty path is `400`.
+- An empty path is `400`. So is a path with an empty, `.` or `..` segment (`a//b`, `a/./b`), a trailing slash (`dir/`) or a backslash, because such a file could not be fetched again.
 - The [storage quota](../repositories/cleanup-and-quotas.md#what-counts) is enforced; over quota is `507`. Replacing a path releases the old content.
 - The content type is the request `Content-Type`, else detected from the first 512 bytes.
 - `PUT` to an existing path replaces it: same record, new content. The replaced blob is removed once nothing references it. Raw files are mutable by default.

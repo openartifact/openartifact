@@ -315,7 +315,7 @@ func (h *Handler) serveAnsibleVersion(
 
 		sess.release()
 		doc.Relink(l)
-		h.writeAnsible(w, r, grp, doc, false)
+		h.writeAnsible(w, r, grp, doc, failed)
 
 		return
 	}

@@ -98,8 +98,9 @@ func stringList(v any) []string {
 
 // publishConflict explains why version of crateName cannot be published into
 // the repository, or returns "" when it can. Crate names are case-insensitive
-// (cargo lowercases them in index paths), so a name that differs from an
-// existing crate only in case is refused.
+// (cargo lowercases them in index paths) and crates.io treats '-' and '_' as the
+// same, so a name that differs from an existing crate only in case or in
+// '-' versus '_' is refused.
 func (h *HTTPHandler) publishConflict(ctx context.Context, repoID, crateName, version string) (string, error) {
 	existing, err := h.DB.ListCargoCrateVersions(ctx, repoID, crateName)
 	if err != nil {
@@ -109,7 +110,7 @@ func (h *HTTPHandler) publishConflict(ctx context.Context, repoID, crateName, ve
 	for _, e := range existing {
 		if e.Name != crateName {
 			return fmt.Sprintf(
-				"crate name `%s` is too similar to the existing crate `%s`: names are case-insensitive",
+				"crate name `%s` is too similar to the existing crate `%s`: names are case-insensitive and treat `-` and `_` alike",
 				crateName,
 				e.Name,
 			), nil

@@ -220,6 +220,38 @@ func (p *NPMStore) GetNPMVersion(ctx context.Context, packageID, version string)
 	}, nil
 }
 
+// ListNPMVersionsByNames returns the live versions of a package among the given
+// version keys, keyed by version key; absent versions are not in the map.
+func (p *NPMStore) ListNPMVersionsByNames(ctx context.Context, packageID string, versions []string) (map[string]*models.NPMVersion, error) {
+	rows, err := p.q.ListNPMVersionsByNames(ctx, dbsqlc.ListNPMVersionsByNamesParams{
+		PackageID:   packageID,
+		VersionKeys: versions,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query npm versions by name: %w", err)
+	}
+
+	out := make(map[string]*models.NPMVersion, len(rows))
+
+	for _, row := range rows {
+		out[row.VersionKey] = &models.NPMVersion{
+			ID:              row.ID,
+			PackageID:       row.PackageID,
+			Version:         row.Version,
+			ManifestJSON:    row.ManifestJson,
+			Integrity:       row.Integrity,
+			Shasum:          row.Shasum,
+			BlobID:          row.BlobID,
+			TarballFilename: row.TarballFilename,
+			BlobSHA256:      row.BlobSha256,
+			BlobSizeBytes:   row.BlobSizeBytes,
+			CreatedAt:       row.CreatedAt,
+		}
+	}
+
+	return out, nil
+}
+
 func (p *NPMStore) GetNPMVersionsByPackage(ctx context.Context, packageID string) ([]*models.NPMVersion, error) {
 	rows, err := p.q.GetNPMVersionsByPackage(ctx, packageID)
 	if err != nil {

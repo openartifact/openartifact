@@ -192,16 +192,20 @@ func (h *AIHandler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	// Without caller-supplied text the server reads the manifest from the
 	// stored artifact, so the artifact must exist in this repository and be of
 	// a kind a manifest can be read from.
-	if body.ManifestText == "" && !h.checkExtractable(w, r, repo, artifactID) {
+	blob, ok := h.checkExtractable(w, r, repo, artifactID, body.ManifestText == "")
+	if !ok {
 		return
 	}
 
+	// Identity comes from the stored component: caller-supplied values would
+	// otherwise be persisted against the real artifact id and shown in the
+	// security findings view.
 	h.aiWorker.Notify(worker.AIAnalysisRequest{
 		RepositoryID:    repo.ID,
 		ArtifactID:      artifactID,
-		ArtifactFormat:  body.ArtifactFormat,
-		ArtifactName:    body.ArtifactName,
-		ArtifactVersion: body.ArtifactVersion,
+		ArtifactFormat:  blob.Format,
+		ArtifactName:    blob.Name,
+		ArtifactVersion: blob.Version,
 		ManifestText:    body.ManifestText,
 	})
 
@@ -211,28 +215,32 @@ func (h *AIHandler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// checkExtractable answers 404/422/500 and returns false when the artifact
-// cannot be analysed without manifest_text.
-func (h *AIHandler) checkExtractable(w http.ResponseWriter, r *http.Request, repo *models.Repository, artifactID string) bool {
+// checkExtractable loads the stored component and answers 404/500 when it is
+// missing. When needManifest is set (no manifest_text supplied) it also
+// answers 422 for artifacts a manifest cannot be read from. ok is false once
+// a response has been written.
+func (h *AIHandler) checkExtractable(
+	w http.ResponseWriter, r *http.Request, repo *models.Repository, artifactID string, needManifest bool,
+) (*models.ComponentBlob, bool) {
 	blob, err := h.db.GetRepoComponentBlob(r.Context(), repo.ID, artifactID)
 	if err != nil {
 		h.log.Errorw("ai handler: component lookup failed", "artifact_id", artifactID, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
-		return false
+		return nil, false
 	}
 
 	if blob == nil {
 		writeError(w, http.StatusNotFound, "not_found", "artifact not found")
-		return false
+		return nil, false
 	}
 
-	if !manifest.Supported(blob.Format, blob.Filename) {
+	if needManifest && !manifest.Supported(blob.Format, blob.Filename) {
 		writeError(w, http.StatusUnprocessableEntity, "unsupported_artifact",
 			"manifest extraction is not supported for this artifact; supply manifest_text")
 
-		return false
+		return nil, false
 	}
 
-	return true
+	return blob, true
 }

@@ -372,7 +372,7 @@ func importConfigOpenArtifactCmd(a *app) *cobra.Command {
 				return exitWith(exitUsageError)
 			}
 
-			return exitWith(runImportConfigCmd(opts, a.outFmt))
+			return exitWith(runImportConfigCmd(a.client.context(), opts, a.outFmt))
 		},
 	}
 
@@ -385,10 +385,7 @@ func importConfigOpenArtifactCmd(a *app) *cobra.Command {
 	return cmd
 }
 
-func runImportConfigCmd(opts importConfigOptions, outFmt string) int {
-	ctx, stop := signalContext()
-	defer stop()
-
+func runImportConfigCmd(ctx context.Context, opts importConfigOptions, outFmt string) int {
 	opts.HTTP = newHTTPClient()
 
 	rep, err := runImportConfig(ctx, opts)

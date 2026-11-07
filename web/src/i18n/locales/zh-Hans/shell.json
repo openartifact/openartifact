@@ -10,7 +10,6 @@
   "shell.requiresAdmin": "需要管理员权限",
   "shell.settingsManagedByAdmins": "实例设置由管理员管理",
   "shell.denied.admin": "该页面仅限管理员访问",
-  "shell.denied.repoCreate": "创建仓库需要在项目中拥有维护者角色",
   "shell.denied.hint": "请向管理员申请访问权限。",
   "shell.searchPill": "搜索或跳转到…",
   "shell.userMenu": "{name} 的账户菜单",

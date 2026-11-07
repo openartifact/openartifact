@@ -5,7 +5,6 @@
 package oacli
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -41,7 +40,7 @@ func newArtifactCmd(a *app) *cobra.Command {
 func artifactUpload(client *Client, opts uploadOptions) {
 	api := newCIAPI(client)
 
-	repo, err := api.repo(context.Background(), opts.repo)
+	repo, err := api.repo(client.context(), opts.repo)
 	if err != nil {
 		dief("%v", err)
 	}
@@ -55,7 +54,7 @@ func artifactUpload(client *Client, opts uploadOptions) {
 		dief("--branch, --apk-repo and --arch only apply to Alpine (apk) repositories; %q is %s", opts.repo, repo.Format)
 	}
 
-	res, err := uploadToRepo(context.Background(), api, repo, ciUploadOptions{
+	res, err := uploadToRepo(client.context(), api, repo, ciUploadOptions{
 		repo: opts.repo, patterns: []string{opts.filePath}, flat: true,
 	})
 	if err != nil {

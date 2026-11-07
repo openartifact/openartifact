@@ -157,6 +157,27 @@ func (d *npmMemDB) GetNPMVersion(_ context.Context, pkgID, version string) (*mod
 	return nil, nil
 }
 
+// ListNPMVersionsByNames is the batched GetNPMVersion; it shares its failure
+// switch so one injected "GetNPMVersion" error covers both lookups.
+func (d *npmMemDB) ListNPMVersionsByNames(_ context.Context, pkgID string, names []string) (map[string]*models.NPMVersion, error) {
+	if err := d.failure("GetNPMVersion"); err != nil {
+		return nil, err
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	out := map[string]*models.NPMVersion{}
+
+	for _, v := range d.versions[pkgID] {
+		if slices.Contains(names, v.Version) {
+			out[v.Version] = v
+		}
+	}
+
+	return out, nil
+}
+
 func (d *npmMemDB) GetNPMVersionsByPackage(_ context.Context, pkgID string) ([]*models.NPMVersion, error) {
 	if err := d.failure("GetNPMVersionsByPackage"); err != nil {
 		return nil, err
@@ -1029,6 +1050,33 @@ func TestNPMRevPut(t *testing.T) {
 
 			if len(e.db.released) != tt.wantReleased {
 				t.Errorf("quota releases = %d, want %d", len(e.db.released), tt.wantReleased)
+			}
+		})
+	}
+}
+
+// Build metadata would let a publisher shadow an immutable release.
+func TestNPMPublishRejectsBuildMetadata(t *testing.T) {
+	payload := []byte("tarball-bytes")
+	b64 := base64.StdEncoding.EncodeToString(payload)
+
+	tests := []struct {
+		version string
+		want    int
+	}{
+		{"1.0.0+x", http.StatusBadRequest},
+		{"1.0.0-rc.1+build.5", http.StatusBadRequest},
+		{"1.0.0-rc.1", http.StatusCreated},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
+			e := newNPMEnv(t)
+			body := npmBody("demo", tt.version, b64, len(payload), "data-middle")
+
+			rw := e.do(npmUser(), http.MethodPut, "/repos/myrepo/demo", body)
+			if rw.Code != tt.want {
+				t.Fatalf("status = %d, want %d; body = %s", rw.Code, tt.want, rw.Body.String())
 			}
 		})
 	}

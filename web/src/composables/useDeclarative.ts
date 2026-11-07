@@ -43,7 +43,11 @@ export function useDeclarative(onApplied: () => void) {
   const error = ref('')
   const busy = ref<DeclarativeBusy>(null)
 
+  /** Bumped whenever the editor or an option changes; an answer for an older revision is dropped. */
+  let revision = 0
+
   watch([manifest, kinds, prune, pruneAll, forceSecrets, continueOnError], () => {
+    revision++
     plan.value = null
     applied.value = false
     error.value = ''
@@ -66,11 +70,15 @@ export function useDeclarative(onApplied: () => void) {
   async function run(kind: 'diff' | 'apply', call: (req: DeclarativeRequest) => Promise<DeclarativeRun>): Promise<boolean> {
     busy.value = kind
     error.value = ''
+    const started = revision
     try {
-      plan.value = await call(request())
+      const answer = await call(request())
+      if (started !== revision) return false
+      plan.value = answer
       applied.value = kind === 'apply'
       return true
     } catch (err) {
+      if (started !== revision) return false
       const refusal = declarativeRefusal(err)
       if (refusal) {
         plan.value = refusal

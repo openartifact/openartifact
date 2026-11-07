@@ -153,7 +153,10 @@ func FuzzOCIMemberTags(f *testing.F) {
 
 		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v2/x/tags/list", http.NoBody)
 
-		tags, found, failed := h.memberTags(req, &models.Repository{Name: "m"}, "x/tags/list", be)
+		sess := h.newSession(req.Context())
+		defer sess.release()
+
+		tags, found, failed := h.memberTags(sess, req, &models.Repository{Name: "m"}, "x/tags/list", be)
 
 		if served == 0 || served > maxMemberTagPages {
 			t.Fatalf("memberTags read %d pages", served)

@@ -88,11 +88,14 @@ func TestAuditLogger_BackpressureDropsIncrementsCounter(t *testing.T) {
 	al.Log(context.Background(), audit.AuditEvent{Action: "drop1"})
 	al.Log(context.Background(), audit.AuditEvent{Action: "drop2"})
 
-	time.Sleep(10 * time.Millisecond)
+	deadline := time.Now().Add(5 * time.Second)
 
-	dropped := testutil.ToFloat64(reg.AuditDroppedTotal)
-	if dropped < 1 {
-		t.Errorf("expected >=1 dropped events, got %v", dropped)
+	for testutil.ToFloat64(reg.AuditDroppedTotal) < 1 {
+		if time.Now().After(deadline) {
+			t.Fatalf("expected >=1 dropped events, got %v", testutil.ToFloat64(reg.AuditDroppedTotal))
+		}
+
+		time.Sleep(time.Millisecond)
 	}
 
 	close(blockDB.ready)
@@ -138,7 +141,8 @@ func TestAuditLogger_ShutdownRespectsDeadline(t *testing.T) {
 	log, _ := logger.New("error", "json", "stderr")
 	reg := newAuditTestRegistry()
 
-	neverDB := &neverInsertDB{}
+	neverDB := &neverInsertDB{release: make(chan struct{})}
+	t.Cleanup(func() { close(neverDB.release) })
 	al := audit.NewLogger(neverDB, log, reg, 10)
 	al.Log(context.Background(), audit.AuditEvent{Action: "stuck"})
 
@@ -153,9 +157,12 @@ func TestAuditLogger_ShutdownRespectsDeadline(t *testing.T) {
 
 type neverInsertDB struct {
 	MockDatabase
+
+	release chan struct{}
 }
 
 func (n *neverInsertDB) InsertAuditLog(_ context.Context, _ *models.AuditLog) error {
-	time.Sleep(10 * time.Second)
+	<-n.release
+
 	return nil
 }

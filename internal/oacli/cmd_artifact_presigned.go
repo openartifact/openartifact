@@ -365,7 +365,7 @@ func (u *presignedUploader) uploadSingle(file io.Reader, size int64, target uplo
 		return errUploadTarget
 	}
 
-	return putObject(context.Background(), u.client, target.UploadURL, target.Headers, file, size)
+	return putObject(u.client.context(), u.client, target.UploadURL, target.Headers, file, size)
 }
 
 // maxCompleteWait bounds how long the CLI keeps retrying a complete call that
@@ -399,7 +399,12 @@ func completePresigned(client *Client, path string) (map[string]any, error) {
 			}
 
 			if json.Unmarshal(body, &e) == nil && e.Code == "upload_in_progress" {
-				time.Sleep(retryAfter(resp))
+				select {
+				case <-time.After(retryAfter(resp)):
+				case <-client.context().Done():
+					return nil, fmt.Errorf("completing upload: %w", client.context().Err())
+				}
+
 				continue
 			}
 

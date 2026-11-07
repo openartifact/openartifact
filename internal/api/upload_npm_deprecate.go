@@ -37,17 +37,29 @@ func (h *NPMUploadHandler) extractNPMDeprecations(
 		return nil, nil
 	}
 
-	var out []npmDeprecation
+	var (
+		out   []npmDeprecation
+		names []string
+	)
 
-	for version, raw := range pub.Versions {
-		if _, hasAtt := pub.attachment(version); hasAtt {
-			continue
+	for version := range pub.Versions {
+		if _, hasAtt := pub.attachment(version); !hasAtt {
+			names = append(names, version)
 		}
+	}
 
-		existing, err := h.db.GetNPMVersion(ctx, pkg.ID, version)
-		if err != nil {
-			return nil, fmt.Errorf("get npm version %s: %w", version, err)
-		}
+	if len(names) == 0 {
+		return nil, nil
+	}
+
+	found, err := h.db.ListNPMVersionsByNames(ctx, pkg.ID, names)
+	if err != nil {
+		return nil, fmt.Errorf("list npm versions: %w", err)
+	}
+
+	for _, version := range names {
+		raw := pub.Versions[version]
+		existing := found[version]
 
 		if existing == nil {
 			continue // a new version without attachment: left for validation to reject

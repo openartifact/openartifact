@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 
 	"github.com/openartifact/openartifact/internal/declarative"
 	"github.com/spf13/cobra"
@@ -139,10 +138,6 @@ func reportError(err error) int {
 	return exitError
 }
 
-func signalContext() (context.Context, context.CancelFunc) {
-	return signal.NotifyContext(context.Background(), os.Interrupt)
-}
-
 func runDecl(f *declFlags, client *Client, globalFormat string, apply bool, stdin io.Reader, out io.Writer) int {
 	asJSON, err := declJSON(f, globalFormat)
 	if err != nil {
@@ -159,15 +154,12 @@ func runDecl(f *declFlags, client *Client, globalFormat string, apply bool, stdi
 		return validateOnly(opts, out)
 	}
 
-	ctx, stop := signalContext()
-	defer stop()
-
-	prepared, err := declarative.Prepare(ctx, opts)
+	prepared, err := declarative.Prepare(client.context(), opts)
 	if err != nil {
 		return reportError(err)
 	}
 
-	return finishDecl(ctx, opts, prepared, apply, asJSON, out)
+	return finishDecl(client.context(), opts, prepared, apply, asJSON, out)
 }
 
 func validateOnly(opts declarative.Options, out io.Writer) int {
@@ -304,10 +296,7 @@ func newExportCmd(a *app) *cobra.Command {
 }
 
 func runExport(client *Client, kinds []string, dir string, withMembers bool) int {
-	ctx, stop := signalContext()
-	defer stop()
-
-	docs, err := declarative.Export(ctx, declarative.ExportOptions{
+	docs, err := declarative.Export(client.context(), declarative.ExportOptions{
 		Registry: declarative.DefaultRegistry(),
 		Client:   declarative.NewClient(client.baseURL, client.token, client.httpClient),
 		Kinds:    kinds, WithMembers: withMembers,

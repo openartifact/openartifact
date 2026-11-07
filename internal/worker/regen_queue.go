@@ -129,7 +129,8 @@ type regenQueue[K comparable] struct {
 	// forwarding mode.
 	forwarded map[K]time.Time
 	ready     []K
-	workers   int
+	workers   int  // registered runners, idle or executing
+	running   int  // runners currently executing a key (subset of workers)
 	closing   bool // Stop called: new notifications are rejected, pending work drains
 	stopped   bool // drain finished: no more runners may start
 	drained   chan struct{}
@@ -276,7 +277,7 @@ func (q *regenQueue[K]) enqueueLocked(key K, e *regenEntry) {
 // startWorkerLocked starts a runner when there is queued work no existing
 // runner will pick up, up to the limiter capacity.
 func (q *regenQueue[K]) startWorkerLocked() {
-	if q.stopped || q.workers >= cap(q.limiter.slots) || q.workers >= len(q.ready) {
+	if q.stopped || q.workers >= cap(q.limiter.slots) || q.workers-q.running >= len(q.ready) {
 		return
 	}
 
@@ -334,6 +335,7 @@ func (q *regenQueue[K]) next() (K, bool) {
 	e := q.entries[key]
 	e.state = regenRunning
 	e.dirty = false
+	q.running++
 
 	return key, true
 }
@@ -354,6 +356,8 @@ func (q *regenQueue[K]) execute(key K) {
 
 	q.mu.Lock()
 	defer q.mu.Unlock()
+
+	q.running--
 
 	e := q.entries[key]
 

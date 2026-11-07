@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -42,7 +43,7 @@ func (d *repoPresignDB) GetRepositoryByName(context.Context, string) (*models.Re
 	return &cp, nil
 }
 
-func (d *repoPresignDB) UpdateRepository(_ context.Context, r *models.Repository) error {
+func (d *repoPresignDB) UpdateRepositorySettings(_ context.Context, r *models.Repository, _ database.RepositorySettingsChange) error {
 	d.repo = r
 	d.updated++
 

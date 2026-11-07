@@ -10,7 +10,6 @@
   "shell.requiresAdmin": "관리자 권한 필요",
   "shell.settingsManagedByAdmins": "인스턴스 설정은 관리자가 관리합니다",
   "shell.denied.admin": "이 페이지는 관리자만 사용할 수 있습니다",
-  "shell.denied.repoCreate": "저장소를 만들려면 프로젝트의 유지 관리자 역할이 필요합니다",
   "shell.denied.hint": "관리자에게 접근 권한을 요청하세요.",
   "shell.searchPill": "검색 또는 이동…",
   "shell.userMenu": "{name}의 계정 메뉴",

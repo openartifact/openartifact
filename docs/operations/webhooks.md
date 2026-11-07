@@ -102,7 +102,26 @@ def valid(body: bytes, header: str, secret: bytes) -> bool:
     return hmac.compare_digest(expected, header)
 ```
 
-Slack and Discord incoming webhooks ignore the header. It is sent anyway.
+That header covers the body only, so a captured delivery stays valid forever. To reject replays, verify the newer pair instead:
+
+- `X-OA-Timestamp`: the Unix time in seconds at which this attempt was sent. Every retry is signed again with a fresh timestamp.
+- `X-OA-Signature-V2: sha256=<hex>`: the HMAC-SHA256, keyed with the secret, of `<timestamp>.<delivery id>.<body>`, where the delivery id is the `X-OA-Delivery` header.
+
+Reject the delivery when the timestamp is more than 5 minutes away from your clock, and compare in constant time:
+
+```python
+import hashlib, hmac, time
+
+def valid_v2(body: bytes, headers: dict, secret: bytes) -> bool:
+    ts = headers["X-OA-Timestamp"]
+    if abs(time.time() - int(ts)) > 300:
+        return False
+    signed = ts.encode() + b"." + headers["X-OA-Delivery"].encode() + b"." + body
+    expected = "sha256=" + hmac.new(secret, signed, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, headers["X-OA-Signature-V2"])
+```
+
+Slack and Discord incoming webhooks ignore these headers. They are sent anyway.
 
 ## Events
 
@@ -229,6 +248,8 @@ Each delivery is an HTTP `POST` of the formatted body with these headers:
 | `Content-Type` | `application/json`, or `application/cloudevents+json` for the `cloudevents` format |
 | `User-Agent` | `OpenArtifact-Webhook/1.0` |
 | `X-Hub-Signature-256` | `sha256=<hex>`, only when the webhook has a secret |
+| `X-OA-Timestamp` | Unix time in seconds of this attempt, only when the webhook has a secret |
+| `X-OA-Signature-V2` | `sha256=<hex>` over `<timestamp>.<delivery id>.<body>`, only when the webhook has a secret |
 
 A `2xx` response is a success. Any other outcome is a failed attempt: another status, a connection error, a timeout or a secret that cannot be decrypted. Redirects are never followed, so a `3xx` response is a failed attempt.
 

@@ -170,6 +170,15 @@ func (s *Service) fetchList(
 	up ociUpstream,
 	target string,
 ) (http.Header, []byte, func(), bool) {
+	// A listing is live data and never cached, so it cannot be collapsed into a flight
+	// (those hand out cached resolutions); the download gate bounds the upstream requests instead.
+	if aerr := s.acquireFetch(r.Context(), repo, target); aerr != nil {
+		s.writeListError(w, aerr)
+		return nil, nil, nil, false
+	}
+
+	defer s.fetches.Release()
+
 	resp, err := s.ociDo(r.Context(), repo, up, http.MethodGet, target, "application/json")
 	if err != nil {
 		s.writeListError(w, err)

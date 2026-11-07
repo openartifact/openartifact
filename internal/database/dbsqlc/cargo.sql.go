@@ -145,7 +145,8 @@ FROM packages p
 JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
 JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
 JOIN blobs b ON b.id = f.blob_id
-WHERE p.repository_id = $1 AND p.name_key = lower($2::text)
+WHERE p.repository_id = $1
+  AND replace(p.name_key, '_', '-') = replace(lower($2::text), '_', '-')
 ORDER BY v.created_at, v.id
 `
 
@@ -178,6 +179,8 @@ type ListCargoCrateVersionsRow struct {
 	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
+// Every version of the crate, matching the name the way crates.io does: case-insensitive
+// and with '-' equal to '_'. Used on publish to refuse a look-alike name; bounded by repository.
 func (q *Queries) ListCargoCrateVersions(ctx context.Context, arg ListCargoCrateVersionsParams) ([]ListCargoCrateVersionsRow, error) {
 	rows, err := q.db.Query(ctx, listCargoCrateVersions, arg.RepositoryID, arg.Name)
 	if err != nil {
@@ -228,7 +231,8 @@ FROM packages p
 JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
 JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
 JOIN blobs b ON b.id = f.blob_id
-WHERE p.repository_id = $1 AND p.name_key = lower($2::text)
+WHERE p.repository_id = $1
+  AND replace(p.name_key, '_', '-') = replace(lower($2::text), '_', '-')
 ORDER BY v.created_at, v.id
 `
 

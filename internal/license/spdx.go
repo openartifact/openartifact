@@ -6,30 +6,8 @@ package license
 
 import (
 	"strings"
-	"sync"
+	"unicode"
 )
-
-// spdxSets holds the lowercase license and exception identifiers.
-type spdxSets struct {
-	licenses   map[string]struct{}
-	exceptions map[string]struct{}
-}
-
-//nolint:gochecknoglobals // immutable lookup built once
-var spdxTable = sync.OnceValue(func() spdxSets {
-	set := func(list string) map[string]struct{} {
-		fields := strings.Fields(list)
-		m := make(map[string]struct{}, len(fields))
-
-		for _, id := range fields {
-			m[strings.ToLower(id)] = struct{}{}
-		}
-
-		return m
-	}
-
-	return spdxSets{licenses: set(spdxLicenseList), exceptions: set(spdxExceptionList)}
-})
 
 // IsSPDXExpression reports whether expr is a well-formed SPDX license
 // expression made only of identifiers of the SPDX License List: ids with an
@@ -44,9 +22,10 @@ func IsSPDXExpression(expr string) bool {
 		return false
 	}
 
-	p := spdxParser{tokens: tokens, table: spdxTable()}
+	p := spdxParser{tokens: tokens, strict: true}
+	node := p.expression()
 
-	return p.expression() && p.pos == len(p.tokens)
+	return node != nil && p.pos == len(p.tokens)
 }
 
 func tokenizeSPDX(expr string) []string {
@@ -63,12 +42,16 @@ func tokenizeSPDX(expr string) []string {
 
 	for _, r := range expr {
 		switch r {
-		case ' ', '\t', '\r', '\n':
-			flush()
 		case '(', ')':
 			flush()
 			tokens = append(tokens, string(r))
 		default:
+			if unicode.IsSpace(r) {
+				flush()
+
+				continue
+			}
+
 			cur.WriteRune(r)
 		}
 	}
@@ -78,15 +61,52 @@ func tokenizeSPDX(expr string) []string {
 	return tokens
 }
 
+// spdxNode is a parsed SPDX expression: a license id (leaf) or an AND / OR
+// of sub-expressions. An exception after WITH is dropped from the tree.
+type spdxNode struct {
+	id   string // normalized id of a leaf; empty for AND / OR nodes
+	and  bool   // for inner nodes: AND (all children) when true, OR (any child) when false
+	kids []*spdxNode
+}
+
+// allowed reports whether the expression can be satisfied with allowed
+// licenses only: a leaf needs its id allowed, OR needs one allowed branch,
+// AND needs every branch allowed.
+func (n *spdxNode) allowed(set map[string]struct{}) bool {
+	if len(n.kids) == 0 {
+		_, ok := set[n.id]
+
+		return ok
+	}
+
+	for _, k := range n.kids {
+		ok := k.allowed(set)
+		if n.and && !ok {
+			return false
+		}
+
+		if !n.and && ok {
+			return true
+		}
+	}
+
+	return n.and
+}
+
 // spdxParser is a recursive-descent parser for
 //
-//	expression = term { ("AND" | "OR") term }
+//	expression = and { "OR" and }
+//	and        = term { "AND" term }
 //	term       = "(" expression ")" | id [ "WITH" exception ]
+//
+// AND binds tighter than OR, as in the SPDX specification. A strict parser
+// accepts only identifiers of the SPDX License List; a lenient one accepts any
+// word as an id, for policy evaluation of free-form metadata.
 type spdxParser struct {
 	tokens []string
 	pos    int
 	depth  int // open parentheses
-	table  spdxSets
+	strict bool
 }
 
 // maxSPDXDepth bounds the parenthesis nesting of an expression; real ones
@@ -101,55 +121,72 @@ func (p *spdxParser) peek() string {
 	return ""
 }
 
-func (p *spdxParser) expression() bool {
-	if !p.term() {
-		return false
-	}
+func (p *spdxParser) expression() *spdxNode { return p.chain("OR", false, p.and) }
 
-	for {
-		switch strings.ToUpper(p.peek()) {
-		case "AND", "OR":
-			p.pos++
-
-			if !p.term() {
-				return false
-			}
-		default:
-			return true
-		}
-	}
+func (p *spdxParser) and() *spdxNode {
+	return p.chain("AND", true, p.term)
 }
 
-func (p *spdxParser) term() bool {
+func (p *spdxParser) chain(op string, isAnd bool, operand func() *spdxNode) *spdxNode {
+	first := operand()
+	if first == nil {
+		return nil
+	}
+
+	kids := []*spdxNode{first}
+
+	for strings.EqualFold(p.peek(), op) {
+		p.pos++
+
+		next := operand()
+		if next == nil {
+			return nil
+		}
+
+		kids = append(kids, next)
+	}
+
+	if len(kids) == 1 {
+		return first
+	}
+
+	return &spdxNode{and: isAnd, kids: kids}
+}
+
+func (p *spdxParser) term() *spdxNode {
 	tok := p.peek()
 
 	if tok == "(" {
 		// A license string is uploaded metadata: without a cap, a few MiB of "("
 		// recurse past the 1 GB goroutine stack limit, which kills the process.
 		if p.depth >= maxSPDXDepth {
-			return false
+			return nil
 		}
 
 		p.pos++
 		p.depth++
 
-		if !p.expression() || p.peek() != ")" {
-			return false
+		n := p.expression()
+		if n == nil || p.peek() != ")" {
+			return nil
 		}
 
 		p.pos++
 		p.depth--
 
-		return true
+		return n
 	}
 
 	if tok == "" || tok == ")" {
-		return false
+		return nil
 	}
 
-	id := strings.TrimSuffix(strings.ToLower(tok), "+")
-	if _, ok := p.table.licenses[id]; !ok {
-		return false
+	if p.strict {
+		if _, ok := SPDXLicenseID(strings.TrimSuffix(tok, "+")); !ok {
+			return nil
+		}
+	} else if isSPDXOperator(tok) {
+		return nil
 	}
 
 	p.pos++
@@ -157,15 +194,42 @@ func (p *spdxParser) term() bool {
 	if strings.EqualFold(p.peek(), "WITH") {
 		p.pos++
 
-		exc := strings.ToLower(p.peek())
-		if _, ok := p.table.exceptions[exc]; !ok {
-			return false
+		exc := p.peek()
+		if exc == "" || exc == "(" || exc == ")" {
+			return nil
+		}
+
+		if _, ok := SPDXExceptionID(exc); !ok && p.strict {
+			return nil
 		}
 
 		p.pos++
 	}
 
-	return true
+	return &spdxNode{id: normalizeID(tok)}
+}
+
+func isSPDXOperator(tok string) bool {
+	switch strings.ToUpper(tok) {
+	case "AND", "OR", "WITH":
+		return true
+	}
+
+	return false
+}
+
+// parseSPDXLenient parses expr into a tree without requiring its identifiers to
+// be on the SPDX License List. It returns nil when expr is not a well-formed
+// expression ("Apache License 2.0", unbalanced parentheses).
+func parseSPDXLenient(expr string) *spdxNode {
+	p := spdxParser{tokens: tokenizeSPDX(expr)}
+
+	n := p.expression()
+	if n == nil || p.pos != len(p.tokens) {
+		return nil
+	}
+
+	return n
 }
 
 // Unresolved returns the licenses that are not SPDX expressions after

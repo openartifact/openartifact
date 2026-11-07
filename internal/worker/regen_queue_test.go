@@ -185,6 +185,45 @@ func TestRegenQueueDistinctKeysRespectPoolCap(t *testing.T) {
 	}
 }
 
+func TestRegenQueueRunsOtherKeyWhileOneIsBlocked(t *testing.T) {
+	gate := make(chan struct{})
+	startedA := make(chan struct{})
+	ranB := make(chan struct{})
+
+	q := newTestQueue(t, func(_ context.Context, key string) error {
+		if key == "a" {
+			close(startedA)
+			<-gate
+
+			return nil
+		}
+
+		close(ranB)
+
+		return nil
+	})
+	q.setLimiter(NewRegenLimiter(2))
+
+	q.Notify("a")
+
+	select {
+	case <-startedA:
+	case <-time.After(queueTestDeadline):
+		t.Fatal("key a never started")
+	}
+
+	q.Notify("b")
+
+	select {
+	case <-ranB:
+	case <-time.After(queueTestDeadline):
+		t.Fatal("key b did not run while key a was still running")
+	}
+
+	close(gate)
+	pollUntil(t, "queue to go idle", q.idle)
+}
+
 func TestRegenQueuesShareLimiter(t *testing.T) {
 	const (
 		poolCap = 2

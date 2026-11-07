@@ -170,6 +170,7 @@ const MAX_CHUNKS = 5
 
 const opened = ref<AuditEntry | null>(null)
 const hiddenCount = ref(0)
+let fetchGeneration = 0
 
 const list = useListQuery({
   filters: { actor: strParam(), action: strParam(), http: boolParam(false) },
@@ -180,19 +181,22 @@ const list = useListQuery({
     // The server has no filter for the per-request rows, so they are dropped here; a chunk made only of them
     // would look like an empty page, hence the loop.
     const hide = !req.filters.http
-    if (req.cursor === undefined) hiddenCount.value = 0
+    // Counted locally and committed only if no newer fetch started meanwhile.
+    const generation = ++fetchGeneration
+    let hidden = 0
     const rows: AuditEntry[] = []
     let cursor = req.cursor
     let hasMore = true
     for (let i = 0; i < MAX_CHUNKS && hasMore && rows.length < req.limit; i++) {
       const page = await listAudit({ cursor, limit: CHUNK, actor: req.filters.actor.trim(), action: req.filters.action.trim() })
       for (const entry of page.items) {
-        if (hide && isHttpNoise(entry)) hiddenCount.value++
+        if (hide && isHttpNoise(entry)) hidden++
         else rows.push(entry)
       }
       hasMore = page.hasMore && page.nextCursor !== null
       cursor = page.nextCursor ?? undefined
     }
+    if (generation === fetchGeneration) hiddenCount.value = req.cursor === undefined ? hidden : hiddenCount.value + hidden
     return { rows, hasMore, nextCursor: cursor }
   },
 })

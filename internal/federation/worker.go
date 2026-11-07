@@ -8,6 +8,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/openartifact/openartifact/internal/pglock"
 )
 
 const (
@@ -166,7 +168,7 @@ func (s *scheduler) release(peerID string) {
 }
 
 func (e *Engine) purgeTombstones(ctx context.Context) {
-	release, locked, err := tryLock(ctx, e.SQL, "federation:gc")
+	release, locked, err := pglock.Try(ctx, e.SQL, "federation:gc")
 	if err != nil || !locked {
 		return
 	}

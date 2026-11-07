@@ -499,3 +499,19 @@ func TestYankHonoursImmutableReleases(t *testing.T) {
 		t.Fatalf("yank of prerelease = %d, want 200", w.Code)
 	}
 }
+
+func TestPublishRefusesNameDifferingOnlyInDashVersusUnderscore(t *testing.T) {
+	h, db, _, _ := newCargoHandler(t)
+
+	if w := publish(t, h, "foo-bar", "1.0.0", []byte("x")); w.Code != http.StatusOK {
+		t.Fatalf("publish = %d: %s", w.Code, w.Body.String())
+	}
+
+	if w := publish(t, h, "foo_bar", "1.1.0", []byte("y")); w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409: %s", w.Code, w.Body.String())
+	}
+
+	if len(db.crates) != 1 {
+		t.Errorf("stored crates = %d, want 1", len(db.crates))
+	}
+}

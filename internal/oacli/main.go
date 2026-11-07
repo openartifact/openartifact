@@ -6,6 +6,7 @@ package oacli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -84,6 +85,17 @@ type Client struct {
 	baseURL    string
 	token      string
 	httpClient *http.Client
+	// ctx cancels in-flight requests on Ctrl-C/SIGTERM; nil means never.
+	ctx context.Context //nolint:containedctx // the CLI's process-wide cancellation, carried with the client
+}
+
+// context returns the client's cancellation context.
+func (c *Client) context() context.Context {
+	if c.ctx == nil {
+		return context.Background()
+	}
+
+	return c.ctx
 }
 
 func newClient(serverURL, token string) *Client {
@@ -95,8 +107,7 @@ func newClient(serverURL, token string) *Client {
 }
 
 func (c *Client) do(method, path string, body io.Reader, contentType string) (*http.Response, error) {
-	//nolint:noctx // CLI tool, no context available
-	req, err := http.NewRequest(method, c.baseURL+path, body)
+	req, err := http.NewRequestWithContext(c.context(), method, c.baseURL+path, body)
 	if err != nil {
 		return nil, err
 	}
@@ -427,6 +438,14 @@ func downloadFile(client *Client, path, dest string) {
 // starts with - can only get here after a bare -- (the flag parser takes every
 // other one for a flag), so it is a name like any other.
 func escape(s string) string { return url.PathEscape(s) }
+
+// warnPasswordExposure warns on w when a password is about to be sent over
+// plain http to a non-loopback server.
+func warnPasswordExposure(w io.Writer, serverURL string) {
+	if u, err := url.Parse(serverURL); err == nil && u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
+		fmt.Fprintf(w, "Warning: sending the password over plain http to %s; use https.\n", u.Host)
+	}
+}
 
 // warnCredentialExposure prints warnings on w for the two ways the CLI can leak
 // its token: a --token argument (visible to every local user in the process

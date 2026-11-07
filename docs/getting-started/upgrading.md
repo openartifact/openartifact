@@ -127,6 +127,30 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
+### Unreleased
+
+**What you must do**
+
+- Nothing is required. Migration `015` builds indexes without locking writes (`CREATE INDEX CONCURRENTLY`), which can take a while on a large `proxy_cache` or `package_versions` table. Migration `016` merges global groups that share a name into the oldest one (members, project grants and permission assignments move to it) and then makes global group names unique.
+
+**Changes.**
+
+- **Groups.** Creating a global group with the name of an existing one answers `409`; SSO provisioning no longer creates duplicates under concurrent logins.
+- **npm.** Publishing a version with build metadata (`1.0.0+build`) is refused with `400`: npm strips it, so two such versions collided.
+- **Cargo.** Publishing a crate whose name differs from an existing one only in `-` versus `_` is refused, as crates.io does.
+- **PyPI.** An upload whose version equals an existing release under PEP 440 (`1.0` and `1.0.0`) joins that release instead of creating a second one.
+- **Raw.** A `PUT` to a path with empty, `.` or `..` segments answers `400 invalid path`.
+- **Webhooks.** Deliveries also carry `X-Oa-Timestamp` and `X-Oa-Signature-V2`, an HMAC over the timestamp, delivery id and body, so a receiver can reject replays. `X-Hub-Signature-256` is unchanged. See [Webhooks](../operations/webhooks.md).
+- **Login** deletes the session the browser already had before creating the new one.
+- **AI analysis** takes the format, name and version from the stored artifact; the fields in the request are ignored.
+- **License policies** evaluate SPDX expressions with `AND` before `OR` and honor parentheses; a comma-joined list needs every license allowed, deprecated `-with-…-exception` ids match their base license, and text that is not a valid expression needs every identifier allowed. See [License scans and policies](../security/scanning.md#license-scans-and-policies).
+- **Docker garbage collection** no longer frees blobs while a manifest's body is missing from storage, and reports such manifests in `manifests_missing_body`.
+- **Admin user edits** write only the fields sent, so they no longer undo a concurrent password change or disable. Clearing the email or full name in the web UI now works.
+- **Repository edits** that move a repository to another project and change its settings are applied together or not at all. A storage backend's kind or config change and its busy check are one transaction.
+- **Cleanup** triggered during shutdown answers `503`.
+- **`oa` CLI.** Downloaded files are created `0600` (an overwritten file keeps its mode); Ctrl-C cancels requests and removes partial downloads; logging in with a password over plain `http://` prints a warning; a blank token is refused; the saved token is only sent to the server it was saved for. See [CLI](../integrations/cli.md).
+- **Groups of Helm, Conda, Ansible, Maven and OCI repositories** do not cache a merged answer built while a member failed.
+
 ### 0.19.2
 
 **What you must do**

@@ -142,7 +142,10 @@ func TestAuditMiddleware_GET_NoEvent(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	time.Sleep(50 * time.Millisecond)
+	// Shutdown drains every queued event, so none can arrive after it returns.
+	if err := al.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
 
 	if len(db.recorded()) != 0 {
 		t.Errorf("expected 0 audit events for GET, got %d", len(db.recorded()))

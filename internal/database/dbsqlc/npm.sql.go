@@ -391,6 +391,79 @@ func (q *Queries) GetNPMVersionsByPackage(ctx context.Context, packageID string)
 	return items, nil
 }
 
+const listNPMVersionsByNames = `-- name: ListNPMVersionsByNames :many
+SELECT f.id, v.package_id, v.version, v.version_key,
+       COALESCE(v.metadata -> 'manifest_json', '{}'::jsonb)::jsonb AS manifest_json,
+       COALESCE(f.checksums ->> 'integrity', '')::text AS integrity,
+       COALESCE(f.checksums ->> 'shasum', '')::text AS shasum,
+       COALESCE(f.blob_id::text, '')::text AS blob_id,
+       f.filename AS tarball_filename,
+       COALESCE(b.sha256, '')::text AS blob_sha256,
+       COALESCE(b.size_bytes, 0)::bigint AS blob_size_bytes,
+       v.created_at
+FROM package_versions v
+JOIN package_files f ON f.version_id = v.id AND f.role = 'primary' AND f.deleted_at IS NULL
+LEFT JOIN blobs b ON b.id = f.blob_id
+WHERE v.package_id = $1 AND v.version_key = ANY($2::text[])
+  AND v.deleted_at IS NULL
+`
+
+type ListNPMVersionsByNamesParams struct {
+	PackageID   string   `db:"package_id" json:"package_id"`
+	VersionKeys []string `db:"version_keys" json:"version_keys"`
+}
+
+type ListNPMVersionsByNamesRow struct {
+	ID              string          `db:"id" json:"id"`
+	PackageID       string          `db:"package_id" json:"package_id"`
+	Version         string          `db:"version" json:"version"`
+	VersionKey      string          `db:"version_key" json:"version_key"`
+	ManifestJson    json.RawMessage `db:"manifest_json" json:"manifest_json"`
+	Integrity       string          `db:"integrity" json:"integrity"`
+	Shasum          string          `db:"shasum" json:"shasum"`
+	BlobID          string          `db:"blob_id" json:"blob_id"`
+	TarballFilename string          `db:"tarball_filename" json:"tarball_filename"`
+	BlobSha256      string          `db:"blob_sha256" json:"blob_sha256"`
+	BlobSizeBytes   int64           `db:"blob_size_bytes" json:"blob_size_bytes"`
+	CreatedAt       time.Time       `db:"created_at" json:"created_at"`
+}
+
+// The live versions of one package among the given version keys: the batched
+// form of GetNPMVersion for publish and deprecate, which look up every version
+// of the payload.
+func (q *Queries) ListNPMVersionsByNames(ctx context.Context, arg ListNPMVersionsByNamesParams) ([]ListNPMVersionsByNamesRow, error) {
+	rows, err := q.db.Query(ctx, listNPMVersionsByNames, arg.PackageID, arg.VersionKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListNPMVersionsByNamesRow{}
+	for rows.Next() {
+		var i ListNPMVersionsByNamesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PackageID,
+			&i.Version,
+			&i.VersionKey,
+			&i.ManifestJson,
+			&i.Integrity,
+			&i.Shasum,
+			&i.BlobID,
+			&i.TarballFilename,
+			&i.BlobSha256,
+			&i.BlobSizeBytes,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markPackumentStale = `-- name: MarkPackumentStale :exec
 UPDATE packages SET attrs = attrs || '{"packument_stale": true}'::jsonb, updated_at = now() WHERE id = $1
 `

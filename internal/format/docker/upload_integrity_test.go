@@ -64,6 +64,31 @@ func (s *hookUploads) PromoteUpload(ctx context.Context, id, sha256, version str
 	return s.UploadStore.PromoteUpload(ctx, id, sha256, version, metadata)
 }
 
+func (l *uploadLocks) maxRefs() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	most := 0
+	for _, e := range l.m {
+		most = max(most, e.refs)
+	}
+
+	return most
+}
+
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal("condition not reached before the deadline")
+		}
+
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // A PATCH racing the completion of the same session must wait for it (and
 // then find the session gone): the stored bytes are the bytes that were hashed.
 func TestCompleteUpload_ConcurrentPatchCannotChangeStoredBytes(t *testing.T) {
@@ -91,7 +116,8 @@ func TestCompleteUpload_ConcurrentPatchCannotChangeStoredBytes(t *testing.T) {
 			patchDone.Store(true)
 		}()
 
-		time.Sleep(150 * time.Millisecond)
+		// refs == 2 means the PATCH is queued behind the completion's lock.
+		waitFor(t, func() bool { return g.h.sessions.maxRefs() >= 2 })
 
 		if patchDone.Load() {
 			t.Error("PATCH ran while the upload was being completed")

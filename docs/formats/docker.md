@@ -228,6 +228,7 @@ The response reports:
 | `blob_refs_deleted` | blob records of this repository removed |
 | `blobs_freed`, `bytes_freed` | storage objects actually removed; in a dry run an upper bound that ignores sharing with other repositories |
 | `failures` | storage deletions that failed and were logged; a later cleanup pass retries them |
+| `manifests_missing_body` | manifests whose body is missing from storage. Their layers are unknown, so while any exists no blob of the repository is removed; the server logs each one with its digest. Delete those manifests to let garbage collection free blobs again |
 | `manifests`, `blobs` | the entries involved, capped at 1000 each, with `truncated` set when capped |
 
 `409` means a run is already in progress for the repository. `400` means the repository is not a Docker repository.

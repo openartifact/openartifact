@@ -350,6 +350,8 @@ func (h *CleanupHandler) handleRun(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "not_found", "cleanup policy not found")
 		case errors.Is(err, worker.ErrPolicyBusy):
 			writeError(w, http.StatusConflict, "conflict", "cleanup policy is already running")
+		case errors.Is(err, worker.ErrCleanupStopping):
+			writeError(w, http.StatusServiceUnavailable, "unavailable", "server is shutting down")
 		default:
 			h.log.Errorw("run cleanup policy: trigger failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to start cleanup policy")

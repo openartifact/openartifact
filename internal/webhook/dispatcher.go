@@ -14,6 +14,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -55,6 +56,12 @@ const (
 	headerDelivery = "X-Oa-Delivery"
 	// headerEvent carries the event name of the delivery.
 	headerEvent = "X-Oa-Event"
+	// headerTimestamp carries the Unix time (seconds) of this attempt. It is
+	// fresh on every retry and covered by headerSignatureV2.
+	headerTimestamp = "X-Oa-Timestamp"
+	// headerSignatureV2 carries sha256=<hex> of "<timestamp>.<delivery id>.<body>",
+	// so a captured delivery cannot be replayed outside the receiver's window.
+	headerSignatureV2 = "X-Oa-Signature-V2"
 )
 
 const (
@@ -405,8 +412,8 @@ func (d *Dispatcher) deliver(wh *models.Webhook, delivery *models.WebhookDeliver
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("User-Agent", "OpenArtifact-Webhook/1.0")
 	// Identify the delivery and event for receivers: delivery is at least once,
-	// so the ID is how a receiver drops a repeat. Like every header these are
-	// outside the signature, which still covers the body only.
+	// so the ID is how a receiver drops a repeat. The legacy signature covers
+	// the body only; the V2 signature below also covers the delivery ID.
 	req.Header.Set(headerDelivery, delivery.ID)
 	req.Header.Set(headerEvent, delivery.EventType)
 
@@ -422,6 +429,16 @@ func (d *Dispatcher) deliver(wh *models.Webhook, delivery *models.WebhookDeliver
 		}
 		signature := computeHMAC(payloadJSON, []byte(secret))
 		req.Header.Set("X-Hub-Signature-256", "sha256="+signature)
+
+		ts := strconv.FormatInt(time.Now().Unix(), 10)
+		signed := make([]byte, 0, len(ts)+len(delivery.ID)+len(payloadJSON)+2)
+		signed = append(signed, ts...)
+		signed = append(signed, '.')
+		signed = append(signed, delivery.ID...)
+		signed = append(signed, '.')
+		signed = append(signed, payloadJSON...)
+		req.Header.Set(headerTimestamp, ts)
+		req.Header.Set(headerSignatureV2, "sha256="+computeHMAC(signed, []byte(secret)))
 	}
 
 	// Make the request

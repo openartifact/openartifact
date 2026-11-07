@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -362,6 +363,19 @@ func TestDeliverySendsDeliveryAndEventHeaders(t *testing.T) {
 
 	if want := "sha256=" + computeHMAC(body, []byte("s3cret")); req.Header.Get("X-Hub-Signature-256") != want {
 		t.Errorf("X-Hub-Signature-256 = %q, want the HMAC of the body alone (%q)", req.Header.Get("X-Hub-Signature-256"), want)
+	}
+
+	// Documented V2 algorithm: HMAC over "<timestamp>.<delivery id>.<body>".
+	ts := req.Header.Get("X-Oa-Timestamp")
+
+	sec, perr := strconv.ParseInt(ts, 10, 64)
+	if perr != nil || time.Since(time.Unix(sec, 0)) > time.Minute {
+		t.Errorf("X-OA-Timestamp = %q, want a current Unix time", ts)
+	}
+
+	wantV2 := "sha256=" + computeHMAC([]byte(ts+".delivery-42."+string(body)), []byte("s3cret"))
+	if got := req.Header.Get("X-Oa-Signature-V2"); got != wantV2 {
+		t.Errorf("X-OA-Signature-V2 = %q, want %q", got, wantV2)
 	}
 }
 

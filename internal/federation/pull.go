@@ -6,8 +6,6 @@ package federation
 
 import (
 	"context"
-	"database/sql"
-	"database/sql/driver"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +16,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/pglock"
 )
 
 const (
@@ -51,48 +50,14 @@ func Backoff(n int, poll, maxDelay time.Duration) time.Duration {
 	return time.Duration(float64(d) * (0.8 + 0.4*rand.Float64())) //nolint:gosec // jitter, not security
 }
 
-// tryLock takes a session advisory lock on a pinned connection; the release
-// func (always non-nil) unlocks it, dropping the connection if that fails.
-func tryLock(ctx context.Context, db *sql.DB, key string) (func(), bool, error) {
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return func() {}, false, fmt.Errorf("pin connection for advisory lock: %w", err)
-	}
-
-	var locked bool
-
-	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock(hashtext($1))", key).Scan(&locked); err != nil {
-		_ = conn.Close()
-
-		return func() {}, false, fmt.Errorf("advisory lock %s: %w", key, err)
-	}
-
-	if !locked {
-		_ = conn.Close()
-
-		return func() {}, false, nil
-	}
-
-	return func() {
-		uctx, cancel := context.WithTimeout(context.Background(), stateWriteTimeout)
-		defer cancel()
-
-		if _, err := conn.ExecContext(uctx, "SELECT pg_advisory_unlock(hashtext($1))", key); err != nil {
-			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
-		}
-
-		_ = conn.Close()
-	}, true, nil
-}
-
 // PullPeer runs one pull of a peer: it catches the peer's log up from the
 // stored cursor, retries the peer's deferred units, and records the outcome.
 // Only one replica pulls a peer at a time. A skipped (locked) pull is not an
 // error.
 func (e *Engine) PullPeer(ctx context.Context, peerID, repoID string) (err error) {
-	release, locked, err := tryLock(ctx, e.SQL, "federation:peer:"+peerID)
+	release, locked, err := pglock.Try(ctx, e.SQL, "federation:peer:"+peerID)
 	if err != nil {
-		return err
+		return fmt.Errorf("federation peer lock: %w", err)
 	}
 
 	if !locked {

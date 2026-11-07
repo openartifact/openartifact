@@ -230,3 +230,30 @@ func TestHeadQuarantine(t *testing.T) {
 		t.Error("quarantined HEAD leaked checksum")
 	}
 }
+
+func TestPutRejectsUnaddressablePaths(t *testing.T) {
+	for _, tc := range []struct {
+		target string
+		want   int
+	}{
+		{"/repos/myrepo/a/b.txt", http.StatusCreated},
+		{"/repos/myrepo/a//b.txt", http.StatusBadRequest},
+		{"/repos/myrepo/a/./b.txt", http.StatusBadRequest},
+		{"/repos/myrepo/a/../b.txt", http.StatusBadRequest},
+		{"/repos/myrepo/a/", http.StatusBadRequest},
+		{"/repos/myrepo/a%5Cb.txt", http.StatusBadRequest},
+	} {
+		t.Run(tc.target, func(t *testing.T) {
+			h, db, _, _ := newTestHandler(t)
+
+			req := formattest.Request(http.MethodPut, tc.target, strings.NewReader("x"))
+			if got := formattest.Do(h.RegisterRepoRoutes, req).Code; got != tc.want {
+				t.Fatalf("status = %d, want %d", got, tc.want)
+			}
+
+			if tc.want != http.StatusCreated && db.art != nil {
+				t.Fatalf("rejected path stored %+v", db.art)
+			}
+		})
+	}
+}

@@ -282,3 +282,39 @@ func contains(t *testing.T, s, sub string) {
 		t.Fatalf("%q does not contain %q", s, sub)
 	}
 }
+
+func TestParseVersionsYankSemantics(t *testing.T) {
+	cases := []struct {
+		name  string
+		lines string
+		want  string
+	}{
+		{"yank", "g 1,2,3,-2 ", "1,3"},
+		{"readd after yank appends", "g 1,2,3,-1,1 ", "2,3,1"},
+		{"duplicate ignored", "g 1,2,1 ", "1,2"},
+		{"yank unknown", "g 1,-9 ", "1"},
+		{"across lines", "g 1,2 \ng -1,3,1 ", "2,3,1"},
+		{"double yank readd", "g 1,-1,1,-1,1 ", "1"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var b strings.Builder
+			b.WriteString("---\n")
+
+			for l := range strings.SplitSeq(tc.lines, "\n") {
+				f := strings.Fields(l)
+				b.WriteString(f[0] + " " + f[1] + " " + md5A + "\n")
+			}
+
+			v, err := ParseVersions(strings.NewReader(b.String()))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if got := strings.Join(v.Entries[0].Versions, ","); got != tc.want {
+				t.Fatalf("got %q want %q", got, tc.want)
+			}
+		})
+	}
+}

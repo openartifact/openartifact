@@ -119,15 +119,20 @@ func (db *authzFakeDB) CreateUser(_ context.Context, u *models.User) (*models.Us
 	return &cp, nil
 }
 
-func (db *authzFakeDB) UpdateUser(_ context.Context, u *models.User) error {
-	if err := db.failing("UpdateUser"); err != nil {
-		return err
+func (db *authzFakeDB) PatchUser(_ context.Context, id string, patch database.UserPatch) (*models.User, error) {
+	if err := db.failing("PatchUser"); err != nil {
+		return nil, err
 	}
 
-	cp := *u
-	db.users[u.ID] = &cp
+	u, ok := db.users[id]
+	if !ok {
+		return nil, nil
+	}
 
-	return nil
+	cp := applyUserPatch(*u, patch)
+	db.users[id] = cp
+
+	return cp, nil
 }
 
 func (db *authzFakeDB) ListUsers(_ context.Context, _, _ int) ([]*models.User, int, error) {
@@ -924,7 +929,7 @@ func TestAdminUserPatchAuthorization(t *testing.T) {
 			id:        idAliceUser,
 			principal: azAdmin(),
 			body:      `{"email":"x@y.z"}`,
-			fail:      map[string]error{"UpdateUser": &pgconn.PgError{Code: "23505"}},
+			fail:      map[string]error{"PatchUser": &pgconn.PgError{Code: "23505"}},
 			want:      http.StatusConflict,
 		},
 		{
@@ -932,7 +937,7 @@ func TestAdminUserPatchAuthorization(t *testing.T) {
 			id:        idAliceUser,
 			principal: azAdmin(),
 			body:      `{"full_name":"x"}`,
-			fail:      map[string]error{"UpdateUser": errFakeDB},
+			fail:      map[string]error{"PatchUser": errFakeDB},
 			want:      http.StatusInternalServerError,
 		},
 		{

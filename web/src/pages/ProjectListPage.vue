@@ -110,6 +110,7 @@ import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import { listProjects, type ProjectListItem } from '../api/projects'
 import { useDocsLink } from '../composables/useDocsLink'
 import { useListQuery } from '../composables/useListQuery'
+import { useUrlFlag } from '../composables/useUrlFlag'
 import { enumParam, strParam } from '../composables/useUrlState'
 import { formatDateTime, timeAgo } from '../lib/datetime'
 import {
@@ -212,16 +213,15 @@ async function onCreated(name: string): Promise<void> {
 }
 
 // The create permission arrives with the first list response, so `?new=1` waits for it.
-if (route.query.new !== undefined) {
-  const stop = watch(
-    loaded,
-    (ready) => {
-      if (!ready) return
-      stop()
-      if (canCreate.value || session.isAdmin) createOpen.value = true
-      else dropNewParam()
-    },
-    { immediate: true },
-  )
-}
+// The page is not remounted for a link to the same path, so the flag is watched, not read once.
+const newFlag = useUrlFlag('new')
+watch(
+  [newFlag.on, loaded],
+  ([on, ready]) => {
+    if (!on || !ready) return
+    if (canCreate.value || session.isAdmin) createOpen.value = true
+    else dropNewParam()
+  },
+  { immediate: true },
+)
 </script>

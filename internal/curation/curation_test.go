@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+func glob(pattern, s string) bool { return globRunes([]rune(pattern), []rune(s)) }
+
 func TestGlob(t *testing.T) {
 	t.Parallel()
 
@@ -38,8 +40,8 @@ func TestGlob(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		if got := Glob(tt.pattern, tt.s); got != tt.want {
-			t.Errorf("Glob(%q, %q) = %v, want %v", tt.pattern, tt.s, got, tt.want)
+		if got := glob(tt.pattern, tt.s); got != tt.want {
+			t.Errorf("glob(%q, %q) = %v, want %v", tt.pattern, tt.s, got, tt.want)
 		}
 	}
 }
@@ -49,7 +51,7 @@ func TestGlobIsLinearEnough(t *testing.T) {
 
 	start := time.Now()
 
-	if Glob(strings.Repeat("a*", 40)+"b", strings.Repeat("a", 4000)) {
+	if glob(strings.Repeat("a*", 40)+"b", strings.Repeat("a", 4000)) {
 		t.Fatal("unexpected match")
 	}
 

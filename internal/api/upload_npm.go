@@ -59,6 +59,7 @@ type NPMUploadStore interface {
 	GetNPMVersionsByPackage(ctx context.Context, packageID string) ([]*models.NPMVersion, error)
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
 	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ListNPMVersionsByNames(ctx context.Context, packageID string, versions []string) (map[string]*models.NPMVersion, error)
 	MarkPackumentStale(ctx context.Context, packageID string) error
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
 	UpdateNPMVersionManifest(ctx context.Context, packageID string, version string, manifest []byte) error
@@ -218,6 +219,12 @@ func prepareNPMVersions(pub *npmPublishBody) ([]*npmPreparedVersion, *npmPublish
 	for version, manifestRaw := range pub.Versions {
 		if err := pkgnpm.ValidateSemver(version); err != nil {
 			return nil, &npmPublishError{http.StatusBadRequest, "invalid semver: " + version}
+		}
+
+		// The npm client strips build metadata itself; a "+" version would be a
+		// shadow of the released version it precedes.
+		if strings.Contains(version, "+") {
+			return nil, &npmPublishError{http.StatusBadRequest, "version must not contain build metadata (+): " + version}
 		}
 
 		var manifestMap map[string]any
@@ -487,24 +494,27 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 
 	// Reject duplicate versions before storing anything.
 	if pkg != nil {
+		names := make([]string, 0, len(prepared))
 		for _, pv := range prepared {
-			existing, err := h.db.GetNPMVersion(r.Context(), pkg.ID, pv.version)
-			if err != nil {
-				uploadResult = "error"
+			names = append(names, pv.version)
+		}
 
-				h.log.Errorw("failed to check existing version", "pkg", pub.Name, "version", pv.version, "error", err)
-				http.Error(w, "internal error", http.StatusInternalServerError)
+		existing, err := h.db.ListNPMVersionsByNames(r.Context(), pkg.ID, names)
+		if err != nil {
+			uploadResult = "error"
 
-				return
-			}
+			h.log.Errorw("failed to check existing versions", "pkg", pub.Name, "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 
-			if existing != nil {
-				uploadResult = "error"
+			return
+		}
 
-				writeJSON(w, http.StatusConflict, map[string]string{"error": "version already exists"})
+		if len(existing) > 0 {
+			uploadResult = "error"
 
-				return
-			}
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "version already exists"})
+
+			return
 		}
 	}
 

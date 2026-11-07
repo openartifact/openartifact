@@ -5,11 +5,15 @@
 package oacli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -129,7 +133,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	err := root.Execute()
+	// One signal-aware context for the whole run: Ctrl-C and SIGTERM cancel
+	// in-flight requests so temp files and multipart uploads are cleaned up.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	err := root.ExecuteContext(ctx)
 
 	var code exitStatusError
 
@@ -203,13 +212,50 @@ func (a *app) preRun(cmd *cobra.Command, _ []string) error {
 
 	a.outFmt = a.format
 	a.server = a.resolve(cmd, "server", a.server, "OA_SERVER", cfg.Server)
-	a.token = a.resolve(cmd, "token", a.token, "OA_TOKEN", cfg.Token)
+	// The saved token belongs to the saved server; it must not follow
+	// --server/OA_SERVER to another host. An explicit token applies anywhere.
+	savedToken := cfg.Token
+	if !sameServer(a.server, cfg.Server) {
+		savedToken = ""
+	}
+
+	a.token = a.resolve(cmd, "token", a.token, "OA_TOKEN", savedToken)
 
 	warnCredentialExposure(os.Stderr, a.server, a.token, cmd.Root().PersistentFlags().Changed("token"))
 
 	a.client = newClient(a.server, a.token)
+	a.client.ctx = cmd.Context()
 
 	return nil
+}
+
+// sameServer reports whether two server URLs name the same origin, ignoring
+// case, a trailing slash and a default port.
+func sameServer(a, b string) bool {
+	return normalizeServer(a) == normalizeServer(b)
+}
+
+func normalizeServer(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(raw)), "/")
+	}
+
+	scheme := strings.ToLower(u.Scheme)
+	host := strings.ToLower(u.Hostname())
+	port := u.Port()
+
+	if port == "" || (scheme == "http" && port == "80") || (scheme == "https" && port == "443") {
+		port = ""
+	} else {
+		port = ":" + port
+	}
+
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+
+	return scheme + "://" + host + port + strings.TrimSuffix(u.Path, "/")
 }
 
 // resolve returns the flag value when it was given, else the environment

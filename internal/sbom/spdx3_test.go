@@ -149,3 +149,33 @@ func TestSPDX3ValidatesWithOfficialValidator(t *testing.T) {
 		t.Fatalf("spdx3-validate rejected the document: %v\n%s", err, out)
 	}
 }
+
+// Two free-form names that sanitize to the same LicenseRef id must keep their
+// own CustomLicense element each; the second must not reuse the first's.
+func TestSPDX3LicenseElement_SameRefIDDifferentNames(t *testing.T) {
+	b := &spdx3Builder{ns: "urn:test-"}
+	cache := map[string]string{}
+
+	a := b.licenseElement([]licenseEntry{{Name: "GPL v2"}}, cache)
+	c := b.licenseElement([]licenseEntry{{Name: "GPL/v2"}}, cache)
+
+	if a == c {
+		t.Fatalf("distinct license names share element %s", a)
+	}
+
+	if again := b.licenseElement([]licenseEntry{{Name: "GPL v2"}}, cache); again != a {
+		t.Errorf("same entries must reuse the element: %s vs %s", again, a)
+	}
+
+	names := map[string]bool{}
+
+	for _, el := range b.graph {
+		if el["type"] == "expandedlicensing_CustomLicense" {
+			names[el["name"].(string)] = true
+		}
+	}
+
+	if len(names) != 2 {
+		t.Errorf("want 2 CustomLicense elements with distinct names, got %v", names)
+	}
+}

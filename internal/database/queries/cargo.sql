@@ -29,6 +29,8 @@ JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
 JOIN blobs b ON b.id = f.blob_id
 WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = lower(sqlc.arg(name)::text);
 
+-- Every version of the crate, matching the name the way crates.io does: case-insensitive
+-- and with '-' equal to '_'. Used on publish to refuse a look-alike name; bounded by repository.
 -- name: ListCargoCrateVersions :many
 SELECT f.id, f.repository_id, COALESCE(v.metadata->>'name', p.name)::text AS name, v.version,
        COALESCE(v.metadata->>'description', '')::text AS description,
@@ -48,7 +50,8 @@ FROM packages p
 JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
 JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
 JOIN blobs b ON b.id = f.blob_id
-WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = lower(sqlc.arg(name)::text)
+WHERE p.repository_id = sqlc.arg(repository_id)
+  AND replace(p.name_key, '_', '-') = replace(lower(sqlc.arg(name)::text), '_', '-')
 ORDER BY v.created_at, v.id;
 
 -- One row per crate: versions are listed oldest first for the caller to rank
@@ -100,5 +103,6 @@ FROM packages p
 JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
 JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
 JOIN blobs b ON b.id = f.blob_id
-WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = lower(sqlc.arg(name)::text)
+WHERE p.repository_id = sqlc.arg(repository_id)
+  AND replace(p.name_key, '_', '-') = replace(lower(sqlc.arg(name)::text), '_', '-')
 ORDER BY v.created_at, v.id;

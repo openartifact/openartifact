@@ -40,8 +40,9 @@ const (
 // visible to it) or starts after it ends.
 type DockerGCStore interface {
 	// ListUnindexedDockerManifests returns up to limit manifests of the
-	// repository whose references have not been recorded yet.
-	ListUnindexedDockerManifests(ctx context.Context, repoID string, limit int) ([]*models.DockerGCManifest, error)
+	// repository whose references have not been recorded yet, leaving out the
+	// manifests in skipIDs (ones the caller could not index this run).
+	ListUnindexedDockerManifests(ctx context.Context, repoID string, skipIDs []string, limit int) ([]*models.DockerGCManifest, error)
 
 	// SetDockerManifestRefs records the references of a manifest body and marks
 	// the manifest indexed. A manifest deleted meanwhile is skipped silently.
@@ -176,10 +177,20 @@ func insertDockerManifestRefs(
 	return nil
 }
 
-func (p *DockerStore) ListUnindexedDockerManifests(ctx context.Context, repoID string, limit int) ([]*models.DockerGCManifest, error) {
+func (p *DockerStore) ListUnindexedDockerManifests(
+	ctx context.Context,
+	repoID string,
+	skipIDs []string,
+	limit int,
+) ([]*models.DockerGCManifest, error) {
+	if skipIDs == nil {
+		skipIDs = []string{}
+	}
+
 	rows, err := p.q.ListUnindexedDockerManifests(ctx, dbsqlc.ListUnindexedDockerManifestsParams{
-		RepositoryID: repoID,
-		Limit:        toInt32(limit),
+		RepositoryID:    repoID,
+		SkipManifestIds: skipIDs,
+		RowLimit:        toInt32(limit),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list unindexed docker manifests: %w", err)

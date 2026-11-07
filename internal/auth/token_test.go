@@ -124,11 +124,14 @@ func TestValidateToken_Revoked(t *testing.T) {
 	}
 }
 
-func TestUpdateLastUsed_NoPanic(t *testing.T) {
-	db := newTokenMockDB()
-	ctx := context.Background()
-	UpdateLastUsed(ctx, db, "nonexistent")
-	time.Sleep(10 * time.Millisecond)
+func TestUpdateLastUsed_WritesTokenID(t *testing.T) {
+	db := &touchCountingDB{}
+
+	UpdateLastUsed(context.Background(), db, "tok-1")
+
+	if len(db.writes) != 1 || db.writes[0] != "tok-1" {
+		t.Fatalf("writes = %v, want [tok-1]", db.writes)
+	}
 }
 
 func TestValidateToken_UnknownPrefix(t *testing.T) {

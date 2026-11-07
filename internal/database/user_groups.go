@@ -8,9 +8,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
-
-	"github.com/google/uuid"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 )
@@ -312,24 +309,15 @@ func (p *UserGroupStore) GetGroupByName(ctx context.Context, name string) (*mode
 }
 
 func (p *UserGroupStore) GetOrCreateGroup(ctx context.Context, name string) (*models.Group, error) {
-	existing, err := p.GetGroupByName(ctx, name)
-	if err != nil {
-		return nil, err
+	// The partial unique index on global group names makes the insert race-free.
+	if _, err := p.db.ExecContext(ctx,
+		`INSERT INTO auth_groups (name, description) VALUES ($1, 'Auto-created by SSO group sync')
+		 ON CONFLICT (name) WHERE project_id IS NULL DO NOTHING`, name); err != nil {
+		return nil, fmt.Errorf("failed to create group: %w", err)
 	}
 
-	if existing != nil {
-		return existing, nil
-	}
+	g, err := scanGroup(p.db.QueryRowContext(ctx,
+		`SELECT `+groupColumns+` FROM auth_groups g WHERE g.name = $1 AND g.project_id IS NULL`, name))
 
-	now := time.Now().UTC()
-	desc := "Auto-created by SSO group sync"
-	g := &models.Group{
-		ID:          uuid.New().String(),
-		Name:        name,
-		Description: &desc,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-
-	return p.CreateGroup(ctx, g)
+	return orNotFound(g, err, "get group by name")
 }

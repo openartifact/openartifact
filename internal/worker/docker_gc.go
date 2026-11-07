@@ -88,6 +88,10 @@ type DockerGCReport struct {
 	// Failures counts storage deletions that failed and were logged. The rows
 	// are already gone, so the orphan collector reclaims their blobs later.
 	Failures int
+	// ManifestsMissingBody counts manifests whose body is absent from storage.
+	// Their references are unknown, so they stay unindexed and, while they
+	// exist, no blob of the repository is swept.
+	ManifestsMissingBody int
 
 	// Manifests and Blobs list the deleted entries, capped at DockerGCReportLimit.
 	Manifests []DockerGCManifest
@@ -304,10 +308,14 @@ func (r *dockerGCRun) run(ctx context.Context) error {
 
 // indexManifests records the references of manifests that predate
 // docker_manifest_refs (or were restored from a backup), reading their bodies
-// from the blob store. A body missing from storage references nothing.
+// from the blob store. A body missing from storage has unknown references, so
+// its manifest is left unindexed (which keeps the blob sweep blocked), skipped
+// for the rest of the run and counted in the report.
 func (r *dockerGCRun) indexManifests(ctx context.Context) error {
+	var skip []string
+
 	for {
-		batch, err := r.w.db.ListUnindexedDockerManifests(ctx, r.repo.ID, dockerGCIndexBatch)
+		batch, err := r.w.db.ListUnindexedDockerManifests(ctx, r.repo.ID, skip, dockerGCIndexBatch)
 		if err != nil {
 			return fmt.Errorf("docker gc: %w", err)
 		}
@@ -317,9 +325,19 @@ func (r *dockerGCRun) indexManifests(ctx context.Context) error {
 		}
 
 		for _, m := range batch {
-			refs, err := r.w.readManifestRefs(ctx, m.BlobSHA256)
+			refs, found, err := r.w.readManifestRefs(ctx, m.BlobSHA256)
 			if err != nil {
 				return fmt.Errorf("docker gc: index manifest %s: %w", m.Digest, err)
+			}
+
+			if !found {
+				skip = append(skip, m.ID)
+				r.report.ManifestsMissingBody++
+
+				r.w.log.Warnw("docker gc: manifest body missing from storage; blobs stay protected",
+					"repository", r.repo.Name, "digest", m.Digest)
+
+				continue
 			}
 
 			if err := r.w.db.SetDockerManifestRefs(ctx, r.repo.ID, m, refs); err != nil {
@@ -329,24 +347,26 @@ func (r *dockerGCRun) indexManifests(ctx context.Context) error {
 	}
 }
 
-func (w *DockerGCWorker) readManifestRefs(ctx context.Context, sha string) (models.DockerManifestRefs, error) {
+// readManifestRefs parses the references of a stored manifest body. found is
+// false when the body is not in the blob store.
+func (w *DockerGCWorker) readManifestRefs(ctx context.Context, sha string) (models.DockerManifestRefs, bool, error) {
 	rc, err := w.blobStore.Get(ctx, sha)
 	if err != nil {
 		if ok, existsErr := w.blobStore.Exists(ctx, sha); existsErr == nil && !ok {
-			return models.DockerManifestRefs{}, nil
+			return models.DockerManifestRefs{}, false, nil
 		}
 
-		return models.DockerManifestRefs{}, fmt.Errorf("read manifest body: %w", err)
+		return models.DockerManifestRefs{}, false, fmt.Errorf("read manifest body: %w", err)
 	}
 
 	defer func() { _ = rc.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(rc, 16<<20))
 	if err != nil {
-		return models.DockerManifestRefs{}, fmt.Errorf("read manifest body: %w", err)
+		return models.DockerManifestRefs{}, false, fmt.Errorf("read manifest body: %w", err)
 	}
 
-	return ocimanifest.ParseRefs(body), nil
+	return ocimanifest.ParseRefs(body), true, nil
 }
 
 // planDryRun reports what a real run would delete, deleting nothing.

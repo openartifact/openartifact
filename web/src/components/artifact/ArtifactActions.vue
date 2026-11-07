@@ -133,25 +133,28 @@ async function copyPermalink(): Promise<void> {
 }
 
 // Both directions apply at once; the toast carries the way back.
-async function applyQuarantine(flag: boolean, undo: boolean): Promise<void> {
+// The Undo toast outlives the page: it re-applies to the repo and files captured here.
+async function applyQuarantine(flag: boolean, undo: boolean, target?: { repo: string; ids: string[]; version: string }): Promise<void> {
   const current = entry.value
-  if (!current) return
+  const resolved = target ?? (current ? { repo: ctx.repoName.value, ids: [...fileIds.value], version: current.version } : undefined)
+  if (!resolved) return
+  const { repo, ids, version } = resolved
   try {
-    const changed = await setVersionQuarantine(ctx.repoName.value, fileIds.value, flag)
+    const changed = await setVersionQuarantine(repo, ids, flag)
     if (changed === 0) {
       toasts.warning(t(flag ? 'artifact.quarantine.nothingScanned' : 'artifact.quarantine.nothingQuarantined'))
       return
     }
     await ctx.reloadSecurity()
     if (undo) {
-      toasts.success(tp(flag ? 'artifact.quarantine.done' : 'artifact.quarantine.released', { version: current.version }))
+      toasts.success(tp(flag ? 'artifact.quarantine.done' : 'artifact.quarantine.released', { version }))
       return
     }
     toasts.push({
       level: 'success',
-      title: tp(flag ? 'artifact.quarantine.done' : 'artifact.quarantine.released', { version: current.version }),
+      title: tp(flag ? 'artifact.quarantine.done' : 'artifact.quarantine.released', { version }),
       description: t(flag ? 'artifact.quarantine.doneHint' : 'artifact.quarantine.releasedHint'),
-      action: { label: t('artifact.undo'), run: () => void applyQuarantine(!flag, true) },
+      action: { label: t('artifact.undo'), run: () => void applyQuarantine(!flag, true, resolved) },
       timeoutMs: 10000,
     })
   } catch (err) {

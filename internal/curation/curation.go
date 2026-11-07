@@ -129,12 +129,13 @@ func NormalizePackage(format, name string) string {
 	}
 }
 
-// Glob reports whether s matches pattern: "*" matches any run of characters
-// (including none, "/" and ":"), "?" exactly one character, every other
-// character itself. Matching is case-sensitive and runs in O(len(pattern) *
-// len(s)) at worst without recursion, so a hostile pattern cannot blow up.
-func Glob(pattern, s string) bool {
-	p, t := []rune(pattern), []rune(s)
+// globRunes reports whether t matches pattern p: "*" matches any run of
+// characters (including none, "/" and ":"), "?" exactly one character, every
+// other character itself. Matching is case-sensitive and runs in
+// O(len(p) * len(t)) at worst without recursion, so a hostile pattern cannot
+// blow up. It takes runes so Set.Evaluate converts each pattern once at NewSet
+// and the subject once per call.
+func globRunes(p, t []rune) bool {
 	pi, ti := 0, 0
 	star, mark := -1, 0
 
@@ -184,8 +185,9 @@ type Set struct {
 }
 
 type compiled struct {
-	rule *Rule
-	pkg  string // normalized package pattern
+	rule    *Rule
+	pkg     []rune // normalized package pattern
+	version []rune // version pattern; nil matches every version
 }
 
 // NewSet builds the Set of a repository of the given format. Rules keep their
@@ -197,7 +199,12 @@ func NewSet(format, mode string, rules []Rule) *Set {
 
 	s := &Set{format: format, mode: mode, rules: make([]compiled, len(rules))}
 	for i := range rules {
-		s.rules[i] = compiled{rule: &rules[i], pkg: NormalizePackage(format, rules[i].Package)}
+		c := compiled{rule: &rules[i], pkg: []rune(NormalizePackage(format, rules[i].Package))}
+		if rules[i].Version != "" {
+			c.version = []rune(rules[i].Version)
+		}
+
+		s.rules[i] = c
 	}
 
 	return s
@@ -225,14 +232,15 @@ func (s *Set) Evaluate(pkg, version string) Verdict {
 		return Verdict{}
 	}
 
-	name := NormalizePackage(s.format, pkg)
+	name := []rune(NormalizePackage(s.format, pkg))
+	ver := []rune(version)
 
 	var blocked, allowed *Rule
 
 	for i := range s.rules {
 		c := &s.rules[i]
 
-		if !Glob(c.pkg, name) || (c.rule.Version != "" && !Glob(c.rule.Version, version)) {
+		if !globRunes(c.pkg, name) || (c.version != nil && !globRunes(c.version, ver)) {
 			continue
 		}
 

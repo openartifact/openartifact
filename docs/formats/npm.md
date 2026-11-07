@@ -57,6 +57,7 @@ Checks before anything is stored (failures are `400`):
 - The package name is valid and at most 214 characters.
 - `name` in the body equals the URL.
 - Each version is valid semver, and the manifest `name` and `version` match.
+- A version has no build metadata: `1.0.0+x` is refused, because it would shadow the released `1.0.0`. Prerelease versions such as `1.0.0-rc.1` are fine.
 - The tarball attachment is present, keyed `<name>-<version>.tgz` or by the bare file name.
 - `dist.integrity`, when sent, matches the tarball.
 - Every `dist-tags` entry points at a version in the request or an existing one.

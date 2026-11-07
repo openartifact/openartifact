@@ -10,7 +10,6 @@
   "shell.requiresAdmin": "Nécessite un administrateur",
   "shell.settingsManagedByAdmins": "Les paramètres de l'instance sont gérés par les administrateurs",
   "shell.denied.admin": "Cette page est réservée aux administrateurs",
-  "shell.denied.repoCreate": "La création d'un dépôt nécessite le rôle de mainteneur dans un projet",
   "shell.denied.hint": "Demandez l'accès à un administrateur.",
   "shell.searchPill": "Rechercher ou aller à…",
   "shell.userMenu": "Menu du compte de {name}",

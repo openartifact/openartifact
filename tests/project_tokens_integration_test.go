@@ -185,8 +185,8 @@ func TestProjectTokenCreatorLeaves(t *testing.T) {
 	disable := func(t *testing.T, f tokenFixture) {
 		t.Helper()
 
-		f.dev.Disabled = true
-		if err := f.db.UpdateUser(ctx, f.dev); err != nil {
+		disabled := true
+		if _, err := f.db.PatchUser(ctx, f.dev.ID, database.UserPatch{Disabled: &disabled}); err != nil {
 			t.Fatal(err)
 		}
 	}

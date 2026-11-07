@@ -171,8 +171,10 @@ func (d *cargoDB) GetCargoCrate(_ context.Context, _, name, version string) (*mo
 func (d *cargoDB) ListCargoCrateVersions(_ context.Context, _, name string) ([]*models.CargoCrate, error) {
 	var out []*models.CargoCrate
 
+	norm := func(s string) string { return strings.ReplaceAll(strings.ToLower(s), "_", "-") }
+
 	for _, c := range d.crates {
-		if strings.EqualFold(c.Name, name) {
+		if norm(c.Name) == norm(name) {
 			out = append(out, c)
 		}
 	}

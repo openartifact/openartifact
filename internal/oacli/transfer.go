@@ -225,7 +225,17 @@ func multipartStream(file io.Reader, fileName string) (io.ReadCloser, string) {
 
 // downloadTo streams the response body into a temp file beside dest and
 // renames it onto dest only after a complete, synced write.
+//
+// The file is created with the owner-only mode of os.CreateTemp, so exports and
+// private artifacts are never wider than 0600. Replacing an existing regular
+// file keeps that file's mode. A device or pipe (/dev/null, /dev/stdout, a
+// FIFO) is written to directly: renaming a temp file over it would replace it.
 func downloadTo(resp *http.Response, dest string) (int64, error) {
+	fi, statErr := os.Stat(dest)
+	if statErr == nil && !fi.Mode().IsRegular() {
+		return copyToSpecial(resp, dest)
+	}
+
 	f, err := os.CreateTemp(filepath.Dir(dest), ".oa-download-*.tmp")
 	if err != nil {
 		return 0, fmt.Errorf("creating temp file: %w", err)
@@ -249,8 +259,10 @@ func downloadTo(resp *http.Response, dest string) (int64, error) {
 		return fail(fmt.Errorf("%w: got %d of %d bytes", io.ErrUnexpectedEOF, n, resp.ContentLength))
 	}
 
-	if err := f.Chmod(0o644); err != nil { //nolint:mnd // regular downloaded file mode
-		return fail(fmt.Errorf("chmod: %w", err))
+	if statErr == nil {
+		if err := f.Chmod(fi.Mode().Perm()); err != nil {
+			return fail(fmt.Errorf("chmod: %w", err))
+		}
 	}
 
 	if err := f.Sync(); err != nil {
@@ -267,6 +279,27 @@ func downloadTo(resp *http.Response, dest string) (int64, error) {
 		_ = os.Remove(tmpName)
 
 		return 0, fmt.Errorf("moving file into place: %w", err)
+	}
+
+	return n, nil
+}
+
+// copyToSpecial streams the response body into an existing non-regular file.
+func copyToSpecial(resp *http.Response, dest string) (int64, error) {
+	f, err := os.OpenFile(dest, os.O_WRONLY, 0)
+	if err != nil {
+		return 0, err
+	}
+
+	n, err := io.Copy(f, resp.Body)
+	if err != nil {
+		_ = f.Close()
+
+		return 0, fmt.Errorf("writing file: %w", err)
+	}
+
+	if err := f.Close(); err != nil {
+		return 0, fmt.Errorf("writing file: %w", err)
 	}
 
 	return n, nil

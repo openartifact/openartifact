@@ -10,7 +10,6 @@
   "shell.requiresAdmin": "Потрібні права адміністратора",
   "shell.settingsManagedByAdmins": "Налаштуваннями екземпляра керують адміністратори",
   "shell.denied.admin": "Ця сторінка доступна лише адміністраторам",
-  "shell.denied.repoCreate": "Для створення репозиторію потрібна роль maintainer у проєкті",
   "shell.denied.hint": "Попросіть адміністратора надати доступ.",
   "shell.searchPill": "Пошук або перехід…",
   "shell.userMenu": "Меню облікового запису {name}",

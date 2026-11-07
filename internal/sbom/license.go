@@ -180,7 +180,7 @@ func (p *exprParser) parseAtom(b *strings.Builder) bool {
 
 	plus := strings.HasSuffix(tok, "+")
 
-	canon, ok := spdxLicenseSet[strings.ToLower(strings.TrimSuffix(tok, "+"))]
+	canon, ok := license.SPDXLicenseID(strings.TrimSuffix(tok, "+"))
 	if !ok {
 		return false
 	}
@@ -200,7 +200,7 @@ func (p *exprParser) parseAtom(b *strings.Builder) bool {
 			return false
 		}
 
-		exc, ok := spdxExceptionSet[strings.ToLower(p.toks[p.pos])]
+		exc, ok := license.SPDXExceptionID(p.toks[p.pos])
 		if !ok {
 			return false
 		}
