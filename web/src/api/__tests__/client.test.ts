@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test'
 import { createPinia, setActivePinia, type StoreGeneric } from 'pinia'
-import { request, preflight, downloadBlob, isSessionExpired, setClientSpanFactory, ApiError, SESSION_EXPIRED } from '../client'
+import { request, preflight, downloadBlob, isSessionExpired, isPasswordChangeRequired, setClientSpanFactory, ApiError, SESSION_EXPIRED } from '../client'
 import router from '../../router'
 import { t } from '../../i18n'
 import { useSessionStore, type User } from '../../stores/session'
@@ -223,6 +223,43 @@ describe('API client', () => {
     expect(isSessionExpired(err)).toBe(true)
     expect(isSessionExpired(new ApiError('nope', 401, 'invalid_credentials'))).toBe(false)
     expect(isSessionExpired(new Error('x'))).toBe(false)
+  })
+
+  it('sends a session flagged for a password change to /change-password and throws a quiet error', async () => {
+    window.history.pushState({}, '', '/repos/foo?tab=files')
+    const session = useSessionStore()
+    const actions = trackActions(session)
+    spyOn(session, 'fetchMe').mockResolvedValue(undefined)
+    const pushSpy = spyOn(router, 'push').mockResolvedValue(undefined)
+    spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      new Response(JSON.stringify({ error: 'password_change_required', change_url: '/change-password' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    const err = await request('/api/v1/repositories').catch((e: unknown) => e)
+
+    expect(isPasswordChangeRequired(err)).toBe(true)
+    expect(isSessionExpired(err)).toBe(false)
+    expect(actions).toEqual(['fetchMe'])
+    expect(pushSpy).toHaveBeenCalledWith({ name: 'change-password', query: { next: '/repos/foo?tab=files' } })
+  })
+
+  it('leaves other 403 bodies and the auth probes alone', async () => {
+    const pushSpy = spyOn(router, 'push').mockResolvedValue(undefined)
+    spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      new Response(JSON.stringify({ error: 'password_change_required' }), { status: 403 }),
+    )
+    const me = await request('/api/v1/auth/me').catch((e: unknown) => e)
+    expect(isPasswordChangeRequired(me)).toBe(false)
+    expect((me as ApiError).status).toBe(403)
+
+    spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 }))
+    const other = await request('/api/v1/x').catch((e: unknown) => e)
+    expect(isPasswordChangeRequired(other)).toBe(false)
+    expect((other as ApiError).message).toBe('forbidden')
+    expect(pushSpy).not.toHaveBeenCalled()
   })
 
   it('words the expired-session error in the catalog, not in hard-coded English', async () => {

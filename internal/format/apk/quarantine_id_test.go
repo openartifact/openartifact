@@ -46,7 +46,7 @@ func (*apkDB) CountFileDownload(string) {}
 // TestDownloadQuarantinedByRowID: a scan keyed by the package's row id (the id
 // the package listing shows) blocks the download of that package only.
 func TestDownloadQuarantinedByRowID(t *testing.T) {
-	db := &apkDB{repos: formattest.NewDB()}
+	db := &apkDB{repos: formattest.NewDB("apk")}
 
 	for _, v := range []struct{ id, version string }{{"file-1", "1.0-r0"}, {"file-2", "2.0-r0"}} {
 		db.pkgs = append(db.pkgs, &models.ApkPackage{

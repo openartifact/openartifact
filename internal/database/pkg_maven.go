@@ -175,6 +175,7 @@ func (p *MavenStore) CreateMavenArtifact(ctx context.Context, a *models.MavenArt
 
 	// ON CONFLICT returns the existing row id; always bind the returned id.
 	a.ID = written.ID
+	a.Replaced = written.Replaced
 
 	return nil
 }

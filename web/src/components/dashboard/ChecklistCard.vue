@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <section class="mb-8 rounded-lg border border-border bg-surface" aria-labelledby="dash-checklist" data-testid="checklist">
     <div class="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
       <h2 id="dash-checklist" class="text-base font-semibold text-foreground">{{ t('dashboard.checklist.title') }}</h2>
-      <span class="text-xs text-muted">{{ tp('dashboard.checklist.progress', { done: String(done), total: String(steps.length) }) }}</span>
+      <span class="text-xs text-muted">{{ tp('dashboard.checklist.progress', { done: done, total: steps.length }) }}</span>
       <span class="flex-1" />
       <AppButton variant="ghost" size="sm" class="max-md:min-h-11" @click="emit('dismiss')">{{ t('dashboard.checklist.dismiss') }}</AppButton>
     </div>

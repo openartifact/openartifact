@@ -326,9 +326,11 @@ func peekLoginUsername(r *http.Request) string {
 		return ""
 	}
 
-	name := body.Username
+	// NUL and invalid UTF-8 cannot be stored in the jsonb audit row; dropping
+	// them keeps the failed-login event from being lost.
+	name := strings.ReplaceAll(strings.ToValidUTF8(body.Username, ""), "\x00", "")
 	if len(name) > maxActorNameLen {
-		name = name[:maxActorNameLen]
+		name = strings.ToValidUTF8(name[:maxActorNameLen], "")
 	}
 
 	return name

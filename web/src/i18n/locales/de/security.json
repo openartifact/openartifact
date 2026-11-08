@@ -252,6 +252,7 @@
   "security.exploit.feedNever": "nicht geladen",
   "security.exploit.problem.error": "{feed}: Die letzte Aktualisierung ist fehlgeschlagen ({error})",
   "security.exploit.problem.stale": "{feed} wurde zuletzt am {date} geprüft",
+  "security.exploit.problem.unchecked": "{feed} wurde am {date} importiert, aber nie geprüft",
   "security.col.exploit": "Ausnutzung",
   "security.vuln.finding.exploit": "Ausnutzung",
   "security.detail.priority": "Priorität",

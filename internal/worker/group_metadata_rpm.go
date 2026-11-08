@@ -119,11 +119,8 @@ func (j *groupJob) buildRPM(ctx context.Context) error {
 	j.blobs["repodata/repomd.xml"] = repomd
 
 	if j.signer != nil {
-		sig, err := formatrpm.SignRepomdXML(j.signer, repomd)
-		if err != nil {
-			j.w.log.Warnw("group worker: failed to sign repomd.xml", "group", j.group.Name, "error", err)
-		} else {
-			j.blobs["repodata/repomd.xml.asc"] = sig
+		if err := addSignedRepomd(j.blobs, repomd, j.signer); err != nil {
+			return fmt.Errorf("group worker: %s: %w", j.group.Name, err)
 		}
 
 		j.addPublicKey()

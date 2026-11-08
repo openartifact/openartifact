@@ -162,8 +162,7 @@ func buildTestDebWithLicense(t *testing.T, license string) []byte {
 }
 
 func TestDebUploadDeleteEmitEventsAndQuota(t *testing.T) {
-	db := &debAPIDB{DB: formattest.NewDB(), pkgs: map[string]*models.Component{}}
-	db.Repo.Format = "deb"
+	db := &debAPIDB{DB: formattest.NewDB("deb"), pkgs: map[string]*models.Component{}}
 
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
@@ -240,8 +239,7 @@ func TestDebUploadImportCreatedAt(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			db := &debAPIDB{DB: formattest.NewDB(), pkgs: map[string]*models.Component{}}
-			db.Repo.Format = "deb"
+			db := &debAPIDB{DB: formattest.NewDB("deb"), pkgs: map[string]*models.Component{}}
 
 			h := NewDebUploadHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), nil)
 			router := chi.NewRouter()
@@ -332,8 +330,7 @@ func uploadDebWithLicense(
 func TestDebUploadLicensePolicy(t *testing.T) {
 	for _, c := range policytest.Cases("GPL-3.0") {
 		t.Run(c.Name, func(t *testing.T) {
-			db := &debAPIDB{DB: formattest.NewDB(), pkgs: map[string]*models.Component{}}
-			db.Repo.Format = "deb"
+			db := &debAPIDB{DB: formattest.NewDB("deb"), pkgs: map[string]*models.Component{}}
 
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
@@ -367,8 +364,7 @@ func TestDebUploadLicensePolicy(t *testing.T) {
 }
 
 func TestDebUploadNoLicenseAdmittedUnderBlockPolicy(t *testing.T) {
-	db := &debAPIDB{DB: formattest.NewDB(), pkgs: map[string]*models.Component{}}
-	db.Repo.Format = "deb"
+	db := &debAPIDB{DB: formattest.NewDB("deb"), pkgs: map[string]*models.Component{}}
 
 	c := policytest.Case{Policies: []*models.LicensePolicy{policytest.Policy(licensepolicy.ActionBlock, []string{"MIT"}, nil)}}
 
@@ -388,8 +384,7 @@ func TestDebUploadNoLicenseAdmittedUnderBlockPolicy(t *testing.T) {
 func TestDebUploadLeavesNoTempFile(t *testing.T) {
 	assertEmpty := formattest.IsolatedTemp(t)
 
-	db := &debAPIDB{DB: formattest.NewDB(), pkgs: map[string]*models.Component{}}
-	db.Repo.Format = "deb"
+	db := &debAPIDB{DB: formattest.NewDB("deb"), pkgs: map[string]*models.Component{}}
 
 	h := NewDebUploadHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), nil)
 

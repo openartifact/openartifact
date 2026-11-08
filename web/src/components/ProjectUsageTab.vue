@@ -72,7 +72,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <p v-if="!sizeLimited && !countLimited" class="text-xs text-muted" data-testid="usage-no-limit">
           {{ t('projects.usage.noLimit') }}
         </p>
-        <p v-else-if="warn > 0" class="text-xs text-muted">{{ tp('projects.usage.warnAt', { n: String(warn) }) }}</p>
+        <p v-else-if="warn > 0" class="text-xs text-muted">{{ tp('projects.usage.warnAt', { n: warn }) }}</p>
       </section>
 
       <section class="rounded-xl border border-border bg-surface overflow-hidden" :aria-label="t('projects.usage.repositories')">

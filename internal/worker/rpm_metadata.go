@@ -411,11 +411,8 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 	}
 
 	if signer != nil {
-		signature, signErr := formatrpm.SignRepomdXML(signer, repomdXML)
-		if signErr != nil {
-			w.log.Warnw("failed to sign repomd.xml", "error", signErr)
-		} else {
-			blobs["repodata/repomd.xml.asc"] = signature
+		if signErr := addSignedRepomd(blobs, repomdXML, signer); signErr != nil {
+			return nil, fmt.Errorf("rpm worker: %w", signErr)
 		}
 
 		publicKey, keyErr := formatrpm.PublicKey(signer)

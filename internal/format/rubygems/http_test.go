@@ -151,7 +151,7 @@ func (d *gemsDB) DecrementStorageUsage(_ context.Context, _ string, size int64, 
 func newTestHandler(t *testing.T) (*HTTPHandler, *gemsDB, *formattest.BlobStore, *formattest.Publisher) {
 	t.Helper()
 
-	db := &gemsDB{DB: formattest.NewDB()}
+	db := &gemsDB{DB: formattest.NewDB("rubygems")}
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
@@ -438,7 +438,7 @@ func assertGemStored(t *testing.T, c policytest.Case, status int, db *gemsDB, bs
 func TestPushLicensePolicy(t *testing.T) {
 	for _, c := range policytest.Cases("GPL-3.0") {
 		t.Run(c.Name, func(t *testing.T) {
-			inner := &gemsDB{DB: formattest.NewDB()}
+			inner := &gemsDB{DB: formattest.NewDB("rubygems")}
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
@@ -454,7 +454,7 @@ func TestPushLicensePolicyNoLicenseAdmitted(t *testing.T) {
 		Want:     policytest.Admitted,
 		Policies: []*models.LicensePolicy{policytest.Policy("block", []string{"MIT"}, nil)},
 	}
-	inner := &gemsDB{DB: formattest.NewDB()}
+	inner := &gemsDB{DB: formattest.NewDB("rubygems")}
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 

@@ -79,7 +79,7 @@ type HTTPHandler struct {
 
 // NewHTTPHandler creates the handler.
 func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
+	return &HTTPHandler{Handler: base.New(FormatName, log, db, blobStore, baseURL), DB: db}
 }
 
 // WithMetrics counts a committed upload in openartifact_uploads_total.
@@ -120,7 +120,7 @@ func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 // composer repository, and passed on untouched otherwise. Run it before the
 // per-format routes.
 func (h *HTTPHandler) Guard(next http.Handler) http.Handler {
-	return base.Guard(h.Handler, FormatName, composer.ParsePath, h.serve)(next)
+	return base.Guard(h.Handler, composer.ParsePath, h.serve)(next)
 }
 
 // serve answers a classified request for the repository called name.
@@ -140,7 +140,7 @@ func (h *HTTPHandler) serve(w http.ResponseWriter, r *http.Request, name string,
 		return
 	}
 
-	if repo == nil || repo.Format != FormatName {
+	if repo == nil {
 		writeError(w, http.StatusNotFound, "Not found.")
 		return
 	}

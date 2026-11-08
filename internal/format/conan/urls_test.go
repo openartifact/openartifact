@@ -39,6 +39,7 @@ func (e *env) urlDo(
 	router.Route("/repos/{name}", e.h.RegisterRepoRoutes)
 
 	req := httptest.NewRequestWithContext(e.t.Context(), method, target, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	req.Host = "a.example"
 	req.RemoteAddr = "192.0.2.1:1234"
 

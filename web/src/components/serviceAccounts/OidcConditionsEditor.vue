@@ -32,8 +32,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <button
           type="button"
           class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary max-md:h-11 max-md:w-11"
-          :aria-label="tp('sa.cond.remove', { n: String(i + 1) })"
-          :title="tp('sa.cond.remove', { n: String(i + 1) })"
+          :aria-label="tp('sa.cond.remove', { n: i + 1 })"
+          :title="tp('sa.cond.remove', { n: i + 1 })"
           :data-testid="`condition-remove-${i}`"
           @click="remove(i)"
         >
@@ -58,7 +58,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <PlusIcon class="h-4 w-4" aria-hidden="true" />
         {{ t('sa.cond.add') }}
       </AppButton>
-      <span v-if="rows.length >= MAX_CONDITIONS" class="ml-2 text-xs text-muted">{{ tp('sa.cond.max', { max: String(MAX_CONDITIONS) }) }}</span>
+      <span v-if="rows.length >= MAX_CONDITIONS" class="ml-2 text-xs text-muted">{{ tp('sa.cond.max', { max: MAX_CONDITIONS }) }}</span>
     </div>
   </fieldset>
 </template>

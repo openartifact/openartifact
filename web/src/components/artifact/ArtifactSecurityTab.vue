@@ -40,13 +40,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <div>
               <dt class="text-xs text-muted">{{ t('artifact.security.secrets') }}</dt>
               <dd class="mt-0.5 tabular-nums" data-testid="sec-secret">
-                <router-link v-if="summary.secret.count > 0 && ctx.caps.value.maintain" :to="scanLink('secret')" class="text-primary hover:underline">{{ tp('artifact.security.secretCount', { count: String(summary.secret.count) }) }}</router-link>
-                <template v-else>{{ tp('artifact.security.secretCount', { count: String(summary.secret.count) }) }}</template>
+                <router-link v-if="summary.secret.count > 0 && ctx.caps.value.maintain" :to="scanLink('secret')" class="text-primary hover:underline">{{ tp('artifact.security.secretCount', { count: summary.secret.count }) }}</router-link>
+                <template v-else>{{ tp('artifact.security.secretCount', { count: summary.secret.count }) }}</template>
               </dd>
             </div>
             <div v-if="summary.ai.quarantine_recommended + summary.ai.review_required > 0">
               <dt class="text-xs text-muted">{{ t('artifact.security.ai') }}</dt>
-              <dd class="mt-0.5 tabular-nums">{{ tp('artifact.security.aiCount', { quarantine: String(summary.ai.quarantine_recommended), review: String(summary.ai.review_required) }) }}</dd>
+              <dd class="mt-0.5 tabular-nums">{{ tp('artifact.security.aiCount', { quarantine: summary.ai.quarantine_recommended, review: summary.ai.review_required }) }}</dd>
             </div>
             <div>
               <dt class="text-xs text-muted">{{ t('artifact.security.quarantine') }}</dt>

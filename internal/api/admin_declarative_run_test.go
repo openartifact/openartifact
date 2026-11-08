@@ -334,6 +334,30 @@ func TestDeclarativeInvalidManifestReportsEveryProblemWithItsLine(t *testing.T) 
 	}
 }
 
+func TestDeclarativeManifestWithoutDocumentsKeepsTheShapeOfAPlan(t *testing.T) {
+	t.Parallel()
+
+	h := newDeclRouter(t, &declBackend{}, true)
+
+	for _, manifest := range []string{"# only a comment\n", "---\n"} {
+		rec := declPost(t, h, "/api/v1/admin/declarative/diff", map[string]any{"manifest": manifest})
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("manifest %q: code=%d body=%s", manifest, rec.Code, rec.Body)
+		}
+
+		for _, field := range []string{`"items":[]`, `"summary":{}`, `"changes":false`, `"secrets":[]`} {
+			if !strings.Contains(rec.Body.String(), field) {
+				t.Fatalf("manifest %q: missing %s in %s", manifest, field, rec.Body)
+			}
+		}
+
+		out := decodeRun(t, rec)
+		if out.Code != "manifest_invalid" || len(out.Problems) != 1 || out.Problems[0].Message == "" {
+			t.Fatalf("manifest %q: out = %+v, want one problem", manifest, out)
+		}
+	}
+}
+
 func TestDeclarativeRequestValidation(t *testing.T) {
 	t.Parallel()
 

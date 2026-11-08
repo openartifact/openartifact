@@ -49,7 +49,7 @@ func BenchmarkHandleSparseIndex(b *testing.B) {
 	) + `"}`
 
 	for _, n := range []int{50, 500} {
-		db := &cargoDB{DB: formattest.NewDB()}
+		db := &cargoDB{DB: formattest.NewDB("cargo")}
 		for i := range n {
 			db.crates = append(
 				db.crates,

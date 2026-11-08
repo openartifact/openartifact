@@ -28,7 +28,7 @@ const repoPrefix = "/repos/myrepo"
 func newHandlerOnly(t *testing.T) *HTTPHandler {
 	t.Helper()
 
-	h := NewHTTPHandler(formattest.NewLogger(t), &cargoDB{DB: formattest.NewDB()}, formattest.NewBlobStore(), "http://localhost")
+	h := NewHTTPHandler(formattest.NewLogger(t), &cargoDB{DB: formattest.NewDB("cargo")}, formattest.NewBlobStore(), "http://localhost")
 	h.SetPublisher(&formattest.Publisher{})
 
 	return h

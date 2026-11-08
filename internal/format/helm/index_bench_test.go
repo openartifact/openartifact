@@ -126,7 +126,7 @@ func (w *discardResponseWriter) Write(p []byte) (int, error) {
 // an in-memory database.
 func BenchmarkHandleGetIndex(b *testing.B) {
 	for _, n := range []int{100, 1000, 10000} {
-		db := &benchHelmDB{DB: formattest.NewDB(), charts: benchCharts(n)}
+		db := &benchHelmDB{DB: formattest.NewDB("helm"), charts: benchCharts(n)}
 		h := NewHTTPHandler(formattest.NewLogger(b), db, formattest.NewBlobStore(), "http://localhost:8080")
 
 		router := chi.NewRouter()

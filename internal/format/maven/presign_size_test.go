@@ -38,7 +38,7 @@ func TestDownloadPresignUsesStoredSize(t *testing.T) {
 	db := &mavenQuarantineDB{
 		art: &models.MavenArtifact{BlobID: "uuid", SHA256: sum, BlobSizeBytes: 9999, RepoPath: "com/example/a/1.0/a-1.0.jar"},
 	}
-	db.repo = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repo = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "maven"}
 
 	router := chi.NewRouter()
 	NewHTTPHandler(formattest.NewLogger(t), db, store).RegisterRoutes(router, "/repos/{name}")

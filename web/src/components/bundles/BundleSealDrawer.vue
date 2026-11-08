@@ -11,7 +11,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <Drawer :open="open" :title="tp('bundles.seal.title', { bundle: `${name} ${version}` })" :eyebrow="t('bundles.nav')" :busy="busy" @close="emit('close')">
     <div class="space-y-4">
-      <p class="text-sm text-foreground">{{ tp('bundles.seal.summary', { count: String(itemCount) }) }}</p>
+      <p class="text-sm text-foreground">{{ tp('bundles.seal.summary', { count: itemCount }) }}</p>
 
       <FormField v-if="keys.length > 0" :label="t('bundles.seal.key')" id="seal-key" :hint="keyHint">
         <select id="seal-key" v-model="keyId" :disabled="loadingKeys" :class="INPUT_CLASS">

@@ -77,7 +77,7 @@ curl -X POST HOST/api/v1/admin/restore \
 # 202 {"message":"restore started","filename":"backup.tar.gz"}
 ```
 
-The UI restore dialog does the same and asks for a confirmation phrase. The manifest `version` must be `1.0`.
+The UI restore dialog does the same and asks for a confirmation phrase. The manifest `version` must be `2.0`.
 
 The response only confirms the upload. The restore runs in the background (24 h limit) and the outcome is in the server log: `restore completed successfully`, `restore completed with failures` with a count, or `restore failed`.
 
@@ -114,7 +114,7 @@ The upload is limited to 10 GiB (413 above) and is spooled to a `restore_*.tar.g
 |---|---|
 | `<table>.jsonl` | one JSON array per table (despite the extension it is not JSON Lines) |
 | `blobs/<sha256>` | one entry per stored blob, `full` backups only |
-| `manifest.json` | written last: `version` (`1.0`), `created_at`, `type`, `table_counts`, and for `full` backups `snapshot_at` and `blob_count` |
+| `manifest.json` | written last: `version` (`2.0`), `created_at`, `type`, `table_counts`, and for `full` backups `snapshot_at` and `blob_count` |
 
 `snapshot_at` is when the database snapshot was taken. `blob_count` is the number of blobs the snapshot lists.
 
@@ -124,12 +124,14 @@ Tables exported:
 - **Per format**: Alpine (apk packages), Cargo, Conan, Conda, Debian distributions, components and architectures with deb packages; Docker (blobs, manifests, tags), Go module, Helm, Ivy, Maven, npm (packages, versions, dist-tags), NuGet, PyPI, raw, rpm, RubyGems, sbt and Terraform (modules and providers) records.
 - **Per repository**: cleanup policies, SBOM, VEX decisions, license, secret and vulnerability scan results, AI analyses.
 
-Lists are read in one call of up to 100000 rows per table.
+Lists are read in pages of 1000 rows, so no table is cut off by a single query.
 
 ### What is not included
 
 - Artifact properties, sessions, the audit log, webhook delivery history, GPG keys and AI provider settings. Re-create them after a restore.
 - Project tokens and their service accounts. Mint them again.
+- Administrator service accounts, together with their tokens, permission assignments and project memberships. Create them again.
+- OIDC trust policies (workload-identity federation). Create them again.
 - [Trashed data](trash.md): trashed repositories and package rows. The export treats them as nonexistent, so a trashed repository is skipped together with its contents. Restore anything you still need from the trash before taking the backup. The blob store is exported as it is, so the bytes of trashed packages are still in the archive until they are purged.
 - Managed GPG private keys. The API cannot export them. Keep your own copy of an imported key, or generate a new one and redistribute its public key. A database dump (`pg_dump`) carries them sealed with `OPENARTIFACT_SECRET_KEY`, which you must then restore too.
 

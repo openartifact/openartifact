@@ -41,7 +41,7 @@ func putDescriptor(h *HTTPHandler, body string) (int, []byte) {
 func TestUploadLicensePolicy(t *testing.T) {
 	for _, c := range policytest.Cases("GPL-3.0") {
 		t.Run(c.Name, func(t *testing.T) {
-			db := &sbtDB{DB: formattest.NewDB()}
+			db := &sbtDB{DB: formattest.NewDB("sbt")}
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 			h := NewHTTPHandler(formattest.NewLogger(t), policyDB{db, c.Lister()}, bs, "http://localhost")
@@ -67,7 +67,7 @@ func TestUploadLicensePolicy(t *testing.T) {
 
 func TestUploadWithoutLicenseAdmittedUnderLicensePolicy(t *testing.T) {
 	policy := policytest.Policy("block", []string{"MIT"}, nil)
-	db := policyDB{&sbtDB{DB: formattest.NewDB()}, policytest.Case{Policies: []*models.LicensePolicy{policy}}.Lister()}
+	db := policyDB{&sbtDB{DB: formattest.NewDB("sbt")}, policytest.Case{Policies: []*models.LicensePolicy{policy}}.Lister()}
 	h := NewHTTPHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), "http://localhost")
 
 	// A non-descriptor file and a descriptor without a license are both undeclared.

@@ -65,6 +65,18 @@ type exporter struct {
 	*Engine
 
 	db database.SnapshotReader
+
+	// userIDs holds the ids of the users written to the archive. Rows owned by
+	// any other account (service accounts are not archived) are dropped so a
+	// restore does not report them as missing users.
+	userIDs map[string]struct{}
+}
+
+// archivesUser reports whether the archive carries the user id.
+func (e *exporter) archivesUser(id string) bool {
+	_, ok := e.userIDs[id]
+
+	return ok
 }
 
 // exportArchive registers a backup lease, freezes the database, and writes the

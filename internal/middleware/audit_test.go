@@ -161,3 +161,28 @@ func TestAuditMiddlewareRecordsRequest(t *testing.T) {
 		}
 	}
 }
+
+func TestPeekLoginUsernameSanitises(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"plain", `{"username":"alice"}`, "alice"},
+		{"nul", `{"username":"al\u0000ice"}`, "alice"},
+		{"invalid utf8", "{\"username\":\"al\xffice\"}", "al\uFFFDice"},
+		{"cut mid-rune", `{"username":"` + strings.Repeat("é", maxActorNameLen) + `"}`, strings.Repeat("é", maxActorNameLen/2)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/auth/login", strings.NewReader(tc.body))
+			if got := peekLoginUsername(r); got != tc.want {
+				t.Fatalf("peekLoginUsername = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

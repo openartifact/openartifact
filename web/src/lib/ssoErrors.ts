@@ -41,5 +41,5 @@ const SSO_ERROR_KEYS: Record<string, string> = {
  */
 export function ssoErrorMessage(code: unknown): string | undefined {
   if (typeof code !== 'string' || code === '') return undefined
-  return tDynamic(SSO_ERROR_KEYS[code] ?? 'login.ssoError.generic')
+  return tDynamic(Object.hasOwn(SSO_ERROR_KEYS, code) ? SSO_ERROR_KEYS[code] : 'login.ssoError.generic')
 }

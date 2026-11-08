@@ -87,6 +87,7 @@ import { primaryFile } from '../../lib/artifactVersions'
 import { supportsPackageDelete } from '../../lib/formats'
 import { useToastStore } from '../../stores/toast'
 import { t, tp } from '../../i18n'
+import { formatNumber } from '../../lib/intl'
 
 const ITEM = 'flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground max-md:min-h-11'
 
@@ -140,12 +141,20 @@ async function applyQuarantine(flag: boolean, undo: boolean, target?: { repo: st
   if (!resolved) return
   const { repo, ids, version } = resolved
   try {
-    const changed = await setVersionQuarantine(repo, ids, flag)
-    if (changed === 0) {
+    const { applied, failed, error } = await setVersionQuarantine(repo, ids, flag)
+    if (applied + failed === 0) {
       toasts.warning(t(flag ? 'artifact.quarantine.nothingScanned' : 'artifact.quarantine.nothingQuarantined'))
       return
     }
+    // Some writes may have landed even when others failed: show the real state either way.
     await ctx.reloadSecurity()
+    if (failed > 0) {
+      toasts.error(
+        tp('artifact.quarantine.partial', { applied: formatNumber(applied), failed: formatNumber(failed) }),
+        error instanceof Error ? error.message : undefined,
+      )
+      return
+    }
     if (undo) {
       toasts.success(tp(flag ? 'artifact.quarantine.done' : 'artifact.quarantine.released', { version }))
       return
@@ -172,7 +181,7 @@ const deleting = ref(false)
 const deleteDescription = computed(() => {
   const days = ctx.repository.value?.trash_retention_days
   if (days === 0) return t('artifact.delete.permanent')
-  if (typeof days === 'number') return tp('artifact.delete.trashDays', { repo: ctx.repoName.value, days: String(days) })
+  if (typeof days === 'number') return tp('artifact.delete.trashDays', { repo: ctx.repoName.value, days: days })
   return tp('artifact.delete.trash', { repo: ctx.repoName.value })
 })
 

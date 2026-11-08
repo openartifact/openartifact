@@ -98,7 +98,7 @@ func TestUploadLicensePolicy(t *testing.T) {
 
 	for _, c := range policytest.Cases("GPL-3.0") {
 		t.Run(c.Name, func(t *testing.T) {
-			db := &condaDB{DB: formattest.NewDB()}
+			db := &condaDB{DB: formattest.NewDB("conda")}
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 			h := NewHTTPHandler(formattest.NewLogger(t), policyDB{db, c.Lister()}, bs, "http://localhost")
@@ -124,7 +124,7 @@ func TestUploadLicensePolicy(t *testing.T) {
 }
 
 func TestUploadWithoutLicenseAdmittedUnderLicensePolicy(t *testing.T) {
-	db := &condaDB{DB: formattest.NewDB()}
+	db := &condaDB{DB: formattest.NewDB("conda")}
 	policy := policytest.Policy("block", []string{"MIT"}, nil)
 	h := NewHTTPHandler(
 		formattest.NewLogger(t),

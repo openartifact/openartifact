@@ -343,10 +343,6 @@ func (m *tokenMockDB) GetReleaseBundleByID(ctx context.Context, id string) (*mod
 	return nil, nil
 }
 
-func (m *tokenMockDB) UpdateReleaseBundle(ctx context.Context, b *models.ReleaseBundle) error {
-	return nil
-}
-
 func (m *tokenMockDB) DeleteReleaseBundle(ctx context.Context, id string) error {
 	return nil
 }
@@ -392,7 +388,6 @@ func (m *tokenMockDB) CreateDockerBlob(_ context.Context, _ *models.DockerBlob) 
 func (m *tokenMockDB) GetDockerBlob(_ context.Context, _, _ string) (*models.DockerBlob, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) DeleteDockerBlob(_ context.Context, _, _ string) error { return nil }
 func (m *tokenMockDB) ListDockerBlobs(_ context.Context, _ string) ([]*models.DockerBlob, error) {
 	return nil, nil
 }

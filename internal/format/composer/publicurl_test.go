@@ -24,8 +24,7 @@ import (
 func handlerFor(t *testing.T, explicit string) (http.Handler, string) {
 	t.Helper()
 
-	db := &composerDB{DB: formattest.NewDB()}
-	db.Repo.Format = FormatName
+	db := &composerDB{DB: formattest.NewDB("composer")}
 
 	h := NewHTTPHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), explicit)
 	require.Equal(t, http.StatusCreated, upload(h, "acme/tools", "1.0.0", composertest.Build(t, acme)).Code)

@@ -70,7 +70,7 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
     hosted: [
       {
         client: 'apk',
-        configure: '# private repository: put the credentials in the URL, {{authBase}}/v3.20/main, and fetch the key with wget --user <USERNAME> --password <TOKEN>\nwget -O /etc/apk/keys/openartifact-{{repo}}.rsa.pub {{base}}/public.key\necho "{{base}}/v3.20/main" >> /etc/apk/repositories\napk update\napk add PACKAGE',
+        configure: '# private repository: put the credentials in the URL, {{authBase}}/v3.20/main, and send the token as a bearer header when fetching the key\nwget --header "Authorization: Bearer <TOKEN>" -O /etc/apk/keys/openartifact-{{repo}}.rsa.pub {{base}}/public.key\necho "{{base}}/v3.20/main" >> /etc/apk/repositories\napk update\napk add PACKAGE',
         publish: 'curl -T my-pkg-1.0-r0.apk -H "Authorization: Bearer <TOKEN>" {{base}}/v3.20/main/x86_64/my-pkg-1.0-r0.apk\n\n# or through the REST API\ncurl -H "Authorization: Bearer <TOKEN>" -F file=@my-pkg-1.0-r0.apk -F branch=v3.20 -F repo=main {{origin}}/api/v1/repositories/{{esc}}/apks',
       },
     ],
@@ -83,7 +83,7 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
     group: [
       {
         client: 'apk',
-        configure: '# the group signs its indexes with its own key, not its members\'\n# private repository: put the credentials in the URL, {{authBase}}/v3.20/main, and fetch the key with wget --user <USERNAME> --password <TOKEN>\nwget -O /etc/apk/keys/openartifact-{{repo}}.rsa.pub {{base}}/public.key\necho "{{base}}/v3.20/main" >> /etc/apk/repositories\napk update\napk add PACKAGE',
+        configure: '# the group signs its indexes with its own key, not its members\'\n# private repository: put the credentials in the URL, {{authBase}}/v3.20/main, and send the token as a bearer header when fetching the key\nwget --header "Authorization: Bearer <TOKEN>" -O /etc/apk/keys/openartifact-{{repo}}.rsa.pub {{base}}/public.key\necho "{{base}}/v3.20/main" >> /etc/apk/repositories\napk update\napk add PACKAGE',
       },
     ],
   },

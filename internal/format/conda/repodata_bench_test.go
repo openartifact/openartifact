@@ -41,7 +41,7 @@ func (d benchCondaDB) CondaRepodataStamp(_ context.Context, _, _ string) (string
 // through chi with an in-memory database.
 func BenchmarkHandleRepodata(b *testing.B) {
 	for _, n := range []int{1000, 10000} {
-		db := &condaDB{DB: formattest.NewDB()}
+		db := &condaDB{DB: formattest.NewDB("conda")}
 		for i := range n {
 			addPkg(db, i)
 		}

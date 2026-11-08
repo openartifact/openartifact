@@ -26,4 +26,11 @@ describe('AttentionList', () => {
     const labels = w.findAll('li a[aria-label]').map((a) => a.attributes('aria-label'))
     expect(labels).toEqual(['Open: Scanner grype is not ready', 'Open: Scanner trivy is not ready'])
   })
+
+  it('does not say all clear while the checks that feed the list failed', () => {
+    const w = mount(AttentionList, { props: { items: [], loading: false, failed: 2 }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    expect(w.text()).not.toContain('All clear')
+    expect(w.get('[data-testid="attention-incomplete"]').exists()).toBe(true)
+    expect(render([]).text()).toContain('All clear')
+  })
 })

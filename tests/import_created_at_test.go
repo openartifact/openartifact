@@ -61,7 +61,7 @@ func TestImportCreatedAt_MavenAndRPM(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name+"/maven", func(t *testing.T) {
 			db := newMockDatabase()
-			db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo"}
+			db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo", Format: "maven"}
 
 			router := withImportAuth(tc.user, newMavenUploadHandlerFor(t, db).Register)
 

@@ -51,6 +51,31 @@ func (q *Queries) AddBundleItem(ctx context.Context, arg AddBundleItemParams) er
 	return err
 }
 
+const archiveReleaseBundle = `-- name: ArchiveReleaseBundle :execrows
+UPDATE release_bundles AS rb
+SET state = 'archived', archived_at = $1,
+    archiver_id = (SELECT au.id FROM auth_users au WHERE au.username = $2),
+    updated_at = now()
+WHERE rb.id = $3 AND rb.state = 'sealed'
+`
+
+type ArchiveReleaseBundleParams struct {
+	ArchivedAt *time.Time `db:"archived_at" json:"archived_at"`
+	ArchivedBy string     `db:"archived_by" json:"archived_by"`
+	ID         string     `db:"id" json:"id"`
+}
+
+// Archives a sealed bundle. It touches only the archive columns and is guarded
+// by the state, so a promotion that committed its current_stage in between is
+// not overwritten; no row is affected when the bundle is not sealed any more.
+func (q *Queries) ArchiveReleaseBundle(ctx context.Context, arg ArchiveReleaseBundleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, archiveReleaseBundle, arg.ArchivedAt, arg.ArchivedBy, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createBundlePromotion = `-- name: CreateBundlePromotion :one
 INSERT INTO bundle_promotions (bundle_id, from_stage, to_stage, target_repo_id, status, promoter_id, notes, item_count, started_at)
 VALUES ($1, $2, $3, $4, $5, (SELECT id FROM auth_users WHERE username = $6), $7, $8, $9)
@@ -553,45 +578,5 @@ type RemoveBundleItemParams struct {
 
 func (q *Queries) RemoveBundleItem(ctx context.Context, arg RemoveBundleItemParams) error {
 	_, err := q.db.Exec(ctx, removeBundleItem, arg.BundleID, arg.Sha256)
-	return err
-}
-
-const updateReleaseBundle = `-- name: UpdateReleaseBundle :exec
-UPDATE release_bundles AS rb
-SET description = $1, state = $2, pipeline_id = $3, current_stage = $4,
-    sealed_at = $5, sealer_id = (SELECT au.id FROM auth_users au WHERE au.username = $6),
-    archived_at = $7, archiver_id = (SELECT au.id FROM auth_users au WHERE au.username = $8),
-    gpg_key_id = $9, gpg_signature = $10, updated_at = now()
-WHERE rb.id = $11
-`
-
-type UpdateReleaseBundleParams struct {
-	Description  *string    `db:"description" json:"description"`
-	State        string     `db:"state" json:"state"`
-	PipelineID   *string    `db:"pipeline_id" json:"pipeline_id"`
-	CurrentStage *string    `db:"current_stage" json:"current_stage"`
-	SealedAt     *time.Time `db:"sealed_at" json:"sealed_at"`
-	Username     string     `db:"username" json:"username"`
-	ArchivedAt   *time.Time `db:"archived_at" json:"archived_at"`
-	Username_2   string     `db:"username_2" json:"username_2"`
-	GpgKeyID     *string    `db:"gpg_key_id" json:"gpg_key_id"`
-	GpgSignature *string    `db:"gpg_signature" json:"gpg_signature"`
-	ID           string     `db:"id" json:"id"`
-}
-
-func (q *Queries) UpdateReleaseBundle(ctx context.Context, arg UpdateReleaseBundleParams) error {
-	_, err := q.db.Exec(ctx, updateReleaseBundle,
-		arg.Description,
-		arg.State,
-		arg.PipelineID,
-		arg.CurrentStage,
-		arg.SealedAt,
-		arg.Username,
-		arg.ArchivedAt,
-		arg.Username_2,
-		arg.GpgKeyID,
-		arg.GpgSignature,
-		arg.ID,
-	)
 	return err
 }

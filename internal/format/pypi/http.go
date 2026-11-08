@@ -81,7 +81,7 @@ type HTTPHandler struct {
 }
 
 func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), maxUpload: maxUploadBytes, DB: db}
+	return &HTTPHandler{Handler: base.New("pypi", log, db, blobStore, baseURL), maxUpload: maxUploadBytes, DB: db}
 }
 
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {

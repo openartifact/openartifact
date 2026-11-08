@@ -89,6 +89,17 @@ func (p *UserStore) PatchUser(ctx context.Context, id string, patch UserPatch) (
 
 	defer func() { _ = tx.Rollback() }()
 
+	// Disabling can remove the last admin: serialise with every other admin
+	// change and verify one remains.
+	disabling := patch.Disabled != nil && *patch.Disabled
+
+	var adminsBefore int
+	if disabling {
+		if adminsBefore, err = lockAndCountAdmins(ctx, tx); err != nil {
+			return nil, err
+		}
+	}
+
 	u, err := scanUser(tx.QueryRowContext(
 		ctx,
 		`UPDATE auth_users u SET
@@ -116,6 +127,12 @@ func (p *UserStore) PatchUser(ctx context.Context, id string, patch UserPatch) (
 	}
 
 	if user.Disabled {
+		if disabling {
+			if err := requireAdminRemains(ctx, tx, adminsBefore); err != nil {
+				return nil, err
+			}
+		}
+
 		if err := revokeProjectTokensOf(ctx, tx, user.ID, ""); err != nil {
 			return nil, err
 		}
@@ -226,6 +243,45 @@ const enabledAdminIDsSQL = `
 			(pa.principal_type = 'user' AND pa.principal_id = u.id)
 			OR (pa.principal_type = 'group' AND pa.principal_id IN
 				(SELECT ug.group_id FROM auth_user_groups ug WHERE ug.user_id = u.id))))`
+
+// lockAndCountAdmins takes the advisory lock that serialises every change able
+// to remove an admin and returns how many enabled admins exist before it.
+func lockAndCountAdmins(ctx context.Context, tx *sql.Tx) (int, error) {
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, adminDeleteAdvisoryLockKey); err != nil {
+		return 0, fmt.Errorf("admin advisory lock: %w", err)
+	}
+
+	return countEnabledAdmins(ctx, tx)
+}
+
+func countEnabledAdmins(ctx context.Context, tx *sql.Tx) (int, error) {
+	var n int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM (`+enabledAdminIDsSQL+`) a`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count enabled admins: %w", err)
+	}
+
+	return n, nil
+}
+
+// requireAdminRemains returns ErrLastAdmin when the change just made inside tx
+// took the number of enabled admins from some to none; before is the count
+// lockAndCountAdmins returned.
+func requireAdminRemains(ctx context.Context, tx *sql.Tx, before int) error {
+	if before == 0 {
+		return nil
+	}
+
+	after, err := countEnabledAdmins(ctx, tx)
+	if err != nil {
+		return err
+	}
+
+	if after == 0 {
+		return ErrLastAdmin
+	}
+
+	return nil
+}
 
 // DeleteUser hard-deletes a human user. Sessions, tokens, project
 // memberships, group links and the SSO link (external_id/provider_slug live on

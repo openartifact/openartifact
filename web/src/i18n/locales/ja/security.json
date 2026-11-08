@@ -249,6 +249,7 @@
   "security.exploit.feedNever": "未読み込み",
   "security.exploit.problem.error": "{feed}：前回の更新に失敗しました（{error}）",
   "security.exploit.problem.stale": "{feed} の最終確認：{date}",
+  "security.exploit.problem.unchecked": "{feed} は {date} にインポートされましたが、一度も確認されていません",
   "security.col.exploit": "悪用状況",
   "security.vuln.finding.exploit": "悪用状況",
   "security.detail.priority": "優先度",

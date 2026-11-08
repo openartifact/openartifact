@@ -8,6 +8,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 )
 
@@ -36,22 +37,27 @@ func (w *CleanupWorker) sweepNixPendingNarsIfDue(ctx context.Context, now time.T
 	removed := 0
 
 	for ctx.Err() == nil {
-		shas, err := w.db.DeleteStaleNixPendingNars(ctx, before, nixPendingBatch)
+		stale, err := w.db.DeleteStaleNixPendingNars(ctx, before, nixPendingBatch)
 		if err != nil {
 			w.log.Warnw("nix pending nar sweep failed", "removed", removed, "error", err)
 
 			return
 		}
 
-		for _, sha := range shas {
-			if err := storage.SafeDeleteBlob(ctx, w.db, w.blobStore, sha); err != nil {
-				w.log.Warnw("failed to delete stale nix nar blob", "sha256", sha, "error", err)
+		for _, nar := range stale {
+			// The staged NAR held its size in the repository's quota.
+			if err := quota.ReleaseN(ctx, w.db, nar.RepositoryID, nar.ReservedBytes, 0); err != nil {
+				w.log.Warnw("failed to release quota of stale nix nar", "sha256", nar.SHA256, "error", err)
+			}
+
+			if err := storage.SafeDeleteBlob(ctx, w.db, w.blobStore, nar.SHA256); err != nil {
+				w.log.Warnw("failed to delete stale nix nar blob", "sha256", nar.SHA256, "error", err)
 			}
 		}
 
-		removed += len(shas)
+		removed += len(stale)
 
-		if len(shas) < nixPendingBatch {
+		if len(stale) < nixPendingBatch {
 			break
 		}
 	}

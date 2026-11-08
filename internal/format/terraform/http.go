@@ -105,7 +105,7 @@ type HTTPHandler struct {
 // download tickets need WithTicketKey; without them the matching endpoints
 // answer 503.
 func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), now: time.Now, DB: db}
+	return &HTTPHandler{Handler: base.New(formatName, log, db, blobStore, baseURL), now: time.Now, DB: db}
 }
 
 // WithSigner sets where provider checksum signatures come from: the GPG key
@@ -182,7 +182,7 @@ func (h *HTTPHandler) LatestGuard(next http.Handler) http.Handler {
 		}
 
 		repo, err := h.ResolveRepo(r.Context(), rctx.URLParam("name"))
-		if err != nil || repo == nil || repo.Format != formatName {
+		if err != nil || repo == nil {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -206,9 +206,9 @@ func (h *HTTPHandler) resolveRepo(w http.ResponseWriter, r *http.Request) *model
 		return nil
 	}
 
-	// A repository of another format has no registry to serve; answering
-	// would let a PUT create terraform rows in, say, a helm repository.
-	if repo == nil || repo.Format != formatName {
+	// ResolveRepo reports a repository of another format as unknown, so a PUT
+	// cannot create terraform rows in, say, a helm repository.
+	if repo == nil {
 		writeErrors(w, http.StatusNotFound, "repository not found")
 
 		return nil

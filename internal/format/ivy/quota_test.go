@@ -133,7 +133,7 @@ func TestOverwriteOverQuotaKeepsPreviousUsage(t *testing.T) {
 }
 
 func TestUploadCreateFailureReleasesQuotaAndBlob(t *testing.T) {
-	db := &ivyDB{DB: formattest.NewDB()}
+	db := &ivyDB{DB: formattest.NewDB("ivy")}
 	bs := formattest.NewBlobStore()
 	h := NewHTTPHandler(formattest.NewLogger(t), &failingCreateDB{ivyDB: db}, bs, "http://localhost")
 

@@ -119,7 +119,7 @@ FROM package_files f
 JOIN package_versions v ON v.id = f.version_id
 JOIN packages p ON p.id = v.package_id
 JOIN blobs b ON b.id = f.blob_id
-WHERE f.repository_id = $1 AND f.deleted_at IS NULL
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND p.format = 'helm'
 ORDER BY p.name, v.version DESC
 `
 

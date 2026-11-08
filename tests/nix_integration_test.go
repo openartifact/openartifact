@@ -58,7 +58,7 @@ func TestNixPendingCommitAndUnique(t *testing.T) {
 	pend := &models.NixPendingNar{RepositoryID: repoID, SHA256: p.SHA256, NarFile: p.NarFile, BlobKey: p.BlobKey, SizeBytes: p.SizeBytes}
 
 	for range 2 {
-		if err := pg.PutNixPendingNar(ctx, pend); err != nil {
+		if _, err := pg.PutNixPendingNar(ctx, pend); err != nil {
 			t.Fatalf("stage: %v", err)
 		}
 	}
@@ -188,7 +188,7 @@ func TestNixDeleteStalePendingNars(t *testing.T) {
 
 	for i := 1; i <= 3; i++ {
 		sha := fmt.Sprintf("%064x", 100+i)
-		if err := pg.PutNixPendingNar(ctx, &models.NixPendingNar{
+		if _, err := pg.PutNixPendingNar(ctx, &models.NixPendingNar{
 			RepositoryID: repoID, SHA256: sha, NarFile: sha[:52] + ".nar.xz", BlobKey: sha, SizeBytes: 10,
 		}); err != nil {
 			t.Fatal(err)
@@ -214,7 +214,7 @@ func TestNixDeleteStalePendingNars(t *testing.T) {
 
 	seen := map[string]bool{}
 	for _, s := range append(first, second...) {
-		seen[s] = true
+		seen[s.SHA256] = true
 	}
 
 	if len(seen) != 3 {

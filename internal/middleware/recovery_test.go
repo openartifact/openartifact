@@ -7,6 +7,7 @@ package middleware
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -75,5 +76,45 @@ func TestRecoveryMiddleware(t *testing.T) {
 
 	if !strings.Contains(string(logged), id) {
 		t.Errorf("panic log does not carry request id %s: %s", id, logged)
+	}
+}
+
+func TestRecoveryMiddlewareRepanicsAbortHandler(t *testing.T) {
+	t.Parallel()
+
+	logPath := filepath.Join(t.TempDir(), "log.json")
+
+	log, err := logger.New("error", "json", logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h := RecoveryMiddleware(log)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		panic(http.ErrAbortHandler)
+	}))
+
+	rec := httptest.NewRecorder()
+
+	var got any
+
+	func() {
+		defer func() { got = recover() }()
+
+		h.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/export", nil))
+	}()
+
+	if e, ok := got.(error); !ok || !errors.Is(e, http.ErrAbortHandler) {
+		t.Fatalf("recovered %v, want http.ErrAbortHandler re-panic", got)
+	}
+
+	if rec.Body.Len() != 0 {
+		t.Errorf("error body written after abort: %q", rec.Body.String())
+	}
+
+	_ = log.Sync()
+
+	if logged, _ := os.ReadFile(logPath); strings.Contains(string(logged), "panic recovered") {
+		t.Errorf("abort was logged as a panic: %s", logged)
 	}
 }

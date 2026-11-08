@@ -53,7 +53,7 @@ describe('useCleanupLivePreview', () => {
     const [url, init] = fetchSpy.mock.calls[0]!
     expect(String(url)).toBe('/api/v1/repositories/my%20repo/cleanup-policies/dry-run')
     expect((init as RequestInit).method).toBe('POST')
-    expect(JSON.parse(String((init as RequestInit).body))).toEqual({ keep_last_n: 3, name_pattern: '' })
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({ keep_last_n: 3, keep_since_days: null, name_pattern: '' })
     expect(p.status.value).toBe('ready')
     expect(p.result.value?.rows).toBe(3)
     scope.stop()
@@ -131,7 +131,7 @@ describe('useCleanupLivePreview', () => {
     await nextTick()
     await advance(PREVIEW_DEBOUNCE_MS)
     expect(fetchSpy).toHaveBeenCalledTimes(2)
-    expect(JSON.parse(String((fetchSpy.mock.calls[1]![1] as RequestInit).body))).toEqual({ keep_last_n: 10, name_pattern: '^app-' })
+    expect(JSON.parse(String((fetchSpy.mock.calls[1]![1] as RequestInit).body))).toEqual({ keep_last_n: 10, keep_since_days: null, name_pattern: '^app-' })
 
     form.value.name_pattern = '(unclosed'
     await nextTick()

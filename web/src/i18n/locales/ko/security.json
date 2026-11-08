@@ -249,6 +249,7 @@
   "security.exploit.feedNever": "불러오지 않음",
   "security.exploit.problem.error": "{feed}: 마지막 업데이트에 실패했습니다({error})",
   "security.exploit.problem.stale": "{feed}을(를) 마지막으로 확인한 시각: {date}",
+  "security.exploit.problem.unchecked": "{feed}은(는) {date}에 가져왔지만 한 번도 확인하지 않았습니다",
   "security.col.exploit": "악용",
   "security.vuln.finding.exploit": "악용",
   "security.detail.priority": "우선순위",

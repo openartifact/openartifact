@@ -424,7 +424,7 @@ func (p *VulnStore) CreateVulnScanResult(ctx context.Context, result *models.Vul
 			vulnerabilities = EXCLUDED.vulnerabilities, vuln_count = EXCLUDED.vuln_count,
 			critical_count = EXCLUDED.critical_count, high_count = EXCLUDED.high_count,
 			medium_count = EXCLUDED.medium_count, low_count = EXCLUDED.low_count,
-			quarantined = EXCLUDED.quarantined, package_name = EXCLUDED.package_name,
+			quarantined = vuln_results.quarantined OR EXCLUDED.quarantined, package_name = EXCLUDED.package_name,
 			package_version = EXCLUDED.package_version, ecosystem = EXCLUDED.ecosystem,
 			failed_scanners = EXCLUDED.failed_scanners, kev_count = EXCLUDED.kev_count, max_epss = EXCLUDED.max_epss
 		RETURNING id`,
@@ -476,14 +476,14 @@ func (p *VulnStore) UpdateVulnScanResult(ctx context.Context, result *models.Vul
 	_, err = p.db.ExecContext(ctx, `
 		WITH res AS (
 			UPDATE vuln_results SET vulnerabilities = $1, vuln_count = $2, critical_count = $3,
-			       high_count = $4, medium_count = $5, low_count = $6, quarantined = $7,
-			       failed_scanners = $13, kev_count = $14, max_epss = $15
-			WHERE id = $11
+			       high_count = $4, medium_count = $5, low_count = $6,
+			       failed_scanners = $12, kev_count = $13, max_epss = $14
+			WHERE id = $10
 			RETURNING scan_job_id
 		)
-		UPDATE scan_jobs sj SET scanner = $8, status = $9, error_message = NULLIF($10, ''), completed_at = $12, updated_at = now()
+		UPDATE scan_jobs sj SET scanner = $7, status = $8, error_message = NULLIF($9, ''), completed_at = $11, updated_at = now()
 		FROM res WHERE sj.id = res.scan_job_id`,
-		vulnsJSON, result.VulnCount, result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount, result.Quarantined,
+		vulnsJSON, result.VulnCount, result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount,
 		result.Scanner, vulnScanStatusToJob(result.ScanStatus), result.ScanError, result.ID, scannedAt,
 		nonNilStrings(result.FailedScanners), toInt32(result.KEVCount), result.MaxEPSS,
 	)

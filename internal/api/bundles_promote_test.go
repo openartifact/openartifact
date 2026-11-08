@@ -134,7 +134,7 @@ func TestBundlePromoteRejectsNonHostedTarget(t *testing.T) {
 		t.Fatalf("status = %d body %s, want 400 validation_failed", rw.Code, rw.Body.String())
 	}
 
-	if db.createPromotionCalled || db.updateBundleCalled {
+	if db.createPromotionCalled || db.archiveCalled {
 		t.Error("a refused promotion was recorded")
 	}
 }

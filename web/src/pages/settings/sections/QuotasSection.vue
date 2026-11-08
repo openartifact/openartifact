@@ -152,8 +152,8 @@ const truncated = computed(() => total.value > all.value.length)
 
 const summary = computed(() =>
   counts.value.over + counts.value.near === 0
-    ? tp('sx.quotas.summaryAllOk', { n: String(all.value.length) })
-    : tp('sx.quotas.summary', { over: String(counts.value.over), near: String(counts.value.near), ok: String(counts.value.ok) }),
+    ? tp('sx.quotas.summaryAllOk', { n: all.value.length })
+    : tp('sx.quotas.summary', { over: counts.value.over, near: counts.value.near, ok: counts.value.ok }),
 )
 
 const scopeOptions = computed(() => SCOPES.map((s) => ({ value: s, label: t(`sx.quotas.scope.${s}`) })))

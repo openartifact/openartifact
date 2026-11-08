@@ -427,7 +427,7 @@ Upload a package into a hosted deb repository (multipart/form-data). Requires wr
 
 Delete a DEB package
 
-Delete a package from a hosted repository. Requires write access.
+Delete a package from a hosted repository. Requires delete access.
 
 **Parameters**
 
@@ -868,7 +868,7 @@ One package version, by the row id of the package listing: the metadata its form
 
 Delete a package
 
-Delete a package row (an id of the package listing) from a hosted repository of any format: into the trash when the repository keeps one, else for good, refreshing the format's generated metadata. A conan recipe revision goes with its files. Released versions of immutable repositories answer 409 unless an admin passes force. Requires write access.
+Delete a package row (an id of the package listing) from a hosted repository of any format: into the trash when the repository keeps one, else for good, refreshing the format's generated metadata. A conan recipe revision goes with its files. Released versions of immutable repositories answer 409 unless an admin passes force. Requires delete access.
 
 **Parameters**
 

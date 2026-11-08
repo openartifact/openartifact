@@ -11,7 +11,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     :data-severity="severity"
   >
     <component :is="icon" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-    {{ count === undefined ? label : tp('ui.severity.count', { count: String(count), label: label.toLocaleLowerCase(formatLocale()) }) }}
+    {{ count === undefined ? label : tp('ui.severity.count', { count: count, label: label.toLocaleLowerCase(formatLocale()) }) }}
   </span>
 </template>
 

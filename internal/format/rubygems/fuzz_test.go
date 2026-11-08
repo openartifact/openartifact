@@ -452,7 +452,7 @@ func pgRejects(g *models.RubyGem) error {
 }
 
 func newFuzzGemHandler() (*HTTPHandler, *fuzzGemsDB, *formattest.BlobStore) {
-	db := &fuzzGemsDB{DB: formattest.NewDB()}
+	db := &fuzzGemsDB{DB: formattest.NewDB("rubygems")}
 	bs := formattest.NewBlobStore()
 	h := NewHTTPHandler(&logger.Logger{SugaredLogger: zap.NewNop().Sugar()}, db, bs, "http://localhost")
 	h.SetPublisher(&formattest.Publisher{})

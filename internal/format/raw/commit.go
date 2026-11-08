@@ -24,6 +24,12 @@ type ifAbsentInserter interface {
 	InsertRawArtifactIfAbsent(ctx context.Context, artifact *models.RawArtifact) (bool, error)
 }
 
+// replacingUpserter is implemented by databases whose upsert reports the
+// content it replaced, read under the lock of the path.
+type replacingUpserter interface {
+	UpsertRawArtifactReplacing(ctx context.Context, artifact *models.RawArtifact) (*models.ReplacedBlob, error)
+}
+
 // Commit records a raw artifact: it stores blob (the content a.SHA256, see
 // storage.CommitBlob), sets a.BlobKey to its storage key and upserts the
 // artifact row under the per-blob lock, so a concurrent unpublish cannot delete
@@ -115,7 +121,8 @@ func commitWith(req *http.Request, h *base.Handler, repoName string, a *models.R
 		only = inserter
 	}
 
-	if err := persist(ctx, h, a, stage, only); err != nil {
+	replaced, err := persist(ctx, h, a, previous, stage, only)
+	if err != nil {
 		if reserved {
 			h.ReleaseQuota(ctx, a.RepositoryID, repoName, a.SizeBytes)
 		}
@@ -123,14 +130,12 @@ func commitWith(req *http.Request, h *base.Handler, repoName string, a *models.R
 		return nil, err
 	}
 
-	if reserved && previous != nil {
-		h.ReleaseQuota(ctx, a.RepositoryID, repoName, previous.SizeBytes)
-	}
+	settleReplaced(ctx, h, repoName, a, reserved, replaced)
 
-	// An overwrite leaves the previous content unreferenced.
-	if previous != nil && previous.SHA256 != "" && previous.SHA256 != a.SHA256 {
-		if delErr := storage.SafeDeleteBlob(ctx, h.DB, h.BlobStore, previous.SHA256); delErr != nil {
-			h.Log.Warnw("failed to clean up replaced blob", "sha256", previous.SHA256, "error", delErr)
+	// An overwrite leaves the replaced content unreferenced.
+	if replaced != nil && replaced.SHA256 != "" && replaced.SHA256 != a.SHA256 {
+		if delErr := storage.SafeDeleteBlob(ctx, h.DB, h.BlobStore, replaced.SHA256); delErr != nil {
+			h.Log.Warnw("failed to clean up replaced blob", "sha256", replaced.SHA256, "error", delErr)
 		}
 	}
 
@@ -146,11 +151,38 @@ func commitWith(req *http.Request, h *base.Handler, repoName string, a *models.R
 	return previous, nil
 }
 
+// settleReplaced gives the usage of the row the write actually replaced back
+// (two concurrent overwrites each see the same previous row, so the one read
+// before the write cannot be trusted). Nothing was reserved when the content
+// was already held, and then nothing is returned.
+func settleReplaced(
+	ctx context.Context,
+	h *base.Handler,
+	repoName string,
+	a *models.RawArtifact,
+	reserved bool,
+	replaced *models.ReplacedBlob,
+) {
+	if reserved && replaced != nil {
+		h.ReleaseQuota(ctx, a.RepositoryID, repoName, replaced.SizeBytes)
+	}
+}
+
 // persist stores the blob and writes the artifact row under the per-blob lock
 // (bytes first, the lock covering only the row write). With inserter set the row is only inserted when its path is free
-// (trash.ErrImmutableRelease otherwise), else it is upserted.
-func persist(ctx context.Context, h *base.Handler, a *models.RawArtifact, stage stageFunc, inserter ifAbsentInserter) error {
-	return stage(ctx, func(ctx context.Context, key string) error {
+// (trash.ErrImmutableRelease otherwise), else it is upserted. It returns the
+// content the upsert replaced: as the database reports it, or the row read
+// before the write when the database cannot.
+func persist(
+	ctx context.Context,
+	h *base.Handler,
+	a, previous *models.RawArtifact,
+	stage stageFunc,
+	inserter ifAbsentInserter,
+) (*models.ReplacedBlob, error) {
+	var replaced *models.ReplacedBlob
+
+	err := stage(ctx, func(ctx context.Context, key string) error {
 		a.BlobKey = key
 
 		if inserter != nil {
@@ -166,12 +198,27 @@ func persist(ctx context.Context, h *base.Handler, a *models.RawArtifact, stage 
 			return nil
 		}
 
+		if up, ok := h.DB.(replacingUpserter); ok {
+			var err error
+			if replaced, err = up.UpsertRawArtifactReplacing(ctx, a); err != nil {
+				return fmt.Errorf("upsert artifact: %w", err)
+			}
+
+			return nil
+		}
+
 		if err := h.DB.UpsertRawArtifact(ctx, a); err != nil {
 			return fmt.Errorf("upsert artifact: %w", err)
 		}
 
+		if previous != nil {
+			replaced = &models.ReplacedBlob{SHA256: previous.SHA256, SizeBytes: previous.SizeBytes}
+		}
+
 		return nil
 	})
+
+	return replaced, err
 }
 
 // StoredID is the id of the row an upload ended up in: an overwrite keeps the

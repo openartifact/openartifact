@@ -128,7 +128,8 @@ func newRig(t *testing.T, spec func(*store) filerepo.Spec[fileRow, quotaDB]) *ri
 		bs:  &metaStore{BlobStore: formattest.NewBlobStore()},
 		pub: &formattest.Publisher{},
 	}
-	r.h = filerepo.New(spec(r.tbl), formattest.NewLogger(t), quotaDB{formattest.NewDB()}, r.bs, "http://localhost")
+	sp := spec(r.tbl)
+	r.h = filerepo.New(sp, formattest.NewLogger(t), quotaDB{formattest.NewDB(sp.Format)}, r.bs, "http://localhost")
 	r.h.SetPublisher(r.pub)
 
 	return r

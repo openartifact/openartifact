@@ -44,7 +44,7 @@ type HTTPHandler struct {
 }
 
 func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
+	return &HTTPHandler{Handler: base.New("npm", log, db, blobStore, baseURL), DB: db}
 }
 
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
@@ -60,26 +60,6 @@ func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
 		h.RegisterRepoRoutes(r)
 	})
 	h.Log.Infow("npm handler registered", "prefix", prefix)
-}
-
-// npmRepoIDOrRespond is ResolveRepoIDOrRespond for the routes of the shared
-// /repos/{name} subrouter: a repository of another format answers 404 instead
-// of being read as an npm registry.
-func (h *HTTPHandler) npmRepoIDOrRespond(w http.ResponseWriter, r *http.Request, name string) string {
-	repo, err := h.ResolveRepo(r.Context(), name)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", name, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return ""
-	}
-
-	if repo == nil || repo.Format != "npm" {
-		http.NotFound(w, r)
-		return ""
-	}
-
-	return repo.ID
 }
 
 func resolvePackageName(raw string) string {
@@ -111,7 +91,7 @@ func (h *HTTPHandler) handlePackument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if repo == nil || repo.Format != "npm" {
+	if repo == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -199,7 +179,7 @@ func (h *HTTPHandler) handleVersionManifest(w http.ResponseWriter, r *http.Reque
 	pkgName := resolvePackageName(vars["pkg"])
 	versionOrTag := vars["version"]
 
-	repoID := h.npmRepoIDOrRespond(w, r, repoName)
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
 		return
 	}
@@ -261,7 +241,7 @@ func (h *HTTPHandler) handleTarball(w http.ResponseWriter, r *http.Request) {
 
 	tarball := vars["tarball"]
 
-	repoID := h.npmRepoIDOrRespond(w, r, repoName)
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
 		return
 	}
@@ -388,7 +368,7 @@ func (h *HTTPHandler) handleGetDistTags(w http.ResponseWriter, r *http.Request) 
 	repoName := vars["name"]
 	pkgName := resolvePackageName(vars["pkg"])
 
-	repoID := h.npmRepoIDOrRespond(w, r, repoName)
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
 		return
 	}

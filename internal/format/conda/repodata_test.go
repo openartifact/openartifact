@@ -53,7 +53,7 @@ func upload(h *HTTPHandler, platform, filename string, body []byte) int {
 func newHandlerOnly(t *testing.T) *HTTPHandler {
 	t.Helper()
 
-	return NewHTTPHandler(formattest.NewLogger(t), &condaDB{DB: formattest.NewDB()}, formattest.NewBlobStore(), "http://localhost")
+	return NewHTTPHandler(formattest.NewLogger(t), &condaDB{DB: formattest.NewDB("conda")}, formattest.NewBlobStore(), "http://localhost")
 }
 
 func TestParsePackageFilename(t *testing.T) {

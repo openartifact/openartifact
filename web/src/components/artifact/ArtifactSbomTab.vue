@@ -71,6 +71,7 @@ import { useLocalList } from '../../composables/useLocalList'
 import { packagesFromCycloneDx, reportsOfVersion, type SbomPackage } from '../../lib/sbomGraph'
 import { useToastStore } from '../../stores/toast'
 import { t, tp } from '../../i18n'
+import { formatNumber } from '../../lib/intl'
 
 const ctx = useArtifactContext()
 const toasts = useToastStore()
@@ -108,12 +109,29 @@ const generating = ref(false)
 async function generate(): Promise<void> {
   generating.value = true
   try {
-    await Promise.all(fileIds.value.map((id) => generateSbom(ctx.repoName.value, id, format.value)))
-    toasts.success(tp('artifact.sbom.generated', { format: format.value }))
-    await reload()
-  } catch (err) {
-    toasts.error(t('artifact.sbom.generateFailed'), err instanceof Error ? err.message : undefined)
+    const results = await Promise.allSettled(fileIds.value.map((id) => generateSbom(ctx.repoName.value, id, format.value)))
+    const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+    if (rejected.length === 0) {
+      toasts.success(tp('artifact.sbom.generated', { format: format.value }))
+      return
+    }
+    const reason = rejected[0].reason
+    const detail = reason instanceof Error ? reason.message : undefined
+    if (rejected.length === results.length) {
+      toasts.error(t('artifact.sbom.generateFailed'), detail)
+    } else {
+      toasts.error(
+        tp('artifact.sbom.generatedPartial', {
+          format: format.value,
+          ok: formatNumber(results.length - rejected.length),
+          failed: formatNumber(rejected.length),
+        }),
+        detail,
+      )
+    }
   } finally {
+    // Reports that were generated exist on the server whatever happened to the others.
+    await reload()
     generating.value = false
   }
 }

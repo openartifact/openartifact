@@ -26,7 +26,7 @@ export function purgeInText(purgeAt: string | null | undefined, now: number = Da
   if (days === null) return '—'
   if (days === 0) return t('trash.purgesToday')
   if (days === 1) return t('trash.purgesInOneDay')
-  return tp('trash.purgesInDays', { n: String(days) })
+  return tp('trash.purgesInDays', { n: days })
 }
 
 /** Parses the retention input: '' -> null (server default), integer >= 0 -> number, otherwise undefined (invalid). */

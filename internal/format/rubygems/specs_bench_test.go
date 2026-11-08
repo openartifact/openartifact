@@ -40,7 +40,7 @@ func (d benchGemsDB) RubyGemsSpecsStamp(_ context.Context, _ string) (string, er
 // database.
 func BenchmarkHandleSpecs(b *testing.B) {
 	for _, n := range []int{5000, 50000} {
-		db := &gemsDB{DB: formattest.NewDB()}
+		db := &gemsDB{DB: formattest.NewDB("rubygems")}
 		for i := range n {
 			db.gems = append(db.gems, &models.RubyGem{
 				Name:         "gem-" + strconv.Itoa(i/5),

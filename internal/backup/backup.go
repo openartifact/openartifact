@@ -571,6 +571,11 @@ func (e *exporter) exportMetadata(ctx context.Context, tw *tar.Writer, manifest 
 		return fmt.Errorf("failed to list users: %w", err)
 	}
 
+	e.userIDs = make(map[string]struct{}, len(users))
+	for _, u := range users {
+		e.userIDs[u.ID] = struct{}{}
+	}
+
 	if err := e.writeTable(tw, manifest, "users", users, len(users)); err != nil {
 		return err
 	}
@@ -850,9 +855,10 @@ func (e *exporter) exportGlobalTables(ctx context.Context, tw *tar.Writer, manif
 	tokens, err := listAll("tokens", func(page int) ([]*models.Token, int, error) {
 		return e.db.ListAllTokens(ctx, page, listPageSize)
 	})
-	// Project tokens belong to service accounts that are not part of the
-	// archive (users are exported without them); they are reissued after a restore.
-	tokens = slices.DeleteFunc(tokens, func(t *models.Token) bool { return t.ProjectID != nil })
+	// Tokens of service accounts (project tokens and administrator service
+	// accounts) belong to accounts that are not part of the archive; they are
+	// reissued after a restore.
+	tokens = slices.DeleteFunc(tokens, func(t *models.Token) bool { return t.ProjectID != nil || !e.archivesUser(t.UserID) })
 
 	if err := writeListedTable(e, tw, manifest, "tokens", tokens, err); err != nil {
 		return err
@@ -944,7 +950,7 @@ func (e *exporter) exportProjects(ctx context.Context, tw *tar.Writer, manifest 
 			return fmt.Errorf("failed to list members of project %s: %w", project.ID, err)
 		}
 
-		members = append(members, m...)
+		members = append(members, slices.DeleteFunc(m, func(pm *models.ProjectMember) bool { return !e.archivesUser(pm.UserID) })...)
 
 		g, err := e.db.ListProjectGroups(ctx, project.ID)
 		if err != nil {
@@ -1480,6 +1486,9 @@ func (e *Engine) restoreRepositories(ctx context.Context, r io.Reader, st *resto
 	return nil
 }
 
+// usernameConstraint is the unique constraint on auth_users.username.
+const usernameConstraint = "auth_users_username_key"
+
 // restoreUsers restores users from JSON data. CreateUser always generates a
 // fresh server-side id, needed downstream for tokens.user_id and
 // projects.owner_id/project_members.user_id.
@@ -1491,6 +1500,15 @@ func (e *Engine) restoreUsers(ctx context.Context, r io.Reader, st *restoreState
 
 		oldID := user.ID
 		if _, err := e.db.CreateUser(ctx, user); err != nil {
+			if constraint := database.UniqueViolationConstraint(err); constraint != "" && constraint != usernameConstraint {
+				// The username is free but another unique column (email, SSO
+				// subject) collides: this user is not on the target.
+				e.restoreWarn("failed to restore user: unique constraint violated",
+					"username", user.Username, "constraint", constraint)
+
+				continue
+			}
+
 			if database.IsUniqueViolation(err) {
 				// A fresh target already has its bootstrap admin: keep that
 				// account; what depends on the archive's one is skipped with it.

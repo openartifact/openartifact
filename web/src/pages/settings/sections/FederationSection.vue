@@ -76,7 +76,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </div>
           </template>
           <template #cell-peers="{ row }">
-            <span v-if="(row as FederationRepoRow).peers.length > 0" class="tabular-nums">{{ tp('sx.fed.peerCount', { n: String((row as FederationRepoRow).peers.length) }) }}</span>
+            <span v-if="(row as FederationRepoRow).peers.length > 0" class="tabular-nums">{{ tp('sx.fed.peerCount', { n: (row as FederationRepoRow).peers.length }) }}</span>
             <span v-else class="text-muted">{{ t('sx.fed.noPeers') }}</span>
           </template>
           <template #cell-state="{ row }">
@@ -155,7 +155,7 @@ const columns: ListColumn[] = [
 const repoPath = (row: FederationRepoRow): string => `/repos/${encodeURIComponent(row.repository)}?tab=federation`
 
 function stateLabel(row: FederationRepoRow): string {
-  if (row.state === 'attention') return tp('sx.fed.state.attention', { n: String(row.attention) })
+  if (row.state === 'attention') return tp('sx.fed.state.attention', { n: row.attention })
   return t(`sx.fed.state.${row.state}`)
 }
 </script>

@@ -54,11 +54,13 @@ export function applyManifest(req: DeclarativeRequest): Promise<DeclarativeRun> 
 
 /**
  * The plan or manifest problems a refused diff/apply carries (422), or null for any other failure.
- * The refusal has the shape of a run: `code`, `error`, and `problems` or the plan.
+ * The refusal has the shape of a run: `code`, `error`, and `problems` or the plan. A refusal that
+ * carries no plan (an older server, an unforeseen path) still gets an empty `items`, so the plan view can render it.
  */
 export function declarativeRefusal(err: unknown): DeclarativeRun | null {
   if (!(err instanceof ApiError) || err.status !== 422 || typeof err.body !== 'object' || err.body === null) return null
-  return err.body as DeclarativeRun
+  const body = err.body as DeclarativeRun
+  return { ...body, items: body.items ?? [] }
 }
 
 function exportQuery(kinds: readonly string[], withMembers: boolean): string {

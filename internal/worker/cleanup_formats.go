@@ -137,6 +137,12 @@ func blobIDsSQL(scope storage.TrashScope) string {
 	return `COALESCE(f.blob_id::text, '')`
 }
 
+// dockerManifestBlobSQL is the select expression of the blob id of the manifest
+// a docker tag points at, so a release bundle pinning the image protects its tags.
+const dockerManifestBlobSQL = `COALESCE((SELECT m.blob_id::text FROM docker_manifests m
+				WHERE m.repository_id = t.repository_id AND m.image = t.image
+				  AND m.digest = t.manifest_digest AND m.deleted_at IS NULL), '')`
+
 // sql is the candidate query pieces of the table.
 func (t cleanupTable) sql() candidateSQL {
 	if t.docker {
@@ -144,7 +150,7 @@ func (t cleanupTable) sql() candidateSQL {
 		// re-tagging (latest, a moving 1.x tag) is activity.
 		return candidateSQL{
 			id: "t.id::text", name: "CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END",
-			version: "t.name", pkg: "''::text", blobs: "''::text", artifacts: "0",
+			version: "t.name", pkg: "''::text", blobs: dockerManifestBlobSQL, artifacts: "0",
 			aged: "t.updated_at", ranked: "t.updated_at", protect: "false",
 			partition: []string{"t.image"}, versionExpr: "t.name",
 			from: `FROM docker_tags t JOIN repositories r ON r.id = t.repository_id

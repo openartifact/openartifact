@@ -25,7 +25,7 @@ import (
 func urlRouter(t *testing.T, explicit string, trusted func(*http.Request) bool) http.Handler {
 	t.Helper()
 
-	db := &memDB{DB: formattest.NewDB(), pkgs: []*models.NuGetPackage{{
+	db := &memDB{DB: formattest.NewDB("nuget"), pkgs: []*models.NuGetPackage{{
 		ID:               "nuget-1",
 		PackageID:        "contoso.lib",
 		Version:          "1.0.0",

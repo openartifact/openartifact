@@ -88,6 +88,8 @@ import { useToastStore } from '../../stores/toast'
 import { t, tDynamic } from '../../i18n'
 
 const POLL_MS = 4000
+/** Consecutive failed refreshes of a running analysis after which the drawer shows the error and stops asking. */
+const MAX_POLL_FAILURES = 3
 
 const props = defineProps<{
   finding: SecurityFinding
@@ -102,6 +104,7 @@ const loading = ref(false)
 const error = ref('')
 const retriggering = ref(false)
 let seq = 0
+let pollFailures = 0
 let timer: ReturnType<typeof setTimeout> | undefined
 
 const active = computed(() => analysis.value?.status === 'pending' || analysis.value?.status === 'processing')
@@ -136,20 +139,23 @@ async function load(silent = false): Promise<void> {
   if (!silent) {
     analysis.value = null
     loading.value = true
+    pollFailures = 0
   }
   error.value = ''
   try {
     const result = await getAIAnalysis(props.finding.repository, props.finding.artifact_id)
     if (mine !== seq) return
     analysis.value = result
+    pollFailures = 0
   } catch (err) {
-    if (mine === seq && !silent) {
+    if (mine === seq && silent) pollFailures++
+    if (mine === seq && (!silent || pollFailures >= MAX_POLL_FAILURES)) {
       error.value = isFeatureUnavailable(err) ? t('security.ai.unavailable') : err instanceof Error ? err.message : t('security.ai.loadFailed')
     }
   } finally {
     if (mine === seq) {
       loading.value = false
-      if (active.value) timer = setTimeout(poll, POLL_MS)
+      if (active.value && !error.value) timer = setTimeout(poll, POLL_MS)
     }
   }
 }

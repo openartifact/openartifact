@@ -29,7 +29,7 @@ type conanDB struct {
 }
 
 func newConanDB() *conanDB {
-	return &conanDB{DB: formattest.NewDB(), clock: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}
+	return &conanDB{DB: formattest.NewDB("conan"), clock: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}
 }
 
 func keyOf(p *models.ConanPackage) models.ConanFileKey {

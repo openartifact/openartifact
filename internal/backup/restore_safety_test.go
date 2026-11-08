@@ -9,6 +9,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -120,5 +122,43 @@ func TestRestore_SkipsNullElements(t *testing.T) {
 
 	if len(db.users) != 1 {
 		t.Fatalf("users after restore = %d, want the one real user", len(db.users))
+	}
+}
+
+// uniqueUserDB rejects every user creation with a unique violation on constraint.
+type uniqueUserDB struct {
+	*fakeDB
+
+	constraint string
+}
+
+func (d *uniqueUserDB) CreateUser(context.Context, *models.User) (*models.User, error) {
+	return nil, &pgconn.PgError{Code: "23505", ConstraintName: d.constraint}
+}
+
+// A collision on the username keeps the existing account silently; a collision
+// on any other unique column means the user is missing and the restore is incomplete.
+func TestRestoreUsers_UniqueViolationConstraint(t *testing.T) {
+	tests := []struct {
+		name       string
+		constraint string
+		wantErr    bool
+	}{
+		{"username already exists", usernameConstraint, false},
+		{"email belongs to another account", "auth_users_email_key", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := &uniqueUserDB{fakeDB: newFakeDB("dst"), constraint: tt.constraint}
+			eng, _ := newTestEngine(t, db)
+
+			archive := writeEntriesArchive(t, []archiveEntry{{"users.jsonl", []map[string]any{{"ID": "u1", "Username": "alice"}}}})
+
+			err := eng.RunRestore(context.Background(), archive)
+			if got := errors.Is(err, ErrRestoreIncomplete); got != tt.wantErr {
+				t.Fatalf("RunRestore = %v, incomplete = %v, want %v", err, got, tt.wantErr)
+			}
+		})
 	}
 }

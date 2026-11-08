@@ -66,6 +66,28 @@ func Affects(aff models.OSVAffected, version string) (bool, string) {
 	return affected, fixed
 }
 
+// FixedVersion returns the lowest fixed version above version among the
+// affected entries that name the package (ecosystem and name, normalized like
+// the mirror), empty when the version is not affected or no range closes.
+func FixedVersion(affected []models.OSVAffected, ecosystem, name, version string) string {
+	nameNorm := NormalizeName(ecosystem, name)
+
+	var fixed string
+
+	for _, aff := range affected {
+		if aff.Ecosystem != ecosystem || NormalizeName(aff.Ecosystem, aff.Name) != nameNorm {
+			continue
+		}
+
+		in, fix := Affects(aff, version)
+		if in && fix != "" && (fixed == "" || lowerVersion(ecosystem, "ECOSYSTEM", fix, fixed)) {
+			fixed = fix
+		}
+	}
+
+	return fixed
+}
+
 func lowerVersion(ecosystem, rangeType, a, b string) bool {
 	if cmp := comparator(rangeType, ecosystem); cmp != nil {
 		if c, ok := cmp(a, b); ok {

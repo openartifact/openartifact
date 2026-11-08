@@ -15,7 +15,49 @@ JOIN blobs b ON b.id = dbb.blob_id
 WHERE dbb.repository_id = $1 AND dbb.digest = $2;
 
 -- name: DeleteDockerBlob :execrows
+-- Removes the repository's record of the blob. Only the delete of a blob
+-- nothing else holds may use it (see DockerBlobStillHeld).
 DELETE FROM docker_blobs WHERE repository_id = $1 AND digest = $2;
+
+-- name: DockerImageReferencesBlob :one
+-- Whether a live manifest of the image references the blob (config or layer).
+-- A live manifest of the image that is not indexed yet has unknown references,
+-- so it counts as one that may reference it.
+SELECT (
+    EXISTS (
+        SELECT 1 FROM docker_manifest_refs r
+        JOIN docker_manifests dm ON dm.id = r.manifest_id
+        WHERE r.repository_id = sqlc.arg(repository_id)::uuid AND r.image = sqlc.arg(image)::text
+          AND r.kind = 'blob' AND r.digest = sqlc.arg(digest)::text AND dm.deleted_at IS NULL
+    ) OR EXISTS (
+        SELECT 1 FROM docker_manifests dm
+        WHERE dm.repository_id = sqlc.arg(repository_id)::uuid AND dm.image = sqlc.arg(image)::text AND dm.deleted_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM docker_manifest_refs x WHERE x.manifest_id = dm.id AND x.kind = 'indexed')
+    )
+)::boolean AS referenced;
+
+-- name: DeleteDockerBlobImageLink :execrows
+DELETE FROM docker_blob_images
+WHERE repository_id = sqlc.arg(repository_id)::uuid AND image = sqlc.arg(image)::text AND digest = sqlc.arg(digest)::text;
+
+-- name: DockerBlobStillHeld :one
+-- Whether anything besides the caller's image link keeps the blob record: a
+-- link of another image, a manifest (trashed ones included, a restore must not
+-- dangle) that references it, or a manifest not indexed yet whose references
+-- are unknown. Same rule as registry GC.
+SELECT (
+    EXISTS (
+        SELECT 1 FROM docker_blob_images i
+        WHERE i.repository_id = sqlc.arg(repository_id)::uuid AND i.digest = sqlc.arg(digest)::text
+    ) OR EXISTS (
+        SELECT 1 FROM docker_manifest_refs r
+        WHERE r.repository_id = sqlc.arg(repository_id)::uuid AND r.kind = 'blob' AND r.digest = sqlc.arg(digest)::text
+    ) OR EXISTS (
+        SELECT 1 FROM docker_manifests dm
+        WHERE dm.repository_id = sqlc.arg(repository_id)::uuid
+          AND NOT EXISTS (SELECT 1 FROM docker_manifest_refs x WHERE x.manifest_id = dm.id AND x.kind = 'indexed')
+    )
+)::boolean AS held;
 
 -- name: ListDockerBlobs :many
 SELECT dbb.id, dbb.repository_id, dbb.digest, b.media_type, COALESCE(dbb.size_bytes, b.size_bytes)::bigint AS size, b.sha256 AS blob_sha256, dbb.created_at
@@ -296,10 +338,15 @@ FROM docker_manifests dm
 JOIN blobs b ON b.id = dm.blob_id
 WHERE dm.repository_id = sqlc.arg(repository_id)::uuid
   AND dm.deleted_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM release_bundle_items rbi
+      JOIN blobs mb ON mb.sha256 = rbi.sha256
+      WHERE mb.id = dm.blob_id
+  )
 ORDER BY dm.created_at;
 
 -- name: DeleteDockerManifestsForGC :many
--- Deletes the given untagged live manifests (never a trashed one), re-checking every condition against the
+-- Deletes the given untagged live manifests (never a trashed one nor one a release bundle pins), re-checking every condition against the
 -- current state: still older than the grace period, still untagged, and not
 -- adjacent (index child, index parent, subject or referrer) to a manifest that
 -- is not being deleted. Must run in a transaction holding the repository's
@@ -310,6 +357,11 @@ DELETE FROM docker_manifests dm
 WHERE dm.repository_id = sqlc.arg(repository_id)::uuid
   AND dm.id = ANY(sqlc.arg(ids)::uuid[])
   AND dm.deleted_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM release_bundle_items rbi
+      JOIN blobs mb ON mb.sha256 = rbi.sha256
+      WHERE mb.id = dm.blob_id
+  )
   AND dm.updated_at <= now() - make_interval(secs => sqlc.arg(grace_seconds)::float8)
   AND NOT EXISTS (
       SELECT 1 FROM docker_tags t

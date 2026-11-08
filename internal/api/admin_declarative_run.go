@@ -199,14 +199,7 @@ func (h *AdminDeclarativeRunHandler) writePrepareError(w http.ResponseWriter, er
 			problems = append(problems, problemOf(e))
 		}
 
-		writeJSON(w, http.StatusUnprocessableEntity, declarativeRunResponse{
-			Error: "the manifest has problems",
-			Code:  "manifest_invalid",
-			// No plan exists, but the answer keeps the shape of one.
-			JSONReport: declarative.BuildJSON(&declarative.Plan{}, nil),
-			Secrets:    []declarativeSecret{},
-			Problems:   problems,
-		})
+		writeManifestRefusal(w, "the manifest has problems", problems)
 
 		return
 	}
@@ -223,12 +216,24 @@ func (h *AdminDeclarativeRunHandler) writePrepareError(w http.ResponseWriter, er
 
 	// A manifest with no document is the author's mistake, not the server's.
 	if strings.HasPrefix(err.Error(), "no manifest documents") {
-		writeError(w, http.StatusUnprocessableEntity, "manifest_invalid", err.Error())
+		writeManifestRefusal(w, err.Error(), []declarativeProblem{{Message: err.Error()}})
 		return
 	}
 
 	h.log.Warnw("declarative: planning failed", "error", err)
 	writeError(w, http.StatusBadGateway, "plan_failed", "planning the manifest failed; see the server log")
+}
+
+// writeManifestRefusal answers 422 manifest_invalid. No plan exists, but the answer keeps the shape of one
+// (empty items, changes and secrets) so a client can render it like any other run.
+func writeManifestRefusal(w http.ResponseWriter, message string, problems []declarativeProblem) {
+	writeJSON(w, http.StatusUnprocessableEntity, declarativeRunResponse{
+		Error:      message,
+		Code:       "manifest_invalid",
+		JSONReport: declarative.BuildJSON(&declarative.Plan{}, nil),
+		Secrets:    []declarativeSecret{},
+		Problems:   problems,
+	})
 }
 
 func problemOf(err error) declarativeProblem {

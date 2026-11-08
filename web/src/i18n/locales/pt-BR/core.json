@@ -21,6 +21,7 @@
   "session.probeFailed": "Não foi possível verificar sua sessão",
   "session.probeFailedHint": "O servidor não respondeu. Navegar novamente repete a verificação.",
   "session.expired": "Sua sessão expirou. Entre novamente.",
+  "session.passwordChangeRequired": "Você precisa alterar sua senha antes de continuar.",
   "nav.repositories": "Repositórios",
   "nav.settings": "Configurações",
   "nav.security": "Segurança",

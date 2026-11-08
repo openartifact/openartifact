@@ -13,6 +13,7 @@ import (
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
+	"github.com/ProtonMail/go-crypto/openpgp/clearsign"
 )
 
 func armoredPrivate(t *testing.T, e *openpgp.Entity, passphrase string) string {
@@ -226,5 +227,93 @@ func TestNewLocalSignerFromEntityRejectsExpiredAndRevoked(t *testing.T) {
 
 	if _, err := NewLocalSignerFromEntity(revoked); !errors.Is(err, ErrKeyRevoked) {
 		t.Errorf("revoked key: err = %v, want ErrKeyRevoked", err)
+	}
+}
+
+// certifyOnlyEntity builds a key whose primary may only certify. With
+// withSigningSubkey it also carries a [S] subkey, like a key from gpg --quick-add-key.
+func certifyOnlyEntity(t *testing.T, withSigningSubkey bool) *openpgp.Entity {
+	t.Helper()
+
+	e, err := openpgp.NewEntity("Repo Signer", "test", "signer@example.com", nil)
+	if err != nil {
+		t.Fatalf("new entity: %v", err)
+	}
+
+	if withSigningSubkey {
+		if err := e.AddSigningSubkey(nil); err != nil {
+			t.Fatalf("add signing subkey: %v", err)
+		}
+	}
+
+	for name, id := range e.Identities {
+		id.SelfSignature.FlagSign = false
+		id.SelfSignature.FlagCertify = true
+
+		if err := id.SelfSignature.SignUserId(name, e.PrimaryKey, e.PrivateKey, nil); err != nil {
+			t.Fatalf("re-sign identity: %v", err)
+		}
+	}
+
+	if !withSigningSubkey {
+		kept := e.Subkeys[:0]
+
+		for _, sub := range e.Subkeys {
+			if !sub.Sig.FlagSign {
+				kept = append(kept, sub)
+			}
+		}
+
+		e.Subkeys = kept
+	}
+
+	return e
+}
+
+func TestCertifyOnlyPrimarySigningSubkey(t *testing.T) {
+	signer, err := NewLocalSignerFromEntity(certifyOnlyEntity(t, true))
+	if err != nil {
+		t.Fatalf("signer from a certify-only primary with a signing subkey: %v", err)
+	}
+
+	out, err := signer.CleartextSign(strings.NewReader("Origin: test\n"))
+	if err != nil {
+		t.Fatalf("cleartext sign: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(out); err != nil {
+		t.Fatal(err)
+	}
+
+	pub, err := signer.PublicKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ring, err := openpgp.ReadArmoredKeyRing(bytes.NewReader(pub))
+	if err != nil {
+		t.Fatalf("read public key: %v", err)
+	}
+
+	block, _ := clearsign.Decode(buf.Bytes())
+	if block == nil {
+		t.Fatal("output is not a cleartext signature")
+	}
+
+	if _, err := openpgp.CheckDetachedSignature(ring, bytes.NewReader(block.Bytes), block.ArmoredSignature.Body, nil); err != nil {
+		t.Errorf("signature does not verify against the signing subkey: %v", err)
+	}
+}
+
+func TestKeyWithoutSigningKeyIsRejected(t *testing.T) {
+	e := certifyOnlyEntity(t, false)
+
+	if _, err := NewLocalSignerFromEntity(e); !errors.Is(err, ErrKeyCannotSign) {
+		t.Errorf("NewLocalSignerFromEntity error = %v, want ErrKeyCannotSign", err)
+	}
+
+	if _, err := ParsePrivateKey(strings.NewReader(armoredPrivate(t, e, "")), nil); !errors.Is(err, ErrKeyCannotSign) {
+		t.Errorf("ParsePrivateKey error = %v, want ErrKeyCannotSign", err)
 	}
 }

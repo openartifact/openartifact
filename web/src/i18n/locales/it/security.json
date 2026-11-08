@@ -252,6 +252,7 @@
   "security.exploit.feedNever": "non caricato",
   "security.exploit.problem.error": "{feed}: l'ultimo aggiornamento non è riuscito ({error})",
   "security.exploit.problem.stale": "{feed} controllato l'ultima volta il {date}",
+  "security.exploit.problem.unchecked": "{feed} importato il {date}, mai verificato",
   "security.col.exploit": "Sfruttamento",
   "security.vuln.finding.exploit": "Sfruttamento",
   "security.detail.priority": "Priorità",

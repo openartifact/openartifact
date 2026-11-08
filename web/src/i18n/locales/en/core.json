@@ -21,6 +21,7 @@
   "session.probeFailed": "Couldn't verify your session",
   "session.probeFailedHint": "The server did not answer. Navigating again retries the check.",
   "session.expired": "Your session has expired. Sign in again.",
+  "session.passwordChangeRequired": "You must change your password before continuing.",
   "nav.repositories": "Repositories",
   "nav.settings": "Settings",
   "nav.security": "Security",

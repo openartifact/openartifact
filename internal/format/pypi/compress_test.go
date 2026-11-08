@@ -18,7 +18,7 @@ import (
 
 // The simple pages are compressed on request and decode to the identity body.
 func TestSimplePagesGzip(t *testing.T) {
-	db := &benchPyPIDB{DB: formattest.NewDB(), all: benchPyPIProjects(400), versions: benchPyPIVersions(200)}
+	db := &benchPyPIDB{DB: formattest.NewDB("pypi"), all: benchPyPIProjects(400), versions: benchPyPIVersions(200)}
 
 	h := NewHTTPHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), "http://localhost:8080")
 	router := chi.NewRouter()

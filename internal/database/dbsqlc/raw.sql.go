@@ -222,6 +222,9 @@ ON CONFLICT (repository_id, path) WHERE deleted_at IS NULL DO UPDATE SET
     blob_id = EXCLUDED.blob_id,
     attrs = EXCLUDED.attrs,
     updated_at = now()
+WHERE EXISTS (
+    SELECT 1 FROM package_versions v JOIN packages p ON p.id = v.package_id
+    WHERE v.id = package_files.version_id AND p.format = 'raw')
 RETURNING id
 `
 
@@ -238,7 +241,9 @@ type UpsertRawFileParams struct {
 // Raw on the generic package tables (see the mapping in pkg_raw.go). One
 // package, one version (”) and one file per path.
 // The file of a path: a live row at the path keeps its id and created_at and
-// takes the new blob and attributes.
+// takes the new blob and attributes. A row of a package of another format is
+// never rewritten (no row comes back): its checksums and format metadata would
+// no longer describe the bytes.
 func (q *Queries) UpsertRawFile(ctx context.Context, arg UpsertRawFileParams) (string, error) {
 	row := q.db.QueryRow(ctx, upsertRawFile,
 		arg.ID,

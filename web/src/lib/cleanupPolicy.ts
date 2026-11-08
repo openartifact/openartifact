@@ -99,11 +99,19 @@ export function cleanupFormValid(f: CleanupPolicyForm): boolean {
   return f.name.trim() !== '' && cleanupRuleValid(f)
 }
 
-/** Request body for create and update: only the rule of the selected type is sent, with the name pattern. */
+/**
+ * Request body for create and update: the rule of the selected type is sent and the other is sent as
+ * null, which makes an update clear it (an absent key keeps the stored value), with the name pattern.
+ */
 export function cleanupPayload(f: CleanupPolicyForm): Record<string, unknown> {
   // name_pattern is always sent: an update replaces it, so an empty one clears it.
   const payload: Record<string, unknown> = { name: f.name, enabled: f.enabled, name_pattern: f.name_pattern }
-  if (f.type === 'keep-last-n') payload.keep_last_n = f.keep_count
-  else payload.keep_since_days = f.keep_days
+  if (f.type === 'keep-last-n') {
+    payload.keep_last_n = f.keep_count
+    payload.keep_since_days = null
+  } else {
+    payload.keep_since_days = f.keep_days
+    payload.keep_last_n = null
+  }
   return payload
 }

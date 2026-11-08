@@ -15,7 +15,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <span v-else class="inline-flex flex-wrap items-center gap-x-2" :title="breakdown" data-testid="security-findings">
     <SeverityBadge v-if="worst.kind === 'severity'" :severity="worst.severity" :count="worst.count" />
     <span v-else :class="['text-xs font-medium', worst.kind === 'secrets' ? 'text-danger' : 'text-warning']">{{ worst.label }}</span>
-    <span v-if="more > 0" class="text-xs text-muted" data-testid="security-more">{{ tp('rl.security.more', { n: String(more) }) }}</span>
+    <span v-if="more > 0" class="text-xs text-muted" data-testid="security-more">{{ tp('rl.security.more', { n: more }) }}</span>
   </span>
 </template>
 

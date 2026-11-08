@@ -154,7 +154,8 @@ func (g *csrfGuard) crossSiteBasic(r *http.Request) bool {
 // token bound to that session in X-CSRF-Token, on every path (the API, /repos,
 // /v2, ...). Requests authenticated by an explicit header credential cannot be
 // forged cross-site and are unaffected, except Basic requests that are visibly
-// cross-site on /api/v1.
+// cross-site: on /api/v1 they need the double-submit token, elsewhere they are
+// refused.
 func CSRFMiddleware(baseURL string, trusted *TrustedProxies) func(http.Handler) http.Handler {
 	g := &csrfGuard{
 		httpsBase: strings.HasPrefix(strings.ToLower(baseURL), "https://"),
@@ -212,9 +213,17 @@ func (g *csrfGuard) handler(next http.Handler) http.Handler {
 			return
 		}
 
-		// No ambient session credential. Outside the API nothing is forgeable
-		// cross-site: a header credential or an anonymous request carries no
-		// browser-held authority.
+		// No ambient session credential. Browser-cached Basic credentials are
+		// attached ambiently on every path (RBAC challenges Basic on /repos and
+		// /v2 too), and outside the API there is no CSRF cookie to fall back
+		// on: a visibly cross-site Basic request is refused.
+		if !inAPI && g.crossSiteBasic(r) {
+			writeCSRFError(w)
+			return
+		}
+
+		// Other header credentials and anonymous requests carry no browser-held
+		// authority.
 		if !inAPI {
 			next.ServeHTTP(w, r)
 			return

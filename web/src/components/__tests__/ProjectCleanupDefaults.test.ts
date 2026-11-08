@@ -62,7 +62,7 @@ describe('ProjectCleanupDefaults', () => {
 
     const post = spy.mock.calls.find(([u, init]) => init?.method === 'POST' && !String(u).endsWith('/dry-run'))!
     expect(String(post[0])).toBe('/api/v1/projects/p/cleanup-policies')
-    expect(JSON.parse(post[1]!.body as string)).toEqual({ name: 'weekly', enabled: true, name_pattern: '', keep_last_n: 10 })
+    expect(JSON.parse(post[1]!.body as string)).toEqual({ name: 'weekly', enabled: true, name_pattern: '', keep_last_n: 10, keep_since_days: null })
   })
 
   it('previews what the default policy would remove, per repository', async () => {
@@ -115,7 +115,7 @@ describe('ProjectCleanupDefaults', () => {
     jest.advanceTimersByTime(PREVIEW_DEBOUNCE_MS)
     await flushPromises()
     const draft = spy.mock.calls.find((c) => String(c[0]).endsWith('/cleanup-policies/dry-run'))!
-    expect(JSON.parse(String(draft[1]!.body))).toEqual({ keep_last_n: 5, name_pattern: '^app-' })
+    expect(JSON.parse(String(draft[1]!.body))).toEqual({ keep_last_n: 5, keep_since_days: null, name_pattern: '^app-' })
     expect(document.querySelector('[data-testid="cleanup-preview-rows"]')?.textContent).toBe('3')
     expect(document.querySelector('[data-testid="cleanup-preview-repos"]')?.textContent).toContain('1 repository')
 
@@ -132,6 +132,6 @@ describe('ProjectCleanupDefaults', () => {
     save.click()
     await flushPromises()
     const put = spy.mock.calls.find(([, init]) => init?.method === 'PUT')!
-    expect(JSON.parse(String(put[1]!.body))).toEqual({ name: 'keep-5', enabled: true, name_pattern: '^lib-', keep_last_n: 5 })
+    expect(JSON.parse(String(put[1]!.body))).toEqual({ name: 'keep-5', enabled: true, name_pattern: '^lib-', keep_last_n: 5, keep_since_days: null })
   })
 })

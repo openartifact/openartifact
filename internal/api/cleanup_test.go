@@ -410,3 +410,39 @@ func TestCleanupListNonAdminIsForbidden(t *testing.T) {
 		}
 	}
 }
+
+func TestCleanupUpdateRuleTriState(t *testing.T) {
+	const id = "5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10"
+
+	tests := []struct {
+		name     string
+		body     string
+		wantLast *int
+		wantDays *int
+	}{
+		{"absent keeps", `{"name":"p2"}`, new(10), nil},
+		{"null clears, other set", `{"keep_last_n":null,"keep_since_days":30}`, nil, new(30)},
+		{"set, other cleared", `{"keep_last_n":3,"keep_since_days":null}`, new(3), nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			db := &cleanupMockDB{policy: &models.CleanupPolicy{
+				ID: id, RepositoryID: "repo-1", Name: "p", Enabled: true, KeepLastN: new(10),
+			}}
+
+			rw := cleanupRequest(t, db, nil, http.MethodPut, "/api/v1/repositories/r/cleanup-policies/"+id, tc.body)
+			if rw.Code != http.StatusOK {
+				t.Fatalf("status = %d: %s", rw.Code, rw.Body.String())
+			}
+
+			for _, c := range []struct {
+				field     string
+				got, want *int
+			}{{"keep_last_n", db.policy.KeepLastN, tc.wantLast}, {"keep_since_days", db.policy.KeepSinceDays, tc.wantDays}} {
+				if (c.got == nil) != (c.want == nil) || (c.got != nil && *c.got != *c.want) {
+					t.Errorf("%s = %v, want %v", c.field, c.got, c.want)
+				}
+			}
+		})
+	}
+}

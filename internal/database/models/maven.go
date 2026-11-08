@@ -34,6 +34,16 @@ type MavenArtifact struct {
 	BlobSizeBytes int64
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	// Replaced is set by CreateMavenArtifact to the content a snapshot
+	// overwrite took the path over from (nil for a new path).
+	Replaced *ReplacedBlob
+}
+
+// ReplacedBlob is the content of a live file an overwrite replaced: the bytes
+// whose usage the caller gives back.
+type ReplacedBlob struct {
+	SHA256    string
+	SizeBytes int64
 }
 
 // MavenGARefs is what maven-metadata.xml regeneration needs to know about one

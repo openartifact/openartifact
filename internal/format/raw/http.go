@@ -41,6 +41,7 @@ type HTTPStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	DeleteRawArtifact(ctx context.Context, repoID string, path string) error
+	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
 	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
 	ListRawArtifacts(ctx context.Context, repoID string, prefix string) ([]*models.RawArtifact, error)
@@ -55,7 +56,7 @@ type HTTPHandler struct {
 }
 
 func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
+	return &HTTPHandler{Handler: base.New("raw", log, db, blobStore, baseURL), DB: db}
 }
 
 // RegisterRepoRoutes registers Raw-specific routes on the provided sub-router.
@@ -97,6 +98,12 @@ func (h *HTTPHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 
 	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
+		return
+	}
+
+	// A writer on a full repository must not get to stage the body.
+	if err := quota.Precheck(r.Context(), h.DB, repoID, r.ContentLength); err != nil {
+		quota.WriteExceeded(w)
 		return
 	}
 

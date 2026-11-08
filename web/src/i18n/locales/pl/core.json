@@ -21,6 +21,7 @@
   "session.probeFailed": "Nie udało się zweryfikować sesji",
   "session.probeFailedHint": "Serwer nie odpowiedział. Ponowne przejście na stronę powtórzy sprawdzenie.",
   "session.expired": "Sesja wygasła. Zaloguj się ponownie.",
+  "session.passwordChangeRequired": "Przed kontynuowaniem musisz zmienić hasło.",
   "nav.repositories": "Repozytoria",
   "nav.settings": "Ustawienia",
   "nav.security": "Bezpieczeństwo",

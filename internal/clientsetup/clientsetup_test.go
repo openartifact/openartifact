@@ -186,7 +186,7 @@ func TestApkGroupSnippetFetchesTheGroupKeyAndPublishesNothing(t *testing.T) {
 	s := snips[0]
 
 	for _, want := range []string{
-		"wget -O /etc/apk/keys/openartifact-all.rsa.pub " + origin + "/repos/all/public.key",
+		"wget --header \"Authorization: Bearer <TOKEN>\" -O /etc/apk/keys/openartifact-all.rsa.pub " + origin + "/repos/all/public.key",
 		"echo \"" + origin + "/repos/all/v3.20/main\" >> /etc/apk/repositories",
 	} {
 		if !strings.Contains(s.Configure, want) {

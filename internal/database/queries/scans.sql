@@ -102,7 +102,8 @@ WITH ref AS (
 INSERT INTO secret_results (scan_job_id, findings, finding_count, quarantined)
 SELECT job.id, $6, $7, $8 FROM job
 ON CONFLICT (scan_job_id) DO UPDATE SET
-    findings = EXCLUDED.findings, finding_count = EXCLUDED.finding_count, quarantined = EXCLUDED.quarantined
+    findings = EXCLUDED.findings, finding_count = EXCLUDED.finding_count,
+    quarantined = secret_results.quarantined OR EXCLUDED.quarantined
 RETURNING id;
 
 -- name: GetSecretScanResult :one
@@ -155,7 +156,7 @@ ON CONFLICT (scan_job_id) DO UPDATE SET
     vulnerabilities = EXCLUDED.vulnerabilities, vuln_count = EXCLUDED.vuln_count,
     critical_count = EXCLUDED.critical_count, high_count = EXCLUDED.high_count,
     medium_count = EXCLUDED.medium_count, low_count = EXCLUDED.low_count,
-    quarantined = EXCLUDED.quarantined, package_name = EXCLUDED.package_name,
+    quarantined = vuln_results.quarantined OR EXCLUDED.quarantined, package_name = EXCLUDED.package_name,
     package_version = EXCLUDED.package_version, ecosystem = EXCLUDED.ecosystem
 RETURNING id;
 
@@ -173,11 +174,11 @@ LIMIT 1;
 -- name: UpdateVulnScanResult :exec
 WITH res AS (
     UPDATE vuln_results AS vr SET vulnerabilities = $1, vuln_count = $2, critical_count = $3,
-           high_count = $4, medium_count = $5, low_count = $6, quarantined = $7
-    WHERE vr.id = $11
+           high_count = $4, medium_count = $5, low_count = $6
+    WHERE vr.id = $10
     RETURNING scan_job_id
 )
-UPDATE scan_jobs sj SET scanner = $8, status = $9, error_message = NULLIF($10, ''), completed_at = $12, updated_at = now()
+UPDATE scan_jobs sj SET scanner = $7, status = $8, error_message = NULLIF($9, ''), completed_at = $11, updated_at = now()
 FROM res WHERE sj.id = res.scan_job_id;
 
 -- name: ListVulnScanResults :many

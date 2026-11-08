@@ -26,7 +26,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <StateBlock variant="empty" :title="t('dashboard.attention.allClear')" :hint="t('dashboard.attention.allClearHint')" />
     </template>
 
-    <ul class="divide-y divide-border rounded-lg border border-border bg-surface" role="list" data-testid="attention-list">
+    <ul v-if="items.length > 0" class="divide-y divide-border rounded-lg border border-border bg-surface" role="list" data-testid="attention-list">
       <li v-for="item in shown" :key="item.id" class="flex items-center gap-3 px-4 py-3 max-md:min-h-11">
         <component :is="icon(item)" class="h-5 w-5 shrink-0" :class="tone(item)" aria-hidden="true" />
         <div class="min-w-0 flex-1">
@@ -37,11 +37,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
         <router-link :to="item.to" :aria-label="`${t('dashboard.attention.open')}: ${text(item)}`" class="shrink-0 text-xs text-primary hover:underline max-md:flex max-md:min-h-11 max-md:items-center">{{ t('dashboard.attention.open') }}</router-link>
       </li>
-      <li v-if="items.length === 0" class="px-4 py-3 text-sm text-muted">{{ t('dashboard.attention.allClear') }}</li>
     </ul>
-    <p v-if="failed > 0" class="mt-2 text-xs text-muted" role="status">{{ t('dashboard.attention.incomplete') }}</p>
+    <p v-if="failed > 0" class="mt-2 text-xs text-warning" role="status" data-testid="attention-incomplete">{{ t('dashboard.attention.incomplete') }}</p>
     <AppButton v-if="items.length > LIMIT" variant="ghost" size="sm" class="mt-2 max-md:min-h-11" :aria-expanded="expanded" @click="expanded = !expanded">
-      {{ expanded ? t('dashboard.attention.showFewer') : tp('dashboard.attention.showMore', { count: String(items.length - LIMIT) }) }}
+      {{ expanded ? t('dashboard.attention.showFewer') : tp('dashboard.attention.showMore', { count: items.length - LIMIT }) }}
     </AppButton>
   </DashSection>
 </template>

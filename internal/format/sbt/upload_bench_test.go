@@ -23,7 +23,7 @@ func BenchmarkUpload(b *testing.B) {
 		rand.NewChaCha8([32]byte{1}).Read(body)
 
 		b.Run(fmt.Sprintf("size=%dKiB", size>>10), func(b *testing.B) {
-			db := &sbtDB{DB: formattest.NewDB()}
+			db := &sbtDB{DB: formattest.NewDB("sbt")}
 			h := NewHTTPHandler(formattest.NewLogger(b), db, formattest.NewDiscardBlobStore(), "http://localhost")
 
 			b.ReportAllocs()

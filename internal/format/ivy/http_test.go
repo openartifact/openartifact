@@ -91,7 +91,7 @@ func (d *ivyDB) seed(a *models.IvyArtifact) {
 func newTestHandler(t *testing.T) (*HTTPHandler, *ivyDB, *formattest.BlobStore, *formattest.Publisher) {
 	t.Helper()
 
-	db := &ivyDB{DB: formattest.NewDB()}
+	db := &ivyDB{DB: formattest.NewDB("ivy")}
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")

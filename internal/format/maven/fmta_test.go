@@ -78,7 +78,7 @@ func newSnapshotRouter(t *testing.T) (http.Handler, *mavenMockBlobStore) {
 
 	// All files of the newest build share timestamp+build; one older jar.
 	db := &snapshotMockDB{
-		repo: &models.Repository{ID: "repo-1", Name: "r"},
+		repo: &models.Repository{ID: "repo-1", Name: "r", Format: "maven"},
 		arts: []*models.MavenArtifact{
 			mk("aa", "20240102.000000-2", "", "pom"),
 			mk("bb", "20240102.000000-2", "", "jar"),
@@ -168,7 +168,7 @@ func TestHeadMetadataAndChecksums(t *testing.T) {
 	xml := []byte("<metadata/>")
 	sha := "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 	db := &mavenMockDB{
-		repo: &models.Repository{ID: "repo-1", Name: "r"},
+		repo: &models.Repository{ID: "repo-1", Name: "r", Format: "maven"},
 		meta: &models.RepoMetadata{ID: "m", RepositoryID: "repo-1", Path: "x", BlobSHA256: sha, BlobSize: int64(len(xml))},
 	}
 

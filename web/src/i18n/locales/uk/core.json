@@ -21,6 +21,7 @@
   "session.probeFailed": "Не вдалося перевірити ваш сеанс",
   "session.probeFailedHint": "Сервер не відповів. Повторний перехід повторить перевірку.",
   "session.expired": "Ваш сеанс завершився. Увійдіть знову.",
+  "session.passwordChangeRequired": "Перш ніж продовжити, потрібно змінити пароль.",
   "nav.repositories": "Репозиторії",
   "nav.settings": "Налаштування",
   "nav.security": "Безпека",

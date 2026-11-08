@@ -341,19 +341,17 @@ func cacheCases() []cacheCase {
 	}
 }
 
+// repoFormat is the format of the case's repository: every handler answers
+// repositories of its own format only. A case name starts with its format.
+func (c cacheCase) repoFormat() string {
+	format, _, _ := strings.Cut(c.name, " ")
+
+	return format
+}
+
 // newCacheFixture serves one format behind RBAC. The repository is public or
 // private; anonymous read of private repositories is off, as in a default
 // deployment.
-// repoFormat is the format of the case's repository: npm routes answer npm repositories only,
-// the other handlers do not look at it.
-func (c cacheCase) repoFormat() string {
-	if strings.HasPrefix(c.name, "npm") {
-		return "npm"
-	}
-
-	return "generic"
-}
-
 func newCacheFixture(t *testing.T, c cacheCase, public bool) cacheFixture {
 	t.Helper()
 

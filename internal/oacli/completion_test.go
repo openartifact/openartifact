@@ -280,3 +280,34 @@ func TestCompletionScripts(t *testing.T) {
 		}
 	}
 }
+
+func TestCompleteDoesNotSendSavedTokenToAnotherServer(t *testing.T) {
+	var requests atomic.Int64
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+
+		if r.Header.Get("Authorization") != "" {
+			t.Errorf("saved token sent to a different server: %q", r.Header.Get("Authorization"))
+		}
+
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("OA_SERVER", srv.URL)
+	t.Setenv("OA_TOKEN", "")
+
+	if err := saveConfig(&Config{Server: "https://prod.example.com", Token: secretToken}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, _ := complete(t, "repo", "show", ""); len(got) != 0 {
+		t.Errorf("suggestions without a token: %v", got)
+	}
+
+	if n := requests.Load(); n != 0 {
+		t.Errorf("completion made %d requests without a usable token", n)
+	}
+}

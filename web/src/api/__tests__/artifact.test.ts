@@ -54,7 +54,7 @@ describe('setVersionQuarantine', () => {
     serve()
     const changed = await setVersionQuarantine('r', ['f1', 'f2'], true)
     const writes = calls().filter((c) => c.method !== 'GET')
-    expect(changed).toBe(2)
+    expect(changed).toEqual({ applied: 2, failed: 0, error: undefined })
     const urls = writes.map((w) => w.url)
     expect(urls).toHaveLength(2)
     expect(urls.some((u) => u.includes('/vuln/scans/v1/quarantine'))).toBe(true)
@@ -63,9 +63,25 @@ describe('setVersionQuarantine', () => {
 
   it('releases only the quarantined ones and reports zero when nothing matches', async () => {
     serve()
-    expect(await setVersionQuarantine('r', ['f2'], false)).toBe(1)
+    expect((await setVersionQuarantine('r', ['f2'], false)).applied).toBe(1)
     spy.mockRestore()
     serve()
-    expect(await setVersionQuarantine('r', ['nothing'], true)).toBe(0)
+    expect(await setVersionQuarantine('r', ['nothing'], true)).toEqual({ applied: 0, failed: 0, error: undefined })
+  })
+
+  it('attempts every write when one fails and reports both counts', async () => {
+    spy = spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if ((init?.method ?? 'GET') !== 'GET') {
+        return url.includes('/license/') ? new Response(JSON.stringify({ error: 'boom' }), { status: 500 }) : json({})
+      }
+      if (url.includes('/vuln/scans')) return json({ scans: [scan('v1', 'f1', false)] })
+      if (url.includes('/license')) return json({ scans: [scan('l1', 'f1', false)] })
+      return json({ scans: [] })
+    })
+    const out = await setVersionQuarantine('r', ['f1'], true)
+    expect(out.applied).toBe(1)
+    expect(out.failed).toBe(1)
+    expect(out.error).toBeInstanceOf(Error)
   })
 })

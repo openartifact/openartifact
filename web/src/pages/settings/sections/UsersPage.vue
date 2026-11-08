@@ -32,7 +32,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <option value="disabled">{{ t('adm.users.filter.disabled') }}</option>
       </select>
       <template v-if="counts" #after>
-        <span class="text-xs text-muted" data-testid="user-counts">{{ tp('settings.users.counts', { total: String(counts.total), active: String(counts.active), disabled: String(counts.disabled) }) }}</span>
+        <span class="text-xs text-muted" data-testid="user-counts">{{ tp('settings.users.counts', { total: counts.total, active: counts.active, disabled: counts.disabled }) }}</span>
       </template>
     </FilterBar>
 

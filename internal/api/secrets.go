@@ -79,8 +79,8 @@ func (h *SecretsHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.ArtifactID == "" {
-		writeError(w, http.StatusBadRequest, "validation_failed", "artifact_id is required")
+	if msg := validateArtifactID(body.ArtifactID); msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
 		return
 	}
 
@@ -193,6 +193,11 @@ func (h *SecretsHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 		h.log.Errorw("quarantine artifact: db error fetching updated result", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
+		return
+	}
+
+	if updated == nil {
+		writeError(w, http.StatusNotFound, "not_found", "secret scan not found")
 		return
 	}
 

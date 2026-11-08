@@ -106,11 +106,16 @@ func (s *LocalSigner) CleartextSign(data io.Reader) (io.Reader, error) {
 		return nil, fmt.Errorf("failed to buffer data: %w", err)
 	}
 
+	key, err := s.SigningKey()
+	if err != nil {
+		return nil, err
+	}
+
 	// clearsign.Encode performs dash-escaping, line-ending canonicalisation
 	// and emits a text-mode (0x01) signature, as required for InRelease.
 	var result bytes.Buffer
 
-	cw, err := clearsign.Encode(&result, s.entity.PrivateKey, &packet.Config{DefaultHash: crypto.SHA256})
+	cw, err := clearsign.Encode(&result, key, &packet.Config{DefaultHash: crypto.SHA256})
 	if err != nil {
 		return nil, fmt.Errorf("failed to start clearsign: %w", err)
 	}

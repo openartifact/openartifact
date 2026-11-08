@@ -32,7 +32,7 @@ func (d *specsCountingDB) ListRubyGemSpecs(ctx context.Context, repoID string) (
 func newSpecsHandler(t *testing.T) (*HTTPHandler, *specsCountingDB) {
 	t.Helper()
 
-	db := &specsCountingDB{gemsDB: &gemsDB{DB: formattest.NewDB()}}
+	db := &specsCountingDB{gemsDB: &gemsDB{DB: formattest.NewDB("rubygems")}}
 
 	return NewHTTPHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), "http://localhost"), db
 }

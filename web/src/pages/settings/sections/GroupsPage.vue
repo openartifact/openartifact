@@ -22,7 +22,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       @clear="list.clear()"
     >
       <template v-if="all.length" #after>
-        <span class="text-xs text-muted" data-testid="group-counts">{{ tp('settings.groups.counts', { groups: String(all.length), memberships: String(totalMembers) }) }}</span>
+        <span class="text-xs text-muted" data-testid="group-counts">{{ tp('settings.groups.counts', { groups: all.length, memberships: totalMembers }) }}</span>
       </template>
     </FilterBar>
 

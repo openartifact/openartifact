@@ -6,6 +6,7 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -283,4 +284,26 @@ func TestCompleteUpload_UnreadableSessionIsUnknown(t *testing.T) {
 			t.Fatalf("complete = %d %s, want 404 BLOB_UPLOAD_UNKNOWN", rec.Code, rec.Body.String())
 		}
 	})
+}
+
+// A completion that fails after the upload may already be linked as the blob
+// must drop the session: it could otherwise be appended to through that link.
+func TestCompleteUpload_CommitFailureDiscardsSession(t *testing.T) {
+	g, db := quotaRegistry(t, 1000, "reg")
+	db.createBlobErr = errors.New("database unavailable")
+
+	layer := []byte("layer bytes")
+	loc := startUpload(t, g, "reg/app")
+
+	if rec := g.do(http.MethodPut, loc+"?digest="+digestOf(layer), string(layer)); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("complete = %d %s, want 500", rec.Code, rec.Body.String())
+	}
+
+	if g.uploadCount() != 0 || len(db.uploads) != 0 {
+		t.Errorf("session survived a failed commit: chunks=%d sessions=%d", g.uploadCount(), len(db.uploads))
+	}
+
+	if rec := g.do(http.MethodPatch, loc, "more"); rec.Code != http.StatusNotFound {
+		t.Errorf("patch after failed commit = %d, want 404", rec.Code)
+	}
 }

@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -499,4 +500,42 @@ func TestStopReturnsWhenStatusWriteHangs(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Stop blocked on a hanging status write")
 	}
+}
+
+func TestResponseBodyText(t *testing.T) {
+	t.Parallel()
+
+	long := strings.Repeat("é", maxWebhookResponseBodySize)
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain", "ok", "ok"},
+		{"nul stripped", "a\x00b", "ab"},
+		{"invalid utf8 replaced", "a\xffb", "a\uFFFDb"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := responseBodyText([]byte(tc.in)); got != tc.want {
+				t.Fatalf("responseBodyText(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+
+	t.Run("truncates on rune boundary", func(t *testing.T) {
+		t.Parallel()
+
+		got := responseBodyText([]byte(long))
+		if len(got) > maxWebhookResponseBodySize {
+			t.Fatalf("length %d exceeds cap", len(got))
+		}
+
+		if !utf8.ValidString(got) || !strings.HasSuffix(got, webhookResponseTruncatedMarker) {
+			t.Fatalf("result not valid UTF-8 with marker")
+		}
+	})
 }

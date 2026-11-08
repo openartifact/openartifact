@@ -57,7 +57,7 @@ type HTTPHandler struct {
 }
 
 func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
+	return &HTTPHandler{Handler: base.New("go", log, db, blobStore, baseURL), DB: db}
 }
 
 // RegisterRepoRoutes registers the GOPROXY GET endpoint relative to the shared
@@ -103,7 +103,7 @@ func (h *HTTPHandler) Guard(next http.Handler) http.Handler {
 		}
 
 		repo, err := h.ResolveRepo(r.Context(), rctx.URLParam("name"))
-		if err != nil || repo == nil || repo.Format != "go" {
+		if err != nil || repo == nil {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -123,16 +123,7 @@ func IsUploadPath(tail string) bool {
 // IsUploadPath matched the request tail. The shared PUT route reaches every
 // hosted repository, so a repository of another format answers 404.
 func (h *HTTPHandler) HandlePut(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.ResolveRepo(r.Context(), urlparams.Vars(r)["name"])
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", urlparams.Vars(r)["name"], "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if repo == nil || repo.Format != "go" {
-		http.NotFound(w, r)
+	if h.ResolveRepoIDOrRespond(w, r, urlparams.Vars(r)["name"]) == "" {
 		return
 	}
 

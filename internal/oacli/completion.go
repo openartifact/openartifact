@@ -135,7 +135,13 @@ func (a *app) completionClient(cmd *cobra.Command) *Client {
 	}
 
 	server := a.resolve(cmd, "server", a.server, "OA_SERVER", cfg.Server)
-	token := a.resolve(cmd, "token", a.token, "OA_TOKEN", cfg.Token)
+	// The saved token belongs to the saved server (see preRun).
+	savedToken := cfg.Token
+	if !sameServer(server, cfg.Server) {
+		savedToken = ""
+	}
+
+	token := a.resolve(cmd, "token", a.token, "OA_TOKEN", savedToken)
 
 	if token == "" {
 		return nil

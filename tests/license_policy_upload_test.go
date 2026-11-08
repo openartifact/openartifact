@@ -394,7 +394,7 @@ func TestMavenUpload_LicensePolicy(t *testing.T) {
 	for _, c := range policytest.Cases("GPL-3.0-only") {
 		t.Run(c.Name, func(t *testing.T) {
 			mock := newMockDatabase()
-			mock.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo"}
+			mock.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo", Format: "maven"}
 
 			pub := &mavenRecordingPublisher{}
 			router := newLicensedMavenRouter(t, withPolicies(mock, c), pub)
@@ -436,7 +436,7 @@ func TestMavenUpload_LicensePolicy(t *testing.T) {
 
 func TestMavenUpload_NoLicenseAdmittedUnderBlockPolicy(t *testing.T) {
 	mock := newMockDatabase()
-	mock.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo"}
+	mock.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo", Format: "maven"}
 
 	router := newLicensedMavenRouter(t, withPolicies(mock, blockAllowListPolicy()), &mavenRecordingPublisher{})
 
@@ -461,7 +461,7 @@ func TestMavenUpload_LicensePolicyReadsThePOM(t *testing.T) {
 			t.Run(name+"/"+c.Name, func(t *testing.T) {
 				db := newMockDatabase()
 				bs := newMockBlobStore()
-				db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo"}
+				db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo", Format: "maven"}
 
 				log, _ := logger.New("info", "json", "stdout")
 				router := chi.NewRouter()
@@ -532,7 +532,7 @@ func TestMavenUpload_UnparsablePOMUnderBlockPolicy(t *testing.T) {
 		t.Run(c.Name, func(t *testing.T) {
 			db := newMockDatabase()
 			bs := newMockBlobStore()
-			db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo"}
+			db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo", Format: "maven"}
 
 			log, _ := logger.New("info", "json", "stdout")
 			router := chi.NewRouter()

@@ -59,7 +59,7 @@ func (h *HTTPHandler) ShadowGuard(next http.Handler) http.Handler {
 		}
 
 		repo, err := h.ResolveRepo(r.Context(), rctx.URLParam("name"))
-		if err != nil || repo == nil || repo.Format != "npm" {
+		if err != nil || repo == nil {
 			next.ServeHTTP(w, r)
 			return
 		}

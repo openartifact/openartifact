@@ -226,22 +226,6 @@ func (q *Queries) DeleteGroup(ctx context.Context, id string) error {
 	return err
 }
 
-const deletePermissionAssignment = `-- name: DeletePermissionAssignment :exec
-DELETE FROM permission_assignments
-WHERE permission_target_id = $1::uuid AND principal_type = $2 AND principal_id = $3::uuid
-`
-
-type DeletePermissionAssignmentParams struct {
-	PermissionTargetID string `db:"permission_target_id" json:"permission_target_id"`
-	PrincipalType      string `db:"principal_type" json:"principal_type"`
-	PrincipalID        string `db:"principal_id" json:"principal_id"`
-}
-
-func (q *Queries) DeletePermissionAssignment(ctx context.Context, arg DeletePermissionAssignmentParams) error {
-	_, err := q.db.Exec(ctx, deletePermissionAssignment, arg.PermissionTargetID, arg.PrincipalType, arg.PrincipalID)
-	return err
-}
-
 const deletePermissionTarget = `-- name: DeletePermissionTarget :exec
 DELETE FROM permission_targets WHERE id = $1
 `

@@ -99,8 +99,7 @@ func (d *gomodDB) seed(modulePath string, versions ...string) {
 func newTestRouter(t *testing.T) (http.Handler, *gomodDB, *formattest.BlobStore, *formattest.Publisher) {
 	t.Helper()
 
-	db := &gomodDB{DB: formattest.NewDB()}
-	db.Repo.Format = "go"
+	db := &gomodDB{DB: formattest.NewDB("go")}
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")

@@ -44,17 +44,21 @@ type nixDB struct {
 
 var errNotImplemented = errors.New("not implemented")
 
-// GetOrCreateStorageQuota is not exercised by the tests.
-func (*nixDB) GetOrCreateStorageQuota(context.Context, string) (*models.StorageQuota, error) {
-	return nil, errNotImplemented
+// GetOrCreateStorageQuota reports the size limit of the test (none by default,
+// like a repository without a quota row to read).
+func (d *nixDB) GetOrCreateStorageQuota(context.Context, string) (*models.StorageQuota, error) {
+	if d.limit == 0 {
+		return nil, errNotImplemented
+	}
+
+	return &models.StorageQuota{MaxSizeBytes: d.limit, CurrentSizeBytes: d.used}, nil
 }
 
 func newNixDB() *nixDB {
 	db := &nixDB{
-		DB: formattest.NewDB(), paths: map[string]*models.NixPath{},
+		DB: formattest.NewDB("nix"), paths: map[string]*models.NixPath{},
 		pending: map[string]*models.NixPendingNar{}, downloads: map[string]int{},
 	}
-	db.Repo.Format = FormatName
 
 	return db
 }
@@ -74,9 +78,14 @@ func (d *nixDB) DecrementStorageUsage(_ context.Context, _ string, size int64, _
 	return nil
 }
 
-func (d *nixDB) PutNixPendingNar(_ context.Context, n *models.NixPendingNar) error {
+func (d *nixDB) PutNixPendingNar(_ context.Context, n *models.NixPendingNar) (bool, error) {
+	if _, dup := d.pending[n.SHA256]; dup {
+		return false, nil
+	}
+
 	d.pending[n.SHA256] = n
-	return nil
+
+	return true, nil
 }
 
 func (d *nixDB) GetNixPendingNar(_ context.Context, _, sha string) (*models.NixPendingNar, error) {
@@ -386,8 +395,9 @@ func TestUploadServeDelete(t *testing.T) {
 		t.Fatalf("delete = %d", w.Code)
 	}
 
-	if len(f.db.paths) != 0 || f.db.used != 0 {
-		t.Errorf("after delete: rows=%d quota=%d", len(f.db.paths), f.db.used)
+	// The NAR staged for the refused narinfo still holds its bytes.
+	if len(f.db.paths) != 0 || f.db.used != int64(len(other.nar)) {
+		t.Errorf("after delete: rows=%d quota=%d, want only the staged NAR's %d", len(f.db.paths), f.db.used, len(other.nar))
 	}
 
 	if _, kept := f.bs.Blobs[sha(s.nar).Hex()]; kept {
@@ -593,19 +603,63 @@ func TestPathsShareANar(t *testing.T) {
 	}
 }
 
-func TestQuotaRefusal(t *testing.T) {
+// A staged NAR holds its bytes in the quota; the narinfo that commits it takes
+// them over instead of reserving them twice, and a NAR that does not fit is
+// refused before anything is staged.
+func TestStagedNarReservesQuota(t *testing.T) {
 	f := newFixture(t)
-	f.db.limit = 10
-
 	s := newStorePath(hashA, "hello-2.12", "hello")
-	f.do(http.MethodPut, "/repos/myrepo/nar/"+s.file, s.nar)
+	size := int64(len(s.nar))
 
-	if w := f.do(http.MethodPut, "/repos/myrepo/"+hashA+".narinfo", s.narinfo()); w.Code != http.StatusInsufficientStorage {
-		t.Errorf("narinfo over quota = %d, want 507", w.Code)
+	f.db.limit = size - 1
+
+	if w := f.do(http.MethodPut, "/repos/myrepo/nar/"+s.file, s.nar); w.Code != http.StatusInsufficientStorage {
+		t.Errorf("NAR over quota = %d, want 507", w.Code)
 	}
 
-	if len(f.db.paths) != 0 || f.db.used != 0 {
-		t.Errorf("rows=%d used=%d after a refused path", len(f.db.paths), f.db.used)
+	if len(f.db.pending) != 0 || f.db.used != 0 {
+		t.Errorf("pending=%d used=%d after a refused NAR", len(f.db.pending), f.db.used)
+	}
+
+	f.db.limit = size
+
+	if w := f.do(http.MethodPut, "/repos/myrepo/nar/"+s.file, s.nar); w.Code != http.StatusCreated {
+		t.Fatalf("NAR = %d: %s", w.Code, w.Body)
+	}
+
+	if f.db.used != size || f.db.pending[sha(s.nar).Hex()].ReservedBytes != size {
+		t.Fatalf("used=%d reserved=%d after staging, want %d", f.db.used, f.db.pending[sha(s.nar).Hex()].ReservedBytes, size)
+	}
+
+	if w := f.do(http.MethodPut, "/repos/myrepo/"+hashA+".narinfo", s.narinfo()); w.Code != http.StatusCreated {
+		t.Fatalf("narinfo = %d: %s", w.Code, w.Body)
+	}
+
+	if f.db.used != size {
+		t.Errorf("used = %d after the commit, want %d (the staged reservation moves to the path)", f.db.used, size)
+	}
+}
+
+// A NAR of unknown length cannot be checked against a size quota.
+func TestNarWithoutLengthNeedsNoQuota(t *testing.T) {
+	f := newFixture(t)
+	s := newStorePath(hashA, "hello-2.12", "hello")
+
+	req := formattest.Request(http.MethodPut, "/repos/myrepo/nar/"+s.file, bytes.NewReader(s.nar))
+	req.ContentLength = -1
+
+	if w := formattest.Do(f.h.RegisterRepoRoutes, req); w.Code != http.StatusCreated {
+		t.Fatalf("unlimited repository: NAR without length = %d, want 201", w.Code)
+	}
+
+	other := newStorePath(hashB, "other-1.0", "other")
+	f.db.limit = 1 << 30
+
+	req = formattest.Request(http.MethodPut, "/repos/myrepo/nar/"+other.file, bytes.NewReader(other.nar))
+	req.ContentLength = -1
+
+	if w := formattest.Do(f.h.RegisterRepoRoutes, req); w.Code != http.StatusLengthRequired {
+		t.Errorf("limited repository: NAR without length = %d, want 411", w.Code)
 	}
 }
 

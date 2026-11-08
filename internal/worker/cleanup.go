@@ -65,7 +65,7 @@ const (
 type CleanupStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
-	DeleteStaleNixPendingNars(ctx context.Context, before time.Time, limit int) ([]string, error)
+	DeleteStaleNixPendingNars(ctx context.Context, before time.Time, limit int) ([]models.NixPendingNar, error)
 	GetCleanupPolicy(ctx context.Context, id string) (*models.CleanupPolicy, error)
 	GetDB() *sql.DB
 	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)

@@ -43,7 +43,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {{ f.cve || f.id }}: {{ f.reasons.map(reasonText).join(', ') }}
             </li>
             <li v-if="verdicts[(row as SecurityFinding).id]!.result!.failed.length > 5" class="text-muted">
-              {{ tp('sx.gate.more', { count: String(verdicts[(row as SecurityFinding).id]!.result!.failed.length - 5) }) }}
+              {{ tp('sx.gate.more', { count: verdicts[(row as SecurityFinding).id]!.result!.failed.length - 5 }) }}
             </li>
           </ul>
         </template>
@@ -95,7 +95,7 @@ const pkg = (f: SecurityFinding): string => `${f.package_name}@${f.package_versi
 
 function signals(f: SecurityFinding): string {
   const parts: string[] = []
-  if (f.kev_count > 0) parts.push(tp('sx.gate.signal.kev', { count: String(f.kev_count) }))
+  if (f.kev_count > 0) parts.push(tp('sx.gate.signal.kev', { count: f.kev_count }))
   if (f.max_epss !== null) parts.push(tp('sx.gate.signal.epss', { score: formatEpss(f.max_epss) }))
   return parts.join(' · ') || '—'
 }

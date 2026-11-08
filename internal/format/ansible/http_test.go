@@ -139,8 +139,7 @@ func (d *ansibleDB) DeleteAnsibleCollection(_ context.Context, _, id string) err
 func newTestHandler(t *testing.T) (*HTTPHandler, *ansibleDB, *formattest.BlobStore, *formattest.Publisher) {
 	t.Helper()
 
-	db := &ansibleDB{DB: formattest.NewDB()}
-	db.Repo.Format = FormatName
+	db := &ansibleDB{DB: formattest.NewDB("ansible")}
 
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}

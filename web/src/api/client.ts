@@ -48,6 +48,14 @@ export function isSessionExpired(err: unknown): boolean {
   return err instanceof ApiError && err.code === SESSION_EXPIRED
 }
 
+/** `ApiError.code` of the error thrown for a session that must change its password; the redirect to /change-password is already under way. */
+export const PASSWORD_CHANGE_REQUIRED = 'password_change_required'
+
+/** True for the error `request()` throws after it redirected a session flagged `must_change_password` to /change-password. */
+export function isPasswordChangeRequired(err: unknown): boolean {
+  return err instanceof ApiError && err.code === PASSWORD_CHANGE_REQUIRED
+}
+
 /**
  * True for the 501 a server answers for a feature compiled out of its build (an AI route of a
  * `-tags noai` binary). It is a permanent state, not a failure to retry or report.
@@ -78,6 +86,27 @@ export function expireSession(): Promise<void> {
     expiring = null
   })
   return expiring
+}
+
+let locking: Promise<void> | null = null
+
+/**
+ * Marks the session as locked behind a forced password change and sends the
+ * user to /change-password with the current location as `next`. Concurrent
+ * refusals share one redirect.
+ */
+function lockForPasswordChange(): Promise<void> {
+  locking ??= (async () => {
+    const { useSessionStore } = await import('../stores/session')
+    await useSessionStore().fetchMe()
+    if (window.location.pathname !== '/change-password') {
+      const { default: router } = await import('../router')
+      await router.push({ name: 'change-password', query: { next: window.location.pathname + window.location.search } })
+    }
+  })().finally(() => {
+    locking = null
+  })
+  return locking
 }
 
 /** The client span of one API call (experimental frontend telemetry, web/src/telemetry). */
@@ -111,12 +140,27 @@ function standardHeaders(extra?: HeadersInit): Headers {
   return headers
 }
 
-/** Handles a 401 outside the auth probes: clears the session, redirects to login and throws. */
-async function rejectExpired(path: string, status: number): Promise<void> {
+/** True when a response body is the RBAC middleware's `{"error":"password_change_required"}` refusal. */
+function isPasswordChangeBody(body: unknown): boolean {
+  const { error, code } = (body ?? {}) as { error?: string; code?: string }
+  return error === PASSWORD_CHANGE_REQUIRED || code === PASSWORD_CHANGE_REQUIRED
+}
+
+/**
+ * Handles a refusal that ends the usable session. A 401 outside the auth probes clears the session, redirects
+ * to login and throws; a 403 password-change refusal sends the user to /change-password and throws. `body`
+ * is the parsed error body, read lazily because only a 403 needs it.
+ */
+async function rejectExpired(path: string, status: number, body: () => Promise<unknown>): Promise<void> {
   // These endpoints return 401 for reasons other than an expired session
   // (bad credentials, wrong current password, "not signed in" probe), so
   // their 401s propagate as ApiError without clearing the session.
-  if (status !== 401 || NO_REDIRECT_401.has(path)) return
+  if (NO_REDIRECT_401.has(path)) return
+  if (status === 403 && isPasswordChangeBody(await body())) {
+    await lockForPasswordChange()
+    throw new ApiError(t('session.passwordChangeRequired'), 403, PASSWORD_CHANGE_REQUIRED)
+  }
+  if (status !== 401) return
   await expireSession()
   throw new ApiError(t('session.expired'), 401, SESSION_EXPIRED)
 }
@@ -140,7 +184,7 @@ async function send(path: string, init: RequestInit): Promise<Response> {
   }
   span?.end(res.status)
 
-  await rejectExpired(path, res.status)
+  await rejectExpired(path, res.status, () => res.clone().json().catch(() => undefined))
 
   return res
 }
@@ -234,7 +278,7 @@ export function upload(path: string, opts: UploadOptions): Promise<void> {
         // non-JSON body: keep the HTTP status message
       }
       const failure = apiErrorFromBody(xhr.status, body)
-      rejectExpired(path, xhr.status).then(
+      rejectExpired(path, xhr.status, () => Promise.resolve(body)).then(
         () => finish(() => reject(failure)),
         (err) => finish(() => reject(err)),
       )

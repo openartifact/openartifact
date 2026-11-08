@@ -26,7 +26,7 @@ func urlRouter(t *testing.T, explicit string, trusted func(*http.Request) bool) 
 	t.Helper()
 
 	db := &benchPyPIDB{
-		DB:       formattest.NewDB(),
+		DB:       formattest.NewDB("pypi"),
 		all:      []*models.PyPIPackage{benchPyPIFile("demo", "1.0", ".tar.gz")},
 		versions: []*models.PyPIPackage{benchPyPIFile("demo", "1.0", "-py3-none-any.whl")},
 	}

@@ -1500,10 +1500,6 @@ func (m *MockDatabase) GetReleaseBundleByID(ctx context.Context, id string) (*mo
 	return nil, nil
 }
 
-func (m *MockDatabase) UpdateReleaseBundle(ctx context.Context, b *models.ReleaseBundle) error {
-	return nil
-}
-
 func (m *MockDatabase) DeleteReleaseBundle(ctx context.Context, id string) error {
 	return nil
 }
@@ -1598,7 +1594,9 @@ func (m *MockDatabase) CreateDockerBlob(ctx context.Context, blob *models.Docker
 func (m *MockDatabase) GetDockerBlob(ctx context.Context, repoID, digest string) (*models.DockerBlob, error) {
 	return nil, nil
 }
-func (m *MockDatabase) DeleteDockerBlob(ctx context.Context, repoID, digest string) error { return nil }
+func (m *MockDatabase) DeleteDockerBlobFromImage(ctx context.Context, repoID, image, digest string) (database.DockerBlobDeletion, error) {
+	return database.DockerBlobRemoved, nil
+}
 func (m *MockDatabase) ListDockerBlobs(ctx context.Context, repoID string) ([]*models.DockerBlob, error) {
 	return nil, nil
 }

@@ -428,3 +428,19 @@ func TestV1SnapshotFillsInDigestsOfOlderFiles(t *testing.T) {
 		t.Error("filling in digests moved the revision time")
 	}
 }
+
+func TestV1BodyRoutesRequireJSONContentType(t *testing.T) {
+	e := newEnv(t)
+
+	e.v1Upload(v1Recipe, v1RecipeFiles())
+
+	for _, route := range []string{"/upload_urls", "/remove_files", "/packages/delete"} {
+		for _, ct := range []string{"", "text/plain", "application/x-www-form-urlencoded"} {
+			if w := e.doType(http.MethodPost, v1Recipe+route, `{}`, ct); w.Code != http.StatusUnsupportedMediaType {
+				t.Errorf("POST %s with Content-Type %q = %d, want 415", route, ct, w.Code)
+			}
+		}
+	}
+
+	e.mustDo(http.MethodGet, v1Recipe+"/download_urls", "", http.StatusOK)
+}

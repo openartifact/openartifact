@@ -127,6 +127,49 @@ func (h *AdminPermissionsHandler) handleGet(w http.ResponseWriter, r *http.Reque
 	writeAdminObject(w, r, h.evaluator, h.db.GetPermissionTargetByID, permTargetToResponse, "permission target")
 }
 
+// permissionTargetPatchBody is the body of a permission target PATCH; a nil
+// field is left unchanged.
+type permissionTargetPatchBody struct {
+	Name             *string  `json:"name"`
+	RepositoryFilter *string  `json:"repository_filter"`
+	PathPattern      *string  `json:"path_pattern"`
+	Actions          []string `json:"actions"`
+}
+
+// changesTarget reports whether the body sets any field.
+func (b *permissionTargetPatchBody) changesTarget() bool {
+	return b.Name != nil || b.RepositoryFilter != nil || b.PathPattern != nil || b.Actions != nil
+}
+
+// apply returns target with the body merged in and the column-wise patch.
+func (b *permissionTargetPatchBody) apply(target *models.PermissionTarget) (models.PermissionTarget, database.PermissionTargetPatch) {
+	merged := *target
+
+	var patch database.PermissionTargetPatch
+
+	if b.Name != nil {
+		merged.Name = strings.TrimSpace(*b.Name)
+		patch.Name = &merged.Name
+	}
+
+	if b.RepositoryFilter != nil {
+		merged.RepositoryFilter = *b.RepositoryFilter
+		patch.RepositoryFilter = b.RepositoryFilter
+	}
+
+	if b.PathPattern != nil {
+		merged.PathPattern = *b.PathPattern
+		patch.PathPattern = b.PathPattern
+	}
+
+	if b.Actions != nil {
+		merged.Actions = b.Actions
+		patch.Actions = b.Actions
+	}
+
+	return merged, patch
+}
+
 func (h *AdminPermissionsHandler) handlePatch(w http.ResponseWriter, r *http.Request) {
 	if !requireAdmin(w, r, h.evaluator) {
 		return
@@ -146,42 +189,20 @@ func (h *AdminPermissionsHandler) handlePatch(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	var body struct {
-		Name             *string  `json:"name"`
-		RepositoryFilter *string  `json:"repository_filter"`
-		PathPattern      *string  `json:"path_pattern"`
-		Actions          []string `json:"actions"`
-	}
+	var body permissionTargetPatchBody
 	if err := decodeJSON(r, &body); err != nil {
 		writeBadJSON(w, err)
 		return
 	}
 
+	if isSeededPermissionTarget(target.Name) && body.changesTarget() {
+		writeError(w, http.StatusConflict, "conflict", seededTargetMessage)
+		return
+	}
+
 	// Validate the merged result, not just the supplied fields, so a PATCH can
 	// never leave behind a target that would not have passed creation.
-	merged := *target
-
-	var patch database.PermissionTargetPatch
-
-	if body.Name != nil {
-		merged.Name = strings.TrimSpace(*body.Name)
-		patch.Name = &merged.Name
-	}
-
-	if body.RepositoryFilter != nil {
-		merged.RepositoryFilter = *body.RepositoryFilter
-		patch.RepositoryFilter = body.RepositoryFilter
-	}
-
-	if body.PathPattern != nil {
-		merged.PathPattern = *body.PathPattern
-		patch.PathPattern = body.PathPattern
-	}
-
-	if body.Actions != nil {
-		merged.Actions = body.Actions
-		patch.Actions = body.Actions
-	}
+	merged, patch := body.apply(target)
 
 	if msg := validatePermissionTarget(&merged); msg != "" {
 		writeError(w, http.StatusBadRequest, "validation_failed", msg)
@@ -223,7 +244,32 @@ func (h *AdminPermissionsHandler) handlePatch(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, permTargetToResponse(updated))
 }
 
+// seededTargetMessage is the 409 text for edits of a target the migrations seed.
+const seededTargetMessage = "the built-in admin-all and anonymous-read permission targets cannot be changed or deleted"
+
+// isSeededPermissionTarget reports whether name is a target the migrations
+// create and the server relies on: admin-all (admin rights, bootstrap repair)
+// and anonymous-read (public access).
+func isSeededPermissionTarget(name string) bool {
+	return name == "admin-all" || name == "anonymous-read"
+}
+
 func (h *AdminPermissionsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
+	target, err := h.db.GetPermissionTargetByID(r.Context(), urlparams.Vars(r)["id"])
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		return
+	}
+
+	if target != nil && isSeededPermissionTarget(target.Name) {
+		writeError(w, http.StatusConflict, "conflict", seededTargetMessage)
+		return
+	}
+
 	deleteAdminObject(w, r, h.evaluator, h.db.GetPermissionTargetByID, h.db.DeletePermissionTarget,
 		audit.ActionPermissionTargetObjDeleted, "permission_target", "permission target", "permission target deleted")
 }
@@ -329,7 +375,13 @@ func (h *AdminPermissionsHandler) handleUnassign(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if err := h.db.DeletePermissionAssignment(r.Context(), id, principalType, principalID); err != nil {
+	err := h.db.DeletePermissionAssignment(r.Context(), id, principalType, principalID)
+	if errors.Is(err, database.ErrLastAdmin) {
+		writeError(w, http.StatusConflict, "conflict", "cannot remove the last enabled admin")
+		return
+	}
+
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 		return
 	}

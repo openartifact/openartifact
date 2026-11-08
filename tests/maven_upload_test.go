@@ -21,7 +21,7 @@ func TestMavenUpload_ReleasePublish_New(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
 
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo", Format: "maven"}
 
 	log, _ := logger.New("info", "json", "stdout")
 	h := api.NewMavenUploadHandler(log, db, bs, nil)
@@ -59,7 +59,7 @@ func TestMavenUpload_ReleaseRepublish_Conflict(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
 
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo", Format: "maven"}
 	db.mavenArtifacts["art-1"] = &models.MavenArtifact{
 		ID:           "art-1",
 		RepositoryID: "repo-1",
@@ -92,7 +92,7 @@ func TestMavenUpload_ReleaseRepublish_Idempotent(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
 
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo", Format: "maven"}
 
 	content := []byte("same-content")
 	log, _ := logger.New("info", "json", "stdout")
@@ -131,7 +131,7 @@ func TestMavenUpload_SnapshotPublish(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
 
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo", Format: "maven"}
 
 	log, _ := logger.New("info", "json", "stdout")
 	h := api.NewMavenUploadHandler(log, db, bs, nil)
@@ -170,7 +170,7 @@ func TestMavenUpload_ChecksumSibling_NoOp(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
 
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo", Format: "maven"}
 
 	log, _ := logger.New("info", "json", "stdout")
 	h := api.NewMavenUploadHandler(log, db, bs, nil)
@@ -201,7 +201,7 @@ func TestMavenUpload_AscPassthrough(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
 
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo", Format: "maven"}
 
 	log, _ := logger.New("info", "json", "stdout")
 	h := api.NewMavenUploadHandler(log, db, bs, nil)
@@ -256,7 +256,7 @@ func (p *mavenRecordingPublisher) Dispatch(_ context.Context, _ string, eventTyp
 func newMavenUploadRouter(t *testing.T, db *MockDatabase, pub *mavenRecordingPublisher) chi.Router {
 	t.Helper()
 
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo", Format: "maven"}
 
 	log, _ := logger.New("info", "json", "stdout")
 	h := api.NewMavenUploadHandler(log, db, newMockBlobStore(), nil)

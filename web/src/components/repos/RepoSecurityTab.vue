@@ -54,7 +54,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="bg-surface px-4 py-3">
           <dt class="text-xs text-muted">{{ t('rl.security.aiReview') }}</dt>
           <dd class="mt-1 text-sm text-foreground" data-testid="ai-count">
-            {{ tp('rl.security.aiCounts', { quarantine: String(summary.ai.quarantine_recommended), review: String(summary.ai.review_required) }) }}
+            {{ tp('rl.security.aiCounts', { quarantine: summary.ai.quarantine_recommended, review: summary.ai.review_required }) }}
           </dd>
         </div>
       </dl>

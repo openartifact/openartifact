@@ -77,11 +77,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <template #footer>
       <span class="mr-auto text-sm text-muted" role="status">
-        {{ picked.size === 0 ? t('bundles.items.noneSelected') : tp('bundles.items.selected', { count: String(picked.size) }) }}
+        {{ picked.size === 0 ? t('bundles.items.noneSelected') : tp('bundles.items.selected', { count: picked.size }) }}
       </span>
       <AppButton variant="secondary" size="sm" :disabled="busy" @click="emit('close')">{{ t('common.cancel') }}</AppButton>
       <AppButton variant="primary" size="sm" :disabled="picked.size === 0" :loading="busy" @click="add">
-        {{ picked.size === 0 ? t('bundles.items.add') : tp('bundles.items.addN', { count: String(picked.size) }) }}
+        {{ picked.size === 0 ? t('bundles.items.add') : tp('bundles.items.addN', { count: picked.size }) }}
       </AppButton>
     </template>
   </Drawer>
@@ -226,7 +226,7 @@ async function add(): Promise<void> {
   error.value = ''
   try {
     const added = await addBundleItems(props.name, props.version, items)
-    toasts.success(tp('bundles.items.added', { count: String(items.length) }))
+    toasts.success(tp('bundles.items.added', { count: items.length }))
     emit('added', added)
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('bundles.items.addFailed')

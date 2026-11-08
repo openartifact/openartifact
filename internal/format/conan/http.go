@@ -77,7 +77,7 @@ type HTTPHandler struct {
 }
 
 func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
+	return &HTTPHandler{Handler: base.New("conan", log, db, blobStore, baseURL), DB: db}
 }
 
 // RegisterRepoRoutes registers Conan-specific routes on the provided sub-router.

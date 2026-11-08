@@ -123,7 +123,7 @@ func NewPresignedUploadHandler(log *logger.Logger, db PresignedUploadStore, blob
 	}
 
 	return &PresignedUploadHandler{
-		Handler:    base.New(log, db, blobStore, ""),
+		Handler:    base.New("raw", log, db, blobStore, ""),
 		evaluator:  evaluator,
 		staging:    staging,
 		multipart:  multipart,

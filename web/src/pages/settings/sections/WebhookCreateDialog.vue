@@ -123,7 +123,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { createWebhook, updateWebhook, type WebhookCreateInput } from '../../../api/webhooks'
+import { createWebhook, type WebhookCreateInput } from '../../../api/webhooks'
 import AdminDialog from '../../../components/AdminDialog.vue'
 import AppButton from '../../../components/AppButton.vue'
 import AppToggle from '../../../components/AppToggle.vue'
@@ -188,16 +188,11 @@ async function submitCreate(): Promise<void> {
       events: form.value.events,
       payload_format: form.value.payload_format,
       ssl_verify: form.value.ssl_verify,
+      enabled: form.value.enabled,
     }
     if (form.value.secret.trim()) payload.secret = form.value.secret.trim()
 
-    const created = await createWebhook(payload)
-
-    // The create endpoint always enables the hook with TLS verification on;
-    // apply the requested non-default flags with a follow-up update.
-    if (created?.id && (!form.value.enabled || !form.value.ssl_verify)) {
-      await updateWebhook(created.id, { enabled: form.value.enabled, ssl_verify: form.value.ssl_verify })
-    }
+    await createWebhook(payload)
     toasts.success(t('adm.webhooks.created'))
     emit('created')
   } catch (err) {

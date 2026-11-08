@@ -11,13 +11,14 @@ interface WebhookListResponse {
   webhooks?: Webhook[]
 }
 
-/** Body accepted by {@link createWebhook}; the hook is always created enabled with TLS verification on. */
+/** Body accepted by {@link createWebhook}; `enabled` defaults to true on the server. */
 export interface WebhookCreateInput {
   name: string
   url: string
   events: string[]
   payload_format: string
   ssl_verify: boolean
+  enabled?: boolean
   secret?: string
 }
 

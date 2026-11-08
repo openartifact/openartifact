@@ -45,7 +45,10 @@ type NixPendingNar struct {
 	NarFile   string
 	BlobKey   string
 	SizeBytes int64
-	CreatedAt time.Time
+	// ReservedBytes is what the staged file holds in the repository's storage
+	// quota until its narinfo arrives or the row is swept.
+	ReservedBytes int64
+	CreatedAt     time.Time
 }
 
 // NixSigningKey is the narinfo signing key of one Nix repository.

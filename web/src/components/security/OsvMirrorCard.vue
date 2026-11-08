@@ -27,7 +27,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <template v-else>
         <p class="mt-2 text-sm text-muted">
           {{ tp('security.osv.source', { url: status.source_url }) }}
-          {{ tp('security.osv.interval', { hours: String(Math.round(status.interval_seconds / 3600)) }) }}
+          {{ tp('security.osv.interval', { hours: Math.round(status.interval_seconds / 3600) }) }}
         </p>
         <p v-if="status.ecosystems.length === 0" class="mt-2 text-sm text-muted">{{ t('security.osv.noEcosystems') }}</p>
         <div v-else class="mt-3 overflow-x-auto">
@@ -49,7 +49,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <td class="py-1.5 pr-4" :title="formatDateTime(e.last_imported_at)">
                   {{ e.last_imported_at ? timeAgo(e.last_imported_at) : t('security.osv.never') }}
                 </td>
-                <td class="py-1.5 pr-4">{{ e.populated ? tp('security.osv.seconds', { n: String(e.last_rematch_seconds) }) : '—' }}</td>
+                <td class="py-1.5 pr-4">{{ e.populated ? tp('security.osv.seconds', { n: e.last_rematch_seconds }) : '—' }}</td>
                 <td class="py-1.5">
                   <span
                     v-if="e.last_error"

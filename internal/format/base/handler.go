@@ -16,7 +16,6 @@ import (
 	"sync/atomic"
 
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/publicurl"
 	"github.com/openartifact/openartifact/internal/quarantine"
@@ -41,6 +40,11 @@ type HandlerStore interface {
 // Handler provides shared fields and methods for artifact-level format HTTP handlers.
 // Embed this in format-specific HTTPHandler structs to eliminate duplicated boilerplate.
 type Handler struct {
+	// Format is the repository format this handler serves. ResolveRepo,
+	// ResolveRepoID and ResolveRepoIDOrRespond treat a repository of any other
+	// format as unknown, so a route mounted on the shared /repos/{name}
+	// sub-router never acts on another format's rows.
+	Format    string
 	Log       *logger.Logger
 	DB        HandlerStore
 	BlobStore storage.BlobStore
@@ -58,9 +62,11 @@ type Handler struct {
 
 var handlerSeq atomic.Uint64 //nolint:gochecknoglobals // numbers handlers for their render cache namespace
 
-// New creates a new base handler with the common dependencies.
-func New(log *logger.Logger, db HandlerStore, blobStore storage.BlobStore, baseURL string) *Handler {
+// New creates a new base handler for the given repository format with the
+// common dependencies.
+func New(format string, log *logger.Logger, db HandlerStore, blobStore storage.BlobStore, baseURL string) *Handler {
 	return &Handler{
+		Format:    format,
 		Log:       log,
 		DB:        db,
 		BlobStore: blobStore,
@@ -104,9 +110,10 @@ func (h *Handler) DenyIfQuarantined(w http.ResponseWriter, r *http.Request, repo
 	return quarantine.Enforce(w, r, h.DB, repoID, keys...)
 }
 
-// ResolveRepoID resolves a repository name to its ID. Returns empty string if not found.
+// ResolveRepoID resolves a repository name to its ID. Returns empty string if
+// the repository does not exist or is not of the handler's format.
 func (h *Handler) ResolveRepoID(ctx context.Context, name string) (string, error) {
-	repo, err := h.DB.GetRepositoryByName(ctx, name)
+	repo, err := h.ResolveRepo(ctx, name)
 	if err != nil {
 		return "", err
 	}
@@ -183,26 +190,6 @@ func (h *Handler) TryPresign(w http.ResponseWriter, r *http.Request, blob presig
 	}
 
 	return presign.Try(h.BlobStore, w, r, blob)
-}
-
-// StreamBlob streams a blob from the store to the response writer.
-// Returns false if the blob is not found.
-func (h *Handler) StreamBlob(w http.ResponseWriter, r *http.Request, blobID, contentType string) bool {
-	if blobID == "" {
-		return false
-	}
-	rc, err := h.BlobStore.Get(r.Context(), blobID)
-	if err != nil {
-		return false
-	}
-	defer func() { CloseLog(rc, h.Log) }()
-
-	if contentType != "" {
-		w.Header().Set("Content-Type", contentType)
-	}
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-	_, err = iocopy.Copy(w, rc)
-	return err == nil
 }
 
 // CloseLog closes a Closer and logs any error. Use for deferred closes where

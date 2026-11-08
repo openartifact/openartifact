@@ -62,7 +62,7 @@ export function securityLevel(summary: SecuritySummary | null): SecurityLevel {
 /** Chip text of the Security tab ("3 critical"): only critical and high are worth a flag. */
 export function securityFlag(summary: SecuritySummary | null): string | undefined {
   if (!summary) return undefined
-  if (summary.vuln.critical > 0) return tp('artifact.security.flag.critical', { count: String(summary.vuln.critical) })
-  if (summary.vuln.high > 0) return tp('artifact.security.flag.high', { count: String(summary.vuln.high) })
+  if (summary.vuln.critical > 0) return tp('artifact.security.flag.critical', { count: summary.vuln.critical })
+  if (summary.vuln.high > 0) return tp('artifact.security.flag.high', { count: summary.vuln.high })
   return undefined
 }

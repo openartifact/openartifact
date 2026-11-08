@@ -68,7 +68,7 @@ func TestPresignedUpload_CompleteIsCounted(t *testing.T) {
 // A rejected multipart upload to the API deb endpoint is counted as an error.
 func TestDebUploadRejectionIsCounted(t *testing.T) {
 	reg := metrics.NewRegistryOn(prometheus.NewRegistry())
-	h := NewDebUploadHandler(nil, &debAPIDB{DB: formattest.NewDB()}, nil, reg)
+	h := NewDebUploadHandler(nil, &debAPIDB{DB: formattest.NewDB("deb")}, nil, reg)
 
 	var body bytes.Buffer
 

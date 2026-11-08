@@ -31,7 +31,7 @@ func (r *redirectRecorder) TryRedirect(w http.ResponseWriter, _ *http.Request, b
 // The crate row already knows the blob size; the presign path must be handed
 // it instead of asking the object store (a HEAD request) for it.
 func TestDownloadPresignUsesStoredSize(t *testing.T) {
-	db := &cargoDB{DB: formattest.NewDB()}
+	db := &cargoDB{DB: formattest.NewDB("cargo")}
 	db.crates = []*models.CargoCrate{{Name: "demo", Version: "0.1.0", BlobKey: "abc", Checksum: "abc", SizeBytes: 4242}}
 
 	store := &redirectRecorder{BlobStore: formattest.NewBlobStore()}

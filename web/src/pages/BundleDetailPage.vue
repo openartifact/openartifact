@@ -267,7 +267,7 @@ const tabs = computed<TabDef[]>(() => {
       id: 'security',
       label: t('bundles.tab.security'),
       hidden: scans.rows.value.length === 0 && !scans.loading.value,
-      flag: critical > 0 ? tp('bundles.scans.criticalFlag', { count: String(critical) }) : undefined,
+      flag: critical > 0 ? tp('bundles.scans.criticalFlag', { count: critical }) : undefined,
     },
     { id: 'verification', label: t('bundles.tab.verification') },
   ]

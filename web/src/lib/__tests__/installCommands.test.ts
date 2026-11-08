@@ -198,7 +198,7 @@ describe('apk', () => {
     const [apk, ...rest] = clientSetup('apk', origin, 'r1')
     expect(rest).toHaveLength(0)
     expect(apk!.client).toBe('apk')
-    expect(apk!.configure).toContain('wget -O /etc/apk/keys/openartifact-r1.rsa.pub https://oa.example:8443/repos/r1/public.key')
+    expect(apk!.configure).toContain('wget --header "Authorization: Bearer <TOKEN>" -O /etc/apk/keys/openartifact-r1.rsa.pub https://oa.example:8443/repos/r1/public.key')
     expect(apk!.configure).toContain('echo "https://oa.example:8443/repos/r1/v3.20/main" >> /etc/apk/repositories')
     expect(apk!.configure).toContain('https://<USERNAME>:<TOKEN>@oa.example:8443/repos/r1/v3.20/main')
     expect(apk!.configure).toContain('apk update\napk add PACKAGE')
@@ -213,7 +213,7 @@ describe('apk', () => {
   it('configures a group with the key of the group and nothing to publish', () => {
     const [apk, ...rest] = clientSetup('apk', origin, 'r1', 'group')
     expect(rest).toHaveLength(0)
-    expect(apk!.configure).toContain('wget -O /etc/apk/keys/openartifact-r1.rsa.pub https://oa.example:8443/repos/r1/public.key')
+    expect(apk!.configure).toContain('wget --header "Authorization: Bearer <TOKEN>" -O /etc/apk/keys/openartifact-r1.rsa.pub https://oa.example:8443/repos/r1/public.key')
     expect(apk!.configure).toContain('echo "https://oa.example:8443/repos/r1/v3.20/main" >> /etc/apk/repositories')
     expect(apk!.publish).toBeUndefined()
   })

@@ -94,6 +94,9 @@ func run(args []string) error {
 	return serve(opts)
 }
 
+// errUnknownCommand is a positional argument that names no subcommand.
+var errUnknownCommand = errors.New("unknown command")
+
 // parseOptions parses the flags and answers the ones that do not start the
 // server (-version, -healthcheck, verify, -h): the bool result is then true and
 // the error is the result of the command.
@@ -127,6 +130,14 @@ func parseOptions(args []string) (options, bool, error) {
 	// Handle 'verify' subcommand: openartifact-server verify config.yaml
 	if flags.NArg() > 0 && flags.Arg(0) == "verify" {
 		return options{}, true, runVerify(*configFile, flags.Args()[1:])
+	}
+
+	if flags.NArg() > 0 {
+		err := fmt.Errorf("%w %q", errUnknownCommand, flags.Arg(0))
+		fmt.Fprintln(flags.Output(), err)
+		flags.Usage()
+
+		return options{}, true, reportedError{err}
 	}
 
 	return options{migrate: *migrateFlag, repairGomod: *repairGomodFlag, configFile: *configFile}, false, nil

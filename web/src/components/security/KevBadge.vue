@@ -16,7 +16,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     data-testid="kev-badge"
   >
     <FireIcon class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-    {{ count !== undefined && count > 1 ? tp('security.exploit.kev.badgeCount', { count: String(count) }) : 'KEV' }}
+    {{ count !== undefined && count > 1 ? tp('security.exploit.kev.badgeCount', { count: count }) : 'KEV' }}
     <span v-if="ransomware" class="sr-only">{{ t('security.exploit.kev.ransomware') }}</span>
   </span>
 </template>

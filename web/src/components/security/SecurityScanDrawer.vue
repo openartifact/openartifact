@@ -15,14 +15,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <fieldset>
         <legend class="mb-1.5 block text-xs font-medium text-muted">{{ t('security.scan.kind') }}</legend>
         <div class="flex flex-wrap gap-2" role="radiogroup">
-          <label
-            v-for="k in kinds"
-            :key="k"
-            class="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm max-md:min-h-11"
-            :class="kind === k ? 'border-primary bg-primary-soft text-foreground' : 'border-border text-muted hover:text-foreground'"
-          >
-            <input v-model="kind" type="radio" name="scan-kind" :value="k" class="sr-only" :data-testid="`scan-kind-${k}`" />
-            {{ tDynamic(`security.type.${k}`) }}
+          <label v-for="k in kinds" :key="k" class="relative">
+            <input v-model="kind" type="radio" name="scan-kind" :value="k" class="peer sr-only" :data-testid="`scan-kind-${k}`" />
+            <span
+              class="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm peer-focus-visible:ring-2 peer-focus-visible:ring-primary max-md:min-h-11"
+              :class="kind === k ? 'border-primary bg-primary-soft text-foreground' : 'border-border text-muted hover:text-foreground'"
+            >
+              {{ tDynamic(`security.type.${k}`) }}
+            </span>
           </label>
         </div>
       </fieldset>

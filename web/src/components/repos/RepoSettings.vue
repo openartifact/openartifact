@@ -25,7 +25,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <section class="space-y-4 rounded-lg border border-border bg-surface p-5" :aria-label="t('repos.settings.quota')">
       <h2 class="text-sm font-semibold text-foreground">{{ t('repos.settings.quota') }}</h2>
       <p v-if="usage" class="text-sm text-muted" data-testid="usage-line">
-        {{ tp('rl.settings.usage', { packages: String(usage.package_count), versions: String(usage.version_count), size: formatBytes(usage.size_bytes) }) }}
+        {{ tp('rl.settings.usage', { packages: usage.package_count, versions: usage.version_count, size: formatBytes(usage.size_bytes) }) }}
       </p>
       <QuotaBar v-if="usage" :used="usage.quota.used_bytes" :limit="usage.quota.limit_bytes" />
       <p v-else-if="usageFailed" class="text-xs text-muted">{{ t('rl.settings.usageUnavailable') }}</p>

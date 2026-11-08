@@ -210,6 +210,51 @@ func sealOIDCConfig(cfg models.OIDCConfig) (json.RawMessage, error) {
 	return b, nil
 }
 
+// prepareCreateConfig validates the kind-specific config of a new provider and
+// stores it in its persisted form (the OIDC client secret sealed). It writes the
+// error response and returns false when the config is not acceptable.
+func (h *AdminSSOHandler) prepareCreateConfig(w http.ResponseWriter, r *http.Request, p *models.SSOProvider) bool {
+	switch p.Kind {
+	case "oidc":
+		var cfg models.OIDCConfig
+		if err := json.Unmarshal(p.OIDCConfig, &cfg); err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", "oidc_config requires issuer, client_id, and client_secret")
+			return false
+		}
+
+		if err := validateOIDCConfig(r.Context(), &cfg); err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return false
+		}
+
+		sealed, err := sealOIDCConfig(cfg)
+		if err != nil {
+			h.log.Errorw("admin sso create: seal oidc config", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to protect client secret")
+
+			return false
+		}
+
+		p.OIDCConfig = sealed
+		p.SAMLConfig = nil
+	case "saml":
+		var cfg models.SAMLConfig
+		if err := json.Unmarshal(p.SAMLConfig, &cfg); err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", "saml_config requires idp_metadata_url or idp_metadata_xml")
+			return false
+		}
+
+		if err := validateSAMLConfig(r.Context(), &cfg); err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return false
+		}
+
+		p.OIDCConfig = nil
+	}
+
+	return true
+}
+
 func (h *AdminSSOHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if !h.requireAdmin(w, r) {
 		return
@@ -265,42 +310,8 @@ func (h *AdminSSOHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch body.Kind {
-	case "oidc":
-		var cfg models.OIDCConfig
-		if err := json.Unmarshal(body.OIDCConfig, &cfg); err != nil {
-			writeError(w, http.StatusBadRequest, "validation_failed", "oidc_config requires issuer, client_id, and client_secret")
-			return
-		}
-
-		if err := validateOIDCConfig(r.Context(), &cfg); err != nil {
-			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
-			return
-		}
-
-		sealed, err := sealOIDCConfig(cfg)
-		if err != nil {
-			h.log.Errorw("admin sso create: seal oidc config", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to protect client secret")
-
-			return
-		}
-
-		body.OIDCConfig = sealed
-		body.SAMLConfig = nil
-	case "saml":
-		var cfg models.SAMLConfig
-		if err := json.Unmarshal(body.SAMLConfig, &cfg); err != nil {
-			writeError(w, http.StatusBadRequest, "validation_failed", "saml_config requires idp_metadata_url or idp_metadata_xml")
-			return
-		}
-
-		if err := validateSAMLConfig(r.Context(), &cfg); err != nil {
-			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
-			return
-		}
-
-		body.OIDCConfig = nil
+	if !h.prepareCreateConfig(w, r, &body) {
+		return
 	}
 
 	now := time.Now()
@@ -310,6 +321,11 @@ func (h *AdminSSOHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	body.Enabled = in.Enabled == nil || *in.Enabled
 
 	if err := h.db.CreateSSOProvider(r.Context(), &body); err != nil {
+		if database.IsUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "conflict", "an SSO provider with this slug already exists")
+			return
+		}
+
 		h.log.Errorw("admin sso create: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 

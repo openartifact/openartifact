@@ -49,7 +49,7 @@ curl -sS -c jar -X POST HOST/api/v1/auth/login \
 | `POST /api/v1/auth/change-password` | `{current_password,new_password}`; session only (tokens get 403); revokes the user's other sessions; wrong guesses count against the login failure budget |
 
 - Login sets two cookies: `oa_session` (HttpOnly, SameSite=Lax) and `oa_csrf` (readable by JS).
-- Both are `Secure` over TLS, when `X-Forwarded-Proto: https` arrives from a trusted proxy, or when `BASE_URL` is `https://`. HSTS is sent under the same condition as `server.tls.enabled` or an `https://` `BASE_URL`.
+- Both are `Secure` over TLS, when `X-Forwarded-Proto: https` arrives from a trusted proxy, or when `BASE_URL` is `https://`. HSTS is sent only when `server.tlsEnabled` is set or `BASE_URL` is `https://`; the `X-Forwarded-Proto` header does not enable it.
 - The server stores only the SHA-256 of the 32-byte random session id.
 - Expiry is sliding: `auth.sessionDurationHours` / `SESSION_DURATION_HOURS` (default 24), extended at most once a minute. A session also ends 30 days after login regardless of activity. That limit is fixed.
 - Disabling a user (`PATCH /api/v1/users/{id}` with `disabled: true`) keeps the account, revokes the user's sessions and rejects the user on every credential type.

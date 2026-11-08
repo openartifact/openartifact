@@ -162,7 +162,8 @@ WITH ref AS (
 INSERT INTO secret_results (scan_job_id, findings, finding_count, quarantined)
 SELECT job.id, $6, $7, $8 FROM job
 ON CONFLICT (scan_job_id) DO UPDATE SET
-    findings = EXCLUDED.findings, finding_count = EXCLUDED.finding_count, quarantined = EXCLUDED.quarantined
+    findings = EXCLUDED.findings, finding_count = EXCLUDED.finding_count,
+    quarantined = secret_results.quarantined OR EXCLUDED.quarantined
 RETURNING id
 `
 
@@ -213,7 +214,7 @@ ON CONFLICT (scan_job_id) DO UPDATE SET
     vulnerabilities = EXCLUDED.vulnerabilities, vuln_count = EXCLUDED.vuln_count,
     critical_count = EXCLUDED.critical_count, high_count = EXCLUDED.high_count,
     medium_count = EXCLUDED.medium_count, low_count = EXCLUDED.low_count,
-    quarantined = EXCLUDED.quarantined, package_name = EXCLUDED.package_name,
+    quarantined = vuln_results.quarantined OR EXCLUDED.quarantined, package_name = EXCLUDED.package_name,
     package_version = EXCLUDED.package_version, ecosystem = EXCLUDED.ecosystem
 RETURNING id
 `
@@ -822,11 +823,11 @@ func (q *Queries) UpdateLicensePolicy(ctx context.Context, arg UpdateLicensePoli
 const updateVulnScanResult = `-- name: UpdateVulnScanResult :exec
 WITH res AS (
     UPDATE vuln_results AS vr SET vulnerabilities = $1, vuln_count = $2, critical_count = $3,
-           high_count = $4, medium_count = $5, low_count = $6, quarantined = $7
-    WHERE vr.id = $11
+           high_count = $4, medium_count = $5, low_count = $6
+    WHERE vr.id = $10
     RETURNING scan_job_id
 )
-UPDATE scan_jobs sj SET scanner = $8, status = $9, error_message = NULLIF($10, ''), completed_at = $12, updated_at = now()
+UPDATE scan_jobs sj SET scanner = $7, status = $8, error_message = NULLIF($9, ''), completed_at = $11, updated_at = now()
 FROM res WHERE sj.id = res.scan_job_id
 `
 
@@ -837,10 +838,9 @@ type UpdateVulnScanResultParams struct {
 	HighCount       int32           `db:"high_count" json:"high_count"`
 	MediumCount     int32           `db:"medium_count" json:"medium_count"`
 	LowCount        int32           `db:"low_count" json:"low_count"`
-	Quarantined     bool            `db:"quarantined" json:"quarantined"`
 	Scanner         *string         `db:"scanner" json:"scanner"`
 	Status          string          `db:"status" json:"status"`
-	Column10        interface{}     `db:"column_10" json:"column_10"`
+	Column9         interface{}     `db:"column_9" json:"column_9"`
 	ID              string          `db:"id" json:"id"`
 	CompletedAt     *time.Time      `db:"completed_at" json:"completed_at"`
 }
@@ -853,10 +853,9 @@ func (q *Queries) UpdateVulnScanResult(ctx context.Context, arg UpdateVulnScanRe
 		arg.HighCount,
 		arg.MediumCount,
 		arg.LowCount,
-		arg.Quarantined,
 		arg.Scanner,
 		arg.Status,
-		arg.Column10,
+		arg.Column9,
 		arg.ID,
 		arg.CompletedAt,
 	)

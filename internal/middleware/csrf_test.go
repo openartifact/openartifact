@@ -223,7 +223,6 @@ func TestCSRFMiddlewareNonSessionWritesOutsideAPIPass(t *testing.T) {
 	}{
 		{"anonymous", auth.CredentialNone},
 		{"bearer", auth.CredentialBearerToken},
-		{"basic", auth.CredentialBasicToken},
 	} {
 		for _, path := range []string{"/repos/r/f", "/v2/r/img/blobs/uploads/"} {
 			t.Run(tc.name+" "+path, func(t *testing.T) {
@@ -406,6 +405,65 @@ func TestCSRFBasicCrossSiteBehindProxy(t *testing.T) {
 
 			if called != tc.want {
 				t.Fatalf("called=%v want %v", called, tc.want)
+			}
+		})
+	}
+}
+
+func TestCSRFMiddlewareBasicCrossSiteOutsideAPI(t *testing.T) {
+	cases := []struct {
+		name       string
+		method     string
+		credential string
+		headers    map[string]string
+		want       int
+	}{
+		{
+			"cross-site basic delete",
+			http.MethodDelete,
+			auth.CredentialBasicToken,
+			map[string]string{"Sec-Fetch-Site": "cross-site"},
+			http.StatusForbidden,
+		},
+		{
+			"cross-site basic post",
+			http.MethodPost,
+			auth.CredentialBasicToken,
+			map[string]string{"Origin": "http://evil.test"},
+			http.StatusForbidden,
+		},
+		{"cli basic post", http.MethodPost, auth.CredentialBasicToken, nil, http.StatusNoContent},
+		{
+			"cross-site basic get",
+			http.MethodGet,
+			auth.CredentialBasicToken,
+			map[string]string{"Sec-Fetch-Site": "cross-site"},
+			http.StatusNoContent,
+		},
+		{
+			"cross-site bearer post",
+			http.MethodPost,
+			auth.CredentialBearerToken,
+			map[string]string{"Sec-Fetch-Site": "cross-site"},
+			http.StatusNoContent,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			r := httptest.NewRequestWithContext(context.Background(), tc.method, "/repos/conan/v1/conans/a/1/u/c/packages/remove", nil)
+			r.Host = "example.com"
+
+			for k, v := range tc.headers {
+				r.Header.Set(k, v)
+			}
+
+			w := httptest.NewRecorder()
+			CSRFMiddleware("", nil)(csrfNext(&called)).ServeHTTP(w, csrfWithPrincipal(r, tc.credential))
+
+			if w.Code != tc.want || called != (tc.want == http.StatusNoContent) {
+				t.Fatalf("status=%d called=%v, want status %d", w.Code, called, tc.want)
 			}
 		})
 	}

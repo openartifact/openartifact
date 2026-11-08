@@ -275,8 +275,29 @@ type DeleteDockerBlobParams struct {
 	Digest       string `db:"digest" json:"digest"`
 }
 
+// Removes the repository's record of the blob. Only the delete of a blob
+// nothing else holds may use it (see DockerBlobStillHeld).
 func (q *Queries) DeleteDockerBlob(ctx context.Context, arg DeleteDockerBlobParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteDockerBlob, arg.RepositoryID, arg.Digest)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteDockerBlobImageLink = `-- name: DeleteDockerBlobImageLink :execrows
+DELETE FROM docker_blob_images
+WHERE repository_id = $1::uuid AND image = $2::text AND digest = $3::text
+`
+
+type DeleteDockerBlobImageLinkParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Image        string `db:"image" json:"image"`
+	Digest       string `db:"digest" json:"digest"`
+}
+
+func (q *Queries) DeleteDockerBlobImageLink(ctx context.Context, arg DeleteDockerBlobImageLinkParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDockerBlobImageLink, arg.RepositoryID, arg.Image, arg.Digest)
 	if err != nil {
 		return 0, err
 	}
@@ -365,6 +386,11 @@ DELETE FROM docker_manifests dm
 WHERE dm.repository_id = $1::uuid
   AND dm.id = ANY($2::uuid[])
   AND dm.deleted_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM release_bundle_items rbi
+      JOIN blobs mb ON mb.sha256 = rbi.sha256
+      WHERE mb.id = dm.blob_id
+  )
   AND dm.updated_at <= now() - make_interval(secs => $3::float8)
   AND NOT EXISTS (
       SELECT 1 FROM docker_tags t
@@ -407,7 +433,7 @@ type DeleteDockerManifestsForGCRow struct {
 	BlobSha256 string `db:"blob_sha256" json:"blob_sha256"`
 }
 
-// Deletes the given untagged live manifests (never a trashed one), re-checking every condition against the
+// Deletes the given untagged live manifests (never a trashed one nor one a release bundle pins), re-checking every condition against the
 // current state: still older than the grace period, still untagged, and not
 // adjacent (index child, index parent, subject or referrer) to a manifest that
 // is not being deleted. Must run in a transaction holding the repository's
@@ -593,6 +619,38 @@ func (q *Queries) DockerBlobQuarantined(ctx context.Context, arg DockerBlobQuara
 	return quarantined, err
 }
 
+const dockerBlobStillHeld = `-- name: DockerBlobStillHeld :one
+SELECT (
+    EXISTS (
+        SELECT 1 FROM docker_blob_images i
+        WHERE i.repository_id = $1::uuid AND i.digest = $2::text
+    ) OR EXISTS (
+        SELECT 1 FROM docker_manifest_refs r
+        WHERE r.repository_id = $1::uuid AND r.kind = 'blob' AND r.digest = $2::text
+    ) OR EXISTS (
+        SELECT 1 FROM docker_manifests dm
+        WHERE dm.repository_id = $1::uuid
+          AND NOT EXISTS (SELECT 1 FROM docker_manifest_refs x WHERE x.manifest_id = dm.id AND x.kind = 'indexed')
+    )
+)::boolean AS held
+`
+
+type DockerBlobStillHeldParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Digest       string `db:"digest" json:"digest"`
+}
+
+// Whether anything besides the caller's image link keeps the blob record: a
+// link of another image, a manifest (trashed ones included, a restore must not
+// dangle) that references it, or a manifest not indexed yet whose references
+// are unknown. Same rule as registry GC.
+func (q *Queries) DockerBlobStillHeld(ctx context.Context, arg DockerBlobStillHeldParams) (bool, error) {
+	row := q.db.QueryRow(ctx, dockerBlobStillHeld, arg.RepositoryID, arg.Digest)
+	var held bool
+	err := row.Scan(&held)
+	return held, err
+}
+
 const dockerBlobVisibleToImage = `-- name: DockerBlobVisibleToImage :one
 SELECT EXISTS (
     SELECT 1 FROM docker_blob_images i
@@ -637,6 +695,37 @@ func (q *Queries) DockerImageExists(ctx context.Context, arg DockerImageExistsPa
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const dockerImageReferencesBlob = `-- name: DockerImageReferencesBlob :one
+SELECT (
+    EXISTS (
+        SELECT 1 FROM docker_manifest_refs r
+        JOIN docker_manifests dm ON dm.id = r.manifest_id
+        WHERE r.repository_id = $1::uuid AND r.image = $2::text
+          AND r.kind = 'blob' AND r.digest = $3::text AND dm.deleted_at IS NULL
+    ) OR EXISTS (
+        SELECT 1 FROM docker_manifests dm
+        WHERE dm.repository_id = $1::uuid AND dm.image = $2::text AND dm.deleted_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM docker_manifest_refs x WHERE x.manifest_id = dm.id AND x.kind = 'indexed')
+    )
+)::boolean AS referenced
+`
+
+type DockerImageReferencesBlobParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Image        string `db:"image" json:"image"`
+	Digest       string `db:"digest" json:"digest"`
+}
+
+// Whether a live manifest of the image references the blob (config or layer).
+// A live manifest of the image that is not indexed yet has unknown references,
+// so it counts as one that may reference it.
+func (q *Queries) DockerImageReferencesBlob(ctx context.Context, arg DockerImageReferencesBlobParams) (bool, error) {
+	row := q.db.QueryRow(ctx, dockerImageReferencesBlob, arg.RepositoryID, arg.Image, arg.Digest)
+	var referenced bool
+	err := row.Scan(&referenced)
+	return referenced, err
 }
 
 const existingDockerUploadIDs = `-- name: ExistingDockerUploadIDs :many
@@ -1115,6 +1204,11 @@ FROM docker_manifests dm
 JOIN blobs b ON b.id = dm.blob_id
 WHERE dm.repository_id = $2::uuid
   AND dm.deleted_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM release_bundle_items rbi
+      JOIN blobs mb ON mb.sha256 = rbi.sha256
+      WHERE mb.id = dm.blob_id
+  )
 ORDER BY dm.created_at
 `
 

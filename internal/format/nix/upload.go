@@ -71,8 +71,7 @@ func (h *HTTPHandler) putNar(w http.ResponseWriter, r *http.Request, repo *model
 		return
 	}
 
-	if err := quota.Precheck(r.Context(), h.DB, repo.ID, r.ContentLength); err != nil {
-		quota.WriteExceeded(w)
+	if !h.precheckNar(w, r, repo.ID) {
 		return
 	}
 
@@ -95,7 +94,18 @@ func (h *HTTPHandler) putNar(w http.ResponseWriter, r *http.Request, repo *model
 		return
 	}
 
-	if err := h.stageNar(r.Context(), repo.ID, file, spool); err != nil {
+	// A staged NAR holds its bytes in the quota until its narinfo commits it
+	// (the reservation moves to the path) or the staging sweep drops it.
+	if !h.reserveQuota(r.Context(), w, repo, spool.Size(), 0) {
+		return
+	}
+
+	staged, err := h.stageNar(r.Context(), repo.ID, file, spool)
+	if err != nil || !staged {
+		h.releaseQuota(r.Context(), repo, spool.Size(), 0)
+	}
+
+	if err != nil {
 		h.Log.Errorw("failed to stage nix nar", "file", file, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
@@ -103,6 +113,54 @@ func (h *HTTPHandler) putNar(w http.ResponseWriter, r *http.Request, repo *model
 	}
 
 	w.WriteHeader(http.StatusCreated)
+}
+
+// precheckNar refuses an upload the repository's quota has no room for before
+// the body is spooled. A body of unknown length cannot be checked against a
+// limited quota, so it is refused with 411.
+func (h *HTTPHandler) precheckNar(w http.ResponseWriter, r *http.Request, repoID string) bool {
+	if r.ContentLength < 0 {
+		if _, limited, err := quota.Room(r.Context(), h.DB, repoID); err == nil && limited {
+			http.Error(w, "a NAR upload to a repository with a size quota needs a Content-Length", http.StatusLengthRequired)
+			return false
+		}
+
+		return true
+	}
+
+	if err := quota.Precheck(r.Context(), h.DB, repoID, r.ContentLength); err != nil {
+		quota.WriteExceeded(w)
+		return false
+	}
+
+	return true
+}
+
+// reserveQuota reserves size bytes and count artifacts of the repository's
+// quota, answering 507 (or 500) when it cannot.
+func (h *HTTPHandler) reserveQuota(ctx context.Context, w http.ResponseWriter, repo *models.Repository, size int64, count int) bool {
+	err := quota.EnforceN(ctx, h.DB, repo.ID, size, count)
+	if err == nil {
+		return true
+	}
+
+	if errors.Is(err, quota.ErrExceeded) {
+		quota.WriteExceeded(w)
+
+		return false
+	}
+
+	h.Log.Errorw("failed to reserve quota", "repo", repo.Name, "error", err)
+	http.Error(w, "internal error", http.StatusInternalServerError)
+
+	return false
+}
+
+// releaseQuota returns a reservation of reserveQuota; a failure is only logged.
+func (h *HTTPHandler) releaseQuota(ctx context.Context, repo *models.Repository, size int64, count int) {
+	if err := quota.ReleaseN(ctx, h.DB, repo.ID, size, count); err != nil {
+		h.Log.Warnw("failed to release quota", "repo", repo.Name, "error", err)
+	}
 }
 
 // narKnown reports whether the NAR file is already stored or staged (an
@@ -119,26 +177,35 @@ func (h *HTTPHandler) narKnown(ctx context.Context, repoID string, sum nix.SHA25
 	return pending != nil, err
 }
 
-// stageNar stores the blob and its staging row. The blob is written before the
+// stageNar stores the blob and its staging row, which records the quota
+// reservation of the NAR's size. It reports whether the row is new: false when
+// a concurrent upload staged the same file first (its row holds the
+// reservation, the caller's must be returned). The blob is written before the
 // per-blob lock is taken, see storage.CommitBlobs.
-func (h *HTTPHandler) stageNar(ctx context.Context, repoID, file string, spool *base.Spool) error {
+func (h *HTTPHandler) stageNar(ctx context.Context, repoID, file string, spool *base.Spool) (bool, error) {
 	sha := spool.SHA256Hex()
 	blob := storage.SeekerBlob(sha, spool.Reader(), map[string]string{"sha256": sha, "filename": file})
 
+	var inserted bool
+
 	err := storage.CommitBlob(ctx, h.DB, h.BlobStore, blob, func(ctx context.Context, blobKey string) error {
-		return h.DB.PutNixPendingNar(ctx, &models.NixPendingNar{
-			RepositoryID: repoID, SHA256: sha, NarFile: file, BlobKey: blobKey, SizeBytes: spool.Size(),
+		var err error
+
+		inserted, err = h.DB.PutNixPendingNar(ctx, &models.NixPendingNar{
+			RepositoryID: repoID, SHA256: sha, NarFile: file, BlobKey: blobKey, SizeBytes: spool.Size(), ReservedBytes: spool.Size(),
 		})
+
+		return err
 	})
 	if err == nil {
-		return nil
+		return inserted, nil
 	}
 
 	if cleanErr := storage.SafeDeleteBlob(ctx, h.DB, h.BlobStore, sha); cleanErr != nil {
 		h.Log.Warnw("failed to clean up nix nar blob", "sha256", sha, "error", cleanErr)
 	}
 
-	return fmt.Errorf("stage nix nar: %w", err)
+	return false, fmt.Errorf("stage nix nar: %w", err)
 }
 
 // discardAux accepts the files "nix copy" writes next to a path with
@@ -283,13 +350,13 @@ func (h *HTTPHandler) putNarInfo(w http.ResponseWriter, r *http.Request, repo *m
 		return
 	}
 
-	row, status, msg := h.rowFor(r.Context(), repo.ID, up)
+	row, staged, status, msg := h.rowFor(r.Context(), repo.ID, up)
 	if row == nil {
 		http.Error(w, msg, status)
 		return
 	}
 
-	h.commitPath(w, r, repo, row)
+	h.commitPath(w, r, repo, row, staged)
 }
 
 // answerExisting handles a narinfo for a path the repository already has:
@@ -310,15 +377,22 @@ func (h *HTTPHandler) answerExisting(w http.ResponseWriter, info *nix.NarInfo, e
 // rowFor builds the row of an uploaded narinfo from the NAR file that is
 // staged (or stored under another path) under its hash. status and msg say why
 // no row results.
-func (h *HTTPHandler) rowFor(ctx context.Context, repoID string, up *uploadedNarInfo) (*models.NixPath, int, string) {
-	sha, size, blobKey, status, msg := h.findNar(ctx, repoID, up)
+//
+// staged is how many bytes of the NAR the staging row already holds in the
+// repository's quota (0 for a NAR another path stored).
+func (h *HTTPHandler) rowFor(
+	ctx context.Context,
+	repoID string,
+	up *uploadedNarInfo,
+) (*models.NixPath, int64, int, string) {
+	nar, status, msg := h.findNar(ctx, repoID, up)
 	if status != 0 {
-		return nil, status, msg
+		return nil, 0, status, msg
 	}
 
 	info := up.info
-	if info.FileHash != "" && info.FileSize != size {
-		return nil, http.StatusBadRequest, "FileSize does not match the uploaded NAR file"
+	if info.FileHash != "" && info.FileSize != nar.size {
+		return nil, 0, http.StatusBadRequest, "FileSize does not match the uploaded NAR file"
 	}
 
 	return &models.NixPath{
@@ -333,11 +407,11 @@ func (h *HTTPHandler) rowFor(ctx context.Context, repoID string, up *uploadedNar
 		Deriver:      info.Deriver,
 		CA:           info.CA,
 		Signatures:   info.Sigs,
-		BlobKey:      blobKey,
-		SHA256:       sha,
-		SizeBytes:    size,
+		BlobKey:      nar.blobKey,
+		SHA256:       nar.sha,
+		SizeBytes:    nar.size,
 		CreatedAt:    importmeta.CreatedAt(ctx),
-	}, 0, ""
+	}, nar.reserved, 0, ""
 }
 
 // canonical returns the "sha256:<nixbase32>" spelling of a validated hash.
@@ -346,46 +420,58 @@ func canonical(s string) string {
 	return h.String()
 }
 
+// narFile is the NAR file a narinfo names.
+type narFile struct {
+	sha     string
+	size    int64
+	blobKey string
+	// reserved is the quota the staging row holds for it (0 when stored).
+	reserved int64
+}
+
 // findNar locates the NAR file a narinfo names: staged by an earlier PUT, or
 // already stored for another path of the repository. A non-zero status is the
 // answer to send.
-func (h *HTTPHandler) findNar(ctx context.Context, repoID string, up *uploadedNarInfo) (string, int64, string, int, string) {
+func (h *HTTPHandler) findNar(ctx context.Context, repoID string, up *uploadedNarInfo) (narFile, int, string) {
 	sha := up.fileHash.Hex()
 
 	pending, err := h.DB.GetNixPendingNar(ctx, repoID, sha)
 	if err != nil {
 		h.Log.Errorw("failed to get staged nix nar", "sha256", sha, "error", err)
-		return "", 0, "", http.StatusInternalServerError, "internal error"
+		return narFile{}, http.StatusInternalServerError, "internal error"
 	}
 
 	if pending != nil {
 		if pending.NarFile != up.file {
-			return "", 0, "", http.StatusBadRequest, "the NAR file was uploaded as nar/" + pending.NarFile
+			return narFile{}, http.StatusBadRequest, "the NAR file was uploaded as nar/" + pending.NarFile
 		}
 
-		return sha, pending.SizeBytes, pending.BlobKey, 0, ""
+		return narFile{sha: sha, size: pending.SizeBytes, blobKey: pending.BlobKey, reserved: pending.ReservedBytes}, 0, ""
 	}
 
 	other, err := h.DB.GetNixPathByNarFile(ctx, repoID, up.file)
 	if err != nil {
 		h.Log.Errorw("failed to get nix nar", "file", up.file, "error", err)
-		return "", 0, "", http.StatusInternalServerError, "internal error"
+		return narFile{}, http.StatusInternalServerError, "internal error"
 	}
 
 	if other == nil {
-		return "", 0, "", http.StatusConflict, "the NAR file nar/" + up.file + " has not been uploaded; PUT it before its narinfo"
+		return narFile{}, http.StatusConflict, "the NAR file nar/" + up.file + " has not been uploaded; PUT it before its narinfo"
 	}
 
-	return other.SHA256, other.SizeBytes, other.BlobKey, 0, ""
+	return narFile{sha: other.SHA256, size: other.SizeBytes, blobKey: other.BlobKey}, 0, ""
 }
 
 // commitPath reserves quota, inserts the row under the NAR blob's lock (a
 // concurrent sweep of stale staging cannot delete the blob in between) and
-// answers 201.
-func (h *HTTPHandler) commitPath(w http.ResponseWriter, r *http.Request, repo *models.Repository, row *models.NixPath) {
+// answers 201. The bytes the NAR's staging row already holds (staged) are not
+// reserved again: the path takes them over when the row is created, and the
+// staging row's reservation stays in place when the commit fails.
+func (h *HTTPHandler) commitPath(w http.ResponseWriter, r *http.Request, repo *models.Repository, row *models.NixPath, staged int64) {
 	ctx := r.Context()
+	fresh := row.SizeBytes - min(staged, row.SizeBytes)
 
-	if !h.ReserveQuotaOrRespond(ctx, w, repo.ID, repo.Name, row.SizeBytes) {
+	if !h.reserveQuota(ctx, w, repo, fresh, 1) {
 		return
 	}
 
@@ -400,7 +486,7 @@ func (h *HTTPHandler) commitPath(w http.ResponseWriter, r *http.Request, repo *m
 			return nil
 		})
 	if err != nil {
-		h.ReleaseQuota(ctx, repo.ID, repo.Name, row.SizeBytes)
+		h.releaseQuota(ctx, repo, fresh, 1)
 
 		h.writeCommitError(w, row, err)
 

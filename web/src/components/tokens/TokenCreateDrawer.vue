@@ -80,10 +80,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <FormField v-if="choices.length > 0" :label="t('tok.create.expires')" id="token-expiry">
         <select id="token-expiry" v-model.number="days" :class="INPUT_CLASS">
-          <option v-for="d in choices" :key="d" :value="d">{{ d === 0 ? t('tok.expiry.never') : tp('tok.expiry.days', { count: String(d) }) }}</option>
+          <option v-for="d in choices" :key="d" :value="d">{{ d === 0 ? t('tok.expiry.never') : tp('tok.expiry.days', { count: d }) }}</option>
         </select>
         <p v-if="days === 0" class="text-xs text-warning" data-testid="no-expiry-warning">{{ t('tok.create.noExpiryWarning') }}</p>
-        <p v-else-if="cap > 0" class="text-xs text-muted">{{ tp('tok.create.capHint', { count: String(cap) }) }}</p>
+        <p v-else-if="cap > 0" class="text-xs text-muted">{{ tp('tok.create.capHint', { count: cap }) }}</p>
       </FormField>
 
       <p v-if="targets.error.value" role="alert" class="text-sm text-danger">{{ targets.error.value }}</p>

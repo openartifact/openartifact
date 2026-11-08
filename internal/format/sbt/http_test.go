@@ -91,7 +91,7 @@ func (d *sbtDB) seed(a *models.SBTArtifact) {
 func newTestHandler(t *testing.T) (*HTTPHandler, *sbtDB, *formattest.BlobStore, *formattest.Publisher) {
 	t.Helper()
 
-	db := &sbtDB{DB: formattest.NewDB()}
+	db := &sbtDB{DB: formattest.NewDB("sbt")}
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")

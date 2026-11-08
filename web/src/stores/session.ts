@@ -26,10 +26,7 @@ export const useSessionStore = defineStore('session', () => {
   const mustChangePassword = computed(() => user.value?.must_change_password === true)
 
   const isAdmin = computed(() => {
-    if (!user.value) return false
-    if (user.value.is_admin === true) return true
-    if (user.value.groups?.includes('admin')) return true
-    return false
+    return user.value?.is_admin === true
   })
 
   /** Projects the caller holds a role in (no implicit admin entries). */

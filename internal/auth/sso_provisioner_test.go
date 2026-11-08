@@ -210,10 +210,6 @@ func (m *provMockDB) GetReleaseBundleByID(ctx context.Context, id string) (*mode
 	return nil, nil
 }
 
-func (m *provMockDB) UpdateReleaseBundle(ctx context.Context, b *models.ReleaseBundle) error {
-	return nil
-}
-
 func (m *provMockDB) DeleteReleaseBundle(ctx context.Context, id string) error {
 	return nil
 }
@@ -481,7 +477,6 @@ func (m *provMockDB) CreateDockerBlob(_ context.Context, _ *models.DockerBlob) e
 func (m *provMockDB) GetDockerBlob(_ context.Context, _, _ string) (*models.DockerBlob, error) {
 	return nil, nil
 }
-func (m *provMockDB) DeleteDockerBlob(_ context.Context, _, _ string) error { return nil }
 func (m *provMockDB) ListDockerBlobs(_ context.Context, _ string) ([]*models.DockerBlob, error) {
 	return nil, nil
 }

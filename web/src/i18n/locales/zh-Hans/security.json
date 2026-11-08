@@ -249,6 +249,7 @@
   "security.exploit.feedNever": "未加载",
   "security.exploit.problem.error": "{feed}：上次更新失败（{error}）",
   "security.exploit.problem.stale": "{feed} 上次检查时间：{date}",
+  "security.exploit.problem.unchecked": "{feed} 已于 {date} 导入，但从未检查",
   "security.col.exploit": "利用情况",
   "security.vuln.finding.exploit": "利用情况",
   "security.detail.priority": "优先级",

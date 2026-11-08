@@ -582,6 +582,7 @@ func (f *fakeAzure) putBlockList(w http.ResponseWriter, r *http.Request, name st
 	}
 
 	b := f.newBlobLocked(name, data)
+	b.meta = metaOf(r.Header)
 	b.contentType = r.Header.Get("X-Ms-Blob-Content-Type")
 
 	if b.contentType == "" {
