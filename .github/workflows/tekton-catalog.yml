@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to publish the catalog for (e.g. v0.20.0)"
+        description: "Existing tag to publish the catalog for (e.g. v0.21.0)"
         required: true
 
 permissions:
@@ -27,7 +27,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE: ghcr.io/${{ github.repository }}-tekton
+  IMAGE: ghcr.io/${{ github.repository_owner }}/oa-tekton
   CATALOG: ghcr.io/${{ github.repository_owner }}/tekton-catalog
   REF: ${{ inputs.tag || github.ref_name }}
   TKN_VERSION: "0.46.2"
@@ -49,7 +49,7 @@ jobs:
             grep -q "SPDX-License-""Identifier: AGPL-3.0-or-later" "$f" || { echo "::error file=$f::missing SPDX header"; exit 1; }
           done
       - name: Shell scripts
-        run: shellcheck -x scripts/smoke/oci-supplychain.sh
+        run: shellcheck -x -P SCRIPTDIR scripts/smoke/oci-supplychain.sh
 
   publish:
     name: Publish image and catalog bundles
