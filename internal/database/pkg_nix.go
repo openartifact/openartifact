@@ -115,18 +115,13 @@ func (p *NixStore) PutNixPendingNar(ctx context.Context, n *models.NixPendingNar
 // GetNixPendingNar returns the staged NAR file, or (nil, nil).
 func (p *NixStore) GetNixPendingNar(ctx context.Context, repoID, sha256 string) (*models.NixPendingNar, error) {
 	row, err := p.q.GetNixPendingNar(ctx, dbsqlc.GetNixPendingNarParams{RepositoryID: repoID, Sha256: sha256})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get nix pending nar: %w", err)
-	}
-
-	return &models.NixPendingNar{
-		RepositoryID: row.RepositoryID, SHA256: row.Sha256, NarFile: row.NarFile,
-		BlobKey: row.BlobKey, SizeBytes: row.SizeBytes, ReservedBytes: row.ReservedBytes, CreatedAt: row.CreatedAt,
-	}, nil
+	return mapRow(row, err, "get nix pending nar", func(row dbsqlc.GetNixPendingNarRow) *models.NixPendingNar {
+		return &models.NixPendingNar{
+			RepositoryID: row.RepositoryID, SHA256: row.Sha256, NarFile: row.NarFile,
+			BlobKey: row.BlobKey, SizeBytes: row.SizeBytes, ReservedBytes: row.ReservedBytes, CreatedAt: row.CreatedAt,
+		}
+	})
 }
 
 // GetNixPathByNarFile returns a live path whose NAR file is narFile, or (nil, nil).
