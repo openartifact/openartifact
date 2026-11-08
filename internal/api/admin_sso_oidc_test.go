@@ -53,6 +53,55 @@ func TestValidateOIDCConfig(t *testing.T) {
 			base(func(c *models.OIDCConfig) { c.Issuer = testIssuer; c.AllowedTenants = []string{"contoso"} }),
 			"allowed_tenants",
 		},
+		{"dex connector", base(func(c *models.OIDCConfig) { c.Issuer = testIssuer; c.DexConnectorID = "ldap" }), ""},
+		{
+			"dex connector with the federated:id scope",
+			base(func(c *models.OIDCConfig) {
+				c.Issuer = testIssuer
+				c.DexConnectorID = "ldap"
+				c.Scopes = []string{"openid", "groups", "federated:id"}
+			}),
+			"",
+		},
+		{
+			"dex connector with explicit scopes needs federated:id",
+			base(func(c *models.OIDCConfig) {
+				c.Issuer = testIssuer
+				c.DexConnectorID = "ldap"
+				c.Scopes = []string{"openid", "groups"}
+			}),
+			"federated:id",
+		},
+		{
+			"dex connector id charset",
+			base(func(c *models.OIDCConfig) { c.Issuer = testIssuer; c.DexConnectorID = "a b" }),
+			"dex_connector_id",
+		},
+		{
+			"dex connector id length",
+			base(func(c *models.OIDCConfig) { c.Issuer = testIssuer; c.DexConnectorID = strings.Repeat("a", 65) }),
+			"dex_connector_id",
+		},
+		{
+			"dex connector id is not for github",
+			base(func(c *models.OIDCConfig) {
+				c.Type = "github"
+				c.AllowedOrgs = []string{"acme"}
+				c.DexConnectorID = "ldap"
+			}),
+			"dex_connector_id",
+		},
+		{
+			"dex connector id is not for oauth2",
+			base(func(c *models.OIDCConfig) {
+				c.Type = "oauth2"
+				c.AuthorizationURL = testAuthURL
+				c.TokenURL = testAuthURL
+				c.UserinfoURL = testAuthURL
+				c.DexConnectorID = "ldap"
+			}),
+			"dex_connector_id",
+		},
 		{"guid tenants are fine", base(func(c *models.OIDCConfig) { c.Issuer = testIssuer; c.AllowedTenants = []string{tenant} }), ""},
 
 		{"github with orgs", base(func(c *models.OIDCConfig) { c.Type = "github"; c.AllowedOrgs = []string{"acme"} }), ""},

@@ -941,6 +941,7 @@ OIDC/OAuth 2.0 provider settings. client_secret is write-only: responses carry h
 | `authorization_url` | string | no | type oauth2: authorization endpoint. |
 | `client_id` | string | no | - |
 | `client_secret` | string | no | - |
+| `dex_connector_id` | string | no | Dex only (type empty): the Dex connector this provider signs in through. Sent as connector_id so Dex skips its connector chooser, and the ID token's federated_claims.connector_id must match or the login is denied. Scopes default to openid email profile groups federated:id; explicit scopes must include federated:id. Pattern: `^[A-Za-z0-9_-]{1,64}$`. |
 | `email_claim` | string | no | - |
 | `graph_endpoint` | string | no | Microsoft Graph base URL (default https://graph.microsoft.com). |
 | `graph_groups` | boolean | no | Resolve Entra groups overage through Microsoft Graph (needs a delegated User.Read access token; group_mapping keys are group object IDs). |

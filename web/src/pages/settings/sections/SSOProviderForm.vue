@@ -57,8 +57,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <template v-if="form.kind === 'oidc'">
       <div>
         <label for="oidc-type" class="block text-sm font-medium text-foreground mb-2">{{ t('adm.sso.field.type') }}</label>
-        <select id="oidc-type" v-model="form.oidc_config.type" :class="inputClass">
+        <select id="oidc-type" :value="preset" :class="inputClass" @change="setPreset(($event.target as HTMLSelectElement).value)">
           <option value="">{{ t('adm.sso.type.oidc') }}</option>
+          <option value="dex">{{ t('adm.sso.type.dex') }}</option>
           <option value="github">{{ t('adm.sso.type.github') }}</option>
           <option value="oauth2">{{ t('adm.sso.type.oauth2') }}</option>
         </select>
@@ -112,7 +113,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <AppToggle v-model="form.oidc_config.require_email_verified" labelledby="sso-emailverified-label" />
         <span id="sso-emailverified-label" class="text-sm font-medium text-foreground">{{ t('adm.sso.field.requireEmailVerified') }}</span>
       </div>
-      <div v-if="form.oidc_config.type === ''" class="flex items-center gap-3">
+      <div v-if="form.oidc_config.type === '' && !form.oidc_config.dex" class="flex items-center gap-3">
         <AppToggle v-model="form.oidc_config.graph_groups" labelledby="sso-graphgroups-label" />
         <span id="sso-graphgroups-label" class="text-sm font-medium text-foreground">{{ t('adm.sso.field.graphGroups') }}</span>
       </div>
@@ -155,7 +156,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { computed } from 'vue'
 import AppToggle from '../../../components/AppToggle.vue'
-import type { SSOProvider } from '../../../api/sso'
+import type { OIDCType, SSOProvider } from '../../../api/sso'
 import type { OIDCTextKey } from '../../../lib/ssoOidcForm'
 import type { SSOFormState } from '../../../lib/ssoProviderForm'
 import { t } from '../../../i18n'
@@ -191,6 +192,13 @@ const oidcExtraFields = computed<ExtraField[]>(() => {
         { key: 'userinfo_url', label: t('adm.sso.field.userinfoUrl'), url: true, required: true },
       ]
     default:
+      // Behind Dex the issuer is Dex, so the Entra and Google checks never apply.
+      if (form.value.oidc_config.dex) {
+        return [
+          { key: 'dex_connector_id', label: t('adm.sso.field.dexConnectorId'), hint: t('adm.sso.field.dexConnectorIdHint'), required: true },
+          { ...scopes, hint: t('adm.sso.field.dexScopesHint') },
+        ]
+      }
       return [
         scopes,
         { key: 'allowed_tenants', label: t('adm.sso.field.allowedTenants'), hint: t('adm.sso.field.allowedTenantsHint') },
@@ -199,6 +207,24 @@ const oidcExtraFields = computed<ExtraField[]>(() => {
       ]
   }
 })
+
+// The provider type select: "dex" is a plain OIDC provider (type '') signing in through one Dex connector.
+const preset = computed(() => (form.value.oidc_config.dex ? 'dex' : form.value.oidc_config.type))
+
+function setPreset(value: string): void {
+  const oidc = form.value.oidc_config
+  oidc.dex = value === 'dex'
+  oidc.type = value === 'dex' ? '' : (value as OIDCType)
+  if (!oidc.dex) {
+    oidc.dex_connector_id = ''
+    return
+  }
+  // Hidden for Dex: drop them so a switch from plain OIDC does not save stale values.
+  oidc.allowed_tenants = ''
+  oidc.hosted_domain = ''
+  oidc.graph_endpoint = ''
+  oidc.graph_groups = false
+}
 
 const inputClass =
   'w-full px-3 py-2 bg-bg border border-border-strong rounded-lg text-sm font-mono text-foreground placeholder-muted focus:ring-2 focus:ring-primary focus:border-primary'

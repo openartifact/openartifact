@@ -27,6 +27,8 @@ export interface OIDCConfigInput {
   auth_base_url?: string
   api_base_url?: string
   allowed_orgs?: string[]
+  /** Dex connector `id` (plain OIDC only): sign in through that one connector. */
+  dex_connector_id?: string
 }
 
 export interface SAMLConfigInput {

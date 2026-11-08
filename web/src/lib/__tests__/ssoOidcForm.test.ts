@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'bun:test'
-import { buildOIDCPayload, emptyOIDCForm, oidcFormFrom } from '../ssoOidcForm'
+import { buildOIDCPayload, emptyOIDCForm, oidcFormFrom, validateOIDCForm } from '../ssoOidcForm'
 
 describe('buildOIDCPayload', () => {
   it('sends only the OIDC settings for a standard provider and clears the others', () => {
@@ -95,5 +95,38 @@ describe('oidcFormFrom', () => {
 
   it('an absent config gives the empty form', () => {
     expect(oidcFormFrom(undefined)).toEqual(emptyOIDCForm())
+  })
+})
+
+describe('Dex connector', () => {
+  const dexForm = () => ({ ...emptyOIDCForm(), issuer: 'https://dex.example', client_id: 'c', dex: true, dex_connector_id: 'github-main' })
+
+  it('round-trips dex_connector_id from config to form to payload', () => {
+    const form = oidcFormFrom({ type: '', issuer: 'https://dex.example', client_id: 'c', dex_connector_id: 'github-main' })
+    expect(form.dex).toBe(true)
+    expect(form.dex_connector_id).toBe('github-main')
+    expect(buildOIDCPayload(form, false).dex_connector_id).toBe('github-main')
+  })
+
+  it('sends an empty value when empty, when the preset is off, and for other types, so a PATCH clears it', () => {
+    expect(buildOIDCPayload({ ...dexForm(), dex_connector_id: '' }, false).dex_connector_id).toBe('')
+    expect(buildOIDCPayload({ ...dexForm(), dex: false }, false).dex_connector_id).toBe('')
+    expect(buildOIDCPayload({ ...dexForm(), type: 'github' }, false).dex_connector_id).toBe('')
+    expect(oidcFormFrom({ type: '', client_id: 'c' }).dex).toBe(false)
+  })
+
+  it('validates the connector ID charset and length', () => {
+    expect(validateOIDCForm(dexForm())).toBeNull()
+    expect(validateOIDCForm({ ...dexForm(), dex_connector_id: '' })).toBe('dexConnectorInvalid')
+    expect(validateOIDCForm({ ...dexForm(), dex_connector_id: 'a b' })).toBe('dexConnectorInvalid')
+    expect(validateOIDCForm({ ...dexForm(), dex_connector_id: 'a'.repeat(65) })).toBe('dexConnectorInvalid')
+    expect(validateOIDCForm({ ...dexForm(), dex_connector_id: 'a'.repeat(64) })).toBeNull()
+  })
+
+  it('requires federated:id in explicit scopes only', () => {
+    expect(validateOIDCForm({ ...dexForm(), scopes: 'openid email' })).toBe('dexScopesFederated')
+    expect(validateOIDCForm({ ...dexForm(), scopes: 'openid federated:id' })).toBeNull()
+    expect(validateOIDCForm({ ...dexForm(), scopes: '' })).toBeNull()
+    expect(validateOIDCForm({ ...emptyOIDCForm(), scopes: 'openid' })).toBeNull()
   })
 })

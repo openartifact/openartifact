@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/auth"
@@ -50,6 +51,10 @@ func validateOIDCConfig(ctx context.Context, cfg *models.OIDCConfig) error {
 	}
 
 	if err := validateOIDCTypeRules(cfg); err != nil {
+		return err
+	}
+
+	if err := validateDexConnector(cfg); err != nil {
 		return err
 	}
 
@@ -147,6 +152,36 @@ func validateOIDCTypeRules(cfg *models.OIDCConfig) error {
 				"oidc_config.allowed_tenants entries must be tenant IDs (GUIDs)",
 			)
 		}
+	}
+
+	return nil
+}
+
+// validateDexConnector checks dex_connector_id: a Dex-only field (type ""),
+// a plain connector id, and, when scopes are explicit, the federated:id scope
+// without which Dex sends no connector in the ID token and every login would
+// be denied.
+func validateDexConnector(cfg *models.OIDCConfig) error {
+	if cfg.DexConnectorID == "" {
+		return nil
+	}
+
+	if cfg.Type != models.OIDCTypeOIDC {
+		return errors.New( //nolint:err113 // validation message surfaced to the admin
+			"oidc_config.dex_connector_id is only valid for a standards-compliant provider (empty type)",
+		)
+	}
+
+	if !auth.ValidDexConnectorID(cfg.DexConnectorID) {
+		return errors.New( //nolint:err113 // validation message surfaced to the admin
+			"oidc_config.dex_connector_id must be 1 to 64 characters of letters, digits, '_' and '-'",
+		)
+	}
+
+	if len(cfg.Scopes) > 0 && !slices.Contains(cfg.Scopes, auth.DexFederatedIDScope) {
+		return errors.New( //nolint:err113 // validation message surfaced to the admin
+			"oidc_config.scopes must include federated:id when dex_connector_id is set",
+		)
 	}
 
 	return nil

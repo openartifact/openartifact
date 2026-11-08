@@ -208,6 +208,51 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  # Opt-in demo of sign-in through Dex: `--profile dex`. OpenLDAP holds two
+  # users (alice, bob) and two groups (artifact-admins, developers); Dex serves
+  # them, and its own password user carol, as an OIDC issuer at
+  # http://127.0.0.1:5556/dex (connectors `ldap` and `local`). Demo credentials only:
+  # do not publish these ports or reuse the values. Configs: docker/dex/. How to
+  # point OpenArtifact at it: docs/security/sso.md#try-it-locally.
+  openldap:
+    image: docker.io/osixia/openldap:1.5.0@sha256:18742e9c449c9c1afe129d3f2f3ee15fb34cc43e5f940a20f3399728f41d7c28
+    profiles: [dex]
+    # Copy the mounted LDIF before the bootstrap edits it (the mount is read-only).
+    command: ["--copy-service"]
+    restart: unless-stopped
+    environment:
+      LDAP_ORGANISATION: Example
+      LDAP_DOMAIN: example.org
+      LDAP_ADMIN_PASSWORD: admin-dev
+      LDAP_TLS: "false"
+    volumes:
+      - ./dex/seed.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/50-seed.ldif:ro
+    networks:
+      - artifact-repo-network
+
+  dex:
+    image: ghcr.io/dexidp/dex:v2.46.1@sha256:65b72ca0f4b0bf6d4ada84ec21da8851782563404ac7b8f926923d27ceced9ab
+    profiles: [dex]
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    depends_on:
+      - openldap
+    restart: unless-stopped
+    environment:
+      # Client secret of the `openartifact` static client (docker/dex/config.yaml).
+      OPENARTIFACT_DEX_CLIENT_SECRET: ${OPENARTIFACT_DEX_CLIENT_SECRET:-dex-dev-secret}
+    ports:
+      # Loopback only. The issuer URL in docker/dex/config.yaml is fixed to this port.
+      - "127.0.0.1:5556:5556"
+    volumes:
+      - ./dex/config.yaml:/etc/dex/config.yaml:ro
+    networks:
+      - artifact-repo-network
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
 volumes:
   postgres_data:
   artifacts_data:

@@ -71,6 +71,10 @@ func (p *OIDCProvider) oidcIdentity(ctx context.Context, res *ExchangeResult, lo
 		}
 	}
 
+	if err := p.checkDexConnector(claims); err != nil {
+		return SSOClaims{}, err
+	}
+
 	externalID := res.IDToken.Subject
 	if p.tenancy != nil {
 		// A subject is only unique within its tenant.

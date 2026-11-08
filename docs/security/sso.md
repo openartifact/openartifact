@@ -10,7 +10,7 @@ Sign in through an external identity provider; provisioned users get a normal se
 
 Providers are database rows managed through the admin API (admin only), not config-file entries. Sessions, CSRF and tokens behave as for local login: see [authentication.md](authentication.md).
 
-Contents: [Prerequisites](#prerequisites) · [Provider API](#provider-api) · [`oidc_config`](#oidc_config) · [`saml_config`](#saml_config) · [Logout](#logout) · [Vendor compatibility](#vendor-compatibility) · [Vendor setup](#vendor-setup) · [LDAP via Dex](#ldap-and-active-directory-via-dex) · [Provisioning rules](#provisioning-rules) · [Groups and permissions](#groups-and-permissions)
+Contents: [Prerequisites](#prerequisites) · [Provider API](#provider-api) · [`oidc_config`](#oidc_config) · [`saml_config`](#saml_config) · [Logout](#logout) · [Vendor compatibility](#vendor-compatibility) · [Vendor setup](#vendor-setup) · [Dex](#dex) · [Provisioning rules](#provisioning-rules) · [Groups and permissions](#groups-and-permissions)
 
 ## Prerequisites
 
@@ -55,9 +55,10 @@ Create body:
 | `type` | `""` (standard OIDC with discovery), `github` or `oauth2` (see [GitHub](#github-oauth2-githubcom-and-enterprise-server)) |
 | `issuer` (must be `https://`; `http://` only for a loopback host; validated against SSRF rules) | required for standard OIDC. The ID token `iss` must match it exactly (a trailing slash matters) |
 | `client_id`, `client_secret` | required. The secret is never returned (`has_secret` is); an empty value in a `PATCH` keeps the stored one |
-| `scopes` | `openid email profile` (`openid` is always added). `groups` or any IdP-specific scope is **opt-in**: add it explicitly. For `github` the default is `read:user user:email read:org` |
+| `scopes` | `openid email profile` (`openid` is always added). `groups` or any IdP-specific scope is **opt-in**: add it explicitly. For `github` the default is `read:user user:email read:org`; with `dex_connector_id` it is `openid email profile groups federated:id` |
 | `username_claim` / `email_claim` / `name_claim` / `groups_claim` | `preferred_username` / `email` / `name` / `groups` |
 | `allowed_tenants` | Entra multi-tenant only: list of tenant IDs (GUIDs) allowed to sign in. **Required** when the issuer is `https://login.microsoftonline.com/{common\|organizations\|consumers}/v2.0`. The `tid` claim must be in the list and `iss` must equal `https://login.microsoftonline.com/<tid>/v2.0`. For these providers the external ID becomes `<tid>:<sub>`; single-tenant issuers are unchanged |
+| `dex_connector_id` | Dex only (`type` empty): the Dex connector this provider signs in through. See [Dex](#dex). Explicit `scopes` must then include `federated:id` |
 | `hosted_domain` | Google Workspace domain (`hd`): sent as an authorization hint **and** enforced against the `hd` claim of the ID token |
 | `require_email_verified` | reject logins whose `email_verified` is not `true`. Google always enforces it |
 | `graph_groups`, `graph_endpoint` | Entra groups overage: when the token carries `_claim_names`/`_claim_sources` instead of `groups`, fetch the groups from Microsoft Graph with the access token. Needs a Graph scope in `scopes` (for example `GroupMember.Read.All` or `User.Read`, see Entra section) and admin consent. On failure the groups count as **absent** (memberships kept) |
@@ -105,7 +106,7 @@ SAML is implemented with [crewjam/saml](https://github.com/crewjam/saml) through
 
 ### Logout
 
-`POST /api/v1/auth/logout` and `POST /api/v1/auth/sso/oidc/{slug}/logout` require a same-origin request. For an OIDC SSO session whose IdP advertises `end_session_endpoint` the response is `200 {"end_session_url": "..."}` and the web UI navigates there. The URL carries `id_token_hint` (the token stored for that session), `client_id` and `post_logout_redirect_uri` = `BASE_URL/login`, which **must be registered** at the IdP as a post-logout redirect URI. Otherwise the response is `204` and only the local session ends. A hint or redirect supplied in the request body is ignored. Google has no `end_session_endpoint`; SAML sign-out is local only (no SLO).
+`POST /api/v1/auth/logout` and `POST /api/v1/auth/sso/oidc/{slug}/logout` require a same-origin request. For an OIDC SSO session whose IdP advertises `end_session_endpoint` the response is `200 {"end_session_url": "..."}` and the web UI navigates there. The URL carries `id_token_hint` (the token stored for that session), `client_id` and `post_logout_redirect_uri` = `BASE_URL/login`, which **must be registered** at the IdP as a post-logout redirect URI. Otherwise the response is `204` and only the local session ends. A hint or redirect supplied in the request body is ignored. Google and Dex (v2.46.1) have no `end_session_endpoint`; SAML sign-out is local only (no SLO).
 
 Sessions are rotated on every SSO login: the pre-login session is revoked and a new session and CSRF token are issued.
 
@@ -127,6 +128,7 @@ Status from vendor documentation; "unverified" means not confirmed in vendor doc
 | OneLogin OIDC / SAML | yes | unverified | unverified | unverified | SAML opt-in |
 | Authentik OIDC / SAML | yes | `groups` claim (needs `groups` scope) | yes | JWKS / metadata URL | SAML opt-in |
 | Zitadel OIDC | yes | roles claim is an object, not a list: needs an Action (unverified) | yes | JWKS | n/a |
+| Dex OIDC (LDAP connector) | yes (live test) | `groups` claim (needs `groups` scope) | local only (no `end_session_endpoint`, live test) | JWKS | n/a |
 | GitHub (OAuth2) | yes (`allowed_orgs`) | orgs and teams | local only | n/a | n/a |
 
 ## Vendor setup
@@ -366,14 +368,82 @@ Source: [GitHub OAuth scopes](https://docs.github.com/en/apps/oauth-apps/buildin
 - Generic OAuth2 (`type: "oauth2"`): set `authorization_url`, `token_url`, `userinfo_url`; the subject is `sub` from the userinfo response, else `id`. No ID token, so no RP-initiated logout.
 - Logout: local only.
 
-## LDAP and Active Directory (via Dex)
+## Dex
 
-OpenArtifact has no built-in LDAP. Put [Dex](https://dexidp.io) in front of the directory and add Dex as an OIDC provider. Dex's [LDAP connector](https://dexidp.io/docs/connectors/ldap/) does the bind and the group search; OpenArtifact sees a normal OIDC login with a `groups` claim. Do not use Dex's SAML connector: Dex documents it as unmaintained.
+[Dex](https://dexidp.io) is an OpenID Connect server that signs users in through other systems (connectors) and issues them one ID token. Add it to OpenArtifact as an OIDC provider, and set `dex_connector_id` to tie the provider to one connector.
 
-Dex config (excerpt):
+### When to use Dex
+
+- **Use Dex** when the users live in LDAP or Active Directory (OpenArtifact has no built-in LDAP), or when one OIDC front end should cover several sources.
+- **Use the native provider** when the source already speaks OIDC or SAML: see [Vendor setup](#vendor-setup). It is one component fewer to run, and it gets logout and group handling from the vendor's own endpoints.
+- **Do not use Dex's SAML connector.** Dex documents it as [unmaintained and likely vulnerable to authentication bypass](https://dexidp.io/docs/connectors/saml/). Add the SAML IdP to OpenArtifact directly.
+
+### One client, one provider per connector
+
+Register one Dex client for OpenArtifact. Create one OpenArtifact provider per connector, each with its own slug, and give each the `dex_connector_id` of its connector (the `id` in Dex's config):
+
+```json
+{
+  "slug": "dex-ldap",
+  "kind": "oidc",
+  "display_name": "Corporate directory",
+  "oidc_config": {
+    "issuer": "https://dex.example.com",
+    "client_id": "openartifact",
+    "client_secret": "<same as OPENARTIFACT_DEX_CLIENT_SECRET>",
+    "dex_connector_id": "ldap"
+  },
+  "group_mapping": { "artifact-admins": "admins", "developers": "developers" },
+  "auto_provision_users": true
+}
+```
+
+List every provider's callback in the Dex client, one `redirectURIs` entry per slug (`BASE_URL/api/v1/auth/sso/oidc/dex-ldap/callback`, and so on).
+
+With `dex_connector_id` set:
+
+- **No chooser.** OpenArtifact sends `connector_id` on the authorization request, so Dex goes straight to that connector's sign-in. Without it, Dex shows its own list of connectors and one provider serves all of them.
+- **Scopes.** If `scopes` is empty, they default to `openid email profile groups federated:id`. Explicit `scopes` must include `federated:id`, or the server refuses the provider.
+- **The connector is checked.** The ID token's `federated_claims.connector_id` (released by the `federated:id` scope) must equal `dex_connector_id`. Otherwise the login fails with `sso_login_denied`.
+- **Why the check.** `connector_id` is only a hint in the browser's address bar. A user can remove it and sign in through another connector of the same Dex. Without the check, that login would land on this provider and its `group_mapping`.
+- **Scope of the field.** It is only valid for standard OIDC providers (`type` empty), and the id is 1 to 64 letters, digits, `_` or `-`.
+
+Per-connector providers also let you set `group_mapping`, `auto_provision_users` and `link_by_email` per source.
+
+### What Dex sends
+
+Seen in a live test against Dex v2.46.1 with these three connectors:
+
+| Claim | `ldap` | `local` (password database) | `oidc` to a second Dex |
+|---|---|---|---|
+| `sub` | opaque, from `idAttr` and the connector `id` | opaque, from the user ID and `local` | opaque, from the upstream `sub` and the connector `id` |
+| `preferred_username` | `preferredUsernameAttr` | absent | absent |
+| `email` | `emailAttr` | the static user's email | the upstream email |
+| `email_verified` | `true` | `true` | `true` (the upstream said so) |
+| `name` | `nameAttr` | the username | the upstream name |
+| `groups` | group search, with the `groups` scope | none | none |
+| `federated_claims.connector_id` | `ldap` | `local` | `upstream` |
+
+- **Username.** Without `preferred_username`, OpenArtifact uses the local part of the email.
+- **Stable identity.** OpenArtifact binds the account to `sub`. Never rename a connector `id`, and pick an `idAttr` that never changes: either one gives every user a new `sub`, so they sign in as new accounts.
+- **Groups.** Dex sends `groups` only when the scope is requested. The default scopes of an unpinned provider do not include it, so no group sync happens and existing memberships stay.
+- **Wrong password.** Dex shows its form again. OpenArtifact is never called back, so no user or session is created.
+
+### Email verification and linking
+
+`link_by_email` binds a first-time login to a local account that has the same email, but only when the ID token says `email_verified` is `true` (see [Provisioning rules](#provisioning-rules)). Check what each connector asserts first:
+
+- **`ldap`, `local` and an `oidc` connector (live test).** Dex sets `true` for every user. For LDAP it does not check the address: the directory's `mail` attribute decides which local account a user takes over. Turn `link_by_email` on only when users cannot edit their own `mail`.
+- **Other connectors (not exercised by the test).** Read the connector's page in the Dex documentation before enabling `link_by_email`. The `authproxy` connector trusts a header, so anyone who can reach Dex without the proxy can claim any address.
+- **Off (default).** A login whose email already belongs to a local account is refused with `sso_login_denied` and no second account is created.
+
+### Connector examples
+
+The Dex excerpts below are the connector part of Dex's config. Only `ldap`, the password database and `oidc` are exercised by the integration test; the others follow the Dex documentation linked on each line. Each connector `id` becomes the `dex_connector_id` of its OpenArtifact provider.
+
+**LDAP and Active Directory** ([Dex LDAP connector](https://dexidp.io/docs/connectors/ldap/), exercised):
 
 ```yaml
-issuer: https://dex.example.com
 connectors:
   - type: ldap
     id: ldap
@@ -397,32 +467,75 @@ connectors:
           - userAttr: DN
             groupAttr: member
         nameAttr: cn
-staticClients:
-  - id: openartifact
-    name: OpenArtifact
-    secretEnv: OPENARTIFACT_DEX_CLIENT_SECRET
-    redirectURIs:
-      - https://artifacts.example.com/api/v1/auth/sso/oidc/ldap/callback
 ```
 
-OpenArtifact provider (`POST /api/v1/admin/sso-providers`):
+**Generic upstream OIDC** ([Dex OIDC connector](https://dexidp.io/docs/connectors/oidc/), exercised against a second Dex). Set `insecureEnableGroups: true` to pass the upstream's groups on:
+
+```yaml
+  - type: oidc
+    id: upstream
+    name: Upstream IdP
+    config:
+      issuer: https://idp.example.com
+      clientID: dex
+      clientSecret: $UPSTREAM_CLIENT_SECRET
+      redirectURI: https://dex.example.com/callback
+```
+
+**Password database** ([Dex static passwords](https://dexidp.io/docs/connectors/local/), exercised): set `enablePasswordDB: true` and list `staticPasswords`. The connector `id` is `local`, users sign in with their email, and Dex sends no groups.
+
+**GitHub** ([Dex GitHub connector](https://dexidp.io/docs/connectors/github/), not exercised): `type: github` with `clientID`, `clientSecret`, `redirectURI` and `orgs`. Dex puts the user's organizations and teams in `groups`. OpenArtifact also has a native [GitHub provider](#github-oauth2-githubcom-and-enterprise-server).
+
+**GitLab** ([Dex GitLab connector](https://dexidp.io/docs/connectors/gitlab/), not exercised): `type: gitlab` with `baseURL`, `clientID`, `clientSecret`, `redirectURI` and optionally `groups` to restrict who may sign in. Dex sends the user's GitLab groups in `groups`.
+
+**Google** ([Dex Google connector](https://dexidp.io/docs/connectors/google/), not exercised): `type: google` with `clientID`, `clientSecret`, `redirectURI` and `hostedDomains`. Groups need a Google Workspace service account with domain-wide delegation (`serviceAccountFilePath` and `adminEmail`). Without them there are no groups. The native [Google provider](#google-workspace) enforces `hosted_domain` itself.
+
+**Microsoft** ([Dex Microsoft connector](https://dexidp.io/docs/connectors/microsoft/), not exercised): `type: microsoft` with `clientID`, `clientSecret`, `redirectURI` and `tenant`. Group handling (`groups`, `groupNameFormat`) is described on that page. The native [Entra ID provider](#microsoft-entra-id) also resolves the groups overage.
+
+**Auth proxy** ([Dex authproxy connector](https://dexidp.io/docs/connectors/authproxy/), not exercised): `type: authproxy` takes the email from the `X-Remote-User` header and the groups from `X-Remote-Group`, both set by a reverse proxy that authenticates users. Dex documents the connector as experimental. Dex must be reachable only through that proxy.
+
+### Logout
+
+Dex v2.46.1 does not advertise an `end_session_endpoint`, so `POST /api/v1/auth/sso/oidc/{slug}/logout` answers `204` and ends only the OpenArtifact session; the live test checks that the session is gone. See [Logout](#logout).
+
+### Try it locally
+
+The `dex` profile of `docker/docker-compose.yml` starts Dex with two connectors: an OpenLDAP with two demo users (`ldap`) and Dex's password database with one (`local`). It does not change a plain `docker compose up`.
+
+```sh
+docker compose -f docker/docker-compose.yml --env-file docker/.env --profile dex up -d dex openldap
+curl -s http://127.0.0.1:5556/dex/.well-known/openid-configuration
+```
+
+Dex listens on `127.0.0.1:5556` with issuer `http://127.0.0.1:5556/dex`. The client secret is `dex-dev-secret`, or the value of `OPENARTIFACT_DEX_CLIENT_SECRET` in `docker/.env`. The Dex client accepts the callbacks of the slugs `dex-ldap` and `dex-local` on an OpenArtifact at port 8080, on `127.0.0.1` or `localhost`. Create the two providers:
 
 ```json
 {
-  "slug": "ldap",
+  "slug": "dex-ldap",
   "kind": "oidc",
-  "display_name": "Corporate directory",
+  "display_name": "Dex (demo LDAP)",
   "oidc_config": {
-    "issuer": "https://dex.example.com",
+    "issuer": "http://127.0.0.1:5556/dex",
     "client_id": "openartifact",
-    "client_secret": "<same as OPENARTIFACT_DEX_CLIENT_SECRET>"
+    "client_secret": "dex-dev-secret",
+    "dex_connector_id": "ldap"
   },
   "group_mapping": { "artifact-admins": "admins", "developers": "developers" },
   "auto_provision_users": true
 }
 ```
 
-Add `"scopes": ["openid", "email", "profile", "groups"]` to `oidc_config` (the default scopes no longer include `groups`); the default claims (`preferred_username`, `email`, `name`, `groups`) match what Dex issues; Dex sets `email_verified` for LDAP users according to its own connector settings, so check them before you turn on `link_by_email`. The issuer is SSRF-checked: if Dex is only reachable on a private network (for example an in-cluster Service), set `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`.
+Repeat it with slug `dex-local`, `"dex_connector_id": "local"` and no `group_mapping`.
+
+| Connector | Sign in as | Password | Groups |
+|---|---|---|---|
+| `ldap` | `alice` | `alice-pass` | `artifact-admins`, `developers` |
+| `ldap` | `bob` | `bob-pass` | `developers` |
+| `local` | `carol@example.org` | `carol-pass` | none |
+
+Run the server on the same host (`make build`), with `BASE_URL=http://127.0.0.1:8080` and `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true` (the issuer is a loopback address, which the SSRF check refuses by default). The `openartifact` compose service cannot use this Dex: inside its container `127.0.0.1` is the container itself, and OpenArtifact accepts plain `http` only for a loopback issuer.
+
+The credentials are for a demo only, and the config lives in `docker/dex/`. Stop and remove the two containers with `docker compose -f docker/docker-compose.yml --env-file docker/.env --profile dex rm -sfv dex openldap`.
 
 ## Provisioning rules
 
