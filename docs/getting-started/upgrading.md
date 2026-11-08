@@ -127,11 +127,13 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
-### Unreleased
+### 0.20.0
 
 **What you must do**
 
-- Nothing is required. Migration `015` builds indexes without locking writes (`CREATE INDEX CONCURRENTLY`), which can take a while on a large `proxy_cache` or `package_versions` table. Migration `016` merges global groups that share a name into the oldest one (members, project grants and permission assignments move to it) and then makes global group names unique. Migration `017` adds the image to Docker upload sessions; a layer push that was in progress during the upgrade is restarted by the client. Migration `018` adds an `icon` column to SSO providers (empty, so the login page picks the icon automatically); it is additive.
+- Check CI jobs that call the vulnerability gate: it now answers `pass:false` for a scan that has not completed, and when `kev` or `epss_min` is requested while that exploit feed is not loaded. See [Exploit signals](../security/exploit-signals.md).
+- Conan 1 clients are unaffected, but scripts that `POST` to the Conan v1 delete or remove-files routes must send `Content-Type: application/json`.
+- Nothing else is required. Migration `019` adds the quota reserved by staged nix NAR files; it is additive. Migration `015` builds indexes without locking writes (`CREATE INDEX CONCURRENTLY`), which can take a while on a large `proxy_cache` or `package_versions` table. Migration `016` merges global groups that share a name into the oldest one (members, project grants and permission assignments move to it) and then makes global group names unique. Migration `017` adds the image to Docker upload sessions; a layer push that was in progress during the upgrade is restarted by the client. Migration `018` adds an `icon` column to SSO providers (empty, so the login page picks the icon automatically); it is additive.
 
 **Changes.**
 
@@ -162,6 +164,18 @@ Newest first. Each version starts with **What you must do**; the text below it l
 - **Secret scanning** keeps no token tail in a finding's line hint, detects encrypted and PGP private keys and fine-grained GitHub tokens, and caps the combined findings of a scan.
 - **`/ready`** caches the S3 bucket check for 2 seconds with a 3 second timeout. A shutdown that runs out of `server.shutdownTimeout` now closes the remaining connections.
 - **Tiering.** A blob delete whose cold-tier copy fails to delete is retried instead of leaving the bytes behind.
+- **Uploads racing deletes.** Deleting or purging a version while another version of the same package is uploaded no longer removes the uploaded file.
+- **Quarantine.** Re-running a secret or vulnerability scan keeps an existing quarantine; only the release endpoints lift it. The vulnerability gate response gains `scan_status` and `failed_scanners`.
+- **Cleanup.** Docker tags and manifests of an image in a release bundle are kept by cleanup policies and registry garbage collection. A cleanup policy `PUT` with `null` clears `keep_last_n`, `keep_since_days` or `keep_downloaded_since_days`.
+- **Signed metadata.** When signing fails, deb and rpm metadata generation fails and keeps the previous signed index instead of publishing an unsigned one. `InRelease` is signed with the signing subkey, like `Release.gpg`; importing a key with no usable signing key is refused.
+- **Administrators.** The seeded `admin-all` and `anonymous-read` permission targets cannot be renamed, changed or deleted (`409`). Unassigning or disabling the last enabled administrator answers `409`.
+- **CSRF.** A state-changing request with browser-cached Basic credentials that comes from another site is refused on every path, not only under `/api/v1`.
+- **Quotas.** A raw `PUT` checks the quota before reading the body. Staged nix NAR files count against the quota, and a NAR upload with no length answers `411` on a repository with a size limit.
+- **SSO.** Creating a provider with an existing slug answers `409`.
+- **Webhooks.** A receiver's response body that is not valid UTF-8 no longer stops the delivery result from being saved.
+- **Backups** leave out administrator service accounts and OIDC trust policies (see [Backup](../operations/backup.md#what-is-not-included)).
+- **Server.** An unknown subcommand prints the usage and exits with an error instead of starting the server.
+- **`oa` CLI.** Shell completion sends the saved token only to the server it was saved for. `oa upload` matches globs that start with `./`.
 
 ### 0.19.2
 
