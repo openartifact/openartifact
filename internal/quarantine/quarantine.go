@@ -52,11 +52,39 @@ func IsQuarantined(ctx context.Context, db Checker, repoID string, keys ...strin
 	return blocked, nil
 }
 
+// Reason says what holds a quarantined artifact.
+type Reason string
+
+const (
+	// ReasonScan is a vulnerability or secret scan that quarantined the artifact.
+	ReasonScan Reason = "quarantine"
+	// ReasonLicense is a license policy that blocks the artifact.
+	ReasonLicense Reason = "license"
+)
+
+// ReasonChecker is implemented by stores that can tell a license hold from a
+// scan quarantine. A Checker that is not one reports every hold as ReasonScan.
+type ReasonChecker interface {
+	// ArtifactHoldReason is the reason the artifact identified by keys is
+	// quarantined: ReasonLicense when only a license result holds it.
+	ArtifactHoldReason(ctx context.Context, repoID string, keys []string) (Reason, error)
+}
+
 // Enforce refuses the request when the artifact is quarantined. It writes a 403
 // (or a 500 when the quarantine state cannot be determined: the check fails
 // closed) and returns true, in which case the caller MUST return without
 // writing anything else.
 func Enforce(w http.ResponseWriter, r *http.Request, db Checker, repoID string, keys ...string) bool {
+	return EnforceWith(w, r, db, repoID, func(Reason) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":"artifact is quarantined","code":"ARTIFACT_QUARANTINED"}` + "\n"))
+	}, keys...)
+}
+
+// EnforceWith is Enforce with the refusal written by refuse, which is told why
+// the artifact is held. The failure to determine the state is still a 500.
+func EnforceWith(w http.ResponseWriter, r *http.Request, db Checker, repoID string, refuse func(Reason), keys ...string) bool {
 	blocked, err := IsQuarantined(r.Context(), db, repoID, keys...)
 	if err != nil {
 		http.Error(w, "unable to verify artifact quarantine state", http.StatusInternalServerError)
@@ -67,9 +95,15 @@ func Enforce(w http.ResponseWriter, r *http.Request, db Checker, repoID string, 
 		return false
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusForbidden)
-	_, _ = w.Write([]byte(`{"error":"artifact is quarantined","code":"ARTIFACT_QUARANTINED"}` + "\n"))
+	reason := ReasonScan
+
+	if rc, ok := db.(ReasonChecker); ok {
+		if got, rerr := rc.ArtifactHoldReason(r.Context(), repoID, keys); rerr == nil {
+			reason = got
+		}
+	}
+
+	refuse(reason)
 
 	return true
 }

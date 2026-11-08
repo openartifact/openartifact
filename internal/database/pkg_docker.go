@@ -445,6 +445,7 @@ func (p *DockerStore) CreateDockerManifest(ctx context.Context, m *models.Docker
 		Size:         m.Size,
 		Column7:      m.SubjectDigest,
 		CreatedAt:    createdAtOrNil(m.CreatedAt),
+		ExpiresAt:    m.ExpiresAt,
 	}
 
 	if m.Refs == nil {
@@ -567,6 +568,7 @@ func (p *DockerStore) GetDockerManifest(ctx context.Context, repoID, image, dige
 		SubjectDigest: row.SubjectDigest,
 		CreatedAt:     row.CreatedAt,
 		UpdatedAt:     row.UpdatedAt,
+		ExpiresAt:     row.ExpiresAt,
 	}, nil
 }
 
@@ -592,6 +594,7 @@ func (p *DockerStore) ListDockerManifestsByRepo(ctx context.Context, repoID stri
 			BlobSHA256:    row.BlobSha256,
 			CreatedAt:     row.CreatedAt,
 			UpdatedAt:     row.UpdatedAt,
+			ExpiresAt:     row.ExpiresAt,
 		}
 	}
 

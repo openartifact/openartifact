@@ -21,7 +21,7 @@ type OIDCPolicyStore struct{ *core }
 
 // oidcPolicyColumns is the column list scanOIDCPolicy reads, FROM oidcPolicyFrom.
 const oidcPolicyColumns = `p.id, p.name, p.issuer, p.audience, p.conditions, p.service_account_id, p.token_ttl_seconds,
-	p.enabled, p.created_by, p.created_at, p.updated_at, u.username, u.disabled`
+	p.enabled, p.created_by, p.created_at, p.updated_at, u.username, u.disabled, p.discovery_mode, p.jwks, p.allow_private_issuer`
 
 const oidcPolicyFrom = ` oidc_trust_policies p JOIN auth_users u ON u.id = p.service_account_id `
 
@@ -29,12 +29,16 @@ func scanOIDCPolicy(row rowScanner) (*models.OIDCTrustPolicy, error) {
 	var (
 		pol  models.OIDCTrustPolicy
 		cond []byte
+		jwks []byte
 	)
 
 	if err := row.Scan(&pol.ID, &pol.Name, &pol.Issuer, &pol.Audience, &cond, &pol.ServiceAccountID, &pol.TokenTTLSeconds,
-		&pol.Enabled, &pol.CreatedBy, &pol.CreatedAt, &pol.UpdatedAt, &pol.ServiceAccountName, &pol.ServiceAccountDisabled); err != nil {
+		&pol.Enabled, &pol.CreatedBy, &pol.CreatedAt, &pol.UpdatedAt, &pol.ServiceAccountName, &pol.ServiceAccountDisabled,
+		&pol.Discovery.Mode, &jwks, &pol.AllowPrivateIssuer); err != nil {
 		return nil, err //nolint:wrapcheck // callers wrap with their own context and test sql.ErrNoRows
 	}
+
+	pol.Discovery.JWKS = jwks
 
 	if err := json.Unmarshal(cond, &pol.Conditions); err != nil {
 		return nil, fmt.Errorf("decode conditions of policy %s: %w", pol.ID, err)
@@ -54,9 +58,11 @@ func (p *OIDCPolicyStore) CreateOIDCPolicy(ctx context.Context, pol *models.OIDC
 
 	var id string
 	if err := p.db.QueryRowContext(ctx,
-		`INSERT INTO oidc_trust_policies (name, issuer, audience, conditions, service_account_id, token_ttl_seconds, enabled, created_by)
-		VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8) RETURNING id`,
+		`INSERT INTO oidc_trust_policies (name, issuer, audience, conditions, service_account_id, token_ttl_seconds, enabled, created_by,
+			discovery_mode, jwks, allow_private_issuer)
+		VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10::jsonb, $11) RETURNING id`,
 		pol.Name, pol.Issuer, pol.Audience, cond, pol.ServiceAccountID, pol.TokenTTLSeconds, pol.Enabled, pol.CreatedBy,
+		pol.Discovery.EffectiveMode(), nullableJSON(pol.Discovery.JWKS), pol.AllowPrivateIssuer,
 	).Scan(&id); err != nil {
 		return nil, fmt.Errorf("failed to create oidc policy: %w", err)
 	}
@@ -93,8 +99,17 @@ func (p *OIDCPolicyStore) ListEnabledOIDCPoliciesByIssuer(ctx context.Context, i
 	return collectRows(rows, "failed to scan oidc policy", "failed to iterate oidc policies", scanOIDCPolicy)
 }
 
+// nullableJSON is the SQL value of an optional JSON document: NULL when empty.
+func nullableJSON(raw []byte) any {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	return raw
+}
+
 // UpdateOIDCPolicy replaces every editable field of the policy (name, issuer,
-// audience, conditions, service account, ttl, enabled) and returns it, nil when
+// audience, conditions, service account, ttl, enabled, discovery) and returns it, nil when
 // there is no such policy.
 func (p *OIDCPolicyStore) UpdateOIDCPolicy(ctx context.Context, pol *models.OIDCTrustPolicy) (*models.OIDCTrustPolicy, error) {
 	cond, err := json.Marshal(pol.Conditions)
@@ -104,9 +119,11 @@ func (p *OIDCPolicyStore) UpdateOIDCPolicy(ctx context.Context, pol *models.OIDC
 
 	res, err := p.db.ExecContext(ctx,
 		`UPDATE oidc_trust_policies SET name = $2, issuer = $3, audience = $4, conditions = $5::jsonb,
-			service_account_id = $6, token_ttl_seconds = $7, enabled = $8, updated_at = now()
+			service_account_id = $6, token_ttl_seconds = $7, enabled = $8, discovery_mode = $9, jwks = $10::jsonb,
+			allow_private_issuer = $11, updated_at = now()
 		WHERE id = $1`,
-		pol.ID, pol.Name, pol.Issuer, pol.Audience, cond, pol.ServiceAccountID, pol.TokenTTLSeconds, pol.Enabled)
+		pol.ID, pol.Name, pol.Issuer, pol.Audience, cond, pol.ServiceAccountID, pol.TokenTTLSeconds, pol.Enabled,
+		pol.Discovery.EffectiveMode(), nullableJSON(pol.Discovery.JWKS), pol.AllowPrivateIssuer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update oidc policy: %w", err)
 	}

@@ -154,7 +154,7 @@ func (t cleanupTable) sql() candidateSQL {
 			aged: "t.updated_at", ranked: "t.updated_at", protect: "false",
 			partition: []string{"t.image"}, versionExpr: "t.name",
 			from: `FROM docker_tags t JOIN repositories r ON r.id = t.repository_id
-				WHERE t.repository_id = $1 AND t.deleted_at IS NULL`,
+				WHERE t.repository_id = $1 AND t.deleted_at IS NULL AND NOT (` + dependentTag("t.name") + `)`,
 		}
 	}
 

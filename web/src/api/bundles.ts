@@ -10,7 +10,7 @@ import { request, JSON_HEADERS } from './client'
 import type {
   BundlePromotion,
   BundleSigningKey,
-  PipelineStage,
+  PipelineStage as GeneratedPipelineStage,
   PromotionPipeline,
   ReleaseBundle,
   ReleaseBundleItem,
@@ -18,8 +18,24 @@ import type {
 
 export type Bundle = ReleaseBundle
 export type BundleItem = ReleaseBundleItem
-export type Pipeline = PromotionPipeline
-export type { BundlePromotion, BundleSigningKey, PipelineStage }
+/** A stage; `required_checks` are the bundle check names that must have succeeded before a promotion into it. */
+export type PipelineStage = GeneratedPipelineStage & { required_checks?: string[] }
+export type Pipeline = Omit<PromotionPipeline, 'stages'> & { stages: PipelineStage[] }
+export type { BundlePromotion, BundleSigningKey }
+
+export type BundleCheckStatus = 'pending' | 'success' | 'failure' | 'error'
+
+/** A check reported against a bundle (by a CI pipeline, a policy engine, ...). */
+export interface BundleCheck {
+  name: string
+  status: BundleCheckStatus
+  summary: string
+  details_url: string
+  reported_by: string
+  updated_at: string
+  /** RFC 3339; a check past it no longer counts. */
+  expires_at: string | null
+}
 export type BundleState = Bundle['state']
 export type PromotionStatus = NonNullable<BundlePromotion['status']>
 
@@ -179,6 +195,17 @@ export function createPipeline(input: {
   stages: PipelineStage[]
 }): Promise<Pipeline> {
   return request<Pipeline>('/api/v1/pipelines', json('POST', input))
+}
+
+/** Replaces the description and/or the stages of a pipeline (a stage list replaces the old one whole). */
+export function updatePipeline(name: string, input: { description?: string; stages?: PipelineStage[] }): Promise<Pipeline> {
+  return request<Pipeline>(`/api/v1/pipelines/${enc(name)}`, json('PATCH', input))
+}
+
+/** The checks reported against a bundle, in the server's order. */
+export async function listBundleChecks(name: string, version: string): Promise<BundleCheck[]> {
+  const res = await request<{ checks?: BundleCheck[] }>(`${bundlePath(name, version)}/checks`)
+  return res.checks ?? []
 }
 
 /** Stored files matching `q` (free text, or `sha256:<digest>`) in the repositories the caller can read. */

@@ -15,7 +15,7 @@ const BUNDLES = [
   { id: '1', name: 'shop', version: '2.4.0', state: 'sealed', current_stage: 'qa', gpg_key_id: 'K1', created_by: 'ann', created_at: '2026-10-01T10:00:00Z', sealed_at: '2026-10-02T10:00:00Z' },
   { id: '2', name: 'shop', version: '2.5.0', state: 'draft', current_stage: null, created_by: 'bob', created_at: '2026-10-03T10:00:00Z', sealed_at: null },
 ]
-const PIPELINES = [{ id: 'p1', name: 'std', description: 'Standard', stages: [{ name: 'qa', repo_id: 'r1' }, { name: 'prod' }] }]
+const PIPELINES = [{ id: 'p1', name: 'std', description: 'Standard', stages: [{ name: 'qa', repo_id: 'r1', required_checks: ['conforma', 'scan'] }, { name: 'prod' }] }]
 const REPOS = [{ id: 'r1', name: 'maven-qa', format: 'maven' }]
 
 let fetchSpy: Mock<typeof fetch>
@@ -26,6 +26,7 @@ async function mountPage(bundles: unknown[] = BUNDLES, path = '/bundles') {
   fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = String(input)
     if (init?.method === 'POST' && url === '/api/v1/pipelines') return json({ ...PIPELINES[0], id: 'p2', name: 'fast' }, 201)
+    if (init?.method === 'PATCH' && url === '/api/v1/pipelines/std') return json(PIPELINES[0])
     if (init?.method === 'POST') return json({ id: '3', name: 'new', version: '1.0.0' }, 201)
     if (url === '/api/v1/pipelines') return json({ pipelines: PIPELINES })
     if (url.startsWith('/api/v1/bundles')) return json({ total: bundles.length, page: 1, limit: 25, bundles })
@@ -137,11 +138,69 @@ describe('BundleListPage', () => {
     await flushPromises()
     type('#pipeline-name', 'fast')
     type('#stage-name-0', 'live')
-    ;(document.body.querySelector('#pipeline-create-form') as HTMLFormElement).dispatchEvent(new Event('submit'))
+    ;(document.body.querySelector('#pipeline-form') as HTMLFormElement).dispatchEvent(new Event('submit'))
     await flushPromises()
 
     const post = fetchSpy.mock.calls.find((c) => String(c[0]) === '/api/v1/pipelines' && (c[1] as RequestInit | undefined)?.method === 'POST')!
     expect(JSON.parse((post[1] as RequestInit).body as string)).toEqual({ name: 'fast', stages: [{ name: 'live' }] })
+    wrapper.unmount()
+  })
+
+  it('shows the required checks of each stage and sends them with a new pipeline', async () => {
+    const { wrapper } = await mountPage()
+    await wrapper.get('[data-testid="open-pipelines"]').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="stage-required-checks"]')!.textContent).toContain('conforma, scan')
+
+    ;[...document.body.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'New pipeline')!.click()
+    await flushPromises()
+    type('#pipeline-name', 'fast')
+    type('#stage-name-0', 'live')
+    type('#stage-checks-0', ' conforma,scan  sbom ')
+    ;(document.body.querySelector('#pipeline-form') as HTMLFormElement).dispatchEvent(new Event('submit'))
+    await flushPromises()
+    const post = fetchSpy.mock.calls.find((c) => String(c[0]) === '/api/v1/pipelines' && (c[1] as RequestInit | undefined)?.method === 'POST')!
+    expect(JSON.parse((post[1] as RequestInit).body as string).stages).toEqual([{ name: 'live', required_checks: ['conforma', 'scan', 'sbom'] }])
+    wrapper.unmount()
+  })
+
+  it('refuses duplicate or over-long check names before sending', async () => {
+    const { wrapper } = await mountPage()
+    await wrapper.get('[data-testid="open-pipelines"]').trigger('click')
+    await flushPromises()
+    ;[...document.body.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'New pipeline')!.click()
+    await flushPromises()
+    type('#pipeline-name', 'fast')
+    type('#stage-name-0', 'live')
+    type('#stage-checks-0', 'scan, scan')
+    await flushPromises()
+    expect(document.body.querySelector('#stage-checks-hint-0')!.textContent).toContain('listed twice')
+    ;(document.body.querySelector('#pipeline-form') as HTMLFormElement).dispatchEvent(new Event('submit'))
+    await flushPromises()
+    type('#stage-checks-0', 'x'.repeat(65))
+    await flushPromises()
+    expect(document.body.querySelector('#stage-checks-hint-0')!.textContent).toContain('longer than 64')
+    expect(sent().some((r) => r.startsWith('POST /api/v1/pipelines'))).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('edits the checks of an existing pipeline with a PATCH, dropping them when emptied', async () => {
+    const { wrapper } = await mountPage()
+    await wrapper.get('[data-testid="open-pipelines"]').trigger('click')
+    await flushPromises()
+    ;(document.body.querySelector('[data-testid="action-edit"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect((document.body.querySelector('#stage-checks-0') as HTMLInputElement).value).toBe('conforma, scan')
+    expect((document.body.querySelector('#pipeline-name') as HTMLInputElement).readOnly).toBe(true)
+    type('#stage-checks-0', '')
+    ;(document.body.querySelector('#pipeline-form') as HTMLFormElement).dispatchEvent(new Event('submit'))
+    await flushPromises()
+    const patch = fetchSpy.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === 'PATCH')!
+    expect(String(patch[0])).toBe('/api/v1/pipelines/std')
+    expect(JSON.parse((patch[1] as RequestInit).body as string).stages).toEqual([
+      { name: 'qa', repo_id: 'r1', required_checks: [] },
+      { name: 'prod', required_checks: [] },
+    ])
     wrapper.unmount()
   })
 })

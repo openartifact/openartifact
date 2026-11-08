@@ -73,10 +73,13 @@ type dockerGCResponse struct {
 	DryRun             bool   `json:"dry_run"`
 	GracePeriodSeconds int64  `json:"grace_period_seconds"`
 	ManifestsDeleted   int    `json:"manifests_deleted"`
-	BlobRefsDeleted    int    `json:"blob_refs_deleted"`
-	BlobsFreed         int    `json:"blobs_freed"`
-	BytesFreed         int64  `json:"bytes_freed"`
-	Failures           int    `json:"failures"`
+	// ManifestsExpired counts, among manifests_deleted, the ones removed because
+	// their quay.expires-after deadline passed.
+	ManifestsExpired int   `json:"manifests_expired"`
+	BlobRefsDeleted  int   `json:"blob_refs_deleted"`
+	BlobsFreed       int   `json:"blobs_freed"`
+	BytesFreed       int64 `json:"bytes_freed"`
+	Failures         int   `json:"failures"`
 	// ManifestsMissingBody counts manifests whose body is missing from storage;
 	// while any exists no blob of the repository is swept.
 	ManifestsMissingBody int `json:"manifests_missing_body"`
@@ -143,6 +146,7 @@ func newDockerGCResponse(rep *worker.DockerGCReport) dockerGCResponse {
 		DryRun:               rep.DryRun,
 		GracePeriodSeconds:   int64(rep.GracePeriod / time.Second),
 		ManifestsDeleted:     rep.ManifestsDeleted,
+		ManifestsExpired:     rep.ManifestsExpired,
 		BlobRefsDeleted:      rep.BlobRefsDeleted,
 		BlobsFreed:           rep.BlobsFreed,
 		BytesFreed:           rep.BytesFreed,

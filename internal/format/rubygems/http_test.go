@@ -321,6 +321,38 @@ func TestDownloadQuarantine(t *testing.T) {
 	}
 }
 
+// TestDownloadsAliasServesGems checks that rubygems.org's /downloads/<file>.gem,
+// the path Hermeto rewrites gem URLs to, answers like /gems/<file>.gem: the
+// same bytes for GET and HEAD, the same 404 for an unknown gem and the same
+// quarantine refusal.
+func TestDownloadsAliasServesGems(t *testing.T) {
+	h, db, bs, _ := newTestHandler(t)
+	db.gems = []*models.RubyGem{{ID: "gem-9", Name: "demo", Version: "1.0.0", Platform: "ruby", BlobKey: "abc"}}
+	bs.Blobs["abc"] = []byte("xyz")
+
+	do := func(method, path string) *httptest.ResponseRecorder {
+		return formattest.Do(h.RegisterRepoRoutes, formattest.Request(method, path, nil))
+	}
+
+	if w := do(http.MethodGet, "/repos/myrepo/downloads/demo-1.0.0.gem"); w.Code != http.StatusOK || w.Body.String() != "xyz" {
+		t.Errorf("GET downloads = %d %q, want 200 xyz", w.Code, w.Body.String())
+	}
+
+	if w := do(http.MethodGet, "/repos/myrepo/downloads/nothing-1.0.0.gem"); w.Code != http.StatusNotFound {
+		t.Errorf("unknown gem = %d, want 404", w.Code)
+	}
+
+	if w := do(http.MethodGet, "/repos/myrepo/downloads/demo-1.0.0.zip"); w.Code != http.StatusNotFound {
+		t.Errorf("non-gem file = %d, want 404", w.Code)
+	}
+
+	db.Keys = map[string]bool{"gem-9": true}
+
+	if w := do(http.MethodGet, "/repos/myrepo/downloads/demo-1.0.0.gem"); w.Code != http.StatusForbidden {
+		t.Errorf("quarantined gem = %d, want 403", w.Code)
+	}
+}
+
 func gunzip(t *testing.T, w *httptest.ResponseRecorder) []byte {
 	t.Helper()
 

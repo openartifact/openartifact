@@ -80,6 +80,8 @@ describe('oidc trust policies api', () => {
     service_account_id: 'sa1',
     token_ttl_seconds: 900,
     enabled: true,
+    discovery: { mode: 'serviceaccount' as const },
+    allow_private_issuer: true,
   }
 
   it('lists the unpaged data array and tolerates its absence', async () => {

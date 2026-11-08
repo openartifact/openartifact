@@ -89,6 +89,48 @@ describe('OidcPolicyDrawer', () => {
     w.unmount()
   })
 
+  it('creates a Kubernetes policy: serviceaccount discovery, private issuer, nested claim', async () => {
+    const w = await mountDrawer({ accountId: 'sa1' })
+    await setValue('#policy-name', 'tekton')
+    await setValue('#policy-issuer', 'https://kubernetes.default.svc')
+    await setValue('#policy-discovery', 'serviceaccount')
+    expect(document.querySelector('#policy-jwks')).toBeNull()
+    await click('[data-testid=policy-allow-private]')
+    await setValue('#policy-audience', 'https://oa.example')
+    await setValue('#cond-claim-0', 'kubernetes.io.namespace')
+    await setValue('#cond-patterns-0', 'team-a')
+    await submit()
+    expect(sent()).toMatchObject({
+      issuer: 'https://kubernetes.default.svc',
+      discovery: { mode: 'serviceaccount' },
+      allow_private_issuer: true,
+      conditions: [{ claim: 'kubernetes.io.namespace', patterns: ['team-a'] }],
+    })
+    w.unmount()
+  })
+
+  it('the static mode asks for the key set instead of the private-issuer switch and sends it', async () => {
+    const w = await mountDrawer({ accountId: 'sa1' })
+    await setValue('#policy-name', 'edge')
+    await setValue('#policy-issuer', 'https://oidc.edge.example')
+    await setValue('#policy-audience', 'aud')
+    await setValue('#cond-claim-0', 'sub')
+    await setValue('#cond-patterns-0', 'system:serviceaccount:team-a:*')
+    await setValue('#policy-discovery', 'static')
+    expect(document.querySelector('[data-testid=policy-allow-private]')).toBeNull()
+
+    await setValue('#policy-jwks', 'nope')
+    await submit()
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('Paste a JSON object')
+
+    await setValue('#policy-jwks', '{"keys":[{"kty":"RSA","kid":"k1","n":"abc","e":"AQAB"}]}')
+    await submit()
+    expect(sent().discovery).toEqual({ mode: 'static', jwks: { keys: [{ kty: 'RSA', kid: 'k1', n: 'abc', e: 'AQAB' }] } })
+    expect(sent().allow_private_issuer).toBe(false)
+    w.unmount()
+  })
+
   it('shows the message the server rejects the policy with and stays open', async () => {
     reply = () => json({ error: 'issuer is shared: pin the repository' }, 400)
     const w = await mountDrawer({ accountId: 'sa1' })

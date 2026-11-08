@@ -4,9 +4,9 @@
 
 import { request, JSON_HEADERS } from './client'
 import { pagedResponse, type PagedResult } from './transform'
-import type { OidcCondition, OidcTrustPolicy, ServiceAccount } from './generated/types.gen'
+import type { OidcCondition, OidcDiscovery, OidcTrustPolicy, ServiceAccount } from './generated/types.gen'
 
-export type { OidcCondition }
+export type { OidcCondition, OidcDiscovery }
 
 /** A service account as the list and detail endpoints return it (the id is always present). */
 export type ServiceAccountItem = ServiceAccount & { id: string; name: string }
@@ -23,6 +23,8 @@ export interface OidcPolicyInput {
   service_account_id: string
   token_ttl_seconds: number
   enabled: boolean
+  discovery: OidcDiscovery
+  allow_private_issuer: boolean
 }
 
 const enc = encodeURIComponent

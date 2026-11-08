@@ -524,7 +524,7 @@ func TestGoProxy_QueryInfoUsesTTLAndNonCanonicalZipIsNotFound(t *testing.T) {
 func TestGoProxy_UnknownAndWrites(t *testing.T) {
 	e := newGoEnv(t)
 
-	for _, p := range []string{"example.com/!mod/@v/v7.7.7.zip", "other.example/x/@v/list", "sumdb/sum.golang.org/supported", "example.com/Mod/@v/list"} {
+	for _, p := range []string{"example.com/!mod/@v/v7.7.7.zip", "other.example/x/@v/list", "sumdb/evil.example/supported", "example.com/Mod/@v/list"} {
 		if w := e.get(p); w.Code != http.StatusNotFound {
 			t.Errorf("GET %s: status %d, want 404", p, w.Code)
 		}

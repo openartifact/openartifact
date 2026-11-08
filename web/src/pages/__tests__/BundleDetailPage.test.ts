@@ -18,8 +18,12 @@ const PIPELINE = {
   id: 'p1',
   name: 'std',
   description: '',
-  stages: [{ name: 'qa' }, { name: 'prod', repo_id: 'r2' }],
+  stages: [{ name: 'qa', required_checks: ['conforma', 'scan', 'sbom'] }, { name: 'prod', repo_id: 'r2' }],
 }
+const CHECKS = [
+  { name: 'conforma', status: 'success', summary: 'policy ok', details_url: 'https://ci.example/run/1', reported_by: 'tekton', updated_at: '2026-10-03T10:00:00Z', expires_at: null },
+  { name: 'scan', status: 'failure', summary: '', details_url: 'javascript:alert(1)', reported_by: 'tekton', updated_at: '2026-10-03T10:00:00Z', expires_at: null },
+]
 const REPOS = [
   { id: 'r1', name: 'maven-dev', format: 'maven' },
   { id: 'r2', name: 'maven-prod', format: 'maven' },
@@ -59,6 +63,7 @@ let state: Record<string, unknown>
 let items: unknown[]
 let getStatus = 200
 let promoteStatus = 200
+let checks: unknown[] = CHECKS
 const KEY = { id: 'k-1', fingerprint: 'ABCDEF0123456789', key_id: 'ABCDEF0123456789', name: 'Release key', user_id: 'rel', algorithm: 'ed25519', active_global: true }
 // What the server answers for the keys the user may seal with, and whether the seal itself is refused.
 let signingKeys: unknown[] = [KEY]
@@ -74,6 +79,7 @@ const bodyOf = (match: string) => {
 
 function route(url: string, method: string, body?: string): Response {
   if (method === 'GET' && url === '/api/v1/bundles/shop/1.0.0') return getStatus === 200 ? json(state) : json({ error: 'not found' }, getStatus)
+  if (url.endsWith('/checks') && method === 'GET') return json({ checks })
   if (url.endsWith('/items') && method === 'GET') return json({ items })
   if (url.endsWith('/items') && method === 'POST') return json({ items: [] }, 201)
   if (url.includes('/items/') && method === 'DELETE') return new Response(null, { status: 204 })
@@ -93,6 +99,7 @@ function route(url: string, method: string, body?: string): Response {
     return json(state)
   }
   if (url.includes('/promote')) {
+    if (promoteStatus === 422) return json({ error: 'required checks have not passed: sbom', code: 'CHECKS_REQUIRED' }, 422)
     if (promoteStatus !== 200) return json({ error: 'conflicting content in the target', code: 'artifact_conflict' }, promoteStatus)
     state = bundle({ ...SEALED, current_stage: 'qa' })
     return json({ promotion: {}, copied: 2, existing: 1, replaced: 0, items: [] })
@@ -138,6 +145,7 @@ describe('BundleDetailPage', () => {
     document.body.innerHTML = ''
     getStatus = 200
     promoteStatus = 200
+    checks = CHECKS
     signingKeys = [KEY]
     signingKeysStatus = 200
     sealRefused = false
@@ -276,6 +284,54 @@ describe('BundleDetailPage', () => {
     expect(sent()).toContain('POST /api/v1/bundles/shop/1.0.0/promote')
     expect(bodyOf('/promote')).toEqual({ to_stage: 'qa', target_repo: 'maven-dev', notes: 'go' })
     expect(useToastStore().queue.some((x) => x.description === '2 copied, 1 already there, 0 replaced.')).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('lists the required checks of the target stage with their state and shows the server refusal', async () => {
+    state = bundle({ ...SEALED, gpg_key_id: 'k-1' })
+    promoteStatus = 422
+    const { wrapper } = await mountPage()
+    testid('primary-promote')!.click()
+    await flushPromises()
+    const rows = [...body().querySelectorAll('[data-testid="promote-check"]')].map((r) => r.textContent!.replace(/\s+/g, ' ').trim())
+    expect(rows).toEqual(['conformaPassed', 'scanFailed', 'sbomNot reported'])
+    expect(body().querySelector('[data-testid="promote-checks"]')!.textContent).toContain('refused until they do')
+
+    const before = sent().filter((r) => r.endsWith('/checks')).length
+    setValue('#promote-repo', 'maven-dev', 'change')
+    submit('#bundle-promote-form')
+    await flushPromises()
+    expect(testid('promote-error')!.textContent).toBe('required checks have not passed: sbom')
+    expect(sent().filter((r) => r.endsWith('/checks')).length).toBe(before + 1)
+    wrapper.unmount()
+  })
+
+  it('shows no required-check panel for a stage without any', async () => {
+    state = bundle({ ...SEALED, current_stage: 'qa', gpg_key_id: 'k-1' })
+    const { wrapper } = await mountPage()
+    testid('primary-promote')!.click()
+    await flushPromises()
+    expect(body().querySelector('[data-testid="promote-checks"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('shows the reported checks and links only to http(s) details', async () => {
+    const { wrapper } = await mountPage('/bundles/shop/1.0.0?tab=checks')
+    expect(sent()).toContain('GET /api/v1/bundles/shop/1.0.0/checks')
+    expect(wrapper.text()).toContain('conforma')
+    expect(wrapper.text()).toContain('policy ok')
+    expect(wrapper.text()).toContain('Passed')
+    expect(wrapper.text()).toContain('Failed')
+    const links = [...wrapper.element.querySelectorAll('a')].filter((a) => a.textContent?.trim() === 'Details')
+    expect(links.map((a) => a.getAttribute('href'))).toEqual(['https://ci.example/run/1'])
+    expect(links[0]!.getAttribute('rel')).toBe('noopener noreferrer')
+    wrapper.unmount()
+  })
+
+  it('says so when no check was reported', async () => {
+    checks = []
+    const { wrapper } = await mountPage('/bundles/shop/1.0.0?tab=checks')
+    expect(wrapper.text()).toContain('No checks reported')
     wrapper.unmount()
   })
 

@@ -182,6 +182,8 @@ This page lists every configuration key with its type, built-in default and the 
 | `auth.samlSpCert` | `OPENARTIFACT_SAML_SP_CERT` | string | `empty` | `samlSpCert` is the PEM certificate of the SAML service provider. Unset: a self-signed pair is generated once and persisted encrypted in system_settings (shared by replicas); regenerating it means re-registering the certificate at the identity provider. |
 | `auth.samlSpKey` | `OPENARTIFACT_SAML_SP_KEY` | string | `empty` | **Secret.** `samlSpKey` is the PEM private key of the SAML service provider. Unset together with the certificate: a self-signed pair is generated (see samlSpCert). Stored unencrypted while `OPENARTIFACT_SECRET_KEY` is unset. |
 | `auth.argon2MaxConcurrent` | `OPENARTIFACT_ARGON2_MAX_CONCURRENT` | int | `0` | `argon2MaxConcurrent` caps the password hashes and verifications running at once, each of which holds 64 MiB until it ends; further logins wait. 0 (default): the CPU count clamped to 2..4 (256 MiB at most). |
+| `auth.oidcServiceAccountTokenFile` | `OPENARTIFACT_OIDC_SERVICEACCOUNT_TOKEN_FILE` | string | `/var/run/secrets/kubernetes.io/serviceaccount/token` | `oidcServiceAccountTokenFile` is the projected Kubernetes service account token OpenArtifact presents as bearer when a CI OIDC trust policy with the serviceaccount discovery mode reads its issuer. It is read for every request (the kubelet rotates it). |
+| `auth.oidcServiceAccountCaFile` | `OPENARTIFACT_OIDC_SERVICEACCOUNT_CA_FILE` | string | `/var/run/secrets/kubernetes.io/serviceaccount/ca.crt` | `oidcServiceAccountCaFile` is the PEM CA bundle, in addition to the system roots, trusted for that read (the cluster CA of the API server). |
 
 ## bootstrap
 
@@ -247,6 +249,7 @@ This page lists every configuration key with its type, built-in default and the 
 | `workers.repoStatsInterval` | `OPENARTIFACT_REPO_STATS_INTERVAL` | duration | `15s` | `repoStatsInterval` is the pause between passes of the worker that recomputes the per-repository figures of the repository list (package count, newest publication, security counts) for the repositories that changed. The list can lag the data by about this long. It must be positive. |
 | `workers.proxyDockerDigestTtl` | `OPENARTIFACT_PROXY_DOCKER_DIGEST_TTL` | duration | `720h` | `proxyDockerDigestTtl` is how long a docker proxy keeps a manifest or blob addressed by digest after its last pull. Such content never changes, so this only bounds the cache's size: the proxy cache worker evicts what has not been pulled for this long, and the next pull fetches it again. Zero keeps it until an admin purge or the repository's removal. |
 | `workers.proxyUpstreamStallTimeout` | `OPENARTIFACT_PROXY_UPSTREAM_STALL_TIMEOUT` | duration | `1m` | `proxyUpstreamStallTimeout` is how long a proxy upstream response body may deliver no data before the fetch fails and its flight is released. It is reset on every read, so slow but steady downloads are unaffected. Zero disables the check. |
+| `workers.proxyGoSumdbHosts` | `OPENARTIFACT_PROXY_GO_SUMDB_HOSTS` | list | `sum.golang.org` | `proxyGoSumdbHosts` lists the Go checksum databases that Go proxy and group repositories relay under /sumdb/\<host>/ (the GOPROXY sumdb protocol). A request for any other host is 404. Each entry is a bare host name (with an optional port); the relay always uses https. Empty turns the relay off. |
 | `workers.dockerUploadTtl` | `OPENARTIFACT_DOCKER_UPLOAD_TTL` | duration | `24h` | `dockerUploadTtl` is how long a blob upload session may sit idle before the sweeper deletes it and its data. Zero or negative disables the sweeper. |
 | `workers.dockerUploadDir` | `OPENARTIFACT_DOCKER_UPLOAD_DIR` | string | `empty` | `dockerUploadDir` is where uploads are kept when the blob store cannot hold them (the oci backend); other backends keep them in the blob store. Empty means /tmp/openartifact/docker-uploads. |
 | `workers.webhookDeliveryRetentionDays` | `OPENARTIFACT_WEBHOOK_DELIVERY_RETENTION_DAYS` | int | `30` | `webhookDeliveryRetentionDays` is how many days finished (success or failed) webhook delivery records are kept before the hourly purge deletes them. 0 keeps them forever. Pending deliveries are never purged. |
@@ -445,6 +448,15 @@ This page lists every configuration key with its type, built-in default and the 
 | `exploit.epssUrl` | `OPENARTIFACT_EXPLOIT_EPSS_URL` | string | `https://epss.empiricalsecurity.com/epss_scores-current.csv.gz` | `epssUrl` is the EPSS score file (epss_scores-current.csv.gz); a mirror serves the same gzip CSV. |
 | `exploit.interval` | `OPENARTIFACT_EXPLOIT_INTERVAL` | duration | `24h` | `interval` is the pause between imports, at least 1h. |
 | `exploit.epssThreshold` | `OPENARTIFACT_EXPLOIT_EPSS_THRESHOLD` | float | `0.1` | `epssThreshold` is the EPSS score (0..1) from which a finding that is not in KEV is prioritised above its severity. |
+
+## quayApi
+
+`quayApi` configures the Quay-compatible API facade for the Konflux image-controller (see [integrations/konflux-image-controller.md](../integrations/konflux-image-controller.md)).
+
+| YAML key | Env | Type | Default | Description |
+|---|---|---|---|---|
+| `quayApi.enabled` | `OPENARTIFACT_QUAY_API_ENABLED` | bool | `false` | `enabled` mounts the facade at /quay/api/v1. Off by default: it hands out registry credentials to a token with global manage permission. |
+| `quayApi.organizations` | `OPENARTIFACT_QUAY_API_ORGANIZATIONS` | list | `empty` | `organizations` lists the hosted docker repositories a Quay client may use as its organization. Empty allows every hosted docker repository. |
 
 ## osvMirror
 

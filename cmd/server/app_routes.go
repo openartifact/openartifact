@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api"
+	"github.com/openartifact/openartifact/internal/attestation"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/backup"
 	"github.com/openartifact/openartifact/internal/dtrack"
@@ -52,7 +53,9 @@ func (a *app) registerPublicRoutes() error {
 
 	api.NewOIDCHandler(db, log, evaluator, hmacKey, cfg.BaseURL).WithTrustedProxies(w.trustedProxies).RegisterPublic(router)
 	api.NewSAMLHandler(db, log, evaluator, hmacKey, cfg.BaseURL, cfg).WithTrustedProxies(w.trustedProxies).RegisterPublic(router)
-	api.NewOIDCExchangeHandler(db, log, w.trustedProxies).RegisterPublic(router)
+	api.NewOIDCExchangeHandler(db, log, w.trustedProxies).
+		WithServiceAccountFiles(cfg.Auth.OIDCServiceAccountTokenFile, cfg.Auth.OIDCServiceAccountCAFile).
+		RegisterPublic(router)
 
 	w.public.sysInfo = api.NewSystemInfoHandler(version, commit, buildTime, db, a.store.blobs, cfg.Storage.Type).
 		WithDocsBaseURL(cfg.Docs.BaseURL).
@@ -191,6 +194,9 @@ func (a *app) formatDeps() *plugin.Deps {
 		REST: a.restUploadHandlers(),
 	}
 
+	// The attestation index comes first: the image SBOM ingest reads from it.
+	deps.DockerManifestHooks = append(deps.DockerManifestHooks, a.attestationHook(), a.imageSBOMHook())
+
 	if a.web.evaluator != nil {
 		deps.DockerAuthorizer = a.web.evaluator
 	}
@@ -327,6 +333,7 @@ func (a *app) registerRepositoryRoutes() {
 		WithPublisher(w.webhook).
 		WithWorkers(w.metadata).
 		WithLicenseFiles(db, a.store.blobs).
+		WithProvenance(attestation.NewService(log, db, a.store.blobs)).
 		RegisterAuthed(authedAPI)
 }
 
@@ -345,6 +352,7 @@ func (a *app) registerSupplyChainRoutes() {
 	sbomHandler.WithAttacher(a.feat.attacher).RegisterAuthed(authedAPI)
 	api.NewAttestationAttachHandler(db, log, evaluator, a.feat.attacher, a.store.blobs).RegisterAuthed(authedAPI)
 	api.NewVEXHandler(db, log, evaluator, sbomGen).WithAttestation(attestSvc).RegisterAuthed(authedAPI)
+	api.NewOCIAttestationsHandler(db, log, evaluator, attestation.NewService(log, db, a.store.blobs)).RegisterAuthed(authedAPI)
 }
 
 // registerDependencyTrack builds the Dependency-Track pusher
@@ -377,10 +385,10 @@ func (a *app) registerScanningRoutes() {
 	db, log, authedAPI, evaluator := a.db, a.log, a.web.authed, a.web.evaluator
 	blobStore := a.store.blobs
 
-	licenseHandler := api.NewLicenseHandler(db, log, evaluator, license.NewDetector(log), blobStore)
+	licenseHandler := api.NewLicenseHandler(db, log, evaluator, license.NewDetector(log), blobStore).WithPublisher(a.workers.webhook)
 	licenseHandler.RegisterRoutes(authedAPI)
 
-	secretsHandler := api.NewSecretsHandler(db, log, secrets.NewScanner(log))
+	secretsHandler := api.NewSecretsHandler(db, log, secrets.NewScanner(log)).WithPublisher(a.workers.webhook)
 	secretsHandler.RegisterRoutes(authedAPI, "/api/v1/repositories/{name}")
 
 	a.registerVulnRoutes()
@@ -391,7 +399,7 @@ func (a *app) registerScanningRoutes() {
 
 	api.NewRepositoryActivityHandler(db, log, evaluator).RegisterAuthed(authedAPI)
 
-	propertiesHandler := api.NewPropertiesHandler(log, db, blobStore)
+	propertiesHandler := api.NewPropertiesHandler(log, db, blobStore).WithPublisher(a.workers.webhook)
 	propertiesHandler.RegisterRoutes(authedAPI, "/api/v1/repositories/{name}")
 
 	a.registerAIRoutes(authedAPI)

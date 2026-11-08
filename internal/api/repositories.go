@@ -428,6 +428,10 @@ func unsupportedRepoTypeMessage(repoType, format string) string {
 // errMergeProxyVersionsAdmin explains why a project maintainer may not touch
 // merge_proxy_versions: it switches the dependency-confusion protection of a
 // group off.
+const errHonourQuayExpiryDocker = "honour_quay_expiry is only valid for hosted docker repositories"
+
+const errHonourQuayExpiryImmutable = "honour_quay_expiry cannot be combined with immutable_releases"
+
 const errSignPackagesRPMOnly = "sign_packages is only valid for hosted rpm repositories"
 
 const errMergeProxyVersionsAdmin = "only an administrator can change merge_proxy_versions"
@@ -615,6 +619,8 @@ type createRepositoryBody struct {
 	MergeProxyVersions bool `json:"merge_proxy_versions"`
 	// SignPackages (hosted rpm only) signs uploads with the active GPG key.
 	SignPackages bool `json:"sign_packages"`
+	// HonourQuayExpiry (hosted docker only) deletes images carrying quay.expires-after.
+	HonourQuayExpiry bool `json:"honour_quay_expiry"`
 	// Federated (hosted repositories of a federation-capable format) starts the
 	// repository's change log so it can replicate with peer instances.
 	Federated bool `json:"federated"`
@@ -731,6 +737,11 @@ func (h *RepositoriesHandler) createRepository(
 		return
 	}
 
+	if msg := honourQuayExpiryError(body.HonourQuayExpiry, repoType, body.Format, body.ImmutableReleases); msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
+		return
+	}
+
 	if msg, status := h.checkFederated(&body, repoType, actor); status != 0 {
 		writeError(w, status, "validation_failed", msg)
 		return
@@ -759,6 +770,7 @@ func (h *RepositoriesHandler) createRepository(
 		ImmutableReleases:  body.ImmutableReleases,
 		MergeProxyVersions: body.MergeProxyVersions,
 		SignPackages:       body.SignPackages,
+		HonourQuayExpiry:   body.HonourQuayExpiry,
 	}
 
 	hasUpstream := body.UpstreamURL != "" || body.UpstreamUsername != "" || body.UpstreamPassword != ""
@@ -950,6 +962,7 @@ type updateRepositoryBody struct {
 	// MergeProxyVersions: groups only, administrators only.
 	MergeProxyVersions *bool `json:"merge_proxy_versions"`
 	SignPackages       *bool `json:"sign_packages"`
+	HonourQuayExpiry   *bool `json:"honour_quay_expiry"`
 }
 
 // changedFields names the settings the request sets, in a fixed order, for the
@@ -979,6 +992,7 @@ func (b *updateRepositoryBody) changedFields() []string {
 		{"immutable releases", b.ImmutableReleases != nil},
 		{"merged proxy versions", b.MergeProxyVersions != nil},
 		{"package signing", b.SignPackages != nil},
+		{"quay expiry", b.HonourQuayExpiry != nil},
 	} {
 		if f.set {
 			out = append(out, f.name)
@@ -1074,6 +1088,17 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 
 	if body.ImmutableReleases != nil {
 		repo.ImmutableReleases = *body.ImmutableReleases
+	}
+
+	if body.HonourQuayExpiry != nil {
+		repo.HonourQuayExpiry = *body.HonourQuayExpiry
+	}
+
+	if body.HonourQuayExpiry != nil || body.ImmutableReleases != nil {
+		if msg := honourQuayExpiryError(repo.HonourQuayExpiry, repo.RepoType, repo.Format, repo.ImmutableReleases); msg != "" {
+			writeError(w, http.StatusBadRequest, "validation_failed", msg)
+			return
+		}
 	}
 
 	touchesUpstream := body.UpstreamURL != nil || body.UpstreamUsername != nil || body.UpstreamPassword != nil ||
@@ -1846,6 +1871,7 @@ func RepositoryToResponse(r *models.Repository) responses.RepositoryResponse {
 		ImmutableReleases:  r.ImmutableReleases,
 		MergeProxyVersions: r.MergeProxyVersions,
 		SignPackages:       r.SignPackages,
+		HonourQuayExpiry:   r.HonourQuayExpiry,
 		Federated:          r.Federated,
 	}
 
@@ -1935,4 +1961,19 @@ func parseIntClamp(s string, defaultVal, minVal, maxVal int) int { //nolint:unpa
 	}
 
 	return v
+}
+
+// honourQuayExpiryError returns the validation message for an invalid
+// honour_quay_expiry state, or "" when the combination is allowed.
+func honourQuayExpiryError(honour bool, repoType, format string, immutable bool) string {
+	switch {
+	case !honour:
+		return ""
+	case repoType != "hosted" || format != "docker":
+		return errHonourQuayExpiryDocker
+	case immutable:
+		return errHonourQuayExpiryImmutable
+	}
+
+	return ""
 }

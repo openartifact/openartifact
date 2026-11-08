@@ -22,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/exploit"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/vuln"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -32,9 +33,13 @@ type VulnStore interface {
 	CreateVulnScanResult(ctx context.Context, result *models.VulnScanResult) error
 	DeleteVulnScanResult(ctx context.Context, repoID string, id string) error
 	GetComponentByID(ctx context.Context, id string) (*models.Component, error)
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
 	GetDebPackageByID(ctx context.Context, id string) (*models.DebPackage, error)
 	GetDebianDistributionsByRepo(ctx context.Context, repoID string) ([]models.DebianDistribution, error)
+	GetVulnScanResult(ctx context.Context, repoID string, artifactID string) (*models.VulnScanResult, error)
 	GetVulnScanResultByID(ctx context.Context, repoID string, id string) (*models.VulnScanResult, error)
+	IsArtifactQuarantined(ctx context.Context, repoID string, keys []string) (bool, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
 	ListVulnScanOverview(ctx context.Context, params models.VulnScanListParams) (*models.VulnScanOverviewPage, error)
 	ListVulnScanResults(ctx context.Context, repoID string, vulnerableOnly bool) ([]*models.VulnScanResult, error)
 	SetVulnScanQuarantine(ctx context.Context, repoID string, id string, quarantined bool) error
@@ -58,6 +63,10 @@ type VulnHandler struct {
 	// osvMirror is the mirror configuration reported by the status endpoint.
 	osvMirror config.OSVMirrorConfig
 
+	// publisher, when set, announces scan.completed, vulnerability.found and
+	// quarantine.changed (scan_events.go).
+	publisher webhook.Publisher
+
 	// onScanned, when set, is told about every scan that produced results.
 	onScanned func(repoID, artifactID string)
 
@@ -66,6 +75,14 @@ type VulnHandler struct {
 
 	// exploit marks findings with the KEV and EPSS signals; never nil.
 	exploit *exploit.Enricher
+
+	// images reads the SBOMs ingested for container images; nil when the
+	// server has none, which refuses the scan of an image.
+	images ImageSBOMs
+
+	// attestations, when set, adds the attestation presence check to the
+	// digest gate.
+	attestations AttestationLookup
 
 	// fwd, when set (server.role=web), receives the scans for a worker process
 	// to run (ForwardScansTo).
@@ -85,6 +102,13 @@ func (h *VulnHandler) WithExploit(e *exploit.Enricher) *VulnHandler {
 // cancelled and awaited when the runner shuts down.
 func (h *VulnHandler) WithTasks(tasks *bgtask.Runner) *VulnHandler {
 	h.tasks = tasks
+	return h
+}
+
+// WithPublisher enables the scan.completed, vulnerability.found and
+// quarantine.changed webhook events.
+func (h *VulnHandler) WithPublisher(p webhook.Publisher) *VulnHandler {
+	h.publisher = p
 	return h
 }
 
@@ -108,6 +132,9 @@ const (
 
 	// vulnScanTimeout bounds the scanner backend call.
 	vulnScanTimeout = 120 * time.Second
+
+	// imageScanTimeout bounds the scanner calls of the scan of one image.
+	imageScanTimeout = 20 * time.Minute
 
 	// vulnPersistTimeout bounds the final DB write, independent of the scan context.
 	vulnPersistTimeout = 30 * time.Second
@@ -170,6 +197,8 @@ func NewVulnHandler(db VulnStore, log *logger.Logger, evaluator *auth.Evaluator,
 // RegisterRoutes registers vulnerability scanning routes.
 func (h *VulnHandler) RegisterRoutes(authedRouter chi.Router, pathPrefix string) {
 	authedRouter.Post(pathPrefix+"/vuln/scan", h.handleScan)
+	authedRouter.Post(pathPrefix+"/vuln/scans/import", h.handleImportScan)
+	authedRouter.Get(pathPrefix+"/gate", h.handleGateDigest)
 	authedRouter.Get(pathPrefix+"/vuln/scanners", h.handleListScanners)
 	authedRouter.Get(pathPrefix+"/vuln/scans", h.handleListScans)
 	authedRouter.Get(pathPrefix+"/vuln/scans/{id}", h.handleGetScan)
@@ -244,7 +273,10 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.PackageName == "" || body.PackageVersion == "" || body.Ecosystem == "" {
+	// The scan of an image names no package: it covers the packages of its SBOM.
+	isImage := strings.EqualFold(body.Ecosystem, vuln.ImageEcosystem)
+
+	if body.Ecosystem == "" || !isImage && (body.PackageName == "" || body.PackageVersion == "") {
 		writeError(w, http.StatusBadRequest, "validation_failed", "artifact_id, package_name, package_version, and ecosystem are required")
 		return
 	}
@@ -257,6 +289,11 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 	scanners, ok := normalizeVulnScanners(body.Scanner, body.Scanners)
 	if !ok {
 		writeError(w, http.StatusBadRequest, "validation_failed", "scanner and scanners must be among: osv, trivy, grype")
+		return
+	}
+
+	if isImage {
+		h.handleImageScan(w, r, repo, body.ArtifactID, scanners)
 		return
 	}
 
@@ -350,6 +387,19 @@ func (h *VulnHandler) startScan(
 	scanResult *models.VulnScanResult,
 	pkg vuln.Package,
 ) bool {
+	if err := h.queueScan(ctx, repoID, scanResult, pkg); err != nil {
+		h.dbError(w, "scan vuln: queueing the scan for the worker", err)
+		return false
+	}
+
+	return true
+}
+
+// queueScan runs the scan of the stored result in the background, or hands it
+// to a worker process. The caller holds a scan slot (reserveScanSlot), which
+// the scan releases; when queueing fails the stored row is removed again, and
+// the slot is the caller's to release.
+func (h *VulnHandler) queueScan(ctx context.Context, repoID string, scanResult *models.VulnScanResult, pkg vuln.Package) error {
 	if h.fwd != nil {
 		if err := h.forwardScan(ctx, scanResult, pkg); err != nil {
 			// A row nobody will scan would stay "scanning" for ever.
@@ -357,12 +407,10 @@ func (h *VulnHandler) startScan(
 				h.log.Errorw("scan vuln: removing the scan that could not be queued", "error", delErr)
 			}
 
-			h.dbError(w, "scan vuln: queueing the scan for the worker", err)
-
-			return false
+			return err
 		}
 
-		return true
+		return nil
 	}
 
 	// The goroutine owns its own copy: the handler keeps reading scanResult
@@ -375,7 +423,41 @@ func (h *VulnHandler) startScan(
 		h.performScan(ctx, &job, pkg)
 	})
 
-	return true
+	return nil
+}
+
+// scanOutcome runs the scanners the result names: on the one package of the
+// request, or, for the scan of an image, on every package of its SBOM. note is
+// extra client-safe text for the stored scan error.
+func (h *VulnHandler) scanOutcome(ctx context.Context, scanResult *models.VulnScanResult, pkg vuln.Package) (vuln.Outcome, string) {
+	// The scanner field holds one name or several joined by ",".
+	names := strings.Split(scanResult.Scanner, ",")
+
+	if strings.EqualFold(scanResult.Ecosystem, vuln.ImageEcosystem) {
+		return h.imageOutcome(ctx, scanResult, names)
+	}
+
+	backends := make([]vuln.ScannerBackend, 0, len(names))
+
+	for _, name := range names {
+		backends = append(backends, h.newBackend(name))
+	}
+
+	return vuln.Run(ctx, h.log, backends, pkg), ""
+}
+
+// scanTimeout bounds the scanner calls of a scan: an image has many packages.
+func scanTimeout(ecosystem string) time.Duration {
+	if strings.EqualFold(ecosystem, vuln.ImageEcosystem) {
+		return imageScanTimeout
+	}
+
+	return vulnScanTimeout
+}
+
+// joinScanErrors joins the non-empty parts of a stored scan error.
+func joinScanErrors(parts ...string) string {
+	return strings.Join(slices.DeleteFunc(parts, func(p string) bool { return p == "" }), "; ")
 }
 
 // performScan performs the actual vulnerability scan of pkg with the scanners
@@ -383,23 +465,15 @@ func (h *VulnHandler) startScan(
 func (h *VulnHandler) performScan(ctx context.Context, scanResult *models.VulnScanResult, pkg vuln.Package) {
 	// ctx is the server lifecycle context: the scan ends with the server, and
 	// the result below is still stored as failed.
-	ctx, cancel := context.WithTimeout(ctx, vulnScanTimeout)
+	ctx, cancel := context.WithTimeout(ctx, scanTimeout(scanResult.Ecosystem))
 	defer cancel()
-
-	// The scanner field holds one name or several joined by ",".
-	names := strings.Split(scanResult.Scanner, ",")
-	backends := make([]vuln.ScannerBackend, 0, len(names))
-
-	for _, name := range names {
-		backends = append(backends, h.newBackend(name))
-	}
 
 	// A scanner that cannot run is a failed scan, never "no vulnerabilities".
 	// Run logs the failure details; only the sanitized text is stored.
-	outcome := vuln.Run(ctx, h.log, backends, pkg)
+	outcome, note := h.scanOutcome(ctx, scanResult, pkg)
 
 	scanResult.ScanStatus = outcome.Status
-	scanResult.ScanError = outcome.PublicError()
+	scanResult.ScanError = joinScanErrors(outcome.PublicError(), note)
 	scanResult.FailedScanners = outcome.FailedScanners()
 	scanResult.Vulnerabilities = outcome.Vulnerabilities
 	scanResult.VulnCount = len(outcome.Vulnerabilities)
@@ -430,6 +504,8 @@ func (h *VulnHandler) performScan(ctx context.Context, scanResult *models.VulnSc
 		h.log.Errorw("vuln scan: db error updating scan result", "error", err)
 		return
 	}
+
+	h.announceScan(persistCtx, scanResult)
 
 	if h.onScanned != nil && (scanResult.ScanStatus == "completed" || scanResult.ScanStatus == "partial") {
 		h.onScanned(scanResult.RepositoryID, scanResult.ArtifactID)
@@ -544,6 +620,11 @@ func (h *VulnHandler) handleQuarantine(w http.ResponseWriter, r *http.Request) {
 	// Releasing what was not quarantined changes nothing and leaves no event.
 	if quarantined || before.Quarantined {
 		auditQuarantine(r, repo, quarantined, "vulnerability", updated.ArtifactID, updated.PackageName, updated.PackageVersion)
+	}
+
+	if quarantined != before.Quarantined {
+		emitQuarantineChanged(r, h.publisher, repo, reviewQuarantine(
+			quarantined, webhook.ScanKindVulnerability, updated.ArtifactID, updated.PackageName, updated.PackageVersion))
 	}
 
 	resp, err := h.scanResponse(ctx, updated)

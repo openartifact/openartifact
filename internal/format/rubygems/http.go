@@ -85,7 +85,13 @@ func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 	r.Get("/latest_specs.4.8.gz", h.handleLatestSpecsGz)
 	r.Get("/prerelease_specs.4.8.gz", h.handlePrereleaseSpecsGz)
 	r.Get("/quick/Marshal.4.8/{filename}", h.handleGemspec)
-	r.Get("/gems/{filename}", h.handleGemDownload)
+
+	// /downloads/ is the path rubygems.org serves gems under, which tools such
+	// as Hermeto rewrite to a registry base URL.
+	for _, dir := range []string{"/gems/", "/downloads/"} {
+		r.Get(dir+"{filename}", h.handleGemDownload)
+	}
+
 	r.Post("/api/v1/gems", h.handleUploadGem)
 	r.Delete("/api/v1/gems/yank", h.handleYankGem)
 	r.Get("/api/v1/gems/{gem}.json", h.handleGemInfo)

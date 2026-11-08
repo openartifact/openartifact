@@ -156,6 +156,10 @@ export type PipelineStage = {
      * UUID of the repository the stage must promote into; empty for any.
      */
     repo_id?: string;
+    /**
+     * Names of bundle checks that must be a live `success` before a promotion into this stage (422 CHECKS_REQUIRED otherwise). Always present in responses; `[]` when none.
+     */
+    required_checks?: Array<string>;
 };
 
 export type PromotionPipeline = {
@@ -307,7 +311,7 @@ export type ServiceAccount = {
 
 export type OidcCondition = {
     /**
-     * Token claim name, for example `repository`, `ref` or `environment`.
+     * Token claim name or dotted path into nested claims, for example `repository`, `ref` or `kubernetes.io.namespace`. A literal top-level key (which may itself contain dots) wins over walking the path; the longest literal key wins. Only strings, numbers, booleans and arrays of those match; an object never does.
      */
     claim: string;
     /**
@@ -322,7 +326,7 @@ export type OidcTrustPolicy = {
      */
     name?: string;
     /**
-     * Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com` or `https://gitlab.com`. Must be https and pass the outbound-request (SSRF) check.
+     * Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com`, `https://gitlab.com` or `https://kubernetes.default.svc`. Must be https and, unless `discovery.mode` is `static`, pass the outbound-request (SSRF) check (relaxed by `allow_private_issuer`).
      */
     issuer?: string;
     /**
@@ -347,6 +351,11 @@ export type OidcTrustPolicy = {
     created_by?: string;
     created_at?: string;
     updated_at?: string;
+    discovery?: OidcDiscovery;
+    /**
+     * Let the issuer and its `jwks_uri` resolve to private, loopback or cluster-internal addresses for this policy only (link-local and cloud-metadata addresses stay blocked). https is still required except on loopback. Not allowed with `discovery.mode` `static`. Admin only.
+     */
+    allow_private_issuer?: boolean;
 };
 
 export type OidcExchangeResponse = {
@@ -493,6 +502,10 @@ export type Repository = {
      */
     federated?: boolean;
     stats?: RepositoryStats;
+    /**
+     * Hosted docker repositories only (400 validation_failed otherwise when true, and when combined with immutable_releases=true). When true, a manifest carrying the quay.expires-after annotation (or image config label) is deleted with its tags and dependents once that time has passed.
+     */
+    honour_quay_expiry?: boolean;
 };
 
 /**
@@ -864,7 +877,7 @@ export type Webhook = {
     repository_id: string | null;
     name: string;
     url: string;
-    events: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted' | 'vulnerability.new'>;
+    events: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted' | 'vulnerability.new' | 'scan.completed' | 'vulnerability.found' | 'quarantine.changed' | 'bundle.check_updated'>;
     content_type: string;
     /**
      * Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes.
@@ -2321,6 +2334,10 @@ export type AnnotatedVulnerability = {
      * Other ids the scanner knows the vulnerability by. Absent when none.
      */
     aliases?: Array<string>;
+    /**
+     * Affected package (`name@version`) in a scan of a container image; absent in the scan of one package.
+     */
+    package?: string;
 } & ExploitAnnotation;
 
 /**
@@ -2376,6 +2393,10 @@ export type VulnGateResponse = {
          */
         reasons: Array<string>;
     }>;
+    /**
+     * What the gate looked at; one `vulnerabilities` check for a scan gate.
+     */
+    checks: Array<GateCheck>;
 };
 
 /**
@@ -2644,10 +2665,13 @@ export type VulnScanner = {
     docs_url: string | null;
 };
 
+/**
+ * `package_name` and `package_version` are required except for ecosystem `docker`, which scans the packages of an image's SBOM: `artifact_id` is then the manifest digest (`sha256:<hex>`).
+ */
 export type VulnScanRequest = {
     artifact_id: string;
-    package_name: string;
-    package_version: string;
+    package_name?: string;
+    package_version?: string;
     ecosystem: string;
     /**
      * Single scanner. Still accepted; merged with `scanners`.
@@ -2797,36 +2821,40 @@ export type DockerGcBlob = {
 };
 
 export type DockerGcReport = {
-    repository: string;
-    dry_run: boolean;
-    grace_period_seconds: number;
+    repository?: string;
+    dry_run?: boolean;
+    grace_period_seconds?: number;
     /**
-     * Untagged manifests deleted (would be, in a dry run)
+     * Manifests deleted (would be, in a dry run): untagged ones and expired ones
      */
-    manifests_deleted: number;
+    manifests_deleted?: number;
     /**
      * Blob records of the repository no manifest references any more
      */
-    blob_refs_deleted: number;
+    blob_refs_deleted?: number;
     /**
      * Storage objects removed; in a dry run an upper bound that ignores sharing with other repositories
      */
-    blobs_freed: number;
-    bytes_freed: number;
+    blobs_freed?: number;
+    bytes_freed?: number;
     /**
      * Storage deletions that failed (logged server-side; the orphan collector retries them)
      */
-    failures: number;
+    failures?: number;
     /**
      * Manifests whose body is missing from storage; while any exists, no blob of the repository is swept
      */
-    manifests_missing_body: number;
-    manifests: Array<DockerGcManifest>;
-    blobs: Array<DockerGcBlob>;
+    manifests_missing_body?: number;
+    manifests?: Array<DockerGcManifest>;
+    blobs?: Array<DockerGcBlob>;
     /**
      * manifests/blobs are capped at 1000 entries each
      */
-    truncated: boolean;
+    truncated?: boolean;
+    /**
+     * Of manifests_deleted, the manifests removed because their quay.expires-after deadline passed (repositories with honour_quay_expiry only), with their referrers and dependent signature manifests
+     */
+    manifests_expired: number;
 };
 
 export type CleanupPreview = {
@@ -3554,6 +3582,162 @@ export type BrandingUpdate = {
     source_url?: string | null;
 };
 
+export type OciAttestation = {
+    /**
+     * Digest of the envelope layer
+     */
+    digest: string;
+    /**
+     * Digest of the image manifest the attachment is about
+     */
+    subject: string;
+    image: string;
+    kind: 'signature' | 'attestation' | 'sbom';
+    predicate_type: string;
+    /**
+     * Certificate SAN (keyless), or key:<sha256 of the DER public key> for a trusted static key; empty when unknown
+     */
+    signer_identity: string;
+    /**
+     * OIDC issuer recorded in the certificate
+     */
+    issuer: string;
+    verified: boolean;
+    /**
+     * Why the attachment did not verify; empty when it did
+     */
+    verify_error: string;
+    /**
+     * When the envelope was first seen; keyless certificates are judged at this time
+     */
+    created_at: string;
+};
+
+export type InTotoStatement = {
+    _type: string;
+    subject: Array<{
+        name?: string;
+        digest?: {
+            [key: string]: string;
+        };
+    }>;
+    predicateType: string;
+    predicate: {
+        [key: string]: unknown;
+    };
+};
+
+export type AttestationTrust = {
+    /**
+     * PEM public keys (PKIX; ECDSA, RSA or Ed25519)
+     */
+    keys?: Array<string>;
+    fulcio?: {
+        /**
+         * PEM certificates of the trusted Fulcio roots
+         */
+        roots?: Array<string>;
+        identities?: Array<{
+            issuer: string;
+            subject?: string;
+            subject_regexp?: string;
+        }>;
+    };
+    /**
+     * Refuse to promote a docker image without verified SLSA provenance (PROVENANCE_REQUIRED); pushes are never blocked
+     */
+    require_verified_provenance?: boolean;
+};
+
+export type BundleCheckReport = {
+    /**
+     * Check name, matched against a stage's `required_checks`.
+     */
+    name: string;
+    status: 'pending' | 'success' | 'failure' | 'error';
+    summary?: string;
+    /**
+     * Absolute http(s) URL.
+     */
+    details_url?: string;
+    /**
+     * Must be in the future; the check stops counting after it.
+     */
+    expires_at?: string | null;
+};
+
+export type BundleCheck = {
+    name: string;
+    status: 'pending' | 'success' | 'failure' | 'error';
+    summary: string;
+    details_url: string;
+    reported_by: string;
+    updated_at: string;
+    expires_at: string | null;
+};
+
+export type GateCheck = {
+    name: 'vulnerabilities' | 'license' | 'quarantine' | 'attestations';
+    pass: boolean;
+    /**
+     * Short client-safe sentence.
+     */
+    detail: string;
+};
+
+export type GateResponse = {
+    /**
+     * True only when every check passed.
+     */
+    pass: boolean;
+    /**
+     * `<check>: <detail>` of the first failing check; absent on pass.
+     */
+    reason?: string;
+    digest: string;
+    checks: Array<GateCheck>;
+    /**
+     * Status of the latest scan of the image (`pending`, `scanning`, `completed`, `partial`, `failed`), `none` when it was never scanned.
+     */
+    scan_status: string;
+    /**
+     * Latest scan; absent when none.
+     */
+    scan_id?: string;
+};
+
+export type VulnScanImportRequest = {
+    format: 'sarif' | 'osv-scanner' | 'oa';
+    /**
+     * Manifest digest of the scanned image.
+     */
+    digest: string;
+    /**
+     * Optional tool label; the scan's scanner becomes `external:<label>` (default: the format).
+     */
+    scanner?: string;
+    /**
+     * The scan result as JSON in the declared format. `oa`: `{"vulnerabilities":[{"id","severity","summary","cvss","fixed_in","package","references","aliases"}]}`.
+     */
+    result: unknown;
+};
+
+/**
+ * Where a trust policy gets the issuer's signing keys.
+ */
+export type OidcDiscovery = {
+    /**
+     * `anonymous` reads `{issuer}/.well-known/openid-configuration` and its `jwks_uri` without credentials. `static` verifies against `jwks` and never contacts the issuer (the `iss` claim must still equal `issuer`). `serviceaccount` reads the same documents with OpenArtifact's own projected service account token as Bearer and trusts the in-pod cluster CA in addition to the system roots (Kubernetes API servers).
+     */
+    mode: 'anonymous' | 'static' | 'serviceaccount';
+    /**
+     * Static mode only (required there, rejected otherwise): a JWK Set with 1-32 public asymmetric signing keys, at most 64 KiB. Private and symmetric keys are refused.
+     */
+    jwks?: {
+        [key: string]: unknown;
+    };
+};
+
 /**
  * OIDC/OAuth 2.0 provider settings. client_secret is write-only: responses carry has_secret instead.
  */
@@ -4234,6 +4418,10 @@ export type PostApiV1RepositoriesData = {
          * Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true).
          */
         federated?: boolean;
+        /**
+         * Hosted docker repositories only (400 validation_failed otherwise when true, and when combined with immutable_releases=true). When true, a manifest carrying the quay.expires-after annotation (or image config label) is deleted with its tags and dependents once that time has passed.
+         */
+        honour_quay_expiry?: boolean;
     };
     path?: never;
     query?: never;
@@ -4611,7 +4799,7 @@ export type PostApiV1RepositoriesByNameWebhooksData = {
         name: string;
         url: string;
         secret?: string;
-        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted' | 'vulnerability.new'>;
+        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted' | 'vulnerability.new' | 'scan.completed' | 'vulnerability.found' | 'quarantine.changed' | 'bundle.check_updated'>;
         content_type?: string;
         /**
          * Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes.
@@ -6138,6 +6326,14 @@ export type PostApiV1RepositoriesByNameVulnScanErrors = {
      * Repository not found
      */
     404: unknown;
+    /**
+     * `no_sbom`: the image has no ingested SBOM
+     */
+    422: unknown;
+    /**
+     * `too_many_scans`: all scan slots are busy; retry later
+     */
+    429: unknown;
 };
 
 export type PostApiV1RepositoriesByNameVulnScanResponses = {
@@ -6248,11 +6444,11 @@ export type GetApiV1RepositoriesByNameVulnScansByIdGateErrors = {
      */
     400: unknown;
     /**
-     * Admin access required
+     * Read access to the repository required
      */
     403: unknown;
     /**
-     * Scan not found
+     * Repository or scan not found
      */
     404: unknown;
 };
@@ -6826,7 +7022,7 @@ export type PostApiV1WebhooksData = {
         name: string;
         url: string;
         secret?: string;
-        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted' | 'vulnerability.new'>;
+        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted' | 'vulnerability.new' | 'scan.completed' | 'vulnerability.found' | 'quarantine.changed' | 'bundle.check_updated'>;
         content_type?: string;
         /**
          * Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes.
@@ -6939,7 +7135,7 @@ export type PutApiV1WebhooksByIdData = {
         name?: string;
         url?: string;
         secret?: string;
-        events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted' | 'vulnerability.new'>;
+        events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted' | 'vulnerability.new' | 'scan.completed' | 'vulnerability.found' | 'quarantine.changed' | 'bundle.check_updated'>;
         content_type?: string;
         /**
          * Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes.
@@ -7614,7 +7810,7 @@ export type PostApiV1OidcTrustPoliciesData = {
          */
         name: string;
         /**
-         * Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com` or `https://gitlab.com`. Must be https and pass the outbound-request (SSRF) check.
+         * Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com`, `https://gitlab.com` or `https://kubernetes.default.svc`. Must be https and, unless `discovery.mode` is `static`, pass the outbound-request (SSRF) check (relaxed by `allow_private_issuer`).
          */
         issuer: string;
         /**
@@ -7631,6 +7827,14 @@ export type PostApiV1OidcTrustPoliciesData = {
          */
         token_ttl_seconds?: number;
         enabled?: boolean;
+        /**
+         * How the issuer's signing keys are found. Defaults to `{"mode":"anonymous"}`. A PATCH replaces the whole object: omit `jwks` to clear it.
+         */
+        discovery?: OidcDiscovery;
+        /**
+         * Let the issuer and its `jwks_uri` resolve to private, loopback or cluster-internal addresses for this policy only (link-local and cloud-metadata addresses stay blocked). https is still required except on loopback. Not allowed with `discovery.mode` `static`. Admin only.
+         */
+        allow_private_issuer?: boolean;
     };
     path?: never;
     query?: never;
@@ -7639,7 +7843,7 @@ export type PostApiV1OidcTrustPoliciesData = {
 
 export type PostApiV1OidcTrustPoliciesErrors = {
     /**
-     * Invalid request, including an issuer that fails the outbound-request check or a missing identity condition for a shared issuer
+     * Invalid request, including an issuer that fails the outbound-request check (unless `allow_private_issuer` or the static mode applies), an invalid or non-public `discovery.jwks`, or a missing identity condition for a shared issuer
      */
     400: Error;
     /**
@@ -7728,7 +7932,7 @@ export type PatchApiV1OidcTrustPoliciesByIdData = {
          */
         name?: string;
         /**
-         * Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com` or `https://gitlab.com`. Must be https and pass the outbound-request (SSRF) check.
+         * Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com`, `https://gitlab.com` or `https://kubernetes.default.svc`. Must be https and, unless `discovery.mode` is `static`, pass the outbound-request (SSRF) check (relaxed by `allow_private_issuer`).
          */
         issuer?: string;
         /**
@@ -7745,6 +7949,14 @@ export type PatchApiV1OidcTrustPoliciesByIdData = {
          */
         token_ttl_seconds?: number;
         enabled?: boolean;
+        /**
+         * How the issuer's signing keys are found. Defaults to `{"mode":"anonymous"}`. A PATCH replaces the whole object: omit `jwks` to clear it.
+         */
+        discovery?: OidcDiscovery;
+        /**
+         * Let the issuer and its `jwks_uri` resolve to private, loopback or cluster-internal addresses for this policy only (link-local and cloud-metadata addresses stay blocked). https is still required except on loopback. Not allowed with `discovery.mode` `static`. Admin only.
+         */
+        allow_private_issuer?: boolean;
     };
     path: {
         id: string;
@@ -10814,6 +11026,10 @@ export type PostApiV1ProjectsByProjectRepositoriesData = {
          * Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true).
          */
         federated?: boolean;
+        /**
+         * Hosted docker repositories only (400 validation_failed otherwise when true, and when combined with immutable_releases=true). When true, a manifest carrying the quay.expires-after annotation (or image config label) is deleted with its tags and dependents once that time has passed.
+         */
+        honour_quay_expiry?: boolean;
     };
     path: {
         project: string;
@@ -12030,6 +12246,10 @@ export type PatchApiV1RepositoryByNameData = {
          * Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed.
          */
         sign_packages?: boolean;
+        /**
+         * Hosted docker repositories only (400 validation_failed otherwise when true, and when combined with immutable_releases=true). When true, a manifest carrying the quay.expires-after annotation (or image config label) is deleted with its tags and dependents once that time has passed.
+         */
+        honour_quay_expiry?: boolean;
     };
     path: {
         name: string;
@@ -12595,7 +12815,7 @@ export type PostApiV1BundlesByNameByVersionPromoteErrors = {
      */
     409: Error;
     /**
-     * A target repository has a blocking license policy and the license of a promoted package file cannot be read (LICENSE_METADATA_UNREADABLE); nothing is copied
+     * A target repository has a blocking license policy and the license of a promoted package file cannot be read (LICENSE_METADATA_UNREADABLE); nothing is copied; a required check of the target stage is missing, failed, pending or expired (CHECKS_REQUIRED); a docker item has no verified SLSA provenance while the source or target repository's attestation trust requires it (PROVENANCE_REQUIRED)
      */
     422: Error;
     /**
@@ -15773,3 +15993,366 @@ export type PutApiV1AdminBrandingByAssetResponses = {
 };
 
 export type PutApiV1AdminBrandingByAssetResponse = PutApiV1AdminBrandingByAssetResponses[keyof PutApiV1AdminBrandingByAssetResponses];
+
+export type GetApiV1RepositoriesByNameAttestationsData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query: {
+        /**
+         * Image manifest digest (sha256:<64 hex>)
+         */
+        subject: string;
+        /**
+         * Image name inside the repository
+         */
+        image?: string;
+    };
+    url: '/api/v1/repositories/{name}/attestations';
+};
+
+export type GetApiV1RepositoriesByNameAttestationsErrors = {
+    /**
+     * Error
+     */
+    400: Error;
+    /**
+     * Error
+     */
+    403: Error;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNameAttestationsError = GetApiV1RepositoriesByNameAttestationsErrors[keyof GetApiV1RepositoriesByNameAttestationsErrors];
+
+export type GetApiV1RepositoriesByNameAttestationsResponses = {
+    /**
+     * Attestations of the image
+     */
+    200: {
+        attestations: Array<OciAttestation>;
+    };
+};
+
+export type GetApiV1RepositoriesByNameAttestationsResponse = GetApiV1RepositoriesByNameAttestationsResponses[keyof GetApiV1RepositoriesByNameAttestationsResponses];
+
+export type GetApiV1RepositoriesByNameAttestationsByDigestData = {
+    body?: never;
+    path: {
+        name: string;
+        /**
+         * Attestation digest as listed (sha256:<64 hex>)
+         */
+        digest: string;
+    };
+    query?: {
+        /**
+         * Image name inside the repository
+         */
+        image?: string;
+    };
+    url: '/api/v1/repositories/{name}/attestations/{digest}';
+};
+
+export type GetApiV1RepositoriesByNameAttestationsByDigestErrors = {
+    /**
+     * Error
+     */
+    400: Error;
+    /**
+     * Error
+     */
+    403: Error;
+    /**
+     * Repository or attestation not found, or the attachment carries no readable statement
+     */
+    404: Error;
+};
+
+export type GetApiV1RepositoriesByNameAttestationsByDigestError = GetApiV1RepositoriesByNameAttestationsByDigestErrors[keyof GetApiV1RepositoriesByNameAttestationsByDigestErrors];
+
+export type GetApiV1RepositoriesByNameAttestationsByDigestResponses = {
+    /**
+     * in-toto statement
+     */
+    200: InTotoStatement;
+};
+
+export type GetApiV1RepositoriesByNameAttestationsByDigestResponse = GetApiV1RepositoriesByNameAttestationsByDigestResponses[keyof GetApiV1RepositoriesByNameAttestationsByDigestResponses];
+
+export type PostApiV1RepositoriesByNameAttestationsReverifyData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: {
+        /**
+         * Image manifest digest (sha256:<64 hex>)
+         */
+        subject?: string;
+        /**
+         * Image name inside the repository
+         */
+        image?: string;
+    };
+    url: '/api/v1/repositories/{name}/attestations/reverify';
+};
+
+export type PostApiV1RepositoriesByNameAttestationsReverifyErrors = {
+    /**
+     * Error
+     */
+    400: Error;
+    /**
+     * Error
+     */
+    403: Error;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type PostApiV1RepositoriesByNameAttestationsReverifyError = PostApiV1RepositoriesByNameAttestationsReverifyErrors[keyof PostApiV1RepositoriesByNameAttestationsReverifyErrors];
+
+export type PostApiV1RepositoriesByNameAttestationsReverifyResponses = {
+    /**
+     * Number of attachment manifests processed
+     */
+    200: {
+        reverified: number;
+    };
+};
+
+export type PostApiV1RepositoriesByNameAttestationsReverifyResponse = PostApiV1RepositoriesByNameAttestationsReverifyResponses[keyof PostApiV1RepositoriesByNameAttestationsReverifyResponses];
+
+export type GetApiV1RepositoriesByNameAttestationTrustData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/attestation-trust';
+};
+
+export type GetApiV1RepositoriesByNameAttestationTrustErrors = {
+    /**
+     * Error
+     */
+    403: Error;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNameAttestationTrustError = GetApiV1RepositoriesByNameAttestationTrustErrors[keyof GetApiV1RepositoriesByNameAttestationTrustErrors];
+
+export type GetApiV1RepositoriesByNameAttestationTrustResponses = {
+    /**
+     * Trust configuration (empty when none is set)
+     */
+    200: AttestationTrust;
+};
+
+export type GetApiV1RepositoriesByNameAttestationTrustResponse = GetApiV1RepositoriesByNameAttestationTrustResponses[keyof GetApiV1RepositoriesByNameAttestationTrustResponses];
+
+export type PutApiV1RepositoriesByNameAttestationTrustData = {
+    body: AttestationTrust;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/attestation-trust';
+};
+
+export type PutApiV1RepositoriesByNameAttestationTrustErrors = {
+    /**
+     * Error
+     */
+    400: Error;
+    /**
+     * Error
+     */
+    403: Error;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type PutApiV1RepositoriesByNameAttestationTrustError = PutApiV1RepositoriesByNameAttestationTrustErrors[keyof PutApiV1RepositoriesByNameAttestationTrustErrors];
+
+export type PutApiV1RepositoriesByNameAttestationTrustResponses = {
+    /**
+     * Stored trust configuration
+     */
+    200: AttestationTrust;
+};
+
+export type PutApiV1RepositoriesByNameAttestationTrustResponse = PutApiV1RepositoriesByNameAttestationTrustResponses[keyof PutApiV1RepositoriesByNameAttestationTrustResponses];
+
+export type GetApiV1BundlesByNameByVersionChecksData = {
+    body?: never;
+    path: {
+        name: string;
+        version: string;
+    };
+    query?: never;
+    url: '/api/v1/bundles/{name}/{version}/checks';
+};
+
+export type GetApiV1BundlesByNameByVersionChecksErrors = {
+    /**
+     * Bundle not found, or not visible to the caller
+     */
+    404: Error;
+};
+
+export type GetApiV1BundlesByNameByVersionChecksError = GetApiV1BundlesByNameByVersionChecksErrors[keyof GetApiV1BundlesByNameByVersionChecksErrors];
+
+export type GetApiV1BundlesByNameByVersionChecksResponses = {
+    /**
+     * Checks
+     */
+    200: {
+        checks: Array<BundleCheck>;
+    };
+};
+
+export type GetApiV1BundlesByNameByVersionChecksResponse = GetApiV1BundlesByNameByVersionChecksResponses[keyof GetApiV1BundlesByNameByVersionChecksResponses];
+
+export type PostApiV1BundlesByNameByVersionChecksData = {
+    body: BundleCheckReport;
+    path: {
+        name: string;
+        version: string;
+    };
+    query?: never;
+    url: '/api/v1/bundles/{name}/{version}/checks';
+};
+
+export type PostApiV1BundlesByNameByVersionChecksErrors = {
+    /**
+     * Invalid name, status, summary, details_url or expires_at (code validation_failed)
+     */
+    400: Error;
+    /**
+     * The bundle is visible but the caller lacks write access to every source repository
+     */
+    403: Error;
+    /**
+     * Bundle not found, or not visible to the caller
+     */
+    404: Error;
+    /**
+     * The bundle is archived
+     */
+    409: Error;
+};
+
+export type PostApiV1BundlesByNameByVersionChecksError = PostApiV1BundlesByNameByVersionChecksErrors[keyof PostApiV1BundlesByNameByVersionChecksErrors];
+
+export type PostApiV1BundlesByNameByVersionChecksResponses = {
+    /**
+     * Stored check
+     */
+    200: BundleCheck;
+};
+
+export type PostApiV1BundlesByNameByVersionChecksResponse = PostApiV1BundlesByNameByVersionChecksResponses[keyof PostApiV1BundlesByNameByVersionChecksResponses];
+
+export type GateImageDigestData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query: {
+        /**
+         * Manifest digest `sha256:<hex>` of the image.
+         */
+        digest: string;
+        /**
+         * `true`: a finding in the KEV catalog fails the vulnerability check.
+         */
+        kev?: boolean;
+        /**
+         * A finding whose EPSS score is at least this value fails the vulnerability check.
+         */
+        epss_min?: number;
+        /**
+         * A finding whose priority is at least this one fails the vulnerability check.
+         */
+        min_priority?: 'kev' | 'epss' | 'critical' | 'high' | 'medium' | 'low';
+    };
+    url: '/api/v1/repositories/{name}/gate';
+};
+
+export type GateImageDigestErrors = {
+    /**
+     * Missing or invalid digest, not a docker repository, or invalid criteria (`validation_failed`)
+     */
+    400: unknown;
+    /**
+     * Read access to the repository required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type GateImageDigestResponses = {
+    /**
+     * The verdict
+     */
+    200: GateResponse;
+};
+
+export type GateImageDigestResponse = GateImageDigestResponses[keyof GateImageDigestResponses];
+
+export type ImportVulnScanData = {
+    body: VulnScanImportRequest;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/vuln/scans/import';
+};
+
+export type ImportVulnScanErrors = {
+    /**
+     * Invalid JSON, or not a docker repository (`validation_failed`)
+     */
+    400: unknown;
+    /**
+     * Write access to the repository required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+    /**
+     * Body too large
+     */
+    413: unknown;
+    /**
+     * `invalid_scan_result`: unknown format, bad digest or label, or a result that cannot be read in the declared format
+     */
+    422: unknown;
+};
+
+export type ImportVulnScanResponses = {
+    /**
+     * The stored scan (`scan_status` is `completed`)
+     */
+    200: VulnScanResult;
+};
+
+export type ImportVulnScanResponse = ImportVulnScanResponses[keyof ImportVulnScanResponses];

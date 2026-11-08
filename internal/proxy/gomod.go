@@ -134,8 +134,13 @@ func canonicalGoVersion(v string) bool {
 }
 
 // goImmutable reports whether the file at key is a .info/.mod/.zip of a
-// canonical module version, which never changes once published.
+// canonical module version or a checksum database tile, which never change once
+// published.
 func goImmutable(key string) bool {
+	if goSumdbImmutable(key) {
+		return true
+	}
+
 	req, ok := parseGoPath(key)
 
 	return ok && req.kind != goList && req.kind != goLatest && canonicalGoVersion(req.version)
@@ -162,6 +167,11 @@ func (s *Service) serveGo(w http.ResponseWriter, r *http.Request, repo *models.R
 	key, ok := CleanPath(relPath)
 	if !ok {
 		http.NotFound(w, r)
+		return
+	}
+
+	if strings.HasPrefix(key, sumdbDir) {
+		s.serveGoSumdb(w, r, repo, key)
 		return
 	}
 
@@ -292,9 +302,11 @@ func verifyGoInfo(want string) func(io.ReadSeeker) error {
 var GoHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	Serve: (*Service).serveGo,
 	// .info/.mod/.zip of a canonical version, not list/@latest/queries.
-	Immutable:  goImmutable,
-	IsMetadata: func(key string) bool { return keyName(key) == "list" || strings.HasSuffix(key, "/@latest") },
-	Published:  (*Service).goInfoPublished,
-	Versions:   (*Service).goVersions,
-	BlobPath:   presign.GoBlobPath,
+	Immutable: goImmutable,
+	IsMetadata: func(key string) bool {
+		return keyName(key) == "list" || strings.HasSuffix(key, "/@latest") || strings.HasPrefix(key, sumdbDir)
+	},
+	Published: (*Service).goInfoPublished,
+	Versions:  (*Service).goVersions,
+	BlobPath:  presign.GoBlobPath,
 }

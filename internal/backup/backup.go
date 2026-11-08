@@ -548,7 +548,7 @@ type packageExport struct {
 // set) is not part of a backup. The export goes through the store list
 // methods, which treat trashed rows as nonexistent, so a trashed repository
 // is skipped with its contents and a restore brings back live data only.
-// Repository settings trash_retention_days and immutable_releases round-trip
+// Repository settings (trash_retention_days, immutable_releases, honour_quay_expiry) and docker manifest expires_at round-trip
 // through models.Repository.
 func (e *exporter) exportMetadata(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
 	repos, err := listAll("repositories", func(page int) ([]*models.Repository, int, error) {

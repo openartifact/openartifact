@@ -65,6 +65,8 @@ func oidcPolicyLive(mutate ...func(spec map[string]any)) *Live {
 	spec := oidcPolicySpec(func(spec map[string]any) {
 		// the live list is canonical: conditions sorted by claim
 		spec["conditions"] = []any{oidcCondition("ref", "refs/heads/main", "refs/tags/v*"), oidcCondition("repository", "acme/*")}
+		spec["discovery"] = map[string]any{"mode": "anonymous"}
+		spec["allow_private_issuer"] = false
 	})
 
 	for _, m := range mutate {
@@ -105,6 +107,16 @@ func TestOIDCPolicyKindList(t *testing.T) {
 			"id": "p-off", "name": "off", "issuer": "https://gitlab.example.org", "audience": "oa",
 			"conditions":         []map[string]any{{"claim": "sub", "patterns": []string{"project_path:acme/*"}}},
 			"service_account_id": "sa-deploy", "service_account": "deploy-bot", "token_ttl_seconds": 3600, "enabled": false,
+		}, {
+			"id": "p-k8s", "name": "k8s", "issuer": "https://kubernetes.default.svc", "audience": "oa",
+			"conditions":         []map[string]any{{"claim": "kubernetes.io.namespace", "patterns": []string{"team-a"}}},
+			"service_account_id": "sa-ci", "service_account": "ci-bot", "token_ttl_seconds": 900, "enabled": true,
+			"discovery": map[string]any{"mode": "serviceaccount"}, "allow_private_issuer": true,
+		}, {
+			"id": "p-static", "name": "static", "issuer": "https://oidc.example.org", "audience": "oa",
+			"conditions":         []map[string]any{{"claim": "sub", "patterns": []string{"system:serviceaccount:team-a:*"}}},
+			"service_account_id": "sa-ci", "service_account": "ci-bot", "token_ttl_seconds": 900, "enabled": true,
+			"discovery": map[string]any{"mode": "static", "jwks": map[string]any{"keys": []any{map[string]any{"kty": "OKP", "kid": "k"}}}},
 		}}}),
 	})
 
@@ -119,6 +131,26 @@ func TestOIDCPolicyKindList(t *testing.T) {
 			"issuer": "https://gitlab.example.org", "audience": "oa",
 			"conditions":      []any{oidcCondition("sub", "project_path:acme/*")},
 			"service_account": "deploy-bot", "token_ttl_seconds": float64(3600), "enabled": false,
+			"discovery": map[string]any{"mode": "anonymous"}, "allow_private_issuer": false,
+		}},
+		{Kind: KindOIDCTrustPolicy, Key: "k8s", ID: "p-k8s", Spec: map[string]any{
+			"issuer": "https://kubernetes.default.svc", "audience": "oa",
+			"conditions":      []any{oidcCondition("kubernetes.io.namespace", "team-a")},
+			"service_account": "ci-bot", "token_ttl_seconds": float64(900), "enabled": true,
+			"discovery": map[string]any{"mode": "serviceaccount"}, "allow_private_issuer": true,
+		}},
+		{Kind: KindOIDCTrustPolicy, Key: "static", ID: "p-static", Spec: map[string]any{
+			"issuer":            "https://oidc.example.org",
+			"audience":          "oa",
+			"conditions":        []any{oidcCondition("sub", "system:serviceaccount:team-a:*")},
+			"service_account":   "ci-bot",
+			"token_ttl_seconds": float64(900),
+			"enabled":           true,
+			"discovery": map[string]any{
+				"mode": "static",
+				"jwks": map[string]any{"keys": []any{map[string]any{"kty": "OKP", "kid": "k"}}},
+			},
+			"allow_private_issuer": false,
 		}},
 	}
 
@@ -167,6 +199,19 @@ func TestOIDCPolicyKindCreate(t *testing.T) {
 			want: map[string]any{
 				"name": "gh", "issuer": githubIssuer, "audience": "https://oa.example.org", "service_account_id": "sa-ci",
 				"conditions": []any{oidcCondition("repository", "acme/*"), oidcCondition("ref", "refs/heads/main", "refs/tags/v*")},
+			},
+		},
+		{
+			name: "sends the discovery setting",
+			spec: oidcPolicySpec(func(spec map[string]any) {
+				spec["discovery"] = map[string]any{"mode": "serviceaccount"}
+				spec["allow_private_issuer"] = true
+			}),
+			want: map[string]any{
+				"name": "gh", "issuer": githubIssuer, "audience": "https://oa.example.org", "service_account_id": "sa-ci",
+				"conditions":        []any{oidcCondition("repository", "acme/*"), oidcCondition("ref", "refs/heads/main", "refs/tags/v*")},
+				"token_ttl_seconds": float64(600), "enabled": true,
+				"discovery": map[string]any{"mode": "serviceaccount"}, "allow_private_issuer": true,
 			},
 		},
 		{
@@ -245,6 +290,23 @@ func TestOIDCPolicyKindUpdate(t *testing.T) {
 			desired: oidcPolicySpec(func(spec map[string]any) { spec["conditions"] = allConditions }),
 			changes: []Change{{Path: "conditions[ref]", New: oidcCondition("ref", "refs/heads/main")}},
 			want:    map[string]any{"conditions": allConditions},
+		},
+		{
+			name: "a changed discovery resends the whole setting",
+			desired: oidcPolicySpec(func(spec map[string]any) {
+				spec["discovery"] = map[string]any{"mode": "static", "jwks": map[string]any{"keys": []any{}}}
+			}),
+			changes: []Change{
+				{Path: "discovery.mode", Old: "anonymous", New: "static"},
+				{Path: "discovery.jwks", New: map[string]any{"keys": []any{}}},
+			},
+			want: map[string]any{"discovery": map[string]any{"mode": "static", "jwks": map[string]any{"keys": []any{}}}},
+		},
+		{
+			name:    "a changed allow_private_issuer is patched alone",
+			desired: oidcPolicySpec(func(spec map[string]any) { spec["allow_private_issuer"] = true }),
+			changes: []Change{{Path: "allow_private_issuer", Old: false, New: true}},
+			want:    map[string]any{"allow_private_issuer": true},
 		},
 		{
 			name:    "a changed service account is sent as its id",
@@ -407,6 +469,18 @@ func TestOIDCPolicyKindValidate(t *testing.T) {
 		manyConditions[i] = oidcCondition("claim"+strconv.Itoa(i), "x")
 	}
 
+	setDiscovery := func(mode string, jwks any) func(map[string]any) {
+		return func(spec map[string]any) {
+			d := map[string]any{"mode": mode}
+			if jwks != nil {
+				d["jwks"] = jwks
+			}
+
+			spec["discovery"] = d
+		}
+	}
+	jwks := map[string]any{"keys": []any{map[string]any{"kty": "OKP"}}}
+
 	tests := []struct {
 		name    string
 		policy  string
@@ -414,6 +488,26 @@ func TestOIDCPolicyKindValidate(t *testing.T) {
 		wantErr string
 	}{
 		{name: "valid", policy: "gh-main_1.0", spec: oidcPolicySpec()},
+		{name: "serviceaccount discovery", spec: oidcPolicySpec(setDiscovery("serviceaccount", nil))},
+		{name: "static discovery", spec: oidcPolicySpec(setDiscovery("static", jwks))},
+		{name: "static discovery without keys", spec: oidcPolicySpec(setDiscovery("static", nil)), wantErr: "discovery.jwks is required"},
+		{
+			name:    "keys outside the static mode",
+			spec:    oidcPolicySpec(setDiscovery("anonymous", jwks)),
+			wantErr: "discovery.jwks is only for the static discovery mode",
+		},
+		{
+			name:    "private issuer with static discovery",
+			spec:    oidcPolicySpec(setDiscovery("static", jwks), func(spec map[string]any) { spec["allow_private_issuer"] = true }),
+			wantErr: "allow_private_issuer has no effect",
+		},
+		{name: "nested claim", spec: oidcPolicySpec(setConditions(oidcCondition("kubernetes.io.namespace", "team-a")))},
+		{
+			name:    "claim path with an empty segment",
+			spec:    oidcPolicySpec(setConditions(oidcCondition("a..b", "x"))),
+			wantErr: "conditions[0].claim",
+		},
+		{name: "claim path ending in a dot", spec: oidcPolicySpec(setConditions(oidcCondition("a.", "x"))), wantErr: "conditions[0].claim"},
 		{name: "http issuer", spec: oidcPolicySpec(setIssuer("http://localhost:8080/realm"))},
 		{name: "name starting with a dash", policy: "-gh", spec: oidcPolicySpec(), wantErr: "metadata.name"},
 		{name: "name too long", policy: strings.Repeat("a", 65), spec: oidcPolicySpec(), wantErr: "metadata.name"},

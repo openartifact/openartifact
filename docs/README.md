@@ -62,6 +62,7 @@ These pages are also published, one version per release, at <https://openartifac
 | [Exploitation signals](security/exploit-signals.md) | CISA KEV and FIRST EPSS on vulnerability findings: priority, filters, CI gate, feed status, metrics, air-gapped mirrors, data terms |
 | [Security findings](security/findings.md) | The findings of all repositories in one list (vulnerabilities, licenses, secrets, AI), summary, export, scanner health and the per-repository counts |
 | [SBOM and VEX](security/sbom.md) | CycloneDX / SPDX 2.3 and 3.0 SBOMs, OpenVEX / CycloneDX VEX, signed attestations (cosign), Trivy, Grype |
+| [Image attestations](security/attestations.md) | Signatures, SLSA provenance and SBOMs pushed by cosign and Tekton Chains: per-repository trust (keys, Fulcio identities), verification, the attestation API and the `require_verified_provenance` promotion gate |
 | [Dependency-Track](security/dependency-track.md) | Pushing the BOM on upload and scan and the VEX after analysis; project naming, permissions, per-repository overrides |
 | [License metadata](security/licenses.md) | How licenses are read from package files: precedence per format, unresolved licenses, limits and limitations |
 | [Threat model](security/threat-model.md) | What OpenArtifact protects, who it assumes to be hostile and the controls in place |
@@ -93,11 +94,14 @@ These pages are also published, one version per release, at <https://openartifac
 |---|---|
 | [CLI](integrations/cli.md) | `oa` commands (including `trash` and repository delete confirmation), login and configuration |
 | [CI integration](integrations/ci.md) | Upload, bundle and promote from Jenkins, Drone, Woodpecker or any shell with `oa`; least-privilege CI tokens, tokenless login with GitHub Actions or GitLab OIDC |
+| [Konflux](integrations/konflux.md) | Registry, hermetic-build package proxy, Conforma, rebuild webhooks and release for Konflux CI |
+| [Tekton catalog](integrations/tekton.md) | StepActions, tasks and pipelines that publish, gate and promote with `oa`; signed Tekton bundles |
 | [Declarative configuration](integrations/declarative.md) | `oa apply`, `oa diff` and `oa export`: manage users, repositories, permissions and more from YAML manifests, GitOps usage |
 | [MCP server](integrations/mcp.md) | Tools, permissions and client configuration (Claude, Cursor, VS Code, Codex, omp) |
 | [REST API](integrations/api.md) | OpenAPI spec, interactive API reference, authentication, conventions |
 | [AI analysis](integrations/ai-analysis.md) | Optional LLM analysis of package manifests |
 | [yap](integrations/yap.md) | Build deb/rpm packages with yap, publish them and install from clients |
+| [Konflux image-controller](integrations/konflux-image-controller.md) | Let the unmodified Konflux image-controller create repositories, robot accounts and permissions through a Quay-compatible API |
 
 ## Reference
 

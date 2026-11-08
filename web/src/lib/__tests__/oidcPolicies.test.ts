@@ -72,7 +72,19 @@ describe('form <-> API body', () => {
       service_account_id: 'sa1',
       token_ttl_seconds: 600,
       enabled: true,
+      discovery: { mode: 'anonymous' },
+      allow_private_issuer: false,
     })
+  })
+
+  it('sends the key set of the static mode only, and never the private-issuer switch with it', () => {
+    const jwks = { keys: [{ kty: 'RSA', kid: 'k1', n: 'abc', e: 'AQAB' }] }
+    const body = inputOf({ ...valid(), discoveryMode: 'static', jwks: JSON.stringify(jwks), allowPrivateIssuer: true })
+    expect(body.discovery).toEqual({ mode: 'static', jwks })
+    expect(body.allow_private_issuer).toBe(false)
+    const kube = inputOf({ ...valid(), discoveryMode: 'serviceaccount', jwks: JSON.stringify(jwks), allowPrivateIssuer: true })
+    expect(kube.discovery).toEqual({ mode: 'serviceaccount' })
+    expect(kube.allow_private_issuer).toBe(true)
   })
 
   it('fills the form of an existing policy', () => {
@@ -93,7 +105,18 @@ describe('form <-> API body', () => {
       ttlMinutes: 30,
       enabled: false,
       rows: [{ claim: 'project_path', patterns: 'g/p, g/q' }],
+      discoveryMode: 'anonymous',
+      jwks: '',
+      allowPrivateIssuer: false,
     })
+  })
+
+  it('fills the discovery of a Kubernetes and of a static policy', () => {
+    const kube = formOf({ name: 'k', discovery: { mode: 'serviceaccount' }, allow_private_issuer: true } as OidcPolicy)
+    expect(kube).toMatchObject({ discoveryMode: 'serviceaccount', jwks: '', allowPrivateIssuer: true })
+    const fixed = formOf({ name: 's', discovery: { mode: 'static', jwks: { keys: [] } } } as OidcPolicy)
+    expect(fixed.discoveryMode).toBe('static')
+    expect(JSON.parse(fixed.jwks)).toEqual({ keys: [] })
   })
 
   it('a blank form defaults to 15 minutes, enabled, one empty row', () => {
@@ -108,6 +131,13 @@ describe('policyProblem', () => {
     expect(policyProblem(valid())).toBeNull()
   })
 
+  it('accepts dotted claim paths and a static key set', () => {
+    const rows = [{ claim: 'kubernetes.io.namespace', patterns: 'team-a' }]
+    expect(policyProblem({ ...valid(), rows })).toBeNull()
+    expect(policyProblem({ ...valid(), rows, discoveryMode: 'static', jwks: '{"keys":[]}' })).toBeNull()
+    expect(policyProblem({ ...valid(), rows, discoveryMode: 'serviceaccount', jwks: 'ignored outside static' })).toBeNull()
+  })
+
   it.each([
     ['name', { name: 'bad name' }],
     ['issuer', { issuer: 'http://insecure.example' }],
@@ -120,6 +150,13 @@ describe('policyProblem', () => {
     ['claim', { rows: [{ claim: '', patterns: 'x' }] }],
     ['patterns', { rows: [{ claim: 'repository', patterns: '' }] }],
     ['tooManyPatterns', { rows: [{ claim: 'repository', patterns: 'a,b,c,d,e,f,g,h,i' }] }],
+    ['claim', { rows: [{ claim: 'kubernetes..namespace', patterns: 'x' }] }],
+    ['claim', { rows: [{ claim: '.kubernetes.io', patterns: 'x' }] }],
+    ['claim', { rows: [{ claim: 'kubernetes.io.', patterns: 'x' }] }],
+    ['claim', { rows: [{ claim: 'has space', patterns: 'x' }] }],
+    ['jwks', { discoveryMode: 'static', jwks: '' }],
+    ['jwks', { discoveryMode: 'static', jwks: 'not json' }],
+    ['jwks', { discoveryMode: 'static', jwks: '[1]' }],
   ] as const)('reports %s', (problem, change) => {
     expect(policyProblem({ ...valid(), ...change })).toBe(problem)
   })

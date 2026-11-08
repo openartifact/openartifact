@@ -28,7 +28,7 @@ Policies run on **every hosted format**: ansible, apk, cargo, composer, conan, c
 | conan | Recipe versions (`version@user/channel`) per package; all revisions of a version count together. | Computed live. |
 | conda | Builds per package and platform (`version-build_string`); the `.tar.bz2` and `.conda` files of one build count together. | `repodata.json` is computed live. |
 | ansible, composer, deb, go, helm, nix, nuget, pacman, pypi, rpm | Versions per package (see below). | deb, rpm and pacman indexes are regenerated. |
-| docker | **Tags** per image, aged by their last update (re-tagging counts as activity). | When tags were removed permanently, [registry garbage collection](#docker-registry-garbage-collection) reclaims the manifests and layers they left unreferenced (subject to its grace period). Tags moved to the trash keep their manifests until the purge. |
+| docker | **Tags** per image, aged by their last update (re-tagging counts as activity). Cosign signature, attestation and SBOM tags (`sha256-<hex>.sig`, `.att`, `.sbom`, `.src`) are never ranked or matched; they go with their image, see [signatures and cleanup policies](../formats/docker.md#signatures-attestations-and-cleanup-policies). | When tags were removed permanently, [registry garbage collection](#docker-registry-garbage-collection) reclaims the manifests and layers they left unreferenced (subject to its grace period). Tags moved to the trash keep their manifests until the purge. |
 | ivy, sbt | Revisions per `organisation:module` (sbt: per group, artifact and Scala version). | Indexes are computed live. |
 | maven | Releases are ranked per `groupId:artifactId`; the timestamped builds of each `-SNAPSHOT` version are ranked against each other. The **newest build of a snapshot is always kept**, so `-SNAPSHOT` keeps resolving. All files of a version (jar, pom, checksums, classifiers) count as one version. | `maven-metadata.xml` of the artifact (and of its snapshot versions) is regenerated. |
 | npm | Versions per package. A version a **dist-tag** points at (`latest`, `next`, ...) is never removed, so no tag is left dangling. | A package that lost its last version is dropped; the others get a new packument validator and `latest` is recomputed. |
@@ -120,6 +120,8 @@ Deleting a Docker tag (a tag moved to the [trash](../operations/trash.md) includ
 | `workers.dockerGcGracePeriod` | `OPENARTIFACT_DOCKER_GC_GRACE_PERIOD` | `24h` |
 
 An admin can run it on demand, with a dry run, through `POST /api/v1/repositories/{repo}/registry-gc` (body `{"dry_run": bool, "grace_period_seconds": int}`, both optional; `409` while a run is in progress, `400` for a non-Docker repository). What is kept, the safety guarantees and the request and response format are in [Docker / OCI: garbage collection](../formats/docker.md#garbage-collection).
+
+Repositories that opt in to [`quay.expires-after`](../formats/docker.md#quay-image-expiry) also have the images whose deadline passed deleted by this worker, without the grace period; the response counts them in `manifests_expired`.
 
 Docker pushes are counted against the repository quota (see [what counts](#what-counts)), so registry garbage collection gives back the bytes of the blobs and the manifests it deletes.
 

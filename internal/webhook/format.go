@@ -163,6 +163,14 @@ func eventTitle(event string) string {
 		return "Bundle promoted"
 	case EventVulnerabilityNew:
 		return "Vulnerability detected"
+	case EventScanCompleted:
+		return "Scan completed"
+	case EventVulnerabilityFound:
+		return "Vulnerabilities found"
+	case EventQuarantineChanged:
+		return "Quarantine changed"
+	case EventBundleCheckUpdated:
+		return "Bundle check updated"
 	case EventWebhookTest:
 		return "Webhook test"
 	default:
@@ -174,7 +182,7 @@ func eventSeverity(event string) severity {
 	switch event {
 	case EventArtifactUploaded, EventArtifactRestored, EventRepoCreated, EventRepoRestored, EventBundlePromoted:
 		return severityGood
-	case EventArtifactDeleted, EventArtifactPurged, EventRepoDeleted, EventRepoPurged, EventVulnerabilityNew:
+	case EventArtifactDeleted, EventArtifactPurged, EventRepoDeleted, EventRepoPurged, EventVulnerabilityNew, EventVulnerabilityFound:
 		return severityBad
 	default:
 		return severityInfo
@@ -265,7 +273,9 @@ func summarize(d *models.WebhookDelivery) eventSummary {
 		facts = addFact(facts, "Type", payloadString(p, "type"))
 	}
 
-	if art, ok := p["artifact"].(map[string]any); ok {
+	if extra, ok := summarizeSubject(p, &s); ok {
+		facts = append(facts, extra...)
+	} else if art, ok := p["artifact"].(map[string]any); ok {
 		name := payloadString(art, "name")
 		version := payloadString(art, "version")
 		facts = addFact(facts, "Artifact", name)
@@ -301,6 +311,94 @@ func summarize(d *models.WebhookDelivery) eventSummary {
 	s.facts = facts
 
 	return s
+}
+
+// summarizeSubject renders the payload blocks of the scan, quarantine and bundle
+// check events: the facts it adds and the headline it sets on s. ok is false for
+// any other payload.
+func summarizeSubject(p map[string]any, s *eventSummary) ([]fact, bool) {
+	var facts []fact
+
+	switch {
+	case isMap(p["scan"]):
+		scan, _ := p["scan"].(map[string]any)
+		facts = addFact(facts, "Scan", payloadString(scan, "kind"))
+		facts = addFact(facts, "Status", payloadString(scan, "status"))
+		facts = addFact(facts, "Artifact", scanSubject(scan))
+
+		if counts, ok := scan["counts"].(map[string]any); ok {
+			facts = addFact(facts, "Findings", countsSummary(counts))
+		}
+
+		s.headline = strings.TrimSpace(s.title + ": " + scanSubject(scan) + " (" + payloadString(scan, "status") + ")")
+	case isMap(p["quarantine"]):
+		q, _ := p["quarantine"].(map[string]any)
+		facts = addFact(facts, "State", payloadString(q, "state"))
+		facts = addFact(facts, "Scan", payloadString(q, "kind"))
+		facts = addFact(facts, "Artifact", scanSubject(q))
+		facts = addFact(facts, "Reason", payloadString(q, "reason"))
+		facts = addFact(facts, "By", payloadString(q, "actor"))
+
+		s.headline = strings.TrimSpace(s.title + ": " + scanSubject(q) + " " + payloadString(q, "state"))
+
+		if payloadString(q, "state") == "quarantined" {
+			s.severity = severityBad
+		} else {
+			s.severity = severityGood
+		}
+	case isMap(p["check"]):
+		c, _ := p["check"].(map[string]any)
+		b, _ := p["bundle"].(map[string]any)
+		bundle := strings.TrimSpace(payloadString(b, "name") + " " + payloadString(b, "version"))
+		facts = addFact(facts, "Bundle", bundle)
+		facts = addFact(facts, "Check", payloadString(c, "name"))
+		facts = addFact(facts, "Status", payloadString(c, "status"))
+		facts = addFact(facts, "Summary", payloadString(c, "summary"))
+		facts = addFact(facts, "Details", payloadString(c, "details_url"))
+		facts = addFact(facts, "Reported by", payloadString(c, "reported_by"))
+
+		s.headline = strings.TrimSpace(s.title + ": " + payloadString(c, "name") + " " + payloadString(c, "status") + " on " + bundle)
+
+		switch payloadString(c, "status") {
+		case "success":
+			s.severity = severityGood
+		case "failure", "error":
+			s.severity = severityBad
+		}
+	default:
+		return nil, false
+	}
+
+	return facts, true
+}
+
+func isMap(v any) bool {
+	_, ok := v.(map[string]any)
+	return ok
+}
+
+// scanSubject names what a scan or quarantine block is about: "package version"
+// when the block carries them, the artifact id otherwise.
+func scanSubject(m map[string]any) string {
+	if name := payloadString(m, "package"); name != "" {
+		return strings.TrimSpace(name + " " + payloadString(m, "version"))
+	}
+
+	return payloadString(m, "artifact_id")
+}
+
+// countsSummary renders the counts of a scan block in a fixed order
+// ("critical 1, high 2").
+func countsSummary(counts map[string]any) string {
+	var parts []string
+
+	for _, k := range []string{"critical", "high", "medium", "low", "findings"} {
+		if n := payloadInt(counts, k); n > 0 {
+			parts = append(parts, k+" "+strconv.FormatInt(n, 10))
+		}
+	}
+
+	return strings.Join(parts, ", ")
 }
 
 // vulnerabilitySummary lists the advisory ids of a vulnerability.new payload

@@ -143,6 +143,10 @@ func tailTables() []Table {
 		{Name: "promotion_pipelines", Key: idKey(), Exclude: []string{"creator_id"}},
 		{Name: "release_bundles", Key: idKey(), Exclude: []string{"creator_id", "sealer_id", "archiver_id"}},
 		{Name: "release_bundle_items", Key: idKey(), Exclude: []string{"adder_id"}},
+		// The latest result of each external check gating a promotion; a
+		// rebuild that lost them would refuse every gated promotion until the
+		// pipelines report again.
+		{Name: "bundle_checks", Key: idKey()},
 	}
 }
 
@@ -213,12 +217,21 @@ func (r *Registry) Lookup(name string) (*Table, bool) {
 //
 //nolint:gochecknoglobals // compiled-in allowlist, immutable after init
 var NotJournaled = map[string]string{
+	"quay_repositories": "Quay API facade state (internal/quayapi); the image-controller recreates the repository, " +
+		"its permission targets and assignments on its next reconcile",
+	"quay_robots": "Quay API facade robot accounts and their sealed tokens; the image-controller recreates them " +
+		"and the service account behind them on its next reconcile",
+	"quay_teams":       "Quay API facade teams and the groups behind them; recreated by the image-controller",
 	"apk_signing_keys": "holds the encrypted private key of the repository index; a secret outside the journal",
 	"nix_pending_nars": "staging of NAR files that await their narinfo; swept by the cleanup worker. A rebuilt " +
 		"instance loses the row, the NAR blob becomes an orphan the blob GC collects, and the narinfo PUT of an " +
 		"interrupted push answers 409 until the client uploads the NAR again",
 	"nix_signing_keys": "holds the encrypted private key of the narinfo signatures; a secret outside the journal",
 	"audit_logs":       "audit trail; kept by database backups",
+	"oci_attestations": "index of the attestations attached to docker images, derived from the manifests and blobs " +
+		"the journal restores; POST /attestations/reverify?subject=&image= rebuilds the rows of an image",
+	"repository_attestation_trust": "operator policy (trusted keys, Fulcio roots and identities) of a repository; " +
+		"kept by database backups",
 	"bundle_promotions": "promotion history of a release bundle (its stage rides with release_bundles); " +
 		"operational data covered by database backups",
 	"cleanup_policies": "operator policy configuration; recreated with `oa apply` or restored from a database " +

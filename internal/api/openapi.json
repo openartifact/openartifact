@@ -475,6 +475,15 @@
           "repo_id": {
             "type": "string",
             "description": "UUID of the repository the stage must promote into; empty for any."
+          },
+          "required_checks": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "description": "Names of bundle checks that must be a live `success` before a promotion into this stage (422 CHECKS_REQUIRED otherwise). Always present in responses; `[]` when none."
           }
         }
       },
@@ -786,7 +795,7 @@
         "properties": {
           "claim": {
             "type": "string",
-            "description": "Token claim name, for example `repository`, `ref` or `environment`."
+            "description": "Token claim name or dotted path into nested claims, for example `repository`, `ref` or `kubernetes.io.namespace`. A literal top-level key (which may itself contain dots) wins over walking the path; the longest literal key wins. Only strings, numbers, booleans and arrays of those match; an object never does."
           },
           "patterns": {
             "type": "array",
@@ -813,7 +822,7 @@
           "issuer": {
             "type": "string",
             "format": "uri",
-            "description": "Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com` or `https://gitlab.com`. Must be https and pass the outbound-request (SSRF) check."
+            "description": "Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com`, `https://gitlab.com` or `https://kubernetes.default.svc`. Must be https and, unless `discovery.mode` is `static`, pass the outbound-request (SSRF) check (relaxed by `allow_private_issuer`)."
           },
           "audience": {
             "type": "string",
@@ -861,6 +870,14 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "discovery": {
+            "$ref": "#/components/schemas/OIDCDiscovery"
+          },
+          "allow_private_issuer": {
+            "type": "boolean",
+            "default": false,
+            "description": "Let the issuer and its `jwks_uri` resolve to private, loopback or cluster-internal addresses for this policy only (link-local and cloud-metadata addresses stay blocked). https is still required except on loopback. Not allowed with `discovery.mode` `static`. Admin only."
           }
         }
       },
@@ -1095,6 +1112,10 @@
           },
           "stats": {
             "$ref": "#/components/schemas/RepositoryStats"
+          },
+          "honour_quay_expiry": {
+            "type": "boolean",
+            "description": "Hosted docker repositories only (400 validation_failed otherwise when true, and when combined with immutable_releases=true). When true, a manifest carrying the quay.expires-after annotation (or image config label) is deleted with its tags and dependents once that time has passed."
           }
         },
         "required": [
@@ -1948,7 +1969,11 @@
                 "repository.restored",
                 "repository.purged",
                 "bundle.promoted",
-                "vulnerability.new"
+                "vulnerability.new",
+                "scan.completed",
+                "vulnerability.found",
+                "quarantine.changed",
+                "bundle.check_updated"
               ]
             }
           },
@@ -5180,6 +5205,10 @@
                   "type": "string"
                 },
                 "description": "Other ids the scanner knows the vulnerability by. Absent when none."
+              },
+              "package": {
+                "type": "string",
+                "description": "Affected package (`name@version`) in a scan of a container image; absent in the scan of one package."
               }
             },
             "required": [
@@ -5227,10 +5256,7 @@
                 "type": "boolean"
               },
               "epss_min": {
-                "type": [
-                  "number",
-                  "null"
-                ],
+                "type": ["number", "null"],
                 "description": "Null when not set."
               },
               "min_priority": {
@@ -5279,6 +5305,13 @@
                 "reasons"
               ]
             }
+          },
+          "checks": {
+            "type": "array",
+            "description": "What the gate looked at; one `vulnerabilities` check for a scan gate.",
+            "items": {
+              "$ref": "#/components/schemas/GateCheck"
+            }
           }
         },
         "required": [
@@ -5287,7 +5320,8 @@
           "failed_scanners",
           "criteria",
           "checked",
-          "failed"
+          "failed",
+          "checks"
         ]
       },
       "ExploitFeed": {
@@ -5890,8 +5924,6 @@
         "type": "object",
         "required": [
           "artifact_id",
-          "package_name",
-          "package_version",
           "ecosystem"
         ],
         "properties": {
@@ -5929,7 +5961,8 @@
             "uniqueItems": true,
             "description": "Scanners to run. Merged with `scanner`; de-duplicated and sorted. Defaults to `osv` when neither is given."
           }
-        }
+        },
+        "description": "`package_name` and `package_version` are required except for ecosystem `docker`, which scans the packages of an image's SBOM: `artifact_id` is then the manifest digest (`sha256:<hex>`)."
       },
       "LicensePolicyViolation": {
         "type": "object",
@@ -6298,7 +6331,7 @@
           },
           "manifests_deleted": {
             "type": "integer",
-            "description": "Untagged manifests deleted (would be, in a dry run)"
+            "description": "Manifests deleted (would be, in a dry run): untagged ones and expired ones"
           },
           "blob_refs_deleted": {
             "type": "integer",
@@ -6335,21 +6368,14 @@
           "truncated": {
             "type": "boolean",
             "description": "manifests/blobs are capped at 1000 entries each"
+          },
+          "manifests_expired": {
+            "type": "integer",
+            "description": "Of manifests_deleted, the manifests removed because their quay.expires-after deadline passed (repositories with honour_quay_expiry only), with their referrers and dependent signature manifests"
           }
         },
         "required": [
-          "repository",
-          "dry_run",
-          "grace_period_seconds",
-          "manifests_deleted",
-          "blob_refs_deleted",
-          "blobs_freed",
-          "bytes_freed",
-          "failures",
-          "manifests_missing_body",
-          "manifests",
-          "blobs",
-          "truncated"
+          "manifests_expired"
         ]
       },
       "CleanupPreview": {
@@ -7866,6 +7892,353 @@
             "description": "http(s) URL; cannot be empty"
           }
         }
+      },
+      "OCIAttestation": {
+        "type": "object",
+        "required": [
+          "digest",
+          "subject",
+          "image",
+          "kind",
+          "predicate_type",
+          "signer_identity",
+          "issuer",
+          "verified",
+          "verify_error",
+          "created_at"
+        ],
+        "properties": {
+          "digest": {
+            "type": "string",
+            "description": "Digest of the envelope layer"
+          },
+          "subject": {
+            "type": "string",
+            "description": "Digest of the image manifest the attachment is about"
+          },
+          "image": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "signature",
+              "attestation",
+              "sbom"
+            ]
+          },
+          "predicate_type": {
+            "type": "string"
+          },
+          "signer_identity": {
+            "type": "string",
+            "description": "Certificate SAN (keyless), or key:<sha256 of the DER public key> for a trusted static key; empty when unknown"
+          },
+          "issuer": {
+            "type": "string",
+            "description": "OIDC issuer recorded in the certificate"
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "verify_error": {
+            "type": "string",
+            "description": "Why the attachment did not verify; empty when it did"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the envelope was first seen; keyless certificates are judged at this time"
+          }
+        }
+      },
+      "InTotoStatement": {
+        "type": "object",
+        "required": [
+          "_type",
+          "subject",
+          "predicateType",
+          "predicate"
+        ],
+        "properties": {
+          "_type": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "digest": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "predicateType": {
+            "type": "string"
+          },
+          "predicate": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "AttestationTrust": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "string"
+            },
+            "description": "PEM public keys (PKIX; ECDSA, RSA or Ed25519)"
+          },
+          "fulcio": {
+            "type": "object",
+            "properties": {
+              "roots": {
+                "type": "array",
+                "maxItems": 16,
+                "items": {
+                  "type": "string"
+                },
+                "description": "PEM certificates of the trusted Fulcio roots"
+              },
+              "identities": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "issuer"
+                  ],
+                  "properties": {
+                    "issuer": {
+                      "type": "string"
+                    },
+                    "subject": {
+                      "type": "string"
+                    },
+                    "subject_regexp": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "require_verified_provenance": {
+            "type": "boolean",
+            "description": "Refuse to promote a docker image without verified SLSA provenance (PROVENANCE_REQUIRED); pushes are never blocked"
+          }
+        }
+      },
+      "BundleCheckReport": {
+        "type": "object",
+        "required": [
+          "name",
+          "status"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Check name, matched against a stage's `required_checks`."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "success",
+              "failure",
+              "error"
+            ]
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "details_url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048,
+            "description": "Absolute http(s) URL."
+          },
+          "expires_at": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "Must be in the future; the check stops counting after it."
+          }
+        }
+      },
+      "BundleCheck": {
+        "type": "object",
+        "required": [
+          "name",
+          "status",
+          "summary",
+          "details_url",
+          "reported_by",
+          "updated_at",
+          "expires_at"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "success",
+              "failure",
+              "error"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "details_url": {
+            "type": "string"
+          },
+          "reported_by": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          }
+        }
+      },
+      "GateCheck": {
+        "type": "object",
+        "required": [
+          "name",
+          "pass",
+          "detail"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "vulnerabilities",
+              "license",
+              "quarantine",
+              "attestations"
+            ]
+          },
+          "pass": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string",
+            "description": "Short client-safe sentence."
+          }
+        }
+      },
+      "GateResponse": {
+        "type": "object",
+        "required": [
+          "pass",
+          "digest",
+          "checks",
+          "scan_status"
+        ],
+        "properties": {
+          "pass": {
+            "type": "boolean",
+            "description": "True only when every check passed."
+          },
+          "reason": {
+            "type": "string",
+            "description": "`<check>: <detail>` of the first failing check; absent on pass."
+          },
+          "digest": {
+            "type": "string"
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GateCheck"
+            }
+          },
+          "scan_status": {
+            "type": "string",
+            "description": "Status of the latest scan of the image (`pending`, `scanning`, `completed`, `partial`, `failed`), `none` when it was never scanned."
+          },
+          "scan_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Latest scan; absent when none."
+          }
+        }
+      },
+      "VulnScanImportRequest": {
+        "type": "object",
+        "required": [
+          "format",
+          "digest",
+          "result"
+        ],
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "sarif",
+              "osv-scanner",
+              "oa"
+            ]
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "description": "Manifest digest of the scanned image."
+          },
+          "scanner": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$",
+            "description": "Optional tool label; the scan's scanner becomes `external:<label>` (default: the format)."
+          },
+          "result": {
+            "description": "The scan result as JSON in the declared format. `oa`: `{\"vulnerabilities\":[{\"id\",\"severity\",\"summary\",\"cvss\",\"fixed_in\",\"package\",\"references\",\"aliases\"}]}`."
+          }
+        }
+      },
+      "OIDCDiscovery": {
+        "type": "object",
+        "description": "Where a trust policy gets the issuer's signing keys.",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "anonymous",
+              "static",
+              "serviceaccount"
+            ],
+            "default": "anonymous",
+            "description": "`anonymous` reads `{issuer}/.well-known/openid-configuration` and its `jwks_uri` without credentials. `static` verifies against `jwks` and never contacts the issuer (the `iss` claim must still equal `issuer`). `serviceaccount` reads the same documents with OpenArtifact's own projected service account token as Bearer and trusts the in-pod cluster CA in addition to the system roots (Kubernetes API servers)."
+          },
+          "jwks": {
+            "type": "object",
+            "description": "Static mode only (required there, rejected otherwise): a JWK Set with 1-32 public asymmetric signing keys, at most 64 KiB. Private and symmetric keys are refused.",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "mode"
+        ]
       }
     }
   },
@@ -8795,6 +9168,10 @@
                   "federated": {
                     "type": "boolean",
                     "description": "Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true)."
+                  },
+                  "honour_quay_expiry": {
+                    "type": "boolean",
+                    "description": "Hosted docker repositories only (400 validation_failed otherwise when true, and when combined with immutable_releases=true). When true, a manifest carrying the quay.expires-after annotation (or image config label) is deleted with its tags and dependents once that time has passed."
                   }
                 },
                 "required": [
@@ -9546,7 +9923,11 @@
                         "repository.restored",
                         "repository.purged",
                         "bundle.promoted",
-                        "vulnerability.new"
+                        "vulnerability.new",
+                        "scan.completed",
+                        "vulnerability.found",
+                        "quarantine.changed",
+                        "bundle.check_updated"
                       ]
                     }
                   },
@@ -12247,7 +12628,7 @@
     "/api/v1/repositories/{name}/vuln/scan": {
       "post": {
         "summary": "Scan vulnerabilities",
-        "description": "Start a vulnerability scan for an artifact. The scan runs in the background: poll the scan until `scan_status` is `completed`, `partial` or `failed`. A scanner that cannot run (not installed, timeout, non-zero exit, unreadable output, upstream error, unsupported ecosystem) is recorded as failed instead of `completed` with zero findings.",
+        "description": "Start a vulnerability scan for an artifact. The scan runs in the background: poll the scan until `scan_status` is `completed`, `partial` or `failed`. A scanner that cannot run (not installed, timeout, non-zero exit, unreadable output, upstream error, unsupported ecosystem) is recorded as failed instead of `completed` with zero findings. With ecosystem `docker` the scan covers every package of the image's SBOM (cosign `.sbom`/`.att` or an SBOM referrer); see the scanning guide for the ecosystems covered.",
         "tags": [
           "Repositories",
           "Scanning"
@@ -12281,6 +12662,12 @@
           },
           "404": {
             "description": "Repository not found"
+          },
+          "422": {
+            "description": "`no_sbom`: the image has no ingested SBOM"
+          },
+          "429": {
+            "description": "`too_many_scans`: all scan slots are busy; retry later"
           }
         },
         "requestBody": {
@@ -12424,7 +12811,7 @@
     "/api/v1/repositories/{name}/vuln/scans/{id}/gate": {
       "get": {
         "summary": "Check a vulnerability scan against exploitation criteria",
-        "description": "Quality gate on the exploitation signals of one scan's findings (admin only). The scan passes when no finding meets any of the given conditions (they are ORed): a CVE in the CISA KEV catalog (`kev=true`), an EPSS score of at least `epss_min`, or a priority of at least `min_priority`. At least one condition is required. The signals are read when the request is made, so a feed import changes the verdict of an old scan.",
+        "description": "Quality gate on the exploitation signals of one scan's findings (readable with read access to the repository). The scan passes when no finding meets any of the given conditions (they are ORed): a CVE in the CISA KEV catalog (`kev=true`), an EPSS score of at least `epss_min`, or a priority of at least `min_priority`. At least one condition is required. The signals are read when the request is made, so a feed import changes the verdict of an old scan.",
         "tags": [
           "Scanning"
         ],
@@ -12496,10 +12883,10 @@
             "description": "No condition given, or an invalid value (`validation_failed`)"
           },
           "403": {
-            "description": "Admin access required"
+            "description": "Read access to the repository required"
           },
           "404": {
-            "description": "Scan not found"
+            "description": "Repository or scan not found"
           }
         }
       }
@@ -13542,7 +13929,11 @@
                         "repository.restored",
                         "repository.purged",
                         "bundle.promoted",
-                        "vulnerability.new"
+                        "vulnerability.new",
+                        "scan.completed",
+                        "vulnerability.found",
+                        "quarantine.changed",
+                        "bundle.check_updated"
                       ]
                     }
                   },
@@ -13719,7 +14110,11 @@
                         "repository.restored",
                         "repository.purged",
                         "bundle.promoted",
-                        "vulnerability.new"
+                        "vulnerability.new",
+                        "scan.completed",
+                        "vulnerability.found",
+                        "quarantine.changed",
+                        "bundle.check_updated"
                       ]
                     }
                   },
@@ -14907,7 +15302,7 @@
                   "issuer": {
                     "type": "string",
                     "format": "uri",
-                    "description": "Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com` or `https://gitlab.com`. Must be https and pass the outbound-request (SSRF) check."
+                    "description": "Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com`, `https://gitlab.com` or `https://kubernetes.default.svc`. Must be https and, unless `discovery.mode` is `static`, pass the outbound-request (SSRF) check (relaxed by `allow_private_issuer`)."
                   },
                   "audience": {
                     "type": "string",
@@ -14936,6 +15331,15 @@
                   "enabled": {
                     "type": "boolean",
                     "default": true
+                  },
+                  "discovery": {
+                    "$ref": "#/components/schemas/OIDCDiscovery",
+                    "description": "How the issuer's signing keys are found. Defaults to `{\"mode\":\"anonymous\"}`. A PATCH replaces the whole object: omit `jwks` to clear it."
+                  },
+                  "allow_private_issuer": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Let the issuer and its `jwks_uri` resolve to private, loopback or cluster-internal addresses for this policy only (link-local and cloud-metadata addresses stay blocked). https is still required except on loopback. Not allowed with `discovery.mode` `static`. Admin only."
                   }
                 },
                 "required": [
@@ -14961,7 +15365,7 @@
             }
           },
           "400": {
-            "description": "Invalid request, including an issuer that fails the outbound-request check or a missing identity condition for a shared issuer",
+            "description": "Invalid request, including an issuer that fails the outbound-request check (unless `allow_private_issuer` or the static mode applies), an invalid or non-public `discovery.jwks`, or a missing identity condition for a shared issuer",
             "content": {
               "application/json": {
                 "schema": {
@@ -15054,7 +15458,7 @@
                   "issuer": {
                     "type": "string",
                     "format": "uri",
-                    "description": "Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com` or `https://gitlab.com`. Must be https and pass the outbound-request (SSRF) check."
+                    "description": "Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com`, `https://gitlab.com` or `https://kubernetes.default.svc`. Must be https and, unless `discovery.mode` is `static`, pass the outbound-request (SSRF) check (relaxed by `allow_private_issuer`)."
                   },
                   "audience": {
                     "type": "string",
@@ -15083,6 +15487,15 @@
                   "enabled": {
                     "type": "boolean",
                     "default": true
+                  },
+                  "discovery": {
+                    "$ref": "#/components/schemas/OIDCDiscovery",
+                    "description": "How the issuer's signing keys are found. Defaults to `{\"mode\":\"anonymous\"}`. A PATCH replaces the whole object: omit `jwks` to clear it."
+                  },
+                  "allow_private_issuer": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Let the issuer and its `jwks_uri` resolve to private, loopback or cluster-internal addresses for this policy only (link-local and cloud-metadata addresses stay blocked). https is still required except on loopback. Not allowed with `discovery.mode` `static`. Admin only."
                   }
                 }
               }
@@ -19896,6 +20309,10 @@
                   "federated": {
                     "type": "boolean",
                     "description": "Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true)."
+                  },
+                  "honour_quay_expiry": {
+                    "type": "boolean",
+                    "description": "Hosted docker repositories only (400 validation_failed otherwise when true, and when combined with immutable_releases=true). When true, a manifest carrying the quay.expires-after annotation (or image config label) is deleted with its tags and dependents once that time has passed."
                   }
                 }
               }
@@ -21723,6 +22140,10 @@
                   "sign_packages": {
                     "type": "boolean",
                     "description": "Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed."
+                  },
+                  "honour_quay_expiry": {
+                    "type": "boolean",
+                    "description": "Hosted docker repositories only (400 validation_failed otherwise when true, and when combined with immutable_releases=true). When true, a manifest carrying the quay.expires-after annotation (or image config label) is deleted with its tags and dependents once that time has passed."
                   }
                 }
               }
@@ -22869,7 +23290,7 @@
             }
           },
           "422": {
-            "description": "A target repository has a blocking license policy and the license of a promoted package file cannot be read (LICENSE_METADATA_UNREADABLE); nothing is copied",
+            "description": "A target repository has a blocking license policy and the license of a promoted package file cannot be read (LICENSE_METADATA_UNREADABLE); nothing is copied; a required check of the target stage is missing, failed, pending or expired (CHECKS_REQUIRED); a docker item has no verified SLSA provenance while the source or target repository's attestation trust requires it (PROVENANCE_REQUIRED)",
             "content": {
               "application/json": {
                 "schema": {
@@ -28339,6 +28760,647 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/attestations": {
+      "get": {
+        "summary": "List the attestations of an image",
+        "description": "Lists the signatures, attestations (SLSA provenance and others) and SBOMs indexed for an image digest of a docker repository, with their verification outcome against the repository's attestation trust configuration. Needs read access to the repository.",
+        "tags": [
+          "Repositories",
+          "Attestations"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subject",
+            "in": "query",
+            "required": true,
+            "description": "Image manifest digest (sha256:<64 hex>)",
+            "schema": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            }
+          },
+          {
+            "name": "image",
+            "in": "query",
+            "description": "Image name inside the repository",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attestations of the image",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "attestations"
+                  ],
+                  "properties": {
+                    "attestations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OCIAttestation"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/attestations/{digest}": {
+      "get": {
+        "summary": "Get the statement of an attestation",
+        "description": "Returns the decoded in-toto statement of an indexed attachment (an SBOM or signature payload is wrapped as the predicate of a statement about the image). The statement is returned as stored, whether or not it verified. Needs read access to the repository.",
+        "tags": [
+          "Repositories",
+          "Attestations"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "digest",
+            "in": "path",
+            "required": true,
+            "description": "Attestation digest as listed (sha256:<64 hex>)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "image",
+            "in": "query",
+            "description": "Image name inside the repository",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "in-toto statement",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InTotoStatement"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or attestation not found, or the attachment carries no readable statement",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/attestations/reverify": {
+      "post": {
+        "summary": "Verify the attestations of an image again",
+        "description": "Re-reads the cosign tags (.sig, .att, .sbom) and the referrers of the image digest and judges them against the current trust configuration; without `subject` every indexed image of the repository is re-verified. With `subject` and `image` it also re-indexes an image whose rows are gone. Needs manage, or maintainer/owner of the repository's project.",
+        "tags": [
+          "Repositories",
+          "Attestations"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subject",
+            "in": "query",
+            "required": false,
+            "description": "Image manifest digest (sha256:<64 hex>)",
+            "schema": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            }
+          },
+          {
+            "name": "image",
+            "in": "query",
+            "description": "Image name inside the repository",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Number of attachment manifests processed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "reverified"
+                  ],
+                  "properties": {
+                    "reverified": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/attestation-trust": {
+      "get": {
+        "summary": "Get the attestation trust configuration",
+        "description": "Returns the keys, Fulcio roots and identities a repository's attestations are verified against. Needs manage, or maintainer/owner of the repository's project.",
+        "tags": [
+          "Repositories",
+          "Attestations"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trust configuration (empty when none is set)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttestationTrust"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
+      },
+      "put": {
+        "summary": "Set the attestation trust configuration",
+        "description": "Replaces the trust configuration of a docker repository. Keys and roots are PEM documents; Fulcio needs both roots and identities; every identity needs an issuer and exactly one of `subject` and `subject_regexp` (matched against the whole subject). Already indexed attestations keep their verdict until reverified. Needs manage, or maintainer/owner of the repository's project.",
+        "tags": [
+          "Repositories",
+          "Attestations"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttestationTrust"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored trust configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttestationTrust"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
+      }
+    },
+    "/api/v1/bundles/{name}/{version}/checks": {
+      "get": {
+        "summary": "List bundle checks",
+        "description": "Checks reported against the bundle, ordered by name. Readable by anyone who can see the bundle, and by a principal holding `write` on every source repository.",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Checks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "checks"
+                  ],
+                  "properties": {
+                    "checks": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BundleCheck"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Bundle not found, or not visible to the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Report a bundle check",
+        "description": "Creates or replaces the check of that name (one row per bundle and name). Requires administrator, or `write` on the source repository of every item of the bundle (a deploy token or OIDC-exchanged CI token). Emits the `bundle.check_updated` webhook event and an audit event. A stage whose `required_checks` lists the name refuses promotion until the check is `success` and unexpired.",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BundleCheckReport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored check",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BundleCheck"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid name, status, summary, details_url or expires_at (code validation_failed)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The bundle is visible but the caller lacks write access to every source repository",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Bundle not found, or not visible to the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The bundle is archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/gate": {
+      "get": {
+        "summary": "Gate an image digest",
+        "operationId": "gateImageDigest",
+        "tags": [
+          "Scanning"
+        ],
+        "description": "Aggregate pass/fail verdict for one image of a docker repository, for CI and release pipelines. Readable with read access to the repository. Checks: `vulnerabilities` (the latest scan of the digest against the exploitation criteria; an image that was never scanned fails), `license` (blocking license policies over the ingested SBOM), `quarantine`, and `attestations` (present and none failed verification; only when attestation indexing is available). Without `kev`, `epss_min` or `min_priority` the criteria default to `min_priority=high`. A failing gate is still HTTP 200.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "digest",
+            "in": "query",
+            "required": true,
+            "description": "Manifest digest `sha256:<hex>` of the image.",
+            "schema": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          },
+          {
+            "name": "kev",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "`true`: a finding in the KEV catalog fails the vulnerability check."
+          },
+          {
+            "name": "epss_min",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "description": "A finding whose EPSS score is at least this value fails the vulnerability check."
+          },
+          {
+            "name": "min_priority",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "kev",
+                "epss",
+                "critical",
+                "high",
+                "medium",
+                "low"
+              ]
+            },
+            "description": "A finding whose priority is at least this one fails the vulnerability check."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The verdict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid digest, not a docker repository, or invalid criteria (`validation_failed`)"
+          },
+          "403": {
+            "description": "Read access to the repository required"
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/vuln/scans/import": {
+      "post": {
+        "summary": "Import an external scan result",
+        "operationId": "importVulnScan",
+        "tags": [
+          "Scanning"
+        ],
+        "description": "Store the result of a scanner that ran elsewhere (SARIF 2.1, osv-scanner JSON or the minimal `oa` schema) as a completed scan of an image, with scanner `external:<scanner label or format>`. The scan is gated, quarantined, exported and announced to webhooks like a scan of this server. Needs write access to the repository. Body up to 32 MiB; at most 50000 findings.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VulnScanImportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The stored scan (`scan_status` is `completed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VulnScanResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON, or not a docker repository (`validation_failed`)"
+          },
+          "403": {
+            "description": "Write access to the repository required"
+          },
+          "404": {
+            "description": "Repository not found"
+          },
+          "413": {
+            "description": "Body too large"
+          },
+          "422": {
+            "description": "`invalid_scan_result`: unknown format, bad digest or label, or a result that cannot be read in the declared format"
           }
         }
       }

@@ -41,6 +41,10 @@ func SubscribableEvents() []string {
 		EventRepoPurged,
 		EventBundlePromoted,
 		EventVulnerabilityNew,
+		EventScanCompleted,
+		EventVulnerabilityFound,
+		EventQuarantineChanged,
+		EventBundleCheckUpdated,
 	}
 }
 

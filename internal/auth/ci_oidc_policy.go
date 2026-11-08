@@ -5,6 +5,8 @@
 package auth
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -34,6 +36,13 @@ var (
 	policyNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
 	claimNameRe  = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,64}$`)
 )
+
+// ValidClaimPath reports whether s names a claim: up to 64 letters, digits or
+// _ . : - where a dot joins the names of nested claims (kubernetes.io.namespace),
+// so it neither starts nor ends with a dot and has no empty segment.
+func ValidClaimPath(s string) bool {
+	return claimNameRe.MatchString(s) && !strings.HasPrefix(s, ".") && !strings.HasSuffix(s, ".") && !strings.Contains(s, "..")
+}
 
 // scopingClaims lists, per shared issuer host, the claims that tie a token to
 // one owner or repository. Every installation of GitHub Actions and every
@@ -82,7 +91,46 @@ func ValidateOIDCPolicy(p *models.OIDCTrustPolicy) error {
 		return policyErrorf("token_ttl_seconds must be between %d and %d", OIDCPolicyMinTTL, OIDCPolicyMaxTTL)
 	}
 
+	if err := validateDiscovery(p); err != nil {
+		return err
+	}
+
 	return validateConditions(p.Issuer, p.Conditions)
+}
+
+// validateDiscovery checks the discovery mode and its settings and normalizes
+// them: an unset mode becomes anonymous, a static key set is stored compact. A
+// key set belongs to the static mode alone, which fetches nothing and so has no
+// use for private-address access.
+func validateDiscovery(p *models.OIDCTrustPolicy) error {
+	p.Discovery.Mode = p.Discovery.EffectiveMode()
+
+	switch p.Discovery.Mode {
+	case models.OIDCDiscoveryAnonymous, models.OIDCDiscoveryServiceAccount:
+		if len(p.Discovery.JWKS) > 0 {
+			return policyErrorf("discovery.jwks is only for the static discovery mode")
+		}
+	case models.OIDCDiscoveryStatic:
+		if _, err := parseStaticJWKS(p.Discovery.JWKS); err != nil {
+			return err
+		}
+
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, p.Discovery.JWKS); err != nil {
+			return policyErrorf("discovery.jwks must be valid JSON")
+		}
+
+		p.Discovery.JWKS = compact.Bytes()
+
+		if p.AllowPrivateIssuer {
+			return policyErrorf("allow_private_issuer has no effect with static discovery, which contacts nobody")
+		}
+	default:
+		return policyErrorf("discovery.mode must be %s, %s or %s",
+			models.OIDCDiscoveryAnonymous, models.OIDCDiscoveryStatic, models.OIDCDiscoveryServiceAccount)
+	}
+
+	return nil
 }
 
 // validateIssuer requires a plain https URL (http only for a loopback host, as
@@ -110,8 +158,9 @@ func validateConditions(issuer string, conditions []models.OIDCCondition) error 
 	seen := make(map[string]bool, len(conditions))
 
 	for i, c := range conditions {
-		if !claimNameRe.MatchString(c.Claim) {
-			return policyErrorf("conditions[%d].claim must be a claim name of up to 64 letters, digits or _ . : -", i)
+		if !ValidClaimPath(c.Claim) {
+			return policyErrorf(
+				"conditions[%d].claim must be a claim name or a dotted path to a nested claim, of up to 64 letters, digits or _ . : -", i)
 		}
 
 		if seen[c.Claim] {

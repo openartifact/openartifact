@@ -58,6 +58,9 @@ type oidcPolicyResponse struct {
 	CreatedBy        string                 `json:"created_by"`
 	CreatedAt        string                 `json:"created_at"`
 	UpdatedAt        string                 `json:"updated_at"`
+	// Discovery is how the issuer's keys are found; its JWKS is public.
+	Discovery          models.OIDCDiscovery `json:"discovery"`
+	AllowPrivateIssuer bool                 `json:"allow_private_issuer"`
 }
 
 func oidcPolicyToResponse(p *models.OIDCTrustPolicy) oidcPolicyResponse {
@@ -66,6 +69,8 @@ func oidcPolicyToResponse(p *models.OIDCTrustPolicy) oidcPolicyResponse {
 		ServiceAccountID: p.ServiceAccountID, ServiceAccount: p.ServiceAccountName,
 		TokenTTLSeconds: p.TokenTTLSeconds, Enabled: p.Enabled, CreatedBy: p.CreatedBy,
 		CreatedAt: formatTime(p.CreatedAt), UpdatedAt: formatTime(p.UpdatedAt),
+		Discovery:          models.OIDCDiscovery{Mode: p.Discovery.EffectiveMode(), JWKS: p.Discovery.JWKS},
+		AllowPrivateIssuer: p.AllowPrivateIssuer,
 	}
 }
 
@@ -79,6 +84,9 @@ type oidcPolicyBody struct {
 	ServiceAccountID *string                 `json:"service_account_id"`
 	TokenTTLSeconds  *int                    `json:"token_ttl_seconds"`
 	Enabled          *bool                   `json:"enabled"`
+	// Discovery replaces the whole discovery setting (mode and key set).
+	Discovery          *models.OIDCDiscovery `json:"discovery"`
+	AllowPrivateIssuer *bool                 `json:"allow_private_issuer"`
 }
 
 // apply copies the fields the body sets onto p.
@@ -110,24 +118,46 @@ func (b *oidcPolicyBody) apply(p *models.OIDCTrustPolicy) {
 	if b.Enabled != nil {
 		p.Enabled = *b.Enabled
 	}
+
+	if b.Discovery != nil {
+		p.Discovery = *b.Discovery
+	}
+
+	if b.AllowPrivateIssuer != nil {
+		p.AllowPrivateIssuer = *b.AllowPrivateIssuer
+	}
+}
+
+// oidcNetworkSetting is what decides whether the server contacts the issuer
+// and how: when it changes, the address check of the issuer runs again.
+type oidcNetworkSetting struct {
+	issuer  string
+	mode    string
+	private bool
+}
+
+func networkSettingOf(p *models.OIDCTrustPolicy) oidcNetworkSetting {
+	return oidcNetworkSetting{issuer: p.Issuer, mode: p.Discovery.EffectiveMode(), private: p.AllowPrivateIssuer}
 }
 
 // validatePolicy applies the content rules and the checks that need the
-// database or the network: the issuer must pass the SSRF guard (checked when it
-// is new or changed, so an old policy stays editable while its issuer is down)
-// and the target must be a service account. A non-empty message is a validation
-// failure for the administrator; an error is the database's.
-func (h *AdminOIDCPoliciesHandler) validatePolicy(ctx context.Context, p *models.OIDCTrustPolicy, issuerChanged bool) (string, error) {
+// database or the network: when the policy contacts its issuer (any mode but
+// static) the issuer must pass the SSRF guard, which allow_private_issuer
+// relaxes for private addresses only (checked when the issuer, the mode or that
+// flag is new or changed, so an old policy stays editable while its issuer is
+// down), and the target must be a service account. A non-empty message is a
+// validation failure for the administrator; an error is the database's.
+func (h *AdminOIDCPoliciesHandler) validatePolicy(ctx context.Context, p *models.OIDCTrustPolicy, networkChanged bool) (string, error) {
 	if err := auth.ValidateOIDCPolicy(p); err != nil {
 		return err.Error(), nil //nolint:nilerr // the message is the validation failure shown to the administrator
 	}
 
-	if issuerChanged {
+	if networkChanged && p.Discovery.Mode != models.OIDCDiscoveryStatic {
 		if err := requireHTTPSIdentityURL(p.Issuer); err != nil {
 			return "issuer: " + err.Error(), nil //nolint:nilerr // see above
 		}
 
-		if err := netutil.ValidateOutboundURLContext(ctx, p.Issuer); err != nil {
+		if err := netutil.ValidateOutboundURLContextWith(ctx, p.Issuer, p.AllowPrivateIssuer); err != nil {
 			return "issuer: " + err.Error(), nil //nolint:nilerr // see above
 		}
 	}
@@ -191,8 +221,10 @@ func (h *AdminOIDCPoliciesHandler) handleCreate(w http.ResponseWriter, r *http.R
 }
 
 // checkPolicy runs validatePolicy and writes the refusal.
-func (h *AdminOIDCPoliciesHandler) checkPolicy(w http.ResponseWriter, r *http.Request, p *models.OIDCTrustPolicy, issuerChanged bool) bool {
-	msg, err := h.validatePolicy(r.Context(), p, issuerChanged)
+func (h *AdminOIDCPoliciesHandler) checkPolicy(
+	w http.ResponseWriter, r *http.Request, p *models.OIDCTrustPolicy, networkChanged bool,
+) bool {
+	msg, err := h.validatePolicy(r.Context(), p, networkChanged)
 	if err != nil {
 		h.log.Errorw("oidc policy validation lookup failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -288,7 +320,7 @@ func (h *AdminOIDCPoliciesHandler) handlePatch(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	issuerChanged := body.Issuer != nil && *body.Issuer != policy.Issuer
+	before := networkSettingOf(policy)
 
 	body.apply(policy)
 
@@ -297,7 +329,7 @@ func (h *AdminOIDCPoliciesHandler) handlePatch(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if !h.checkPolicy(w, r, policy, issuerChanged) {
+	if !h.checkPolicy(w, r, policy, networkSettingOf(policy) != before) {
 		return
 	}
 

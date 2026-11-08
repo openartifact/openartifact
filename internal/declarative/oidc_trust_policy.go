@@ -6,6 +6,7 @@ package declarative
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -33,6 +34,13 @@ const (
 	oidcMaxIssuerLength    = 512
 	oidcPolicyTTLField     = "token_ttl_seconds"
 	oidcPolicyAccountField = "service_account"
+	oidcDiscoveryField     = "discovery"
+	oidcAllowPrivateField  = "allow_private_issuer"
+
+	// Discovery modes of the API: how the keys of the issuer are found.
+	oidcDiscoveryAnonymous      = "anonymous"
+	oidcDiscoveryStatic         = "static"
+	oidcDiscoveryServiceAccount = "serviceaccount"
 )
 
 var (
@@ -74,6 +82,11 @@ func (oidcPolicyKind) Schema() *Field {
 		oidcPolicyAccountField: {Type: TString, Required: true},
 		oidcPolicyTTLField:     {Type: TInt, HasMin: true, Min: oidcPolicyMinTTL},
 		"enabled":              {Type: TBool},
+		oidcDiscoveryField: {Type: TObject, Fields: map[string]*Field{
+			"mode": {Type: TString, Enum: []string{oidcDiscoveryAnonymous, oidcDiscoveryStatic, oidcDiscoveryServiceAccount}},
+			"jwks": {Type: TAny},
+		}},
+		oidcAllowPrivateField: {Type: TBool},
 	}}
 }
 
@@ -102,6 +115,7 @@ func (oidcPolicyKind) Validate(o *Object) []error {
 		msgs = append(msgs, fmt.Sprintf("%s must be between %d and %d", oidcPolicyTTLField, oidcPolicyMinTTL, oidcPolicyMaxTTL))
 	}
 
+	msgs = append(msgs, oidcCheckDiscovery(o.Spec)...)
 	msgs = append(msgs, oidcCheckConditions(specEntries(o.Spec, "conditions"))...)
 
 	errs := make([]error, len(msgs))
@@ -110,6 +124,26 @@ func (oidcPolicyKind) Validate(o *Object) []error {
 	}
 
 	return errs
+}
+
+// oidcCheckDiscovery mirrors the server rules on discovery: a key set belongs to
+// the static mode, which needs one and contacts nobody. The key set itself (a
+// public JWKS) is parsed by the server only.
+func oidcCheckDiscovery(spec map[string]any) []string {
+	d, _ := spec[oidcDiscoveryField].(map[string]any)
+	mode := Str(d, "mode")
+	_, hasJWKS := d["jwks"]
+
+	switch {
+	case mode == oidcDiscoveryStatic && !hasJWKS:
+		return []string{"discovery.jwks is required for the static discovery mode"}
+	case mode == oidcDiscoveryStatic && Bool(spec, oidcAllowPrivateField):
+		return []string{oidcAllowPrivateField + " has no effect with static discovery, which contacts nobody"}
+	case mode != oidcDiscoveryStatic && hasJWKS:
+		return []string{"discovery.jwks is only for the static discovery mode"}
+	}
+
+	return nil
 }
 
 // oidcCheckIssuer requires a URL naming the issuer the way its tokens do: http
@@ -142,8 +176,9 @@ func oidcCheckConditions(conditions []map[string]any) []string {
 	for i, c := range conditions {
 		claim := Str(c, "claim")
 
-		if !oidcClaimNameRe.MatchString(claim) {
-			msgs = append(msgs, fmt.Sprintf("conditions[%d].claim must be a claim name of up to 64 letters, digits or _ . : -", i))
+		if !oidcValidClaimPath(claim) {
+			msgs = append(msgs, fmt.Sprintf(
+				"conditions[%d].claim must be a claim name or a dotted path to a nested claim, of up to 64 letters, digits or _ . : -", i))
 		}
 
 		if seen[claim] {
@@ -156,6 +191,10 @@ func oidcCheckConditions(conditions []map[string]any) []string {
 	}
 
 	return msgs
+}
+
+func oidcValidClaimPath(s string) bool {
+	return oidcClaimNameRe.MatchString(s) && !strings.HasPrefix(s, ".") && !strings.HasSuffix(s, ".") && !strings.Contains(s, "..")
 }
 
 func oidcCheckPatterns(index int, patterns []string) []string {
@@ -184,16 +223,40 @@ type oidcConditionResponse struct {
 	Patterns []string `json:"patterns"`
 }
 
+// oidcDiscoveryResponse is how a policy finds its issuer's keys; jwks is public.
+type oidcDiscoveryResponse struct {
+	Mode string          `json:"mode"`
+	JWKS json.RawMessage `json:"jwks"`
+}
+
 // oidcPolicyResponse is one policy of GET /api/v1/oidc-trust-policies.
 type oidcPolicyResponse struct {
-	ID              string                  `json:"id"`
-	Name            string                  `json:"name"`
-	Issuer          string                  `json:"issuer"`
-	Audience        string                  `json:"audience"`
-	Conditions      []oidcConditionResponse `json:"conditions"`
-	ServiceAccount  string                  `json:"service_account"`
-	TokenTTLSeconds int                     `json:"token_ttl_seconds"`
-	Enabled         bool                    `json:"enabled"`
+	ID                 string                  `json:"id"`
+	Name               string                  `json:"name"`
+	Issuer             string                  `json:"issuer"`
+	Audience           string                  `json:"audience"`
+	Conditions         []oidcConditionResponse `json:"conditions"`
+	ServiceAccount     string                  `json:"service_account"`
+	TokenTTLSeconds    int                     `json:"token_ttl_seconds"`
+	Enabled            bool                    `json:"enabled"`
+	Discovery          oidcDiscoveryResponse   `json:"discovery"`
+	AllowPrivateIssuer bool                    `json:"allow_private_issuer"`
+}
+
+// spec renders the discovery setting the way a manifest writes it: the
+// mode, and the key set of the static mode.
+func (d oidcDiscoveryResponse) spec() map[string]any {
+	spec := map[string]any{"mode": oidcDiscoveryAnonymous}
+	if d.Mode != "" {
+		spec["mode"] = d.Mode
+	}
+
+	var jwks any
+	if len(d.JWKS) > 0 && json.Unmarshal(d.JWKS, &jwks) == nil && jwks != nil {
+		spec["jwks"] = jwks
+	}
+
+	return spec
 }
 
 func (p *oidcPolicyResponse) live() *Live {
@@ -216,6 +279,8 @@ func (p *oidcPolicyResponse) live() *Live {
 			oidcPolicyAccountField: p.ServiceAccount,
 			oidcPolicyTTLField:     float64(p.TokenTTLSeconds),
 			"enabled":              p.Enabled,
+			oidcDiscoveryField:     p.Discovery.spec(),
+			oidcAllowPrivateField:  p.AllowPrivateIssuer,
 		},
 	}
 }
@@ -243,7 +308,7 @@ func (oidcPolicyKind) Create(ctx context.Context, env *Env, o *Object) (string, 
 		return "", fmt.Errorf("create OIDC trust policy %q: %w", o.Name, err)
 	}
 
-	body := Pick(o.Spec, "issuer", "audience", "conditions", oidcPolicyTTLField, "enabled")
+	body := Pick(o.Spec, "issuer", "audience", "conditions", oidcPolicyTTLField, "enabled", oidcDiscoveryField, oidcAllowPrivateField)
 	body["name"] = o.Name
 	body["service_account_id"] = accountID
 

@@ -1,0 +1,116 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: oa-gate
+  labels:
+    app.kubernetes.io/version: "0.1"
+  annotations:
+    tekton.dev/pipelines.minVersion: 0.62.0
+    tekton.dev/tags: openartifact
+spec:
+  description: >-
+    Ask OpenArtifact whether images may ship: the gate aggregates the vulnerability gate, licence policy,
+    quarantine state and attestation presence. Takes a Konflux SNAPSHOT or a list of digests and reports the
+    standard TEST_OUTPUT result, so it works as an integration test scenario.
+  params:
+    - name: SERVER
+      type: string
+      description: OpenArtifact base URL.
+    - name: POLICY
+      type: string
+      default: ""
+      description: OIDC trust policy name; empty lets the server match the token.
+    - name: CA_FILE
+      type: string
+      default: ""
+      description: PEM bundle trusted for the OpenArtifact server.
+    - name: IMAGE
+      type: string
+      default: ghcr.io/openartifact/oa-tekton:0.21.0
+    - name: REPOSITORY
+      type: string
+      description: Docker repository holding the images.
+    - name: SNAPSHOT
+      type: string
+      default: ""
+      description: Konflux Snapshot JSON; every component containerImage digest is checked.
+    - name: DIGESTS
+      type: array
+      default: []
+      description: Extra image manifest digests (sha256:...) to check.
+  results:
+    - name: TEST_OUTPUT
+      description: Konflux test result JSON (result, timestamp, successes, failures, warnings).
+    - name: GATE_RESULT
+      description: SUCCESS, FAILURE or ERROR, the plain value of TEST_OUTPUT.result.
+    - name: SCAN_OUTPUT
+      description: Gate documents of the checked digests, as a JSON array.
+  stepTemplate:
+    volumeMounts:
+      - name: oa-auth
+        mountPath: /oa-auth
+  steps:
+    - name: exchange
+      ref:
+        name: oa-exchange-token
+      params:
+        - name: server
+          value: $(params.SERVER)
+        - name: policy
+          value: $(params.POLICY)
+        - name: caFile
+          value: $(params.CA_FILE)
+      volumeMounts:
+        - name: oa-token
+          mountPath: /var/run/secrets/openartifact
+          readOnly: true
+    - name: gate
+      image: $(params.IMAGE)
+      env:
+        - name: SERVER
+          value: $(params.SERVER)
+        - name: CA_FILE
+          value: $(params.CA_FILE)
+        - name: REPOSITORY
+          value: $(params.REPOSITORY)
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+      args:
+        - $(params.DIGESTS[*])
+      script: |
+        #!/bin/bash
+        set -uo pipefail
+        [ -z "$CA_FILE" ] || export SSL_CERT_FILE="$CA_FILE"
+        OA_TOKEN="$(cat /oa-auth/docker/token)"
+        export OA_SERVER="$SERVER" OA_TOKEN
+        digests=("$@")
+        if [ -n "$SNAPSHOT" ]; then
+          while IFS= read -r d; do digests+=("$d"); done < <(jq -r '.components[].containerImage | split("@")[1]' <<<"$SNAPSHOT")
+        fi
+        ok=0 bad=0 docs='[]'
+        for d in "${digests[@]}"; do
+          if doc="$(oa --format json gate "$REPOSITORY" --digest "$d" 2>/dev/null)"; then ok=$((ok + 1)); else bad=$((bad + 1)); fi
+          docs="$(jq -c --arg d "$d" --argjson doc "${doc:-null}" '. + [{digest: $d, gate: $doc}]' <<<"$docs")"
+        done
+        result=SUCCESS
+        [ "$bad" -eq 0 ] || result=FAILURE
+        [ "${#digests[@]}" -gt 0 ] || result=ERROR
+        jq -cn --arg r "$result" --argjson s "$ok" --argjson f "$bad" --argjson t "$(date +%s)" \
+          '{result: $r, timestamp: ($t | tostring), successes: $s, failures: $f, warnings: 0}' > "$(results.TEST_OUTPUT.path)"
+        printf %s "$result" > "$(results.GATE_RESULT.path)"
+        printf %s "$docs" > "$(results.SCAN_OUTPUT.path)"
+  volumes:
+    - name: oa-token
+      projected:
+        sources:
+          - serviceAccountToken:
+              audience: openartifact
+              expirationSeconds: 600
+              path: token
+    - name: oa-auth
+      emptyDir:
+        medium: Memory

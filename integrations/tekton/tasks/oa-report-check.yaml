@@ -1,0 +1,122 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: oa-report-check
+  labels:
+    app.kubernetes.io/version: "0.1"
+  annotations:
+    tekton.dev/pipelines.minVersion: 0.62.0
+    tekton.dev/tags: openartifact
+spec:
+  description: >-
+    Report the outcome of a pipeline check (Conforma verification, tests) on an OpenArtifact release bundle,
+    so a promotion stage with required_checks can proceed. The ServiceAccount needs write access to the
+    bundle's repository.
+  params:
+    - name: SERVER
+      type: string
+      description: OpenArtifact base URL.
+    - name: POLICY
+      type: string
+      default: ""
+      description: OIDC trust policy name; empty lets the server match the token.
+    - name: CA_FILE
+      type: string
+      default: ""
+      description: PEM bundle trusted for the OpenArtifact server.
+    - name: IMAGE
+      type: string
+      default: ghcr.io/openartifact/oa-tekton:0.21.0
+    - name: BUNDLE_NAME
+      type: string
+    - name: BUNDLE_VERSION
+      type: string
+    - name: CHECK_NAME
+      type: string
+      default: conforma
+    - name: TEST_OUTPUT
+      type: string
+      default: ""
+      description: Konflux TEST_OUTPUT JSON; maps SUCCESS/WARNING to success, FAILURE to failure, else error.
+    - name: STATUS
+      type: string
+      default: ""
+      description: Explicit status (pending, success, failure, error); overrides TEST_OUTPUT.
+    - name: DETAILS_URL
+      type: string
+      default: ""
+    - name: SUMMARY
+      type: string
+      default: ""
+  stepTemplate:
+    volumeMounts:
+      - name: oa-auth
+        mountPath: /oa-auth
+  steps:
+    - name: exchange
+      ref:
+        name: oa-exchange-token
+      params:
+        - name: server
+          value: $(params.SERVER)
+        - name: policy
+          value: $(params.POLICY)
+        - name: caFile
+          value: $(params.CA_FILE)
+      volumeMounts:
+        - name: oa-token
+          mountPath: /var/run/secrets/openartifact
+          readOnly: true
+    - name: report
+      image: $(params.IMAGE)
+      env:
+        - name: SERVER
+          value: $(params.SERVER)
+        - name: CA_FILE
+          value: $(params.CA_FILE)
+        - name: BUNDLE_NAME
+          value: $(params.BUNDLE_NAME)
+        - name: BUNDLE_VERSION
+          value: $(params.BUNDLE_VERSION)
+        - name: CHECK_NAME
+          value: $(params.CHECK_NAME)
+        - name: TEST_OUTPUT
+          value: $(params.TEST_OUTPUT)
+        - name: STATUS
+          value: $(params.STATUS)
+        - name: DETAILS_URL
+          value: $(params.DETAILS_URL)
+        - name: SUMMARY
+          value: $(params.SUMMARY)
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+        [ -z "$CA_FILE" ] || export SSL_CERT_FILE="$CA_FILE"
+        OA_TOKEN="$(cat /oa-auth/docker/token)"
+        export OA_SERVER="$SERVER" OA_TOKEN
+        status="$STATUS"
+        if [ -z "$status" ]; then
+          case "$(jq -r '.result // empty' <<<"${TEST_OUTPUT:-{\}}")" in
+            SUCCESS | WARNING | SKIPPED) status=success ;;
+            FAILURE) status=failure ;;
+            *) status=error ;;
+          esac
+        fi
+        summary="$SUMMARY"
+        [ -n "$summary" ] || summary="$(jq -r '"successes=\(.successes // 0) failures=\(.failures // 0) warnings=\(.warnings // 0)"' <<<"${TEST_OUTPUT:-{\}}")"
+        oa bundle check report "$BUNDLE_NAME" "$BUNDLE_VERSION" --name "$CHECK_NAME" --status "$status" --summary "$summary" --details-url "$DETAILS_URL"
+  volumes:
+    - name: oa-token
+      projected:
+        sources:
+          - serviceAccountToken:
+              audience: openartifact
+              expirationSeconds: 600
+              path: token
+    - name: oa-auth
+      emptyDir:
+        medium: Memory

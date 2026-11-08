@@ -7,6 +7,8 @@ package netutil
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
@@ -43,16 +45,21 @@ var ErrCannotResolve = errors.New("cannot resolve host")
 // ErrBlockedAddress is returned when a destination address is not permitted.
 var ErrBlockedAddress = errors.New("destination address is not allowed")
 
-func blockedIP(ip netip.Addr) bool {
+func blockedIP(ip netip.Addr) bool { return blockedIPWith(ip, allowPrivate()) }
+
+// blockedIPWith is blockedIP with the private ranges (loopback, RFC 1918,
+// CGNAT) allowed or not by the caller; metadata, link-local and the other
+// always-blocked ranges stay blocked either way.
+func blockedIPWith(ip netip.Addr, private bool) bool {
 	ip = ip.Unmap().WithZone("")
-	if blockedAddr(ip) {
+	if blockedAddr(ip, private) {
 		return true
 	}
 
 	// Transition mechanisms smuggle an IPv4 address through an IPv6 one; the
 	// embedded address gets the same verdict it would get on its own.
 	if emb, ok := embeddedIPv4(ip); ok {
-		return blockedIP(emb)
+		return blockedIPWith(emb, private)
 	}
 
 	return false
@@ -65,12 +72,18 @@ func blockedIP(ip netip.Addr) bool {
 // resolution, so a DNS answer that changes between a check and the dial
 // cannot get around the policy.
 func dialControl(_, address string, _ syscall.RawConn) error {
+	return dialControlWith(address, false)
+}
+
+// dialControlWith is dialControl for a client that may itself be allowed to
+// reach private ranges (see ClientOptions.AllowPrivate).
+func dialControlWith(address string, private bool) error {
 	ap, err := netip.ParseAddrPort(address)
 	if err != nil {
 		return err
 	}
 
-	if blockedIP(ap.Addr()) {
+	if blockedIPWith(ap.Addr(), private || allowPrivate()) {
 		return ErrBlockedAddress
 	}
 
@@ -83,8 +96,8 @@ func safeDialer() *net.Dialer {
 }
 
 // blockedAddr applies the policy to ip itself, without looking inside
-// IPv6 transition addresses.
-func blockedAddr(ip netip.Addr) bool {
+// IPv6 transition addresses. private allows the private ranges.
+func blockedAddr(ip netip.Addr, private bool) bool {
 	if ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 		return true // includes 169.254.169.254 metadata
 	}
@@ -97,7 +110,7 @@ func blockedAddr(ip netip.Addr) bool {
 		return true
 	}
 
-	if allowPrivate() {
+	if private {
 		return false
 	}
 
@@ -229,6 +242,15 @@ var (
 // ValidateOutboundURLContext checks scheme, host and (resolved) addresses of
 // raw, resolving the host under ctx.
 func ValidateOutboundURLContext(ctx context.Context, raw string) error {
+	return ValidateOutboundURLContextWith(ctx, raw, false)
+}
+
+// ValidateOutboundURLContextWith is ValidateOutboundURLContext for a caller
+// that may reach private, loopback and CGNAT addresses (private); metadata and
+// link-local addresses stay refused.
+func ValidateOutboundURLContextWith(ctx context.Context, raw string, private bool) error {
+	private = private || allowPrivate()
+
 	u, err := url.Parse(raw)
 	if err != nil {
 		return fmt.Errorf("invalid URL: %w", err)
@@ -241,7 +263,7 @@ func ValidateOutboundURLContext(ctx context.Context, raw string) error {
 		return errHostRequired
 	}
 	if ip, err := netip.ParseAddr(host); err == nil {
-		if blockedIP(ip) {
+		if blockedIPWith(ip, private) {
 			return ErrBlockedAddress
 		}
 		return nil
@@ -251,7 +273,7 @@ func ValidateOutboundURLContext(ctx context.Context, raw string) error {
 		return fmt.Errorf("%w %q", ErrCannotResolve, host)
 	}
 	for _, ipAddr := range ips {
-		if a, ok := netip.AddrFromSlice(ipAddr.IP); ok && blockedIP(a) {
+		if a, ok := netip.AddrFromSlice(ipAddr.IP); ok && blockedIPWith(a, private) {
 			return ErrBlockedAddress
 		}
 	}
@@ -322,10 +344,38 @@ func SafeHTTPClientWithHeaderTimeout(timeout, responseHeaderTimeout time.Duratio
 // that does not answer is closed, so requests on a dead connection fail fast
 // instead of waiting for TCP retransmit exhaustion.
 func SafeHTTPClientWithStallTimeout(timeout, responseHeaderTimeout, stallTimeout time.Duration) *http.Client {
-	d := safeDialer()
+	return newSafeHTTPClient(timeout, responseHeaderTimeout, stallTimeout, ClientOptions{})
+}
+
+// ClientOptions are the per-client exceptions of SafeHTTPClientWithOptions.
+type ClientOptions struct {
+	// AllowPrivate lets the client connect to private, loopback and CGNAT
+	// addresses (a cluster-internal issuer) without the process-wide
+	// OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS. Link-local, cloud metadata and the
+	// other always-blocked ranges stay refused.
+	AllowPrivate bool
+	// RootCAs, when set, replaces the system roots for the TLS handshakes.
+	RootCAs *x509.CertPool
+	// DisableKeepAlives closes every connection after its request, for clients
+	// that are built often and used rarely.
+	DisableKeepAlives bool
+}
+
+// SafeHTTPClientWithOptions is SafeHTTPClient with the exceptions in opts.
+func SafeHTTPClientWithOptions(timeout time.Duration, opts ClientOptions) *http.Client {
+	return newSafeHTTPClient(timeout, 0, 0, opts)
+}
+
+func newSafeHTTPClient(timeout, responseHeaderTimeout, stallTimeout time.Duration, opts ClientOptions) *http.Client {
+	d := &net.Dialer{
+		Timeout: 10 * time.Second,
+		Control: func(_, address string, _ syscall.RawConn) error { return dialControlWith(address, opts.AllowPrivate) },
+	}
 	tr := &http.Transport{
 		Proxy:                 nil,
 		DialContext:           func(ctx context.Context, n, a string) (net.Conn, error) { return d.DialContext(ctx, n, a) },
+		TLSClientConfig:       tlsConfigFor(opts.RootCAs),
+		DisableKeepAlives:     opts.DisableKeepAlives,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: responseHeaderTimeout,
 		MaxIdleConns:          100,
@@ -366,6 +416,14 @@ func SafeHTTPClientWithStallTimeout(timeout, responseHeaderTimeout, stallTimeout
 			return nil
 		},
 	}
+}
+
+func tlsConfigFor(roots *x509.CertPool) *tls.Config {
+	if roots == nil {
+		return nil
+	}
+
+	return &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
 }
 
 // IsLoopbackHost reports whether host (no port) is "localhost" or a loopback

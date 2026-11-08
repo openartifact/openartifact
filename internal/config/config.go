@@ -43,6 +43,7 @@ var (
 	errNegativeDockerGCGrace    = errors.New("workers.dockerGcGracePeriod must not be negative")
 	errRepoStatsInterval        = errors.New("workers.repoStatsInterval must be positive")
 	errNegativeStallTimeout     = errors.New("workers.proxyUpstreamStallTimeout must not be negative")
+	errBadGoSumdbHost           = errors.New("workers.proxyGoSumdbHosts entries must be host names without scheme or path")
 	errNegativeDigestTTL        = errors.New("workers.proxyDockerDigestTtl must not be negative")
 	errNegativeWebhookRetention = errors.New("workers.webhookDeliveryRetentionDays must not be negative")
 	errNegativeTrashRetention   = errors.New("trash.retentionDays must not be negative")
@@ -142,6 +143,9 @@ type Config struct {
 	// Exploit configures the KEV and EPSS feeds behind the exploitation
 	// signals of vulnerability findings.
 	Exploit ExploitConfig `yaml:"exploit"`
+	// QuayAPI configures the Quay-compatible API facade for the Konflux
+	// image-controller (see docs/integrations/konflux-image-controller.md).
+	QuayAPI QuayAPIConfig `yaml:"quayApi"`
 	// OSVMirror configures the local OSV vulnerability mirror (see docs/security/osv-mirror.md).
 	OSVMirror OSVMirrorConfig `yaml:"osvMirror"`
 	// BaseURL is the public URL of the server. SSO callbacks, SAML metadata,
@@ -226,6 +230,12 @@ type WorkersConfig struct {
 	// is reset on every read, so slow but steady downloads are unaffected.
 	// Zero disables the check.
 	ProxyUpstreamStallTimeout time.Duration `yaml:"proxyUpstreamStallTimeout"`
+	// ProxyGoSumdbHosts lists the Go checksum databases that Go proxy and group
+	// repositories relay under /sumdb/<host>/ (the GOPROXY sumdb protocol). A
+	// request for any other host is 404. Each entry is a bare host name (with
+	// an optional port); the relay always uses https. Empty turns the relay
+	// off.
+	ProxyGoSumdbHosts []string `yaml:"proxyGoSumdbHosts"`
 	// DockerUploadTTL is how long a blob upload session may sit idle before
 	// the sweeper deletes it and its data. Zero or negative disables the
 	// sweeper.
@@ -417,6 +427,14 @@ type AuthConfig struct {
 	// once, each of which holds 64 MiB until it ends; further logins wait. 0
 	// (default): the CPU count clamped to 2..4 (256 MiB at most).
 	Argon2MaxConcurrent int `yaml:"argon2MaxConcurrent"`
+	// OIDCServiceAccountTokenFile is the projected Kubernetes service account
+	// token OpenArtifact presents as bearer when a CI OIDC trust policy with the
+	// serviceaccount discovery mode reads its issuer. It is read for every
+	// request (the kubelet rotates it).
+	OIDCServiceAccountTokenFile string `yaml:"oidcServiceAccountTokenFile"`
+	// OIDCServiceAccountCAFile is the PEM CA bundle, in addition to the system
+	// roots, trusted for that read (the cluster CA of the API server).
+	OIDCServiceAccountCAFile string `yaml:"oidcServiceAccountCaFile"`
 }
 
 // ServerConfig contains HTTP server configuration.
@@ -720,6 +738,9 @@ func defaultConfig() *Config {
 			SAMLSPCertPEM:        "",
 			SAMLSPKeyPEM:         "",
 			Argon2MaxConcurrent:  0,
+
+			OIDCServiceAccountTokenFile: inPodServiceAccountFile("token"),
+			OIDCServiceAccountCAFile:    inPodServiceAccountFile("ca.crt"),
 		},
 		Backup: BackupConfig{
 			BackupDir: "/var/lib/openartifact/backups",
@@ -757,6 +778,7 @@ func defaultConfig() *Config {
 			RepoStatsInterval:            15 * time.Second,
 			ProxyDockerDigestTTL:         30 * 24 * time.Hour,
 			ProxyUpstreamStallTimeout:    60 * time.Second,
+			ProxyGoSumdbHosts:            []string{"sum.golang.org"},
 			DockerUploadTTL:              24 * time.Hour,
 			WebhookDeliveryRetentionDays: 30,
 		},
@@ -809,6 +831,7 @@ func defaultConfig() *Config {
 			Grype:           GrypeScanner{Install: InstallNone},
 		},
 		Exploit: defaultExploitConfig(),
+		QuayAPI: defaultQuayAPIConfig(),
 	}
 }
 
@@ -926,6 +949,8 @@ func applyEnvOverrides(cfg *Config) {
 	overrideInt(&cfg.Auth.SessionDurationHours, "SESSION_DURATION_HOURS")
 	overrideInt(&cfg.Auth.Argon2MaxConcurrent, "OPENARTIFACT_ARGON2_MAX_CONCURRENT")
 	overrideString(&cfg.Auth.HMACKey, "AUTH_HMAC_KEY")
+	overrideString(&cfg.Auth.OIDCServiceAccountTokenFile, "OPENARTIFACT_OIDC_SERVICEACCOUNT_TOKEN_FILE")
+	overrideString(&cfg.Auth.OIDCServiceAccountCAFile, "OPENARTIFACT_OIDC_SERVICEACCOUNT_CA_FILE")
 	overrideString(&cfg.Auth.SAMLSPCertPEM, "OPENARTIFACT_SAML_SP_CERT")
 	overrideString(&cfg.Auth.SAMLSPKeyPEM, "OPENARTIFACT_SAML_SP_KEY")
 
@@ -986,6 +1011,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideDuration(&cfg.Workers.RepoStatsInterval, "OPENARTIFACT_REPO_STATS_INTERVAL")
 	overrideDuration(&cfg.Workers.ProxyDockerDigestTTL, "OPENARTIFACT_PROXY_DOCKER_DIGEST_TTL")
 	overrideDuration(&cfg.Workers.ProxyUpstreamStallTimeout, "OPENARTIFACT_PROXY_UPSTREAM_STALL_TIMEOUT")
+	overrideSlice(&cfg.Workers.ProxyGoSumdbHosts, "OPENARTIFACT_PROXY_GO_SUMDB_HOSTS")
 	overrideDuration(&cfg.Workers.DockerUploadTTL, "OPENARTIFACT_DOCKER_UPLOAD_TTL")
 	overrideString(&cfg.Workers.DockerUploadDir, "OPENARTIFACT_DOCKER_UPLOAD_DIR")
 	overrideInt(&cfg.Workers.WebhookDeliveryRetentionDays, "OPENARTIFACT_WEBHOOK_DELIVERY_RETENTION_DAYS")
@@ -1052,6 +1078,8 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Exploit.EPSSURL, "OPENARTIFACT_EXPLOIT_EPSS_URL")
 	overrideDuration(&cfg.Exploit.Interval, "OPENARTIFACT_EXPLOIT_INTERVAL")
 	overrideFloat(&cfg.Exploit.EPSSThreshold, "OPENARTIFACT_EXPLOIT_EPSS_THRESHOLD")
+	overrideBool(&cfg.QuayAPI.Enabled, "OPENARTIFACT_QUAY_API_ENABLED")
+	overrideSlice(&cfg.QuayAPI.Organizations, "OPENARTIFACT_QUAY_API_ORGANIZATIONS")
 
 	// Base URL
 	overrideString(&cfg.BaseURL, "BASE_URL")
@@ -1103,6 +1131,12 @@ func (c *Config) validateProxyWorkers() error {
 
 	if c.Workers.ProxyUpstreamStallTimeout < 0 {
 		return errNegativeStallTimeout
+	}
+
+	for _, h := range c.Workers.ProxyGoSumdbHosts {
+		if h == "" || strings.ContainsAny(h, "/@?#\\ ") {
+			return fmt.Errorf("%w: %q", errBadGoSumdbHost, h)
+		}
 	}
 
 	if c.Workers.RepoStatsInterval <= 0 {
@@ -1184,6 +1218,10 @@ func (c *Config) Validate() error {
 // validateFeatures checks the scanner and presign settings.
 func (c *Config) validateFeatures() error {
 	if err := c.Scanners.validate(); err != nil {
+		return err
+	}
+
+	if err := c.QuayAPI.validate(); err != nil {
 		return err
 	}
 
@@ -1483,4 +1521,10 @@ func (c *Config) validateMCP() error {
 	}
 
 	return nil
+}
+
+// inPodServiceAccountFile is the path of a file of the service account volume
+// Kubernetes mounts into every pod.
+func inPodServiceAccountFile(name string) string {
+	return "/var/run/secrets/kubernetes.io/serviceaccount/" + name
 }

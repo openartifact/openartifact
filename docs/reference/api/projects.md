@@ -664,6 +664,7 @@ Create a repository owned by the project. Requires the maintainer or owner role 
 | `description` | string | no | - |
 | `federated` | boolean | no | Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true). |
 | `format` | string | yes | - |
+| `honour_quay_expiry` | boolean | no | Hosted docker repositories only (400 validation_failed otherwise when true, and when combined with immutable_releases=true). When true, a manifest carrying the quay.expires-after annotation (or image config label) is deleted with its tags and dependents once that time has passed. |
 | `immutable_releases` | boolean | no | - |
 | `max_stale_seconds` | integer | no | - |
 | `member_repos` | array of string | no | - |

@@ -116,6 +116,8 @@ type RepositoryResponse struct {
 	MergeProxyVersions bool `json:"merge_proxy_versions"`
 	// SignPackages (hosted rpm only): uploads are signed with the active GPG key.
 	SignPackages bool `json:"sign_packages"`
+	// HonourQuayExpiry (hosted docker only): images with quay.expires-after are deleted when due.
+	HonourQuayExpiry bool `json:"honour_quay_expiry"`
 	// Federated: the repository replicates with peer instances (hosted only).
 	Federated bool `json:"federated"`
 
@@ -853,6 +855,33 @@ type VulnGateResponse struct {
 	Criteria       VulnGateCriteria  `json:"criteria"`
 	Checked        int               `json:"checked"`
 	Failed         []VulnGateFailure `json:"failed"`
+	// Checks lists what the gate looked at, one entry per check; Pass is true
+	// only when every one passed.
+	Checks []GateCheck `json:"checks"`
+}
+
+// GateCheck is one check of a gate verdict.
+type GateCheck struct {
+	// Name is vulnerabilities, license, quarantine or attestations.
+	Name string `json:"name"`
+	Pass bool   `json:"pass"`
+	// Detail is a short client-safe sentence.
+	Detail string `json:"detail"`
+}
+
+// GateResponse is GET /api/v1/repositories/{name}/gate: the aggregate verdict
+// for one image digest.
+type GateResponse struct {
+	Pass   bool   `json:"pass"`
+	Reason string `json:"reason,omitempty"`
+	// Digest is the image the verdict is about.
+	Digest string      `json:"digest"`
+	Checks []GateCheck `json:"checks"`
+	// ScanStatus is the status of the latest vulnerability scan of the image,
+	// "none" when it has none.
+	ScanStatus string `json:"scan_status"`
+	// Scan is the id of that scan; empty when there is none.
+	Scan string `json:"scan_id,omitempty"`
 }
 
 // ExploitFeedResponse is the state of one exploitation-signal feed.

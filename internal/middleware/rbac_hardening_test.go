@@ -252,6 +252,21 @@ func TestClassifyAPIRoute(t *testing.T) {
 		},
 		{http.MethodPost, "/api/v1/repositories/app/security/summary", routeScope{action: "manage"}, "the summary is read-only"},
 		{
+			http.MethodGet, "/api/v1/repositories/app/gate", routeScope{action: "read", repoName: "app"},
+			"the digest gate needs repo read",
+		},
+		{
+			http.MethodGet, "/api/v1/repositories/app/vuln/scans/7/gate", routeScope{action: "read", repoName: "app"},
+			"the scan gate needs repo read",
+		},
+		{http.MethodPost, "/api/v1/repositories/app/gate", routeScope{action: "manage"}, "the gate is read-only"},
+		{http.MethodGet, "/api/v1/repositories/app/vuln/scans/7/gate/x", routeScope{action: "manage"}, "the gate has no deeper path"},
+		{
+			http.MethodPost, "/api/v1/repositories/app/vuln/scans/import", routeScope{action: "write", repoName: "app"},
+			"importing a scan result needs repo write",
+		},
+		{http.MethodGet, "/api/v1/repositories/app/vuln/scans/import", routeScope{action: "manage"}, "import is a POST"},
+		{
 			http.MethodGet,
 			"/api/v1/repositories/app/availability",
 			routeScope{action: "read", repoName: "app"},
@@ -286,6 +301,28 @@ func TestClassifyAPIRoute(t *testing.T) {
 			"/api/v1/repositories/app/proxy-versions",
 			routeScope{action: "manage"},
 			"the proxy version list is read-only",
+		},
+		{
+			http.MethodGet, "/api/v1/repositories/app/attestations", routeScope{action: "read", repoName: "app"},
+			"the attestation list needs repo read",
+		},
+		{
+			http.MethodGet, "/api/v1/repositories/app/attestations/sha256:abc", routeScope{action: "read", repoName: "app"},
+			"one attestation needs repo read",
+		},
+		{http.MethodDelete, "/api/v1/repositories/app/attestations", routeScope{action: "manage"}, "attestations are read-only"},
+		{
+			http.MethodPost, "/api/v1/repositories/app/attestations/reverify", routeScope{action: "manage", delegateRepo: "app"},
+			"reverification is delegated to the repository's admins",
+		},
+		{http.MethodPost, "/api/v1/repositories/app/attestations/sha256:abc", routeScope{action: "manage"}, "only reverify is a POST"},
+		{
+			http.MethodPut, "/api/v1/repositories/app/attestation-trust", routeScope{action: "manage", delegateRepo: "app"},
+			"the trust configuration is delegated to the repository's admins",
+		},
+		{
+			http.MethodGet, "/api/v1/repositories/app/attestation-trust", routeScope{action: "manage", delegateRepo: "app"},
+			"reading the trust configuration is not a repo read",
 		},
 		{
 			http.MethodGet,
@@ -387,6 +424,8 @@ func TestClassifyAPIRoute(t *testing.T) {
 		{http.MethodDelete, "/api/v1/bundles/shop/1/items/abc", routeScope{action: "manage", bundles: true}, "remove item"},
 		{http.MethodPost, "/api/v1/bundles/shop/1/seal", routeScope{action: "manage", bundles: true}, "seal"},
 		{http.MethodPost, "/api/v1/bundles/shop/1/promote", routeScope{action: "manage", bundles: true}, "promote"},
+		{http.MethodPost, "/api/v1/bundles/shop/1/checks", routeScope{action: "manage", bundles: true}, "report a check"},
+		{http.MethodGet, "/api/v1/bundles/shop/1/checks", routeScope{action: "manage", bundles: true}, "list checks"},
 		{http.MethodPost, "/api/v1/bundles/shop/1/archive", routeScope{action: "manage", bundles: true}, "archive"},
 		{http.MethodGet, "/api/v1/bundles/shop/1/manifest.asc", routeScope{action: "manage", bundles: true}, "signature"},
 		{http.MethodGet, "/api/v1/bundles/shop/1/promotions", routeScope{action: "manage", bundles: true}, "promotion history"},

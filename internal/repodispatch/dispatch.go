@@ -26,6 +26,7 @@ import (
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/pkg/compactindex"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -161,6 +162,13 @@ func (d *Dispatcher) Middleware(next http.Handler) http.Handler {
 		if repo.Format == "conan" && (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
 			formatconan.ServeReadOnlySession(w, r, strings.TrimPrefix(tail, "/")) {
 			return
+		}
+
+		// Hermeto rewrites rubygems.org's /downloads/<file>.gem to the proxy it is
+		// given. Proxies and groups see it as the /gems/<file>.gem it aliases, so
+		// curation, quarantine and the hosted-wins rule judge it by the same keys.
+		if repo.Format == "rubygems" {
+			tail = compactindex.CanonicalPath(tail)
 		}
 
 		switch repo.RepoType {

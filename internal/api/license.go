@@ -21,6 +21,7 @@ import (
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -49,9 +50,16 @@ type LicenseStore interface {
 type LicenseHandler struct {
 	repoAccess
 
-	detector *license.Detector
-	licenses artifactLicenseSource
-	db       LicenseStore
+	detector  *license.Detector
+	licenses  artifactLicenseSource
+	publisher webhook.Publisher
+	db        LicenseStore
+}
+
+// WithPublisher enables the scan.completed and quarantine.changed webhook events.
+func (h *LicenseHandler) WithPublisher(p webhook.Publisher) *LicenseHandler {
+	h.publisher = p
+	return h
 }
 
 // NewLicenseHandler returns the license scan and policy handler. blobs is the
@@ -132,11 +140,19 @@ func (h *LicenseHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 
 	// Evaluate the policies on the licenses the artifact declares and record
 	// the result; a violated blocking policy quarantines the artifact.
+	prior, err := priorLicenseScan(ctx, h.db, h.publisher, repo.ID, body.ArtifactID)
+	if err != nil {
+		h.dbError(w, "scan licenses: db error reading the previous scan result", err)
+		return
+	}
+
 	scanResult, violations, err := licensepolicy.Record(ctx, h.db, h.log, repo.ID, body.ArtifactID, resolved.Licenses, resolved.Source)
 	if err != nil {
 		h.dbError(w, "scan licenses: db error recording scan result", err)
 		return
 	}
+
+	announceLicenseScan(ctx, h.publisher, repo, prior, scanResult, actorOf(r))
 
 	policyViolations := make([]licensepolicy.Violation, 0, len(violations))
 	policyViolations = append(policyViolations, violations...)
@@ -214,6 +230,10 @@ func (h *LicenseHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 
 	if quarantined || before.Quarantined {
 		auditQuarantine(r, repo, quarantined, "license", updated.ArtifactID, "", "")
+	}
+
+	if quarantined != before.Quarantined {
+		emitQuarantineChanged(r, h.publisher, repo, reviewQuarantine(quarantined, webhook.ScanKindLicense, updated.ArtifactID, "", ""))
 	}
 
 	writeJSON(w, http.StatusOK, LicenseScanResultResponse(updated))

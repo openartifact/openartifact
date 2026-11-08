@@ -1,0 +1,89 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+apiVersion: tekton.dev/v1beta1
+kind: StepAction
+metadata:
+  name: oa-upload
+  labels:
+    app.kubernetes.io/version: "0.1"
+spec:
+  description: >-
+    Upload files to a hosted OpenArtifact repository with oa upload (deb, ivy, maven, raw, rpm, sbt and the
+    other formats that take a package file) and record build properties. Needs the token file written by
+    oa-exchange-token in dockerConfigDir. Nothing is uploaded when files is empty.
+  image: ghcr.io/openartifact/oa-tekton:0.21.0
+  params:
+    - name: server
+      type: string
+    - name: repository
+      type: string
+    - name: files
+      type: array
+      description: File paths or globs to upload.
+    - name: targetPath
+      type: string
+      default: ""
+    - name: version
+      type: string
+      default: ""
+    - name: buildName
+      type: string
+      default: ""
+    - name: buildNumber
+      type: string
+      default: ""
+    - name: vcsRevision
+      type: string
+      default: ""
+    - name: dockerConfigDir
+      type: string
+      default: /oa-auth/docker
+    - name: caFile
+      type: string
+      default: ""
+  results:
+    - name: uploaded
+      description: JSON document printed by oa upload --format json.
+  env:
+    - name: OA_SERVER
+      value: $(params.server)
+    - name: OA_REPO
+      value: $(params.repository)
+    - name: OA_TARGET
+      value: $(params.targetPath)
+    - name: OA_VERSION
+      value: $(params.version)
+    - name: OA_BUILD_NAME
+      value: $(params.buildName)
+    - name: OA_BUILD_NUMBER
+      value: $(params.buildNumber)
+    - name: OA_VCS
+      value: $(params.vcsRevision)
+    - name: OA_DOCKER_DIR
+      value: $(params.dockerConfigDir)
+    - name: OA_CA_FILE
+      value: $(params.caFile)
+    - name: OA_RESULT
+      value: $(step.results.uploaded.path)
+  args:
+    - $(params.files[*])
+  script: |
+    #!/bin/sh
+    set -eu
+    [ -z "$OA_CA_FILE" ] || export SSL_CERT_FILE="$OA_CA_FILE"
+    OA_TOKEN="$(cat "$OA_DOCKER_DIR/token")"
+    export OA_TOKEN
+    if [ "$#" -eq 0 ]; then
+      echo '{"uploaded":[]}' | tee "$OA_RESULT"
+      exit 0
+    fi
+    flags=""
+    [ -z "$OA_TARGET" ] || flags="$flags --target-path $OA_TARGET"
+    [ -z "$OA_VERSION" ] || flags="$flags --version $OA_VERSION"
+    [ -z "$OA_BUILD_NAME" ] || flags="$flags --build-name $OA_BUILD_NAME"
+    [ -z "$OA_BUILD_NUMBER" ] || flags="$flags --build-number $OA_BUILD_NUMBER"
+    [ -z "$OA_VCS" ] || flags="$flags --vcs-revision $OA_VCS"
+    # shellcheck disable=SC2086
+    oa --format json upload $flags "$OA_REPO" "$@" | tee "$OA_RESULT"

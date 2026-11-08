@@ -26,6 +26,8 @@ type dockerSpec struct {
 	tags     []string
 	// unindexed leaves the manifest without docker_manifest_refs, like one restored from a backup.
 	unindexed bool
+	// expires seeds docker_manifests.expires_at (a day from now).
+	expires bool
 }
 
 // dockerSeed is a seeded manifest.
@@ -67,9 +69,14 @@ func seedDockerManifest(h *harness, repoID, blobID string, spec dockerSpec) dock
 		subject = spec.subject
 	}
 
-	manifestID := h.row("docker_manifests", repoID, "blob_id", blobID, map[string]any{
+	cols := map[string]any{
 		"image": spec.image, "digest": digest, "media_type": media, "size": size, "subject_digest": subject,
-	})
+	}
+	if spec.expires {
+		cols["expires_at"] = sqlExpr("now() + interval '1 day'")
+	}
+
+	manifestID := h.row("docker_manifests", repoID, "blob_id", blobID, cols)
 
 	type ref struct{ kind, digest string }
 

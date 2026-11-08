@@ -180,6 +180,31 @@ func (w *CleanupWorker) planCandidates(
 		return nil, err
 	}
 
+	eligible, err := w.eligibleInChunks(ctx, repo, selected)
+	if err != nil || !t.docker {
+		return eligible, err
+	}
+
+	// The dependent tags the run would take along with the images it removes.
+	orphans, err := w.previewOrphanDependents(ctx, policy, eligible)
+	if err != nil {
+		return nil, err
+	}
+
+	more, err := w.eligibleInChunks(ctx, repo, orphans)
+	if err != nil {
+		return nil, err
+	}
+
+	return append(eligible, more...), nil
+}
+
+// eligibleInChunks applies the protections of a run to selected, chunk by chunk.
+func (w *CleanupWorker) eligibleInChunks(
+	ctx context.Context,
+	repo *models.Repository,
+	selected []cleanupCandidate,
+) ([]cleanupCandidate, error) {
 	var eligible []cleanupCandidate
 
 	for chunk := range slices.Chunk(selected, cleanupChunkSize) {

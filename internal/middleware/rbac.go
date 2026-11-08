@@ -48,6 +48,11 @@ type RBACConfig struct {
 	// It lives outside /api/, /v2/, and /repos/ but must never fall through
 	// the SPA/static bypass below — MCP tools require auth like the REST API.
 	MCPPath string
+	// QuayAPIPath is the mount path of the Quay-compatible API facade
+	// (internal/quayapi), "" while it is disabled. Like the MCP path it is
+	// outside /api/, /v2/ and /repos/ yet must never fall through the static
+	// bypass; every request to it needs the global manage permission.
+	QuayAPIPath string
 	// SPAHandler serves the web UI. Browser navigations to Vue-router page
 	// shapes under /repos/ (which collide with format-handler routes such as
 	// the npm packument GET /repos/{name}/{pkg}) are answered by it directly,
@@ -152,7 +157,7 @@ func RBACMiddleware(cfg RBACConfig, db RBACMiddlewareStore, evaluator *auth.Eval
 				return
 			}
 
-			scope := classifyRoute(r)
+			scope := classifyRouteFor(r, cfg)
 
 			if scope.isProjectRoute() {
 				if authorizeProjectRoute(w, r, cfg, evaluator, log, principal, credential, scope, db) {
@@ -302,7 +307,7 @@ func isSafeMethod(method string) bool {
 // additionally restrict this to GET/HEAD.
 func isStaticPath(urlPath string, cfg RBACConfig) bool {
 	return !strings.HasPrefix(urlPath, "/api/") && !strings.HasPrefix(urlPath, "/v2/") && !isMCPPath(urlPath, cfg) &&
-		!strings.HasPrefix(urlPath, "/repos/")
+		!isQuayAPIPath(urlPath, cfg) && !strings.HasPrefix(urlPath, "/repos/")
 }
 
 // isSPANavigation reports whether r is a browser page navigation to one of the
@@ -821,6 +826,9 @@ func classifyAPIRoute(method, escapedPath string) routeScope {
 		return routeScope{action: "manage", anyAuthenticated: true}
 	case isReadOnlyRoute(method, segs):
 		return classifyReadOnlyRoute(segs)
+	case isRepoScanImportRoute(method, segs):
+		// A CI job reports the result of a scan it ran: write access.
+		return routeScope{action: "write", repoName: segs[1]}
 	case len(segs) >= 3 && segs[0] == "repositories" && isPlainName(segs[1]) && slices.Contains(repoDataSegments(), segs[2]):
 		switch method {
 		case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodDelete:
@@ -875,7 +883,37 @@ func isFilteredListRoute(method string, segs []string) bool {
 func isReadOnlyRoute(method string, segs []string) bool {
 	return isSafeMethod(method) && (len(segs) == 2 && segs[0] == "repository" && isPlainName(segs[1]) ||
 		isSecurityFindingsRoute(method, segs) || isRepoSecuritySummaryRoute(method, segs) ||
-		isRepoAvailabilityRoute(segs) || isRepoActivityRoute(method, segs))
+		isRepoAvailabilityRoute(segs) || isRepoActivityRoute(method, segs) || isRepoAttestationsReadRoute(segs) ||
+		isRepoGateRoute(segs))
+}
+
+// isRepoAttestationsReadRoute reports whether segs (of an /api/v1/ path) is
+// repositories/{name}/attestations or repositories/{name}/attestations/{digest}
+// (the caller's method is already known to be safe): the attestations attached
+// to the repository's images, readable by anyone who can read the repository.
+func isRepoAttestationsReadRoute(segs []string) bool {
+	return (len(segs) == 3 || len(segs) == 4) && segs[0] == "repositories" && isPlainName(segs[1]) && segs[2] == "attestations" &&
+		!slices.Contains(segs, "")
+}
+
+// isRepoGateRoute reports whether segs (of an /api/v1/ path) is
+// repositories/{name}/gate or repositories/{name}/vuln/scans/{id}/gate (the
+// caller's method is already known to be safe): the pass/fail verdicts a CI
+// pipeline asks for, readable by anyone who can read the repository.
+func isRepoGateRoute(segs []string) bool {
+	if len(segs) < 3 || segs[0] != "repositories" || !isPlainName(segs[1]) || slices.Contains(segs, "") {
+		return false
+	}
+
+	return len(segs) == 3 && segs[2] == "gate" ||
+		len(segs) == 6 && segs[2] == "vuln" && segs[3] == "scans" && segs[5] == "gate"
+}
+
+// isRepoScanImportRoute reports whether (method, segs) is
+// POST repositories/{name}/vuln/scans/import.
+func isRepoScanImportRoute(method string, segs []string) bool {
+	return method == http.MethodPost && len(segs) == 5 && segs[0] == "repositories" && isPlainName(segs[1]) &&
+		segs[2] == "vuln" && segs[3] == "scans" && segs[4] == "import"
 }
 
 // classifyReadOnlyRoute is the scope of a route isReadOnlyRoute accepted.
@@ -944,18 +982,34 @@ func isDelegatedRepoReadOrQuota(method, leaf string) bool {
 	}
 }
 
+// isDelegatedRepoSubroute reports whether repositories/{name}/... (segs has at
+// least three elements) is one of the delegated routes below a repository.
+func isDelegatedRepoSubroute(method string, segs []string) bool {
+	switch segs[2] {
+	case "cleanup-policies":
+		return len(segs) <= 5
+	case "curation-rules":
+		return len(segs) <= 4
+	case "attestation-trust":
+		return len(segs) == 3
+	case "attestations":
+		return len(segs) == 4 && segs[3] == "reverify" && method == http.MethodPost
+	default:
+		return len(segs) == 3 && isDelegatedRepoReadOrQuota(method, segs[2])
+	}
+}
+
 // delegatedRepoName returns the repository of a route whose administration is
 // delegated to project maintainers and owners (global manage still passes):
 // PATCH/DELETE repository/{name}, the cleanup-policy and curation-rule routes,
-// the quota routes and the GET usage and members routes of the repository, or
+// the quota routes, the GET usage and members routes, the attestation trust
+// routes and POST attestations/reverify of the repository, or
 // "" for any other route. The one exception in the
 // quota family, POST .../quota/reconcile, stays administrative.
 func delegatedRepoName(method string, segs []string) string {
 	switch {
 	case len(segs) == 2 && segs[0] == "repository" && (method == http.MethodPatch || method == http.MethodDelete):
-	case len(segs) >= 3 && len(segs) <= 5 && segs[0] == "repositories" && segs[2] == "cleanup-policies":
-	case len(segs) >= 3 && len(segs) <= 4 && segs[0] == "repositories" && segs[2] == "curation-rules":
-	case len(segs) == 3 && segs[0] == "repositories" && isDelegatedRepoReadOrQuota(method, segs[2]):
+	case len(segs) >= 3 && segs[0] == "repositories" && isDelegatedRepoSubroute(method, segs):
 	default:
 		return ""
 	}
@@ -1032,7 +1086,9 @@ func propertiesMethod(method string) string {
 
 // isBundleRoute reports whether segs (of an /api/v1/ path) is a per-bundle
 // route: everything under bundles/{name}/{version}, plus GET
-// bundles/signing-keys (the seal dialog's key list). The bundle list
+// bundles/signing-keys (the seal dialog's key list). POST .../checks reports a
+// required check: the handler lets a principal with `write` on the source
+// repositories do it, so a CI token needs no `manage`. The bundle list
 // (GET bundles), pipelines and any other shape stay administrative; POST
 // bundles (create) is part of the delegated set.
 func isBundleRoute(method string, segs []string) bool {
@@ -1050,8 +1106,8 @@ func isBundleRoute(method string, segs []string) bool {
 		return method == http.MethodGet || method == http.MethodDelete
 	case 4:
 		switch segs[3] {
-		case "items", "promotions", "manifest", "manifest.asc":
-			return isSafeMethod(method) || (segs[3] == "items" && method == http.MethodPost)
+		case "items", "promotions", "manifest", "manifest.asc", "checks":
+			return isSafeMethod(method) || ((segs[3] == "items" || segs[3] == "checks") && method == http.MethodPost)
 		case "seal", "promote", "archive":
 			return method == http.MethodPost
 		}

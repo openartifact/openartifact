@@ -602,13 +602,22 @@ type cleanupRun struct {
 	touched map[string]string
 	// hard counts the rows removed permanently (not moved to the trash).
 	hard int
+	// heads are, for a docker run, the manifests the tags about to be removed
+	// point at, by tag id; removedHeads the ones of the tags actually removed.
+	heads        map[string]dockerHead
+	removedHeads []dockerHead
 }
 
 func newCleanupRun() *cleanupRun { return &cleanupRun{touched: map[string]string{}} }
 
-// touch records the packages cs belong to.
+// touch records the packages cs belong to, and the manifests of the docker tags
+// among them.
 func (r *cleanupRun) touch(cs []cleanupCandidate) {
 	for _, c := range cs {
+		if h, ok := r.heads[c.id]; ok {
+			r.removedHeads = append(r.removedHeads, h)
+		}
+
 		key := c.packageID
 		if key == "" {
 			key = c.name
@@ -637,7 +646,6 @@ func (w *CleanupWorker) deleteArtifacts(
 	t cleanupTable,
 ) (*cleanupRun, int, error) {
 	run := newCleanupRun()
-	totalDeleted := 0
 
 	// Usage of the rows removed so far is handed back to the repository's quota
 	// in one update when the run ends, however it ends (finished, timed out,
@@ -646,18 +654,49 @@ func (w *CleanupWorker) deleteArtifacts(
 
 	toDelete, err := w.selectCandidates(ctx, policy, t)
 	if err != nil {
+		return run, 0, err
+	}
+
+	var totalDeleted int
+
+	totalDeleted, err = w.deleteInChunks(ctx, policy, repo, t, toDelete, run)
+	if err != nil || !t.docker {
 		return run, totalDeleted, err
 	}
 
-	for chunk := range slices.Chunk(toDelete, cleanupChunkSize) {
-		if err := ctx.Err(); err != nil {
-			return run, totalDeleted, fmt.Errorf("cleanup interrupted: %w", err)
-		}
-
-		totalDeleted += w.deleteChunk(ctx, policy, repo, t, chunk, run)
+	// The dependent tags (signatures, attestations) of the images just removed
+	// go with them, as do those whose image was already gone.
+	orphans, err := w.selectOrphanDependents(ctx, policy, run.removedHeads, nil)
+	if err != nil {
+		return run, totalDeleted, err
 	}
 
-	return run, totalDeleted, nil
+	n, err := w.deleteInChunks(ctx, policy, repo, t, orphans, run)
+
+	return run, totalDeleted + n, err
+}
+
+// deleteInChunks removes the rows of selected chunk by chunk and returns how
+// many it removed.
+func (w *CleanupWorker) deleteInChunks(
+	ctx context.Context,
+	policy *models.CleanupPolicy,
+	repo *models.Repository,
+	t cleanupTable,
+	selected []cleanupCandidate,
+	run *cleanupRun,
+) (int, error) {
+	total := 0
+
+	for chunk := range slices.Chunk(selected, cleanupChunkSize) {
+		if err := ctx.Err(); err != nil {
+			return total, fmt.Errorf("cleanup interrupted: %w", err)
+		}
+
+		total += w.deleteChunk(ctx, policy, repo, t, chunk, run)
+	}
+
+	return total, nil
 }
 
 // cleanupChunkSize is how many selected rows are looked up and deleted per
@@ -697,6 +736,8 @@ func (w *CleanupWorker) deleteChunk(
 	if len(eligible) == 0 {
 		return 0
 	}
+
+	w.recordDockerHeads(ctx, repo.ID, t, eligible, run)
 
 	// Soft delete keeps the rows, their blobs and their quota usage until the
 	// purge; only the permanent path below releases them.

@@ -183,6 +183,23 @@ func TestParsePath(t *testing.T) {
 	}
 }
 
+func TestCanonicalPath(t *testing.T) {
+	t.Parallel()
+
+	for rel, want := range map[string]string{
+		"downloads/rake-13.0.6.gem":  "gems/rake-13.0.6.gem",
+		"/downloads/rake-13.0.6.gem": "/gems/rake-13.0.6.gem",
+		"gems/rake-13.0.6.gem":       "gems/rake-13.0.6.gem",
+		"info/rake":                  "info/rake",
+		"versions":                   "versions",
+		"/":                          "/",
+		"":                           "",
+		"x/downloads/a-1.gem":        "x/downloads/a-1.gem",
+	} {
+		equal(t, want, CanonicalPath(rel), rel)
+	}
+}
+
 func TestSplitFile(t *testing.T) {
 	t.Parallel()
 

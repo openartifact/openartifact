@@ -28,6 +28,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/dtrack"
 	"github.com/openartifact/openartifact/internal/format/plugin"
+	"github.com/openartifact/openartifact/internal/imagesbom"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/sbom"
@@ -331,6 +332,7 @@ type features struct {
 	dtPublisher *dtrack.UploadPublisher
 	attacher    *api.AttestationAttacher
 	sbomGen     *sbom.Generator
+	imageSBOM   *imagesbom.Ingestor
 }
 
 // webStack is the HTTP side: the router, the authenticated sub-router every

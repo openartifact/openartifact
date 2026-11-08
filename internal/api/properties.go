@@ -13,18 +13,28 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/license"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 type PropertiesHandler struct {
 	repoAccess
 
-	licenses artifactLicenseSource
-	db       LicenseStore
+	licenses  artifactLicenseSource
+	publisher webhook.Publisher
+	db        LicenseStore
+}
+
+// WithPublisher enables the scan.completed and quarantine.changed webhook
+// events of the license policy evaluation a license property triggers.
+func (h *PropertiesHandler) WithPublisher(p webhook.Publisher) *PropertiesHandler {
+	h.publisher = p
+	return h
 }
 
 // NewPropertiesHandler returns the artifact properties handler. blobs is the
@@ -183,7 +193,7 @@ func (h *PropertiesHandler) handleSetProperties(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if !h.applyLicensePolicy(w, r, repo.ID, artifactID, body) {
+	if !h.applyLicensePolicy(w, r, repo, artifactID, body) {
 		return
 	}
 
@@ -199,7 +209,8 @@ func (h *PropertiesHandler) handleSetProperties(w http.ResponseWriter, r *http.R
 func (h *PropertiesHandler) applyLicensePolicy(
 	w http.ResponseWriter,
 	r *http.Request,
-	repoID, artifactID string,
+	repo *models.Repository,
+	artifactID string,
 	props map[string]string,
 ) bool {
 	touched := false
@@ -217,21 +228,29 @@ func (h *PropertiesHandler) applyLicensePolicy(
 
 	ctx := r.Context()
 
-	resolved, err := h.licenses.licenses(ctx, repoID, artifactID)
+	resolved, err := h.licenses.licenses(ctx, repo.ID, artifactID)
 	if writeLicenseSourceError(w, err, "properties saved, but ") {
 		return false
 	}
 
+	var prior, result *models.LicenseScanResult
+
 	if err == nil {
-		_, _, err = licensepolicy.Record(ctx, h.db, h.log, repoID, artifactID, resolved.Licenses, resolved.Source)
+		prior, err = priorLicenseScan(ctx, h.db, h.publisher, repo.ID, artifactID)
+	}
+
+	if err == nil {
+		result, _, err = licensepolicy.Record(ctx, h.db, h.log, repo.ID, artifactID, resolved.Licenses, resolved.Source)
 	}
 
 	if err != nil {
-		h.log.Errorw("properties: license policy evaluation failed", "repository_id", repoID, "artifact_id", artifactID, "error", err)
+		h.log.Errorw("properties: license policy evaluation failed", "repository_id", repo.ID, "artifact_id", artifactID, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "properties saved, but the license policy could not be evaluated")
 
 		return false
 	}
+
+	announceLicenseScan(ctx, h.publisher, repo, prior, result, actorOf(r))
 
 	return true
 }
@@ -260,7 +279,7 @@ func (h *PropertiesHandler) handlePatchProperties(w http.ResponseWriter, r *http
 		return
 	}
 
-	if !h.applyLicensePolicy(w, r, repo.ID, artifactID, body) {
+	if !h.applyLicensePolicy(w, r, repo, artifactID, body) {
 		return
 	}
 

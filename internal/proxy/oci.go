@@ -194,12 +194,10 @@ func (s *Service) serveOCIEntry(
 			s.renewDigestEntry(r.Context(), repo, entry)
 		}
 
-		if quarantine.Enforce(
-			w,
-			r,
-			s.db,
-			repo.ID,
-			quarantine.PathKeys(key, entry.ID, req.Name+"/"+kindSegment(req.Kind)+"/"+req.Ref, req.Ref, r.URL.Path)...) {
+		if quarantine.EnforceWith(w, r, s.db, repo.ID, func(reason quarantine.Reason) {
+			_, image := ocipath.SplitName(req.Name)
+			newQuarantineBlock(reason, image, req.Ref).WriteOCI(w)
+		}, quarantine.PathKeys(key, entry.ID, req.Name+"/"+kindSegment(req.Kind)+"/"+req.Ref, req.Ref, r.URL.Path)...) {
 			return
 		}
 

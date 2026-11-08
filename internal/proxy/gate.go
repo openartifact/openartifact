@@ -12,6 +12,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/blockreason"
 	"github.com/openartifact/openartifact/internal/curation"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
@@ -140,22 +141,29 @@ func checkGate(g versionGate, pkg, version string, published time.Time) error {
 	return nil
 }
 
-// writeGateError answers a gateError with 403 and the reason; false when err is
-// not one. A minimum-age refusal keeps its fixed message.
+// writeGateError answers a gateError with the policy refusal (see
+// internal/blockreason); false when err is not one. A minimum-age refusal keeps
+// its fixed message.
 func writeGateError(w http.ResponseWriter, err error) bool {
 	var ge *gateError
 	if !errors.As(err, &ge) {
 		return false
 	}
 
-	msg := ge.hold.Detail
-	if ge.hold.Source == curation.SourceMinAge {
+	ge.block().Write(w)
+
+	return true
+}
+
+// block is the refusal of the download the error stands for.
+func (e *gateError) block() blockreason.Block {
+	msg := e.hold.Detail
+	if e.hold.Source == curation.SourceMinAge {
 		msg = errTooNew.Error()
 	}
 
-	http.Error(w, msg, http.StatusForbidden)
-
-	return true
+	// The sources of a hold are named like the policies of a refusal.
+	return blockreason.Block{Policy: blockreason.Policy(e.hold.Source), Package: e.pkg, Version: e.version, Message: msg}
 }
 
 // PublishTime is the publish time the upstream states for version of pkg in

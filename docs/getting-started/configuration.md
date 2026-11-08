@@ -201,6 +201,8 @@ See [authentication](../security/authentication.md) and [RBAC](../security/rbac.
 | `AUTH_HMAC_KEY` | `hmacKey` | generated once, persisted | Signs OIDC/SAML login state. Unset: a random key is generated once and stored in `system_settings` (shared by replicas); a configured value wins (**secret**) |
 | `OPENARTIFACT_SAML_SP_CERT` | `samlSpCert` | empty | PEM certificate of the SAML service provider. Unset: a self-signed pair is generated once and persisted encrypted in `system_settings` (shared by replicas); regenerating it means re-registering the SP certificate at the IdP |
 | `OPENARTIFACT_SAML_SP_KEY` | `samlSpKey` | empty | PEM private key of the SAML service provider (**secret**). Unset together with the certificate: see above. Stored unencrypted when `OPENARTIFACT_SECRET_KEY` is unset |
+| `OPENARTIFACT_OIDC_SERVICEACCOUNT_TOKEN_FILE` | `oidcServiceAccountTokenFile` | `/var/run/secrets/kubernetes.io/serviceaccount/token` | Service account token sent as Bearer when a CI trust policy uses the `serviceaccount` discovery mode (a Kubernetes API server issuer); read again on every request |
+| `OPENARTIFACT_OIDC_SERVICEACCOUNT_CA_FILE` | `oidcServiceAccountCaFile` | `/var/run/secrets/kubernetes.io/serviceaccount/ca.crt` | CA bundle trusted in addition to the system roots for that discovery. See [Kubernetes and Tekton service accounts](../integrations/ci.md#kubernetes-and-tekton-service-accounts) |
 
 `API_KEY` lives under `server` in YAML, not `auth`.
 
@@ -350,6 +352,7 @@ Operational tunables. The defaults suit most installations; change them when the
 | `OPENARTIFACT_REPO_STATS_INTERVAL` | `workers.repoStatsInterval` | `15s` | Pause between passes of the worker that recomputes the repository list's package count, newest publication and security counts for the repositories that changed. The list lags uploads, deletes and scans by about this long (the stored size and quota are always current). Must be positive |
 | `OPENARTIFACT_PROXY_DOCKER_DIGEST_TTL` | `workers.proxyDockerDigestTtl` | `720h` | How long a Docker proxy keeps a digest-addressed manifest or blob after its last pull; see the note below |
 | `OPENARTIFACT_PROXY_UPSTREAM_STALL_TIMEOUT` | `workers.proxyUpstreamStallTimeout` | `1m` | How long a proxy upstream response may deliver no data before the fetch fails; `0` disables it |
+| `OPENARTIFACT_PROXY_GO_SUMDB_HOSTS` | `workers.proxyGoSumdbHosts` | `sum.golang.org` | Comma-separated checksum database hosts that Go proxy and group repositories relay under `/sumdb/<host>/`; any other host is `404`. Empty turns the relay off. See [Go modules](../formats/go.md#checksum-database-relay) |
 | `OPENARTIFACT_DOCKER_UPLOAD_TTL` | `workers.dockerUploadTtl` | `24h` | Age after which an unfinished Docker blob upload session and its data are removed; `0` disables the sweep. Must not be negative |
 | `OPENARTIFACT_DOCKER_UPLOAD_DIR` | `workers.dockerUploadDir` | `/tmp/openartifact/docker-uploads` | Directory where in-progress Docker blob uploads are kept when the blob store cannot hold them (the `oci` storage backend); every other backend keeps them in the blob store and ignores it. With `oci` and several replicas, mount it on a volume they share. See [Docker uploads](../formats/docker.md#push-behaviour) |
 | `OPENARTIFACT_WEBHOOK_DELIVERY_RETENTION_DAYS` | `workers.webhookDeliveryRetentionDays` | `30` | Days finished (success or failed) webhook delivery records are kept; the hourly purge deletes older ones. `0` keeps them forever. Must not be negative |
@@ -458,6 +461,15 @@ The daily import of the CISA KEV catalog and the FIRST EPSS scores that mark vul
 | `OPENARTIFACT_EXPLOIT_EPSS_THRESHOLD` | `exploit.epssThreshold` | `0.1` | EPSS score, above `0` and at most `1`, from which a finding outside KEV ranks above its severity |
 
 The URLs must be absolute `https` URLs without credentials or fragment; the server refuses to start on an invalid value.
+
+### Quay-compatible API (`quayApi`)
+
+A Quay API facade that lets the Konflux image-controller onboard components into OpenArtifact. See [Konflux image-controller](../integrations/konflux-image-controller.md).
+
+| Environment variable | YAML key | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_QUAY_API_ENABLED` | `quayApi.enabled` | `false` | Mount the facade at `/quay/api/v1`. Needs `OPENARTIFACT_SECRET_KEY`: the server refuses to start without it |
+| `OPENARTIFACT_QUAY_API_ORGANIZATIONS` | `quayApi.organizations` | empty | Comma-separated hosted docker repositories a Quay client may use as its organization. Empty allows every hosted docker repository. Each entry must be a plain repository name |
 
 ### Blob deletion (`blobDeletion`)
 

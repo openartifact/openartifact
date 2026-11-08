@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openartifact/openartifact/internal/blockreason"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -354,5 +355,36 @@ func TestServe_MavenMetadataWithAnUnparsableMemberIsUncacheable(t *testing.T) {
 	if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" || w.Header().Get("ETag") != "" {
 		t.Errorf("merge missing a member = %d cache-control %q etag %q, want 200 no-store without validator",
 			w.Code, w.Header().Get("Cache-Control"), w.Header().Get("ETag"))
+	}
+}
+
+// A member's policy refusal is the group's answer, with its X-OA-Block-Reason
+// header and body: the group neither tries the next member nor rewrites it.
+func TestServe_MemberPolicyRefusalPassesThrough(t *testing.T) {
+	f := newFixture(t, "raw", member("a", "raw", "proxy"), member("b", "raw", "proxy"))
+	f.set("b", "f.bin", 200, "from-b")
+
+	be := f.backend()
+	be.ServeMember = func(w http.ResponseWriter, _ *http.Request, m *models.Repository, p string) {
+		f.asked = append(f.asked, m.Name)
+
+		if m.Name == "a" {
+			blockreason.Block{Policy: blockreason.Curation, Package: p, Version: "1.0", Message: "blocked"}.Write(w)
+			return
+		}
+
+		_, _ = io.WriteString(w, "from-b")
+	}
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	f.h.Serve(w, req, f.grp, "f.bin", be)
+
+	if w.Code != http.StatusForbidden || w.Header().Get(blockreason.Header) != "curation" {
+		t.Fatalf("status %d, %s = %q, want 403 curation", w.Code, blockreason.Header, w.Header().Get(blockreason.Header))
+	}
+
+	if !strings.Contains(w.Body.String(), `"code":"BLOCKED_BY_POLICY"`) || strings.Join(f.asked, ",") != "a" {
+		t.Errorf("body %q, members asked %v", w.Body.String(), f.asked)
 	}
 }

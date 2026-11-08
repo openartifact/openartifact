@@ -124,3 +124,50 @@ func TestPathKeys(t *testing.T) {
 		t.Errorf("PathKeys = %v, want %v", got, want)
 	}
 }
+
+type reasonDB struct {
+	quarantineDB
+
+	reason Reason
+	err    error
+}
+
+func (db *reasonDB) ArtifactHoldReason(context.Context, string, []string) (Reason, error) {
+	return db.reason, db.err
+}
+
+func TestEnforceWith_TellsWhyTheArtifactIsHeld(t *testing.T) {
+	held := quarantineDB{repoID: "r", keys: map[string]bool{"a": true}}
+
+	tests := []struct {
+		name   string
+		db     Checker
+		keys   []string
+		called bool
+		reason Reason
+	}{
+		{"not held", &reasonDB{quarantineDB: held, reason: ReasonLicense}, []string{"b"}, false, ""},
+		{"license hold", &reasonDB{quarantineDB: held, reason: ReasonLicense}, []string{"a"}, true, ReasonLicense},
+		{"scan hold", &reasonDB{quarantineDB: held, reason: ReasonScan}, []string{"a"}, true, ReasonScan},
+		{"store without reasons", &held, []string{"a"}, true, ReasonScan},
+		{
+			"reason lookup fails", &reasonDB{quarantineDB: held, reason: ReasonLicense, err: errors.New("db down")},
+			[]string{"a"}, true, ReasonScan,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got Reason
+
+			called := false
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+			w := httptest.NewRecorder()
+
+			answered := EnforceWith(w, r, tt.db, "r", func(reason Reason) { called, got = true, reason }, tt.keys...)
+			if answered != tt.called || called != tt.called || got != tt.reason {
+				t.Errorf("answered %v, refuse called %v with %q; want %v with %q", answered, called, got, tt.called, tt.reason)
+			}
+		})
+	}
+}

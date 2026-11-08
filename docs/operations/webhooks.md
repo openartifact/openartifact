@@ -136,6 +136,10 @@ Slack and Discord incoming webhooks ignore these headers. They are sent anyway.
 | `repository.restored` | a repository is restored from the trash |
 | `repository.purged` | a trashed repository is removed for good |
 | `bundle.promoted` | a [release bundle](../repositories/release-bundles.md) is promoted into the target repository of a pipeline stage |
+| `scan.completed` | a vulnerability, license or secret scan stored its final result (vulnerability scans: `completed`, `partial` or `failed`) |
+| `vulnerability.found` | a vulnerability scan that completed (or partly completed) has at least one finding |
+| `quarantine.changed` | an artifact is quarantined or released, by a blocking license policy or an administrator's review |
+| `bundle.check_updated` | a CI system reported a check against a [release bundle](../repositories/release-bundles.md#required-checks) |
 | `webhook.test` | only by the test route; you cannot subscribe to it |
 
 Notes on when events fire:
@@ -144,6 +148,9 @@ Notes on when events fire:
 - `artifact.deleted` is not emitted for Go modules and Cargo.
 - `artifact.purged` fires for a purge by an admin and by the retention purge.
 - `bundle.promoted` goes to the webhooks of the target repository and to the global ones.
+- `scan.completed`, `vulnerability.found` and `quarantine.changed` go to the webhooks of the scanned repository and to the global ones. A scan run through the API, the background worker or a license property change fires them exactly once per stored result. `vulnerability.found` is for a scan you requested; `vulnerability.new` is the OSV mirror finding a new advisory on an artifact scanned earlier.
+- `quarantine.changed` fires only when the state changes: releasing an artifact that is not quarantined, or quarantining one that already is, fires nothing. A license scan that re-evaluates an artifact and leaves its quarantine as it was fires `scan.completed` alone.
+- `bundle.check_updated` goes to the webhooks of the bundle's first source repository and to the global ones; a bundle without items reaches the global ones only. It fires for every report, including a repeat of the same status.
 - Events are published after the operation succeeds. A failure to record an event never fails the upload or delete that caused it.
 
 There is no `artifact.downloaded` event, because downloads are the highest-volume operation and each delivery costs a database insert and an HTTP request. Subscribing to it is rejected with 400. Use the `artifact.downloaded` action of the [audit log](monitoring.md) or the download metrics instead.
@@ -188,6 +195,53 @@ Extra fields of `bundle.promoted`:
 | `copied` | artifacts newly written to the target |
 | `existing` | artifacts the target already held with the same content |
 | `replaced` | artifacts a forced promotion moved to the target's trash |
+
+Scan and quarantine events carry the repository payload (`repository`, `format`, `type`) plus one block:
+
+```json
+{
+  "event": "vulnerability.found",
+  "timestamp": "2026-01-02T15:04:05Z",
+  "repository": "npm-hosted", "format": "npm", "type": "hosted",
+  "scan": {
+    "id": "<scan id>", "kind": "vulnerability", "status": "completed",
+    "artifact_id": "lodash@4.17.20", "package": "lodash", "version": "4.17.20",
+    "counts": {"total": 3, "critical": 1, "high": 2, "medium": 0, "low": 0}
+  }
+}
+```
+
+`scan.completed` has the same shape. `kind` is `vulnerability`, `license` or `secret`; `status` is the stored scan status (`completed`, `partial`, `failed`; `clean` or `flagged` for secrets). `counts` holds `total` and the four severities for a vulnerability scan, `licenses` for a license scan and `findings` for a secret scan. `package` and `version` appear when the scan names them.
+
+```json
+{
+  "event": "quarantine.changed",
+  "timestamp": "2026-01-02T15:04:05Z",
+  "repository": "npm-hosted", "format": "npm", "type": "hosted",
+  "quarantine": {
+    "state": "quarantined", "kind": "license", "artifact_id": "lodash@4.17.20",
+    "reason": "blocking license policy", "actor": "alice"
+  }
+}
+```
+
+`state` is `quarantined` or `released`; `actor` is empty when the system acted.
+
+`bundle.check_updated` carries the first source repository's repository payload (`type` is always `hosted`), the `bundle` (`name`, `version`) and the `check`:
+
+```json
+{
+  "event": "bundle.check_updated",
+  "timestamp": "2026-01-02T15:04:05Z",
+  "repository": "build", "format": "raw", "type": "hosted",
+  "bundle": {"name": "shop", "version": "2.4.0"},
+  "check": {
+    "name": "conforma", "status": "success", "summary": "all rules passed",
+    "details_url": "https://ci.example.com/run/1", "reported_by": "tekton-ci",
+    "expires_at": null
+  }
+}
+```
 
 ## Payload formats
 

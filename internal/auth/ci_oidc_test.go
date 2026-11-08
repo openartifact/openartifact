@@ -51,6 +51,17 @@ func (i *ciTestIssuer) jwksLocation() string {
 func newCITestIssuer(t *testing.T) *ciTestIssuer {
 	t.Helper()
 
+	// The issuer listens on loopback, which the SSRF dial guard blocks.
+	t.Setenv(netutil.EnvAllowPrivate, "true")
+
+	return newCITestIssuerOnLoopback(t)
+}
+
+// newCITestIssuerOnLoopback is newCITestIssuer without the process-wide switch
+// that lets the SSRF guard reach loopback.
+func newCITestIssuerOnLoopback(t *testing.T) *ciTestIssuer {
+	t.Helper()
+
 	iss := &ciTestIssuer{keys: map[string]*rsa.PrivateKey{"k1": newRSAKey(t)}}
 	mux := http.NewServeMux()
 
@@ -83,9 +94,6 @@ func newCITestIssuer(t *testing.T) *ciTestIssuer {
 
 		_ = json.NewEncoder(w).Encode(set)
 	})
-
-	// The issuer listens on loopback, which the SSRF dial guard blocks.
-	t.Setenv(netutil.EnvAllowPrivate, "true")
 
 	iss.srv = httptest.NewServer(mux)
 	t.Cleanup(iss.srv.Close)
@@ -684,6 +692,61 @@ func TestGlobMatch(t *testing.T) {
 func TestConditionsMatch_NoConditionsNeverMatch(t *testing.T) {
 	if ConditionsMatch(nil, map[string]any{"repository": "acme/widgets"}) {
 		t.Fatal("a policy without conditions must not trust every token")
+	}
+}
+
+func TestConditionsMatch_NestedClaims(t *testing.T) {
+	claims := map[string]any{
+		"sub": "system:serviceaccount:team-a:build-pipeline-7",
+		"kubernetes.io": map[string]any{
+			"namespace":      "team-a",
+			"serviceaccount": map[string]any{"name": "build-pipeline-7"},
+			"pod":            map[string]any{"name": "build-abc-pod", "uid": "u-1"},
+			"groups":         []any{"g1", "g2"},
+			"ready":          true,
+		},
+		"kubernetes": map[string]any{"io": map[string]any{"namespace": "shadowed"}},
+		"a":          map[string]any{"b": map[string]any{"c": "deep"}},
+		"a.b":        "literal-ab",
+		"x.y":        map[string]any{"z": "dotted-key"},
+		"nothing":    nil,
+		"list":       []any{map[string]any{"name": "in-array"}},
+	}
+
+	tests := []struct {
+		name    string
+		claim   string
+		pattern string
+		want    bool
+	}{
+		{"top-level claim", "sub", "system:serviceaccount:team-a:*", true},
+		{"a key that itself contains a dot, then a nested key", "kubernetes.io.namespace", "team-a", true},
+		{"the same path with another value", "kubernetes.io.namespace", "team-b", false},
+		{"two levels below a dotted key", "kubernetes.io.serviceaccount.name", "build-pipeline-*", true},
+		{"pod name", "kubernetes.io.pod.name", "build-*-pod", true},
+		{"array of scalars below a path", "kubernetes.io.groups", "g2", true},
+		{"boolean below a path", "kubernetes.io.ready", "true", true},
+		{"a literal top-level key wins over the walk", "a.b", "literal-ab", true},
+		{"the walk is not tried when the literal key exists", "a.b", "deep", false},
+		{"plain nesting", "a.b.c", "deep", true},
+		{"dotted key holding an object", "x.y.z", "dotted-key", true},
+		{"the longest literal key wins over a shorter one that also fits", "kubernetes.io.namespace", "shadowed", false},
+		{"an object never matches", "kubernetes.io", "*", false},
+		{"an object below a path never matches", "kubernetes.io.pod", "*", false},
+		{"objects in an array never match", "list", "*", false},
+		{"a missing leaf", "kubernetes.io.node", "*", false},
+		{"a missing root", "openshift.io.namespace", "*", false},
+		{"a path through a scalar", "sub.x", "*", false},
+		{"a null claim", "nothing", "*", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ConditionsMatch([]models.OIDCCondition{{Claim: tt.claim, Patterns: []string{tt.pattern}}}, claims)
+			if got != tt.want {
+				t.Fatalf("ConditionsMatch(%q ~ %q) = %v, want %v", tt.claim, tt.pattern, got, tt.want)
+			}
+		})
 	}
 }
 

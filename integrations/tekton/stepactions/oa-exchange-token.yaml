@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+apiVersion: tekton.dev/v1beta1
+kind: StepAction
+metadata:
+  name: oa-exchange-token
+  labels:
+    app.kubernetes.io/version: "0.1"
+spec:
+  description: >-
+    Exchange the Kubernetes ServiceAccount token projected into the Task for a short-lived OpenArtifact
+    access token (OIDC trust policy) and write a docker config.json so skopeo, oras and cosign can log in.
+    The token itself is written to the file "token" next to it (mode 0600) for later oa steps (OA_TOKEN).
+    The enclosing Task must project the token volume and mount it at tokenPath.
+  image: ghcr.io/openartifact/oa-tekton:0.21.0
+  params:
+    - name: server
+      type: string
+      description: OpenArtifact base URL, for example https://artifacts.example.com
+    - name: policy
+      type: string
+      default: ""
+      description: Name of the OIDC trust policy; empty lets the server pick the policy that matches the token.
+    - name: tokenPath
+      type: string
+      default: /var/run/secrets/openartifact/token
+      description: File holding the projected ServiceAccount token (audience set by the trust policy).
+    - name: dockerConfigDir
+      type: string
+      default: /oa-auth/docker
+      description: Directory that receives config.json; mount a shared volume there.
+    - name: caFile
+      type: string
+      default: ""
+      description: PEM bundle to trust for the OpenArtifact server; empty uses the image trust store.
+  results:
+    - name: expires
+      description: Always "ok" once the token was exchanged; the token itself is only written to the docker config.
+  env:
+    - name: OA_SERVER
+      value: $(params.server)
+    - name: OA_POLICY
+      value: $(params.policy)
+    - name: OA_TOKEN_PATH
+      value: $(params.tokenPath)
+    - name: OA_DOCKER_DIR
+      value: $(params.dockerConfigDir)
+    - name: OA_CA_FILE
+      value: $(params.caFile)
+  script: |
+    #!/bin/sh
+    set -eu
+    [ -z "$OA_CA_FILE" ] || export SSL_CERT_FILE="$OA_CA_FILE"
+    set -- oidc exchange --server "$OA_SERVER" --token-file "$OA_TOKEN_PATH" --docker-config "$OA_DOCKER_DIR"
+    [ -z "$OA_POLICY" ] || set -- "$@" --policy "$OA_POLICY"
+    umask 077
+    oa "$@" > "$OA_DOCKER_DIR/token"
+    printf ok > "$(step.results.expires.path)"

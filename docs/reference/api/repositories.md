@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Repositories API
 
-68 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+73 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -92,6 +92,7 @@ Create a new repository (admin only)
 | `description` | string | no | - |
 | `federated` | boolean | no | Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true). |
 | `format` | string | yes | One of: `ansible`, `apk`, `cargo`, `composer`, `conan`, `conda`, `deb`, `docker`, `go`, `helm`, `huggingface`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `pacman`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. |
+| `honour_quay_expiry` | boolean | no | Hosted docker repositories only (400 validation_failed otherwise when true, and when combined with immutable_releases=true). When true, a manifest carrying the quay.expires-after annotation (or image config label) is deleted with its tags and dependents once that time has passed. |
 | `immutable_releases` | boolean | no | When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true. |
 | `max_stale_seconds` | integer | no | Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000. |
 | `member_repos` | array of string | no | For group repos: ordered member repository names (first hit wins). Members must be hosted or proxy repositories of the group's format; groups cannot be nested. |
@@ -359,6 +360,132 @@ Delete a specific property from an artifact
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Property not found | - |
+
+### `GET /api/v1/repositories/{name}/attestation-trust`
+
+Get the attestation trust configuration
+
+Returns the keys, Fulcio roots and identities a repository's attestations are verified against. Needs manage, or maintainer/owner of the repository's project.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | Trust configuration (empty when none is set) | `application/json`: [AttestationTrust](schemas.md#attestationtrust) |
+| `403` | Error | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository not found | - |
+
+### `PUT /api/v1/repositories/{name}/attestation-trust`
+
+Set the attestation trust configuration
+
+Replaces the trust configuration of a docker repository. Keys and roots are PEM documents; Fulcio needs both roots and identities; every identity needs an issuer and exactly one of `subject` and `subject_regexp` (matched against the whole subject). Already indexed attestations keep their verdict until reverified. Needs manage, or maintainer/owner of the repository's project.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+
+**Request body** (required)
+
+`application/json`: [AttestationTrust](schemas.md#attestationtrust)
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | Stored trust configuration | `application/json`: [AttestationTrust](schemas.md#attestationtrust) |
+| `400` | Error | `application/json`: [Error](schemas.md#error) |
+| `403` | Error | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository not found | - |
+
+### `GET /api/v1/repositories/{name}/attestations`
+
+List the attestations of an image
+
+Lists the signatures, attestations (SLSA provenance and others) and SBOMs indexed for an image digest of a docker repository, with their verification outcome against the repository's attestation trust configuration. Needs read access to the repository.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+| `subject` | query | string | yes | Image manifest digest (sha256:`<64 hex>`). Pattern: `^sha256:[a-f0-9]{64}$`. |
+| `image` | query | string | no | Image name inside the repository |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | Attestations of the image | `application/json`: object |
+| `400` | Error | `application/json`: [Error](schemas.md#error) |
+| `403` | Error | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository not found | - |
+
+Fields of the `200` response (`application/json`):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `attestations` | array of [OCIAttestation](schemas.md#ociattestation) | yes | - |
+
+### `POST /api/v1/repositories/{name}/attestations/reverify`
+
+Verify the attestations of an image again
+
+Re-reads the cosign tags (.sig, .att, .sbom) and the referrers of the image digest and judges them against the current trust configuration; without `subject` every indexed image of the repository is re-verified. With `subject` and `image` it also re-indexes an image whose rows are gone. Needs manage, or maintainer/owner of the repository's project.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+| `subject` | query | string | no | Image manifest digest (sha256:`<64 hex>`). Pattern: `^sha256:[a-f0-9]{64}$`. |
+| `image` | query | string | no | Image name inside the repository |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | Number of attachment manifests processed | `application/json`: object |
+| `400` | Error | `application/json`: [Error](schemas.md#error) |
+| `403` | Error | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository not found | - |
+
+Fields of the `200` response (`application/json`):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `reverified` | integer | yes | - |
+
+### `GET /api/v1/repositories/{name}/attestations/{digest}`
+
+Get the statement of an attestation
+
+Returns the decoded in-toto statement of an indexed attachment (an SBOM or signature payload is wrapped as the predicate of a statement about the image). The statement is returned as stored, whether or not it verified. Needs read access to the repository.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+| `digest` | path | string | yes | Attestation digest as listed (sha256:`<64 hex>`) |
+| `image` | query | string | no | Image name inside the repository |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | in-toto statement | `application/json`: [InTotoStatement](schemas.md#intotostatement) |
+| `400` | Error | `application/json`: [Error](schemas.md#error) |
+| `403` | Error | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or attestation not found, or the attachment carries no readable statement | `application/json`: [Error](schemas.md#error) |
 
 ### `PUT /api/v1/repositories/{name}/comps`
 
@@ -1540,7 +1667,7 @@ Delete a recorded VEX decision; the vulnerability falls back to its derived stat
 
 Scan vulnerabilities
 
-Start a vulnerability scan for an artifact. The scan runs in the background: poll the scan until `scan_status` is `completed`, `partial` or `failed`. A scanner that cannot run (not installed, timeout, non-zero exit, unreadable output, upstream error, unsupported ecosystem) is recorded as failed instead of `completed` with zero findings.
+Start a vulnerability scan for an artifact. The scan runs in the background: poll the scan until `scan_status` is `completed`, `partial` or `failed`. A scanner that cannot run (not installed, timeout, non-zero exit, unreadable output, upstream error, unsupported ecosystem) is recorded as failed instead of `completed` with zero findings. With ecosystem `docker` the scan covers every package of the image's SBOM (cosign `.sbom`/`.att` or an SBOM referrer); see the scanning guide for the ecosystems covered.
 
 **Parameters**
 
@@ -1560,6 +1687,8 @@ Start a vulnerability scan for an artifact. The scan runs in the background: pol
 | `400` | Invalid body or unknown scanner | - |
 | `403` | Admin access required | - |
 | `404` | Repository not found | - |
+| `422` | `no_sbom`: the image has no ingested SBOM | - |
+| `429` | `too_many_scans`: all scan slots are busy; retry later | - |
 
 ### `GET /api/v1/repositories/{name}/vuln/scanners`
 
@@ -1735,7 +1864,7 @@ Create a new webhook for a repository
 |---|---|---|---|
 | `content_type` | string | no | - |
 | `enabled` | boolean | no | - |
-| `events` | array of string | yes | Items: one of: `artifact.uploaded`, `artifact.deleted`, `repository.created`, `repository.deleted`, `artifact.restored`, `artifact.purged`, `repository.restored`, `repository.purged`, `bundle.promoted`, `vulnerability.new`. |
+| `events` | array of string | yes | Items: one of: `artifact.uploaded`, `artifact.deleted`, `repository.created`, `repository.deleted`, `artifact.restored`, `artifact.purged`, `repository.restored`, `repository.purged`, `bundle.promoted`, `vulnerability.new`, `scan.completed`, `vulnerability.found`, `quarantine.changed`, `bundle.check_updated`. |
 | `max_retries` | integer | no | - |
 | `name` | string | yes | - |
 | `payload_format` | string | no | Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes. One of: `openartifact`, `cloudevents`, `slack`, `teams`, `discord`. Default: `openartifact`. |
@@ -1798,6 +1927,7 @@ Update repository configuration. Requires global admin, or the maintainer or own
 | `cache_ttl_seconds` | integer | no | - |
 | `curation_mode` | string | no | Proxy repositories only (400 for other types). off ignores the curation rules, denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches. A change is audited as repository.updated. One of: `off`, `denylist`, `allowlist`. |
 | `description` | string | no | - |
+| `honour_quay_expiry` | boolean | no | Hosted docker repositories only (400 validation_failed otherwise when true, and when combined with immutable_releases=true). When true, a manifest carrying the quay.expires-after annotation (or image config label) is deleted with its tags and dependents once that time has passed. |
 | `immutable_releases` | boolean | no | When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true. |
 | `max_stale_seconds` | integer | no | Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000. |
 | `member_repos` | array of string | no | - |

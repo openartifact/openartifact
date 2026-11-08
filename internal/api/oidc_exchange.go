@@ -59,6 +59,14 @@ func NewOIDCExchangeHandler(db OIDCExchangeStore, log *logger.Logger, trustedPro
 	}
 }
 
+// WithServiceAccountFiles sets the projected service account token and cluster CA
+// bundle the serviceaccount discovery mode of a policy uses to read its issuer.
+func (h *OIDCExchangeHandler) WithServiceAccountFiles(tokenFile, caFile string) *OIDCExchangeHandler {
+	h.verifier.WithServiceAccountFiles(tokenFile, caFile)
+
+	return h
+}
+
 // RegisterPublic mounts the exchange on the unauthenticated router.
 func (h *OIDCExchangeHandler) RegisterPublic(r chi.Router) {
 	r.Post("/api/v1/auth/oidc/exchange", h.handleExchange)

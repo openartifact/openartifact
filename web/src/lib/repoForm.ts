@@ -35,6 +35,7 @@ export interface RepoForm {
   quotaUnit: SizeUnit
   immutableReleases: boolean
   signPackages: boolean
+  honourQuayExpiry: boolean
   mergeProxyVersions: boolean
   federated: boolean
   presign: PresignMode
@@ -57,6 +58,7 @@ export function emptyRepoForm(overrides: Partial<RepoForm> = {}): RepoForm {
     quotaUnit: 'GB',
     immutableReleases: false,
     signPackages: false,
+    honourQuayExpiry: false,
     mergeProxyVersions: false,
     federated: false,
     presign: 'inherit',
@@ -77,6 +79,7 @@ export function repoFormFrom(r: Repository): RepoForm {
     retentionDays: r.trash_retention_days == null ? '' : String(r.trash_retention_days),
     immutableReleases: r.immutable_releases ?? false,
     signPackages: r.sign_packages ?? false,
+    honourQuayExpiry: r.honour_quay_expiry ?? false,
     mergeProxyVersions: r.merge_proxy_versions ?? false,
     federated: r.federated ?? false,
     presign: presignModeOf(r),
@@ -132,6 +135,7 @@ export function buildCreateBody(form: RepoForm, ctx: { isAdmin: boolean }): Crea
     ...(retention !== undefined && retention !== null ? { trash_retention_days: retention } : {}),
     ...(form.immutableReleases ? { immutable_releases: true } : {}),
     ...(form.type === 'hosted' && form.format === 'rpm' && form.signPackages ? { sign_packages: true } : {}),
+    ...(form.type === 'hosted' && form.format === 'docker' && form.honourQuayExpiry ? { honour_quay_expiry: true } : {}),
     ...(form.type === 'group' && ctx.isAdmin && form.mergeProxyVersions ? { merge_proxy_versions: true } : {}),
     ...(federationAvailable(form.type, form.format) && form.federated ? { federated: true } : {}),
     ...(form.project && ctx.isAdmin ? { project: form.project } : {}),
@@ -158,6 +162,7 @@ export function buildUpdateBody(form: RepoForm, repo: Repository, ctx: { isAdmin
     immutable_releases: form.immutableReleases,
     // The API answers 403 to non-admins that send these, so only admins send them.
     ...(type === 'hosted' && repo.format === 'rpm' ? { sign_packages: form.signPackages } : {}),
+    ...(type === 'hosted' && repo.format === 'docker' ? { honour_quay_expiry: form.honourQuayExpiry } : {}),
     ...(type === 'group' && ctx.isAdmin ? { merge_proxy_versions: form.mergeProxyVersions } : {}),
     ...(ctx.isAdmin && form.project !== (repo.project === SYSTEM_PROJECT_NAME ? '' : (repo.project ?? ''))
       ? { project: form.project || SYSTEM_PROJECT_NAME }

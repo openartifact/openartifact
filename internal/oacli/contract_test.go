@@ -383,6 +383,20 @@ func TestContractRepo(t *testing.T) {
 			},
 		},
 		{
+			name:    "create with honour quay expiry",
+			args:    []string{"repo", "create", "r", "--format", "docker", "--honour-quay-expiry"},
+			replies: map[string]reply{"POST /api/v1/repositories": {status: 201, body: one}},
+			calls: []call{{method: "POST", pattern: "/api/v1/repositories", body: m{
+				"name": "r", "format": "docker", "description": "", "public": false, "honour_quay_expiry": true,
+			}}},
+		},
+		{
+			name:    "update honour quay expiry",
+			args:    []string{"repo", "update", "r", "--honour-quay-expiry=false"},
+			replies: map[string]reply{"PATCH /api/v1/repository/{name}": ok(one)},
+			calls:   []call{{method: "PATCH", pattern: "/api/v1/repository/{name}", body: m{"honour_quay_expiry": false}}},
+		},
+		{
 			name:    "update merge proxy versions",
 			args:    []string{"repo", "update", "g", "--merge-proxy-versions"},
 			replies: map[string]reply{"PATCH /api/v1/repository/{name}": ok(one)},

@@ -35,7 +35,7 @@ go env -w GOPROXY=HOST/repos/REPO
 ```
 
 - A hosted repository holds private modules that the public checksum database does not know. `GONOSUMDB=*` stops the go command from looking them up there. `,direct` lets the go command fall back to the module's own origin for anything the repository lacks.
-- A proxy or group serves public modules. Leave `GONOSUMDB` unset and do not add `,direct`, so the go command keeps verifying what it receives against the checksum database.
+- A proxy or group serves public modules. Leave `GONOSUMDB` unset and do not add `,direct`, so the go command keeps verifying what it receives against the checksum database. The proxy [relays the checksum database](#checksum-database-relay), so the client needs no other route out.
 - Private repositories need a token on every request. See [authentication](../security/authentication.md).
 
 ## Publish
@@ -103,11 +103,34 @@ go mod download
 
 Proxies and groups are read-only. `PUT` answers `405`.
 
-- **Forwarding.** Requests go to `upstream_url` in the case-encoded form the go command uses (`github.com/!azure/x` goes upstream as `github.com/%21azure/x`). A path that is not a valid module path or version, a `.mod` or `.zip` of a non-canonical version, and everything outside `<module>/@v/{list,<version>.info,.mod,.zip}` and `<module>/@latest` (including `sumdb/...`) answers `404`.
+- **Forwarding.** Requests go to `upstream_url` in the case-encoded form the go command uses (`github.com/!azure/x` goes upstream as `github.com/%21azure/x`). A path that is not a valid module path or version, a `.mod` or `.zip` of a non-canonical version, and everything outside `<module>/@v/{list,<version>.info,.mod,.zip}`, `<module>/@latest` and `sumdb/<host>/...` answers `404`.
 - **Caching.** `@v/list`, `@latest` and the `.info` of a query such as `master` are cached for `cache_ttl_seconds` and served stale (`Warning: 110`) when the upstream fails. `.info`, `.mod` and `.zip` of a canonical version (a release, pre-release, pseudo-version or `+incompatible`) are immutable: fetched once, never revalidated, and served with the upstream down.
 - **Body checks.** A body that fails its check is refused with `502` and not stored. `list` must be one valid semantic version per line. `.info` must be a JSON object whose `Version` equals the requested version. `.mod` must be a `go.mod` with a `module` line. `.zip` must pass the module zip checks (files under `<module>@<version>/`, size and path limits).
 - **Credentials.** Upstream credentials are sent only to the upstream origin.
-- **Checksum database.** `GET /sumdb/...` is not proxied, so clients reach the checksum database directly. Air-gapped clients need their own mirror.
+- **Checksum database.** `sumdb/<host>/...` is relayed to the checksum database, see [Checksum database relay](#checksum-database-relay).
+
+### Checksum database relay
+
+A proxy or group also relays the Go checksum database, the way `GOPROXY` expects (`GOPROXY=HOST/repos/REPO/sumdb/sum.golang.org/...`). A build host that can reach only OpenArtifact still verifies every module against the database. The go command uses the relay by itself: it asks `GOPROXY` for `sumdb/<GOSUMDB host>/supported` and, on `200`, sends all checksum database requests there.
+
+```sh
+go env -w GOPROXY=HOST/repos/REPO
+go env -w GOSUMDB=sum.golang.org   # the default; the relay is chosen automatically
+```
+
+| Path below `HOST/repos/REPO/sumdb/<host>/` | Handling |
+|---|---|
+| `supported` | `200` with an empty body, answered by OpenArtifact itself, for an allowed host |
+| `latest` | the signed tree head, cached for `cache_ttl_seconds` and served stale when the upstream fails |
+| `lookup/<module>@<version>` | the signed record and tree head, cached like `latest`; the version must be canonical and the module a valid module path |
+| `tile/<H>/<L>/<K>[.p/<W>]`, `tile/<H>/data/<K>[.p/<W>]` | hash and record tiles. They never change, so they are cached as immutable and served with the upstream down |
+
+- **Allowed hosts.** Only the hosts in `workers.proxyGoSumdbHosts` (env `OPENARTIFACT_PROXY_GO_SUMDB_HOSTS`, default `sum.golang.org`) are relayed. A request for any other host is `404`, so the go command falls back to the database directly. The request is always sent to `https://<host>` and never to the repository's `upstream_url`, and the repository's credentials are not sent. An empty list turns the relay off.
+- **Verification stays on the client.** The proxy relays signed notes and tiles unchanged. The go command checks the database's signature and the tree itself, so a relay cannot forge a record. The proxy only refuses bodies that cannot be the file asked for (an HTML page instead of a signed note, a hash tile whose length is not a multiple of 32 bytes, an empty record tile) with `502`, and does not store them.
+- **Private upstreams.** The relay uses the same outbound checks as every proxy fetch: loopback, private and link-local addresses are refused unless `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS` is set. To mirror an internal database, list its host and set that option.
+- **Hosted repositories** hold private modules that a public database does not know and relay nothing: every `sumdb/...` path is `404`. Use a proxy or a group for public modules, and `GONOSUMDB`/`GOPRIVATE` for the private ones.
+- **Groups** answer `sumdb/...` from the first member that does: hosted members answer `404`, so the proxy member relays it. A group needs a go proxy member for the relay to work.
+- Quarantine, curation and the minimum age do not apply: the database holds no module files.
 
 ### Minimum age and curation
 

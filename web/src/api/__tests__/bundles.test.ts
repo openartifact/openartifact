@@ -5,12 +5,14 @@
 import { describe, it, expect, spyOn, afterEach } from 'bun:test'
 import {
   addBundleItems,
+  listBundleChecks,
   listBundleSigningKeys,
   listBundles,
   manifestUrl,
   promoteBundle,
   removeBundleItem,
   sealBundle,
+  updatePipeline,
   searchItemCandidates,
   signatureUrl,
 } from '../bundles'
@@ -80,5 +82,23 @@ describe('bundles api', () => {
 
     spy.mockResolvedValue(json({}))
     expect(await searchItemCandidates('x')).toEqual([])
+  })
+
+  it('lists the checks of a bundle, empty when the answer has none', async () => {
+    const check = { name: 'scan', status: 'success', summary: '', details_url: '', reported_by: 'ci', updated_at: '2026-10-03T10:00:00Z', expires_at: null }
+    spy = spyOn(globalThis, 'fetch').mockResolvedValue(json({ checks: [check] }))
+    expect(await listBundleChecks('my shop', '1+2')).toEqual([check])
+    expect(call().url).toBe('/api/v1/bundles/my%20shop/1%2B2/checks')
+
+    spy.mockResolvedValue(json({}))
+    expect(await listBundleChecks('shop', '1')).toEqual([])
+  })
+
+  it('patches a pipeline by escaped name, carrying the required checks of each stage', async () => {
+    spy = spyOn(globalThis, 'fetch').mockResolvedValue(json({}))
+    await updatePipeline('my pipe', { stages: [{ name: 'prod', required_checks: ['scan'] }] })
+    expect(call().url).toBe('/api/v1/pipelines/my%20pipe')
+    expect(call().init.method).toBe('PATCH')
+    expect(JSON.parse(call().init.body as string)).toEqual({ stages: [{ name: 'prod', required_checks: ['scan'] }] })
   })
 })

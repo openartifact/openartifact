@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Scanning API
 
-35 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+37 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -42,6 +42,31 @@ Create a global license policy (admin only)
 | `201` | License policy created | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+
+### `GET /api/v1/repositories/{name}/gate`
+
+Gate an image digest
+
+Aggregate pass/fail verdict for one image of a docker repository, for CI and release pipelines. Readable with read access to the repository. Checks: `vulnerabilities` (the latest scan of the digest against the exploitation criteria; an image that was never scanned fails), `license` (blocking license policies over the ingested SBOM), `quarantine`, and `attestations` (present and none failed verification; only when attestation indexing is available). Without `kev`, `epss_min` or `min_priority` the criteria default to `min_priority=high`. A failing gate is still HTTP 200.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+| `digest` | query | string | yes | Manifest digest `sha256:<hex>` of the image. Pattern: `^sha256:[0-9a-f]{64}$`. |
+| `kev` | query | boolean | no | `true`: a finding in the KEV catalog fails the vulnerability check. |
+| `epss_min` | query | number | no | A finding whose EPSS score is at least this value fails the vulnerability check. Minimum: 0. Maximum: 1. |
+| `min_priority` | query | string | no | A finding whose priority is at least this one fails the vulnerability check. One of: `kev`, `epss`, `critical`, `high`, `medium`, `low`. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The verdict | `application/json`: [GateResponse](schemas.md#gateresponse) |
+| `400` | Missing or invalid digest, not a docker repository, or invalid criteria (`validation_failed`) | - |
+| `403` | Read access to the repository required | - |
+| `404` | Repository not found | - |
 
 ### `GET /api/v1/repositories/{name}/license/policies`
 
@@ -435,7 +460,7 @@ Counts only: vulnerabilities by severity, license violations, secret findings, A
 
 Scan vulnerabilities
 
-Start a vulnerability scan for an artifact. The scan runs in the background: poll the scan until `scan_status` is `completed`, `partial` or `failed`. A scanner that cannot run (not installed, timeout, non-zero exit, unreadable output, upstream error, unsupported ecosystem) is recorded as failed instead of `completed` with zero findings.
+Start a vulnerability scan for an artifact. The scan runs in the background: poll the scan until `scan_status` is `completed`, `partial` or `failed`. A scanner that cannot run (not installed, timeout, non-zero exit, unreadable output, upstream error, unsupported ecosystem) is recorded as failed instead of `completed` with zero findings. With ecosystem `docker` the scan covers every package of the image's SBOM (cosign `.sbom`/`.att` or an SBOM referrer); see the scanning guide for the ecosystems covered.
 
 **Parameters**
 
@@ -455,6 +480,8 @@ Start a vulnerability scan for an artifact. The scan runs in the background: pol
 | `400` | Invalid body or unknown scanner | - |
 | `403` | Admin access required | - |
 | `404` | Repository not found | - |
+| `422` | `no_sbom`: the image has no ingested SBOM | - |
+| `429` | `too_many_scans`: all scan slots are busy; retry later | - |
 
 ### `GET /api/v1/repositories/{name}/vuln/scanners`
 
@@ -508,6 +535,33 @@ Fields of the `200` response (`application/json`):
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `scans` | array of [VulnScanResult](schemas.md#vulnscanresult) | no | - |
+
+### `POST /api/v1/repositories/{name}/vuln/scans/import`
+
+Import an external scan result
+
+Store the result of a scanner that ran elsewhere (SARIF 2.1, osv-scanner JSON or the minimal `oa` schema) as a completed scan of an image, with scanner `external:<scanner label or format>`. The scan is gated, quarantined, exported and announced to webhooks like a scan of this server. Needs write access to the repository. Body up to 32 MiB; at most 50000 findings.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+
+**Request body** (required)
+
+`application/json`: [VulnScanImportRequest](schemas.md#vulnscanimportrequest)
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The stored scan (`scan_status` is `completed`) | `application/json`: [VulnScanResult](schemas.md#vulnscanresult) |
+| `400` | Invalid JSON, or not a docker repository (`validation_failed`) | - |
+| `403` | Write access to the repository required | - |
+| `404` | Repository not found | - |
+| `413` | Body too large | - |
+| `422` | `invalid_scan_result`: unknown format, bad digest or label, or a result that cannot be read in the declared format | - |
 
 ### `GET /api/v1/repositories/{name}/vuln/scans/{id}`
 
@@ -580,7 +634,7 @@ Findings of one scan as SARIF, CSV or JSON (admin only). Every finding carries i
 
 Check a vulnerability scan against exploitation criteria
 
-Quality gate on the exploitation signals of one scan's findings (admin only). The scan passes when no finding meets any of the given conditions (they are ORed): a CVE in the CISA KEV catalog (`kev=true`), an EPSS score of at least `epss_min`, or a priority of at least `min_priority`. At least one condition is required. The signals are read when the request is made, so a feed import changes the verdict of an old scan.
+Quality gate on the exploitation signals of one scan's findings (readable with read access to the repository). The scan passes when no finding meets any of the given conditions (they are ORed): a CVE in the CISA KEV catalog (`kev=true`), an EPSS score of at least `epss_min`, or a priority of at least `min_priority`. At least one condition is required. The signals are read when the request is made, so a feed import changes the verdict of an old scan.
 
 **Parameters**
 
@@ -598,8 +652,8 @@ Quality gate on the exploitation signals of one scan's findings (admin only). Th
 |---|---|---|
 | `200` | The verdict, `pass` true or false (a failing gate is still HTTP 200). | `application/json`: [VulnGateResponse](schemas.md#vulngateresponse) |
 | `400` | No condition given, or an invalid value (`validation_failed`) | - |
-| `403` | Admin access required | - |
-| `404` | Scan not found | - |
+| `403` | Read access to the repository required | - |
+| `404` | Repository or scan not found | - |
 
 ### `POST /api/v1/repositories/{name}/vuln/scans/{id}/quarantine`
 

@@ -18,6 +18,7 @@ import (
 	"github.com/openartifact/openartifact/internal/scanexport"
 	"github.com/openartifact/openartifact/internal/secrets"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -39,8 +40,15 @@ type SecretsStore interface {
 type SecretsHandler struct {
 	repoAccess
 
-	scanner *secrets.Scanner
-	db      SecretsStore
+	scanner   *secrets.Scanner
+	publisher webhook.Publisher
+	db        SecretsStore
+}
+
+// WithPublisher enables the scan.completed and quarantine.changed webhook events.
+func (h *SecretsHandler) WithPublisher(p webhook.Publisher) *SecretsHandler {
+	h.publisher = p
+	return h
 }
 
 func NewSecretsHandler(db SecretsStore, log *logger.Logger, scanner *secrets.Scanner) *SecretsHandler {
@@ -125,6 +133,11 @@ func (h *SecretsHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	emitScanCompleted(ctx, h.publisher, repo, webhook.ScanCompleted{
+		ScanID: scanResult.ID, Kind: webhook.ScanKindSecret, Status: scanResult.ScanStatus, ArtifactID: scanResult.ArtifactID,
+		Counts: map[string]int{"findings": scanResult.FindingCount},
+	})
+
 	writeJSON(w, http.StatusOK, secretScanResultToMap(scanResult))
 }
 
@@ -203,6 +216,10 @@ func (h *SecretsHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 
 	if quarantined || wasQuarantined {
 		auditQuarantine(r, repo, quarantined, "secret", result.ArtifactID, "", "")
+	}
+
+	if quarantined != wasQuarantined {
+		emitQuarantineChanged(r, h.publisher, repo, reviewQuarantine(quarantined, webhook.ScanKindSecret, result.ArtifactID, "", ""))
 	}
 
 	writeJSON(w, http.StatusOK, secretScanResultToMap(updated))

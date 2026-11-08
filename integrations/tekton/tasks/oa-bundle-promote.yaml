@@ -1,0 +1,135 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: oa-bundle-promote
+  labels:
+    app.kubernetes.io/version: "0.1"
+  annotations:
+    tekton.dev/pipelines.minVersion: 0.62.0
+    tekton.dev/tags: openartifact
+spec:
+  description: >-
+    Create a release bundle from image digests (or a docker repository), seal it and promote it to a pipeline
+    stage. Required checks configured on the stage are enforced by the server (HTTP 422 CHECKS_REQUIRED fails
+    the task). Authenticates by OIDC token exchange.
+  params:
+    - name: SERVER
+      type: string
+      description: OpenArtifact base URL.
+    - name: POLICY
+      type: string
+      default: ""
+      description: OIDC trust policy name; empty lets the server match the token.
+    - name: CA_FILE
+      type: string
+      default: ""
+      description: PEM bundle trusted for the OpenArtifact server.
+    - name: IMAGE
+      type: string
+      default: ghcr.io/openartifact/oa-tekton:0.21.0
+    - name: REPOSITORY
+      type: string
+      description: Docker repository holding the images.
+    - name: BUNDLE_NAME
+      type: string
+    - name: BUNDLE_VERSION
+      type: string
+    - name: DIGESTS
+      type: array
+      default: []
+      description: Image manifest digests (sha256:...) to put into the bundle; unused when MODE is promote.
+    - name: STAGE
+      type: string
+      default: ""
+      description: Pipeline stage to promote to; required unless MODE is seal.
+    - name: MODE
+      type: string
+      default: all
+      description: >-
+        all creates, seals and promotes; seal stops after sealing so required checks can be reported on
+        the bundle (oa-report-check); promote only promotes an already sealed bundle.
+    - name: NOTES
+      type: string
+      default: ""
+  results:
+    - name: BUNDLE_ID
+      description: Id of the bundle, the key of the required-check API.
+    - name: PROMOTED
+      description: '"true" once the promotion succeeded.'
+  stepTemplate:
+    volumeMounts:
+      - name: oa-auth
+        mountPath: /oa-auth
+  steps:
+    - name: exchange
+      ref:
+        name: oa-exchange-token
+      params:
+        - name: server
+          value: $(params.SERVER)
+        - name: policy
+          value: $(params.POLICY)
+        - name: caFile
+          value: $(params.CA_FILE)
+      volumeMounts:
+        - name: oa-token
+          mountPath: /var/run/secrets/openartifact
+          readOnly: true
+    - name: promote
+      image: $(params.IMAGE)
+      env:
+        - name: SERVER
+          value: $(params.SERVER)
+        - name: CA_FILE
+          value: $(params.CA_FILE)
+        - name: REPOSITORY
+          value: $(params.REPOSITORY)
+        - name: NAME
+          value: $(params.BUNDLE_NAME)
+        - name: VERSION
+          value: $(params.BUNDLE_VERSION)
+        - name: STAGE
+          value: $(params.STAGE)
+        - name: NOTES
+          value: $(params.NOTES)
+        - name: MODE
+          value: $(params.MODE)
+      args:
+        - $(params.DIGESTS[*])
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+        [ -z "$CA_FILE" ] || export SSL_CERT_FILE="$CA_FILE"
+        OA_TOKEN="$(cat /oa-auth/docker/token)"
+        export OA_SERVER="$SERVER" OA_TOKEN
+        : > "$(results.PROMOTED.path)"
+        : > "$(results.BUNDLE_ID.path)"
+        case "$MODE" in all | seal | promote) ;; *) echo "MODE must be all, seal or promote" >&2; exit 1 ;; esac
+        if [ "$MODE" != promote ]; then
+          digests=()
+          # a digest argument may hold several, space separated (oa-publish results)
+          for arg in "$@"; do for d in $arg; do digests+=(--digest "$d"); done; done
+          oa --format json bundle create "$NAME" "$VERSION" | jq -j .id > "$(results.BUNDLE_ID.path)"
+          oa bundle add "$NAME" "$VERSION" --repo "$REPOSITORY" "${digests[@]}"
+          oa bundle seal "$NAME" "$VERSION"
+        fi
+        if [ "$MODE" != seal ]; then
+          [ -n "$STAGE" ] || { echo "STAGE is required to promote" >&2; exit 1; }
+          oa promote "$NAME" "$VERSION" --stage "$STAGE" --notes "$NOTES"
+          printf true > "$(results.PROMOTED.path)"
+        fi
+  volumes:
+    - name: oa-token
+      projected:
+        sources:
+          - serviceAccountToken:
+              audience: openartifact
+              expirationSeconds: 600
+              path: token
+    - name: oa-auth
+      emptyDir:
+        medium: Memory

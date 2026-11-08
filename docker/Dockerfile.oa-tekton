@@ -1,0 +1,62 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Step image of the Tekton catalog (integrations/tekton): the oa CLI plus the
+# registry clients its tasks and the Konflux release pipelines call (cosign,
+# oras, skopeo, jq). Tekton script steps need a shell, so the base is a
+# digest-pinned Alpine, not a distroless image. Build from the repository root:
+#   docker build -f docker/Dockerfile.oa-tekton --build-arg VERSION=1.2.3 -t oa-tekton .
+
+# ---- oa (static, built from this repository) --------------------------------
+FROM --platform=$BUILDPLATFORM docker.io/golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS builder
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+ARG VERSION=dev
+ARG TARGETOS=linux
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
+    -ldflags "-s -w -X main.version=${VERSION}" -o /out/oa ./cmd/oa
+
+# ---- cosign and oras (static, digest-pinned upstream images) ----------------
+FROM gcr.io/projectsigstore/cosign:v3.1.4@sha256:0f06154836d2de34f887a5c273506d52ca43edaa1d9e53e6510fa78a48f69c2d AS cosign-src
+FROM ghcr.io/oras-project/oras:v1.3.6@sha256:9cfb578be975b762fd898b9d004243d8003aeb807a3e15b2ed212cdd1326c9eb AS oras-src
+
+# ---- Runtime ----------------------------------------------------------------
+FROM docker.io/library/alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f
+
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_TIME=unknown
+LABEL org.opencontainers.image.title="oa-tekton" \
+      org.opencontainers.image.description="Step image of the OpenArtifact Tekton catalog: oa, cosign, oras, skopeo and jq." \
+      org.opencontainers.image.vendor="OpenArtifact" \
+      org.opencontainers.image.authors="The OpenArtifact Authors" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+      org.opencontainers.image.url="https://github.com/openartifact/openartifact" \
+      org.opencontainers.image.source="https://github.com/openartifact/openartifact" \
+      org.opencontainers.image.documentation="https://github.com/openartifact/openartifact/blob/main/docs/integrations/tekton.md" \
+      org.opencontainers.image.base.name="docker.io/library/alpine:3.22" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT}" \
+      org.opencontainers.image.created="${BUILD_TIME}"
+
+# bash is for the catalog's scripts (pipefail); ca-certificates for TLS to registries.
+# hadolint ignore=DL3018
+RUN apk add --no-cache bash ca-certificates jq skopeo && \
+    adduser -D -u 65532 oa
+
+COPY --from=builder /out/oa /usr/local/bin/oa
+COPY --from=cosign-src /ko-app/cosign /usr/local/bin/cosign
+COPY --from=oras-src /bin/oras /usr/local/bin/oras
+
+USER 65532:65532
+WORKDIR /home/oa
+
+CMD ["oa", "version"]

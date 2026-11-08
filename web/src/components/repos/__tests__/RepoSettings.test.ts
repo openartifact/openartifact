@@ -196,6 +196,14 @@ describe('RepoSettings: saving', () => {
     expect(writes(calls)[0].body).toMatchObject({ sign_packages: true })
   })
 
+  it('sends honour_quay_expiry only for a hosted docker repository', async () => {
+    const calls = serve((c) => (c.method === 'PATCH' ? json(repo()) : undefined))
+    const w = await mountSettings(repo({ format: 'docker' }))
+    await w.find('[data-row="policies"] input[type="checkbox"]').setValue(true)
+    await save(w)
+    expect(writes(calls)[0].body).toMatchObject({ honour_quay_expiry: true })
+  })
+
   it('maps the trash retention input: empty resets to the default (null), 0 and N are sent, text is refused', async () => {
     const calls = serve((c) => (c.method === 'PATCH' ? json(repo()) : undefined))
     const w = await mountSettings(repo({ trash_retention_days: 7 }))

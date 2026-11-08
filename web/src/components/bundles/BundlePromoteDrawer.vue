@@ -37,6 +37,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <option v-for="s in stages" :key="s.name" :value="s.name">{{ s.name }}</option>
         </select>
       </FormField>
+      <section v-if="required.length > 0" :aria-label="t('bundles.promote.checks')" data-testid="promote-checks">
+        <h3 class="mb-1.5 text-sm font-medium text-foreground">{{ t('bundles.promote.checks') }}</h3>
+        <ul class="space-y-1">
+          <li v-for="c in required" :key="c.name" class="flex items-center justify-between gap-2 text-sm" data-testid="promote-check">
+            <span class="min-w-0 truncate font-mono text-xs text-foreground" :title="c.name">{{ c.name }}</span>
+            <StatusBadge :label="requiredCheckLabel(c.state)" :variant="requiredCheckVariant(c.state)" />
+          </li>
+        </ul>
+        <p v-if="blocking" class="mt-1 text-xs text-warning" role="status">{{ t('bundles.promote.checksBlocking') }}</p>
+      </section>
+
       <FormField :label="t('bundles.promote.repo')" id="promote-repo" :hint="fixedRepo ? t('bundles.promote.repoFixed') : undefined">
         <select id="promote-repo" v-model="targetRepo" required :disabled="fixedRepo !== undefined" :class="INPUT_CLASS">
           <option value="" disabled>{{ t('bundles.promote.chooseRepo') }}</option>
@@ -69,10 +80,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, ref, watch } from 'vue'
 import AppButton from '../AppButton.vue'
 import FormField from '../FormField.vue'
+import StatusBadge from '../StatusBadge.vue'
 import Drawer from '../ui/Drawer.vue'
-import { promoteBundle, type Bundle, type PipelineStage } from '../../api/bundles'
+import { promoteBundle, type Bundle, type BundleCheck, type PipelineStage } from '../../api/bundles'
+import { ApiError } from '../../api/client'
 import type { Repository } from '../../api/repositories'
 import type { BundleScanRow } from '../../composables/useBundleScans'
+import { requiredCheckLabel, requiredCheckStates, requiredCheckVariant } from '../../lib/bundles'
 import { INPUT_CLASS } from '../../lib/formClasses'
 import { useToastStore } from '../../stores/toast'
 import { t, tp } from '../../i18n'
@@ -85,8 +99,10 @@ const props = defineProps<{
   repos: Repository[]
   itemCount: number
   scans: BundleScanRow[]
+  /** The checks reported against the bundle. */
+  checks: BundleCheck[]
 }>()
-const emit = defineEmits<{ close: []; promoted: [] }>()
+const emit = defineEmits<{ close: []; promoted: []; checksStale: [] }>()
 
 const toasts = useToastStore()
 const toStage = ref('')
@@ -105,6 +121,13 @@ const fixedRepo = computed(() => {
   const id = props.stages.find((s) => s.name === toStage.value)?.repo_id
   return id ? props.repos.find((r) => r.id === id)?.name : undefined
 })
+
+/** The chosen stage's required checks with what the bundle currently reports for each. */
+const required = computed(() => {
+  const names = props.stages.find((s) => s.name === toStage.value)?.required_checks ?? []
+  return requiredCheckStates(names, props.checks)
+})
+const blocking = computed(() => required.value.some((c) => c.state !== 'success'))
 
 watch(fixedRepo, (name) => {
   if (name) targetRepo.value = name
@@ -142,6 +165,8 @@ async function submit(): Promise<void> {
     emit('promoted')
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('bundles.promote.failed')
+    // The server's verdict on the checks may differ from what is shown: look again.
+    if (err instanceof ApiError && err.code === 'CHECKS_REQUIRED') emit('checksStale')
   } finally {
     busy.value = false
   }
