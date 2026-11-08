@@ -245,7 +245,9 @@ func FuzzGemspecMetadata(f *testing.F) {
 		meta := parseGemspecMetadata(data)
 		checkMetadata(t, meta)
 
-		if raw, ok := meta["raw_metadata"]; ok && (raw != string(data) || len(meta) != 1) {
+		// The fallback is the sole raw_metadata key; a decoded payload may
+		// carry a key of that name itself.
+		if raw, ok := meta["raw_metadata"]; ok && len(meta) == 1 && raw != string(data) {
 			t.Fatalf("raw_metadata fallback is not the payload: %v", meta)
 		}
 
