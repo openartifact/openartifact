@@ -412,6 +412,8 @@ List the attestations of an image
 
 Lists the signatures, attestations (SLSA provenance and others) and SBOMs indexed for an image digest of a docker repository, with their verification outcome against the repository's attestation trust configuration. Needs read access to the repository.
 
+**Security:** `bearerAuth` or `cookieAuth` or .
+
 **Parameters**
 
 | Name | In | Type | Required | Description |
@@ -469,6 +471,8 @@ Fields of the `200` response (`application/json`):
 Get the statement of an attestation
 
 Returns the decoded in-toto statement of an indexed attachment (an SBOM or signature payload is wrapped as the predicate of a statement about the image). The statement is returned as stored, whether or not it verified. Needs read access to the repository.
+
+**Security:** `bearerAuth` or `cookieAuth` or .
 
 **Parameters**
 

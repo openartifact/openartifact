@@ -49,6 +49,8 @@ Gate an image digest
 
 Aggregate pass/fail verdict for one image of a docker repository, for CI and release pipelines. Readable with read access to the repository. Checks: `vulnerabilities` (the latest scan of the digest against the exploitation criteria; an image that was never scanned fails), `license` (blocking license policies over the ingested SBOM), `quarantine`, and `attestations` (present and none failed verification; only when attestation indexing is available). Without `kev`, `epss_min` or `min_priority` the criteria default to `min_priority=high`. A failing gate is still HTTP 200.
 
+**Security:** `bearerAuth` or `cookieAuth` or .
+
 **Parameters**
 
 | Name | In | Type | Required | Description |
@@ -635,6 +637,8 @@ Findings of one scan as SARIF, CSV or JSON (admin only). Every finding carries i
 Check a vulnerability scan against exploitation criteria
 
 Quality gate on the exploitation signals of one scan's findings (readable with read access to the repository). The scan passes when no finding meets any of the given conditions (they are ORed): a CVE in the CISA KEV catalog (`kev=true`), an EPSS score of at least `epss_min`, or a priority of at least `min_priority`. At least one condition is required. The signals are read when the request is made, so a feed import changes the verdict of an old scan.
+
+**Security:** `bearerAuth` or `cookieAuth` or .
 
 **Parameters**
 

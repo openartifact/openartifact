@@ -12810,6 +12810,15 @@
     },
     "/api/v1/repositories/{name}/vuln/scans/{id}/gate": {
       "get": {
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          },
+          {}
+        ],
         "summary": "Check a vulnerability scan against exploitation criteria",
         "description": "Quality gate on the exploitation signals of one scan's findings (readable with read access to the repository). The scan passes when no finding meets any of the given conditions (they are ORed): a CVE in the CISA KEV catalog (`kev=true`), an EPSS score of at least `epss_min`, or a priority of at least `min_priority`. At least one condition is required. The signals are read when the request is made, so a feed import changes the verdict of an old scan.",
         "tags": [
@@ -28766,6 +28775,15 @@
     },
     "/api/v1/repositories/{name}/attestations": {
       "get": {
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          },
+          {}
+        ],
         "summary": "List the attestations of an image",
         "description": "Lists the signatures, attestations (SLSA provenance and others) and SBOMs indexed for an image digest of a docker repository, with their verification outcome against the repository's attestation trust configuration. Needs read access to the repository.",
         "tags": [
@@ -28850,6 +28868,15 @@
     },
     "/api/v1/repositories/{name}/attestations/{digest}": {
       "get": {
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          },
+          {}
+        ],
         "summary": "Get the statement of an attestation",
         "description": "Returns the decoded in-toto statement of an indexed attachment (an SBOM or signature payload is wrapped as the predicate of a statement about the image). The statement is returned as stored, whether or not it verified. Needs read access to the repository.",
         "tags": [
@@ -29265,6 +29292,15 @@
     },
     "/api/v1/repositories/{name}/gate": {
       "get": {
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          },
+          {}
+        ],
         "summary": "Gate an image digest",
         "operationId": "gateImageDigest",
         "tags": [
