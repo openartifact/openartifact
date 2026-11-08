@@ -63,7 +63,7 @@
   "sx.cleanup.disabled": "Desactivada",
   "sx.cleanup.noRule": "Sin regla",
   "sx.cleanup.empty": "No hay políticas de limpieza",
-  "sx.cleanup.emptyHint": "Las políticas de limpieza eliminan versiones antiguas automáticamente, por ejemplo “conservar las últimas 5”. Las versiones eliminadas van primero a la papelera, así que los errores se pueden recuperar. Añade una política en la pestaña Limpieza de un repositorio alojado.",
+  "sx.cleanup.emptyHint": "Las políticas de limpieza eliminan versiones antiguas automáticamente, por ejemplo “conservar las últimas 5”. Las versiones eliminadas van primero a la papelera, así que los errores se pueden recuperar. Añade una política en la sección Limpieza de la pestaña Ajustes de un repositorio alojado.",
   "sx.cleanup.partial": "No se pudieron leer las políticas de: {names}.",
   "sx.cleanup.scope": "Las políticas se guardan por repositorio; esta lista las reúne de todos los repositorios alojados. Las políticas predeterminadas de proyecto se gestionan en el proyecto.",
   "sx.scanners.summary.ready": "{ready} de {total} escáneres listos",

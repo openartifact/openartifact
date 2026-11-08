@@ -63,7 +63,7 @@
   "sx.cleanup.disabled": "已禁用",
   "sx.cleanup.noRule": "无规则",
   "sx.cleanup.empty": "没有清理策略",
-  "sx.cleanup.emptyHint": "清理策略会自动删除旧版本，例如“保留最近 5 个”。被删除的版本会先进入回收站，因此误操作可以恢复。请在托管仓库的“清理”标签页中添加策略。",
+  "sx.cleanup.emptyHint": "清理策略会自动删除旧版本，例如“保留最近 5 个”。被删除的版本会先进入回收站，因此误操作可以恢复。请在托管仓库“设置”标签页的“清理”部分中添加策略。",
   "sx.cleanup.partial": "无法读取以下仓库的策略：{names}。",
   "sx.cleanup.scope": "策略按仓库保存；此列表汇总了所有托管仓库的策略。项目默认策略在项目中管理。",
   "sx.scanners.summary.ready": "{total} 个扫描器中有 {ready} 个就绪",

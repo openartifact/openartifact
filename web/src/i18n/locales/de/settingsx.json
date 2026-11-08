@@ -63,7 +63,7 @@
   "sx.cleanup.disabled": "Deaktiviert",
   "sx.cleanup.noRule": "Keine Regel",
   "sx.cleanup.empty": "Keine Bereinigungsrichtlinien",
-  "sx.cleanup.emptyHint": "Bereinigungsrichtlinien löschen alte Versionen automatisch, zum Beispiel „die letzten 5 behalten“. Gelöschte Versionen landen zunächst im Papierkorb, sodass Fehler behoben werden können. Fügen Sie eine Richtlinie auf dem Tab „Bereinigung“ eines gehosteten Repositorys hinzu.",
+  "sx.cleanup.emptyHint": "Bereinigungsrichtlinien löschen alte Versionen automatisch, zum Beispiel „die letzten 5 behalten“. Gelöschte Versionen landen zunächst im Papierkorb, sodass Fehler behoben werden können. Fügen Sie eine Richtlinie im Abschnitt „Bereinigung“ des Tabs „Einstellungen“ eines gehosteten Repositorys hinzu.",
   "sx.cleanup.partial": "Die Richtlinien folgender Repositories konnten nicht gelesen werden: {names}.",
   "sx.cleanup.scope": "Richtlinien werden pro Repository gespeichert; diese Liste sammelt sie aus jedem gehosteten Repository. Standardrichtlinien für Projekte werden am Projekt verwaltet.",
   "sx.scanners.summary.ready": "{ready} von {total} Scannern bereit",
