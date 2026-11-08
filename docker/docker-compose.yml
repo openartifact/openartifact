@@ -208,9 +208,10 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  # Opt-in demo of LDAP sign-in through Dex: `--profile dex`. OpenLDAP holds two
-  # users (alice, bob) and two groups (artifact-admins, developers), Dex serves
-  # them as an OIDC issuer at http://127.0.0.1:5556/dex. Demo credentials only:
+  # Opt-in demo of sign-in through Dex: `--profile dex`. OpenLDAP holds two
+  # users (alice, bob) and two groups (artifact-admins, developers); Dex serves
+  # them, and its own password user carol, as an OIDC issuer at
+  # http://127.0.0.1:5556/dex (connectors `ldap` and `local`). Demo credentials only:
   # do not publish these ports or reuse the values. Configs: docker/dex/. How to
   # point OpenArtifact at it: docs/security/sso.md#try-it-locally.
   openldap:

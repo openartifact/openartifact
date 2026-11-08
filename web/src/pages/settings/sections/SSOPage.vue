@@ -87,7 +87,7 @@ import {
   type SSOConfigInput,
   type SSOProvider,
 } from '../../../api/sso'
-import { buildOIDCPayload } from '../../../lib/ssoOidcForm'
+import { buildOIDCPayload, validateOIDCForm } from '../../../lib/ssoOidcForm'
 import AppButton from '../../../components/AppButton.vue'
 import SSOProviderCard from './SSOProviderCard.vue'
 import SSOProviderForm from './SSOProviderForm.vue'
@@ -162,6 +162,11 @@ function buildConfig(): Partial<SSOConfigInput> | null {
   if (f.kind === 'saml') {
     config.saml_config = { ...f.saml_config }
     return config
+  }
+  const invalid = validateOIDCForm(f.oidc_config)
+  if (invalid) {
+    toasts.error(invalid === 'dexConnectorInvalid' ? t('adm.sso.error.dexConnectorInvalid') : t('adm.sso.error.dexScopesFederated'))
+    return null
   }
   const existing = editingProvider.value?.oidc_config
   if (f.oidc_config.client_secret || !editingProvider.value) {

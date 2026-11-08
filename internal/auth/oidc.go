@@ -203,7 +203,7 @@ func newDiscoveredProvider(ctx context.Context, slug string, cfg models.OIDCConf
 			ClientSecret: cfg.ClientSecret,
 			Endpoint:     provider.Endpoint(),
 			RedirectURL:  redirectURL,
-			Scopes:       ensureOpenID(cfg.Scopes),
+			Scopes:       oidcScopes(cfg),
 		},
 		Cfg:           cfg,
 		EndSessionURL: pc.EndSessionEndpoint,
@@ -239,6 +239,18 @@ func ensureOpenID(scopes []string) []string {
 	return append([]string{"openid"}, scopes...)
 }
 
+// oidcScopes returns the scopes of a discovered provider. A Dex provider
+// (dex_connector_id set) defaults to the groups and federated:id scopes too:
+// groups feeds group_mapping and federated:id releases the federated_claims
+// the connector check reads. Explicit scopes are used as configured.
+func oidcScopes(cfg models.OIDCConfig) []string {
+	if len(cfg.Scopes) == 0 && cfg.DexConnectorID != "" {
+		return append(ensureOpenID(nil), DexGroupsScope, DexFederatedIDScope)
+	}
+
+	return ensureOpenID(cfg.Scopes)
+}
+
 // AuthURL builds the authorization redirect. The nonce is bound into the ID
 // token and therefore only sent for OIDC providers.
 func (p *OIDCProvider) AuthURL(state, nonce, codeChallenge string) string {
@@ -255,6 +267,12 @@ func (p *OIDCProvider) AuthURL(state, nonce, codeChallenge string) string {
 		// Only a UI hint for the account chooser; the ID token's hd claim is
 		// what is enforced.
 		opts = append(opts, oauth2.SetAuthURLParam("hd", p.Cfg.HostedDomain))
+	}
+
+	if p.Cfg.DexConnectorID != "" {
+		// Dex's connector hint: the chooser is skipped. It is only a hint (the
+		// browser can strip it), so the ID token's connector is what is enforced.
+		opts = append(opts, oauth2.SetAuthURLParam("connector_id", p.Cfg.DexConnectorID))
 	}
 
 	return p.Config.AuthCodeURL(state, opts...)

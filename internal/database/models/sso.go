@@ -45,6 +45,14 @@ type OIDCConfig struct {
 	// Type is "", "github" or "oauth2".
 	Type string `json:"type,omitempty"`
 
+	// DexConnectorID pins a Dex provider (Type "") to one of the connectors
+	// of that Dex: it is sent as connector_id on the authorization request,
+	// so Dex skips its connector chooser, and the ID token's
+	// federated_claims.connector_id must equal it. Scopes default to
+	// "openid email profile groups federated:id" when it is set; explicit
+	// scopes must include federated:id, the scope that releases the claim.
+	DexConnectorID string `json:"dex_connector_id,omitempty"`
+
 	// AllowedTenants lists the Entra tenant IDs accepted for a multi-tenant
 	// authority (issuer .../common/v2.0, .../organizations/v2.0). The ID
 	// token's tid claim must be one of them. Required for those authorities.

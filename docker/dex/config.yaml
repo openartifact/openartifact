@@ -2,8 +2,9 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Dex in front of the demo OpenLDAP of the `dex` compose profile; the Dex
-# integration test (tests/integration/dex_sso_integration_test.go) loads this
+# Dex in front of the demo OpenLDAP of the `dex` compose profile, plus Dex's own
+# password database with one static user: two connectors (`ldap` and `local`)
+# behind one client. The Dex integration test (tests/integration/dex_sso_integration_test.go) loads this
 # file and only swaps the issuer, the client secret and the redirect URI.
 # Demo credentials only. See docs/security/sso.md#try-it-locally.
 
@@ -18,12 +19,20 @@ web:
   http: 0.0.0.0:5556
 
 oauth2:
-  # LDAP users are the only login: go straight back to OpenArtifact after the
-  # password form, without Dex's "Grant access" page.
+  # Go straight back to OpenArtifact after the password form, without Dex's
+  # "Grant access" page.
   skipApprovalScreen: true
   responseTypes: [code]
 
-enablePasswordDB: false
+# The built-in `local` connector, fed by staticPasswords below.
+enablePasswordDB: true
+
+staticPasswords:
+  # carol / carol-pass. hash is bcrypt (cost 10) of the password.
+  - email: carol@example.org
+    hash: "$2a$10$oN2xdEYKQLjgt37YuPaJfubrBU/4cMtMNcXNu1pCQki0a07cG60Aa"
+    username: carol
+    userID: 6c7d1f3e-2b4a-4f0e-9a61-0d5b7a1c8e42
 
 connectors:
   - type: ldap
@@ -55,6 +64,9 @@ staticClients:
   - id: openartifact
     name: OpenArtifact
     secretEnv: OPENARTIFACT_DEX_CLIENT_SECRET
+    # One OpenArtifact provider per connector (slugs dex-ldap and dex-local).
     redirectURIs:
-      - http://127.0.0.1:8080/api/v1/auth/sso/oidc/dex/callback
-      - http://localhost:8080/api/v1/auth/sso/oidc/dex/callback
+      - http://127.0.0.1:8080/api/v1/auth/sso/oidc/dex-ldap/callback
+      - http://127.0.0.1:8080/api/v1/auth/sso/oidc/dex-local/callback
+      - http://localhost:8080/api/v1/auth/sso/oidc/dex-ldap/callback
+      - http://localhost:8080/api/v1/auth/sso/oidc/dex-local/callback

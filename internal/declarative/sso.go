@@ -64,6 +64,7 @@ func ssoStringMap() *Field { return &Field{Type: TMap, Elem: &Field{Type: TStrin
 func ssoOIDCFields() map[string]*Field {
 	return map[string]*Field{
 		"type":                   {Type: TString, Enum: []string{"", "github", "oauth2"}},
+		"dex_connector_id":       ssoStr(),
 		"issuer":                 ssoStr(),
 		"client_id":              ssoStr(),
 		"client_secret":          {Type: TString, Secret: true},

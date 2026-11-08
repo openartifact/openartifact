@@ -57,8 +57,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <template v-if="form.kind === 'oidc'">
       <div>
         <label for="oidc-type" class="block text-sm font-medium text-foreground mb-2">{{ t('adm.sso.field.type') }}</label>
-        <select id="oidc-type" v-model="form.oidc_config.type" :class="inputClass">
+        <select id="oidc-type" :value="preset" :class="inputClass" @change="setPreset(($event.target as HTMLSelectElement).value)">
           <option value="">{{ t('adm.sso.type.oidc') }}</option>
+          <option value="dex">{{ t('adm.sso.type.dex') }}</option>
           <option value="github">{{ t('adm.sso.type.github') }}</option>
           <option value="oauth2">{{ t('adm.sso.type.oauth2') }}</option>
         </select>
@@ -155,7 +156,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { computed } from 'vue'
 import AppToggle from '../../../components/AppToggle.vue'
-import type { SSOProvider } from '../../../api/sso'
+import type { OIDCType, SSOProvider } from '../../../api/sso'
 import type { OIDCTextKey } from '../../../lib/ssoOidcForm'
 import type { SSOFormState } from '../../../lib/ssoProviderForm'
 import { t } from '../../../i18n'
@@ -192,13 +193,28 @@ const oidcExtraFields = computed<ExtraField[]>(() => {
       ]
     default:
       return [
-        scopes,
+        ...(form.value.oidc_config.dex
+          ? [
+              { key: 'dex_connector_id', label: t('adm.sso.field.dexConnectorId'), hint: t('adm.sso.field.dexConnectorIdHint'), required: true } as ExtraField,
+              { ...scopes, hint: t('adm.sso.field.dexScopesHint') },
+            ]
+          : [scopes]),
         { key: 'allowed_tenants', label: t('adm.sso.field.allowedTenants'), hint: t('adm.sso.field.allowedTenantsHint') },
         { key: 'hosted_domain', label: t('adm.sso.field.hostedDomain'), hint: t('adm.sso.field.hostedDomainHint') },
         { key: 'graph_endpoint', label: t('adm.sso.field.graphEndpoint'), hint: t('adm.sso.field.graphEndpointHint'), url: true },
       ]
   }
 })
+
+// The provider type select: "dex" is a plain OIDC provider (type '') signing in through one Dex connector.
+const preset = computed(() => (form.value.oidc_config.dex ? 'dex' : form.value.oidc_config.type))
+
+function setPreset(value: string): void {
+  const oidc = form.value.oidc_config
+  oidc.dex = value === 'dex'
+  oidc.type = value === 'dex' ? '' : (value as OIDCType)
+  if (!oidc.dex) oidc.dex_connector_id = ''
+}
 
 const inputClass =
   'w-full px-3 py-2 bg-bg border border-border-strong rounded-lg text-sm font-mono text-foreground placeholder-muted focus:ring-2 focus:ring-primary focus:border-primary'

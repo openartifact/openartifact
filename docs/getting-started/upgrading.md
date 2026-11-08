@@ -135,6 +135,7 @@ Newest first. Each version starts with **What you must do**; the text below it l
 
 **Changes.**
 
+- **Dex.** OIDC providers have a new optional `oidc_config.dex_connector_id` that ties a provider to one connector of a Dex server and checks it on login. Existing providers are unchanged, and no action is required. See [Dex](../security/sso.md#dex).
 - **Groups.** Creating a global group with the name of an existing one answers `409`; SSO provisioning no longer creates duplicates under concurrent logins.
 - **npm.** Publishing a version with build metadata (`1.0.0+build`) is refused with `400`: npm strips it, so two such versions collided.
 - **Cargo.** Publishing a crate whose name differs from an existing one only in `-` versus `_` is refused, as crates.io does.

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -35,6 +36,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/network"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"go.yaml.in/yaml/v3"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/openartifact/openartifact/internal/api"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -57,11 +59,20 @@ import (
 // container runtime. Without a runtime the test skips; with CI set it fails.
 
 const (
-	dexTestSlug         = "dex"
+	dexTestSlug         = "dex-ldap" // pinned to the ldap connector
 	dexTestClientID     = "openartifact"
 	dexTestClientSecret = "dex-integration-secret"
 	dexTestPort         = "5556/tcp"
 	dexLDIFPath         = "/container/service/slapd/assets/config/bootstrap/ldif/custom/50-seed.ldif"
+
+	// The second Dex, an upstream IdP the first one federates to through its
+	// oidc connector. Its issuer is a name only the Dex network resolves;
+	// the browser reaches it through browser.dialMap.
+	dexUpstreamHost     = "dex-upstream:5556"
+	dexUpstreamIssuer   = "http://" + dexUpstreamHost + "/dex"
+	dexUpstreamClientID = "dex-hub"
+	dexUpstreamSecret   = "dex-hub-integration-secret"
+	dexUpstreamPassword = "dana-pass"
 
 	dexAdminGroup = "oa-admins"
 	dexDevGroup   = "oa-developers"
@@ -132,8 +143,9 @@ func freeHostPort(t *testing.T) int {
 	return l.Addr().(*net.TCPAddr).Port
 }
 
-// dexConfig renders docker/dex/config.yaml for this run.
-func dexConfig(t *testing.T, issuer, redirectURI string) []byte {
+// dexConfig renders docker/dex/config.yaml for this run and adds the `upstream`
+// oidc connector (a second Dex) to its ldap and local connectors.
+func dexConfig(t *testing.T, issuer string, redirectURIs []string) []byte {
 	t.Helper()
 
 	raw, err := os.ReadFile(filepath.Join("..", "..", "docker", "dex", "config.yaml"))
@@ -160,7 +172,20 @@ func dexConfig(t *testing.T, issuer, redirectURI string) []byte {
 
 	delete(client, "secretEnv")
 	client["secret"] = dexTestClientSecret
-	client["redirectURIs"] = []string{redirectURI}
+	client["redirectURIs"] = redirectURIs
+
+	connectors, _ := cfg["connectors"].([]any)
+	cfg["connectors"] = append(connectors, map[string]any{
+		"type": "oidc",
+		"id":   "upstream",
+		"name": "Upstream IdP",
+		"config": map[string]any{
+			"issuer":       dexUpstreamIssuer,
+			"clientID":     dexUpstreamClientID,
+			"clientSecret": dexUpstreamSecret,
+			"redirectURI":  issuer + "/callback",
+		},
+	})
 
 	out, err := yaml.Marshal(cfg)
 	if err != nil {
@@ -168,6 +193,46 @@ func dexConfig(t *testing.T, issuer, redirectURI string) []byte {
 	}
 
 	return out
+}
+
+// upstreamDexConfig is the second Dex: the password database with one static
+// user, one client (the first Dex) and no connector, so it shows its login
+// form straight away.
+func upstreamDexConfig(t *testing.T, hubCallback string) []byte {
+	t.Helper()
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(dexUpstreamPassword), 10) // Dex refuses a lower cost
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := yaml.Marshal(map[string]any{
+		"issuer":           dexUpstreamIssuer,
+		"storage":          map[string]any{"type": "memory"},
+		"web":              map[string]any{"http": "0.0.0.0:5556"},
+		"oauth2":           map[string]any{"skipApprovalScreen": true, "responseTypes": []string{"code"}},
+		"enablePasswordDB": true,
+		"staticPasswords": []map[string]any{{
+			"email": "dana@upstream.example", "hash": string(hash), "username": "dana",
+			"userID": "0a5c5a1e-7a4b-4d8e-8b6e-2f3c1d9e4a10",
+		}},
+		"staticClients": []map[string]any{{
+			"id": dexUpstreamClientID, "name": "Dex hub", "secret": dexUpstreamSecret, "redirectURIs": []string{hubCallback},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("render upstream dex config: %v", err)
+	}
+
+	return out
+}
+
+// dexStack is the running containers.
+type dexStack struct {
+	issuer string // the first Dex, reachable from this process
+	// upstreamAddr is where this process reaches the second Dex, whose own
+	// URLs name dexUpstreamHost.
+	upstreamAddr string
 }
 
 // logContainerOnFailure prints a container's log when the test failed.
@@ -192,9 +257,9 @@ func logContainerOnFailure(t *testing.T, name string, c testcontainers.Container
 	})
 }
 
-// startDex starts OpenLDAP (seeded) and Dex on one network and returns Dex's
-// issuer URL, reachable from this process.
-func startDex(t *testing.T, redirectURI string) string {
+// startDex starts OpenLDAP (seeded), the upstream Dex and the Dex under test on
+// one network.
+func startDex(t *testing.T, redirectURIs []string) dexStack {
 	t.Helper()
 
 	dexSkipWithoutRuntime(t)
@@ -239,6 +304,34 @@ func startDex(t *testing.T, redirectURI string) string {
 	hostPort := freeHostPort(t)
 	issuer := fmt.Sprintf("http://127.0.0.1:%d/dex", hostPort)
 
+	upstream, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		Image:        services["dex"].Image,
+		Cmd:          []string{"dex", "serve", "/etc/dex/config.yaml"},
+		ExposedPorts: []string{dexTestPort},
+		Files: []testcontainers.ContainerFile{{
+			Reader:            strings.NewReader(string(upstreamDexConfig(t, issuer+"/callback"))),
+			ContainerFilePath: "/etc/dex/config.yaml",
+			FileMode:          0o644,
+		}},
+		WaitingFor: wait.ForHTTP("/dex/.well-known/openid-configuration").
+			WithPort(dexTestPort).WithStartupTimeout(2 * time.Minute),
+		Networks:       []string{nw.Name},
+		NetworkAliases: map[string][]string{nw.Name: {"dex-upstream"}},
+		Started:        true,
+	})
+	testcontainers.CleanupContainer(t, upstream)
+
+	if err != nil {
+		t.Fatalf("start upstream dex: %v", err)
+	}
+
+	logContainerOnFailure(t, "dex-upstream", upstream)
+
+	upstreamPort, err := upstream.MappedPort(ctx, dexTestPort)
+	if err != nil {
+		t.Fatalf("upstream dex port: %v", err)
+	}
+
 	dex, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		Image:        services["dex"].Image,
 		Cmd:          []string{"dex", "serve", "/etc/dex/config.yaml"},
@@ -251,7 +344,7 @@ func startDex(t *testing.T, redirectURI string) string {
 			}
 		},
 		Files: []testcontainers.ContainerFile{{
-			Reader:            strings.NewReader(string(dexConfig(t, issuer, redirectURI))),
+			Reader:            strings.NewReader(string(dexConfig(t, issuer, redirectURIs))),
 			ContainerFilePath: "/etc/dex/config.yaml",
 			FileMode:          0o644,
 		}},
@@ -268,13 +361,16 @@ func startDex(t *testing.T, redirectURI string) string {
 
 	logContainerOnFailure(t, "dex", dex)
 
-	return issuer
+	return dexStack{issuer: issuer, upstreamAddr: "127.0.0.1:" + upstreamPort.Port()}
 }
 
 // dexOA is the in-process OpenArtifact server under test.
 type dexOA struct {
 	baseURL string
 	host    string
+	// dialMap sends a browser's connections for a host:port elsewhere (the
+	// upstream Dex's name only resolves inside the container network).
+	dialMap map[string]string
 	pg      *database.PostgresDB
 	admin   http.Handler
 }
@@ -330,25 +426,24 @@ func (o *dexOA) adminJSON(t *testing.T, method, path string, body any) (int, str
 	return rec.Code, rec.Body.String()
 }
 
-func (o *dexOA) createProvider(t *testing.T, issuer string) {
+// createProvider adds an OIDC provider for the Dex under test; oidc carries
+// what differs per provider (dex_connector_id, scopes).
+func (o *dexOA) createProvider(t *testing.T, issuer, slug string, oidc map[string]any) {
 	t.Helper()
 
+	cfg := map[string]any{"issuer": issuer, "client_id": dexTestClientID, "client_secret": dexTestClientSecret}
+	maps.Copy(cfg, oidc)
+
 	code, body := o.adminJSON(t, http.MethodPost, "/api/v1/admin/sso-providers", map[string]any{
-		"slug":         dexTestSlug,
-		"kind":         "oidc",
-		"display_name": "Dex (LDAP)",
-		"oidc_config": map[string]any{
-			"issuer":        issuer,
-			"client_id":     dexTestClientID,
-			"client_secret": dexTestClientSecret,
-			// groups is opt-in at OpenArtifact; Dex only emits the claim for it.
-			"scopes": []string{"openid", "email", "profile", "groups"},
-		},
+		"slug":                 slug,
+		"kind":                 "oidc",
+		"display_name":         "Dex " + slug,
+		"oidc_config":          cfg,
 		"group_mapping":        map[string]string{"artifact-admins": dexAdminGroup, "developers": dexDevGroup},
 		"auto_provision_users": true,
 	})
 	if code != http.StatusCreated {
-		t.Fatalf("create provider = %d %s", code, body)
+		t.Fatalf("create provider %s = %d %s", slug, code, body)
 	}
 }
 
@@ -370,7 +465,7 @@ type browser struct {
 	oaHost string
 }
 
-func newBrowser(t *testing.T, oaHost string) *browser {
+func newBrowser(t *testing.T, oa *dexOA) *browser {
 	t.Helper()
 
 	jar, err := cookiejar.New(nil)
@@ -378,11 +473,25 @@ func newBrowser(t *testing.T, oaHost string) *browser {
 		t.Fatal(err)
 	}
 
+	tr, _ := http.DefaultTransport.(*http.Transport)
+	tr = tr.Clone()
+	dialer := &net.Dialer{}
+	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if to, ok := oa.dialMap[addr]; ok {
+			addr = to
+		}
+
+		return dialer.DialContext(ctx, network, addr)
+	}
+
+	t.Cleanup(tr.CloseIdleConnections)
+
 	return &browser{
 		t:      t,
-		oaHost: oaHost,
+		oaHost: oa.host,
 		client: &http.Client{
 			Jar:           jar,
+			Transport:     tr,
 			Timeout:       30 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
@@ -513,10 +622,10 @@ func (b *browser) submitLogin(page step, user, password string) step {
 // route, Dex, the LDAP form, back to OpenArtifact's callback. It returns the
 // callback's own answer (the session cookies are in the jar); ok is false when
 // Dex refused the credentials and never sent the browser back.
-func (b *browser) loginViaOpenArtifact(oa *dexOA, user, password string) (reply, bool) {
+func (b *browser) loginViaOpenArtifact(oa *dexOA, slug, user, password string) (reply, bool) {
 	b.t.Helper()
 
-	page := b.walk(oa.baseURL + "/api/v1/auth/sso/oidc/" + dexTestSlug + "/login")
+	page := b.walk(oa.baseURL + "/api/v1/auth/sso/oidc/" + slug + "/login")
 	if page.callback != nil {
 		b.t.Fatalf("login did not reach Dex: %v", page.callback)
 	}
@@ -606,10 +715,10 @@ func fetchDiscovery(t *testing.T, issuer string) dexDiscovery {
 // probeClaims logs in at Dex directly (same client, redirect to the OpenArtifact
 // callback that is never fetched), redeems the code and returns the ID token
 // claims. It is how the test sees exactly what Dex asserts for an LDAP user.
-func probeClaims(t *testing.T, oa *dexOA, disc dexDiscovery, scope, user, password string) map[string]any {
+func probeClaims(t *testing.T, oa *dexOA, disc dexDiscovery, connector, scope, user, password string) map[string]any {
 	t.Helper()
 
-	b := newBrowser(t, oa.host)
+	b := newBrowser(t, oa)
 	redirectURI := oa.baseURL + "/api/v1/auth/sso/oidc/" + dexTestSlug + "/callback"
 
 	q := url.Values{
@@ -619,6 +728,10 @@ func probeClaims(t *testing.T, oa *dexOA, disc dexDiscovery, scope, user, passwo
 		"scope":         {scope},
 		"state":         {"probe-state"},
 		"nonce":         {"probe-nonce"},
+	}
+
+	if connector != "" {
+		q.Set("connector_id", connector)
 	}
 
 	page := b.walk(disc.AuthEndpoint + "?" + q.Encode())
@@ -781,8 +894,22 @@ func TestDexLDAPLogin(t *testing.T) {
 	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "true") // Dex is on loopback
 
 	oa, _ := newDexOA(t)
-	issuer := startDex(t, oa.baseURL+"/api/v1/auth/sso/oidc/"+dexTestSlug+"/callback")
-	oa.createProvider(t, issuer)
+	callback := func(slug string) string { return oa.baseURL + "/api/v1/auth/sso/oidc/" + slug + "/callback" }
+	stack := startDex(t, []string{callback(dexTestSlug), callback(dexLocalSlug), callback(dexUpstreamSlug), callback(dexOpenSlug)})
+	issuer := stack.issuer
+	oa.dialMap = map[string]string{dexUpstreamHost: stack.upstreamAddr}
+
+	// One Dex client, one OpenArtifact provider per connector. The ldap one sets
+	// its scopes (federated:id included); the others take the defaults of a
+	// pinned provider.
+	oa.createProvider(t, issuer, dexTestSlug, map[string]any{
+		"dex_connector_id": "ldap",
+		"scopes":           []string{"openid", "email", "profile", "groups", "federated:id"},
+	})
+	oa.createProvider(t, issuer, dexLocalSlug, map[string]any{"dex_connector_id": "local"})
+	oa.createProvider(t, issuer, dexUpstreamSlug, map[string]any{"dex_connector_id": "upstream"})
+	// No pin: Dex shows its connector chooser.
+	oa.createProvider(t, issuer, dexOpenSlug, map[string]any{"scopes": []string{"openid", "email", "profile"}})
 
 	f := &dexFixture{oa: oa, issuer: issuer, disc: fetchDiscovery(t, issuer)}
 	if f.disc.Issuer != issuer {
@@ -800,10 +927,17 @@ func TestDexLDAPLogin(t *testing.T) {
 	t.Run("link_by_email off: the address is already taken, login is denied", f.linkOff)
 	t.Run("link_by_email on: the login binds the existing local user", f.linkOn)
 	t.Run("logout", f.logout)
+
+	t.Run("what each connector asserts in the ID token", f.connectorClaims)
+	t.Run("the login route sends the connector hint and the Dex scopes", f.connectorHint)
+	t.Run("a pinned provider refuses a login completed through another connector", f.hintStripped)
+	t.Run("local connector: login through its own provider", f.localLogin)
+	t.Run("upstream oidc connector: login through a second Dex", f.upstreamLogin)
+	t.Run("a provider without a pin shows Dex's connector chooser", f.chooser)
 }
 
 func (f *dexFixture) claims(t *testing.T) {
-	claims := probeClaims(t, f.oa, f.disc, "openid email profile groups", "alice", "alice-pass")
+	claims := probeClaims(t, f.oa, f.disc, "ldap", "openid email profile groups", "alice", "alice-pass")
 	t.Logf("alice id_token claims: %v", claims)
 
 	if claims["iss"] != f.issuer || claims["email"] != "alice@example.org" ||
@@ -825,16 +959,16 @@ func (f *dexFixture) claims(t *testing.T) {
 // OpenArtifact's default scopes are "openid email profile": a provider that
 // does not add groups gets no group sync (the claim is absent, not empty).
 func (f *dexFixture) noGroupsScope(t *testing.T) {
-	claims := probeClaims(t, f.oa, f.disc, "openid email profile", "alice", "alice-pass")
+	claims := probeClaims(t, f.oa, f.disc, "ldap", "openid email profile", "alice", "alice-pass")
 	if _, ok := claims["groups"]; ok {
 		t.Errorf("groups claim present without the groups scope: %v", claims["groups"])
 	}
 }
 
 func (f *dexFixture) provisioning(t *testing.T) {
-	b := newBrowser(t, f.oa.host)
+	b := newBrowser(t, f.oa)
 
-	r, ok := b.loginViaOpenArtifact(f.oa, "alice", "alice-pass")
+	r, ok := b.loginViaOpenArtifact(f.oa, dexTestSlug, "alice", "alice-pass")
 	if !ok {
 		t.Fatal("Dex refused the right password")
 	}
@@ -865,9 +999,9 @@ func (f *dexFixture) provisioning(t *testing.T) {
 
 func (f *dexFixture) wrongPassword(t *testing.T) {
 	sessions := countSessions(t, f.oa.pg)
-	b := newBrowser(t, f.oa.host)
+	b := newBrowser(t, f.oa)
 
-	if _, ok := b.loginViaOpenArtifact(f.oa, "bob", "not-bobs-password"); ok {
+	if _, ok := b.loginViaOpenArtifact(f.oa, dexTestSlug, "bob", "not-bobs-password"); ok {
 		t.Fatal("Dex accepted a wrong password")
 	}
 
@@ -891,9 +1025,9 @@ func (f *dexFixture) linkOff(t *testing.T) {
 		t.Fatalf("create local user: %v", err)
 	}
 
-	b := newBrowser(t, f.oa.host)
+	b := newBrowser(t, f.oa)
 
-	r, ok := b.loginViaOpenArtifact(f.oa, "bob", "bob-pass")
+	r, ok := b.loginViaOpenArtifact(f.oa, dexTestSlug, "bob", "bob-pass")
 	if !ok {
 		t.Fatal("Dex refused the right password")
 	}
@@ -908,9 +1042,9 @@ func (f *dexFixture) linkOff(t *testing.T) {
 func (f *dexFixture) linkOn(t *testing.T) {
 	f.oa.setLinkByEmail(t, true)
 
-	b := newBrowser(t, f.oa.host)
+	b := newBrowser(t, f.oa)
 
-	r, ok := b.loginViaOpenArtifact(f.oa, "bob", "bob-pass")
+	r, ok := b.loginViaOpenArtifact(f.oa, dexTestSlug, "bob", "bob-pass")
 	if !ok {
 		t.Fatal("Dex refused the right password")
 	}
@@ -944,9 +1078,9 @@ func (f *dexFixture) linkOn(t *testing.T) {
 
 func (f *dexFixture) logout(t *testing.T) {
 	oa := f.oa
-	b := newBrowser(t, oa.host)
+	b := newBrowser(t, oa)
 
-	if _, ok := b.loginViaOpenArtifact(oa, "alice", "alice-pass"); !ok {
+	if _, ok := b.loginViaOpenArtifact(oa, dexTestSlug, "alice", "alice-pass"); !ok {
 		t.Fatal("Dex refused the right password")
 	}
 

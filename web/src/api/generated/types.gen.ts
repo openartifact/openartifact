@@ -1574,6 +1574,10 @@ export type OidcConfig = {
      */
     allowed_tenants?: Array<string>;
     /**
+     * Dex only (type empty): the Dex connector this provider signs in through. Sent as connector_id so Dex skips its connector chooser, and the ID token's federated_claims.connector_id must match or the login is denied. Scopes default to openid email profile groups federated:id; explicit scopes must include federated:id.
+     */
+    dex_connector_id?: string;
+    /**
      * Google Workspace domain: sent as the hd authorization parameter and required in the hd claim.
      */
     hosted_domain?: string;
@@ -3542,6 +3546,10 @@ export type OidcConfigWritable = {
      * Entra tenant IDs (GUIDs) allowed to sign in. Required for multi-tenant authorities.
      */
     allowed_tenants?: Array<string>;
+    /**
+     * Dex only (type empty): the Dex connector this provider signs in through. Sent as connector_id so Dex skips its connector chooser, and the ID token's federated_claims.connector_id must match or the login is denied. Scopes default to openid email profile groups federated:id; explicit scopes must include federated:id.
+     */
+    dex_connector_id?: string;
     /**
      * Google Workspace domain: sent as the hd authorization parameter and required in the hd claim.
      */
