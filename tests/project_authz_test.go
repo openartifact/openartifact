@@ -202,14 +202,50 @@ func (d *pzDB) CreateProject(_ context.Context, p *models.Project) error {
 	return nil
 }
 
-func (d *pzDB) UpdateProject(_ context.Context, p *models.Project) error {
+func (d *pzDB) PatchProject(_ context.Context, id string, patch database.ProjectPatch) (*models.Project, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	c := *p
-	d.projects[p.ID] = &c
+	p := d.projects[id]
+	if p == nil {
+		return nil, nil
+	}
 
-	return nil
+	if patch.DisplayName != nil {
+		p.DisplayName = patch.DisplayName
+	}
+
+	if patch.Description != nil {
+		p.Description = patch.Description
+	}
+
+	if patch.AllowedFormats != nil {
+		p.AllowedFormats = *patch.AllowedFormats
+	}
+
+	if patch.AllowedRepoTypes != nil {
+		p.AllowedRepoTypes = patch.AllowedRepoTypes
+	}
+
+	if patch.RepoNamePrefix != nil {
+		p.RepoNamePrefix = *patch.RepoNamePrefix
+	}
+
+	if patch.AllowPublicRepos != nil {
+		p.AllowPublicRepos = *patch.AllowPublicRepos
+	}
+
+	if patch.MaxRepositories != nil {
+		p.MaxRepositories = *patch.MaxRepositories
+	}
+
+	if patch.TokenMaxTTLDays != nil {
+		p.TokenMaxTTLDays = *patch.TokenMaxTTLDays
+	}
+
+	c := *p
+
+	return &c, nil
 }
 
 func (d *pzDB) DeleteProject(_ context.Context, id string) error {

@@ -155,3 +155,50 @@ func TestStartServesTLS(t *testing.T) {
 	default:
 	}
 }
+
+// A graceful stop that runs out of time must not leave the in-flight handlers
+// running: the caller closes the stores they use right after Stop returns.
+func TestStopClosesConnectionsWhenTheDrainTimesOut(t *testing.T) {
+	probe, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	addr := probe.Addr().String()
+	_ = probe.Close()
+
+	s := NewHTTPServer(addr, newServerTestLogger(t))
+	entered, aborted := make(chan struct{}), make(chan struct{})
+
+	s.GetRouter().Get("/slow", func(_ http.ResponseWriter, r *http.Request) {
+		close(entered)
+		<-r.Context().Done()
+		close(aborted)
+	})
+
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	go func() {
+		resp, err := http.Get("http://" + addr + "/slow") //nolint:noctx // test client, ended by the server closing the connection
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+
+	<-entered
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	if err := s.Stop(ctx); err == nil {
+		t.Fatal("Stop reported a clean drain with a request still in flight")
+	}
+
+	select {
+	case <-aborted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the in-flight handler kept running after Stop returned")
+	}
+}

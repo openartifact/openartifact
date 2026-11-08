@@ -170,7 +170,7 @@ func uploadSession(t *testing.T, name string) (*PostgresDB, *models.DockerUpload
 	pg := newQuotaTestDB(t, 8)
 	s := newQuotaSeeder(t, pg, name, "docker")
 
-	up := &models.DockerUpload{RepositoryID: s.repo, UploadUUID: "11111111-1111-4111-8111-111111111111"}
+	up := &models.DockerUpload{RepositoryID: s.repo, Image: "app", UploadUUID: "11111111-1111-4111-8111-111111111111"}
 	if err := pg.CreateDockerUpload(context.Background(), up); err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func uploadSession(t *testing.T, name string) (*PostgresDB, *models.DockerUpload
 func acquire(t *testing.T, pg *PostgresDB, up *models.DockerUpload, token string, ttl time.Duration) *models.DockerUpload {
 	t.Helper()
 
-	got, err := pg.AcquireDockerUploadLease(context.Background(), up.RepositoryID, up.UploadUUID, token, ttl)
+	got, err := pg.AcquireDockerUploadLease(context.Background(), up.RepositoryID, up.Image, up.UploadUUID, token, ttl)
 	if err != nil || got == nil {
 		t.Fatalf("acquire %s = %+v, %v, want the session", token, got, err)
 	}
@@ -191,10 +191,10 @@ func acquire(t *testing.T, pg *PostgresDB, up *models.DockerUpload, token string
 }
 
 // refused fails the test unless the lease is refused (nil session, no error).
-func refused(t *testing.T, pg *PostgresDB, repoID, uploadUUID, token string) {
+func refused(t *testing.T, pg *PostgresDB, repoID, image, uploadUUID, token string) {
 	t.Helper()
 
-	got, err := pg.AcquireDockerUploadLease(context.Background(), repoID, uploadUUID, token, liveTTL)
+	got, err := pg.AcquireDockerUploadLease(context.Background(), repoID, image, uploadUUID, token, liveTTL)
 	if err != nil || got != nil {
 		t.Fatalf("acquire %s = %+v, %v, want nil (refused)", token, got, err)
 	}
@@ -208,10 +208,10 @@ func TestAcquireDockerUploadLeaseIsExclusive(t *testing.T) {
 		t.Fatalf("acquired session = %+v, want the fresh session at offset 0", first)
 	}
 
-	refused(t, pg, up.RepositoryID, up.UploadUUID, tokenB)
+	refused(t, pg, up.RepositoryID, up.Image, up.UploadUUID, tokenB)
 
 	// The holder's own token does not get a second lease either: one request at a time.
-	refused(t, pg, up.RepositoryID, up.UploadUUID, tokenA)
+	refused(t, pg, up.RepositoryID, up.Image, up.UploadUUID, tokenA)
 
 	time.Sleep(3 * shortTTL)
 
@@ -219,8 +219,8 @@ func TestAcquireDockerUploadLeaseIsExclusive(t *testing.T) {
 	acquire(t, pg, up, tokenB, liveTTL)
 
 	// The session of another repository or an unknown session grants nothing.
-	refused(t, pg, noRepo, up.UploadUUID, tokenA)
-	refused(t, pg, up.RepositoryID, uploadOther, tokenA)
+	refused(t, pg, noRepo, up.Image, up.UploadUUID, tokenA)
+	refused(t, pg, up.RepositoryID, up.Image, uploadOther, tokenA)
 }
 
 func TestAcquireDockerUploadLeaseReturnsTheCommittedPosition(t *testing.T) {
@@ -272,11 +272,11 @@ func TestRenewDockerUploadLeaseNeedsTheToken(t *testing.T) {
 
 	// The renewal outlives the original ttl.
 	time.Sleep(3 * shortTTL)
-	refused(t, pg, up.RepositoryID, up.UploadUUID, tokenB)
+	refused(t, pg, up.RepositoryID, up.Image, up.UploadUUID, tokenB)
 
 	// A renewal is activity for the idle sweep: a session a request is still
 	// streaming into is not stale.
-	got, err := pg.GetDockerUpload(ctx, up.RepositoryID, up.UploadUUID)
+	got, err := pg.GetDockerUpload(ctx, up.RepositoryID, up.Image, up.UploadUUID)
 	if err != nil || got == nil || !got.UpdatedAt.After(up.UpdatedAt) {
 		t.Fatalf("updated_at after renew = %+v, %v, want after %v", got, err, up.UpdatedAt)
 	}
@@ -306,7 +306,7 @@ func TestReleaseDockerUploadLeaseNeedsTheToken(t *testing.T) {
 		t.Fatalf("release with a foreign token = %v, want no error", err)
 	}
 
-	refused(t, pg, up.RepositoryID, up.UploadUUID, tokenB)
+	refused(t, pg, up.RepositoryID, up.Image, up.UploadUUID, tokenB)
 
 	if err := pg.ReleaseDockerUploadLease(ctx, up.RepositoryID, up.UploadUUID, tokenA); err != nil {
 		t.Fatalf("release by the holder = %v", err)
@@ -341,7 +341,7 @@ func TestAdvanceDockerUploadIsCompareAndSet(t *testing.T) {
 			t.Fatalf("%s: advance = %v, %v, want false", name, ok, err)
 		}
 
-		got, err := pg.GetDockerUpload(ctx, up.RepositoryID, up.UploadUUID)
+		got, err := pg.GetDockerUpload(ctx, up.RepositoryID, up.Image, up.UploadUUID)
 		if err != nil || got == nil || got.Offset != 0 || len(got.HashState) != 0 || got.StageState != "" {
 			t.Fatalf("%s: session = %+v, %v, want untouched", name, got, err)
 		}
@@ -369,7 +369,7 @@ func TestAdvanceDockerUploadIsCompareAndSet(t *testing.T) {
 		t.Fatalf("advance keeping the lease = %v, %v, want true", ok, err)
 	}
 
-	got, err := pg.GetDockerUpload(ctx, up.RepositoryID, up.UploadUUID)
+	got, err := pg.GetDockerUpload(ctx, up.RepositoryID, up.Image, up.UploadUUID)
 	if err != nil || got == nil || got.Offset != 10 || !bytes.Equal(got.HashState, state) || got.StageState != "stage-1" {
 		t.Fatalf("session = %+v, %v, want offset 10, the new hash state and stage-1", got, err)
 	}
@@ -378,7 +378,7 @@ func TestAdvanceDockerUploadIsCompareAndSet(t *testing.T) {
 		t.Fatalf("updated_at = %v, want after %v: the idle sweep counts advances as activity", got.UpdatedAt, up.UpdatedAt)
 	}
 
-	refused(t, pg, up.RepositoryID, up.UploadUUID, tokenB)
+	refused(t, pg, up.RepositoryID, up.Image, up.UploadUUID, tokenB)
 
 	// Replaying the same move fails: the offset is no longer the old one.
 	if ok, err := pg.AdvanceDockerUpload(
@@ -468,7 +468,7 @@ func TestAdvanceDockerUploadOfDeletedSession(t *testing.T) {
 		t.Fatalf("renew of a deleted session = %v, %v, want false", ok, err)
 	}
 
-	if got, err := pg.GetDockerUpload(ctx, up.RepositoryID, up.UploadUUID); err != nil || got != nil {
+	if got, err := pg.GetDockerUpload(ctx, up.RepositoryID, up.Image, up.UploadUUID); err != nil || got != nil {
 		t.Fatalf("get of a deleted session = %+v, %v, want nil", got, err)
 	}
 }
@@ -477,7 +477,7 @@ func TestGetDockerUploadRoundTripsPositionState(t *testing.T) {
 	pg, up := uploadSession(t, "docker-get-state")
 	ctx := context.Background()
 
-	fresh, err := pg.GetDockerUpload(ctx, up.RepositoryID, up.UploadUUID)
+	fresh, err := pg.GetDockerUpload(ctx, up.RepositoryID, up.Image, up.UploadUUID)
 	if err != nil || fresh == nil || fresh.Offset != 0 || len(fresh.HashState) != 0 || fresh.StageState != "" {
 		t.Fatalf("fresh session = %+v, %v, want offset 0 and empty states", fresh, err)
 	}
@@ -508,12 +508,12 @@ func TestGetDockerUploadRoundTripsPositionState(t *testing.T) {
 		t.Fatalf("advance = %v, %v, want true", ok, err)
 	}
 
-	got, err := pg.GetDockerUpload(ctx, up.RepositoryID, up.UploadUUID)
+	got, err := pg.GetDockerUpload(ctx, up.RepositoryID, up.Image, up.UploadUUID)
 	if err != nil || got == nil || got.Offset != 1<<33 || !bytes.Equal(got.HashState, state) || got.StageState != stage {
 		t.Fatalf("session = %+v, %v, want offset %d with the stored hash and stage state", got, err, int64(1<<33))
 	}
 
-	if got, err := pg.GetDockerUpload(ctx, noRepo, up.UploadUUID); err != nil || got != nil {
+	if got, err := pg.GetDockerUpload(ctx, noRepo, up.Image, up.UploadUUID); err != nil || got != nil {
 		t.Fatalf("foreign get = %+v, %v, want nil", got, err)
 	}
 }
@@ -539,5 +539,40 @@ func TestExistingDockerUploadIDsFollowTheSession(t *testing.T) {
 
 	if ids, err := pg.ExistingDockerUploadIDs(ctx, []string{up.UploadUUID}); err != nil || len(ids) != 0 {
 		t.Fatalf("existing ids after delete = %v, %v, want none", ids, err)
+	}
+}
+
+// A session belongs to the image it was started for: asked for through another
+// image it does not exist (no lease, no status), and a session that predates
+// the image column (NULL) is reachable through no image at all.
+func TestDockerUploadIsBoundToItsImage(t *testing.T) {
+	pg, up := uploadSession(t, "docker-upload-image")
+	ctx := context.Background()
+
+	if got, err := pg.GetDockerUpload(ctx, up.RepositoryID, up.Image, up.UploadUUID); err != nil || got == nil || got.Image != up.Image {
+		t.Fatalf("owner get = %+v, %v, want the session of image %q", got, err, up.Image)
+	}
+
+	for _, other := range []string{"other", ""} {
+		if got, err := pg.GetDockerUpload(ctx, up.RepositoryID, other, up.UploadUUID); err != nil || got != nil {
+			t.Fatalf("get through image %q = %+v, %v, want nil", other, got, err)
+		}
+
+		refused(t, pg, up.RepositoryID, other, up.UploadUUID, tokenA)
+	}
+
+	// The refused attempts took no lease: the owner still gets it.
+	acquire(t, pg, up, tokenB, liveTTL)
+
+	if _, err := pg.GetDB().ExecContext(ctx, `UPDATE docker_uploads SET image = NULL, lease_token = NULL, lease_until = NULL`); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, image := range []string{up.Image, ""} {
+		if got, err := pg.GetDockerUpload(ctx, up.RepositoryID, image, up.UploadUUID); err != nil || got != nil {
+			t.Fatalf("legacy session get through image %q = %+v, %v, want nil", image, got, err)
+		}
+
+		refused(t, pg, up.RepositoryID, image, up.UploadUUID, tokenA)
 	}
 }

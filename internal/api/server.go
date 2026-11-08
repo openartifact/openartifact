@@ -109,10 +109,18 @@ func (s *HTTPServer) DisableKeepAlives() {
 	s.httpServer.SetKeepAlivesEnabled(false)
 }
 
-// Stop gracefully stops the server.
+// Stop gracefully stops the server. When ctx ends before the in-flight requests
+// do, the remaining connections are closed: the handlers must not outlive the
+// stores the caller closes next.
 func (s *HTTPServer) Stop(ctx context.Context) error {
 	s.log.Infow("Stopping HTTP server")
-	return s.httpServer.Shutdown(ctx)
+
+	err := s.httpServer.Shutdown(ctx)
+	if err != nil {
+		_ = s.httpServer.Close()
+	}
+
+	return err
 }
 
 // GetRouter returns the underlying chi router.

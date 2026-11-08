@@ -509,6 +509,52 @@ func TestStoreDeleteKeepsRowWhenPlacementTierIsUnknown(t *testing.T) {
 	}
 }
 
+// deleteFailingStore fails every Delete with a backend error.
+type deleteFailingStore struct{ storage.BlobStore }
+
+func (deleteFailingStore) Delete(context.Context, string) error { return errBackendDown }
+
+// A blob whose row is already gone (the deletion sweeper's case) can have its
+// only copy on any tier: a failing cold tier must fail the delete so the sweeper
+// retries, not report success and orphan the bytes.
+func TestStoreDeleteReportsColdTierFailureWhenPlacementRowIsGone(t *testing.T) {
+	t.Parallel()
+
+	r := newRig(t)
+	ctx := context.Background()
+	sha := r.addBlob([]byte("deleted while the cold tier is down"), 0)
+
+	if out, err := r.mover.Move(ctx, sha, testColdBackend, "test"); err != nil || out != OutcomeMoved {
+		t.Fatalf("Move = %v, %v", out, err)
+	}
+
+	r.db.mu.Lock()
+	delete(r.db.blobs, sha)
+	r.db.mu.Unlock()
+
+	r.replaceTier(testColdBackend, func(c *Tier) { c.Store = deleteFailingStore{c.Store} })
+
+	if err := r.store.Delete(ctx, sha); !errors.Is(err, errBackendDown) {
+		t.Fatalf("Delete = %v, want the cold tier failure (nil would drop the sweeper entry and orphan the cold copy)", err)
+	}
+}
+
+// With a known placement a failure on a tier that is not the placed one stays
+// non-fatal: its stray copies are queued for deletion separately.
+func TestStoreDeleteIgnoresOtherTierFailureWhenPlacementIsKnown(t *testing.T) {
+	t.Parallel()
+
+	r := newRig(t)
+	ctx := context.Background()
+	sha := r.addBlob([]byte("placed hot, cold tier down"), 0)
+
+	r.replaceTier(testColdBackend, func(c *Tier) { c.Store = deleteFailingStore{c.Store} })
+
+	if err := r.store.Delete(ctx, sha); err != nil {
+		t.Fatalf("Delete = %v, want nil: the placed (primary) copy is gone", err)
+	}
+}
+
 // --- finding 6: no cold tier -------------------------------------------------
 
 func TestNoColdTierSkipsTrackingAndUsageAggregate(t *testing.T) {

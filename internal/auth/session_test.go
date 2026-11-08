@@ -156,7 +156,7 @@ func (m *sessionMockDB) GetNPMVersion(_ context.Context, _, _ string) (*models.N
 func (m *sessionMockDB) GetNPMVersionsByPackage(_ context.Context, _ string) ([]*models.NPMVersion, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) DeleteNPMVersion(_ context.Context, _, _ string) error { return nil }
+func (m *sessionMockDB) DeleteNPMVersions(_ context.Context, _ string, _ []string) error { return nil }
 func (m *sessionMockDB) UpsertNPMDistTag(_ context.Context, _ *models.NPMDistTag) (*models.NPMDistTag, error) {
 	return nil, nil
 }
@@ -184,7 +184,6 @@ func (m *sessionMockDB) CreateGroup(_ context.Context, _ *models.Group) (*models
 func (m *sessionMockDB) GetGroupByID(_ context.Context, _ string) (*models.Group, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) UpdateGroup(_ context.Context, _ *models.Group) error     { return nil }
 func (m *sessionMockDB) DeleteGroup(_ context.Context, _ string) error            { return nil }
 func (m *sessionMockDB) ListGroups(_ context.Context) ([]*models.Group, error)    { return nil, nil }
 func (m *sessionMockDB) AddUserToGroup(_ context.Context, _, _ string) error      { return nil }
@@ -218,9 +217,6 @@ func (m *sessionMockDB) GetPermissionTargetByID(_ context.Context, _ string) (*m
 func (m *sessionMockDB) GetPermissionTargetByName(_ context.Context, _ string) (*models.PermissionTarget, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) UpdatePermissionTarget(_ context.Context, _ *models.PermissionTarget) error {
-	return nil
-}
 func (m *sessionMockDB) DeletePermissionTarget(_ context.Context, _ string) error { return nil }
 func (m *sessionMockDB) ListPermissionTargets(_ context.Context) ([]*models.PermissionTarget, error) {
 	return nil, nil
@@ -252,10 +248,10 @@ func (m *sessionMockDB) ListDockerBlobs(_ context.Context, _ string) ([]*models.
 func (m *sessionMockDB) CreateDockerUpload(_ context.Context, _ *models.DockerUpload) error {
 	return nil
 }
-func (m *sessionMockDB) GetDockerUpload(_ context.Context, _, _ string) (*models.DockerUpload, error) {
+func (m *sessionMockDB) GetDockerUpload(_ context.Context, _, _, _ string) (*models.DockerUpload, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) AcquireDockerUploadLease(_ context.Context, _, _, _ string, _ time.Duration) (*models.DockerUpload, error) {
+func (m *sessionMockDB) AcquireDockerUploadLease(_ context.Context, _, _, _, _ string, _ time.Duration) (*models.DockerUpload, error) {
 	return nil, nil
 }
 func (m *sessionMockDB) RenewDockerUploadLease(_ context.Context, _, _, _ string, _ time.Duration) (bool, error) {
@@ -386,8 +382,7 @@ func (m *sessionMockDB) CreateWebhook(_ context.Context, _ *models.Webhook) erro
 func (m *sessionMockDB) GetWebhook(_ context.Context, _ string) (*models.Webhook, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) UpdateWebhook(_ context.Context, _ *models.Webhook) error { return nil }
-func (m *sessionMockDB) DeleteWebhook(_ context.Context, _ string) error          { return nil }
+func (m *sessionMockDB) DeleteWebhook(_ context.Context, _ string) error { return nil }
 func (m *sessionMockDB) ListWebhooks(_ context.Context, _ string) ([]*models.Webhook, error) {
 	return nil, nil
 }
@@ -541,9 +536,6 @@ func (m *sessionMockDB) GetProject(_ context.Context, _ string) (*models.Project
 func (m *sessionMockDB) GetProjectByName(_ context.Context, _ string) (*models.Project, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) UpdateProject(_ context.Context, _ *models.Project) error {
-	return nil
-}
 func (m *sessionMockDB) DeleteProject(_ context.Context, _ string) error { return nil }
 func (m *sessionMockDB) ListProjects(_ context.Context, _ string) ([]*models.Project, error) {
 	return nil, nil
@@ -634,8 +626,7 @@ func (m *sessionMockDB) CreateSSOProvider(_ context.Context, _ *models.SSOProvid
 func (m *sessionMockDB) GetSSOProviderBySlug(_ context.Context, _ string) (*models.SSOProvider, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) UpdateSSOProvider(_ context.Context, _ *models.SSOProvider) error { return nil }
-func (m *sessionMockDB) DeleteSSOProvider(_ context.Context, _ string) error              { return nil }
+func (m *sessionMockDB) DeleteSSOProvider(_ context.Context, _ string) error { return nil }
 func (m *sessionMockDB) ListEnabledSSOProviders(_ context.Context) ([]*models.SSOProvider, error) {
 	return nil, nil
 }
@@ -698,10 +689,6 @@ func (m *sessionMockDB) GetPromotionPipelineByName(ctx context.Context, name str
 
 func (m *sessionMockDB) GetPromotionPipelineByID(ctx context.Context, id string) (*models.PromotionPipeline, error) {
 	return nil, nil
-}
-
-func (m *sessionMockDB) UpdatePromotionPipeline(ctx context.Context, p *models.PromotionPipeline) error {
-	return nil
 }
 
 func (m *sessionMockDB) DeletePromotionPipeline(ctx context.Context, id string) error {

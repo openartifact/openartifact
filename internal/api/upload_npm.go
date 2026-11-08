@@ -52,7 +52,7 @@ type NPMUploadStore interface {
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	DeleteNPMDistTag(ctx context.Context, packageID string, tag string) error
 	DeleteNPMPackage(ctx context.Context, packageID string) error
-	DeleteNPMVersion(ctx context.Context, packageID string, version string) error
+	DeleteNPMVersions(ctx context.Context, packageID string, versions []string) error
 	GetNPMDistTags(ctx context.Context, packageID string) (map[string]string, error)
 	GetNPMPackageByName(ctx context.Context, repoID string, fullName string) (*models.NPMPackage, error)
 	GetNPMVersion(ctx context.Context, packageID string, version string) (*models.NPMVersion, error)
@@ -533,13 +533,19 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 		ctx := context.WithoutCancel(r.Context())
 
 		if pkg != nil {
-			for _, pv := range createdVersions {
-				if delErr := h.db.DeleteNPMVersion(ctx, pkg.ID, pv.version); delErr != nil {
-					// The row is still there, so it keeps its blob and its quota.
-					h.log.Errorw("npm publish rollback: delete version", "pkg", pub.Name, "version", pv.version, "error", delErr)
-					continue
-				}
+			names := make([]string, len(createdVersions))
+			for i, pv := range createdVersions {
+				names[i] = pv.version
+			}
 
+			if delErr := h.db.DeleteNPMVersions(ctx, pkg.ID, names); delErr != nil {
+				// The rows are still there, so they keep their blobs and quota.
+				h.log.Errorw("npm publish rollback: delete versions", "pkg", pub.Name, "versions", names, "error", delErr)
+
+				createdVersions = nil
+			}
+
+			for _, pv := range createdVersions {
 				h.releaseQuota(ctx, repo.ID, pv.att.size)
 
 				if delErr := storage.SafeDeleteBlob(ctx, h.db, h.blobStore, pv.sha256Hex); delErr != nil {
@@ -921,14 +927,18 @@ func (h *NPMUploadHandler) hardDeleteNPMVersions(
 		return err
 	}
 
+	names := make([]string, len(versions))
+	for i, v := range versions {
+		names[i] = v.Version
+		removed[v.Version] = true
+	}
+
+	if err := h.db.DeleteNPMVersions(ctx, pkg.ID, names); err != nil {
+		return err
+	}
+
 	for i, v := range versions {
 		size := sizes[i]
-
-		if err := h.db.DeleteNPMVersion(ctx, pkg.ID, v.Version); err != nil {
-			return err
-		}
-
-		removed[v.Version] = true
 
 		h.releaseQuota(ctx, repo.ID, size)
 

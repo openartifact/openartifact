@@ -80,26 +80,45 @@ func (p *WebhookStore) GetWebhook(ctx context.Context, id string) (*models.Webho
 	return mapRow(row, err, "get webhook", webhookFromRow)
 }
 
-// UpdateWebhook updates an existing webhook.
-func (p *WebhookStore) UpdateWebhook(ctx context.Context, wh *models.Webhook) error {
-	err := p.q.UpdateWebhook(ctx, dbsqlc.UpdateWebhookParams{
-		ID:             wh.ID,
-		Name:           wh.Name,
-		Url:            wh.URL,
-		SecretEnc:      strPtr(wh.SecretEnc),
-		Enabled:        wh.Enabled,
-		Events:         wh.Events,
-		ContentType:    wh.ContentType,
-		PayloadFormat:  cmp.Or(wh.PayloadFormat, models.PayloadFormatOpenArtifact),
-		SslVerify:      wh.SSLVerify,
-		MaxRetries:     int32(wh.MaxRetries),     //nolint:gosec // G115: value is bounded by API validation
-		TimeoutSeconds: int32(wh.TimeoutSeconds), //nolint:gosec // G115: value is bounded by API validation
-	})
-	if err != nil {
-		return fmt.Errorf("failed to update webhook: %w", err)
-	}
+// WebhookPatch names the columns an edit writes; nil fields leave the stored
+// value alone. SecretEnc is only written when SetSecret is true, an empty
+// value clearing the signing secret.
+type WebhookPatch struct {
+	Name           *string
+	URL            *string
+	SetSecret      bool
+	SecretEnc      string
+	Enabled        *bool
+	Events         []string
+	ContentType    *string
+	PayloadFormat  *string
+	SSLVerify      *bool
+	MaxRetries     *int
+	TimeoutSeconds *int
+}
 
-	return nil
+// PatchWebhook writes only the columns in patch, so a concurrent edit of other
+// columns is not reverted by a stale snapshot. It returns the updated row, or
+// nil when the webhook does not exist.
+func (p *WebhookStore) PatchWebhook(ctx context.Context, id string, patch WebhookPatch) (*models.Webhook, error) {
+	row, err := p.q.PatchWebhook(ctx, dbsqlc.PatchWebhookParams{
+		ID:             id,
+		Name:           patch.Name,
+		Url:            patch.URL,
+		SetSecret:      patch.SetSecret,
+		SecretEnc:      strPtr(patch.SecretEnc),
+		Enabled:        patch.Enabled,
+		Events:         patch.Events,
+		ContentType:    patch.ContentType,
+		PayloadFormat:  patch.PayloadFormat,
+		SslVerify:      patch.SSLVerify,
+		MaxRetries:     int32Ptr(patch.MaxRetries),
+		TimeoutSeconds: int32Ptr(patch.TimeoutSeconds),
+	})
+
+	return mapRow(row, err, "update webhook", func(r dbsqlc.PatchWebhookRow) *models.Webhook {
+		return webhookFromRow(dbsqlc.GetWebhookRow(r))
+	})
 }
 
 // DeleteWebhook deletes a webhook.

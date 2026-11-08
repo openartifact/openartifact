@@ -63,7 +63,7 @@ The storage result is cached for 10 seconds and each probe is limited to 3 secon
 - `storage unavailable`
 - `shutting down`: a shutdown signal arrived, see [graceful shutdown](#graceful-shutdown-and-rolling-updates).
 
-`/ready` checks the object store only for the S3-family backends (`s3`, `garage`, `seaweedfs`), and it does so on every call. Other backends are not probed by `/ready`; `/health` covers them.
+`/ready` checks the object store only for the S3-family backends (`s3`, `garage`, `seaweedfs`), with a 3-second timeout; the result is reused for 2 seconds, so a flood of requests costs one bucket round trip per interval. Other backends are not probed by `/ready`; `/health` covers them.
 
 ### Container healthcheck
 

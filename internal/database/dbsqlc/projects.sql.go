@@ -449,6 +449,68 @@ func (q *Queries) ListProjectsByUser(ctx context.Context, ownerID *string) ([]Pr
 	return items, nil
 }
 
+const patchProject = `-- name: PatchProject :one
+UPDATE projects SET
+       display_name = COALESCE($1, display_name),
+       description = COALESCE($2, description),
+       allowed_formats = CASE WHEN $3::bool THEN $4::text[] ELSE allowed_formats END,
+       allowed_repo_types = COALESCE($5::text[], allowed_repo_types),
+       repo_name_prefix = COALESCE($6, repo_name_prefix),
+       allow_public_repos = COALESCE($7, allow_public_repos),
+       max_repositories = COALESCE($8::int, max_repositories),
+       token_max_ttl_days = COALESCE($9::int, token_max_ttl_days),
+       updated_at = now()
+WHERE id = $10
+RETURNING id, name, display_name, description, owner_id, created_at, updated_at, slug, allowed_formats, allowed_repo_types, repo_name_prefix, allow_public_repos, max_repositories, token_max_ttl_days
+`
+
+type PatchProjectParams struct {
+	DisplayName       *string  `db:"display_name" json:"display_name"`
+	Description       *string  `db:"description" json:"description"`
+	SetAllowedFormats bool     `db:"set_allowed_formats" json:"set_allowed_formats"`
+	AllowedFormats    []string `db:"allowed_formats" json:"allowed_formats"`
+	AllowedRepoTypes  []string `db:"allowed_repo_types" json:"allowed_repo_types"`
+	RepoNamePrefix    *string  `db:"repo_name_prefix" json:"repo_name_prefix"`
+	AllowPublicRepos  *bool    `db:"allow_public_repos" json:"allow_public_repos"`
+	MaxRepositories   *int32   `db:"max_repositories" json:"max_repositories"`
+	TokenMaxTtlDays   *int32   `db:"token_max_ttl_days" json:"token_max_ttl_days"`
+	ID                string   `db:"id" json:"id"`
+}
+
+// Column-wise edit: a NULL argument leaves the stored value alone, so a concurrent edit of other columns survives.
+func (q *Queries) PatchProject(ctx context.Context, arg PatchProjectParams) (Project, error) {
+	row := q.db.QueryRow(ctx, patchProject,
+		arg.DisplayName,
+		arg.Description,
+		arg.SetAllowedFormats,
+		arg.AllowedFormats,
+		arg.AllowedRepoTypes,
+		arg.RepoNamePrefix,
+		arg.AllowPublicRepos,
+		arg.MaxRepositories,
+		arg.TokenMaxTtlDays,
+		arg.ID,
+	)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.DisplayName,
+		&i.Description,
+		&i.OwnerID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Slug,
+		&i.AllowedFormats,
+		&i.AllowedRepoTypes,
+		&i.RepoNamePrefix,
+		&i.AllowPublicRepos,
+		&i.MaxRepositories,
+		&i.TokenMaxTtlDays,
+	)
+	return i, err
+}
+
 const setProjectGroup = `-- name: SetProjectGroup :exec
 INSERT INTO project_groups (project_id, group_id, role, created_by)
 VALUES ($1, $2, $3, $4)
@@ -468,42 +530,6 @@ func (q *Queries) SetProjectGroup(ctx context.Context, arg SetProjectGroupParams
 		arg.GroupID,
 		arg.Role,
 		arg.CreatedBy,
-	)
-	return err
-}
-
-const updateProject = `-- name: UpdateProject :exec
-UPDATE projects SET display_name = $1, description = $2, owner_id = $3,
-       allowed_formats = $4, allowed_repo_types = $5, repo_name_prefix = $6, allow_public_repos = $7,
-       max_repositories = $8, token_max_ttl_days = $9, updated_at = now()
-WHERE id = $10
-`
-
-type UpdateProjectParams struct {
-	DisplayName      *string  `db:"display_name" json:"display_name"`
-	Description      *string  `db:"description" json:"description"`
-	OwnerID          *string  `db:"owner_id" json:"owner_id"`
-	AllowedFormats   []string `db:"allowed_formats" json:"allowed_formats"`
-	AllowedRepoTypes []string `db:"allowed_repo_types" json:"allowed_repo_types"`
-	RepoNamePrefix   string   `db:"repo_name_prefix" json:"repo_name_prefix"`
-	AllowPublicRepos bool     `db:"allow_public_repos" json:"allow_public_repos"`
-	MaxRepositories  int32    `db:"max_repositories" json:"max_repositories"`
-	TokenMaxTtlDays  int32    `db:"token_max_ttl_days" json:"token_max_ttl_days"`
-	ID               string   `db:"id" json:"id"`
-}
-
-func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) error {
-	_, err := q.db.Exec(ctx, updateProject,
-		arg.DisplayName,
-		arg.Description,
-		arg.OwnerID,
-		arg.AllowedFormats,
-		arg.AllowedRepoTypes,
-		arg.RepoNamePrefix,
-		arg.AllowPublicRepos,
-		arg.MaxRepositories,
-		arg.TokenMaxTtlDays,
-		arg.ID,
 	)
 	return err
 }

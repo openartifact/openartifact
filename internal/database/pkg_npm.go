@@ -320,11 +320,15 @@ func (p *NPMStore) UpdateNPMVersionManifest(ctx context.Context, packageID, vers
 	return nil
 }
 
-// DeleteNPMVersion hard-deletes the live version with its tarball row and the
-// dist-tags that named it (unless a trashed incarnation of the same version
+// DeleteNPMVersions hard-deletes the live versions among the given version keys
+// with their tarball rows and the dist-tags that named them (unless a trashed incarnation of the same version
 // remains), and bumps the packument ETag, in one transaction. The package row
 // stays: DeleteNPMPackage removes it once no version row is left.
-func (p *NPMStore) DeleteNPMVersion(ctx context.Context, packageID, version string) error {
+func (p *NPMStore) DeleteNPMVersions(ctx context.Context, packageID string, versions []string) error {
+	if len(versions) == 0 {
+		return nil
+	}
+
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin npm version delete: %w", err)
@@ -335,8 +339,8 @@ func (p *NPMStore) DeleteNPMVersion(ctx context.Context, packageID, version stri
 	q := p.q.WithTx(tx)
 
 	versionIDs, err := q.DeleteNPMLiveVersionFiles(ctx, dbsqlc.DeleteNPMLiveVersionFilesParams{
-		PackageID:  packageID,
-		VersionKey: version,
+		PackageID:   packageID,
+		VersionKeys: versions,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to delete npm version files: %w", err)
@@ -350,9 +354,9 @@ func (p *NPMStore) DeleteNPMVersion(ctx context.Context, packageID, version stri
 		return fmt.Errorf("failed to delete npm version: %w", err)
 	}
 
-	if err := q.DeleteNPMTagsOfVersion(ctx, dbsqlc.DeleteNPMTagsOfVersionParams{
+	if err := q.DeleteNPMTagsOfVersions(ctx, dbsqlc.DeleteNPMTagsOfVersionsParams{
 		PackageID: packageID,
-		Version:   version,
+		Versions:  versions,
 	}); err != nil {
 		return fmt.Errorf("failed to delete npm tags of version: %w", err)
 	}

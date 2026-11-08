@@ -77,19 +77,20 @@ func (q *Queries) DeleteNPMDistTag(ctx context.Context, arg DeleteNPMDistTagPara
 const deleteNPMLiveVersionFiles = `-- name: DeleteNPMLiveVersionFiles :many
 DELETE FROM package_files f
 USING package_versions v
-WHERE f.version_id = v.id AND v.package_id = $1 AND v.version_key = $2 AND v.deleted_at IS NULL
+WHERE f.version_id = v.id AND v.package_id = $1 AND v.version_key = ANY($2::text[])
+  AND v.deleted_at IS NULL
 RETURNING f.version_id
 `
 
 type DeleteNPMLiveVersionFilesParams struct {
-	PackageID  string `db:"package_id" json:"package_id"`
-	VersionKey string `db:"version_key" json:"version_key"`
+	PackageID   string   `db:"package_id" json:"package_id"`
+	VersionKeys []string `db:"version_keys" json:"version_keys"`
 }
 
-// Hard delete of the file of the live version (the quota trigger releases its
-// usage); the version itself goes in PruneEmptyVersions.
+// Hard delete of the files of the live versions among the given keys (the quota
+// trigger releases their usage); the versions themselves go in PruneEmptyVersions.
 func (q *Queries) DeleteNPMLiveVersionFiles(ctx context.Context, arg DeleteNPMLiveVersionFilesParams) ([]string, error) {
-	rows, err := q.db.Query(ctx, deleteNPMLiveVersionFiles, arg.PackageID, arg.VersionKey)
+	rows, err := q.db.Query(ctx, deleteNPMLiveVersionFiles, arg.PackageID, arg.VersionKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -121,22 +122,22 @@ func (q *Queries) DeleteNPMPackage(ctx context.Context, id string) error {
 	return err
 }
 
-const deleteNPMTagsOfVersion = `-- name: DeleteNPMTagsOfVersion :exec
+const deleteNPMTagsOfVersions = `-- name: DeleteNPMTagsOfVersions :exec
 DELETE FROM package_tags t
-WHERE t.package_id = $1 AND t.version = $2
+WHERE t.package_id = $1 AND t.version = ANY($2::text[])
   AND NOT EXISTS (SELECT 1 FROM package_versions v WHERE v.package_id = t.package_id AND v.version_key = t.version)
 `
 
-type DeleteNPMTagsOfVersionParams struct {
-	PackageID string `db:"package_id" json:"package_id"`
-	Version   string `db:"version" json:"version"`
+type DeleteNPMTagsOfVersionsParams struct {
+	PackageID string   `db:"package_id" json:"package_id"`
+	Versions  []string `db:"versions" json:"versions"`
 }
 
 // Tags are keyed by the version string, so they do not follow the version row.
 // A trashed incarnation of the same version keeps them (a restore brings them
 // back).
-func (q *Queries) DeleteNPMTagsOfVersion(ctx context.Context, arg DeleteNPMTagsOfVersionParams) error {
-	_, err := q.db.Exec(ctx, deleteNPMTagsOfVersion, arg.PackageID, arg.Version)
+func (q *Queries) DeleteNPMTagsOfVersions(ctx context.Context, arg DeleteNPMTagsOfVersionsParams) error {
+	_, err := q.db.Exec(ctx, deleteNPMTagsOfVersions, arg.PackageID, arg.Versions)
 	return err
 }
 

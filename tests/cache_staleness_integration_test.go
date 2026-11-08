@@ -737,8 +737,8 @@ func TestCachedPackumentStaysCurrentNPM(t *testing.T) {
 		staleStep{name: "version delete in the database", do: func() {
 			publish("2.0.0")()
 
-			if err := e.pg.DeleteNPMVersion(context.Background(), pkgID(), "1.0.0"); err != nil {
-				t.Fatalf("DeleteNPMVersion: %v", err)
+			if err := e.pg.DeleteNPMVersions(context.Background(), pkgID(), []string{"1.0.0"}); err != nil {
+				t.Fatalf("DeleteNPMVersions: %v", err)
 			}
 		}, changes: both},
 	)

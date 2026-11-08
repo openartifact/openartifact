@@ -194,10 +194,6 @@ func (m *provMockDB) GetPromotionPipelineByID(ctx context.Context, id string) (*
 	return nil, nil
 }
 
-func (m *provMockDB) UpdatePromotionPipeline(ctx context.Context, p *models.PromotionPipeline) error {
-	return nil
-}
-
 func (m *provMockDB) DeletePromotionPipeline(ctx context.Context, id string) error {
 	return nil
 }
@@ -349,7 +345,7 @@ func (m *provMockDB) GetNPMVersion(_ context.Context, _, _ string) (*models.NPMV
 func (m *provMockDB) GetNPMVersionsByPackage(_ context.Context, _ string) ([]*models.NPMVersion, error) {
 	return nil, nil
 }
-func (m *provMockDB) DeleteNPMVersion(_ context.Context, _, _ string) error { return nil }
+func (m *provMockDB) DeleteNPMVersions(_ context.Context, _ string, _ []string) error { return nil }
 func (m *provMockDB) UpsertNPMDistTag(_ context.Context, _ *models.NPMDistTag) (*models.NPMDistTag, error) {
 	return nil, nil
 }
@@ -379,7 +375,6 @@ func (m *provMockDB) CreateGroup(_ context.Context, _ *models.Group) (*models.Gr
 func (m *provMockDB) GetGroupByID(_ context.Context, id string) (*models.Group, error) {
 	return m.groupsByID[id], nil
 }
-func (m *provMockDB) UpdateGroup(_ context.Context, _ *models.Group) error     { return nil }
 func (m *provMockDB) DeleteGroup(_ context.Context, _ string) error            { return nil }
 func (m *provMockDB) ListGroups(_ context.Context) ([]*models.Group, error)    { return nil, nil }
 func (m *provMockDB) AddUserToGroup(_ context.Context, _, _ string) error      { return nil }
@@ -423,9 +418,6 @@ func (m *provMockDB) GetPermissionTargetByID(_ context.Context, _ string) (*mode
 func (m *provMockDB) GetPermissionTargetByName(_ context.Context, name string) (*models.PermissionTarget, error) {
 	return m.targetsByName[name], nil
 }
-func (m *provMockDB) UpdatePermissionTarget(_ context.Context, _ *models.PermissionTarget) error {
-	return nil
-}
 func (m *provMockDB) DeletePermissionTarget(_ context.Context, _ string) error { return nil }
 func (m *provMockDB) ListPermissionTargets(_ context.Context) ([]*models.PermissionTarget, error) {
 	return nil, nil
@@ -448,8 +440,7 @@ func (m *provMockDB) CreateSSOProvider(_ context.Context, _ *models.SSOProvider)
 func (m *provMockDB) GetSSOProviderBySlug(_ context.Context, _ string) (*models.SSOProvider, error) {
 	return nil, nil
 }
-func (m *provMockDB) UpdateSSOProvider(_ context.Context, _ *models.SSOProvider) error { return nil }
-func (m *provMockDB) DeleteSSOProvider(_ context.Context, _ string) error              { return nil }
+func (m *provMockDB) DeleteSSOProvider(_ context.Context, _ string) error { return nil }
 func (m *provMockDB) ListEnabledSSOProviders(_ context.Context) ([]*models.SSOProvider, error) {
 	return nil, nil
 }
@@ -496,10 +487,10 @@ func (m *provMockDB) ListDockerBlobs(_ context.Context, _ string) ([]*models.Doc
 }
 
 func (m *provMockDB) CreateDockerUpload(_ context.Context, _ *models.DockerUpload) error { return nil }
-func (m *provMockDB) GetDockerUpload(_ context.Context, _, _ string) (*models.DockerUpload, error) {
+func (m *provMockDB) GetDockerUpload(_ context.Context, _, _, _ string) (*models.DockerUpload, error) {
 	return nil, nil
 }
-func (m *provMockDB) AcquireDockerUploadLease(_ context.Context, _, _, _ string, _ time.Duration) (*models.DockerUpload, error) {
+func (m *provMockDB) AcquireDockerUploadLease(_ context.Context, _, _, _, _ string, _ time.Duration) (*models.DockerUpload, error) {
 	return nil, nil
 }
 func (m *provMockDB) RenewDockerUploadLease(_ context.Context, _, _, _ string, _ time.Duration) (bool, error) {
@@ -628,8 +619,7 @@ func (m *provMockDB) CreateWebhook(_ context.Context, _ *models.Webhook) error {
 func (m *provMockDB) GetWebhook(_ context.Context, _ string) (*models.Webhook, error) {
 	return nil, nil
 }
-func (m *provMockDB) UpdateWebhook(_ context.Context, _ *models.Webhook) error { return nil }
-func (m *provMockDB) DeleteWebhook(_ context.Context, _ string) error          { return nil }
+func (m *provMockDB) DeleteWebhook(_ context.Context, _ string) error { return nil }
 func (m *provMockDB) ListWebhooks(_ context.Context, _ string) ([]*models.Webhook, error) {
 	return nil, nil
 }
@@ -777,8 +767,7 @@ func (m *provMockDB) GetProject(_ context.Context, _ string) (*models.Project, e
 func (m *provMockDB) GetProjectByName(_ context.Context, _ string) (*models.Project, error) {
 	return nil, nil
 }
-func (m *provMockDB) UpdateProject(_ context.Context, _ *models.Project) error { return nil }
-func (m *provMockDB) DeleteProject(_ context.Context, _ string) error          { return nil }
+func (m *provMockDB) DeleteProject(_ context.Context, _ string) error { return nil }
 func (m *provMockDB) ListProjects(_ context.Context, _ string) ([]*models.Project, error) {
 	return nil, nil
 }

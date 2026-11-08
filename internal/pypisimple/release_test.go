@@ -28,6 +28,10 @@ func TestFileVersion(t *testing.T) {
 		{"foo", "other-name-3.1.tar.gz", "3.1"},
 		{"foo", "foo.tar.gz", ""},
 		{"foo", "foo.whl", ""},
+		{"foo", "foo-1.0-py3.8.egg", "1"},
+		{"foo", "foo-1.0-py3.8-linux-x86_64.egg", "1"},
+		{"foo", "foo-1.0.win-amd64-py3.8.exe", "1"},
+		{"foo", "foo-1.0.win32.msi", "1"},
 	}
 
 	for _, tt := range tests {

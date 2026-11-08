@@ -326,6 +326,7 @@ func (a *app) registerRepositoryRoutes() {
 		WithBundleSigners(a.cfg.GPG.BundleSigners).
 		WithPublisher(w.webhook).
 		WithWorkers(w.metadata).
+		WithLicenseFiles(db, a.store.blobs).
 		RegisterAuthed(authedAPI)
 }
 

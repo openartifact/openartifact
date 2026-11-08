@@ -91,19 +91,33 @@ func (p *PermissionStore) GetPermissionTargetByName(ctx context.Context, name st
 	return mapRow(dbsqlc.GetPermissionTargetByIDRow(row), err, "get permission target by name", permissionTargetFromRow)
 }
 
-func (p *PermissionStore) UpdatePermissionTarget(ctx context.Context, target *models.PermissionTarget) error {
+// PermissionTargetPatch names the columns an edit writes; nil fields leave the
+// stored value alone.
+type PermissionTargetPatch struct {
+	Name             *string
+	RepositoryFilter *string
+	PathPattern      *string
+	Actions          []string
+}
+
+// PatchPermissionTarget writes only the columns in patch, so a concurrent edit
+// of other columns is not reverted by a stale snapshot. It returns the updated
+// row, or nil when the target does not exist.
+func (p *PermissionStore) PatchPermissionTarget(
+	ctx context.Context, id string, patch PermissionTargetPatch,
+) (*models.PermissionTarget, error) {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
-	_, err := p.db.ExecContext(ctx,
-		`UPDATE permission_targets SET name=$2, repository_filter=$3, path_pattern=$4, actions=$5 WHERE id=$1`,
-		target.ID, target.Name, target.RepositoryFilter, target.PathPattern, target.Actions,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to update permission target: %w", err)
-	}
+	row, err := p.q.PatchPermissionTarget(ctx, dbsqlc.PatchPermissionTargetParams{
+		ID:               id,
+		Name:             patch.Name,
+		RepositoryFilter: patch.RepositoryFilter,
+		PathPattern:      patch.PathPattern,
+		Actions:          patch.Actions,
+	})
 
-	return nil
+	return mapRow(dbsqlc.GetPermissionTargetByIDRow(row), err, "update permission target", permissionTargetFromRow)
 }
 
 func (p *PermissionStore) DeletePermissionTarget(ctx context.Context, id string) error {

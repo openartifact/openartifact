@@ -110,6 +110,21 @@ describe('AttestationPage', () => {
     w.unmount()
   })
 
+  it('lists every docker repository, not only the first page', async () => {
+    const names = Array.from({ length: 101 }, (_, i) => `img-${String(i).padStart(3, '0')}`)
+    serve({
+      'GET /api/v1/admin/attestation': () => json(KEY),
+      'GET /api/v1/repositories': () => {
+        const page = calls[calls.length - 1]!.path.includes('page=2') ? 2 : 1
+        const slice = page === 1 ? names.slice(0, 100) : names.slice(100)
+        return json({ repositories: slice.map((name) => ({ name })), total: names.length })
+      },
+    })
+    const w = await mountPage()
+    expect(w.text()).toContain('img-100')
+    w.unmount()
+  })
+
   it('lists docker repositories with their state and sends the toggle as a PUT', async () => {
     let enabled = false
     serve({

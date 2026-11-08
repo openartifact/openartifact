@@ -39,9 +39,6 @@ SELECT id, name, description, created_at, updated_at FROM auth_groups WHERE id =
 -- name: GetGroupByName :one
 SELECT id, name, description, created_at, updated_at FROM auth_groups WHERE name = $1;
 
--- name: UpdateGroup :exec
-UPDATE auth_groups SET name = $2, description = $3 WHERE id = $1;
-
 -- name: DeleteGroup :exec
 DELETE FROM auth_groups WHERE id = $1;
 
@@ -120,8 +117,15 @@ FROM permission_targets WHERE id = $1;
 SELECT id, name, repository_filter, path_pattern, actions, created_at, updated_at
 FROM permission_targets WHERE name = $1;
 
--- name: UpdatePermissionTarget :exec
-UPDATE permission_targets SET name = $2, repository_filter = $3, path_pattern = $4, actions = $5 WHERE id = $1;
+-- name: PatchPermissionTarget :one
+-- Column-wise edit: a NULL argument leaves the stored value alone.
+UPDATE permission_targets SET
+       name = COALESCE(sqlc.narg(name), name),
+       repository_filter = COALESCE(sqlc.narg(repository_filter), repository_filter),
+       path_pattern = COALESCE(sqlc.narg(path_pattern), path_pattern),
+       actions = COALESCE(sqlc.narg(actions)::text[], actions)
+WHERE id = sqlc.arg(id)
+RETURNING id, name, repository_filter, path_pattern, actions, created_at, updated_at;
 
 -- name: DeletePermissionTarget :exec
 DELETE FROM permission_targets WHERE id = $1;

@@ -39,7 +39,7 @@ type AdminPermissionsStore interface {
 	GetUserByID(ctx context.Context, id string) (*models.User, error)
 	ListPermissionAssignmentsForTarget(ctx context.Context, targetID string) ([]models.PermissionAssignmentView, error)
 	ListPermissionTargets(ctx context.Context) ([]*models.PermissionTarget, error)
-	UpdatePermissionTarget(ctx context.Context, target *models.PermissionTarget) error
+	PatchPermissionTarget(ctx context.Context, id string, patch database.PermissionTargetPatch) (*models.PermissionTarget, error)
 }
 
 type AdminPermissionsHandler struct {
@@ -161,20 +161,26 @@ func (h *AdminPermissionsHandler) handlePatch(w http.ResponseWriter, r *http.Req
 	// never leave behind a target that would not have passed creation.
 	merged := *target
 
+	var patch database.PermissionTargetPatch
+
 	if body.Name != nil {
 		merged.Name = strings.TrimSpace(*body.Name)
+		patch.Name = &merged.Name
 	}
 
 	if body.RepositoryFilter != nil {
 		merged.RepositoryFilter = *body.RepositoryFilter
+		patch.RepositoryFilter = body.RepositoryFilter
 	}
 
 	if body.PathPattern != nil {
 		merged.PathPattern = *body.PathPattern
+		patch.PathPattern = body.PathPattern
 	}
 
 	if body.Actions != nil {
 		merged.Actions = body.Actions
+		patch.Actions = body.Actions
 	}
 
 	if msg := validatePermissionTarget(&merged); msg != "" {
@@ -195,8 +201,8 @@ func (h *AdminPermissionsHandler) handlePatch(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	merged.UpdatedAt = time.Now()
-	if err := h.db.UpdatePermissionTarget(ctx, &merged); err != nil {
+	updated, err := h.db.PatchPermissionTarget(ctx, id, patch)
+	if err != nil {
 		if database.IsUniqueViolation(err) {
 			writeError(w, http.StatusConflict, "conflict", "a permission target with this name already exists")
 			return
@@ -207,9 +213,14 @@ func (h *AdminPermissionsHandler) handlePatch(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	auditAdmin(r, audit.ActionPermissionTargetObjUpdated, "permission_target", merged.ID, "permission target "+merged.Name+" updated")
+	if updated == nil {
+		writeError(w, http.StatusNotFound, "not_found", "permission target not found")
+		return
+	}
 
-	writeJSON(w, http.StatusOK, permTargetToResponse(&merged))
+	auditAdmin(r, audit.ActionPermissionTargetObjUpdated, "permission_target", updated.ID, "permission target "+updated.Name+" updated")
+
+	writeJSON(w, http.StatusOK, permTargetToResponse(updated))
 }
 
 func (h *AdminPermissionsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {

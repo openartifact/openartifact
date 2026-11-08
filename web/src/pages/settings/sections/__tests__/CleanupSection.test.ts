@@ -75,7 +75,7 @@ describe('CleanupSection', () => {
     expect(keep.text()).toContain('npm-a')
     expect(keep.text()).toContain('Enabled')
     expect(keep.text()).toContain('Never')
-    expect(keep.find('a').attributes('href')).toBe('/repos/npm-a?tab=cleanup')
+    expect(keep.find('a').attributes('href')).toBe('/repos/npm-a?tab=settings')
     expect(w.findAll('tbody tr').find((r) => r.text().includes('old stuff'))!.text()).toContain('Disabled')
     w.unmount()
   })
@@ -125,10 +125,10 @@ describe('CleanupSection', () => {
     w.unmount()
   })
 
-  it('links edit to the repository Cleanup tab', async () => {
+  it('links edit to the repository Settings tab', async () => {
     serve()
     const w = await mountPage()
-    expect(w.find('a[aria-label="Edit: debs"]').attributes('href')).toBe('/repos/deb-b?tab=cleanup')
+    expect(w.find('a[aria-label="Edit: debs"]').attributes('href')).toBe('/repos/deb-b?tab=settings')
     w.unmount()
   })
 })

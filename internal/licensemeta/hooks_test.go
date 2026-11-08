@@ -28,6 +28,7 @@ func init() { //nolint:gochecknoinits // test-only format registry, see above
 		"ivy":      manifest.IvyRule,
 		"sbt":      manifest.SBTRule,
 		"rubygems": manifest.RubyGemsRule,
+		"helm":     manifest.HelmRule,
 	} {
 		manifest.Register(format, rule)
 	}
@@ -42,6 +43,7 @@ func init() { //nolint:gochecknoinits // test-only format registry, see above
 		"ivy":      IvyHooks,
 		"sbt":      SBTHooks,
 		"rubygems": RubyGemsHooks,
+		"helm":     HelmHooks,
 	} {
 		Register(format, h)
 	}

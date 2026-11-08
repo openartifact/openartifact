@@ -73,19 +73,47 @@ func (p *BundleStore) getPromotionPipeline(ctx context.Context, column, value st
 	return pp, nil
 }
 
-func (p *BundleStore) UpdatePromotionPipeline(ctx context.Context, pp *models.PromotionPipeline) error {
-	stagesJSON, err := json.Marshal(pp.Stages)
-	if err != nil {
-		return fmt.Errorf("failed to marshal pipeline stages: %w", err)
+// PipelinePatch names the columns an edit writes; nil fields leave the stored
+// value alone.
+type PipelinePatch struct {
+	Description *string
+	Stages      *[]models.PipelineStage
+}
+
+// PatchPromotionPipeline writes only the columns in patch, so a concurrent edit
+// of the other column is not reverted by a stale snapshot. It returns the
+// updated pipeline, or nil when it does not exist.
+func (p *BundleStore) PatchPromotionPipeline(ctx context.Context, id string, patch PipelinePatch) (*models.PromotionPipeline, error) {
+	var stages []byte
+
+	if patch.Stages != nil {
+		var err error
+
+		if stages, err = json.Marshal(*patch.Stages); err != nil {
+			return nil, fmt.Errorf("failed to marshal pipeline stages: %w", err)
+		}
 	}
 
-	_, err = p.db.ExecContext(ctx,
-		`UPDATE promotion_pipelines SET name=$1, description=$2, stages=$3, updated_at=now()
-		 WHERE id=$4`,
-		pp.Name, pp.Description, stagesJSON, pp.ID,
-	)
+	var updatedID string
 
-	return err
+	err := p.db.QueryRowContext(ctx,
+		`UPDATE promotion_pipelines SET
+			description = COALESCE($2, description),
+			stages = COALESCE($3::jsonb, stages),
+			updated_at = now()
+		 WHERE id = $1
+		 RETURNING id`,
+		id, patch.Description, stages,
+	).Scan(&updatedID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to update promotion pipeline: %w", err)
+	}
+
+	return p.GetPromotionPipelineByID(ctx, updatedID)
 }
 
 func (p *BundleStore) DeletePromotionPipeline(ctx context.Context, id string) error {

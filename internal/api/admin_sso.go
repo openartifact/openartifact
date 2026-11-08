@@ -23,6 +23,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/crypto"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/netutil"
@@ -41,7 +42,7 @@ type AdminSSOStore interface {
 	GetSystemSetting(ctx context.Context, key string) (string, error)
 	ListAllSSOProviders(ctx context.Context) ([]*models.SSOProvider, error)
 	ListEnabledSSOProviders(ctx context.Context) ([]*models.SSOProvider, error)
-	UpdateSSOProvider(ctx context.Context, provider *models.SSOProvider) error
+	PatchSSOProvider(ctx context.Context, id string, patch database.SSOProviderPatch) (*models.SSOProvider, error)
 }
 
 type AdminSSOHandler struct {
@@ -500,17 +501,22 @@ func (h *AdminSSOHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if status, code, msg := applySSOPatch(ctx, existing, patch); status != 0 {
-		writeError(w, status, code, msg)
+	dbPatch, err := buildSSOPatch(ctx, existing, patch)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 		return
 	}
 
-	existing.UpdatedAt = time.Now()
-
-	if err := h.db.UpdateSSOProvider(ctx, existing); err != nil {
+	existing, err = h.db.PatchSSOProvider(ctx, existing.ID, dbPatch)
+	if err != nil {
 		h.log.Errorw("admin sso update: db update", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
+		return
+	}
+
+	if existing == nil {
+		writeError(w, http.StatusNotFound, "not_found", "SSO provider not found")
 		return
 	}
 
@@ -519,12 +525,16 @@ func (h *AdminSSOHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ssoProviderToResponse(existing))
 }
 
-// applySSOPatch merges patch into existing, validating exactly what create
-// validates. On failure it returns the HTTP status, error code and message
-// (status 0 means success).
-func applySSOPatch(ctx context.Context, existing *models.SSOProvider, patch map[string]json.RawMessage) (int, string, string) {
-	invalid := func(msg string) (int, string, string) {
-		return http.StatusBadRequest, "validation_failed", msg
+// buildSSOPatch validates patch against the stored provider, exactly as create
+// validates, and returns the columns to write. The error's text is the
+// validation message for the client.
+func buildSSOPatch(
+	ctx context.Context, existing *models.SSOProvider, patch map[string]json.RawMessage,
+) (database.SSOProviderPatch, error) {
+	var out database.SSOProviderPatch
+
+	invalid := func(msg string) (database.SSOProviderPatch, error) {
+		return database.SSOProviderPatch{}, errors.New(msg) //nolint:err113 // client validation message
 	}
 
 	if v, ok := patch["display_name"]; ok {
@@ -533,13 +543,13 @@ func applySSOPatch(ctx context.Context, existing *models.SSOProvider, patch map[
 			return invalid("display_name must be a non-empty string")
 		}
 
-		existing.DisplayName = s
+		out.DisplayName = &s
 	}
 
-	for field, dst := range map[string]*bool{
-		"enabled":              &existing.Enabled,
-		"auto_provision_users": &existing.AutoProvisionUsers,
-		"link_by_email":        &existing.LinkByEmail,
+	for field, dst := range map[string]**bool{
+		"enabled":              &out.Enabled,
+		"auto_provision_users": &out.AutoProvisionUsers,
+		"link_by_email":        &out.LinkByEmail,
 	} {
 		if v, ok := patch[field]; ok {
 			b, ok := patchBool(v)
@@ -547,7 +557,7 @@ func applySSOPatch(ctx context.Context, existing *models.SSOProvider, patch map[
 				return invalid(field + " must be a boolean")
 			}
 
-			*dst = b
+			*dst = &b
 		}
 	}
 
@@ -561,7 +571,7 @@ func applySSOPatch(ctx context.Context, existing *models.SSOProvider, patch map[
 			return invalid(err.Error())
 		}
 
-		existing.OIDCConfig = merged
+		out.OIDCConfig = merged
 	}
 
 	if v, ok := patch["saml_config"]; ok {
@@ -574,7 +584,7 @@ func applySSOPatch(ctx context.Context, existing *models.SSOProvider, patch map[
 			return invalid(err.Error())
 		}
 
-		existing.SAMLConfig = merged
+		out.SAMLConfig = merged
 	}
 
 	if v, ok := patch["claim_mapping"]; ok {
@@ -582,12 +592,12 @@ func applySSOPatch(ctx context.Context, existing *models.SSOProvider, patch map[
 			return invalid(err.Error())
 		}
 
-		existing.ClaimMapping = v
+		out.ClaimMapping = v
 	}
 
-	for field, dst := range map[string]*map[string]string{
-		"group_mapping":      &existing.GroupMapping,
-		"permission_mapping": &existing.PermissionMapping,
+	for field, dst := range map[string]**map[string]string{
+		"group_mapping":      &out.GroupMapping,
+		"permission_mapping": &out.PermissionMapping,
 	} {
 		if v, ok := patch[field]; ok {
 			var m map[string]string
@@ -599,11 +609,11 @@ func applySSOPatch(ctx context.Context, existing *models.SSOProvider, patch map[
 				return invalid(err.Error())
 			}
 
-			*dst = m
+			*dst = &m
 		}
 	}
 
-	return 0, "", ""
+	return out, nil
 }
 
 func (h *AdminSSOHandler) handleDelete(w http.ResponseWriter, r *http.Request) {

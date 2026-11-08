@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 )
@@ -149,5 +150,76 @@ func TestAdminJSONBodyOverCapIsRequestEntityTooLarge(t *testing.T) {
 
 	if rw.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rw.Body.String(), "request_entity_too_large") {
 		t.Fatalf("POST over the cap = %d %s, want 413 request_entity_too_large", rw.Code, rw.Body.String())
+	}
+}
+
+// groupPatchMockDB records the patch the handler sends for the one known group.
+type groupPatchMockDB struct {
+	groupMembersMockDBStore
+
+	known string
+	patch database.GroupPatch
+}
+
+func (db *groupPatchMockDB) PatchGroup(_ context.Context, id string, patch database.GroupPatch) (*models.Group, error) {
+	if id != db.known {
+		return nil, nil
+	}
+
+	db.patch = patch
+
+	return &models.Group{ID: id, Name: "g"}, nil
+}
+
+// A group PATCH names only the columns in the request body, so an edit of the
+// description cannot revert a concurrent rename; an unknown group is a 404.
+func TestPatchGroupWritesOnlyRequestedColumns(t *testing.T) {
+	const (
+		known   = "6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11"
+		missing = "d947c217-221c-3f9d-8a88-2bf7de623c0c"
+	)
+
+	for _, tc := range []struct {
+		name        string
+		id          string
+		body        string
+		status      int
+		wantName    bool
+		wantDescrip bool
+	}{
+		{"description only", known, `{"description":"d"}`, http.StatusOK, false, true},
+		{"name only", known, `{"name":"renamed"}`, http.StatusOK, true, false},
+		{"missing group", missing, `{"description":"d"}`, http.StatusNotFound, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := &groupPatchMockDB{known: known}
+			log := newFixTestLogger(t)
+			r := chi.NewRouter()
+			NewAdminGroupsHandler(db, log, auth.NewEvaluator(db, log, false)).Register(r)
+
+			req := httptest.NewRequestWithContext(
+				context.Background(),
+				http.MethodPatch,
+				"/api/v1/groups/"+tc.id,
+				strings.NewReader(tc.body),
+			)
+			req.Header.Set("Content-Type", "application/json")
+			req = req.WithContext(middleware.WithPrincipal(req.Context(), &auth.Principal{Username: "admin", IsLegacy: true}))
+
+			rw := httptest.NewRecorder()
+			r.ServeHTTP(rw, req)
+
+			if rw.Code != tc.status {
+				t.Fatalf("PATCH = %d, want %d: %s", rw.Code, tc.status, rw.Body.String())
+			}
+
+			if tc.status != http.StatusOK {
+				return
+			}
+
+			if (db.patch.Name != nil) != tc.wantName || (db.patch.Description != nil) != tc.wantDescrip {
+				t.Errorf("patch = %+v, want name set %v, description set %v", db.patch, tc.wantName, tc.wantDescrip)
+			}
+		})
 	}
 }

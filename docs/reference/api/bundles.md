@@ -291,6 +291,7 @@ Copies every item of a sealed bundle into target_repo and moves the bundle to to
 | `403` | Not an admin; an item is quarantined in its source (ARTIFACT_QUARANTINED); or a license policy of the target blocks it (LICENSE_BLOCKED) | `application/json`: [Error](schemas.md#error) |
 | `404` | Bundle or target repository not found | `application/json`: [Error](schemas.md#error) |
 | `409` | Bundle not sealed or changed concurrently; to_stage does not follow the current stage; an item no longer exists in its source repository (artifact_missing); the target holds different content at the same coordinates (artifact_conflict), or the target has immutable releases and the version is a release (immutable_release) | `application/json`: [Error](schemas.md#error) |
+| `422` | A target repository has a blocking license policy and the license of a promoted package file cannot be read (LICENSE_METADATA_UNREADABLE); nothing is copied | `application/json`: [Error](schemas.md#error) |
 | `507` | The target repository's storage quota would be exceeded (quota_exceeded) | `application/json`: [Error](schemas.md#error) |
 | `default` | Error | `application/json`: [Error](schemas.md#error) |
 

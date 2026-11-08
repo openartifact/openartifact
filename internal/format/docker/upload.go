@@ -73,12 +73,13 @@ type uploadSession struct {
 }
 
 // acquireUpload claims the session for this request. On failure it has written
-// the error response: 404 for an unknown session, 409 while another request
-// holds it (the client asks for the status and resumes).
-func (h *HTTPHandler) acquireUpload(w http.ResponseWriter, r *http.Request, repoID, uploadUUID string) (*uploadSession, bool) {
+// the error response: 404 for an unknown session (or one started for another
+// image), 409 while another request holds it (the client asks for the status
+// and resumes).
+func (h *HTTPHandler) acquireUpload(w http.ResponseWriter, r *http.Request, repoID, image, uploadUUID string) (*uploadSession, bool) {
 	token := uuid.NewString()
 
-	upload, err := h.db.AcquireDockerUploadLease(r.Context(), repoID, uploadUUID, token, uploadLeaseTTL)
+	upload, err := h.db.AcquireDockerUploadLease(r.Context(), repoID, image, uploadUUID, token, uploadLeaseTTL)
 	if err != nil {
 		h.log.Errorw("failed to claim upload", "uuid", uploadUUID, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
@@ -87,7 +88,7 @@ func (h *HTTPHandler) acquireUpload(w http.ResponseWriter, r *http.Request, repo
 	}
 
 	if upload == nil {
-		existing, err := h.db.GetDockerUpload(r.Context(), repoID, uploadUUID)
+		existing, err := h.db.GetDockerUpload(r.Context(), repoID, image, uploadUUID)
 
 		switch {
 		case err != nil:
@@ -335,7 +336,7 @@ func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) 
 	name := vars["name"]
 	uploadUUID := vars["uuid"]
 
-	repo, _, ok := h.target(w, r, name)
+	repo, image, ok := h.target(w, r, name)
 	if !ok {
 		return
 	}
@@ -349,7 +350,7 @@ func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) 
 	}
 	defer unlock()
 
-	sess, ok := h.acquireUpload(w, r, repo.ID, uploadUUID)
+	sess, ok := h.acquireUpload(w, r, repo.ID, image, uploadUUID)
 	if !ok {
 		return
 	}
@@ -455,7 +456,7 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 	// The session stays claimed to the end of the request: a chunk appended
 	// through another replica meanwhile could not be part of what is verified
 	// and stored, but it would overwrite stored bytes the digest covers.
-	sess, ok := h.acquireUpload(w, r, repo.ID, uploadUUID)
+	sess, ok := h.acquireUpload(w, r, repo.ID, image, uploadUUID)
 	if !ok {
 		return
 	}
@@ -627,7 +628,7 @@ func (h *HTTPHandler) handleCancelBlobUpload(w http.ResponseWriter, r *http.Requ
 	name := vars["name"]
 	uploadUUID := vars["uuid"]
 
-	repo, _, ok := h.target(w, r, name)
+	repo, image, ok := h.target(w, r, name)
 	if !ok {
 		return
 	}
@@ -638,7 +639,7 @@ func (h *HTTPHandler) handleCancelBlobUpload(w http.ResponseWriter, r *http.Requ
 	}
 	defer unlock()
 
-	upload, err := h.db.GetDockerUpload(r.Context(), repo.ID, uploadUUID)
+	upload, err := h.db.GetDockerUpload(r.Context(), repo.ID, image, uploadUUID)
 	if err != nil {
 		h.log.Errorw("failed to get upload", "uuid", uploadUUID, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")

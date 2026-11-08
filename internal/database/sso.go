@@ -112,41 +112,88 @@ func (p *SSOStore) GetSSOProviderBySlug(ctx context.Context, slug string) (*mode
 	return provider, nil
 }
 
-func (p *SSOStore) UpdateSSOProvider(ctx context.Context, provider *models.SSOProvider) error {
-	groupMappingJSON, err := json.Marshal(provider.GroupMapping)
-	if err != nil {
-		return fmt.Errorf("failed to marshal group_mapping: %w", err)
+// SSOProviderPatch names the columns an admin edit writes; nil fields leave
+// the stored value alone. A nil mapping pointer is unchanged, a pointer to a
+// nil map writes JSON null.
+type SSOProviderPatch struct {
+	DisplayName        *string
+	Enabled            *bool
+	AutoProvisionUsers *bool
+	LinkByEmail        *bool
+	OIDCConfig         json.RawMessage
+	SAMLConfig         json.RawMessage
+	ClaimMapping       json.RawMessage
+	GroupMapping       *map[string]string
+	PermissionMapping  *map[string]string
+}
+
+// marshalOptional is nil for an absent value, else its JSON encoding.
+func marshalOptional[T any](v *T, field string) (any, error) {
+	if v == nil {
+		return nil, nil //nolint:nilnil // nil is the SQL NULL that leaves the column unchanged
 	}
 
-	permissionMappingJSON, err := json.Marshal(provider.PermissionMapping)
+	b, err := json.Marshal(*v)
 	if err != nil {
-		return fmt.Errorf("failed to marshal permission_mapping: %w", err)
+		return nil, fmt.Errorf("failed to marshal %s: %w", field, err)
 	}
 
-	_, err = p.db.ExecContext(
+	return b, nil
+}
+
+// rawOptional is nil for an absent document, so the column keeps its value.
+func rawOptional(raw json.RawMessage) any {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	return []byte(raw)
+}
+
+// PatchSSOProvider writes only the columns in patch, so a concurrent edit of
+// other columns is not reverted by a stale snapshot. It returns the updated
+// row, or nil when the provider does not exist.
+func (p *SSOStore) PatchSSOProvider(ctx context.Context, id string, patch SSOProviderPatch) (*models.SSOProvider, error) {
+	groupMapping, err := marshalOptional(patch.GroupMapping, "group_mapping")
+	if err != nil {
+		return nil, err
+	}
+
+	permissionMapping, err := marshalOptional(patch.PermissionMapping, "permission_mapping")
+	if err != nil {
+		return nil, err
+	}
+
+	row := p.db.QueryRowContext(
 		ctx,
-		`UPDATE auth_sso_providers SET slug=$2, kind=$3, display_name=$4, enabled=$5, oidc_config=$6::jsonb, saml_config=$7::jsonb,
-			claim_mapping=$8::jsonb, group_mapping=$9::jsonb, permission_mapping=$10::jsonb, auto_provision_users=$11,
-			link_by_email=$12
-		WHERE id=$1`,
-		provider.ID,
-		provider.Slug,
-		provider.Kind,
-		provider.DisplayName,
-		provider.Enabled,
-		provider.OIDCConfig,
-		provider.SAMLConfig,
-		provider.ClaimMapping,
-		groupMappingJSON,
-		permissionMappingJSON,
-		provider.AutoProvisionUsers,
-		provider.LinkByEmail,
+		`UPDATE auth_sso_providers SET
+			display_name = COALESCE($2, display_name),
+			enabled = COALESCE($3, enabled),
+			oidc_config = COALESCE($4::jsonb, oidc_config),
+			saml_config = COALESCE($5::jsonb, saml_config),
+			claim_mapping = COALESCE($6::jsonb, claim_mapping),
+			group_mapping = COALESCE($7::jsonb, group_mapping),
+			permission_mapping = COALESCE($8::jsonb, permission_mapping),
+			auto_provision_users = COALESCE($9, auto_provision_users),
+			link_by_email = COALESCE($10, link_by_email)
+		WHERE id = $1
+		RETURNING id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping,
+			auto_provision_users, link_by_email, created_at, updated_at`,
+		id,
+		patch.DisplayName,
+		patch.Enabled,
+		rawOptional(patch.OIDCConfig),
+		rawOptional(patch.SAMLConfig),
+		rawOptional(patch.ClaimMapping),
+		groupMapping,
+		permissionMapping,
+		patch.AutoProvisionUsers,
+		patch.LinkByEmail,
 	)
-	if err != nil {
-		return fmt.Errorf("failed to update sso provider: %w", err)
-	}
 
-	return nil
+	provider, err := scanSSOProvider(row)
+
+	return orNotFound(provider, err, "update sso provider")
 }
 
 func (p *SSOStore) DeleteSSOProvider(ctx context.Context, id string) error {

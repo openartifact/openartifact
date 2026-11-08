@@ -29,5 +29,7 @@ func ansibleStorage() storage.Storage {
 			Info: []storage.InfoField{entry("namespace", fromP("namespace")), entry("requires_ansible", fromV("requires_ansible"))},
 			Deps: fromV("dependencies"), Decoder: "ansible-map",
 		},
+		// The collection_info license (a string or a list) the publish was judged on.
+		Promotion: storage.Promotion{Licenses: licenseList("sv.metadata->'metadata'->'license'")},
 	}
 }

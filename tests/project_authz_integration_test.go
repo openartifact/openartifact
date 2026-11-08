@@ -222,8 +222,8 @@ func TestProjectAuthz_RemovedMemberStaleWithoutInvalidation(t *testing.T) {
 	f.expect(t, "raw delete without the invalidation hook (cached)", f.alice, "r")
 
 	// Any hooked project write drops every cached lookup.
-	if err := f.pg.UpdateProject(ctx, f.project); err != nil {
-		t.Fatalf("UpdateProject: %v", err)
+	if _, err := f.pg.PatchProject(ctx, f.project.ID, database.ProjectPatch{}); err != nil {
+		t.Fatalf("PatchProject: %v", err)
 	}
 
 	f.expect(t, "after a hooked write", f.alice, "")

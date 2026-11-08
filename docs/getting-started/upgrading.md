@@ -131,7 +131,7 @@ Newest first. Each version starts with **What you must do**; the text below it l
 
 **What you must do**
 
-- Nothing is required. Migration `015` builds indexes without locking writes (`CREATE INDEX CONCURRENTLY`), which can take a while on a large `proxy_cache` or `package_versions` table. Migration `016` merges global groups that share a name into the oldest one (members, project grants and permission assignments move to it) and then makes global group names unique.
+- Nothing is required. Migration `015` builds indexes without locking writes (`CREATE INDEX CONCURRENTLY`), which can take a while on a large `proxy_cache` or `package_versions` table. Migration `016` merges global groups that share a name into the oldest one (members, project grants and permission assignments move to it) and then makes global group names unique. Migration `017` adds the image to Docker upload sessions; a layer push that was in progress during the upgrade is restarted by the client.
 
 **Changes.**
 
@@ -150,6 +150,14 @@ Newest first. Each version starts with **What you must do**; the text below it l
 - **Cleanup** triggered during shutdown answers `503`.
 - **`oa` CLI.** Downloaded files are created `0600` (an overwritten file keeps its mode); Ctrl-C cancels requests and removes partial downloads; logging in with a password over plain `http://` prints a warning; a blank token is refused; the saved token is only sent to the server it was saved for. See [CLI](../integrations/cli.md).
 - **Groups of Helm, Conda, Ansible, Maven and OCI repositories** do not cache a merged answer built while a member failed.
+- **Docker uploads.** A blob upload session belongs to the image it was started for; continuing it through another image answers `404 BLOB_UPLOAD_UNKNOWN`. See [Docker](../formats/docker.md).
+- **Promotion** checks the target's license policy for conda, ansible, NuGet, Helm, Maven, Ivy, sbt and npm as well. Under a blocking policy, a package file whose license cannot be read stops the promotion with `422 LICENSE_METADATA_UNREADABLE`. License scans now read Helm charts (`artifacthub.io/license`). See [Licenses](../security/licenses.md).
+- **License metadata.** Cargo crates are read from the `[project]` table when `[package]` declares no license, and a non-string `license` is unreadable instead of clean. PyPI eggs and Windows installers match version rules and minimum-age by their release version.
+- **Admin edits** of projects, webhooks, groups, SSO providers, permission targets and promotion pipelines write only the fields sent, so they no longer undo a concurrent edit of other fields.
+- **Storage.** GCS `hmacKey`/`hmacSecret` sent in camelCase are encrypted and hidden from `GET /api/v1/admin/storage` like the snake_case names. If you configured them that way, re-save the backend so the stored values are encrypted.
+- **Secret scanning** keeps no token tail in a finding's line hint, detects encrypted and PGP private keys and fine-grained GitHub tokens, and caps the combined findings of a scan.
+- **`/ready`** caches the S3 bucket check for 2 seconds with a 3 second timeout. A shutdown that runs out of `server.shutdownTimeout` now closes the remaining connections.
+- **Tiering.** A blob delete whose cold-tier copy fails to delete is retried instead of leaving the bytes behind.
 
 ### 0.19.2
 

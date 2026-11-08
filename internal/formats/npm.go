@@ -50,6 +50,21 @@ func npmFormat() plugin.Format {
 const npmTouchPackument = `UPDATE packages SET updated_at = now()
 	 WHERE id = (SELECT v.package_id FROM package_files f JOIN package_versions v ON v.id = f.version_id WHERE f.id = $1::uuid)`
 
+// npmLicenses is the promotion Licenses expression of npm: what
+// licensemeta.ParsePackageJSON reads from the package.json kept as
+// manifest_json. The "license" field is a string or the legacy {"type": ...}
+// object, and only when it names nothing does the legacy "licenses" array
+// count, its elements being strings or objects the same way.
+const npmLicenses = `COALESCE(
+	  NULLIF(ARRAY(SELECT btrim(l, E' \t\r\n') FROM (SELECT CASE jsonb_typeof(sv.metadata->'manifest_json'->'license')
+	      WHEN 'string' THEN sv.metadata->'manifest_json'->>'license'
+	      WHEN 'object' THEN sv.metadata->'manifest_json'->'license'->>'type' END AS l) one
+	    WHERE btrim(l, E' \t\r\n') <> ''), '{}'::text[]),
+	  ARRAY(SELECT btrim(l, E' \t\r\n') FROM (SELECT CASE jsonb_typeof(x) WHEN 'string' THEN x #>> '{}' WHEN 'object' THEN x->>'type' END AS l
+	      FROM jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata->'manifest_json'->'licenses') = 'array'
+	                                     THEN sv.metadata->'manifest_json'->'licenses' ELSE '[]'::jsonb END) x) many
+	    WHERE btrim(l, E' \t\r\n') <> ''))`
+
 // npmStorage describes how the generic engines treat npm rows: the dist-tags are
 // package_tags, the packument is regenerated from the rows, and a version a
 // dist-tag points at is never removed by retention.
@@ -84,8 +99,9 @@ func npmStorage() storage.Storage {
 			Deps: fromV("manifest_json"), Decoder: "npm-manifest",
 		},
 		Promotion: storage.Promotion{
-			Tags:  true,
-			Regen: storage.RegenNPM,
+			Tags:     true,
+			Regen:    storage.RegenNPM,
+			Licenses: npmLicenses,
 			// The latest_version and the stale flag are worker output of the
 			// destination, not state to copy.
 			PackageAttrs: "sp.attrs - 'latest_version' - 'packument_stale'",

@@ -61,19 +61,31 @@ func (p *UserGroupStore) getGroup(ctx context.Context, column, value string) (*m
 	return orNotFound(g, err, "get group by "+column)
 }
 
-func (p *UserGroupStore) UpdateGroup(ctx context.Context, group *models.Group) error {
+// GroupPatch names the columns an admin edit writes; nil fields leave the
+// stored value alone.
+type GroupPatch struct {
+	Name        *string
+	Description *string
+}
+
+// PatchGroup writes only the columns in patch, so a concurrent edit of the
+// other column is not reverted by a stale snapshot. It returns the updated
+// row, or nil when the group does not exist.
+func (p *UserGroupStore) PatchGroup(ctx context.Context, id string, patch GroupPatch) (*models.Group, error) {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
-	_, err := p.db.ExecContext(ctx,
-		`UPDATE auth_groups SET name=$2, description=$3 WHERE id=$1`,
-		group.ID, group.Name, group.Description,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to update group: %w", err)
-	}
+	g, err := scanGroup(p.db.QueryRowContext(ctx,
+		`UPDATE auth_groups g SET
+			name = COALESCE($2, g.name),
+			description = COALESCE($3, g.description),
+			updated_at = now()
+		WHERE g.id = $1
+		RETURNING `+groupColumns,
+		id, patch.Name, patch.Description,
+	))
 
-	return nil
+	return orNotFound(g, err, "update group")
 }
 
 func (p *UserGroupStore) DeleteGroup(ctx context.Context, id string) error {

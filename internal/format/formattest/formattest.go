@@ -284,7 +284,7 @@ type formatStore interface {
 	DeleteIvyArtifact(ctx context.Context, id string) error
 	DeleteNPMDistTag(ctx context.Context, packageID string, tag string) error
 	DeleteNPMPackage(ctx context.Context, packageID string) error
-	DeleteNPMVersion(ctx context.Context, packageID string, version string) error
+	DeleteNPMVersions(ctx context.Context, packageID string, versions []string) error
 	DeleteNixPath(ctx context.Context, repoID string, id string) error
 	DeleteNuGetPackage(ctx context.Context, repoID string, packageID string, version string) error
 	DeletePacmanPackage(ctx context.Context, repoID string, id string) error

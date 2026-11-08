@@ -56,6 +56,7 @@ type HTTPStore interface {
 	AcquireDockerUploadLease(
 		ctx context.Context,
 		repositoryID string,
+		image string,
 		uploadUUID string,
 		token string,
 		ttl time.Duration,
@@ -85,7 +86,7 @@ type HTTPStore interface {
 	GetDockerBlob(ctx context.Context, repoID string, digest string) (*models.DockerBlob, error)
 	GetDockerManifest(ctx context.Context, repoID string, image string, digest string) (*models.DockerManifest, error)
 	GetDockerTag(ctx context.Context, repoID string, image string, name string) (*models.DockerTag, error)
-	GetDockerUpload(ctx context.Context, repositoryID string, uploadUUID string) (*models.DockerUpload, error)
+	GetDockerUpload(ctx context.Context, repositoryID string, image string, uploadUUID string) (*models.DockerUpload, error)
 	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
 	ListDockerManifestsBySubject(ctx context.Context, repoID string, image string, subjectDigest string) ([]*models.DockerManifest, error)
@@ -1265,6 +1266,7 @@ func (h *HTTPHandler) handleInitiateBlobUpload(w http.ResponseWriter, r *http.Re
 	upload := &models.DockerUpload{
 		ID:           uuid.New().String(),
 		RepositoryID: repo.ID,
+		Image:        image,
 		UploadUUID:   uploadUUID,
 		Offset:       0,
 		CreatedAt:    time.Now(),
@@ -1603,12 +1605,12 @@ func (h *HTTPHandler) handleGetUploadStatus(w http.ResponseWriter, r *http.Reque
 	name := vars["name"]
 	uploadUUID := vars["uuid"]
 
-	repo, _, ok := h.target(w, r, name)
+	repo, image, ok := h.target(w, r, name)
 	if !ok {
 		return
 	}
 
-	upload, err := h.db.GetDockerUpload(r.Context(), repo.ID, uploadUUID)
+	upload, err := h.db.GetDockerUpload(r.Context(), repo.ID, image, uploadUUID)
 	if err != nil {
 		h.log.Errorw("failed to get upload", "uuid", uploadUUID, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")

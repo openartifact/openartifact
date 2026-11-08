@@ -17,7 +17,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       data-testid="scanner-summary"
     >
       <ExclamationTriangleIcon v-if="readyCount === 0" class="h-4 w-4 shrink-0" aria-hidden="true" />
-      {{ readyCount > 0 ? tp('sx.scanners.summary.ready', { ready: String(readyCount), total: String(health.scanners.length) }) : t('sx.scanners.summary.none') }}
+      {{ readyCount > 0 ? tp('sx.scanners.summary.ready', { ready: formatNumber(readyCount), total: formatNumber(health.scanners.length) }) : t('sx.scanners.summary.none') }}
     </p>
 
     <ListTable
@@ -64,15 +64,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
         <div>
           <dt class="text-muted">{{ t('sx.scanners.pending') }}</dt>
-          <dd class="tabular-nums text-foreground">{{ health.scans_pending }}</dd>
+          <dd class="tabular-nums text-foreground">{{ formatNumber(health.scans_pending) }}</dd>
         </div>
         <div>
           <dt class="text-muted">{{ t('sx.scanners.failed') }}</dt>
-          <dd class="tabular-nums" :class="health.scans_failed_24h > 0 ? 'font-medium text-danger' : 'text-foreground'">{{ health.scans_failed_24h }}</dd>
+          <dd class="tabular-nums" :class="health.scans_failed_24h > 0 ? 'font-medium text-danger' : 'text-foreground'">{{ formatNumber(health.scans_failed_24h) }}</dd>
         </div>
         <div>
           <dt class="text-muted">{{ t('sx.scanners.unscanned') }}</dt>
-          <dd class="tabular-nums" :class="health.unscanned_repositories > 0 ? 'font-medium text-warning' : 'text-foreground'">{{ health.unscanned_repositories }}</dd>
+          <dd class="tabular-nums" :class="health.unscanned_repositories > 0 ? 'font-medium text-warning' : 'text-foreground'">{{ formatNumber(health.unscanned_repositories) }}</dd>
         </div>
       </dl>
     </section>
@@ -100,6 +100,7 @@ import type { SecurityHealth } from '../../../api/security'
 import { useSecurityHealth } from '../../../composables/useSecurityHealth'
 import { safeDocsUrl, vulnScannerLabel } from '../../../lib/vulnScanners'
 import { t, tp } from '../../../i18n'
+import { formatNumber } from '../../../lib/intl'
 
 type Scanner = SecurityHealth['scanners'][number]
 

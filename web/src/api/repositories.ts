@@ -80,14 +80,15 @@ export function listRepositories(params: RepositoryListParams = {}): Promise<Lis
   return request<ListRepositoriesResult>(`/api/v1/repositories${query}`)
 }
 
-/** Walks the paginated list endpoint (page size is clamped server-side). */
-export async function listAllRepositories(): Promise<RepositoryListItem[]> {
+/** Walks the paginated list endpoint (page size is clamped server-side); `filter` narrows by type and format. */
+export async function listAllRepositories(filter: Pick<RepositoryListParams, 'type' | 'format'> = {}): Promise<RepositoryListItem[]> {
   const all: RepositoryListItem[] = []
+  const limit = 100
   for (let page = 1; page <= 50; page++) {
-    const res = await listRepositories({ page, limit: 100 })
+    const res = await listRepositories({ ...filter, page, limit })
     const batch = res.repositories || []
     all.push(...batch)
-    if (batch.length === 0 || all.length >= res.total) break
+    if (batch.length < limit || all.length >= res.total) break
   }
   return all
 }

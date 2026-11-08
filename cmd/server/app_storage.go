@@ -41,6 +41,9 @@ type storageStack struct {
 
 	// health is the cached probe behind the public /health storage status.
 	health *storage.HealthProbe
+	// ready is the cached probe behind /ready: the bucket of an S3-compatible
+	// backend, nil for the others (nothing to wait for).
+	ready *storage.HealthProbe
 }
 
 const (
@@ -49,6 +52,9 @@ const (
 	healthProbeTTL = 10 * time.Second
 	// healthProbeTimeout bounds one storage probe.
 	healthProbeTimeout = 3 * time.Second
+	// readyProbeTTL is shorter: a load balancer acts on /ready, but a flood of
+	// unauthenticated requests still costs one bucket round trip per TTL.
+	readyProbeTTL = 2 * time.Second
 )
 
 // setupStorage opens the configured backend, layers tiers and replication on
@@ -76,6 +82,10 @@ func (a *app) setupStorage() error {
 
 	a.store.blobs = storage.NewMetricsBlobStore(top, a.reg)
 	a.store.health = storage.NewHealthProbe(a.store.blobs, healthProbeTTL, healthProbeTimeout)
+
+	if s3store, ok := raw.(*storage.S3BlobStore); ok {
+		a.store.ready = storage.NewHealthProbe(s3store, readyProbeTTL, healthProbeTimeout)
+	}
 
 	a.log.Infow("Storage initialized", "type", a.cfg.Storage.Type, "path", a.cfg.Storage.Path)
 

@@ -58,6 +58,11 @@ var (
 	ErrQuarantined = errors.New("promote: artifact is quarantined in the source repository")
 	// ErrConflict: the target repository holds different content at the same coordinates.
 	ErrConflict = errors.New("promote: the target repository holds different content at the same coordinates")
+	// ErrLicenseUnreadable: the license of an item cannot be read from its package file, and a
+	// blocking license policy of the target forbids judging it on what clients declared.
+	ErrLicenseUnreadable = errors.New("promote: the license of the artifact cannot be read from its package file")
+	// ErrNoLicenseSource: the engine has no LicenseSource to read the license of a format that keeps none in its rows.
+	ErrNoLicenseSource = errors.New("promote: no license source configured")
 	// ErrEmpty: the bundle has no items.
 	ErrEmpty = errors.New("promote: bundle has no items")
 )
@@ -141,6 +146,10 @@ type Result struct {
 	// Licenses are the licenses the copied content declares, checked against
 	// the destination's license policies.
 	Licenses []string
+	// LicenseFiles are the ids of the source package files whose declared
+	// license the copied content is judged on, for a format that keeps no
+	// license in its rows: the engine reads them through its LicenseSource.
+	LicenseFiles []string
 	// QuarantineKeys are the identifiers (row id, paths) under which the
 	// source content may have been quarantined.
 	QuarantineKeys []string

@@ -149,14 +149,24 @@ func (d *regFakeDB) CreateDockerUpload(_ context.Context, u *models.DockerUpload
 	return nil
 }
 
-func (d *regFakeDB) GetDockerUpload(_ context.Context, repoID, uploadUUID string) (*models.DockerUpload, error) {
-	return d.uploads[scoped(repoID, uploadUUID)], nil
+// uploadFor is the session as the store answers it: only for the image it was started for.
+func (d *regFakeDB) uploadFor(repoID, image, uploadUUID string) *models.DockerUpload {
+	u := d.uploads[scoped(repoID, uploadUUID)]
+	if u == nil || u.Image != image {
+		return nil
+	}
+
+	return u
+}
+
+func (d *regFakeDB) GetDockerUpload(_ context.Context, repoID, image, uploadUUID string) (*models.DockerUpload, error) {
+	return d.uploadFor(repoID, image, uploadUUID), nil
 }
 
 func (d *regFakeDB) AcquireDockerUploadLease(
-	_ context.Context, repoID, uploadUUID, token string, ttl time.Duration,
+	_ context.Context, repoID, image, uploadUUID, token string, ttl time.Duration,
 ) (*models.DockerUpload, error) {
-	u := d.uploads[scoped(repoID, uploadUUID)]
+	u := d.uploadFor(repoID, image, uploadUUID)
 	if u == nil || !d.acquire(scoped(repoID, uploadUUID), token, ttl) {
 		return nil, nil
 	}

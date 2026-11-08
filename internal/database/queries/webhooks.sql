@@ -7,10 +7,23 @@ RETURNING id, created_at, updated_at;
 SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, payload_format, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
 FROM webhooks WHERE id = $1;
 
--- name: UpdateWebhook :exec
-UPDATE webhooks
-SET name = $2, url = $3, secret_enc = $4, enabled = $5, events = $6, content_type = $7, payload_format = $8, ssl_verify = $9, max_retries = $10, timeout_seconds = $11, updated_at = now()
-WHERE id = $1;
+-- name: PatchWebhook :one
+-- Column-wise edit: a NULL argument leaves the stored value alone; the secret is only written when set_secret is true.
+UPDATE webhooks SET
+       name = COALESCE(sqlc.narg(name), name),
+       url = COALESCE(sqlc.narg(url), url),
+       secret_enc = CASE WHEN sqlc.arg(set_secret)::bool THEN sqlc.narg(secret_enc) ELSE secret_enc END,
+       enabled = COALESCE(sqlc.narg(enabled), enabled),
+       events = COALESCE(sqlc.narg(events)::text[], events),
+       content_type = COALESCE(sqlc.narg(content_type), content_type),
+       payload_format = COALESCE(sqlc.narg(payload_format), payload_format),
+       ssl_verify = COALESCE(sqlc.narg(ssl_verify), ssl_verify),
+       max_retries = COALESCE(sqlc.narg(max_retries)::int, max_retries),
+       timeout_seconds = COALESCE(sqlc.narg(timeout_seconds)::int, timeout_seconds),
+       updated_at = now()
+WHERE id = sqlc.arg(id)
+RETURNING id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled,
+          COALESCE(events, '{}') AS events, content_type, payload_format, ssl_verify, max_retries, timeout_seconds, created_at, updated_at;
 
 -- name: DeleteWebhook :exec
 DELETE FROM webhooks WHERE id = $1;

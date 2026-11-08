@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/netutil"
@@ -50,9 +51,57 @@ func (db *webhooksMockDB) GetWebhook(_ context.Context, id string) (*models.Webh
 	return nil, nil
 }
 
-func (db *webhooksMockDB) UpdateWebhook(_ context.Context, wh *models.Webhook) error {
-	db.stored = wh
-	return nil
+// PatchWebhook mirrors the store: only the columns named in patch change.
+func (db *webhooksMockDB) PatchWebhook(_ context.Context, id string, patch database.WebhookPatch) (*models.Webhook, error) {
+	if db.stored == nil || db.stored.ID != id {
+		return nil, nil
+	}
+
+	wh := *db.stored
+
+	if patch.Name != nil {
+		wh.Name = *patch.Name
+	}
+
+	if patch.URL != nil {
+		wh.URL = *patch.URL
+	}
+
+	if patch.SetSecret {
+		wh.SecretEnc = patch.SecretEnc
+	}
+
+	if patch.Enabled != nil {
+		wh.Enabled = *patch.Enabled
+	}
+
+	if patch.Events != nil {
+		wh.Events = patch.Events
+	}
+
+	if patch.ContentType != nil {
+		wh.ContentType = *patch.ContentType
+	}
+
+	if patch.PayloadFormat != nil {
+		wh.PayloadFormat = *patch.PayloadFormat
+	}
+
+	if patch.SSLVerify != nil {
+		wh.SSLVerify = *patch.SSLVerify
+	}
+
+	if patch.MaxRetries != nil {
+		wh.MaxRetries = *patch.MaxRetries
+	}
+
+	if patch.TimeoutSeconds != nil {
+		wh.TimeoutSeconds = *patch.TimeoutSeconds
+	}
+
+	db.stored = &wh
+
+	return &wh, nil
 }
 
 func (db *webhooksMockDB) CreateWebhookDelivery(_ context.Context, d *models.WebhookDelivery) error {

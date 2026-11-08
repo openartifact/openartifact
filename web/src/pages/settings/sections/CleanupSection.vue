@@ -55,11 +55,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <span class="text-muted">
           <template v-for="r in [row as CleanupOverviewRow]" :key="r.id">
             <span v-if="r.keep_count != null">
-              {{ t('cleanup.keepLast') }} <span class="font-mono font-semibold text-foreground">{{ r.keep_count }}</span>
+              {{ t('cleanup.keepLast') }} <span class="font-mono font-semibold text-foreground">{{ formatNumber(r.keep_count) }}</span>
             </span>
             <span v-if="r.keep_count != null && r.keep_days != null"> · </span>
             <span v-if="r.keep_days != null">
-              {{ t('cleanup.keepFor') }} <span class="font-mono font-semibold text-foreground">{{ r.keep_days }}</span> {{ t('cleanup.days') }}
+              {{ t('cleanup.keepFor') }} <span class="font-mono font-semibold text-foreground">{{ formatNumber(r.keep_days) }}</span> {{ t('cleanup.days') }}
             </span>
             <span v-if="r.keep_count == null && r.keep_days == null">{{ t('sx.cleanup.noRule') }}</span>
           </template>
@@ -114,7 +114,7 @@ import { loadCleanupOverview, type CleanupOverviewRow } from '../../../lib/clean
 import { formatDateTime, timeAgo } from '../../../lib/datetime'
 import { useToastStore } from '../../../stores/toast'
 import { t, tp } from '../../../i18n'
-import { compareText } from '../../../lib/intl'
+import { compareText, formatNumber } from '../../../lib/intl'
 
 const STATUSES = ['all', 'enabled', 'disabled'] as const
 type CleanupStatus = (typeof STATUSES)[number]
@@ -156,8 +156,8 @@ const columns: ListColumn[] = [
 ]
 
 const rowKey = (row: CleanupOverviewRow): string => `${row.repository}:${row.id}`
-/** Policies are edited on the repository's Cleanup tab. */
-const repoPath = (row: CleanupOverviewRow): string => `/repos/${encodeURIComponent(row.repository)}?tab=cleanup`
+/** Policies are edited in the Cleanup section of the repository's Settings tab. */
+const repoPath = (row: CleanupOverviewRow): string => `/repos/${encodeURIComponent(row.repository)}?tab=settings`
 
 function rowActions(row: CleanupOverviewRow): RowAction[] {
   return [

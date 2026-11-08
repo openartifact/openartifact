@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -31,11 +32,20 @@ type EngineStore interface {
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
 }
 
+// LicenseSource reads the licenses a stored package file of repoID declares
+// (artifactID is the package_files id), for the formats that keep none in their
+// rows. A file that cannot be read safely, or at all while a blocking license
+// policy applies, fails with an error wrapping ErrLicenseUnreadable.
+type LicenseSource interface {
+	Licenses(ctx context.Context, repoID, artifactID string) ([]string, error)
+}
+
 // Engine promotes a sealed bundle into a repository.
 type Engine struct {
-	db    EngineStore
-	log   *logger.Logger
-	regen *lifecycle.Workers
+	db       EngineStore
+	log      *logger.Logger
+	regen    *lifecycle.Workers
+	licenses LicenseSource
 }
 
 // dockerFormat is the one format with dedicated tables and its own promoter;
@@ -43,9 +53,11 @@ type Engine struct {
 const dockerFormat = "docker"
 
 // NewEngine returns an Engine. regen may be nil (generated metadata is then
-// only refreshed by the periodic sweep).
-func NewEngine(db EngineStore, log *logger.Logger, regen *lifecycle.Workers) *Engine {
-	return &Engine{db: db, log: log, regen: regen}
+// only refreshed by the periodic sweep). licenses may be nil: promoting a format
+// that keeps its license in the package file alone then fails with
+// ErrNoLicenseSource rather than skip the license policy.
+func NewEngine(db EngineStore, log *logger.Logger, regen *lifecycle.Workers, licenses LicenseSource) *Engine {
+	return &Engine{db: db, log: log, regen: regen, licenses: licenses}
 }
 
 // promoteItem copies the content req selects with the promoter of format.
@@ -298,16 +310,46 @@ func (e *Engine) checkPolicies(ctx context.Context, src, dst *models.Repository,
 		return ErrQuarantined
 	}
 
-	violations, err := licensepolicy.Evaluate(ctx, e.db, e.log, dst.ID, res.Licenses)
+	licenses, err := e.declaredLicenses(ctx, src, res)
+	if err != nil {
+		return err
+	}
+
+	violations, err := licensepolicy.Evaluate(ctx, e.db, e.log, dst.ID, licenses)
 	if err != nil {
 		return fmt.Errorf("evaluate license policies: %w", err)
 	}
 
 	if blocked := licensepolicy.Blocked(violations); len(blocked) > 0 {
-		return &LicenseBlockedError{Licenses: res.Licenses, Violations: blocked}
+		return &LicenseBlockedError{Licenses: licenses, Violations: blocked}
 	}
 
 	return nil
+}
+
+// declaredLicenses is what the promoted content declares: the licenses its rows
+// hold plus those its package files declare, read through the LicenseSource.
+func (e *Engine) declaredLicenses(ctx context.Context, src *models.Repository, res *Result) ([]string, error) {
+	if len(res.LicenseFiles) == 0 {
+		return res.Licenses, nil
+	}
+
+	if e.licenses == nil {
+		return nil, ErrNoLicenseSource
+	}
+
+	licenses := slices.Clone(res.Licenses)
+
+	for _, id := range res.LicenseFiles {
+		declared, err := e.licenses.Licenses(ctx, src.ID, id)
+		if err != nil {
+			return nil, fmt.Errorf("read the license of file %s: %w", id, err)
+		}
+
+		licenses = append(licenses, declared...)
+	}
+
+	return licenses, nil
 }
 
 // charge reserves the promotion's usage in the target's quota.

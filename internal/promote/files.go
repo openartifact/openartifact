@@ -13,6 +13,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/itempath"
+	"github.com/openartifact/openartifact/internal/licensemeta"
 )
 
 // rolePrimary is the package_files.role of the files that count as artifacts
@@ -129,7 +130,60 @@ func (fp *filePromoter) promote(ctx context.Context, tx Tx, req Request) (*Resul
 		return nil, err
 	}
 
+	if fp.p.Licenses == "" {
+		if res.LicenseFiles, err = fp.licenseFiles(ctx, tx, req, toCopy); err != nil {
+			return nil, err
+		}
+	}
+
 	return res, nil
+}
+
+// licenseFiles returns the ids of the source files whose package file declares
+// the license of the versions toCopy belongs to, for a format that keeps no
+// license in its rows: every live file of those versions that licensemeta
+// reads, not just the copied ones (a maven jar is judged through the .pom
+// beside it).
+func (fp *filePromoter) licenseFiles(ctx context.Context, tx Tx, req Request, toCopy []srcFile) ([]string, error) {
+	versionIDs := make([]string, 0, len(toCopy))
+	seen := map[string]bool{}
+
+	for _, f := range toCopy {
+		if !seen[f.versionID] {
+			seen[f.versionID] = true
+			versionIDs = append(versionIDs, f.versionID)
+		}
+	}
+
+	rows, err := tx.QueryContext(ctx,
+		`SELECT id::text, filename FROM package_files
+		  WHERE repository_id = $1::uuid AND version_id = ANY($2::uuid[]) AND deleted_at IS NULL
+		  ORDER BY created_at, id`, req.Src.ID, uuidList(versionIDs))
+	if err != nil {
+		return nil, fmt.Errorf("select %s files to read licenses from: %w", fp.format, err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	var ids []string
+
+	for rows.Next() {
+		var id, filename string
+
+		if err := rows.Scan(&id, &filename); err != nil {
+			return nil, fmt.Errorf("scan %s file to read licenses from: %w", fp.format, err)
+		}
+
+		if licensemeta.Expected(fp.format, filename) {
+			ids = append(ids, id)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read %s files to read licenses from: %w", fp.format, err)
+	}
+
+	return ids, nil
 }
 
 // sourceFileSelect is the SELECT of srcFile columns over the aliases s (the

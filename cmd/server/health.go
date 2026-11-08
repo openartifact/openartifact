@@ -12,7 +12,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -68,13 +67,10 @@ func (a *app) operationalAuth() func(http.Handler) http.Handler {
 }
 
 // storageHealth is the readiness check of the object store: it only waits for
-// an S3-compatible one, and probes it on every call.
+// an S3-compatible one. /ready is unauthenticated, so the probe is cached and
+// time-limited like the one of /health.
 func (a *app) storageHealth(r *http.Request) error {
-	if s3store, ok := a.store.raw.(*storage.S3BlobStore); ok {
-		return s3store.HealthCheck(r.Context())
-	}
-
-	return nil
+	return a.store.ready.Check(r.Context())
 }
 
 // storageComponent is the storage entry of /health: the cached, time-limited
@@ -151,6 +147,7 @@ func (a *app) handleReady(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := a.storageHealth(r); err != nil {
+		a.log.Errorw("ready: storage check failed", "error", err)
 		writeJSONBody(w, http.StatusServiceUnavailable, `{"status":"not ready","reason":"storage unavailable"}`)
 		return
 	}
