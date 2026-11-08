@@ -51,6 +51,32 @@ func (p *RepositoryStore) GetRepositoryByID(ctx context.Context, id string) (*mo
 	return p.getRepositoryWhere(ctx, "id", "id = $1", id)
 }
 
+// GetRepositoriesByIDs returns the live repositories among ids, keyed by id;
+// ids that do not exist (or are in the trash) are absent from the map.
+func (p *RepositoryStore) GetRepositoriesByIDs(ctx context.Context, ids []string) (map[string]*models.Repository, error) {
+	if len(ids) == 0 {
+		return map[string]*models.Repository{}, nil
+	}
+
+	rows, err := p.db.QueryContext(ctx,
+		`SELECT `+repoColumns+` FROM repositories WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get repositories by id: %w", err)
+	}
+
+	repos, err := collectRows(rows, "failed to scan repository", "failed to iterate repositories", scanRepository)
+	if err != nil {
+		return nil, err
+	}
+
+	byID := make(map[string]*models.Repository, len(repos))
+	for _, r := range repos {
+		byID[r.ID] = r
+	}
+
+	return byID, nil
+}
+
 func (p *RepositoryStore) ListRepositories(ctx context.Context, page, limit int, formatFilter string) ([]*models.Repository, error) {
 	offset := (page - 1) * limit
 
@@ -106,7 +132,7 @@ func (p *RepositoryStore) UpdateRepository(ctx context.Context, repo *models.Rep
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
-	return updateRepositoryRow(ctx, p.db, repo)
+	return updateRepositoryRow(ctx, p.db, repo, true)
 }
 
 // repoExecer is the part of *sql.DB and *sql.Tx the repository update needs.
@@ -119,7 +145,9 @@ type repoExecer interface {
 // the repository's proxy cache rows (cached metadata and negative entries
 // included): they describe the old upstream, and a 404 or a document it served
 // must not outlive the change. Cached blobs are reclaimed by the blob cleanup.
-func updateRepositoryRow(ctx context.Context, db repoExecer, repo *models.Repository) error {
+// project_id is written only when writeProject is set: a settings update from a
+// stale snapshot must not revert a concurrent project transfer.
+func updateRepositoryRow(ctx context.Context, db repoExecer, repo *models.Repository, writeProject bool) error {
 	_, err := db.ExecContext(
 		ctx,
 		`WITH old AS (
@@ -128,7 +156,7 @@ func updateRepositoryRow(ctx context.Context, db repoExecer, repo *models.Reposi
 		), upd AS (
 		UPDATE repositories SET description = $1, public = $2, repo_type = $3, upstream_url = NULLIF($4,''), upstream_username =
 			NULLIF($5,''), upstream_password_enc = NULLIF($6,''), cache_ttl_seconds = $7, negative_cache_ttl_seconds = $8,
-			max_stale_seconds = $9, blocked = $10, project_id = $11, trash_retention_days = $12,
+			max_stale_seconds = $9, blocked = $10, project_id = CASE WHEN $20::boolean THEN $11 ELSE project_id END, trash_retention_days = $12,
 			immutable_releases = $13, presign_downloads = $15, merge_proxy_versions = $16, sign_packages = $17, updated_at = now(),
 			min_age_hours = $18, curation_mode = $19 WHERE id = $14 AND deleted_at IS NULL
 		) DELETE FROM proxy_cache_entries
@@ -155,6 +183,7 @@ func updateRepositoryRow(ctx context.Context, db repoExecer, repo *models.Reposi
 		repo.SignPackages,
 		repo.MinAgeHours,
 		curationModeOrOff(repo.CurationMode),
+		writeProject,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update repository: %w", err)

@@ -80,12 +80,7 @@ func (h *Handler) serveMavenMetadata(
 		what:        "maven metadata",
 		contentType: contentType,
 		merge: func(c *collection) ([]byte, error) {
-			docs := make([][]byte, len(c.docs))
-			for i, d := range c.docs {
-				docs[i] = d.body
-			}
-
-			body, err := mergeDocuments(docs)
+			body, err := mergeDocuments(c)
 			if err != nil || suffix == "" {
 				return body, err
 			}
@@ -101,23 +96,25 @@ func (h *Handler) serveMavenMetadata(
 }
 
 // mergeDocuments merges the members' metadata. One document is returned
-// verbatim; unparsable documents are an error only when they leave nothing to
-// merge.
-func mergeDocuments(docs [][]byte) ([]byte, error) {
-	if len(docs) == 1 {
-		return docs[0], nil
+// verbatim; an unparsable document is recorded as a failed member (the merge is
+// then partial) and is an error only when it leaves nothing to merge.
+func mergeDocuments(c *collection) ([]byte, error) {
+	if len(c.docs) == 1 {
+		return c.docs[0].body, nil
 	}
 
-	parsed := make([]*pkgmaven.Metadata, 0, len(docs))
+	parsed := make([]*pkgmaven.Metadata, 0, len(c.docs))
 
 	var firstErr error
 
-	for _, d := range docs {
-		m, err := pkgmaven.ParseMetadata(d)
+	for _, d := range c.docs {
+		m, err := pkgmaven.ParseMetadata(d.body)
 		if err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
+
+			c.fail(d.member)
 
 			continue
 		}

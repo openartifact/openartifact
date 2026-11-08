@@ -12,6 +12,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/pglock"
 )
 
 // Queries behind the Go module zip repair (internal/format/gomod/repair.go).
@@ -78,29 +79,16 @@ type GomodAffectedRow struct {
 // connection. ok is false when another replica holds it. release must be
 // called when ok is true; it unlocks and returns the connection to the pool.
 func (p *GoModStore) TryGomodRepairLock(ctx context.Context) (func(), bool, error) {
-	conn, err := p.db.Conn(ctx)
+	release, ok, err := pglock.Try(ctx, p.db, gomodRepairLockKey)
 	if err != nil {
-		return nil, false, fmt.Errorf("pin connection for gomod repair lock: %w", err)
-	}
-
-	var locked bool
-	if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(hashtext($1))`, gomodRepairLockKey).Scan(&locked); err != nil {
-		_ = conn.Close()
-
 		return nil, false, fmt.Errorf("try gomod repair lock: %w", err)
 	}
 
-	if !locked {
-		_ = conn.Close()
-
+	if !ok {
 		return nil, false, nil
 	}
 
-	return func() {
-		// The caller's context may be cancelled (shutdown); unlock regardless.
-		_, _ = conn.ExecContext(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock(hashtext($1))`, gomodRepairLockKey)
-		_ = conn.Close()
-	}, true, nil
+	return release, true, nil
 }
 
 // ListGomodAffectedRows returns every Go module version whose zip blob row has

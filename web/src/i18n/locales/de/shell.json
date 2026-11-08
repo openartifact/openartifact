@@ -10,7 +10,6 @@
   "shell.requiresAdmin": "Erfordert Administrator",
   "shell.settingsManagedByAdmins": "Instanzeinstellungen werden von Administratoren verwaltet",
   "shell.denied.admin": "Diese Seite ist nur für Administratoren verfügbar",
-  "shell.denied.repoCreate": "Zum Erstellen eines Repositorys ist die Rolle „Maintainer“ in einem Projekt nötig",
   "shell.denied.hint": "Bitten Sie einen Administrator um Zugriff.",
   "shell.searchPill": "Suchen oder springen zu…",
   "shell.userMenu": "Kontomenü für {name}",

@@ -264,10 +264,11 @@ ON CONFLICT (manifest_id, kind, digest) DO NOTHING;
 SELECT dm.id, dm.image, dm.digest, b.sha256 AS blob_sha256
 FROM docker_manifests dm
 JOIN blobs b ON b.id = dm.blob_id
-WHERE dm.repository_id = $1
+WHERE dm.repository_id = sqlc.arg(repository_id)
+  AND dm.id <> ALL(sqlc.arg(skip_manifest_ids)::uuid[])
   AND NOT EXISTS (SELECT 1 FROM docker_manifest_refs r WHERE r.manifest_id = dm.id AND r.kind = 'indexed')
-ORDER BY dm.created_at
-LIMIT $2;
+ORDER BY dm.created_at, dm.id
+LIMIT sqlc.arg(row_limit);
 
 -- name: ListDockerGCManifests :many
 -- Every live manifest of the repository (trashed ones are never GC candidates;
@@ -422,7 +423,8 @@ END)::boolean AS trashed;
 -- for the default image) after $1, up to $2 names. Hosted repositories list
 -- their images with a live manifest (a loose index scan over the live-digest
 -- index, one probe per image), proxy repositories the images with a cached
--- manifest, groups the images of their members under the group's own name.
+-- manifest (a loose index scan over idx_proxy_cache_docker_image, one probe
+-- per image), groups the images of their members under the group's own name.
 -- sources lists, per name, the repositories that hold the image (the repository
 -- itself unless it is a group): the caller authorizes each of them. The
 -- parallel arrays are ordered by source id.
@@ -438,14 +440,22 @@ WITH RECURSIVE hosted(repository_id, image) AS (
     FROM hosted h
     WHERE h.image IS NOT NULL
 ),
-proxied AS (
-    SELECT DISTINCT e.repository_id,
-           substring(e.cache_key FROM '^(.+)/manifests/[^/]+$') AS image
-    FROM proxy_cache_entries e
-    JOIN repositories r ON r.id = e.repository_id
+proxied(repository_id, image) AS (
+    SELECT r.id, (SELECT substring(e.cache_key FROM '^(.+)/manifests/[^/]+$') AS img
+                  FROM proxy_cache_entries e
+                  WHERE e.repository_id = r.id AND e.status_code = 200 AND e.blob_key IS NOT NULL
+                    AND substring(e.cache_key FROM '^(.+)/manifests/[^/]+$') IS NOT NULL
+                  ORDER BY img LIMIT 1)
+    FROM repositories r
     WHERE r.format = 'docker' AND r.repo_type = 'proxy' AND r.deleted_at IS NULL AND NOT r.blocked
-      AND e.status_code = 200 AND e.blob_key IS NOT NULL
-      AND e.cache_key LIKE '%/manifests/%'
+  UNION ALL
+    SELECT p.repository_id, (SELECT substring(e.cache_key FROM '^(.+)/manifests/[^/]+$') AS img
+                             FROM proxy_cache_entries e
+                             WHERE e.repository_id = p.repository_id AND e.status_code = 200 AND e.blob_key IS NOT NULL
+                               AND substring(e.cache_key FROM '^(.+)/manifests/[^/]+$') > p.image
+                             ORDER BY img LIMIT 1)
+    FROM proxied p
+    WHERE p.image IS NOT NULL
 ),
 held AS (
     SELECT repository_id, image FROM hosted WHERE image IS NOT NULL

@@ -231,6 +231,8 @@ function getActionPillClasses(action: string): string {
 
 // `?new=1` opens the create drawer (palette link, reload; Back closes it).
 const newFlag = useUrlFlag('new')
+/** Id of the target a previous submit created before its assignment failed; a retry only assigns. */
+let createdTargetId: string | null = null
 const grantDrawerOpen = computed(() => newFlag.on.value)
 watch(newFlag.on, (on) => { if (on) resetForm() }, { immediate: true })
 
@@ -239,6 +241,7 @@ function openGrant(): void {
 }
 
 function resetForm(): void {
+  createdTargetId = null
   formData.value = {
     name: '',
     repository_filter: '.*',
@@ -263,14 +266,17 @@ async function submitGrant(): Promise<void> {
   }
   saving.value = true
   try {
-    const target = await createPermissionTarget({
-      name: form.name.trim(),
-      repository_filter: form.repository_filter,
-      path_pattern: form.path_pattern,
-      actions: form.actions,
-    })
-    if (form.principal_id && target?.id) {
-      await assignPermissionTarget(target.id, {
+    if (!createdTargetId) {
+      const target = await createPermissionTarget({
+        name: form.name.trim(),
+        repository_filter: form.repository_filter,
+        path_pattern: form.path_pattern,
+        actions: form.actions,
+      })
+      createdTargetId = target?.id ?? null
+    }
+    if (form.principal_id && createdTargetId) {
+      await assignPermissionTarget(createdTargetId, {
         principal_type: form.principal_type,
         principal_id: form.principal_id,
       })

@@ -397,9 +397,10 @@ func (p *VulnStore) CreateVulnScanResult(ctx context.Context, result *models.Vul
 		return fmt.Errorf("failed to marshal vulnerabilities: %w", err)
 	}
 
-	var scannedAt time.Time
+	// A nil ScannedAt (a job still scanning) is stored as NULL, not the zero time.
+	scannedAt := sql.NullTime{}
 	if result.ScannedAt != nil {
-		scannedAt = *result.ScannedAt
+		scannedAt = sql.NullTime{Time: *result.ScannedAt, Valid: true}
 	}
 
 	err = p.db.QueryRowContext(ctx, `
@@ -466,9 +467,10 @@ func (p *VulnStore) UpdateVulnScanResult(ctx context.Context, result *models.Vul
 		return fmt.Errorf("failed to marshal vulnerabilities: %w", err)
 	}
 
-	var scannedAt time.Time
+	// A nil ScannedAt (a job still scanning) is stored as NULL, not the zero time.
+	scannedAt := sql.NullTime{}
 	if result.ScannedAt != nil {
-		scannedAt = *result.ScannedAt
+		scannedAt = sql.NullTime{Time: *result.ScannedAt, Valid: true}
 	}
 
 	_, err = p.db.ExecContext(ctx, `

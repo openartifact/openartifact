@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -111,5 +112,53 @@ func TestOCIGroup_TagsUnfollowableLinkIsReportedPartial(t *testing.T) {
 				t.Errorf("Cache-Control = %q, want no-store for a possibly incomplete list", got)
 			}
 		})
+	}
+}
+
+// A member the caller may not read contributes nothing: not its tags, not its
+// manifests, not its blobs.
+func TestOCIGroup_DeniedMemberIsNeverServed(t *testing.T) {
+	f := newFixture(t, "docker", member("hosted", "docker", "hosted"), member("mirror", "docker", "proxy"))
+	denied := map[string]bool{"hosted": true}
+
+	be := Backend{
+		Authorize: func(_ *http.Request, m *models.Repository, _ string) bool { return !denied[m.Name] },
+		ServeMember: func(w http.ResponseWriter, r *http.Request, m *models.Repository, _ string) {
+			if m.Name == "mirror" && !strings.HasSuffix(r.URL.Path, "/tags/list") {
+				http.NotFound(w, r)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"name": "img", "tags": []string{m.Name + "-tag"}})
+		},
+	}
+
+	serve := func(kind ocipath.Kind, rel, ref string) *httptest.ResponseRecorder {
+		r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/"+rel, nil)
+		w := httptest.NewRecorder()
+		f.h.ServeOCI(w, r, f.grp, ocipath.Request{Kind: kind, Name: "all/img", Ref: ref}, rel, be)
+
+		return w
+	}
+
+	w := serve(ocipath.KindTags, "img/tags/list", "")
+	if w.Code != http.StatusOK || strings.Contains(w.Body.String(), "hosted-tag") || !strings.Contains(w.Body.String(), "mirror-tag") {
+		t.Errorf("tags = %d %s, want only the mirror's", w.Code, w.Body.String())
+	}
+
+	for _, c := range []struct {
+		kind    ocipath.Kind
+		rel     string
+		ref     string
+		wantMsg string
+	}{
+		{ocipath.KindManifest, "img/manifests/v1", "v1", "MANIFEST_UNKNOWN"},
+		{ocipath.KindBlob, "img/blobs/sha256:abc", "sha256:abc", "BLOB_UNKNOWN"},
+	} {
+		w := serve(c.kind, c.rel, c.ref)
+		if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), c.wantMsg) {
+			t.Errorf("%s held only by a denied member = %d %s, want 404 %s", c.rel, w.Code, w.Body.String(), c.wantMsg)
+		}
 	}
 }

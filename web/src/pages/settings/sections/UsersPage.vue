@@ -218,8 +218,9 @@ async function submitForm(): Promise<void> {
   try {
     if (editingUser.value) {
       await updateUser(editingUser.value.id, {
-        full_name: f.full_name || undefined,
-        email: f.email || undefined,
+        // An empty string clears the field on the server; leaving it out keeps it.
+        full_name: f.full_name,
+        email: f.email,
         must_change_password: f.must_change_password,
       })
       toasts.success(t('adm.users.updated'))

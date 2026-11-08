@@ -60,6 +60,18 @@ func (d *pypiDB) CreatePyPIPackage(_ context.Context, p *models.PyPIPackage) err
 	return nil
 }
 
+func (d *pypiDB) ListPyPIPackageVersions(_ context.Context, _, name string) ([]*models.PyPIPackage, error) {
+	var out []*models.PyPIPackage
+
+	for _, p := range d.pkgs {
+		if p.Name == name {
+			out = append(out, p)
+		}
+	}
+
+	return out, nil
+}
+
 func (d *pypiDB) ListPyPIPackageNames(_ context.Context, _ string) ([]string, error) {
 	return distinctPyPINames(d.pkgs), nil
 }
@@ -701,4 +713,30 @@ func TestUploadLeavesNoTempFile(t *testing.T) {
 	}
 
 	assertEmpty()
+}
+
+// Warehouse keeps one release per canonical version: 1.0.0 joins the 1.0 release.
+func TestUploadJoinsExistingReleaseOfEqualVersion(t *testing.T) {
+	h, db, _, _ := newTestHandler(t)
+
+	if got := uploadAs(t, h, "foo", "1.0", "foo-1.0.tar.gz"); got != http.StatusOK {
+		t.Fatalf("first upload = %d", got)
+	}
+
+	if got := uploadAs(t, h, "foo", "1.0.0", "foo-1.0.0-py3-none-any.whl"); got != http.StatusOK {
+		t.Fatalf("second upload = %d", got)
+	}
+
+	if got := uploadAs(t, h, "foo", "1.1", "foo-1.1.tar.gz"); got != http.StatusOK {
+		t.Fatalf("third upload = %d", got)
+	}
+
+	var versions []string
+	for _, p := range db.pkgs {
+		versions = append(versions, p.Version)
+	}
+
+	if want := []string{"1.0", "1.0", "1.1"}; !slices.Equal(versions, want) {
+		t.Fatalf("stored versions = %v, want %v", versions, want)
+	}
 }

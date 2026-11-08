@@ -146,7 +146,7 @@ func bundleNameVersion() cobra.CompletionFunc {
 
 // runBundle runs one bundle command body and prints its result like every CI command.
 func runBundle(a *app, fn func(ctx context.Context, api *ciAPI) (bundleOut, error)) error {
-	out, err := fn(context.Background(), newCIAPI(a.client))
+	out, err := fn(a.client.context(), newCIAPI(a.client))
 	if err != nil {
 		return err
 	}

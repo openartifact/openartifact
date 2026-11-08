@@ -43,7 +43,7 @@ type AdminStorageStore interface {
 	ListStorageBackends(ctx context.Context) ([]*models.StorageBackend, error)
 	StorageBackendBusyReason(ctx context.Context, backendID string) (string, error)
 	StorageTierUsage(ctx context.Context) ([]models.TierUsage, error)
-	UpdateStorageBackend(ctx context.Context, backend *models.StorageBackend) error
+	UpdateStorageBackendIfIdle(ctx context.Context, backend *models.StorageBackend, requireIdle bool) (string, error)
 	UpdateStorageBackendStatus(ctx context.Context, id string, status string, message *string) error
 }
 
@@ -539,26 +539,20 @@ func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	// Blobs are located through the backend's kind and location config (credentials excluded, so they can rotate): re-pointing a
 	// backend that holds blobs, or that a tier or move journal row names, would
 	// orphan them.
-	if backend.Kind != origKind || !storageLocationEqual(config, origConfig) {
-		reason, err := h.db.StorageBackendBusyReason(r.Context(), backend.ID)
-		if err != nil {
-			h.log.Errorw("failed to check storage backend usage", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to update storage backend")
-
-			return
-		}
-
-		if reason != "" {
-			writeError(w, http.StatusConflict, "conflict", "cannot change kind or config: "+reason)
-			return
-		}
-	}
+	// The check and the update run in one transaction (UpdateStorageBackendIfIdle).
+	requireIdle := backend.Kind != origKind || !storageLocationEqual(config, origConfig)
 
 	backend.Config = config
 	backend.UpdatedAt = time.Now()
 
-	if err := h.db.UpdateStorageBackend(r.Context(), backend); err != nil {
+	reason, err := h.db.UpdateStorageBackendIfIdle(r.Context(), backend, requireIdle)
+	if err != nil {
 		h.writeStorageWriteError(w, err, "update")
+		return
+	}
+
+	if reason != "" {
+		writeError(w, http.StatusConflict, "conflict", "cannot change kind or config: "+reason)
 		return
 	}
 

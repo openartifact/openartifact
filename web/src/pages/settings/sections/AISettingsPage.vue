@@ -222,7 +222,7 @@ import { buildAIProviders } from '../../../lib/aiProviders'
 import AIProviderPicker from './AIProviderPicker.vue'
 import AITestResult from './AITestResult.vue'
 import { MONO_INPUT_CLASS } from '../../../lib/formClasses'
-import { t } from '../../../i18n'
+import { t, tpn } from '../../../i18n'
 
 const PROVIDERS = computed(buildAIProviders)
 
@@ -284,7 +284,7 @@ async function loadModels(): Promise<void> {
     const result = await testAIConfig({ ...form })
     if (result.ok && result.models && result.models.length > 0) {
       availableModels.value = result.models
-      toasts.success(`${t('adm.ai.loadedModels')} ${result.models.length}`)
+      toasts.success(tpn('adm.ai.loadedModels', result.models.length))
     } else if (!result.ok) {
       toasts.error(result.error ?? t('adm.ai.loadModelsFailed'))
     } else {

@@ -84,7 +84,7 @@ Add a dependency with `registry = "REPO"`, or use the repository in place of cra
 
 ### Crate names
 
-Crate names are case-insensitive, as on crates.io. Cargo lower-cases them in index paths and download URLs, and lookups compare them case-insensitively. A crate published as `Demo-Crate` is found as `demo-crate`. The index entry keeps the name as published.
+Crate names are case-insensitive, as on crates.io. Cargo lower-cases them in index paths and download URLs, and lookups compare them case-insensitively. A crate published as `Demo-Crate` is found as `demo-crate`. The index entry keeps the name as published. As on crates.io, `-` and `_` count as the same character: publishing `foo_bar` is refused when `foo-bar` already exists in the repository, and the other way round.
 
 ### Search
 

@@ -77,6 +77,9 @@ type dockerGCResponse struct {
 	BlobsFreed         int    `json:"blobs_freed"`
 	BytesFreed         int64  `json:"bytes_freed"`
 	Failures           int    `json:"failures"`
+	// ManifestsMissingBody counts manifests whose body is missing from storage;
+	// while any exists no blob of the repository is swept.
+	ManifestsMissingBody int `json:"manifests_missing_body"`
 	// Manifests and Blobs list what was deleted (would be, in a dry run), capped
 	// at worker.DockerGCReportLimit entries each; Truncated is set when capped.
 	Manifests []dockerGCManifestEntry `json:"manifests"`
@@ -136,17 +139,18 @@ func (h *DockerGCHandler) handleRun(w http.ResponseWriter, r *http.Request) {
 
 func newDockerGCResponse(rep *worker.DockerGCReport) dockerGCResponse {
 	resp := dockerGCResponse{
-		Repository:         rep.Repository,
-		DryRun:             rep.DryRun,
-		GracePeriodSeconds: int64(rep.GracePeriod / time.Second),
-		ManifestsDeleted:   rep.ManifestsDeleted,
-		BlobRefsDeleted:    rep.BlobRefsDeleted,
-		BlobsFreed:         rep.BlobsFreed,
-		BytesFreed:         rep.BytesFreed,
-		Failures:           rep.Failures,
-		Manifests:          make([]dockerGCManifestEntry, len(rep.Manifests)),
-		Blobs:              make([]dockerGCBlobEntry, len(rep.Blobs)),
-		Truncated:          rep.Truncated,
+		Repository:           rep.Repository,
+		DryRun:               rep.DryRun,
+		GracePeriodSeconds:   int64(rep.GracePeriod / time.Second),
+		ManifestsDeleted:     rep.ManifestsDeleted,
+		BlobRefsDeleted:      rep.BlobRefsDeleted,
+		BlobsFreed:           rep.BlobsFreed,
+		BytesFreed:           rep.BytesFreed,
+		Failures:             rep.Failures,
+		ManifestsMissingBody: rep.ManifestsMissingBody,
+		Manifests:            make([]dockerGCManifestEntry, len(rep.Manifests)),
+		Blobs:                make([]dockerGCBlobEntry, len(rep.Blobs)),
+		Truncated:            rep.Truncated,
 	}
 
 	for i, m := range rep.Manifests {

@@ -74,9 +74,9 @@ func TestAuthCache_UserDisableVisible(t *testing.T) {
 		t.Fatalf("warm lookup = %+v", u)
 	}
 
-	f.user.Disabled = true
-	if err := f.pg.UpdateUser(ctx, f.user); err != nil {
-		t.Fatalf("UpdateUser: %v", err)
+	disabled := true
+	if _, err := f.pg.PatchUser(ctx, f.user.ID, database.UserPatch{Disabled: &disabled}); err != nil {
+		t.Fatalf("PatchUser: %v", err)
 	}
 
 	if u, err := f.pg.GetUserByID(ctx, f.user.ID); err != nil || u == nil || !u.Disabled {

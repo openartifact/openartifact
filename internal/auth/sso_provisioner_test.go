@@ -28,7 +28,6 @@ type provMockDB struct {
 	groupsByID     map[string]*models.Group
 	createUserFn   func(*models.User) (*models.User, error)
 	updateUserFn   func(*models.User) error
-	fullRowUpdates int
 	updateSSOFn    func(userID, extID, slug string) error
 	syncGroupsFn   func(userID string, groupIDs []string) error
 	syncGroupsErr  error
@@ -94,19 +93,6 @@ func (m *provMockDB) CreateUser(_ context.Context, u *models.User) (*models.User
 	m.createdUsers = append(m.createdUsers, u)
 
 	return u, nil
-}
-
-func (m *provMockDB) UpdateUser(_ context.Context, u *models.User) error {
-	m.fullRowUpdates++
-
-	if m.updateUserFn != nil {
-		return m.updateUserFn(u)
-	}
-
-	m.usersByID[u.ID] = u
-	m.updatedUsers = append(m.updatedUsers, u)
-
-	return nil
 }
 
 func (m *provMockDB) UpdateUserSSOProfile(_ context.Context, id string, email, fullName *string, at time.Time) error {
@@ -1024,10 +1010,6 @@ func TestProvisioner_ReLoginUsesNarrowUpdate(t *testing.T) {
 		testClaims("sub|narrow", "n@example.com", "narrow", nil),
 	); err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if db.fullRowUpdates != 0 {
-		t.Fatalf("Provision wrote the full user row %d time(s)", db.fullRowUpdates)
 	}
 
 	if len(db.updatedUsers) == 0 {

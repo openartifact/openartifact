@@ -371,8 +371,12 @@ SELECT (SELECT count(*) FROM scan_jobs
        (SELECT count(*) FROM scan_jobs
         WHERE scan_type IN ('vuln', 'license', 'secret', 'ai') AND status = 'failed'
           AND updated_at >= now() - interval '24 hours')::bigint AS scans_failed_24h,
-       COALESCE((SELECT max(COALESCE(completed_at, updated_at)) FROM scan_jobs
-                 WHERE scan_type IN ('vuln', 'license', 'secret', 'ai') AND status IN ('completed', 'partial')),
+       COALESCE((SELECT max(latest.at)
+                 FROM unnest(ARRAY['vuln', 'license', 'secret', 'ai']::text[]) AS t(scan_type)
+                 CROSS JOIN LATERAL (SELECT COALESCE(sj.completed_at, sj.updated_at) AS at
+                                     FROM scan_jobs sj
+                                     WHERE sj.scan_type = t.scan_type AND sj.status IN ('completed', 'partial')
+                                     ORDER BY COALESCE(sj.completed_at, sj.updated_at) DESC LIMIT 1) latest),
                 'epoch'::timestamptz)::timestamptz AS last_scan_at,
        (SELECT count(*) FROM repositories r
         WHERE r.repo_type <> 'group'

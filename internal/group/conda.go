@@ -341,6 +341,8 @@ func (h *Handler) mergeCondaMembers(
 	b, err := pkgconda.NewBuilder(p.Subdir, "")
 	if err != nil {
 		h.log.Errorw("failed to start conda repodata merge", "error", err)
+		dropValidators(w)
+		w.Header().Set("Cache-Control", "no-store")
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return nil, false
@@ -373,6 +375,8 @@ func (h *Handler) mergeCondaMembers(
 	doc, err := b.Finish()
 	if err != nil {
 		h.log.Errorw("failed to finish conda repodata merge", "error", err)
+		dropValidators(w)
+		w.Header().Set("Cache-Control", "no-store")
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return nil, false

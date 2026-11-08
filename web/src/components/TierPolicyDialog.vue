@@ -148,7 +148,7 @@ import TierDryRunResult from './TierDryRunResult.vue'
 import { createPolicy, updatePolicy, type StoragePolicy, type StorageTier } from '../api/tiering'
 import { useTierDryRun } from '../composables/useTierDryRun'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n'
+import { t, tp } from '../i18n'
 import { ALL_FORMATS } from '../lib/formats'
 import {
   TIER_SIZE_UNITS,
@@ -217,7 +217,7 @@ async function save(): Promise<void> {
     const body = formToInput(form)
     if (props.policy?.id) await updatePolicy(props.policy.id, body)
     else await createPolicy(body)
-    toasts.success(`${t('tiering.policy.saved')}: ${body.name}`)
+    toasts.success(tp('tiering.policy.saved', { name: body.name }))
     emit('saved')
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('tiering.policy.saveFailed'))

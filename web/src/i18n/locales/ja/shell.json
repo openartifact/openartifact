@@ -10,7 +10,6 @@
   "shell.requiresAdmin": "管理者権限が必要です",
   "shell.settingsManagedByAdmins": "インスタンスの設定は管理者が管理します",
   "shell.denied.admin": "このページは管理者のみ利用できます",
-  "shell.denied.repoCreate": "リポジトリを作成するには、プロジェクトのメンテナーロールが必要です",
   "shell.denied.hint": "アクセスが必要な場合は管理者に依頼してください。",
   "shell.searchPill": "検索または移動…",
   "shell.userMenu": "{name} のアカウントメニュー",

@@ -303,6 +303,20 @@ func (m *MockDatabase) UpdateRepository(ctx context.Context, repo *models.Reposi
 	return nil
 }
 
+func (m *MockDatabase) UpdateRepositorySettings(
+	ctx context.Context,
+	repo *models.Repository,
+	change database.RepositorySettingsChange,
+) error {
+	if change.MoveToProjectID != "" {
+		repo.ProjectID = &change.MoveToProjectID
+	}
+
+	m.repositories[repo.ID] = repo
+
+	return nil
+}
+
 func (m *MockDatabase) DeleteRepository(ctx context.Context, id string) error {
 	delete(m.repositories, id)
 	return nil
@@ -672,6 +686,22 @@ func (m *MockDatabase) GetNPMVersion(ctx context.Context, packageID, version str
 	return m.npmVersions[packageID+":"+version], nil
 }
 
+func (m *MockDatabase) ListNPMVersionsByNames(
+	ctx context.Context,
+	packageID string,
+	versions []string,
+) (map[string]*models.NPMVersion, error) {
+	out := make(map[string]*models.NPMVersion, len(versions))
+
+	for _, v := range versions {
+		if nv := m.npmVersions[packageID+":"+v]; nv != nil {
+			out[v] = nv
+		}
+	}
+
+	return out, nil
+}
+
 func (m *MockDatabase) GetNPMVersionsByPackage(ctx context.Context, packageID string) ([]*models.NPMVersion, error) {
 	var result []*models.NPMVersion
 
@@ -809,15 +839,33 @@ func (m *MockDatabase) GetUserByUsername(ctx context.Context, username string) (
 	return m.authUsersByName[username], nil
 }
 
-func (m *MockDatabase) UpdateUser(ctx context.Context, user *models.User) error {
-	if _, ok := m.authUsers[user.ID]; !ok {
-		return nil
+func (m *MockDatabase) PatchUser(ctx context.Context, id string, p database.UserPatch) (*models.User, error) {
+	u, ok := m.authUsers[id]
+	if !ok {
+		return nil, nil
 	}
 
-	m.authUsers[user.ID] = user
-	m.authUsersByName[user.Username] = user
+	if p.SetEmail {
+		u.Email = p.Email
+	}
 
-	return nil
+	if p.FullName != nil {
+		u.FullName = p.FullName
+	}
+
+	if p.Disabled != nil {
+		u.Disabled = *p.Disabled
+	}
+
+	if p.MustChangePassword != nil {
+		u.MustChangePassword = *p.MustChangePassword
+	}
+
+	if p.PasswordHash != nil {
+		u.PasswordHash = p.PasswordHash
+	}
+
+	return u, nil
 }
 
 func (m *MockDatabase) UpdateUserSSOProfile(ctx context.Context, id string, email, fullName *string, at time.Time) error {
@@ -2013,7 +2061,7 @@ func (m *MockDatabase) GetStorageBackend(ctx context.Context, name string) (*mod
 	return m.storageBackends[name], nil
 }
 
-func (m *MockDatabase) UpdateStorageBackend(ctx context.Context, backend *models.StorageBackend) error {
+func (m *MockDatabase) UpdateStorageBackendIfIdle(ctx context.Context, backend *models.StorageBackend, _ bool) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -2026,7 +2074,7 @@ func (m *MockDatabase) UpdateStorageBackend(ctx context.Context, backend *models
 
 	m.storageBackends[backend.Name] = backend
 
-	return nil
+	return "", nil
 }
 
 func (m *MockDatabase) DeleteStorageBackend(ctx context.Context, id string) error {

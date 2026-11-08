@@ -5,7 +5,6 @@
 package group
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -117,8 +116,11 @@ func (h *Handler) serveTags(
 		failed bool
 	)
 
+	sess := h.newSession(r.Context())
+	defer sess.release()
+
 	for _, m := range members {
-		mt, mfound, mfailed := h.memberTags(mr, m, relPath, be)
+		mt, mfound, mfailed := h.memberTags(sess, mr, m, relPath, be)
 		failed = failed || mfailed
 
 		if mfound {
@@ -126,6 +128,8 @@ func (h *Handler) serveTags(
 			tags = append(tags, mt...)
 		}
 	}
+
+	sess.release()
 
 	if !found {
 		if failed {
@@ -178,7 +182,13 @@ func (h *Handler) serveTags(
 // it is followed until exhausted so the merged list is never silently cut. found
 // reports that the member knows the image; failed that the list may be
 // incomplete or the member erred.
-func (h *Handler) memberTags(mr *http.Request, m *models.Repository, relPath string, be Backend) ([]string, bool, bool) {
+func (h *Handler) memberTags(
+	sess *mergeSession,
+	mr *http.Request,
+	m *models.Repository,
+	relPath string,
+	be Backend,
+) ([]string, bool, bool) {
 	var (
 		tags  []string
 		found bool
@@ -189,12 +199,12 @@ func (h *Handler) memberTags(mr *http.Request, m *models.Repository, relPath str
 	last := ""
 
 	for range maxMemberTagPages {
-		rec := &recorder{header: http.Header{}, limit: budget}
+		rec := sess.capture(budget)
 		be.ServeMember(rec, pageReq, m, relPath)
 
 		switch {
-		case rec.status == http.StatusOK && !rec.overflow:
-		case rec.status == http.StatusOK || rec.status >= http.StatusInternalServerError:
+		case rec.code() == http.StatusOK && !rec.overflow:
+		case rec.code() == http.StatusOK || rec.code() >= http.StatusInternalServerError:
 			return tags, found, true
 		case found:
 			return tags, found, true // a later page vanished
@@ -300,32 +310,4 @@ func nonNil(s []string) []string {
 	}
 
 	return s
-}
-
-// recorder captures one member's response for merging.
-type recorder struct {
-	header   http.Header
-	status   int
-	body     bytes.Buffer
-	limit    int
-	overflow bool
-}
-
-func (c *recorder) Header() http.Header { return c.header }
-
-func (c *recorder) WriteHeader(code int) {
-	if c.status == 0 {
-		c.status = code
-	}
-}
-
-func (c *recorder) Write(b []byte) (int, error) {
-	c.WriteHeader(http.StatusOK)
-
-	if c.body.Len()+len(b) > c.limit {
-		c.overflow = true
-		return len(b), nil
-	}
-
-	return c.body.Write(b)
 }

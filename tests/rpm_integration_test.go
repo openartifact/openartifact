@@ -45,8 +45,8 @@ func buildTestPackage() pkgrpm.Package {
 			{Name: "libssl", Flags: pkgrpm.SENSE_GREATEREQUAL, Version: "3.0", Epoch: 0},
 		},
 		Files: []pkgrpm.FileEntry{
-			{Path: "/usr/bin/test-app", Size: 50000, Mode: 0o755, MTime: 1700000000, Digest: "abc123"},
-			{Path: "/etc/test.conf", Size: 256, Mode: 0o644, MTime: 1700000000},
+			{Path: "/usr/bin/test-app", MTime: 1700000000, Digest: "abc123"},
+			{Path: "/etc/test.conf", MTime: 1700000000},
 		},
 		Changelogs: []pkgrpm.ChangelogEntry{
 			{Time: 1700000000, Author: "Test Packager <test@example.com>", Description: "Initial package"},

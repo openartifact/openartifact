@@ -69,6 +69,18 @@ func (d *repoOpsDB) GetRepositoryByID(_ context.Context, id string) (*models.Rep
 	return nil, nil
 }
 
+func (d *repoOpsDB) GetRepositoriesByIDs(_ context.Context, ids []string) (map[string]*models.Repository, error) {
+	out := map[string]*models.Repository{}
+
+	for _, r := range d.repos {
+		if slices.Contains(ids, r.ID) {
+			out[r.ID] = r
+		}
+	}
+
+	return out, nil
+}
+
 func (d *repoOpsDB) ListGroupMembers(_ context.Context, groupID string) ([]*models.RepositoryGroupMember, error) {
 	if d.listMembersErr != nil {
 		return nil, d.listMembersErr
@@ -95,16 +107,21 @@ func (d *repoOpsDB) ReplaceGroupMembers(_ context.Context, groupID string, ids [
 	return nil
 }
 
-func (d *repoOpsDB) UpdateRepositoryAndMembers(_ context.Context, repo *models.Repository, ids []string) error {
-	cp := *repo
-	d.updated, d.updMem = &cp, slices.Clone(ids)
+func (d *repoOpsDB) UpdateRepositorySettings(_ context.Context, repo *models.Repository, change database.RepositorySettingsChange) error {
+	if change.MoveToProjectID != "" {
+		if d.moveErr != nil {
+			return d.moveErr
+		}
 
-	return nil
-}
+		d.moves = append(d.moves, repo.ID+"->"+change.MoveToProjectID)
+	}
 
-func (d *repoOpsDB) UpdateRepository(_ context.Context, repo *models.Repository) error {
 	cp := *repo
 	d.updated = &cp
+
+	if change.ReplaceMembers {
+		d.updMem = slices.Clone(change.MemberIDs)
+	}
 
 	return nil
 }
@@ -559,6 +576,23 @@ func TestRepositoryMovePermissions(t *testing.T) {
 				t.Errorf("a failed move still wrote the repository: %+v", db.updated)
 			}
 		})
+	}
+}
+
+// A PATCH that moves a repository to another project and also carries an
+// invalid member list is rejected before anything is written.
+func TestRepositoryPatchMoveAndInvalidMembersWritesNothing(t *testing.T) {
+	db := newRepoOpsDB()
+	db.projects["beta"] = &models.Project{ID: "proj-beta", Name: "beta"}
+
+	code, body := projectJSON(t, db.router(t), uAdmin1, http.MethodPatch, "/api/v1/repository/grp",
+		`{"project":"beta","member_repos":["hosted","ghost"]}`)
+	if code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body = %v", code, http.StatusBadRequest, body)
+	}
+
+	if len(db.moves) != 0 || db.updated != nil {
+		t.Errorf("rejected PATCH wrote: moves = %v, updated = %+v", db.moves, db.updated)
 	}
 }
 

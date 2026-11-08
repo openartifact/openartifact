@@ -7,6 +7,7 @@ package sbom
 import (
 	"context"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -56,16 +57,24 @@ func (b *spdx3Builder) relationship(from, relType string, to []string) {
 // creating it on first use. Names that are not SPDX ids become a CustomLicense
 // referenced from the expression through customIdToUri.
 func (b *spdx3Builder) licenseElement(entries []licenseEntry, cache map[string]string) string {
-	var (
-		extracted []spdxExtracted
-		key       = spdxLicenseExpr(entries, &extracted)
-	)
+	// Keyed on the raw entries, not the rendered expression: names such as
+	// "GPL v2" and "GPL/v2" render the same LicenseRef id but are different
+	// licenses, each needing its own CustomLicense.
+	var rawKey strings.Builder
 
+	for _, e := range entries {
+		rawKey.WriteString(e.Expr + "\x00" + e.Name + "\x01")
+	}
+
+	key := rawKey.String()
 	if id, ok := cache[key]; ok {
 		return id
 	}
 
-	el := map[string]any{"type": "simplelicensing_LicenseExpression", "simplelicensing_licenseExpression": key}
+	var extracted []spdxExtracted
+
+	expr := spdxLicenseExpr(entries, &extracted)
+	el := map[string]any{"type": "simplelicensing_LicenseExpression", "simplelicensing_licenseExpression": expr}
 
 	var custom []map[string]any
 

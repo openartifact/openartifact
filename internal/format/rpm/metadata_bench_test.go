@@ -88,7 +88,6 @@ func benchRPMPackages(n int) []pkgrpm.Package {
 		for j := range 30 {
 			p.Files = append(p.Files, pkgrpm.FileEntry{
 				Path: fmt.Sprintf("/usr/lib64/%s/plugins/module%d.so", name, j),
-				Size: 4096, Mode: 0o755,
 			})
 		}
 

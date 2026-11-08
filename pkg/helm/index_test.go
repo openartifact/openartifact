@@ -246,3 +246,24 @@ entries:
 		t.Errorf("created = %q", got)
 	}
 }
+
+func TestParseIndex_CapsVersions(t *testing.T) {
+	build := func(n int) []byte {
+		var b strings.Builder
+		b.WriteString("apiVersion: v1\nentries:\n  app:\n")
+
+		for range n {
+			b.WriteString("  - {name: app}\n")
+		}
+
+		return []byte(b.String())
+	}
+
+	if _, err := ParseIndex(build(MaxVersions)); err != nil {
+		t.Fatalf("index at the cap: %v", err)
+	}
+
+	if _, err := ParseIndex(build(MaxVersions + 1)); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("index over the cap: err = %v, want ErrTooLarge", err)
+	}
+}

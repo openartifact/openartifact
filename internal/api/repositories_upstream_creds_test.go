@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -30,7 +31,11 @@ func (db *updateCapturingDB) GetRepositoryByName(context.Context, string) (*mode
 	return &cp, nil
 }
 
-func (db *updateCapturingDB) UpdateRepository(_ context.Context, repo *models.Repository) error {
+func (db *updateCapturingDB) UpdateRepositorySettings(
+	_ context.Context,
+	repo *models.Repository,
+	_ database.RepositorySettingsChange,
+) error {
 	db.updated = repo
 	return nil
 }

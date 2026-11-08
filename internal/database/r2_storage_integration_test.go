@@ -69,7 +69,7 @@ func TestCreatePresignedUploadCappedIsAtomic(t *testing.T) {
 }
 
 // API-11: the repository row and its group members change together or not at all.
-func TestUpdateRepositoryAndMembersRollsBack(t *testing.T) {
+func TestUpdateRepositorySettingsRollsBack(t *testing.T) {
 	pg := newQuotaTestDB(t, 4)
 	ctx := context.Background()
 	group := newQuotaSeeder(t, pg, "grp-atomic", "raw")
@@ -82,9 +82,12 @@ func TestUpdateRepositoryAndMembersRollsBack(t *testing.T) {
 	repo.Description = "changed"
 
 	// A member id that is not a repository violates the foreign key.
-	err = pg.UpdateRepositoryAndMembers(ctx, repo, []string{"00000000-0000-0000-0000-000000000001"})
+	err = pg.UpdateRepositorySettings(ctx, repo, RepositorySettingsChange{
+		ReplaceMembers: true,
+		MemberIDs:      []string{"00000000-0000-0000-0000-000000000001"},
+	})
 	if err == nil {
-		t.Fatal("UpdateRepositoryAndMembers accepted a member that does not exist")
+		t.Fatal("UpdateRepositorySettings accepted a member that does not exist")
 	}
 
 	after, err := pg.GetRepositoryByID(ctx, group.repo)

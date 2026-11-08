@@ -43,11 +43,15 @@ func (m *storageUpdateMockDB) GetStorageBackend(context.Context, string) (*model
 	return &c, nil
 }
 
-func (m *storageUpdateMockDB) UpdateStorageBackend(_ context.Context, b *models.StorageBackend) error {
+func (m *storageUpdateMockDB) UpdateStorageBackendIfIdle(_ context.Context, b *models.StorageBackend, requireIdle bool) (string, error) {
+	if requireIdle && m.busy != "" {
+		return m.busy, nil
+	}
+
 	m.updated = true
 	m.saved = b
 
-	return nil
+	return "", nil
 }
 
 func (m *storageUpdateMockDB) StorageBackendBusyReason(context.Context, string) (string, error) {

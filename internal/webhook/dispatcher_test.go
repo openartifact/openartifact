@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -93,42 +94,6 @@ func TestNewDispatcher_Initialized(t *testing.T) {
 
 	if d.doneCh == nil {
 		t.Error("expected non-nil done channel")
-	}
-}
-
-// Test computeHMAC function directly
-func TestComputeHMAC(t *testing.T) {
-	tests := []struct {
-		name     string
-		data     []byte
-		secret   []byte
-		expected string
-	}{
-		{
-			name:     "simple",
-			data:     []byte("test data"),
-			secret:   []byte("secret"),
-			expected: "sha256=",
-		},
-		{
-			name:     "empty data",
-			data:     []byte(""),
-			secret:   []byte("secret"),
-			expected: "sha256=",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := computeHMAC(tt.data, tt.secret)
-			if len(result) == 0 {
-				t.Error("expected non-empty HMAC")
-			}
-			// Verify it's a valid hex string
-			if _, err := hex.DecodeString(result); err != nil {
-				t.Errorf("HMAC is not valid hex: %v", err)
-			}
-		})
 	}
 }
 
@@ -360,8 +325,29 @@ func TestDeliverySendsDeliveryAndEventHeaders(t *testing.T) {
 		t.Errorf("X-OA-Event = %q, want %q", h, EventRepoCreated)
 	}
 
-	if want := "sha256=" + computeHMAC(body, []byte("s3cret")); req.Header.Get("X-Hub-Signature-256") != want {
+	// Computed here as a receiver would, not through the dispatcher's helper.
+	receiverHMAC := func(msg string) string {
+		m := hmac.New(sha256.New, []byte("s3cret"))
+		m.Write([]byte(msg))
+
+		return "sha256=" + hex.EncodeToString(m.Sum(nil))
+	}
+
+	if want := receiverHMAC(string(body)); req.Header.Get("X-Hub-Signature-256") != want {
 		t.Errorf("X-Hub-Signature-256 = %q, want the HMAC of the body alone (%q)", req.Header.Get("X-Hub-Signature-256"), want)
+	}
+
+	// Documented V2 algorithm: HMAC over "<timestamp>.<delivery id>.<body>".
+	ts := req.Header.Get("X-Oa-Timestamp")
+
+	sec, perr := strconv.ParseInt(ts, 10, 64)
+	if perr != nil || time.Since(time.Unix(sec, 0)) > time.Minute {
+		t.Errorf("X-OA-Timestamp = %q, want a current Unix time", ts)
+	}
+
+	wantV2 := receiverHMAC(ts + ".delivery-42." + string(body))
+	if got := req.Header.Get("X-Oa-Signature-V2"); got != wantV2 {
+		t.Errorf("X-OA-Signature-V2 = %q, want %q", got, wantV2)
 	}
 }
 

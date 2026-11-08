@@ -161,7 +161,6 @@ func (m *tokenMockDB) GetUserByID(_ context.Context, id string) (*models.User, e
 func (m *tokenMockDB) GetUserByUsername(_ context.Context, _ string) (*models.User, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) UpdateUser(_ context.Context, _ *models.User) error { return nil }
 func (m *tokenMockDB) ListUsers(_ context.Context, _, _ int) ([]*models.User, int, error) {
 	return nil, 0, nil
 }

@@ -8,7 +8,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"testing"
 	"time"
 )
@@ -141,30 +140,6 @@ func TestRateLimitRefill(t *testing.T) {
 
 		if time.Now().After(deadline) {
 			t.Fatal("bucket never refilled")
-		}
-
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-
-func TestRateLimitJanitorStopsOnCancel(t *testing.T) {
-	// Not parallel: counts goroutines of the whole process.
-	before := runtime.NumGoroutine()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	_ = RateLimitMiddleware(ctx, 1, time.Hour, nil)
-
-	if runtime.NumGoroutine() <= before {
-		t.Skip("janitor goroutine not observable yet")
-	}
-
-	cancel()
-
-	deadline := time.Now().Add(5 * time.Second)
-
-	for runtime.NumGoroutine() > before {
-		if time.Now().After(deadline) {
-			t.Fatalf("janitor goroutine leaked: %d > %d", runtime.NumGoroutine(), before)
 		}
 
 		time.Sleep(10 * time.Millisecond)

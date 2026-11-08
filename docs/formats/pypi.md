@@ -54,6 +54,7 @@ The upload URL must end in `/legacy/`.
 - `name` and `version` must be present, otherwise `400`.
 - The file name must belong to them: `<dist>-<version>.tar.gz`, or `<dist>-<version>-<tags>.whl` with `-` in the version written as `_`. Otherwise `400`.
 - Project names are normalized: runs of `-`, `_` and `.` collapse to one `-`, and the name is lower-cased. `My_Package` and `my-package` are one project.
+- Versions that PEP 440 treats as equal are one release. A file uploaded as `1.0.0` when the project already has `1.0` joins the `1.0` release and is listed under that spelling.
 - A file name that already exists in the repository is `409 file already exists`. Distributions are immutable: bump the version.
 - The `409` also covers a file name another name and version pair already holds. `foo-1-2.tar.gz` is both `foo` `1-2` and `foo-1` `2`. A download of an already ambiguous file name is `409`.
 

@@ -2779,6 +2779,10 @@ export type DockerGcReport = {
      * Storage deletions that failed (logged server-side; the orphan collector retries them)
      */
     failures: number;
+    /**
+     * Manifests whose body is missing from storage; while any exists, no blob of the repository is swept
+     */
+    manifests_missing_body: number;
     manifests: Array<DockerGcManifest>;
     blobs: Array<DockerGcBlob>;
     /**

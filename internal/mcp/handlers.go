@@ -166,6 +166,8 @@ func (s *Server) triggerAIAnalysis(ctx context.Context, in triggerAnalysisIn) (q
 		return queuedResult{}, errRateLimited
 	}
 
+	// Identity comes from the stored component, never from the caller.
+	in.ArtifactFormat, in.ArtifactName, in.ArtifactVersion = blob.Format, blob.Name, blob.Version
 	// AIAnalysisRequest has the fields of the tool input; the conversion stops compiling if they diverge.
 	s.analyzer.Queue(AIAnalysisRequest(in))
 

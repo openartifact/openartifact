@@ -361,3 +361,54 @@ func TestEvaluatePolicyWithException(t *testing.T) {
 		t.Error("an exception must not be matched as a denied license")
 	}
 }
+
+func TestExpressionAllowed_Precedence(t *testing.T) {
+	allow := normalizeSet([]string{"MIT", "Apache-2.0"})
+
+	for _, tc := range []struct {
+		expr string
+		want bool
+	}{
+		{"MIT AND (Apache-2.0 OR GPL-3.0-only)", true},
+		{"(GPL-3.0-only OR Apache-2.0) AND MIT", true},
+		{"MIT AND (GPL-3.0-only OR LGPL-3.0-only)", false},
+		{"MIT OR GPL-3.0-only AND LGPL-3.0-only", true}, // AND binds tighter: MIT OR (GPL AND LGPL)
+		{"GPL-3.0-only AND LGPL-3.0-only OR MIT", true},
+		{"(MIT OR GPL-3.0-only) AND GPL-2.0-only", false},
+		{"MIT AND Apache-2.0 WITH LLVM-exception", true},
+		{"MIT, GPL-3.0-only", false},
+		{"MIT, Apache-2.0", true},
+		{"MIT GPL-3.0-only", false},
+		{"Apache License 2.0", true}, // alias of an allowed id
+		{"Foo License 2.0", false},
+		{"(MIT", true}, // malformed: every identifier is allowed
+	} {
+		if got := expressionAllowed(tc.expr, allow); got != tc.want {
+			t.Errorf("expressionAllowed(%q) = %v, want %v", tc.expr, got, tc.want)
+		}
+	}
+
+	if !expressionAllowed("Apache License 2.0", normalizeSet([]string{"Apache License 2.0"})) {
+		t.Error("a multi-word name listed as a whole must stay allowed")
+	}
+}
+
+func TestNormalizeID_DeprecatedWithException(t *testing.T) {
+	for in, want := range map[string]string{
+		"GPL-2.0-with-classpath-exception": "gpl-2.0",
+		"GPL-2.0-with-GCC-exception":       "gpl-2.0",
+		"GPL-3.0-with-autoconf-exception":  "gpl-3.0",
+		"GPL-2.0-only":                     "gpl-2.0",
+	} {
+		if got := normalizeID(in); got != want {
+			t.Errorf("normalizeID(%q) = %q, want %q", in, got, want)
+		}
+	}
+
+	d := NewDetector(nil)
+	deny := &models.LicensePolicy{Enabled: true, DeniedLicenses: []string{"GPL-2.0"}}
+
+	if ok, _ := d.EvaluatePolicy([]string{"GPL-2.0-with-classpath-exception"}, deny); ok {
+		t.Error("deprecated with-exception id must hit a GPL-2.0 deny entry")
+	}
+}

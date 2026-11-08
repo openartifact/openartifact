@@ -79,7 +79,7 @@ import AppToggle from './AppToggle.vue'
 import { listStorageBackends, type StorageBackend } from '../api/storage'
 import { createTier } from '../api/tiering'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n'
+import { t, tp } from '../i18n'
 
 const props = defineProps<{
   open: boolean
@@ -137,7 +137,7 @@ async function submit(): Promise<void> {
       ...(hasRank ? { rank: Number(rank.value) } : {}),
       promote_on_read: promote.value,
     })
-    toasts.success(`${t('tiering.tier.created')}: ${name.value.trim()}`)
+    toasts.success(tp('tiering.tier.created', { name: name.value.trim() }))
     emit('created')
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('tiering.tier.saveFailed'))

@@ -21,12 +21,9 @@ const MaxFileListBytes = 16 << 20
 
 type FileEntry struct {
 	Path   string
-	Size   int64
-	Mode   uint16
 	MTime  int64
 	Digest string
 	LinkTo string
-	IsDir  bool
 }
 
 type ChangelogEntry struct {
@@ -230,8 +227,6 @@ func extractFiles(h *Header) ([]FileEntry, bool) {
 
 	dirNames, _ := h.GetStringArray(RPMTAG_DIRNAMES)
 	dirIdx, _ := h.GetInt32s(RPMTAG_DIRINDEXES)
-	sizes, _ := h.GetInt32s(RPMTAG_FILESIZES)
-	modes, _ := h.GetInt32s(RPMTAG_FILEMODES)
 	mtimes, _ := h.GetInt32s(RPMTAG_FILEMTIMES)
 	digests, _ := h.GetStringArray(RPMTAG_FILEDIGESTS)
 	linktos, _ := h.GetStringArray(RPMTAG_FILELINKTOS)
@@ -265,15 +260,6 @@ func extractFiles(h *Header) ([]FileEntry, bool) {
 
 		budget -= cost
 		entry.Path = dir + base
-
-		if i < len(sizes) {
-			entry.Size = int64(sizes[i])
-		}
-
-		if i < len(modes) {
-			entry.Mode = uint16(modes[i] & 0xFFFF)
-			entry.IsDir = (modes[i] & 0xF000) == 0x4000
-		}
 
 		if i < len(mtimes) {
 			entry.MTime = int64(mtimes[i])

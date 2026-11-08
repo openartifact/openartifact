@@ -82,7 +82,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { PlusIcon } from '@heroicons/vue/20/solid'
 import { useRoute, useRouter } from 'vue-router'
 import AppButton from '../../../components/AppButton.vue'
@@ -94,6 +94,7 @@ import TokensTable from '../../../components/tokens/TokensTable.vue'
 import FilterBar from '../../../components/ui/FilterBar.vue'
 import SegmentedControl from '../../../components/ui/SegmentedControl.vue'
 import { useDocsLink } from '../../../composables/useDocsLink'
+import { useUrlFlag } from '../../../composables/useUrlFlag'
 import { useTokenList } from '../../../composables/useTokenList'
 import type { UnifiedToken } from '../../../api/tokens'
 import { TOKEN_TYPE_FILTERS, type TokenTypeFilter } from '../../../lib/tokens'
@@ -109,7 +110,10 @@ const { list, who, canRevoke, revoking, revokeBusy, confirmRevoke } = useTokenLi
 const docsUrl = useDocsLink('settings-tokens')
 
 // `?new=1` (with `type` and `project`) opens the drawer from a link.
-const creating = ref(route.query.new === '1')
+// The page is not remounted for a link to the same path, so the flag is watched.
+const newFlag = useUrlFlag('new')
+const creating = ref(false)
+watch(newFlag.on, (on) => { if (on) creating.value = true }, { immediate: true })
 const secret = ref<string | null>(null)
 const revealTitle = ref('')
 const revealHint = ref('')

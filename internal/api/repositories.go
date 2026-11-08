@@ -83,6 +83,7 @@ type RepositoriesStore interface {
 	GetRepoComponentBlob(ctx context.Context, repoID string, id string) (*models.ComponentBlob, error)
 	GetRepoComponentDetail(ctx context.Context, repoID string, id string) (*models.ComponentDetail, error)
 	GetRepoMetadataByRepo(ctx context.Context, repositoryID string) ([]models.RepoMetadata, error)
+	GetRepositoriesByIDs(ctx context.Context, ids []string) (map[string]*models.Repository, error)
 	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
 	ListComponentsByRepo(ctx context.Context, repoID string, formatFilter string, page int, limit int) ([]*models.Component, int, error)
@@ -94,8 +95,7 @@ type RepositoriesStore interface {
 	MoveRepositoryToProject(ctx context.Context, repoID string, toProjectID string, maxRepositories int) error
 	ReplaceGroupMembers(ctx context.Context, groupRepoID string, memberIDs []string) error
 	RepoCatalogStats(ctx context.Context, repoIDs []string) (map[string]models.RepoStats, error)
-	UpdateRepository(ctx context.Context, repo *models.Repository) error
-	UpdateRepositoryAndMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error
+	UpdateRepositorySettings(ctx context.Context, repo *models.Repository, change database.RepositorySettingsChange) error
 }
 
 type RepositoriesHandler struct {
@@ -1212,18 +1212,20 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		repo.PresignDownloads = override
 	}
 
+	// Everything is validated before the first write; the project move, the
+	// settings and the member list are then written in one transaction.
+	var change database.RepositorySettingsChange
+
 	if body.Project != nil {
 		project := h.resolveProject(ctx, w, *body.Project)
 		if project == nil {
 			return
 		}
 
-		if !h.moveToProject(ctx, w, repo, project.ID) {
-			return
+		if repo.ProjectID == nil || *repo.ProjectID != project.ID {
+			change.MoveToProjectID = project.ID
 		}
 	}
-
-	var memberIDs []string
 
 	if body.MemberRepos != nil {
 		ids, status, code, msg := h.resolveGroupMembers(ctx, actor, repo.Name, repo.Format, *body.MemberRepos)
@@ -1232,18 +1234,22 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 			return
 		}
 
-		memberIDs = ids
+		change.ReplaceMembers, change.MemberIDs = true, ids
 	}
 
-	if body.MemberRepos != nil {
-		err = h.db.UpdateRepositoryAndMembers(ctx, repo, memberIDs)
-	} else {
-		err = h.db.UpdateRepository(ctx, repo)
-	}
-
+	err = h.db.UpdateRepositorySettings(ctx, repo, change)
 	if err != nil {
-		if database.IsUniqueViolation(err) {
+		switch {
+		case database.IsUniqueViolation(err):
 			writeError(w, http.StatusConflict, "conflict", "a repository with this name already exists")
+			return
+		case errors.Is(err, database.ErrProjectQuotaExceeded):
+			writeError(w, http.StatusConflict, "project_quota_exceeded",
+				"the target project's storage quota cannot take this repository's usage")
+
+			return
+		case errors.Is(err, database.ErrRepositoryNotFound):
+			writeError(w, http.StatusNotFound, "not_found", "repository not found")
 			return
 		}
 
@@ -1251,6 +1257,10 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
+	}
+
+	if change.MoveToProjectID != "" {
+		repo.ProjectID = &change.MoveToProjectID
 	}
 
 	h.metadataChanged(repo)
@@ -1275,40 +1285,6 @@ func curationModeOf(repo *models.Repository) string {
 	}
 
 	return repo.CurationMode
-}
-
-// moveToProject reassigns repo to the project (admin PATCH with "project").
-// The move goes through MoveRepositoryToProject so the repository's usage
-// follows it to the target project's quota; it writes the error response and
-// returns false on failure. The caller's own update then re-writes the same
-// project_id.
-func (h *RepositoriesHandler) moveToProject(ctx context.Context, w http.ResponseWriter, repo *models.Repository, projectID string) bool {
-	if repo.ProjectID != nil && *repo.ProjectID == projectID {
-		return true
-	}
-
-	if err := h.db.MoveRepositoryToProject(ctx, repo.ID, projectID, 0); err != nil {
-		switch {
-		case errors.Is(err, database.ErrProjectQuotaExceeded):
-			writeError(
-				w,
-				http.StatusConflict,
-				"project_quota_exceeded",
-				"the target project's storage quota cannot take this repository's usage",
-			)
-		case errors.Is(err, database.ErrRepositoryNotFound):
-			writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		default:
-			h.log.Errorw("update repository: move to project failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-		}
-
-		return false
-	}
-
-	repo.ProjectID = &projectID
-
-	return true
 }
 
 func (h *RepositoriesHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
@@ -1722,15 +1698,21 @@ func downloadFilename(blob *models.ComponentBlob) string {
 func (h *RepositoriesHandler) writeMemberList(w http.ResponseWriter, r *http.Request, members []*models.RepositoryGroupMember) {
 	memberList := make([]map[string]any, 0, len(members))
 
+	ids := make([]string, len(members))
+	for i, member := range members {
+		ids[i] = member.MemberRepoID
+	}
+
+	repos, err := h.db.GetRepositoriesByIDs(r.Context(), ids)
+	if err != nil {
+		h.log.Errorw("list members: db error getting member repos", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
 	for _, member := range members {
-		repo, err := h.db.GetRepositoryByID(r.Context(), member.MemberRepoID)
-		if err != nil {
-			h.log.Errorw("list members: db error getting member repo", "member_id", member.MemberRepoID, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-			return
-		}
-
+		repo := repos[member.MemberRepoID]
 		if repo == nil {
 			continue
 		}

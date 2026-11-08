@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/pglock"
 	"github.com/openartifact/openartifact/migrations"
 )
 
@@ -97,7 +98,7 @@ func (m *Migrator) acquireLock(ctx context.Context, conn *sql.Conn) error {
 func (m *Migrator) releaseLock(ctx context.Context, conn *sql.Conn) {
 	// A cancelled ctx (shutdown mid-migration) must not skip the unlock: the
 	// session lock would otherwise outlive this attempt on a pooled connection.
-	_, _ = conn.ExecContext(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock(`+advisoryLockKey+`)`)
+	pglock.Unlock(ctx, conn, `SELECT pg_advisory_unlock(`+advisoryLockKey+`)`)
 }
 
 func (m *Migrator) loadApplied(ctx context.Context, conn *sql.Conn) (map[string]string, error) {

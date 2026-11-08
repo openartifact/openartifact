@@ -198,6 +198,8 @@ func ParseVersions(r io.Reader) (*Versions, error) {
 	var (
 		v     = &Versions{}
 		index = make(map[string]int)
+		live  = make(map[liveKey]int)
+		dead  = make(map[int][]int)
 		sc    = newScanner(r)
 	)
 
@@ -238,11 +240,21 @@ func ParseVersions(r io.Reader) (*Versions, error) {
 
 		for _, tok := range tokens {
 			if bare, yanked := strings.CutPrefix(tok, "-"); yanked {
-				e.Versions = slices.DeleteFunc(e.Versions, func(x string) bool { return x == bare })
-			} else if !slices.Contains(e.Versions, tok) {
+				k := liveKey{i, bare}
+				if pos, ok := live[k]; ok {
+					delete(live, k)
+
+					dead[i] = append(dead[i], pos)
+				}
+			} else if k := (liveKey{i, tok}); !hasLive(live, k) {
+				live[k] = len(e.Versions)
 				e.Versions = append(e.Versions, tok)
 			}
 		}
+	}
+
+	for i, positions := range dead {
+		compactVersions(&v.Entries[i], positions)
 	}
 
 	if err := scanErr(sc); err != nil {
@@ -250,6 +262,37 @@ func ParseVersions(r io.Reader) (*Versions, error) {
 	}
 
 	return v, nil
+}
+
+// liveKey identifies a live version of one entry while parsing; its value in the
+// live map is the version's position in Entry.Versions.
+type liveKey struct {
+	entry   int
+	version string
+}
+
+func hasLive(live map[liveKey]int, k liveKey) bool {
+	_, ok := live[k]
+
+	return ok
+}
+
+// compactVersions drops the yanked positions, keeping the order of the rest.
+func compactVersions(e *Entry, positions []int) {
+	drop := make(map[int]struct{}, len(positions))
+	for _, p := range positions {
+		drop[p] = struct{}{}
+	}
+
+	out := e.Versions[:0]
+
+	for p, ver := range e.Versions {
+		if _, gone := drop[p]; !gone {
+			out = append(out, ver)
+		}
+	}
+
+	e.Versions = out
 }
 
 func parseVersionsLine(line string) (string, []string, string, error) {

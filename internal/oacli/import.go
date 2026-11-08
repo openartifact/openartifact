@@ -19,11 +19,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -373,8 +371,7 @@ func runImport(cfg importConfig, client *Client, outFmt string) int {
 		return exitImportUsage
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	ctx := client.context()
 
 	progress := io.Writer(os.Stderr)
 	if cfg.Quiet {

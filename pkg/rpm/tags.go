@@ -25,8 +25,6 @@ const (
 	RPMTAG_GROUP             TagType = 1016
 	RPMTAG_URL               TagType = 1020
 	RPMTAG_ARCH              TagType = 1022
-	RPMTAG_FILESIZES         TagType = 1028
-	RPMTAG_FILEMODES         TagType = 1030
 	RPMTAG_FILEMTIMES        TagType = 1034
 	RPMTAG_FILEDIGESTS       TagType = 1035
 	RPMTAG_FILELINKTOS       TagType = 1036

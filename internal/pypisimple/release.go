@@ -96,6 +96,11 @@ func canonicalVersion(v string) string {
 	return strings.Join(parts, ".")
 }
 
+// SameVersion reports whether two spellings name one release ("1.0" and "1.0.0").
+func SameVersion(a, b string) bool {
+	return canonicalVersion(a) == canonicalVersion(b)
+}
+
 // Releases maps a release (the files of one version) to the time its first
 // file was uploaded.
 type Releases map[string]time.Time

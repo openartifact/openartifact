@@ -14,6 +14,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -55,6 +56,12 @@ const (
 	headerDelivery = "X-Oa-Delivery"
 	// headerEvent carries the event name of the delivery.
 	headerEvent = "X-Oa-Event"
+	// headerTimestamp carries the Unix time (seconds) of this attempt. It is
+	// fresh on every retry and covered by headerSignatureV2.
+	headerTimestamp = "X-Oa-Timestamp"
+	// headerSignatureV2 carries sha256=<hex> of "<timestamp>.<delivery id>.<body>",
+	// so a captured delivery cannot be replayed outside the receiver's window.
+	headerSignatureV2 = "X-Oa-Signature-V2"
 )
 
 const (
@@ -405,8 +412,8 @@ func (d *Dispatcher) deliver(wh *models.Webhook, delivery *models.WebhookDeliver
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("User-Agent", "OpenArtifact-Webhook/1.0")
 	// Identify the delivery and event for receivers: delivery is at least once,
-	// so the ID is how a receiver drops a repeat. Like every header these are
-	// outside the signature, which still covers the body only.
+	// so the ID is how a receiver drops a repeat. The legacy signature covers
+	// the body only; the V2 signature below also covers the delivery ID.
 	req.Header.Set(headerDelivery, delivery.ID)
 	req.Header.Set(headerEvent, delivery.EventType)
 
@@ -420,8 +427,14 @@ func (d *Dispatcher) deliver(wh *models.Webhook, delivery *models.WebhookDeliver
 
 			return
 		}
-		signature := computeHMAC(payloadJSON, []byte(secret))
-		req.Header.Set("X-Hub-Signature-256", "sha256="+signature)
+		key := []byte(secret)
+		req.Header.Set("X-Hub-Signature-256", "sha256="+computeHMAC(key, payloadJSON))
+
+		// V2 signs "<timestamp>.<delivery id>.<body>".
+		ts := strconv.FormatInt(time.Now().Unix(), 10)
+		dot := []byte{'.'}
+		req.Header.Set(headerTimestamp, ts)
+		req.Header.Set(headerSignatureV2, "sha256="+computeHMAC(key, []byte(ts), dot, []byte(delivery.ID), dot, payloadJSON))
 	}
 
 	// Make the request
@@ -505,10 +518,12 @@ func (d *Dispatcher) saveDelivery(webhookID string, delivery *models.WebhookDeli
 	}
 }
 
-// computeHMAC computes HMAC-SHA256 signature.
-func computeHMAC(data, secret []byte) string {
+// computeHMAC computes the hex HMAC-SHA256 of the concatenation of parts.
+func computeHMAC(secret []byte, parts ...[]byte) string {
 	h := hmac.New(sha256.New, secret)
-	h.Write(data)
+	for _, p := range parts {
+		h.Write(p)
+	}
 
 	return hex.EncodeToString(h.Sum(nil))
 }

@@ -19,12 +19,6 @@ FROM auth_users WHERE email = $1;
 SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at, updated_at, external_id, provider_slug, sso_managed_groups
 FROM auth_users WHERE external_id = $1 AND provider_slug = $2;
 
--- name: UpdateUser :exec
-UPDATE auth_users
-SET username = $2, email = $3, password_hash = $4, full_name = $5, disabled = $6,
-    must_change_password = $7, last_login_at = $8, external_id = $9, provider_slug = $10, sso_managed_groups = $11
-WHERE id = $1;
-
 -- name: CountUsers :one
 SELECT COUNT(*) FROM auth_users;
 

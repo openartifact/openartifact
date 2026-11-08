@@ -46,13 +46,20 @@ func Try(ctx context.Context, db *sql.DB, key string) (func(), bool, error) {
 	}
 
 	return func() {
-		uctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), unlockTimeout)
-		defer cancel()
-
-		if _, err := conn.ExecContext(uctx, "SELECT pg_advisory_unlock(hashtext($1))", key); err != nil {
-			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
-		}
-
+		Unlock(ctx, conn, "SELECT pg_advisory_unlock(hashtext($1))", key)
 		_ = conn.Close()
 	}, true, nil
+}
+
+// Unlock runs the unlock statement on conn with a bounded timeout, detached
+// from ctx's cancellation. When it fails the physical connection is marked bad
+// so the following conn.Close drops it and the session lock dies with it. The
+// caller still closes conn.
+func Unlock(ctx context.Context, conn *sql.Conn, query string, args ...any) {
+	uctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), unlockTimeout)
+	defer cancel()
+
+	if _, err := conn.ExecContext(uctx, query, args...); err != nil {
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+	}
 }

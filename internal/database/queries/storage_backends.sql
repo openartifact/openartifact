@@ -10,9 +10,6 @@ FROM storage_backends ORDER BY name ASC;
 SELECT id, name, kind, config, status, status_message, last_checked_at, created_at, updated_at
 FROM storage_backends WHERE name = $1;
 
--- name: UpdateStorageBackend :exec
-UPDATE storage_backends SET name = $1, kind = $2, config = $3, updated_at = $4 WHERE id = $5;
-
 -- name: DeleteStorageBackend :exec
 DELETE FROM storage_backends WHERE id = $1;
 

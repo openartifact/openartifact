@@ -344,3 +344,15 @@ func TestServe_HitIsNotSniffableAsHTML(t *testing.T) {
 		t.Errorf("Content-Type = %q, want application/octet-stream default", got)
 	}
 }
+
+func TestServe_MavenMetadataWithAnUnparsableMemberIsUncacheable(t *testing.T) {
+	f := newFixture(t, "maven", member("hosted", "maven", "hosted"), member("central", "maven", "proxy"))
+	f.set("hosted", metaPath, 200, versionsDoc("20240101000000", "1.0"))
+	f.set("central", metaPath, 200, "<not-xml")
+
+	w := f.get(http.MethodGet, metaPath)
+	if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" || w.Header().Get("ETag") != "" {
+		t.Errorf("merge missing a member = %d cache-control %q etag %q, want 200 no-store without validator",
+			w.Code, w.Header().Get("Cache-Control"), w.Header().Get("ETag"))
+	}
+}

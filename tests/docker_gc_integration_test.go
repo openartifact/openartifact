@@ -368,6 +368,47 @@ func TestDockerGC_MultiArchIndexKeepsChildren(t *testing.T) {
 	}
 }
 
+// TestDockerGC_MissingManifestBodyProtectsBlobs: a manifest whose body is not
+// in the store (a restored database, a store inconsistency) has unknown
+// references. GC must not record it as referencing nothing: the run completes,
+// reports it, and sweeps no blob while it exists.
+func TestDockerGC_MissingManifestBodyProtectsBlobs(t *testing.T) {
+	f := newGCFixture(t)
+
+	const keptLayer, strayLayer, keptCfg = "layer of the tagged image", "layer of the untagged image", `{"kept":true}`
+
+	m1, _ := f.pushImage("reg/app", "v1", keptCfg, keptLayer)
+	f.pushImage("reg/app", "", `{"stray":true}`, strayLayer)
+
+	// Forget the recorded references and lose the tagged manifest's body.
+	if _, err := f.pg.GetDB().ExecContext(context.Background(), `DELETE FROM docker_manifest_refs`); err != nil {
+		t.Fatalf("wipe refs: %v", err)
+	}
+
+	if err := f.store.Delete(context.Background(), strings.TrimPrefix(ociDigest([]byte(m1)), "sha256:")); err != nil {
+		t.Fatalf("delete manifest body: %v", err)
+	}
+
+	f.age(2 * gcGrace)
+
+	rep := f.run(worker.DockerGCOptions{Grace: gcGrace})
+
+	if rep.ManifestsMissingBody != 1 {
+		t.Errorf("ManifestsMissingBody = %d, want 1", rep.ManifestsMissingBody)
+	}
+
+	// The untagged manifest goes, but no blob record or object is swept.
+	if rep.ManifestsDeleted != 1 || rep.BlobRefsDeleted != 0 {
+		t.Errorf("report: manifests=%d blob_refs=%d, want 1/0", rep.ManifestsDeleted, rep.BlobRefsDeleted)
+	}
+
+	for _, l := range []string{keptLayer, keptCfg} {
+		if !f.inStore(ociDigest([]byte(l))) {
+			t.Errorf("blob %q was swept although its manifest's body is unreadable", l)
+		}
+	}
+}
+
 // TestDockerGC_RecentUntaggedManifestKept: the grace period protects a manifest
 // that lost its tag only a moment ago.
 func TestDockerGC_RecentUntaggedManifestKept(t *testing.T) {

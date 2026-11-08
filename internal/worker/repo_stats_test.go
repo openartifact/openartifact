@@ -134,9 +134,14 @@ func TestRepoStatsWorkerRunsAtStartAndStops(t *testing.T) {
 
 	w.Stop()
 
+	// Stop returns only after the loop goroutine exited, so the count is final.
 	n := db.callCount()
 
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-w.doneCh:
+	default:
+		t.Fatal("Stop returned before the worker loop exited")
+	}
 
 	if db.callCount() != n {
 		t.Fatal("the worker kept running after Stop")

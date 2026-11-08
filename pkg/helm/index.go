@@ -23,6 +23,15 @@ import (
 // ErrNotIndex is returned for a document that is not a Helm repository index.
 var ErrNotIndex = errors.New("not a helm repository index")
 
+// MaxVersions caps the chart versions (entries across all charts) of an index
+// ParseIndex accepts. The tree of an index costs tens of nodes per version, so
+// the cap bounds what a merge keeps in memory. The largest public indexes list
+// a few tens of thousands of versions; 200000 is several times that.
+const MaxVersions = 200_000
+
+// ErrTooLarge is returned for an index listing more than MaxVersions versions.
+var ErrTooLarge = errors.New("helm index lists too many chart versions")
+
 // Index is a parsed index.yaml of a classic Helm chart repository. It keeps
 // the YAML tree, so everything but the fields a caller rewrites is reproduced
 // as the upstream published it (annotations, dependencies, icons, ...).
@@ -99,9 +108,17 @@ func ParseIndex(doc []byte) (*Index, error) {
 
 		ix.entries = e
 
+		versions := 0
+
 		for i := 1; i < len(e.Content); i += 2 {
-			if s := e.Content[i]; !isNull(s) && s.Kind != yaml.SequenceNode {
+			s := e.Content[i]
+			if !isNull(s) && s.Kind != yaml.SequenceNode {
 				return nil, fmt.Errorf("%w: entries are not lists", ErrNotIndex)
+			}
+
+			versions += len(s.Content)
+			if versions > MaxVersions {
+				return nil, ErrTooLarge
 			}
 		}
 	}

@@ -546,3 +546,15 @@ func TestAnsibleGroup_ListsAreRevalidatable(t *testing.T) {
 		t.Errorf("revalidation = %d, want 304", rec.Code)
 	}
 }
+
+func TestAnsibleGroup_VersionDocAfterAFailedMemberIsUncacheable(t *testing.T) {
+	a := newAnsibleFixture(t, true, ansibleMembers()...)
+	a.add("hosted", &ansibleFake{fail: true})
+	a.add("mirror", &ansibleFake{collections: map[string][]string{"acme.lib": {"1.0.0"}}})
+
+	w := a.get(http.MethodGet, "api/v3/collections/acme/lib/versions/1.0.0/", "")
+	if w.Code != http.StatusOK || w.Header().Get("Cache-Control") != "no-store" || w.Header().Get("ETag") != "" {
+		t.Errorf("version doc = %d cache-control %q etag %q, want 200 no-store without validator",
+			w.Code, w.Header().Get("Cache-Control"), w.Header().Get("ETag"))
+	}
+}

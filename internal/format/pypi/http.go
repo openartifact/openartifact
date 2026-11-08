@@ -55,6 +55,23 @@ type HTTPStore interface {
 	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
 }
 
+// existingReleaseSpelling returns the spelling of the live release of project that
+// version names under PEP 440 canonicalization, or version itself when there is none.
+func (h *HTTPHandler) existingReleaseSpelling(ctx context.Context, repoID, project, version string) (string, error) {
+	existing, err := h.DB.ListPyPIPackageVersions(ctx, repoID, project)
+	if err != nil {
+		return "", fmt.Errorf("list pypi versions: %w", err)
+	}
+
+	for _, e := range existing {
+		if pypisimple.SameVersion(e.Version, version) {
+			return e.Version, nil
+		}
+	}
+
+	return version, nil
+}
+
 type HTTPHandler struct {
 	*base.Handler
 
@@ -328,6 +345,16 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	// Normalize package name
 	normalizedName := pypisimple.NormalizeName(name)
+
+	// Warehouse keeps one release per canonical version: a file uploaded as 1.0.0
+	// joins the existing 1.0 release instead of opening a second one.
+	version, err := h.existingReleaseSpelling(r.Context(), repoID, normalizedName, version)
+	if err != nil {
+		h.Log.Errorw("failed to list project versions", "error", err)
+		http.Error(w, "failed to create package", http.StatusInternalServerError)
+
+		return
+	}
 
 	blobKey := fmt.Sprintf("pypi/%s/%s", repoID, filename)
 

@@ -472,7 +472,7 @@ func (db *projectsMockDB) MoveRepositoryToProject(_ context.Context, _, _ string
 	return nil
 }
 
-func (db *projectsMockDB) UpdateRepository(_ context.Context, repo *models.Repository) error {
+func (db *projectsMockDB) UpdateRepositorySettings(_ context.Context, repo *models.Repository, _ database.RepositorySettingsChange) error {
 	db.updRepo = repo
 	return nil
 }

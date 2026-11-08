@@ -6,6 +6,7 @@ package oacli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -61,13 +63,13 @@ func authLoginCmd(a *app) *cobra.Command {
 			server = *serverURL
 		}
 
-		authLogin(server, *username, *passwordStdin)
+		authLogin(a.client.context(), server, *username, *passwordStdin)
 	}
 
 	return cmd
 }
 
-func authLogin(server, username string, passwordStdin bool) {
+func authLogin(ctx context.Context, server, username string, passwordStdin bool) {
 	switch {
 	case passwordStdin:
 		if username == "" {
@@ -80,7 +82,10 @@ func authLogin(server, username string, passwordStdin bool) {
 	var savedToken, savedTokenID string
 
 	if username == "" {
-		savedToken = readPassword("API token: ")
+		savedToken = strings.TrimSpace(readPassword("API token: "))
+		if savedToken == "" {
+			dief("no API token given; the saved credentials were not changed")
+		}
 	} else {
 		var password string
 		if passwordStdin {
@@ -89,7 +94,12 @@ func authLogin(server, username string, passwordStdin bool) {
 			password = readPassword("Password: ")
 		}
 
-		savedToken, savedTokenID = sessionLoginToken(newClient(server, ""), username, password, passwordStdin)
+		warnPasswordExposure(os.Stderr, server)
+
+		c := newClient(server, "")
+		c.ctx = ctx
+
+		savedToken, savedTokenID = sessionLoginToken(c, username, password, passwordStdin)
 	}
 
 	newCfg := &Config{Server: server, Token: savedToken, TokenID: savedTokenID}
@@ -115,12 +125,14 @@ func authLogoutCmd(a *app) *cobra.Command {
 	username := cmd.Flags().String("username", "", "Username (with --revoke)")
 	passwordStdin := cmd.Flags().Bool("password-stdin", false, "Read the password from stdin (with --revoke)")
 
-	cmd.Run = func(*cobra.Command, []string) { authLogout(a.cfg, *revoke, *username, *passwordStdin) }
+	cmd.Run = func(*cobra.Command, []string) {
+		authLogout(a.client.context(), a.cfg, *revoke, *username, *passwordStdin)
+	}
 
 	return cmd
 }
 
-func authLogout(cfg *Config, revoke bool, username string, passwordStdin bool) {
+func authLogout(ctx context.Context, cfg *Config, revoke bool, username string, passwordStdin bool) {
 	tokenID := cfg.TokenID
 	revoked := false
 
@@ -129,7 +141,10 @@ func authLogout(cfg *Config, revoke bool, username string, passwordStdin bool) {
 			dief("--revoke needs a login saved by this version of oa, --username and --password-stdin")
 		}
 
+		warnPasswordExposure(os.Stderr, cfg.Server)
+
 		c := newClient(cfg.Server, "")
+		c.ctx = ctx
 		c.httpClient.Jar = newCookieJar()
 		sessionSignIn(c, username, readPasswordStdin(), true)
 
@@ -180,7 +195,10 @@ func currentUsername(client *Client) string {
 // openSession signs in with username/password and returns a client carrying
 // the cookie session (CSRF-aware via sessionDo).
 func openSession(client *Client, username, password string) *Client {
+	warnPasswordExposure(os.Stderr, client.baseURL)
+
 	c := newClient(client.baseURL, "")
+	c.ctx = client.ctx
 
 	jar, err := cookiejar.New(nil)
 	if err != nil {

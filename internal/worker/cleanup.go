@@ -6,7 +6,6 @@ package worker
 
 import (
 	"context"
-	"database/sql/driver"
 	"errors"
 	"fmt"
 	"regexp"
@@ -21,6 +20,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatlifecycle "github.com/openartifact/openartifact/internal/format/lifecycle"
+	"github.com/openartifact/openartifact/internal/pglock"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
@@ -34,6 +34,8 @@ var (
 	ErrPolicyNotFound = errors.New("cleanup policy not found")
 	// ErrPolicyBusy is returned when the policy is already being executed.
 	ErrPolicyBusy = errors.New("cleanup policy is already running")
+	// ErrCleanupStopping is returned by TriggerPolicy once the worker is shutting down.
+	ErrCleanupStopping = errors.New("cleanup worker is shutting down")
 )
 
 const (
@@ -83,7 +85,9 @@ type CleanupWorker struct {
 	blobStore storage.BlobStore
 	log       *logger.Logger
 
-	wg sync.WaitGroup // manually triggered policy runs
+	wg       sync.WaitGroup // manually triggered policy runs
+	trigMu   sync.Mutex     // makes "not stopping" + wg.Go atomic w.r.t. Stop
+	stopping bool           // guarded by trigMu
 
 	workers *formatlifecycle.Workers // the metadata workers the format lifecycles notify
 
@@ -129,6 +133,10 @@ func (w *CleanupWorker) safeCycle() {
 // Stop is idempotent and safe without Start. It also waits for the manually
 // triggered policy runs.
 func (w *CleanupWorker) Stop() {
+	w.trigMu.Lock()
+	w.stopping = true
+	w.trigMu.Unlock()
+
 	w.lifecycle.Stop()
 	w.wg.Wait()
 }
@@ -262,34 +270,16 @@ func (w *CleanupWorker) shouldRunPolicyAt(policy *models.CleanupPolicy, now time
 // dedicated connection, so lock and unlock are guaranteed to run on the same
 // session. The returned release func unlocks and returns the connection.
 func (w *CleanupWorker) acquirePolicyLock(ctx context.Context, policyID string) (func(), error) {
-	conn, err := w.db.GetDB().Conn(ctx)
+	release, locked, err := pglock.Try(ctx, w.db.GetDB(), "cleanup:"+policyID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get connection for cleanup lock: %w", err)
-	}
-
-	var locked bool
-	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock(hashtext($1))", "cleanup:"+policyID).Scan(&locked); err != nil {
-		_ = conn.Close()
 		return nil, fmt.Errorf("failed to acquire cleanup lock: %w", err)
 	}
 
 	if !locked {
-		_ = conn.Close()
 		return nil, ErrPolicyBusy
 	}
 
-	return func() {
-		uctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), policyRecordTimeout)
-		defer cancel()
-
-		if _, err := conn.ExecContext(uctx, "SELECT pg_advisory_unlock(hashtext($1))", "cleanup:"+policyID); err != nil {
-			// Closing the session releases session-level advisory locks as well; make
-			// sure the pooled connection is not reused with the lock still held.
-			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
-		}
-
-		_ = conn.Close()
-	}, nil
+	return release, nil
 }
 
 func (w *CleanupWorker) executePolicy(ctx context.Context, policy *models.CleanupPolicy) {
@@ -340,6 +330,14 @@ func (w *CleanupWorker) TriggerPolicy(ctx context.Context, policyID string) erro
 	release, err := w.acquirePolicyLock(w.runCtx, policy.ID)
 	if err != nil {
 		return err
+	}
+
+	w.trigMu.Lock()
+	defer w.trigMu.Unlock()
+
+	if w.stopping {
+		release()
+		return ErrCleanupStopping
 	}
 
 	w.wg.Go(func() {

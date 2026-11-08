@@ -336,6 +336,7 @@ type formatStore interface {
 	GetNPMPackageByName(ctx context.Context, repoID string, fullName string) (*models.NPMPackage, error)
 	GetNPMVersion(ctx context.Context, packageID string, version string) (*models.NPMVersion, error)
 	GetNPMVersionsByPackage(ctx context.Context, packageID string) ([]*models.NPMVersion, error)
+	ListNPMVersionsByNames(ctx context.Context, packageID string, versions []string) (map[string]*models.NPMVersion, error)
 	GetNixPathByHash(ctx context.Context, repoID string, storeHash string) (*models.NixPath, error)
 	GetNixPathByNarFile(ctx context.Context, repoID string, narFile string) (*models.NixPath, error)
 	GetNixPendingNar(ctx context.Context, repoID string, sha256 string) (*models.NixPendingNar, error)

@@ -148,6 +148,19 @@ func (d *prDB) UpdateRepository(_ context.Context, repo *models.Repository) erro
 	return nil
 }
 
+func (d *prDB) UpdateRepositorySettings(_ context.Context, repo *models.Repository, change database.RepositorySettingsChange) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if change.MoveToProjectID != "" {
+		repo.ProjectID = &change.MoveToProjectID
+	}
+
+	d.repos[repo.Name] = repo
+
+	return nil
+}
+
 func (d *prDB) DeleteRepository(_ context.Context, id string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()

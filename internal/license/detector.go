@@ -255,6 +255,13 @@ func (d *Detector) EvaluatePolicy(licenses []string, policy *models.LicensePolic
 // "GPL-3.0-or-later", and in an allow list also allows it.
 func normalizeID(id string) string {
 	id = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(id)), "+")
+	// Deprecated "GPL-2.0-with-classpath-exception" ids name the base license
+	// plus an exception; like "GPL-2.0 WITH Classpath-exception-2.0" the
+	// exception does not count for policy.
+	if i := strings.Index(id, "-with-"); i > 0 && strings.HasSuffix(id, "-exception") {
+		id = id[:i]
+	}
+
 	if spdx, ok := licenseAliases[id]; ok {
 		id = strings.ToLower(spdx)
 	}
@@ -283,13 +290,6 @@ func expressionFields(expr string) []string {
 	return strings.FieldsFunc(expr, func(r rune) bool {
 		return unicode.IsSpace(r) || strings.ContainsRune("(),/;|", r)
 	})
-}
-
-// joinsLicenses reports whether an expression lists licenses with a separator
-// that does not say which of them applies ("/", ";", "|") or with AND.
-func joinsLicenses(expr string) bool {
-	return strings.ContainsAny(expr, "/;|") ||
-		slices.ContainsFunc(expressionFields(expr), func(f string) bool { return strings.EqualFold(f, "AND") })
 }
 
 // spdxIdentifiers returns the normalized license identifiers of an SPDX
@@ -327,33 +327,52 @@ func spdxIdentifiers(expr string) []string {
 	return ids
 }
 
-// expressionAllowed: an expression joined by AND, "/", ";" or "|" needs every
-// identifier allowed; otherwise (single license or OR) any allowed identifier
-// suffices.
+// nonSPDXJoiners are the separators package metadata uses in place of an
+// operator; none says which license applies, so all are required.
+const nonSPDXJoiners = "/;|,"
+
+// expressionAllowed reports whether an expression is covered by the allow list.
+// A well-formed SPDX expression is evaluated with its precedence and
+// parentheses: OR needs one allowed branch, AND needs all of them ("MIT AND
+// (Apache-2.0 OR GPL-3.0-only)" is allowed by [MIT, Apache-2.0]); WITH
+// exceptions are ignored. Free-form text joined by "/", ";", "|" or "," needs
+// every identifier allowed (conservative). Anything else that does not parse,
+// such as a multi-word name, is allowed only when the whole string is listed
+// or when every identifier in it is allowed.
+//
+// Deny matching is deliberately stricter and unchanged: see EvaluatePolicy, an
+// expression is denied when any identifier in it is denied, even in an OR
+// branch, because the consumer may pick that branch.
 func expressionAllowed(expr string, allowed map[string]struct{}) bool {
 	if _, ok := allowed[normalizeID(expr)]; ok {
 		return true
 	}
 
+	if !strings.ContainsAny(expr, nonSPDXJoiners) {
+		if n := parseSPDXLenient(expr); n != nil {
+			return n.allowed(allowed)
+		}
+	}
+
+	return flatExpressionAllowed(expr, allowed)
+}
+
+// flatExpressionAllowed is the rule for text that is not a well-formed
+// expression: every identifier must be allowed, so a joiner or stray word can
+// never smuggle an unlisted license past the allow list.
+func flatExpressionAllowed(expr string, allowed map[string]struct{}) bool {
 	ids := spdxIdentifiers(expr)[1:]
 	if len(ids) == 0 {
 		return false
 	}
 
-	requireAll := joinsLicenses(expr)
-
 	for _, id := range ids {
-		_, ok := allowed[id]
-		if requireAll && !ok {
+		if _, ok := allowed[id]; !ok {
 			return false
-		}
-
-		if !requireAll && ok {
-			return true
 		}
 	}
 
-	return requireAll
+	return true
 }
 
 // contains checks if a slice contains a string.

@@ -27,7 +27,7 @@ oa help                 # full command list (also: oa --help); oa help COMMAND =
 | Setting | Flag | Env | Default |
 |---|---|---|---|
 | Server URL | `--server URL` | `OA_SERVER` | value saved by `oa auth login`, else `http://localhost:8080` |
-| API token | `--token TOKEN` | `OA_TOKEN` | value saved by `oa auth login` |
+| API token | `--token TOKEN` | `OA_TOKEN` | value saved by `oa auth login`, used only when the server is the saved one |
 | Output format | `--format table\|json` | n/a | `table` |
 
 Precedence: flag, then environment variable, then the config file. The global flags go anywhere on the command line (`oa --format json repo list` and `oa repo list --format json` are the same), except where the command has a flag of that name itself (see [Flags](#flags)).
@@ -212,6 +212,10 @@ Uploads and downloads stream through the CLI without buffering whole files.
 | `oa backup download <id> <dest>` | writes to a temp file next to `<dest>`, syncs, then renames onto `<dest>` |
 | `oa sbom download <repo> <id> <dest>` | same |
 | `oa delta get <repo> <pkg-id> --from <sha256> <dest>` | same; downloads the delta patch from the given base version |
+
+A new downloaded file is readable by its owner only (mode 0600), so private artifacts and audit exports are never world-readable. Overwriting an existing file keeps that file's mode. A device or pipe such as `/dev/null` is written to directly. Ctrl-C or SIGTERM stops a transfer, removes the temp file and aborts a multipart upload on the server.
+
+`oa auth login`, `oa auth logout --revoke` and the password commands warn when they send the password over plain http to a non-loopback server. `oa auth login` refuses an empty API token and leaves the saved credentials alone.
 
 For CI uploads with build properties use [`oa upload`](#oa-upload); there is no `oa download` command.
 

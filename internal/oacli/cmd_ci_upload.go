@@ -150,7 +150,7 @@ type ciUploadResult struct {
 }
 
 func runUploadCmd(client *Client, outFmt string, o ciUploadOptions) error {
-	res, err := runCIUpload(context.Background(), newCIAPI(client), o)
+	res, err := runCIUpload(client.context(), newCIAPI(client), o)
 	if err != nil {
 		if outFmt == formatJSON {
 			res.Error = err.Error()

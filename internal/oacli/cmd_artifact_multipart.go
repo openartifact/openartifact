@@ -168,7 +168,7 @@ func (u *presignedUploader) uploadParts(file io.ReaderAt, size int64, base strin
 			next:     1,
 		}
 
-		err = m.run(context.Background())
+		err = m.run(u.client.context())
 	}
 
 	if err != nil {
@@ -194,10 +194,20 @@ func checkMultipartTarget(size int64, target uploadTarget) error {
 	return nil
 }
 
+// abortTimeout bounds the best-effort abort of an upload.
+const abortTimeout = 30 * time.Second
+
 // abort cancels an upload on the server. It is best effort: the CLI is already
 // failing and the server expires stale uploads on its own.
 func (u *presignedUploader) abort(path string) {
-	resp, err := u.client.doJSON(http.MethodPost, path, nil)
+	// The caller's context may be what failed (Ctrl-C); abort regardless.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(u.client.context()), abortTimeout)
+	defer cancel()
+
+	detached := *u.client
+	detached.ctx = ctx
+
+	resp, err := detached.doJSON(http.MethodPost, path, nil)
 	if err != nil {
 		return
 	}

@@ -55,7 +55,7 @@ function landingPath(next: unknown): string {
 }
 
 /** Sends the user home and says why, instead of dropping them there silently. */
-function denied(reasonKey: 'shell.denied.admin' | 'shell.denied.repoCreate') {
+function denied(reasonKey: 'shell.denied.admin') {
   useToastStore().push({ level: 'info', title: t(reasonKey), description: t('shell.denied.hint') })
   return { name: 'dashboard' }
 }
@@ -123,12 +123,6 @@ router.beforeEach(async (to, from) => {
     if (section?.id === 'tokens' && to.query.type === undefined) {
       return { path: to.path, query: { ...to.query, type: 'personal' }, hash: to.hash, replace: true }
     }
-  }
-
-  // Creating a repository needs admin or maintainer in some project; the server
-  // still checks the chosen project.
-  if (to.meta.requiresRepoCreate && !session.canCreateRepo) {
-    return denied('shell.denied.repoCreate')
   }
 })
 

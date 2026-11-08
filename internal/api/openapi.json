@@ -6226,6 +6226,10 @@
             "type": "integer",
             "description": "Storage deletions that failed (logged server-side; the orphan collector retries them)"
           },
+          "manifests_missing_body": {
+            "type": "integer",
+            "description": "Manifests whose body is missing from storage; while any exists, no blob of the repository is swept"
+          },
           "manifests": {
             "type": "array",
             "items": {
@@ -6252,6 +6256,7 @@
           "blobs_freed",
           "bytes_freed",
           "failures",
+          "manifests_missing_body",
           "manifests",
           "blobs",
           "truncated"

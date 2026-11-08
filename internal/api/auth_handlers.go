@@ -371,6 +371,19 @@ func readLoginCredentials(w http.ResponseWriter, r *http.Request) (string, strin
 	return body.Username, body.Password, true
 }
 
+// revokePreLoginSession drops the session the login request already carries,
+// so a pre-login cookie cannot outlive the login (session fixation).
+func (h *AuthHandler) revokePreLoginSession(r *http.Request) {
+	old := sessionCookieValue(r)
+	if old == "" {
+		return
+	}
+
+	if err := auth.DeleteSession(r.Context(), h.db, old); err != nil {
+		h.log.Warnw("login: revoke pre-login session", "error", err)
+	}
+}
+
 func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !requireJSONSameOrigin(w, r) {
 		return
@@ -478,6 +491,8 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// success would switch the protection off while the attack is still going.
 	h.loginPairLimiter.reset(pairKey)
 	h.loginTrust.remember(pairKey)
+
+	h.revokePreLoginSession(r)
 
 	cookieValue, _, err := auth.CreateSession(ctx, h.db, user.ID, clientIP, r.UserAgent())
 	if err != nil {

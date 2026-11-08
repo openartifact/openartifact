@@ -595,6 +595,11 @@ type GpgKeyRepository struct {
 	AssignedAt   time.Time `db:"assigned_at" json:"assigned_at"`
 }
 
+type GroupMerge struct {
+	DupID  string      `db:"dup_id" json:"dup_id"`
+	KeepID interface{} `db:"keep_id" json:"keep_id"`
+}
+
 type GroupMetadataState struct {
 	RepositoryID string          `db:"repository_id" json:"repository_id"`
 	Stale        bool            `db:"stale" json:"stale"`

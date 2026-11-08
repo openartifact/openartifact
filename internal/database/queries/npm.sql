@@ -60,6 +60,25 @@ JOIN package_files f ON f.version_id = v.id AND f.role = 'primary' AND f.deleted
 LEFT JOIN blobs b ON b.id = f.blob_id
 WHERE v.package_id = $1 AND v.version_key = $2 AND v.deleted_at IS NULL;
 
+-- name: ListNPMVersionsByNames :many
+-- The live versions of one package among the given version keys: the batched
+-- form of GetNPMVersion for publish and deprecate, which look up every version
+-- of the payload.
+SELECT f.id, v.package_id, v.version, v.version_key,
+       COALESCE(v.metadata -> 'manifest_json', '{}'::jsonb)::jsonb AS manifest_json,
+       COALESCE(f.checksums ->> 'integrity', '')::text AS integrity,
+       COALESCE(f.checksums ->> 'shasum', '')::text AS shasum,
+       COALESCE(f.blob_id::text, '')::text AS blob_id,
+       f.filename AS tarball_filename,
+       COALESCE(b.sha256, '')::text AS blob_sha256,
+       COALESCE(b.size_bytes, 0)::bigint AS blob_size_bytes,
+       v.created_at
+FROM package_versions v
+JOIN package_files f ON f.version_id = v.id AND f.role = 'primary' AND f.deleted_at IS NULL
+LEFT JOIN blobs b ON b.id = f.blob_id
+WHERE v.package_id = sqlc.arg(package_id) AND v.version_key = ANY(sqlc.arg(version_keys)::text[])
+  AND v.deleted_at IS NULL;
+
 -- name: GetNPMVersionsByPackage :many
 SELECT f.id, v.package_id, v.version,
        COALESCE(v.metadata -> 'manifest_json', '{}'::jsonb)::jsonb AS manifest_json,

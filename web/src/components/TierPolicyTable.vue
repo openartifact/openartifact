@@ -141,7 +141,7 @@ async function confirmDelete(): Promise<void> {
   deleting.value = true
   try {
     await deletePolicy(target.id)
-    toasts.success(`${t('tiering.policy.deleted')}: ${target.name}`)
+    toasts.success(tp('tiering.policy.deleted', { name: target.name ?? '' }))
     deleteTarget.value = null
     emit('changed')
   } catch (err) {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 )
@@ -37,9 +38,35 @@ func (db *userPatchMockDB) GetUserByID(context.Context, string) (*models.User, e
 	return &u, nil
 }
 
-func (db *userPatchMockDB) UpdateUser(_ context.Context, u *models.User) error {
-	db.updated = u
-	return nil
+// applyUserPatch mirrors what PatchUser writes: only the columns named in patch.
+func applyUserPatch(u models.User, patch database.UserPatch) *models.User {
+	if patch.SetEmail {
+		u.Email = patch.Email
+	}
+
+	if patch.FullName != nil {
+		u.FullName = patch.FullName
+	}
+
+	if patch.Disabled != nil {
+		u.Disabled = *patch.Disabled
+	}
+
+	if patch.MustChangePassword != nil {
+		u.MustChangePassword = *patch.MustChangePassword
+	}
+
+	if patch.PasswordHash != nil {
+		u.PasswordHash = patch.PasswordHash
+	}
+
+	return &u
+}
+
+func (db *userPatchMockDB) PatchUser(_ context.Context, _ string, patch database.UserPatch) (*models.User, error) {
+	db.updated = applyUserPatch(db.user, patch)
+
+	return db.updated, nil
 }
 
 // PATCH {"email": ""} clears the address (NULL) instead of storing "": the
@@ -77,7 +104,7 @@ func TestAdminUsersPatchEmptyEmailClearsIt(t *testing.T) {
 			}
 
 			if db.updated == nil {
-				t.Fatal("UpdateUser was not called")
+				t.Fatal("PatchUser was not called")
 			}
 
 			switch got := db.updated.Email; {

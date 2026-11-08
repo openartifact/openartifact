@@ -34,7 +34,7 @@ type AdminUsersStore interface {
 	DeleteUser(ctx context.Context, id string) (bool, error)
 	GetUserByID(ctx context.Context, id string) (*models.User, error)
 	ListUsers(ctx context.Context, page int, perPage int) ([]*models.User, int, error)
-	UpdateUser(ctx context.Context, user *models.User) error
+	PatchUser(ctx context.Context, id string, patch database.UserPatch) (*models.User, error)
 }
 
 type AdminUsersHandler struct {
@@ -244,7 +244,10 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 
 	revokeSessions := false
 
-	var changed []string
+	var (
+		changed []string
+		patch   database.UserPatch
+	)
 
 	if body.Email != nil {
 		if *body.Email != "" && !strings.Contains(*body.Email, "@") {
@@ -254,30 +257,32 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 
 		// An empty string clears the address: stored as "" it would collide
 		// with every other cleared user on the unique email index (a 409).
-		user.Email = body.Email
+		patch.SetEmail = true
+
+		patch.Email = body.Email
 		if *body.Email == "" {
-			user.Email = nil
+			patch.Email = nil
 		}
 
 		changed = append(changed, "email")
 	}
 
 	if body.FullName != nil {
-		user.FullName = body.FullName
+		patch.FullName = body.FullName
 
 		changed = append(changed, "full_name")
 	}
 
 	if isAdmin {
 		if body.Disabled != nil {
-			user.Disabled = *body.Disabled
+			patch.Disabled = body.Disabled
 			revokeSessions = revokeSessions || *body.Disabled
 
 			changed = append(changed, "disabled="+strconv.FormatBool(*body.Disabled))
 		}
 
 		if body.MustChangePassword != nil {
-			user.MustChangePassword = *body.MustChangePassword
+			patch.MustChangePassword = body.MustChangePassword
 
 			changed = append(changed, "must_change_password")
 		}
@@ -289,15 +294,15 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 
-			user.PasswordHash = &newHash
+			patch.PasswordHash = &newHash
 			revokeSessions = true
 
 			changed = append(changed, "password_reset")
 		}
 	}
 
-	user.UpdatedAt = time.Now()
-	if err := h.db.UpdateUser(ctx, user); err != nil {
+	user, err = h.db.PatchUser(ctx, id, patch)
+	if err != nil {
 		if database.IsUniqueViolation(err) {
 			writeError(w, http.StatusConflict, "conflict", "a user with this email already exists")
 			return
@@ -305,6 +310,11 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
+		return
+	}
+
+	if user == nil {
+		writeError(w, http.StatusNotFound, "not_found", "user not found")
 		return
 	}
 

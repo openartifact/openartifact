@@ -62,51 +62,70 @@ func (p *UserStore) GetUserByUsername(ctx context.Context, username string) (*mo
 	return p.getUserWhere(ctx, "username", "u.username = $1", username)
 }
 
-func (p *UserStore) UpdateUser(ctx context.Context, user *models.User) error {
+// UserPatch names the columns an admin edit writes; nil fields (and
+// SetEmail=false) leave the stored value alone.
+type UserPatch struct {
+	SetEmail           bool // Email is written, nil clearing it to NULL
+	Email              *string
+	FullName           *string
+	Disabled           *bool
+	MustChangePassword *bool
+	PasswordHash       *string
+}
+
+// PatchUser writes only the columns in patch, so a concurrent disable or
+// password change on other columns is not reverted by a stale snapshot. It
+// returns the updated row, or nil when the user does not exist. A user that
+// is disabled after the write loses the project tokens it minted, in the same
+// transaction.
+func (p *UserStore) PatchUser(ctx context.Context, id string, patch UserPatch) (*models.User, error) {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to update user: %w", err)
+		return nil, fmt.Errorf("failed to update user: %w", err)
 	}
 
 	defer func() { _ = tx.Rollback() }()
 
-	_, err = tx.ExecContext(
+	u, err := scanUser(tx.QueryRowContext(
 		ctx,
-		`UPDATE auth_users SET username=$2, email=$3, password_hash=$4, full_name=$5, disabled=$6, must_change_password=$7,
-			last_login_at=$8, external_id=$9, provider_slug=$10, sso_managed_groups=$11,
-		password_expires_at = CASE WHEN password_hash IS DISTINCT FROM $4 THEN NULL ELSE password_expires_at END
-		WHERE id=$1`,
-		user.ID,
-		user.Username,
-		user.Email,
-		user.PasswordHash,
-		user.FullName,
-		user.Disabled,
-		user.MustChangePassword,
-		user.LastLoginAt,
-		user.ExternalID,
-		user.ProviderSlug,
-		user.SSOManagedGroups,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to update user: %w", err)
+		`UPDATE auth_users u SET
+			email = CASE WHEN $2 THEN $3 ELSE u.email END,
+			full_name = COALESCE($4, u.full_name),
+			disabled = COALESCE($5, u.disabled),
+			must_change_password = COALESCE($6, u.must_change_password),
+			password_hash = COALESCE($7, u.password_hash),
+			password_expires_at = CASE WHEN $7::text IS NOT NULL THEN NULL ELSE u.password_expires_at END,
+			updated_at = now()
+		WHERE u.id = $1
+		RETURNING `+userColumns,
+		id,
+		patch.SetEmail,
+		patch.Email,
+		patch.FullName,
+		patch.Disabled,
+		patch.MustChangePassword,
+		patch.PasswordHash,
+	))
+
+	user, err := orNotFound(u, err, "update user")
+	if err != nil || user == nil {
+		return nil, err
 	}
 
-	// A disabled creator loses the project tokens it minted, in the same transaction.
 	if user.Disabled {
 		if err := revokeProjectTokensOf(ctx, tx, user.ID, ""); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to update user: %w", err)
+		return nil, fmt.Errorf("failed to update user: %w", err)
 	}
 
-	return nil
+	return user, nil
 }
 
 // UpdateUserLastLogin sets only last_login_at, so a login finishing from a

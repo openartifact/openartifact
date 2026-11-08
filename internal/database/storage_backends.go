@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -80,15 +81,44 @@ func (p *StorageBackendStore) GetStorageBackend(ctx context.Context, name string
 	}, nil
 }
 
-// UpdateStorageBackend updates a storage backend configuration.
-func (p *StorageBackendStore) UpdateStorageBackend(ctx context.Context, backend *models.StorageBackend) error {
-	return p.q.UpdateStorageBackend(ctx, dbsqlc.UpdateStorageBackendParams{
-		Name:      backend.Name,
-		Kind:      backend.Kind,
-		Config:    backend.Config,
-		UpdatedAt: backend.UpdatedAt,
-		ID:        backend.ID,
-	})
+// UpdateStorageBackendIfIdle updates a storage backend's name, kind and config.
+// When requireIdle is set (the kind or location changes), the backend row is
+// locked FOR UPDATE and the busy check runs in the same transaction, so a
+// concurrent tier move or blob write (which takes a key-share lock on the row)
+// either commits first and is seen, or waits until the update is done. It
+// returns "" when the backend was updated and the busy reason otherwise.
+func (p *StorageBackendStore) UpdateStorageBackendIfIdle(
+	ctx context.Context,
+	backend *models.StorageBackend,
+	requireIdle bool,
+) (string, error) {
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("begin update storage backend tx: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	if requireIdle {
+		if _, err := tx.ExecContext(ctx, `SELECT 1 FROM storage_backends WHERE id = $1 FOR UPDATE`, backend.ID); err != nil {
+			return "", fmt.Errorf("lock storage backend: %w", err)
+		}
+
+		if reason, err := storageBackendBusy(ctx, tx, backend.ID, true); err != nil || reason != "" {
+			return reason, err
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `UPDATE storage_backends SET name = $1, kind = $2, config = $3, updated_at = $4 WHERE id = $5`,
+		backend.Name, backend.Kind, backend.Config, backend.UpdatedAt, backend.ID); err != nil {
+		return "", fmt.Errorf("update storage backend: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit update storage backend: %w", err)
+	}
+
+	return "", nil
 }
 
 // DeleteStorageBackend deletes a storage backend.

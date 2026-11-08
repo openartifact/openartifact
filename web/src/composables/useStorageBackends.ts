@@ -10,7 +10,7 @@ import {
   testStoragePrimary,
   type StoragePrimary,
 } from '../api/storage'
-import { t, tp } from '../i18n'
+import { t, tp, tpn } from '../i18n'
 import type { StorageBackend } from '../lib/storageBackends'
 import { useToastStore } from '../stores/toast'
 
@@ -87,7 +87,7 @@ export function useStorageBackends() {
       const results = await Promise.allSettled(checks)
       const failed = results.filter((r) => r.status === 'rejected' || !r.value.ok).length
       if (failed === 0) toasts.success(t('adm.storage.allHealthy'))
-      else toasts.warning(`${failed} ${t('adm.storage.someFailed')}`)
+      else toasts.warning(tpn('adm.storage.someFailed', failed))
       await load()
     } finally {
       testingAll.value = false

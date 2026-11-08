@@ -174,7 +174,7 @@ async function confirmDelete(): Promise<void> {
   deleting.value = true
   try {
     await deleteTier(target.name)
-    toasts.success(`${t('tiering.tier.deleted')}: ${target.name}`)
+    toasts.success(tp('tiering.tier.deleted', { name: target.name }))
     deleteTarget.value = null
     emit('changed')
   } catch (err) {

@@ -10,7 +10,6 @@
   "shell.requiresAdmin": "Wymaga administratora",
   "shell.settingsManagedByAdmins": "Ustawieniami instancji zarządzają administratorzy",
   "shell.denied.admin": "Ta strona jest dostępna tylko dla administratorów",
-  "shell.denied.repoCreate": "Utworzenie repozytorium wymaga roli opiekuna (maintainer) w projekcie",
   "shell.denied.hint": "Poproś administratora o dostęp.",
   "shell.searchPill": "Szukaj lub przejdź do…",
   "shell.userMenu": "Menu konta: {name}",

@@ -191,6 +191,10 @@ func TestAdminAIConfigAppliesToRunningWorker(t *testing.T) {
 	srv := chatEndpoint(t)
 	e := newAIRuntimeEnv(t)
 
+	for _, id := range []string{"a", "b", "c"} {
+		e.db.blobs[id] = &models.ComponentBlob{ID: id, Format: "npm", Filename: id + "-1.tgz", Name: id, Version: "1", SHA256: id}
+	}
+
 	if e.worker.Enabled() {
 		t.Fatal("worker enabled before any configuration")
 	}
@@ -296,7 +300,8 @@ func TestAITriggerWithoutManifestText(t *testing.T) {
 		{"unknown artifact", "nope", `{}`, http.StatusNotFound},
 		{"artifact without a readable manifest", "docker-1", `{}`, http.StatusUnprocessableEntity},
 		{"supported artifact", "npm-1", `{}`, http.StatusAccepted},
-		{"caller text needs no stored artifact", "nope", `{"manifest_text":"x","artifact_format":"npm"}`, http.StatusAccepted},
+		{"caller text still needs a stored artifact", "nope", `{"manifest_text":"x","artifact_format":"npm"}`, http.StatusNotFound},
+		{"caller text for a stored artifact", "docker-1", `{"manifest_text":"x"}`, http.StatusAccepted},
 	}
 
 	for _, tc := range tests {
