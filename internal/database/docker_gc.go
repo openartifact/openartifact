@@ -7,6 +7,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/ociref"
 )
 
 // Reference kinds recorded in docker_manifest_refs.
@@ -49,13 +51,24 @@ type DockerGCStore interface {
 	SetDockerManifestRefs(ctx context.Context, repoID string, m *models.DockerGCManifest, refs models.DockerManifestRefs) error
 
 	// ListDockerGCManifests returns every live manifest of the repository with its
-	// tagged/young flags (young: pushed within grace) and index children.
+	// tagged/young flags (young: pushed within grace), index children and, for a
+	// manifest held by dependent tags (cosign .sig/.att/.sbom/.src, referrers tag
+	// schema), the subject digests of those tags.
 	ListDockerGCManifests(ctx context.Context, repoID string, grace time.Duration) ([]*models.DockerGCManifest, error)
 
 	// DeleteDockerManifestsForGC deletes the given manifests (by row id) that
-	// are still older than grace, untagged and not adjacent to a manifest
-	// outside ids, and returns the ones actually deleted.
+	// are still older than grace, untagged (a dependent tag whose subject is
+	// absent or among ids does not count) and not adjacent to a manifest outside
+	// ids, together with their dependent tags, and returns the ones actually deleted.
 	DeleteDockerManifestsForGC(ctx context.Context, repoID string, ids []string, grace time.Duration) ([]*models.DockerGCManifest, error)
+
+	// ExpireDockerManifests deletes the live manifests whose quay.expires-after
+	// deadline has passed, with every tag that points at them, their referrers,
+	// the manifests held only by their cosign/referrers dependent tags and the
+	// children of a deleted index nothing else lists, bypassing the grace period.
+	// A manifest a release bundle pins, and a child of a live index that stays, are
+	// left. With dryRun it only reports what it would delete.
+	ExpireDockerManifests(ctx context.Context, repoID string, dryRun bool) ([]*models.DockerGCManifest, error)
 
 	// ListDockerGCBlobs returns up to limit blob records of the repository that
 	// no manifest other than excludeManifestIDs references and that have not
@@ -234,8 +247,9 @@ func (p *DockerStore) SetDockerManifestRefs(
 
 func (p *DockerStore) ListDockerGCManifests(ctx context.Context, repoID string, grace time.Duration) ([]*models.DockerGCManifest, error) {
 	rows, err := p.q.ListDockerGCManifests(ctx, dbsqlc.ListDockerGCManifestsParams{
-		RepositoryID: repoID,
-		GraceSeconds: grace.Seconds(),
+		RepositoryID:   repoID,
+		GraceSeconds:   grace.Seconds(),
+		DependentTagRe: ociref.TagPattern,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list docker gc manifests: %w", err)
@@ -255,6 +269,10 @@ func (p *DockerStore) ListDockerGCManifests(ctx context.Context, repoID string, 
 		}
 		if r.Children != "" {
 			m.Children = strings.Split(r.Children, ",")
+		}
+
+		if r.DependentOf != "" {
+			m.DependentOf = strings.Split(r.DependentOf, ",")
 		}
 
 		out[i] = m
@@ -281,9 +299,10 @@ func (p *DockerStore) DeleteDockerManifestsForGC(
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 
 	rows, err := p.q.WithTx(tx).DeleteDockerManifestsForGC(ctx, dbsqlc.DeleteDockerManifestsForGCParams{
-		RepositoryID: repoID,
-		Ids:          ids,
-		GraceSeconds: grace.Seconds(),
+		RepositoryID:   repoID,
+		Ids:            ids,
+		GraceSeconds:   grace.Seconds(),
+		DependentTagRe: ociref.TagPattern,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("delete docker manifests for gc: %w", err)
@@ -296,6 +315,82 @@ func (p *DockerStore) DeleteDockerManifestsForGC(
 	out := make([]*models.DockerGCManifest, len(rows))
 	for i, r := range rows {
 		out[i] = &models.DockerGCManifest{ID: r.ID, Image: r.Image, Digest: r.Digest, Size: r.Size, BlobSHA256: r.BlobSha256}
+	}
+
+	return out, nil
+}
+
+// expiryClosureRounds bounds how many times dependents of dependents are
+// followed (a signature of a signature of an image).
+const expiryClosureRounds = 4
+
+func gcManifest(id, image, digest string, size int64, blobSHA256 string) *models.DockerGCManifest {
+	return &models.DockerGCManifest{ID: id, Image: image, Digest: digest, Size: size, BlobSHA256: blobSHA256}
+}
+
+func (p *DockerStore) ExpireDockerManifests(ctx context.Context, repoID string, dryRun bool) ([]*models.DockerGCManifest, error) {
+	tx, err := p.beginDockerGCTx(ctx, repoID)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+
+	q := p.q.WithTx(tx)
+
+	roots, err := q.ListDockerExpiredManifests(ctx, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("list expired docker manifests: %w", err)
+	}
+
+	if len(roots) == 0 {
+		return nil, nil
+	}
+
+	doomed := make([]*models.DockerGCManifest, 0, len(roots))
+	frontier := make([]string, 0, len(roots))
+
+	for _, r := range roots {
+		doomed = append(doomed, gcManifest(r.ID, r.Image, r.Digest, r.Size, r.BlobSha256))
+		frontier = append(frontier, r.ID)
+	}
+
+	all := slices.Clone(frontier)
+
+	for range expiryClosureRounds {
+		deps, err := q.ListDockerExpiryDependents(ctx, dbsqlc.ListDockerExpiryDependentsParams{
+			RepositoryID: repoID, Ids: all, DependentTagRe: ociref.TagPattern,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list dependents of expired docker manifests: %w", err)
+		}
+
+		if len(deps) == 0 {
+			break
+		}
+
+		for _, d := range deps {
+			doomed = append(doomed, gcManifest(d.ID, d.Image, d.Digest, d.Size, d.BlobSha256))
+			all = append(all, d.ID)
+		}
+	}
+
+	if dryRun {
+		return doomed, nil
+	}
+
+	rows, err := q.DeleteDockerExpiredManifests(ctx, dbsqlc.DeleteDockerExpiredManifestsParams{RepositoryID: repoID, Ids: all})
+	if err != nil {
+		return nil, fmt.Errorf("delete expired docker manifests: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit docker manifest expiry: %w", err)
+	}
+
+	out := make([]*models.DockerGCManifest, len(rows))
+	for i, r := range rows {
+		out[i] = gcManifest(r.ID, r.Image, r.Digest, r.Size, r.BlobSha256)
 	}
 
 	return out, nil

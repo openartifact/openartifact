@@ -41,6 +41,8 @@ const (
 	gemSuffix     = ".gem"
 	gemspecSuffix = ".gemspec.rz"
 	quickDir      = "quick/Marshal.4.8/"
+	gemsDir       = "gems/"
+	downloadsDir  = "downloads/"
 )
 
 // ParsePath classifies a repository-relative request path; ok is false for
@@ -61,7 +63,7 @@ func ParsePath(rel string) (Path, bool) {
 		return Path{Kind: KindInfo, Gem: gem}, ValidName(gem)
 	}
 
-	if file, ok := strings.CutPrefix(rel, "gems/"); ok {
+	if file, ok := strings.CutPrefix(rel, gemsDir); ok {
 		if stem, ok := strings.CutSuffix(file, gemSuffix); ok {
 			return Path{Kind: KindGem, File: stem}, validFile(stem)
 		}
@@ -76,6 +78,21 @@ func ParsePath(rel string) (Path, bool) {
 	}
 
 	return Path{}, false
+}
+
+// CanonicalPath maps the "downloads/<file>.gem" alias of a gem download to its
+// "gems/<file>.gem" path and returns every other path unchanged. Hermeto rewrites
+// rubygems.org gem URLs (https://rubygems.org/downloads/<file>.gem) to the proxy
+// it is given, so the alias must reach every repository type the way "gems/" does.
+func CanonicalPath(rel string) string {
+	trimmed := strings.TrimPrefix(rel, "/")
+
+	file, ok := strings.CutPrefix(trimmed, downloadsDir)
+	if !ok {
+		return rel
+	}
+
+	return rel[:len(rel)-len(trimmed)] + gemsDir + file
 }
 
 // validFile reports whether stem can be "<name>-<version>[-<platform>]": name

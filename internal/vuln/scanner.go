@@ -164,6 +164,24 @@ type osvVulnerability struct {
 	} `json:"database_specific"`
 }
 
+// convertOSV converts an OSV advisory that affects the package version to a
+// finding.
+func convertOSV(osvVuln osvVulnerability, osvEcosystem, name, version string) models.Vulnerability {
+	vuln := models.Vulnerability{
+		ID:          osvVuln.ID,
+		Aliases:     cleanAliases(osvVuln.ID, osvVuln.Aliases),
+		Summary:     osvVuln.Summary,
+		PublishedAt: osvVuln.Published,
+		References:  extractReferencesFromOSV(osvVuln.References),
+		CWEs:        osvVuln.DatabaseSpecific.CWEIDs,
+	}
+
+	vuln.Severity, vuln.CVSS = parseSeverityFromOSV(osvVuln.Severity, osvVuln.DatabaseSpecific.Severity)
+	vuln.FixedIn = extractFixedVersionFromOSV(osvVuln.Affected, osvEcosystem, name, version)
+
+	return vuln
+}
+
 // Scan queries OSV API for vulnerabilities in a package.
 func (s *OSVScanner) Scan(ctx context.Context, pkg Package) ([]models.Vulnerability, error) {
 	packageName, version := pkg.Name, pkg.Version
@@ -199,24 +217,8 @@ func (s *OSVScanner) Scan(ctx context.Context, pkg Package) ([]models.Vulnerabil
 			return nil, err
 		}
 
-		// Convert OSV vulnerabilities to our format
 		for _, osvVuln := range osvResp.Vulns {
-			vuln := models.Vulnerability{
-				ID:          osvVuln.ID,
-				Aliases:     cleanAliases(osvVuln.ID, osvVuln.Aliases),
-				Summary:     osvVuln.Summary,
-				PublishedAt: osvVuln.Published,
-				References:  extractReferencesFromOSV(osvVuln.References),
-				CWEs:        osvVuln.DatabaseSpecific.CWEIDs,
-			}
-
-			// Extract severity and CVSS
-			vuln.Severity, vuln.CVSS = parseSeverityFromOSV(osvVuln.Severity, osvVuln.DatabaseSpecific.Severity)
-
-			// Extract fixed version
-			vuln.FixedIn = extractFixedVersionFromOSV(osvVuln.Affected, osvEcosystem, packageName, version)
-
-			vulns = append(vulns, vuln)
+			vulns = append(vulns, convertOSV(osvVuln, osvEcosystem, packageName, version))
 		}
 
 		if osvResp.NextPageToken == "" {

@@ -64,6 +64,18 @@ func (p *SBOMStore) CreateSBOMReport(ctx context.Context, report *models.SBOMRep
 
 // ListSBOMReports lists all SBOM reports for a repository.
 func (p *SBOMStore) ListSBOMReports(ctx context.Context, repoID string) ([]*models.SBOMReport, error) {
+	return p.querySBOMReports(ctx, "list SBOM reports", repoID, "")
+}
+
+// GetSBOMReportsByArtifact lists the SBOM reports stored for one artifact of a
+// repository (one per SBOM format and spec version), newest first.
+func (p *SBOMStore) GetSBOMReportsByArtifact(ctx context.Context, repoID, artifactID string) ([]*models.SBOMReport, error) {
+	return p.querySBOMReports(ctx, "list SBOM reports of an artifact", repoID, artifactID)
+}
+
+// querySBOMReports lists the reports of a repository, of one artifact when
+// artifactID is not empty, newest first.
+func (p *SBOMStore) querySBOMReports(ctx context.Context, what, repoID, artifactID string) ([]*models.SBOMReport, error) {
 	rows, err := p.db.QueryContext(ctx, `
 		SELECT sr.id, ref.repository_id, ref.artifact_path, sr.sbom_format, sr.spec_version,
 		       sr.component_count, b.sha256, sj.completed_at, sj.created_at, sj.updated_at
@@ -71,10 +83,10 @@ func (p *SBOMStore) ListSBOMReports(ctx context.Context, repoID string) ([]*mode
 		JOIN scan_jobs sj ON sj.id = sr.scan_job_id
 		JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
 		LEFT JOIN blobs b ON b.id = sr.blob_id
-		WHERE sj.scan_type = 'sbom' AND ref.repository_id = $1
-		ORDER BY sj.created_at DESC`, repoID)
+		WHERE sj.scan_type = 'sbom' AND ref.repository_id = $1 AND ($2 = '' OR ref.artifact_path = $2)
+		ORDER BY sj.created_at DESC, sr.id`, repoID, artifactID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list SBOM reports: %w", err)
+		return nil, fmt.Errorf("failed to %s: %w", what, err)
 	}
 	defer rows.Close()
 

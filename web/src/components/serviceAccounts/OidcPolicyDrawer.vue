@@ -39,6 +39,33 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         />
       </FormField>
 
+      <FormField :label="t('sa.policy.discovery')" id="policy-discovery" :hint="discoveryHint">
+        <select id="policy-discovery" v-model="form.discoveryMode" :class="INPUT_CLASS" data-testid="policy-discovery">
+          <option v-for="m in DISCOVERY_MODES" :key="m" :value="m">{{ tDynamic(`sa.policy.discovery.${m}`) }}</option>
+        </select>
+      </FormField>
+
+      <FormField v-if="form.discoveryMode === 'static'" :label="t('sa.policy.jwks')" id="policy-jwks" :error="fieldError('jwks')" :hint="t('sa.policy.jwksHint')">
+        <textarea
+          id="policy-jwks"
+          v-model="form.jwks"
+          rows="6"
+          spellcheck="false"
+          autocomplete="off"
+          :class="[INPUT_CLASS, 'font-mono text-xs']"
+          :aria-invalid="fieldError('jwks') ? 'true' : undefined"
+          data-testid="policy-jwks"
+        />
+      </FormField>
+
+      <div v-else class="flex flex-col gap-1">
+        <div class="flex items-center gap-3">
+          <AppToggle v-model="form.allowPrivateIssuer" labelledby="policy-private-label" data-testid="policy-allow-private" />
+          <span id="policy-private-label" class="text-sm text-foreground">{{ t('sa.policy.allowPrivate') }}</span>
+        </div>
+        <p class="text-xs text-muted">{{ t('sa.policy.allowPrivateHint') }}</p>
+      </div>
+
       <FormField :label="t('sa.policy.audience')" id="policy-audience" :error="fieldError('audience')" :hint="t('sa.policy.audienceHint')">
         <input id="policy-audience" v-model="form.audience" type="text" autocomplete="off" spellcheck="false" :class="[INPUT_CLASS, 'font-mono']" :aria-invalid="fieldError('audience') ? 'true' : undefined" />
       </FormField>
@@ -94,6 +121,7 @@ import { createOidcPolicy, updateOidcPolicy, type OidcPolicy, type ServiceAccoun
 import { INPUT_CLASS } from '../../lib/formClasses'
 import {
   blankForm,
+  DISCOVERY_MODES,
   formOf,
   inputOf,
   MAX_TTL_MINUTES,
@@ -143,6 +171,7 @@ function applyPreset(preset: Preset): void {
   load({ ...presetForm(preset, form.serviceAccountId), name, audience })
 }
 
+const discoveryHint = computed(() => tDynamic(`sa.policy.discoveryHint.${form.discoveryMode}`))
 const issuerHint = computed(() => (presetOfIssuer(form.issuer) ? t('sa.policy.issuerShared') : t('sa.policy.issuerHint')))
 
 const FIELD_OF: Record<PolicyProblem, string> = {
@@ -155,6 +184,7 @@ const FIELD_OF: Record<PolicyProblem, string> = {
   claim: 'conditions',
   patterns: 'conditions',
   tooManyPatterns: 'conditions',
+  jwks: 'jwks',
 }
 const problem = computed(() => policyProblem(form))
 function fieldError(field: string): string | undefined {

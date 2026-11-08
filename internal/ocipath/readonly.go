@@ -11,18 +11,24 @@ import (
 
 // WriteError writes a distribution-spec error response.
 func WriteError(w http.ResponseWriter, status int, code, message string) {
+	WriteErrorDetail(w, status, code, message, nil)
+}
+
+// WriteErrorDetail is WriteError with a structured "detail" member, which the
+// distribution spec leaves to the registry; a nil detail is written as null.
+func WriteErrorDetail(w http.ResponseWriter, status int, code, message string, detail map[string]string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 
 	type errBody struct {
-		Code    string  `json:"code"`
-		Message string  `json:"message"`
-		Detail  *string `json:"detail"`
+		Code    string            `json:"code"`
+		Message string            `json:"message"`
+		Detail  map[string]string `json:"detail"`
 	}
 
 	body, err := json.Marshal(struct {
 		Errors []errBody `json:"errors"`
-	}{[]errBody{{Code: code, Message: message}}})
+	}{[]errBody{{Code: code, Message: message, Detail: detail}}})
 	if err == nil {
 		_, _ = w.Write(append(body, '\n'))
 	}

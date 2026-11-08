@@ -461,6 +461,9 @@ func TestDeclarativeApplyEndToEnd(t *testing.T) {
 	copyDir(t, examples, work)
 	replaceInFile(t, filepath.Join(work, "webhooks.yaml"), "https://hooks.example.com/openartifact", "http://127.0.0.1:9/openartifact")
 	replaceInFile(t, filepath.Join(work, "webhooks.yaml"), "https://hooks.example.com/chat", "http://127.0.0.1:9/chat")
+	// The in-cluster issuer resolves only inside a cluster; a private address literal passes the same
+	// allow_private_issuer check without DNS.
+	replaceInFile(t, filepath.Join(work, "ci-oidc.yaml"), "issuer: https://kubernetes.default.svc", "issuer: https://10.96.0.1")
 
 	t.Run("empty server differs", func(t *testing.T) {
 		s.expect(t, 2, "Repository/npm-hosted", "diff", "-f", work)

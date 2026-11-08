@@ -95,6 +95,7 @@ curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
 | `immutable_releases` | all | Default `false`. When `true`, deleting or overwriting a released version is `409` unless an admin passes `?force=true` ([per format](../operations/trash.md#immutable-releases)). |
 | `merge_proxy_versions` | group | Default `false`: for a package name held by a readable hosted member, the group hides what proxy members offer under that name (hosted members win, see [hosted wins](#hosted-members-win-a-package-name)). `true` merges proxy versions with the hosted ones. Global admins only: a delegated project maintainer sending it gets `403`. Ignored/refused on other repository types. |
 | `sign_packages` | hosted rpm | Default `false`. When `true`, new RPM uploads are signed with the active GPG key; existing packages are not re-signed. `400` for any other repository. |
+| `honour_quay_expiry` | hosted docker | Default `false`. When `true`, images carrying `quay.expires-after` are deleted after that time ([Quay image expiry](../formats/docker.md#quay-image-expiry)). `400` for any other repository or together with `immutable_releases`. |
 | `federated` | hosted | Default `false`. When `true`, the repository replicates with peer instances ([federation](../operations/federation.md)). Needs `federation.enabled` on the server, a federation-capable format and global admin rights; `400` otherwise. Can also be switched on later from the Federation section of the repository's Settings tab or `PUT /api/v1/repositories/{name}/federation`. |
 
 - For `cache_ttl_seconds` and `negative_cache_ttl_seconds`, `0` or an omitted field selects the default (it does not disable caching); negative values are `400`; values above the max are clamped. For `max_stale_seconds` only an omitted field selects the default: an explicit `0` means "never serve stale"; negative is `400`.
@@ -183,7 +184,7 @@ The proxy cache worker runs every 5 minutes and deletes entries expired by more 
 `min_age_hours` hides versions the upstream published recently, so a freshly published (possibly malicious) release is not picked up straight away. A version the upstream published less than `min_age_hours` ago has both effects:
 
 - it is dropped from the metadata the proxy renders, and "latest" style pointers move to the newest remaining version; a package whose versions are all too new behaves like a package with no versions;
-- its files are refused on download with `403` and the reason in the body.
+- its files are refused on download with `403` and the reason in the body (see [blocked downloads](#blocked-downloads)).
 
 A version whose publish time the upstream does not state is not hidden. Files already in the cache stay served. A version becomes visible by itself once it is old enough (rendered documents are revalidated at most every few minutes). Groups containing the proxy inherit the filter.
 
@@ -325,11 +326,38 @@ curl 'HOST/api/v1/repositories/npm-proxy/proxy-versions?package=left-pad' \
 
 Like the held-back list it reads the cache only (the upstream is never asked), is newest first and has the same `supported` rule and format coverage. `status` is `available` (clients can install it) or `held` (the gate keeps it from them; `reasons` says why, empty for an available version). `cached` is `true` when a file of the version is already stored in the proxy cache, so installing it needs no download from the upstream; it is read from the cache keys, which name the version for npm, PyPI, cargo, Go, Helm, NuGet and RubyGems. For the other formats `cache_known` is `false` and `cached` is `false` for every version. The package page of a proxy shows this list with Available, Cached and Held badges and an install command for each version that can be installed.
 
+### Blocked downloads
+
+Every refusal of a proxy download by a repository policy has the same shape, whatever the format, so a build tool or CI task can tell "blocked on purpose" from a transport failure. The status is `403`, the `X-OA-Block-Reason` header names the policy, and the body is JSON:
+
+```json
+{
+  "error": "version is younger than the repository's minimum age",
+  "code": "BLOCKED_BY_POLICY",
+  "policy": "min_age",
+  "package": "lodash",
+  "version": "4.17.22"
+}
+```
+
+| `policy` | Refused by |
+|---|---|
+| `quarantine` | a [vulnerability or secret scan](../security/scanning.md#quarantine) that quarantined the artifact |
+| `curation` | a [package curation](#package-curation) block rule, or an allowlist that does not list the version |
+| `min_age` | the [minimum age](#minimum-age) |
+| `license` | a license policy with the `block` action that holds the artifact |
+
+- `package` and `version` are the coordinates the format uses (for docker the image and the tag or digest). They are empty strings when the refused file does not name them, for example some terraform files.
+- The header is also set on `HEAD`, and a group passes the refusal of a member on unchanged: it does not try the next member.
+- **Docker** keeps the registry error body, because docker clients only parse that: `{"errors":[{"code":"DENIED","message":"…","detail":{"code":"BLOCKED_BY_POLICY","policy":"curation","package":"library/alpine","version":"3.19"}}]}`, with the same `X-OA-Block-Reason` header.
+- A version the gate hides from rendered metadata (npm packuments, PyPI pages, ...) is simply absent there; the refusal is what a client that still asks for its file gets. The availability endpoint of a proxy package explains each hold (see [package curation](#package-curation)).
+- Hosted repositories keep `ARTIFACT_QUARANTINED` for quarantined artifacts.
+
 ### Behavior notes
 
 - Concurrent requests for the same uncached path share one upstream fetch. Clients receive the first byte once the whole file is cached.
 - Cache hits do not update `hit_count` or `last_hit_at`: that would add a database write to every download.
-- Quarantined files answer `403` (`ARTIFACT_QUARANTINED`) like hosted ones.
+- Quarantined files answer `403` with the [block-reason contract](#blocked-downloads).
 
 ### Upstream URL and credentials
 

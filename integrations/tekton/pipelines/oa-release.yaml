@@ -1,0 +1,145 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: oa-release
+  labels:
+    app.kubernetes.io/version: "0.1"
+  annotations:
+    tekton.dev/pipelines.minVersion: 0.62.0
+    tekton.dev/tags: openartifact, release
+spec:
+  description: >-
+    Release path A: copy the images into an OpenArtifact docker repository, gate them against OpenArtifact
+    policy, seal them in a bundle, report the gate as a bundle check and promote when it passed. Run it from a Konflux integration test scenario or by hand.
+  params:
+    - name: SERVER
+      type: string
+    - name: REGISTRY_HOST
+      type: string
+      description: Registry host of the OpenArtifact server (host[:port], no scheme).
+    - name: REPOSITORY
+      type: string
+      description: Docker repository that receives the images.
+    - name: SOURCE_ARTIFACT
+      type: string
+    - name: SNAPSHOT_FILE
+      type: string
+      description: Snapshot JSON below SOURCE_ARTIFACT.
+    - name: SNAPSHOT
+      type: string
+      description: Snapshot JSON content, for the gate.
+    - name: BUNDLE_NAME
+      type: string
+    - name: BUNDLE_VERSION
+      type: string
+    - name: STAGE
+      type: string
+    - name: POLICY
+      type: string
+      default: ""
+    - name: CA_FILE
+      type: string
+      default: ""
+  tasks:
+    - name: publish
+      taskRef:
+        name: oa-publish
+      params:
+        - name: SERVER
+          value: $(params.SERVER)
+        - name: REPOSITORY
+          value: $(params.REPOSITORY)
+        - name: POLICY
+          value: $(params.POLICY)
+        - name: CA_FILE
+          value: $(params.CA_FILE)
+        - name: SOURCE_ARTIFACT
+          value: $(params.SOURCE_ARTIFACT)
+        - name: SNAPSHOT_FILE
+          value: $(params.SNAPSHOT_FILE)
+        - name: TARGET_PREFIX
+          value: $(params.REGISTRY_HOST)/$(params.REPOSITORY)
+    - name: gate
+      runAfter: [publish]
+      taskRef:
+        name: oa-gate
+      params:
+        - name: SERVER
+          value: $(params.SERVER)
+        - name: REPOSITORY
+          value: $(params.REPOSITORY)
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: POLICY
+          value: $(params.POLICY)
+        - name: CA_FILE
+          value: $(params.CA_FILE)
+    - name: seal
+      runAfter: [gate]
+      taskRef:
+        name: oa-bundle-promote
+      params:
+        - name: SERVER
+          value: $(params.SERVER)
+        - name: REPOSITORY
+          value: $(params.REPOSITORY)
+        - name: BUNDLE_NAME
+          value: $(params.BUNDLE_NAME)
+        - name: BUNDLE_VERSION
+          value: $(params.BUNDLE_VERSION)
+        - name: DIGESTS
+          value: ["$(tasks.publish.results.IMAGE_DIGEST)"]
+        - name: MODE
+          value: seal
+        - name: POLICY
+          value: $(params.POLICY)
+        - name: CA_FILE
+          value: $(params.CA_FILE)
+    - name: report-gate
+      runAfter: [seal]
+      taskRef:
+        name: oa-report-check
+      params:
+        - name: SERVER
+          value: $(params.SERVER)
+        - name: BUNDLE_NAME
+          value: $(params.BUNDLE_NAME)
+        - name: BUNDLE_VERSION
+          value: $(params.BUNDLE_VERSION)
+        - name: CHECK_NAME
+          value: oa-gate
+        - name: TEST_OUTPUT
+          value: $(tasks.gate.results.TEST_OUTPUT)
+        - name: POLICY
+          value: $(params.POLICY)
+        - name: CA_FILE
+          value: $(params.CA_FILE)
+    - name: promote
+      runAfter: [report-gate]
+      when:
+        - input: $(tasks.gate.results.GATE_RESULT)
+          operator: in
+          values: [SUCCESS]
+      taskRef:
+        name: oa-bundle-promote
+      params:
+        - name: SERVER
+          value: $(params.SERVER)
+        - name: REPOSITORY
+          value: $(params.REPOSITORY)
+        - name: BUNDLE_NAME
+          value: $(params.BUNDLE_NAME)
+        - name: BUNDLE_VERSION
+          value: $(params.BUNDLE_VERSION)
+        - name: MODE
+          value: promote
+        - name: STAGE
+          value: $(params.STAGE)
+        - name: POLICY
+          value: $(params.POLICY)
+        - name: CA_FILE
+          value: $(params.CA_FILE)

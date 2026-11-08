@@ -93,11 +93,15 @@ func repoCreateCmd(a *app) *cobra.Command {
 	immutable := cmd.Flags().Bool("immutable-releases", false, "Block deleting or overwriting released versions")
 	signPkgs := cmd.Flags().Bool("sign-packages", false, "Hosted rpm repositories: sign uploaded RPMs with the active GPG key")
 
+	honourQuay := cmd.Flags().Bool("honour-quay-expiry", false,
+		"Hosted docker repositories: delete images once their quay.expires-after time has passed (not with --immutable-releases)")
+
 	flagEnum(cmd, "format", hostedFormatNames()...)
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		repoCreate(a.client, args[0], a.outFmt, cmd.Flags().Changed, repoCreateFlags{
 			format: *repoFmt, description: *desc, public: *public, retention: *retention, immutable: *immutable, signPackages: *signPkgs,
+			honourQuay: *honourQuay,
 		})
 	}
 
@@ -105,8 +109,8 @@ func repoCreateCmd(a *app) *cobra.Command {
 }
 
 type repoCreateFlags struct {
-	format, description, retention  string
-	public, immutable, signPackages bool
+	format, description, retention              string
+	public, immutable, signPackages, honourQuay bool
 }
 
 func repoCreate(client *Client, name, outFmt string, changed func(string) bool, f repoCreateFlags) {
@@ -140,6 +144,10 @@ func repoCreate(client *Client, name, outFmt string, changed func(string) bool, 
 		body["sign_packages"] = f.signPackages
 	}
 
+	if changed("honour-quay-expiry") {
+		body["honour_quay_expiry"] = f.honourQuay
+	}
+
 	result := sendJSON(client, "POST", "/api/v1/repositories", body, http.StatusCreated)
 
 	if outFmt == "json" {
@@ -163,7 +171,7 @@ func repoShow(client *Client, name, outFmt string) {
 
 	for _, k := range []string{
 		"name", "format", "repo_type", "description", "public", "upstream_url", "trash_retention_days",
-		"immutable_releases", "merge_proxy_versions", "sign_packages", "created_at", "updated_at",
+		"immutable_releases", "merge_proxy_versions", "sign_packages", "honour_quay_expiry", "created_at", "updated_at",
 	} {
 		if v, ok := result[k]; ok {
 			_, _ = fmt.Fprintf(w, "%s\t%s\n", k, cell(v))
@@ -208,6 +216,12 @@ func repoUpdateCmd(a *app) *cobra.Command {
 		"Hosted rpm repositories: sign uploaded RPMs with the active GPG key (--sign-packages=false to stop)",
 	)
 
+	honourQuay := fl.Bool(
+		"honour-quay-expiry",
+		false,
+		"Hosted docker repositories: delete images once their quay.expires-after time has passed (--honour-quay-expiry=false to stop)",
+	)
+
 	flagEnum(cmd, "trash-retention-days", "default", "0", "7", "30")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -243,10 +257,14 @@ func repoUpdateCmd(a *app) *cobra.Command {
 			body["sign_packages"] = *signPkgs
 		}
 
+		if set("honour-quay-expiry") {
+			body["honour_quay_expiry"] = *honourQuay
+		}
+
 		if len(body) == 0 {
 			dief(
 				"nothing to update: pass --description, --public[=false], --trash-retention-days, " +
-					"--immutable-releases[=false], --sign-packages[=false] or --merge-proxy-versions[=false]",
+					"--immutable-releases[=false], --sign-packages[=false], --honour-quay-expiry[=false] or --merge-proxy-versions[=false]",
 			)
 		}
 

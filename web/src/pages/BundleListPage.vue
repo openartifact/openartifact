@@ -71,7 +71,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </ListTable>
 
     <BundleCreateDrawer :open="create.on.value" :pipelines="pipelines" @close="create.set(false)" @created="onCreated" />
-    <BundlePipelinesDrawer :open="pipelineOpen" :pipelines="pipelines" @close="pipelineOpen = false" @created="loadPipelines" />
+    <BundlePipelinesDrawer :open="pipelineOpen" :pipelines="pipelines" @close="pipelineOpen = false" @saved="loadPipelines" />
   </div>
 </template>
 

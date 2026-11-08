@@ -70,8 +70,11 @@ Endpoints, relative to `HOST/repos/REPO`:
 | `GET /specs.4.8.gz`, `/latest_specs.4.8.gz`, `/prerelease_specs.4.8.gz` | gzipped Marshal indexes (latest is the newest release per name and platform) |
 | `GET /quick/Marshal.4.8/<file>` | gemspec |
 | `GET /gems/<file>.gem` | gem download |
+| `GET /downloads/<file>.gem` | alias of `/gems/<file>.gem` (see below) |
 | `GET /api/v1/gems/<gem>.json` | gem info |
 | `GET /api/v1/search.json?query=` | search |
+
+`/downloads/<file>.gem` is the same download under the path rubygems.org's `gem_uri` uses (`https://rubygems.org/downloads/<file>.gem`). It is served by hosted, proxy and group repositories alike, with the same cache, quarantine, curation and minimum-age rules as `/gems/`. Tools that rebuild gem URLs from a registry base URL, such as hermetic-build prefetchers (Hermeto) and some lockfile mirrors, can therefore use `HOST/repos/REPO` as the registry. Only `.gem` files are aliased: any other name below `/downloads/` is `404`.
 
 Info and search return snake_case entries: `name`, `version`, `platform`, `summary`, `description`, `homepage`, `authors`, `licenses`, `sha256`, `downloads`, `size`, `created_at`.
 

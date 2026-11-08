@@ -4,7 +4,10 @@
 
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type User struct {
 	ID                 string
@@ -129,6 +132,39 @@ type OIDCCondition struct {
 	Patterns []string `json:"patterns"`
 }
 
+// How the signing keys of the issuer of an OIDCTrustPolicy are found
+// (OIDCDiscovery.Mode).
+const (
+	// OIDCDiscoveryAnonymous reads the discovery document and the key set
+	// without credentials: the default, and what public issuers (GitHub Actions,
+	// GitLab, managed Kubernetes) need.
+	OIDCDiscoveryAnonymous = "anonymous"
+	// OIDCDiscoveryStatic verifies against the key set stored on the policy;
+	// nothing is fetched.
+	OIDCDiscoveryStatic = "static"
+	// OIDCDiscoveryServiceAccount reads the discovery document and the key set
+	// with OpenArtifact's own Kubernetes service account token, for clusters
+	// whose issuer is not anonymously readable.
+	OIDCDiscoveryServiceAccount = "serviceaccount"
+)
+
+// OIDCDiscovery says how the keys that verify the tokens of a policy's issuer
+// are found. JWKS is a public key set (a JSON object), set for the static mode
+// only.
+type OIDCDiscovery struct {
+	Mode string          `json:"mode"`
+	JWKS json.RawMessage `json:"jwks,omitempty"`
+}
+
+// EffectiveMode is the mode, OIDCDiscoveryAnonymous when none is set.
+func (d OIDCDiscovery) EffectiveMode() string {
+	if d.Mode == "" {
+		return OIDCDiscoveryAnonymous
+	}
+
+	return d.Mode
+}
+
 // OIDCTrustPolicy is an administrator's rule for exchanging an ID token of an
 // external issuer (a CI system) for a short-lived token of a service account.
 type OIDCTrustPolicy struct {
@@ -143,6 +179,14 @@ type OIDCTrustPolicy struct {
 	CreatedBy        string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+
+	// Discovery is how the issuer's signing keys are found; the zero value
+	// means OIDCDiscoveryAnonymous.
+	Discovery OIDCDiscovery
+	// AllowPrivateIssuer lets the issuer and its jwks_uri resolve to private or
+	// loopback addresses (a cluster-internal issuer) whatever the process-wide
+	// OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS says. Only administrators set it.
+	AllowPrivateIssuer bool
 
 	// ServiceAccountName and ServiceAccountDisabled are read-only: filled by reads.
 	ServiceAccountName     string

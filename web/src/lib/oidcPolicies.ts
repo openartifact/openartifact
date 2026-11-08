@@ -5,7 +5,7 @@
 // Pure logic of the trust policy form: the condition rows (a claim and its patterns as one text),
 // the CI presets, and the mapping between the form and the API body.
 
-import type { OidcCondition, OidcPolicy, OidcPolicyInput } from '../api/serviceAccounts'
+import type { OidcCondition, OidcDiscovery, OidcPolicy, OidcPolicyInput } from '../api/serviceAccounts'
 
 /** The server accepts 1-16 conditions of 1-8 patterns each. */
 export const MAX_CONDITIONS = 16
@@ -17,6 +17,14 @@ export const MAX_TTL_MINUTES = 60
 export const DEFAULT_TTL_MINUTES = 15
 
 export const NAME_PATTERN = /^[A-Za-z0-9._-]{1,64}$/
+
+/** A claim name or a dotted path into nested claims (`kubernetes.io.namespace`): no empty segment. */
+export const CLAIM_PATTERN = /^[A-Za-z0-9_:-]+(\.[A-Za-z0-9_:-]+)*$/
+export const MAX_CLAIM_LENGTH = 64
+
+/** How the issuer's signing keys are found; the server defines the three modes. */
+export type DiscoveryMode = OidcDiscovery['mode']
+export const DISCOVERY_MODES: readonly DiscoveryMode[] = ['anonymous', 'static', 'serviceaccount']
 
 /** One row of the conditions editor: the patterns stay free text until the form is submitted. */
 export interface ConditionRow {
@@ -82,6 +90,10 @@ export interface PolicyForm {
   ttlMinutes: number
   enabled: boolean
   rows: ConditionRow[]
+  discoveryMode: DiscoveryMode
+  /** The JWKS of the static mode, as typed. */
+  jwks: string
+  allowPrivateIssuer: boolean
 }
 
 export const blankForm = (serviceAccountId = ''): PolicyForm => ({
@@ -92,6 +104,9 @@ export const blankForm = (serviceAccountId = ''): PolicyForm => ({
   ttlMinutes: DEFAULT_TTL_MINUTES,
   enabled: true,
   rows: [emptyRow()],
+  discoveryMode: 'anonymous',
+  jwks: '',
+  allowPrivateIssuer: false,
 })
 
 /** The form pre-filled for a preset: its issuer and identity claim row. */
@@ -108,7 +123,26 @@ export function formOf(policy: OidcPolicy): PolicyForm {
     ttlMinutes: Math.round((policy.token_ttl_seconds ?? DEFAULT_TTL_MINUTES * 60) / 60),
     enabled: policy.enabled ?? true,
     rows: policy.conditions?.length ? rowsOf(policy.conditions) : [emptyRow()],
+    discoveryMode: policy.discovery?.mode ?? 'anonymous',
+    jwks: policy.discovery?.jwks ? JSON.stringify(policy.discovery.jwks, null, 2) : '',
+    allowPrivateIssuer: policy.allow_private_issuer ?? false,
   }
+}
+
+/** The JWKS text as an object, or null when it is not a JSON object. */
+export function parseJwks(text: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(text)
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+/** The discovery object of the body: the key set belongs to the static mode alone. */
+function discoveryOf(form: PolicyForm): OidcDiscovery {
+  if (form.discoveryMode !== 'static') return { mode: form.discoveryMode }
+  return { mode: 'static', jwks: parseJwks(form.jwks) ?? {} }
 }
 
 export function inputOf(form: PolicyForm): OidcPolicyInput {
@@ -120,6 +154,9 @@ export function inputOf(form: PolicyForm): OidcPolicyInput {
     service_account_id: form.serviceAccountId,
     token_ttl_seconds: Math.round(form.ttlMinutes) * 60,
     enabled: form.enabled,
+    discovery: discoveryOf(form),
+    // The static mode contacts nobody, so the server refuses the switch there.
+    allow_private_issuer: form.discoveryMode !== 'static' && form.allowPrivateIssuer,
   }
 }
 
@@ -133,6 +170,7 @@ export type PolicyProblem =
   | 'claim'
   | 'patterns'
   | 'tooManyPatterns'
+  | 'jwks'
 
 /**
  * The first thing wrong with the form that can be told without the server. Identity rules (a shared
@@ -145,9 +183,10 @@ export function policyProblem(form: PolicyForm): PolicyProblem | null {
   if (!input.audience) return 'audience'
   if (!input.service_account_id) return 'account'
   if (!Number.isFinite(form.ttlMinutes) || form.ttlMinutes < MIN_TTL_MINUTES || form.ttlMinutes > MAX_TTL_MINUTES) return 'ttl'
+  if (form.discoveryMode === 'static' && parseJwks(form.jwks) === null) return 'jwks'
   if (input.conditions.length === 0) return 'noConditions'
   for (const c of input.conditions) {
-    if (!c.claim) return 'claim'
+    if (!c.claim || c.claim.length > MAX_CLAIM_LENGTH || !CLAIM_PATTERN.test(c.claim)) return 'claim'
     if (c.patterns.length === 0) return 'patterns'
     if (c.patterns.length > MAX_PATTERNS) return 'tooManyPatterns'
   }

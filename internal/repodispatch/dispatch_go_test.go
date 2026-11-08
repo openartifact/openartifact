@@ -167,7 +167,10 @@ func TestGoProxyAndGroupThroughDispatch(t *testing.T) {
 		},
 		{"group unknown", http.MethodGet, "/repos/all/example.com/nope/@v/list", 404, ""},
 		{"group refuses uploads", http.MethodPut, "/repos/all/example.com/local/@v/v0.2.0.zip", 405, ""},
-		{"group has no checksum database", http.MethodGet, "/repos/all/sumdb/sum.golang.org/supported", 404, ""},
+		{"proxy relays the checksum database", http.MethodGet, "/repos/mirror/sumdb/sum.golang.org/supported", 200, ""},
+		{"proxy relays only the listed databases", http.MethodGet, "/repos/mirror/sumdb/evil.example/supported", 404, ""},
+		{"group relays the checksum database via its proxy", http.MethodGet, "/repos/all/sumdb/sum.golang.org/supported", 200, ""},
+		{"group relays only the listed databases", http.MethodGet, "/repos/all/sumdb/evil.example/supported", 404, ""},
 		{
 			"hosted repository still reaches the format handler",
 			http.MethodPut,

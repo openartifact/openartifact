@@ -3,14 +3,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'bun:test'
-import type { Bundle, BundlePromotion, ItemCandidate, Pipeline } from '../../api/bundles'
+import type { Bundle, BundleCheck, BundlePromotion, ItemCandidate, Pipeline } from '../../api/bundles'
 import {
   bundleRoute,
   bundleStatus,
   candidateToItem,
   isBundleable,
+  checkExpired,
+  checkVariant,
   lifecycleSteps,
+  parseRequiredChecks,
   promotableStages,
+  requiredCheckStates,
+  safeDetailsUrl,
   validateBundleLabel,
   type LifecycleStep,
 } from '../bundles'
@@ -151,5 +156,74 @@ describe('labels', () => {
 
   it('escapes the detail route', () => {
     expect(bundleRoute({ name: 'my shop', version: '1+2' })).toBe('/bundles/my%20shop/1%2B2')
+  })
+})
+
+describe('required checks', () => {
+  it('reads names separated by commas and spaces, trimmed', () => {
+    expect(parseRequiredChecks('')).toEqual({ names: [], error: null })
+    expect(parseRequiredChecks(' conforma,scan  sbom ,')).toEqual({ names: ['conforma', 'scan', 'sbom'], error: null })
+  })
+
+  it('refuses duplicates, long names, control characters and more than 20', () => {
+    expect(parseRequiredChecks('a, b, a').error).toContain('listed twice')
+    expect(parseRequiredChecks('x'.repeat(64)).error).toBeNull()
+    expect(parseRequiredChecks('x'.repeat(65)).error).toContain('longer than 64')
+    expect(parseRequiredChecks('a\u0000b').error).toContain('control characters')
+    const many = Array.from({ length: 21 }, (_, i) => `c${i}`)
+    expect(parseRequiredChecks(many.slice(0, 20).join(',')).error).toBeNull()
+    expect(parseRequiredChecks(many.join(',')).error).toContain('at most 20')
+  })
+
+  const check = (over: Partial<BundleCheck>): BundleCheck => ({
+    name: 'scan',
+    status: 'success',
+    summary: '',
+    details_url: '',
+    reported_by: 'ci',
+    updated_at: '2026-10-03T10:00:00Z',
+    expires_at: null,
+    ...over,
+  })
+  const now = Date.parse('2026-10-10T00:00:00Z')
+
+  it('classifies each required check: reported status, missing or expired', () => {
+    const states = requiredCheckStates(
+      ['conforma', 'scan', 'sbom', 'lint', 'old'],
+      [
+        check({ name: 'conforma' }),
+        check({ name: 'scan', status: 'failure' }),
+        check({ name: 'lint', status: 'pending' }),
+        check({ name: 'old', expires_at: '2026-10-09T00:00:00Z' }),
+        check({ name: 'unrelated' }),
+      ],
+      now,
+    )
+    expect(states).toEqual([
+      { name: 'conforma', state: 'success' },
+      { name: 'scan', state: 'failure' },
+      { name: 'sbom', state: 'missing' },
+      { name: 'lint', state: 'pending' },
+      { name: 'old', state: 'expired' },
+    ])
+  })
+
+  it('expires only at or after the expiry time', () => {
+    expect(checkExpired(check({ expires_at: null }), now)).toBe(false)
+    expect(checkExpired(check({ expires_at: '2026-10-11T00:00:00Z' }), now)).toBe(false)
+    expect(checkExpired(check({ expires_at: '2026-10-10T00:00:00Z' }), now)).toBe(true)
+  })
+
+  it('colours success green, failures red, the rest amber', () => {
+    expect(checkVariant('success')).toBe('success')
+    expect(checkVariant('failure')).toBe('danger')
+    expect(checkVariant('error')).toBe('danger')
+    expect(checkVariant('pending')).toBe('warning')
+  })
+
+  it('links only http and https details', () => {
+    expect(safeDetailsUrl('https://ci.example/run/1')).toBe('https://ci.example/run/1')
+    expect(safeDetailsUrl('http://ci.example/x')).toBe('http://ci.example/x')
+    for (const bad of ['', 'javascript:alert(1)', 'data:text/html,x', '/relative', 'not a url', undefined]) expect(safeDetailsUrl(bad)).toBeNull()
   })
 })

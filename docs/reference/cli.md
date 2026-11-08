@@ -34,7 +34,7 @@ oa [flags]
 | `OA_IMPORT_SOURCE_URL` | `oa import artifactory`, `oa import nexus` |
 | `OA_IMPORT_SOURCE_USER` | `oa import artifactory`, `oa import nexus` |
 | `OA_SERVER` | `--server` |
-| `OA_TOKEN` | `--token` |
+| `OA_TOKEN` | `--token`, `oa oidc exchange` |
 | `OA_WEBHOOK_SECRET` | `oa webhook create`, `oa webhook repo create` |
 
 ## Auth
@@ -374,6 +374,7 @@ oa repo create <name> --format <fmt> [flags]
 |---|---|---|
 | `--description` | `string` | Description |
 | `--format` | `string` | Repository format (required) |
+| `--honour-quay-expiry` | none | Hosted docker repositories: delete images once their quay.expires-after time has passed (not with --immutable-releases) |
 | `--immutable-releases` | none | Block deleting or overwriting released versions |
 | `--public` | none | Public repository |
 | `--sign-packages` | none | Hosted rpm repositories: sign uploaded RPMs with the active GPG key |
@@ -434,6 +435,7 @@ oa repo update <name> [flags]
 | Flag | Value | Description |
 |---|---|---|
 | `--description` | `string` | Description |
+| `--honour-quay-expiry` | none | Hosted docker repositories: delete images once their quay.expires-after time has passed (--honour-quay-expiry=false to stop) |
 | `--immutable-releases` | none | Block deleting or overwriting released versions (--immutable-releases=false to allow) |
 | `--merge-proxy-versions` | none | Group repositories, administrators only: merge proxy members' versions of names a hosted member holds (--merge-proxy-versions=false restores hosted-wins) |
 | `--public` | none | Public (--public=false to make private) |
@@ -1455,9 +1457,9 @@ Manage release bundles.
 
 #### `oa bundle add`
 
-Add artifacts to a draft bundle, by path or by the build that produced them.
+Add artifacts to a draft bundle, by path, by image digest or by the build that produced them.
 
-Add artifacts to a draft bundle: either --repo R with one or more --path P, or --from-build NAME/NUMBER (optionally limited to the repositories named by --repo).
+Add artifacts to a draft bundle: either --repo R with one or more --path P, --repo R with one or more image manifest digests (--digest sha256:..., docker repositories), or --from-build NAME/NUMBER (optionally limited to the repositories named by --repo).
 
 ```text
 oa bundle add <name> <version> [flags]
@@ -1465,9 +1467,32 @@ oa bundle add <name> <version> [flags]
 
 | Flag | Value | Description |
 |---|---|---|
+| `--digest` | `stringArray` | Image manifest digest sha256:... in the docker --repo (repeatable) |
 | `--from-build` | `string` | Add every artifact recorded for build NAME/NUMBER (properties build.name and build.number) |
 | `--path` | `stringArray` | Artifact path in --repo (repeatable) |
 | `-r`, `--repo` | `stringArray` | Repository of the artifacts (repeatable with --from-build to limit the search) |
+
+#### `oa bundle check`
+
+Report external checks on a bundle.
+
+#### `oa bundle check report`
+
+Report the result of an external check (a policy run, a scan) on a bundle.
+
+Set the state of the check NAME on the bundle NAME VERSION. A promotion stage that lists the check in its required_checks only promotes the bundle once the check is success. The caller needs write access on the bundle's repository (a deploy token is enough). Reporting a check again replaces its state.
+
+```text
+oa bundle check report <name> <version> [flags]
+```
+
+| Flag | Value | Description |
+|---|---|---|
+| `--details-url` | `string` | Link to the full report (a PipelineRun, a Conforma report) |
+| `--expires-at` | `string` | RFC 3339 time after which the result no longer counts |
+| `--name` | `string` | Check name, as the stage's required_checks lists it (required) |
+| `--status` | `string` | Check state: pending, success, failure, error (required) |
+| `--summary` | `string` | One line describing the result |
 
 #### `oa bundle create`
 
@@ -1501,6 +1526,47 @@ Show a bundle and its items.
 ```text
 oa bundle show <name> <version> [flags]
 ```
+
+### `oa gate`
+
+Check whether an artifact may ship: vulnerabilities, licences, quarantine, attestations.
+
+Ask the server for the gate of one artifact of a repository: either the manifest or artifact with --digest sha256:..., or the vulnerability scan --scan ID. The answer lists every check behind the verdict. Reading it needs read access on the repository.
+
+The exit status is 0 when the gate passes and 1 when it does not; the result is printed either way (--format json for the full document).
+
+```text
+oa gate <repo> --digest D | --scan ID [flags]
+```
+
+| Flag | Value | Description |
+|---|---|---|
+| `--digest` | `string` | Digest of the artifact or image manifest (sha256:...) |
+| `--scan` | `string` | Id of a vulnerability scan of the repository |
+
+### `oa oidc`
+
+Exchange CI identity tokens for access tokens.
+
+#### `oa oidc exchange`
+
+Trade a CI job's OIDC token for a short-lived deploy token.
+
+Read the OIDC ID token of a CI job (a GitHub Actions or GitLab CI token, a Kubernetes projected service account token) from --token-file and exchange it, at the server's trust policies, for a short-lived deploy token. The token is printed on stdout.
+
+With --docker-config DIR the token is also stored in DIR/config.json as the registry credential of the server's host, so docker, cosign, oras and skopeo can use it (set DOCKER_CONFIG=DIR); other hosts already in the file are kept.
+
+No stored credential is involved: the exchange is anonymous and --token and OA_TOKEN are not sent.
+
+```text
+oa oidc exchange [flags]
+```
+
+| Flag | Value | Description |
+|---|---|---|
+| `--docker-config` | `string` | Also write the token as registry credential into DIR/config.json |
+| `--policy` | `string` | Trust policy to use, by name (default: the one that matches the token) |
+| `--token-file` | `string` | File holding the ID token, or - for stdin (required) |
 
 ### `oa promote`
 

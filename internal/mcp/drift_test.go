@@ -72,6 +72,12 @@ var driftTable = []driftDecision{
 		pattern: "repositories/vuln/scans/gate",
 		reason:  "CI gate verdict for a scan; get_vulnerabilities reports the findings it is computed from",
 	},
+	{
+		pattern: "repositories/gate",
+		reason:  "CI gate verdict for an image digest; get_vulnerabilities reports the findings it is computed from",
+	},
+	{pattern: "repositories/attestations", reason: "signature and provenance records of images; not part of the assistant surface yet"},
+	{pattern: "repositories/attestation-trust", reason: reasonRepoConfig},
 	{pattern: "repositories/vuln/scanners", reason: reasonRepoConfig},
 	{pattern: "repositories/secrets/**", reason: "secret-scan findings name leaked credentials; never relayed to an assistant"},
 	{pattern: "repositories/license/policies", reason: reasonRepoConfig},

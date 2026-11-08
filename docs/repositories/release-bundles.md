@@ -56,6 +56,8 @@ An operation in the wrong state is `409 conflict`. Sealing an empty bundle is `4
 | `POST /api/v1/bundles/{name}/{version}/archive` | Sealed to archived; records `archived_at`/`archived_by`. |
 | `POST /api/v1/bundles/{name}/{version}/promote` | Copy the bundle into a stage's repository ([details](#promoting-a-bundle)). |
 | `GET /api/v1/bundles/{name}/{version}/promotions` | `{"promotions": [...]}`: the promotion history, newest first. |
+| `POST /api/v1/bundles/{name}/{version}/checks` | Report a check result ([details](#required-checks)). |
+| `GET /api/v1/bundles/{name}/{version}/checks` | `{"checks": [...]}`: the reported checks, ordered by name. |
 
 Each item:
 
@@ -108,6 +110,7 @@ Bundles involve several repositories (the sources of the items and the target of
 | Add or remove items | The owner or an administrator, and `read` on each source repository added. |
 | Seal, archive, delete | The owner or an administrator; sealing also needs `read` on every source repository. |
 | Promote | `read` on every source repository and `write` on the target repository. No ownership is needed, so a release engineer can promote a bundle a build job created. `?force=true` stays administrator-only. |
+| Report a check, read the checks | An administrator, or `write` on every source repository of the bundle (and at least one item). Reading is also open to anyone who can see the bundle. Ownership grants nothing here, so the owner cannot vouch for the gate their own bundle is subject to. A visible bundle you may not report on answers `403`; one you cannot see, `404`. |
 | List all bundles (`GET /api/v1/bundles`), every `/api/v1/pipelines` route | Administrator. |
 
 Pipelines are the operator's gate: a bundle can only be promoted when it has a pipeline and a stage defined by an administrator. A CI token attaches a pipeline by name (`pipeline` on create) without being allowed to list or edit pipelines. Signing at seal time (`gpg_key_id`) is limited to administrators and to users named for that key in `gpg.bundleSigners`; a CI job that should sign needs such a grant. Ownership is decided on the user id, not the username. Creating, sealing (with the signing fingerprint) and archiving a bundle are audit events (`bundle.created`, `bundle.sealed`, `bundle.archived`).
@@ -116,21 +119,36 @@ A deploy token with `read` and `write` on the build and release repositories is 
 
 ## Pipelines API
 
-A pipeline is a named, ordered list of stages; each stage has a `name` and an optional `repo_id` (UUID of an existing repository that the stage must promote into).
+A pipeline is a named, ordered list of stages; each stage has a `name`, an optional `repo_id` (UUID of an existing repository that the stage must promote into) and an optional `required_checks` list (names of [checks](#required-checks) that must pass before a promotion into the stage; at most 20, unique, up to 64 characters each). Responses always carry `required_checks`, `[]` when there are none.
 
 | Method and path | Purpose |
 |---|---|
 | `GET /api/v1/pipelines` | `{"pipelines": [...]}`. |
-| `POST /api/v1/pipelines` | `{"name","description","stages":[{"name":"qa","repo_id":"<UUID>"},{"name":"prod"}]}`; at most 50 stages, unique stage names. `409` if the name exists. |
+| `POST /api/v1/pipelines` | `{"name","description","stages":[{"name":"qa","repo_id":"<UUID>"},{"name":"prod","required_checks":["conforma"]}]}`; at most 50 stages, unique stage names. `409` if the name exists. |
 | `GET /api/v1/pipelines/{name}` | One pipeline. |
 | `PATCH /api/v1/pipelines/{name}` | Update `description` and/or replace `stages`. |
 | `DELETE /api/v1/pipelines/{name}` | Delete (bundles referencing it keep existing, with no pipeline). `204`. |
+
+## Required checks
+
+An external system (a Tekton or Konflux pipeline, a policy engine, a manual review tool) can vouch for a bundle by reporting a named check, and a pipeline stage can refuse promotion until it has. List the names in the stage's `required_checks`.
+
+```bash
+curl -X POST HOST/api/v1/bundles/shop/2.4.0/checks -H "Authorization: Bearer <TOKEN>" \
+  -d '{"name":"conforma","status":"success","summary":"all rules passed","details_url":"https://ci.example.com/run/1","expires_at":"2026-12-31T00:00:00Z"}'
+```
+
+The body takes `name` (required, up to 64 characters), `status` (required: `pending`, `success`, `failure` or `error`), `summary` (up to 2000 characters), `details_url` (absolute http or https URL) and `expires_at` (RFC 3339, must be in the future). A bundle holds one result per name: reporting the same name again replaces the previous one. The answer is `200` with `name`, `status`, `summary`, `details_url`, `reported_by`, `updated_at` and `expires_at`. Errors: `400 validation_failed`, `403`/`404` as in [Permissions](#permissions), and `409` for an archived bundle.
+
+A deploy token that has `write` on the build repositories is enough, including a token from the [OIDC exchange](../integrations/ci.md#tokenless-ci-oidc-token-exchange) of a pipeline run, so the pipeline that builds the artifacts can report on them without administrator rights. Reports are audit events (`bundle.check_reported`) and fire the [`bundle.check_updated` webhook event](../operations/webhooks.md).
+
+A promotion into a stage with `required_checks` is refused with `422` and code `CHECKS_REQUIRED` unless every required check is `success` and has not expired. The message lists the names that are missing (never reported), failed (`failure` or `error`), pending or expired. Nothing is copied; report the check and retry. Checks that the stage does not require never block it, and a failing optional check is shown but ignored. The check is evaluated for each promotion, so a check that expires between two stages must be reported again before the next one. `force` does not override it.
 
 ## Promoting a bundle
 
 `POST /api/v1/bundles/{name}/{version}/promote` with `{"to_stage","target_repo","notes"}` copies every item of a sealed bundle into `target_repo`.
 
-Checks before anything is copied: the bundle is sealed and has a pipeline, `to_stage` is one of its stages and comes after the bundle's `current_stage`, `target_repo` (a repository name) exists and matches the stage's `repo_id` when one is set. `target_repo` may be omitted when the stage has a `repo_id`: that repository is the target. A stage without one needs `target_repo` (`400 validation_failed` otherwise). The target must be a hosted repository (not a proxy or group), not deleted, of the same format as every item's source repository, and different from it.
+Checks before anything is copied: the bundle is sealed and has a pipeline, the stage's [required checks](#required-checks) are satisfied (`422 CHECKS_REQUIRED`), `to_stage` is one of its stages and comes after the bundle's `current_stage`, `target_repo` (a repository name) exists and matches the stage's `repo_id` when one is set. `target_repo` may be omitted when the stage has a `repo_id`: that repository is the target. A stage without one needs `target_repo` (`400 validation_failed` otherwise). The target must be a hosted repository (not a proxy or group), not deleted, of the same format as every item's source repository, and different from it.
 
 A promotion is one database transaction. Either every item is copied, the `bundle_promotions` record is written and `current_stage` moves to `to_stage`, or nothing changes at all: a failed promotion leaves no rows, no quota charge and no history entry, and can simply be retried. Concurrent promotions of the same bundle are serialised; the loser gets `409 conflict`.
 
@@ -144,7 +162,7 @@ Artifact bytes are content-addressed and stored once. Promotion adds metadata ro
 | cargo, conda, helm, ivy, maven, nuget, pypi, raw, rubygems, sbt | The artifact row (file, coordinates, metadata). |
 | conan | The whole recipe revision the file belongs to: recipe files and every binary package revision under it. The copy becomes the newest revision in the target. |
 | deb | The package, plus the distribution, component and architecture rows it needs; the Packages/Release indexes are regenerated. |
-| docker | The manifest, its config and layer references, the manifest's tags and, for an image index, every child manifest. Blobs the target already holds are not charged again. |
+| docker | The manifest, its config and layer references, the manifest's tags, for an image index every child manifest, and the signatures, attestations and referrers of the image (and of each child) with their cosign tags ([details](../formats/docker.md#signatures-attestations-and-referrers)). Blobs the target already holds are not charged again. |
 | go | The module version: zip, `go.mod` and `.info`. The item may be the zip or the `go.mod` blob. |
 | npm | The version (with its manifest) and the source dist-tags that point at it; the target package is created if missing, gets a `latest` tag when it has none, and its packument is regenerated. |
 | rpm | The package; the repository's metadata is marked stale and regenerated. Signing keys of the source repository are never copied. |

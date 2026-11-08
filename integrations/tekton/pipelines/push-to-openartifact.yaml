@@ -1,0 +1,297 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Managed release pipeline for Konflux (release-service). Same contract as push-to-external-registry in
+# konflux-ci/release-service-catalog (same params, data collection, Conforma verification and CR status
+# update); the Quay-only tasks (registry token secret, make-repo-public) and Pyxis are replaced by
+# publishing into OpenArtifact. The oa-* tasks must be installed in the managed namespace (or resolved
+# through the bundles resolver, see docs/integrations/tekton.md).
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: push-to-openartifact
+  labels:
+    app.kubernetes.io/version: "0.1"
+  annotations:
+    tekton.dev/pipelines.minVersion: 0.62.0
+    tekton.dev/tags: release, openartifact
+spec:
+  description: >-
+    Release Snapshots to an OpenArtifact docker repository, verify them with Conforma, bundle and promote them.
+  params:
+    - name: release
+      type: string
+      description: The namespaced name (namespace/name) of the Release custom resource initiating this run.
+    - name: releasePlan
+      type: string
+    - name: releasePlanAdmission
+      type: string
+    - name: releaseServiceConfig
+      type: string
+    - name: snapshot
+      type: string
+      description: The namespaced name (namespace/name) of the snapshot.
+    - name: enterpriseContractPolicy
+      type: string
+      description: JSON representation of the EnterpriseContractPolicy.
+    - name: enterpriseContractExtraRuleData
+      type: string
+      default: pipeline_intention=release
+    - name: taskGitUrl
+      type: string
+      default: https://github.com/konflux-ci/release-service-catalog.git
+    - name: taskGitRevision
+      type: string
+      description: Revision of taskGitUrl to take the release-service-catalog tasks from (pin a commit).
+    - name: ociStorage
+      type: string
+      description: OCI repository for Trusted Artifacts.
+    - name: orasOptions
+      type: string
+      default: ""
+    - name: trustedArtifactsDebug
+      type: string
+      default: ""
+    - name: dataDir
+      type: string
+      default: /var/workdir/release
+    - name: server
+      type: string
+      description: OpenArtifact base URL.
+    - name: registryHost
+      type: string
+      description: Registry host of the OpenArtifact server (host[:port], no scheme).
+    - name: repository
+      type: string
+      description: Docker repository that receives the images.
+    - name: stage
+      type: string
+      description: Promotion stage.
+    - name: oidcPolicy
+      type: string
+      default: ""
+    - name: caFile
+      type: string
+      default: ""
+    - name: certificateIdentity
+      type: string
+      default: ""
+      description: Signer identity Conforma expects on the build attestations.
+    - name: certificateOidcIssuer
+      type: string
+      default: ""
+    - name: conformaCheckName
+      type: string
+      default: conforma
+  tasks:
+    - name: collect-data
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: $(params.taskGitUrl)
+          - name: revision
+            value: $(params.taskGitRevision)
+          - name: pathInRepo
+            value: tasks/managed/collect-data/collect-data.yaml
+      params:
+        - name: release
+          value: $(params.release)
+        - name: releasePlan
+          value: $(params.releasePlan)
+        - name: releasePlanAdmission
+          value: $(params.releasePlanAdmission)
+        - name: releaseServiceConfig
+          value: $(params.releaseServiceConfig)
+        - name: snapshot
+          value: $(params.snapshot)
+        - name: subdirectory
+          value: $(context.pipelineRun.uid)
+        - name: ociStorage
+          value: $(params.ociStorage)
+        - name: dataDir
+          value: $(params.dataDir)
+        - name: trustedArtifactsDebug
+          value: $(params.trustedArtifactsDebug)
+        - name: taskGitUrl
+          value: $(params.taskGitUrl)
+        - name: taskGitRevision
+          value: $(params.taskGitRevision)
+    - name: reduce-snapshot
+      runAfter: [collect-data]
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: $(params.taskGitUrl)
+          - name: revision
+            value: $(params.taskGitRevision)
+          - name: pathInRepo
+            value: tasks/managed/reduce-snapshot/reduce-snapshot.yaml
+      params:
+        - name: SNAPSHOT
+          value: $(params.dataDir)/$(tasks.collect-data.results.snapshotSpec)
+        - name: SINGLE_COMPONENT
+          value: $(tasks.collect-data.results.singleComponentMode)
+        - name: SINGLE_COMPONENT_CUSTOM_RESOURCE
+          value: snapshot/$(tasks.collect-data.results.snapshotName)
+        - name: SINGLE_COMPONENT_CUSTOM_RESOURCE_NS
+          value: $(tasks.collect-data.results.snapshotNamespace)
+        - name: SNAPSHOT_PATH
+          value: $(params.dataDir)/$(tasks.collect-data.results.snapshotSpec)
+        - name: ociStorage
+          value: $(params.ociStorage)
+        - name: sourceDataArtifact
+          value: $(tasks.collect-data.results.sourceDataArtifact)
+        - name: dataDir
+          value: $(params.dataDir)
+        - name: trustedArtifactsDebug
+          value: $(params.trustedArtifactsDebug)
+        - name: taskGitUrl
+          value: $(params.taskGitUrl)
+        - name: taskGitRevision
+          value: $(params.taskGitRevision)
+    - name: verify-conforma
+      runAfter: [reduce-snapshot]
+      timeout: 4h00m0s
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/conforma/tekton-catalog
+          - name: revision
+            value: 0004edc302b83067034bffbd17677299900273f9
+          - name: pathInRepo
+            value: tasks/verify-conforma-konflux-ta/0.1/verify-conforma-konflux-ta.yaml
+      params:
+        - name: SNAPSHOT_FILENAME
+          value: $(tasks.collect-data.results.snapshotSpec)
+        - name: SSL_CERT_DIR
+          value: /var/run/secrets/kubernetes.io/serviceaccount
+        - name: POLICY_CONFIGURATION
+          value: $(params.enterpriseContractPolicy)
+        - name: STRICT
+          value: "true"
+        - name: IGNORE_REKOR
+          value: "true"
+        - name: EXTRA_RULE_DATA
+          value: $(params.enterpriseContractExtraRuleData)
+        - name: SOURCE_DATA_ARTIFACT
+          value: $(tasks.reduce-snapshot.results.sourceDataArtifact)
+        - name: TRUSTED_ARTIFACTS_DEBUG
+          value: $(params.trustedArtifactsDebug)
+        - name: CERTIFICATE_IDENTITY
+          value: $(params.certificateIdentity)
+        - name: CERTIFICATE_OIDC_ISSUER
+          value: $(params.certificateOidcIssuer)
+    - name: push-snapshot
+      runAfter: [verify-conforma]
+      retries: 3
+      taskRef:
+        name: oa-publish
+      params:
+        - name: SERVER
+          value: $(params.server)
+        - name: REPOSITORY
+          value: $(params.repository)
+        - name: POLICY
+          value: $(params.oidcPolicy)
+        - name: CA_FILE
+          value: $(params.caFile)
+        - name: SOURCE_ARTIFACT
+          value: $(tasks.reduce-snapshot.results.sourceDataArtifact)
+        - name: SNAPSHOT_FILE
+          value: $(tasks.collect-data.results.snapshotSpec)
+        - name: TARGET_PREFIX
+          value: $(params.registryHost)/$(params.repository)
+    - name: seal-bundle
+      runAfter: [push-snapshot]
+      taskRef:
+        name: oa-bundle-promote
+      params:
+        - name: SERVER
+          value: $(params.server)
+        - name: REPOSITORY
+          value: $(params.repository)
+        - name: BUNDLE_NAME
+          value: $(context.pipelineRun.name)
+        - name: BUNDLE_VERSION
+          value: $(context.pipelineRun.uid)
+        - name: DIGESTS
+          value: ["$(tasks.push-snapshot.results.IMAGE_DIGEST)"]
+        - name: MODE
+          value: seal
+        - name: POLICY
+          value: $(params.oidcPolicy)
+        - name: CA_FILE
+          value: $(params.caFile)
+    - name: report-conforma
+      runAfter: [seal-bundle]
+      taskRef:
+        name: oa-report-check
+      params:
+        - name: SERVER
+          value: $(params.server)
+        - name: BUNDLE_NAME
+          value: $(context.pipelineRun.name)
+        - name: BUNDLE_VERSION
+          value: $(context.pipelineRun.uid)
+        - name: CHECK_NAME
+          value: $(params.conformaCheckName)
+        - name: TEST_OUTPUT
+          value: $(tasks.verify-conforma.results.TEST_OUTPUT)
+        - name: POLICY
+          value: $(params.oidcPolicy)
+        - name: CA_FILE
+          value: $(params.caFile)
+    - name: promote
+      runAfter: [report-conforma]
+      taskRef:
+        name: oa-bundle-promote
+      params:
+        - name: SERVER
+          value: $(params.server)
+        - name: REPOSITORY
+          value: $(params.repository)
+        - name: BUNDLE_NAME
+          value: $(context.pipelineRun.name)
+        - name: BUNDLE_VERSION
+          value: $(context.pipelineRun.uid)
+        - name: MODE
+          value: promote
+        - name: STAGE
+          value: $(params.stage)
+        - name: POLICY
+          value: $(params.oidcPolicy)
+        - name: CA_FILE
+          value: $(params.caFile)
+    - name: update-cr-status
+      runAfter: [promote]
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: $(params.taskGitUrl)
+          - name: revision
+            value: $(params.taskGitRevision)
+          - name: pathInRepo
+            value: tasks/managed/update-cr-status/update-cr-status.yaml
+      params:
+        - name: resource
+          value: $(params.release)
+        - name: resultsDirPath
+          value: $(tasks.collect-data.results.resultsDir)
+        - name: ociStorage
+          value: $(params.ociStorage)
+        - name: resultArtifacts
+          value:
+            - $(tasks.reduce-snapshot.results.sourceDataArtifact)=$(params.dataDir)
+        - name: dataDir
+          value: $(params.dataDir)
+        - name: trustedArtifactsDebug
+          value: $(params.trustedArtifactsDebug)
+        - name: taskGitUrl
+          value: $(params.taskGitUrl)
+        - name: taskGitRevision
+          value: $(params.taskGitRevision)

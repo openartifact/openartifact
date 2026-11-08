@@ -25,6 +25,10 @@ func dockerFormat() plugin.Format {
 				h.SetAuthorizer(d.DockerAuthorizer)
 			}
 
+			for _, hook := range d.DockerManifestHooks {
+				h.AddManifestPutHook(hook)
+			}
+
 			return dockerHosted{h}, nil
 		},
 		Supply: plugin.Analysis{

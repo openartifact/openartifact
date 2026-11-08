@@ -46,6 +46,9 @@ type Repository struct {
 	MergeProxyVersions bool
 	// SignPackages (hosted rpm only) signs uploaded RPMs with the active GPG key.
 	SignPackages bool
+	// HonourQuayExpiry (hosted docker only) deletes manifests once the
+	// quay.expires-after deadline they declared at push time has passed.
+	HonourQuayExpiry bool
 	// Federated marks a hosted repository that replicates with peers
 	// (see internal/federation). It is set only by federation.Store.Enable.
 	Federated bool

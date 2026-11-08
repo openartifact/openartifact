@@ -1,0 +1,94 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: oa-sbom-fetch
+  labels:
+    app.kubernetes.io/version: "0.1"
+  annotations:
+    tekton.dev/pipelines.minVersion: 0.62.0
+    tekton.dev/tags: openartifact
+spec:
+  description: >-
+    Download the SBOM and the attestations OpenArtifact stores for an image (cosign attach sbom, in-toto
+    attestations) into the Task workspace results, for later scan or release tasks.
+  params:
+    - name: SERVER
+      type: string
+      description: OpenArtifact base URL.
+    - name: POLICY
+      type: string
+      default: ""
+      description: OIDC trust policy name; empty lets the server match the token.
+    - name: CA_FILE
+      type: string
+      default: ""
+      description: PEM bundle trusted for the OpenArtifact server.
+    - name: IMAGE
+      type: string
+      default: ghcr.io/openartifact/oa-tekton:0.21.0
+    - name: IMAGE_REF
+      type: string
+      description: Image reference with digest, for example artifacts.example.com/team/app@sha256:...
+  results:
+    - name: SBOM_DIGEST
+      description: sha256 of the downloaded SBOM, empty when the image has none.
+    - name: ATTESTATIONS
+      description: Number of in-toto attestations found.
+  workspaces:
+    - name: output
+      description: Receives sbom.json and attestations.jsonl.
+  stepTemplate:
+    volumeMounts:
+      - name: oa-auth
+        mountPath: /oa-auth
+  steps:
+    - name: exchange
+      ref:
+        name: oa-exchange-token
+      params:
+        - name: server
+          value: $(params.SERVER)
+        - name: policy
+          value: $(params.POLICY)
+        - name: caFile
+          value: $(params.CA_FILE)
+      volumeMounts:
+        - name: oa-token
+          mountPath: /var/run/secrets/openartifact
+          readOnly: true
+    - name: fetch
+      image: $(params.IMAGE)
+      workingDir: $(workspaces.output.path)
+      env:
+        - name: CA_FILE
+          value: $(params.CA_FILE)
+        - name: IMAGE_REF
+          value: $(params.IMAGE_REF)
+      script: |
+        #!/bin/bash
+        set -uo pipefail
+        [ -z "$CA_FILE" ] || export SSL_CERT_FILE="$CA_FILE"
+        export DOCKER_CONFIG=/oa-auth/docker
+        : > "$(results.SBOM_DIGEST.path)"
+        if cosign download sbom "$IMAGE_REF" > sbom.json 2>/dev/null; then
+          sha256sum sbom.json | cut -d' ' -f1 | tr -d '\n' > "$(results.SBOM_DIGEST.path)"
+        else
+          rm -f sbom.json
+        fi
+        cosign download attestation "$IMAGE_REF" > attestations.jsonl 2>/dev/null || : > attestations.jsonl
+        wc -l < attestations.jsonl | tr -d ' \n' > "$(results.ATTESTATIONS.path)"
+  volumes:
+    - name: oa-token
+      projected:
+        sources:
+          - serviceAccountToken:
+              audience: openartifact
+              expirationSeconds: 600
+              path: token
+    - name: oa-auth
+      emptyDir:
+        medium: Memory

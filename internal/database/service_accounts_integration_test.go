@@ -8,6 +8,8 @@ package database
 
 import (
 	"context"
+	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -351,5 +353,79 @@ func TestOIDCPolicies_Store(t *testing.T) {
 
 	if ok, err := pg.DeleteOIDCPolicy(ctx, first.ID); err != nil || ok {
 		t.Fatalf("second DeleteOIDCPolicy = %v, %v; want false", ok, err)
+	}
+}
+
+const discoveryTestJWKS = `{"keys":[{"kty":"RSA","kid":"k1","n":"abc","e":"AQAB"}]}`
+
+func newDiscoveryPolicy(saID, name string, d models.OIDCDiscovery, private bool) *models.OIDCTrustPolicy {
+	return &models.OIDCTrustPolicy{
+		Name: name, Issuer: "https://kubernetes.default.svc", Audience: "https://oa.example", ServiceAccountID: saID,
+		TokenTTLSeconds: 600, Enabled: true, Discovery: d, AllowPrivateIssuer: private, CreatedBy: "admin",
+		Conditions: []models.OIDCCondition{{Claim: "kubernetes.io.namespace", Patterns: []string{"team-a"}}},
+	}
+}
+
+func TestOIDCPolicies_DiscoveryColumns(t *testing.T) {
+	pg := newQuotaTestDB(t, 4)
+	ctx := context.Background()
+	sa := newServiceAccount(t, pg, "ci-tekton")
+
+	// A policy without discovery is anonymous, with nothing stored.
+	plain, err := pg.CreateOIDCPolicy(ctx, newDiscoveryPolicy(sa.ID, "plain", models.OIDCDiscovery{}, false))
+	if err != nil || plain.Discovery.Mode != models.OIDCDiscoveryAnonymous || len(plain.Discovery.JWKS) != 0 || plain.AllowPrivateIssuer {
+		t.Fatalf("default policy = %+v, %v", plain, err)
+	}
+
+	kubeDiscovery := models.OIDCDiscovery{Mode: models.OIDCDiscoveryServiceAccount}
+
+	kube, err := pg.CreateOIDCPolicy(ctx, newDiscoveryPolicy(sa.ID, "kube", kubeDiscovery, true))
+	if err != nil || kube.Discovery.Mode != models.OIDCDiscoveryServiceAccount || !kube.AllowPrivateIssuer {
+		t.Fatalf("serviceaccount policy = %+v, %v", kube, err)
+	}
+
+	staticDiscovery := models.OIDCDiscovery{Mode: models.OIDCDiscoveryStatic, JWKS: []byte(discoveryTestJWKS)}
+
+	static, err := pg.CreateOIDCPolicy(ctx, newDiscoveryPolicy(sa.ID, "static", staticDiscovery, false))
+	if err != nil || static.Discovery.Mode != models.OIDCDiscoveryStatic {
+		t.Fatalf("static policy = %+v, %v", static, err)
+	}
+
+	// The key set is read back as the same JSON document.
+	var got, want map[string]any
+	if err := json.Unmarshal(static.Discovery.JWKS, &got); err != nil {
+		t.Fatalf("stored jwks: %v", err)
+	}
+
+	if err := json.Unmarshal([]byte(discoveryTestJWKS), &want); err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("jwks = %v, want %v (%v)", got, want, err)
+	}
+
+	// Moving a static policy to the Kubernetes mode drops its keys.
+	static.Discovery = kubeDiscovery
+	static.AllowPrivateIssuer = true
+
+	moved, err := pg.UpdateOIDCPolicy(ctx, static)
+	if err != nil || moved.Discovery.Mode != models.OIDCDiscoveryServiceAccount || len(moved.Discovery.JWKS) != 0 ||
+		!moved.AllowPrivateIssuer {
+		t.Fatalf("updated policy = %+v, %v", moved, err)
+	}
+}
+
+// The table refuses a mode and its key set that disagree.
+func TestOIDCPolicies_DiscoveryConstraints(t *testing.T) {
+	pg := newQuotaTestDB(t, 4)
+	ctx := context.Background()
+	sa := newServiceAccount(t, pg, "ci-tekton")
+
+	for name, d := range map[string]models.OIDCDiscovery{
+		"static-without-keys":    {Mode: models.OIDCDiscoveryStatic},
+		"keys-outside-static":    {Mode: models.OIDCDiscoveryAnonymous, JWKS: []byte(discoveryTestJWKS)},
+		"keys-that-are-no-set":   {Mode: models.OIDCDiscoveryStatic, JWKS: []byte(`[1]`)},
+		"a-mode-that-is-unknown": {Mode: "magic"},
+	} {
+		if _, err := pg.CreateOIDCPolicy(ctx, newDiscoveryPolicy(sa.ID, name, d, false)); err == nil {
+			t.Errorf("%s was stored", name)
+		}
 	}
 }

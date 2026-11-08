@@ -141,17 +141,18 @@ DELETE FROM docker_uploads WHERE updated_at < $1 RETURNING upload_uuid;
 -- Re-pushing a manifest already stored for the image is a no-op refresh, not
 -- an error (OCI distribution: manifest PUT is idempotent). A copy of the same
 -- digest sitting in the trash does not conflict: the push creates a new live row.
-INSERT INTO docker_manifests (repository_id, image, digest, media_type, blob_id, size, subject_digest, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
+-- expires_at is the quay.expires-after deadline (NULL: none); a re-push restarts it.
+INSERT INTO docker_manifests (repository_id, image, digest, media_type, blob_id, size, subject_digest, created_at, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), COALESCE(sqlc.narg(created_at)::timestamptz, NOW()), sqlc.narg(expires_at)::timestamptz)
 ON CONFLICT (repository_id, image, digest) WHERE deleted_at IS NULL DO UPDATE
     SET media_type = EXCLUDED.media_type, blob_id = EXCLUDED.blob_id, size = EXCLUDED.size,
-        subject_digest = EXCLUDED.subject_digest, updated_at = now()
+        subject_digest = EXCLUDED.subject_digest, expires_at = EXCLUDED.expires_at, updated_at = now()
 RETURNING id, created_at, updated_at, (xmax = 0) AS inserted;
 
 -- name: GetDockerManifest :one
 SELECT id, repository_id, image, digest, media_type, blob_id, size,
        COALESCE(subject_digest, '') AS subject_digest,
-       created_at, updated_at
+       created_at, updated_at, expires_at
 FROM docker_manifests
 WHERE repository_id = $1 AND image = $2 AND digest = $3 AND deleted_at IS NULL;
 
@@ -239,7 +240,7 @@ LIMIT $2;
 -- name: ListDockerManifestsByRepo :many
 SELECT dm.id, dm.repository_id, dm.image, dm.digest, dm.media_type, b.sha256 AS blob_sha256, dm.size,
        COALESCE(dm.subject_digest, '') AS subject_digest,
-       dm.created_at, dm.updated_at
+       dm.created_at, dm.updated_at, dm.expires_at
 FROM docker_manifests dm
 JOIN blobs b ON b.id = dm.blob_id
 WHERE dm.repository_id = $1 AND dm.deleted_at IS NULL
@@ -321,6 +322,11 @@ LIMIT sqlc.arg(row_limit);
 -- tagged (some tag of the same image points at it, a trashed tag included: the
 -- manifest must survive until the tag is purged so a restore never dangles), young (pushed or re-pushed
 -- within the grace period) and the child manifests it references (an index).
+-- A live dependent tag (cosign .sig/.att/.sbom/.src, referrers tag schema:
+-- dependent_tag_re, see internal/ociref) holds its manifest only while its subject
+-- manifest exists outside this listing (trashed, or pinned by a release bundle):
+-- one that is in the listing is judged with it (dependent_of), so the dependents of
+-- a subject that is collected are collected with it.
 SELECT dm.id, dm.image, dm.digest,
        COALESCE(dm.subject_digest, '')::text AS subject_digest,
        dm.size,
@@ -328,7 +334,21 @@ SELECT dm.id, dm.image, dm.digest,
        EXISTS (
            SELECT 1 FROM docker_tags t
            WHERE t.repository_id = dm.repository_id AND t.image = dm.image AND t.manifest_digest = dm.digest
+             AND (t.deleted_at IS NOT NULL OR t.name !~ sqlc.arg(dependent_tag_re)::text OR EXISTS (
+                 SELECT 1 FROM docker_manifests s
+                 WHERE s.repository_id = dm.repository_id AND s.image = dm.image
+                   AND s.digest = 'sha256:' || substr(t.name, 8, 64)
+                   AND (s.deleted_at IS NOT NULL OR EXISTS (
+                       SELECT 1 FROM release_bundle_items rbi
+                       JOIN blobs sb ON sb.sha256 = rbi.sha256
+                       WHERE sb.id = s.blob_id))
+             ))
        ) AS tagged,
+       COALESCE((
+           SELECT string_agg(DISTINCT 'sha256:' || substr(t.name, 8, 64), ',') FROM docker_tags t
+           WHERE t.repository_id = dm.repository_id AND t.image = dm.image AND t.manifest_digest = dm.digest
+             AND t.deleted_at IS NULL AND t.name ~ sqlc.arg(dependent_tag_re)::text
+       ), '')::text AS dependent_of,
        (dm.updated_at > now() - make_interval(secs => sqlc.arg(grace_seconds)::float8))::boolean AS young,
        COALESCE((
            SELECT string_agg(r.digest, ',') FROM docker_manifest_refs r
@@ -349,9 +369,11 @@ ORDER BY dm.created_at;
 -- Deletes the given untagged live manifests (never a trashed one nor one a release bundle pins), re-checking every condition against the
 -- current state: still older than the grace period, still untagged, and not
 -- adjacent (index child, index parent, subject or referrer) to a manifest that
--- is not being deleted. Must run in a transaction holding the repository's
--- exclusive docker lock so a concurrent push cannot register new references
--- between the check and the delete.
+-- is not being deleted. A dependent tag (dependent_tag_re) does not count as a tag
+-- when its subject manifest is absent or among ids; the dependent tags of the
+-- deleted manifests are removed with them. Must run in a transaction holding the
+-- repository's exclusive docker lock so a concurrent push cannot register new
+-- references between the check and the delete.
 WITH deleted AS (
 DELETE FROM docker_manifests dm
 WHERE dm.repository_id = sqlc.arg(repository_id)::uuid
@@ -366,6 +388,12 @@ WHERE dm.repository_id = sqlc.arg(repository_id)::uuid
   AND NOT EXISTS (
       SELECT 1 FROM docker_tags t
       WHERE t.repository_id = dm.repository_id AND t.image = dm.image AND t.manifest_digest = dm.digest
+        AND (t.deleted_at IS NOT NULL OR t.name !~ sqlc.arg(dependent_tag_re)::text OR EXISTS (
+            SELECT 1 FROM docker_manifests s
+            WHERE s.repository_id = dm.repository_id AND s.image = dm.image
+              AND s.digest = 'sha256:' || substr(t.name, 8, 64)
+              AND s.id <> ALL(sqlc.arg(ids)::uuid[])
+        ))
   )
   AND NOT EXISTS (
       SELECT 1 FROM docker_manifest_refs r
@@ -384,6 +412,11 @@ WHERE dm.repository_id = sqlc.arg(repository_id)::uuid
         AND s.digest = dm.subject_digest AND s.id <> ALL(sqlc.arg(ids)::uuid[])
   )
 RETURNING dm.id, dm.image, dm.digest, dm.size, dm.blob_id
+), dropped_tags AS (
+    DELETE FROM docker_tags t
+    USING deleted d
+    WHERE t.repository_id = sqlc.arg(repository_id)::uuid AND t.image = d.image AND t.manifest_digest = d.digest
+      AND t.deleted_at IS NULL
 )
 SELECT d.id, d.image, d.digest, d.size, b.sha256 AS blob_sha256
 FROM deleted d
@@ -572,3 +605,86 @@ SELECT EXISTS (
           OR EXISTS (SELECT 1 FROM license_results lr WHERE lr.scan_job_id = sj.id AND lr.quarantined)
       )
 )::boolean AS quarantined;
+
+-- name: ListDockerExpiredManifests :many
+-- The live manifests whose quay.expires-after deadline has passed. Left out: one a
+-- release bundle pins, and one that is a child of a live index that stays (an
+-- index is kept when it has no deadline or a later one, or is itself pinned).
+SELECT dm.id, dm.image, dm.digest, dm.size, b.sha256 AS blob_sha256
+FROM docker_manifests dm
+JOIN blobs b ON b.id = dm.blob_id
+WHERE dm.repository_id = $1
+  AND dm.deleted_at IS NULL
+  AND dm.expires_at IS NOT NULL AND dm.expires_at <= now()
+  AND NOT EXISTS (SELECT 1 FROM release_bundle_items rbi WHERE rbi.sha256 = b.sha256)
+  AND NOT EXISTS (
+      SELECT 1 FROM docker_manifest_refs r
+      JOIN docker_manifests pm ON pm.id = r.manifest_id AND pm.deleted_at IS NULL
+      JOIN blobs pb ON pb.id = pm.blob_id
+      WHERE r.repository_id = dm.repository_id AND r.kind = 'manifest' AND r.image = dm.image AND r.digest = dm.digest
+        AND NOT (
+            pm.expires_at IS NOT NULL AND pm.expires_at <= now()
+            AND NOT EXISTS (SELECT 1 FROM release_bundle_items prbi WHERE prbi.sha256 = pb.sha256)
+        )
+  )
+ORDER BY dm.created_at;
+
+-- name: ListDockerExpiryDependents :many
+-- The live manifests that go with the doomed manifests (ids): their referrers, the
+-- manifests held only by their dependent tags (dependent_tag_re) and the children
+-- of a doomed index that no live manifest outside ids lists. Never one a release
+-- bundle pins nor one a tag of its own (trashed included) holds.
+SELECT DISTINCT m.id, m.image, m.digest, m.size, b.sha256 AS blob_sha256
+FROM docker_manifests doomed
+JOIN docker_manifests m
+  ON m.repository_id = doomed.repository_id AND m.image = doomed.image
+ AND m.deleted_at IS NULL AND m.id <> ALL(sqlc.arg(ids)::uuid[])
+JOIN blobs b ON b.id = m.blob_id
+WHERE doomed.repository_id = sqlc.arg(repository_id)::uuid
+  AND doomed.id = ANY(sqlc.arg(ids)::uuid[])
+  AND NOT EXISTS (SELECT 1 FROM release_bundle_items rbi WHERE rbi.sha256 = b.sha256)
+  AND NOT EXISTS (
+      SELECT 1 FROM docker_tags own
+      WHERE own.repository_id = m.repository_id AND own.image = m.image AND own.manifest_digest = m.digest
+        AND own.name !~ sqlc.arg(dependent_tag_re)::text
+  )
+  AND (
+      m.subject_digest = doomed.digest
+      OR EXISTS (
+          SELECT 1 FROM docker_tags dep
+          WHERE dep.repository_id = m.repository_id AND dep.image = m.image AND dep.manifest_digest = m.digest
+            AND dep.name ~ sqlc.arg(dependent_tag_re)::text
+            AND 'sha256:' || substr(dep.name, 8, 64) = doomed.digest
+      )
+      OR (
+          EXISTS (
+              SELECT 1 FROM docker_manifest_refs r
+              WHERE r.manifest_id = doomed.id AND r.kind = 'manifest' AND r.image = doomed.image AND r.digest = m.digest
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM docker_manifest_refs r2
+              JOIN docker_manifests pm ON pm.id = r2.manifest_id AND pm.deleted_at IS NULL
+              WHERE r2.repository_id = m.repository_id AND r2.kind = 'manifest' AND r2.image = m.image AND r2.digest = m.digest
+                AND pm.id <> ALL(sqlc.arg(ids)::uuid[])
+          )
+      )
+  );
+
+-- name: DeleteDockerExpiredManifests :many
+-- Deletes the given live manifests with every tag that points at them (trashed
+-- ones included), bypassing the registry GC grace period: the push declared the
+-- deadline. Must run in a transaction holding the repository's exclusive docker lock.
+WITH deleted AS (
+    DELETE FROM docker_manifests dm
+    WHERE dm.repository_id = sqlc.arg(repository_id)::uuid
+      AND dm.id = ANY(sqlc.arg(ids)::uuid[])
+      AND dm.deleted_at IS NULL
+    RETURNING dm.id, dm.image, dm.digest, dm.size, dm.blob_id
+), dropped_tags AS (
+    DELETE FROM docker_tags t
+    USING deleted d
+    WHERE t.repository_id = sqlc.arg(repository_id)::uuid AND t.image = d.image AND t.manifest_digest = d.digest
+)
+SELECT d.id, d.image, d.digest, d.size, b.sha256 AS blob_sha256
+FROM deleted d
+JOIN blobs b ON b.id = d.blob_id;

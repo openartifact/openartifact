@@ -80,6 +80,7 @@ Includes all fields of [ExploitAnnotation](#exploitannotation).
 | `kev_date_added` | string (date) | no | Day CISA added the CVE to the catalog. Only for a KEV CVE. |
 | `kev_due_date` | string (date) | no | Remediation deadline CISA set. Only for a KEV CVE that has one. |
 | `kev_ransomware` | boolean | no | True when CISA knows the CVE to be used in ransomware campaigns. Absent otherwise. |
+| `package` | string | no | Affected package (`name@version`) in a scan of a container image; absent in the scan of one package. |
 | `priority` | [ExploitPriority](#exploitpriority) | yes | - |
 | `published_at` | string | yes | - |
 | `references` | array of string | no | - |
@@ -139,6 +140,19 @@ Includes all fields of [ExploitAnnotation](#exploitannotation).
 | `public_key_pem` | string | no | - |
 | `public_key_url` | string | no | - |
 | `source` | string | no | One of: `file`, `generated`. |
+
+### AttestationTrust
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `fulcio` | object | no | - |
+| `fulcio.identities` | array of object | no | - |
+| `fulcio.identities[].issuer` | string | yes | - |
+| `fulcio.identities[].subject` | string | no | - |
+| `fulcio.identities[].subject_regexp` | string | no | - |
+| `fulcio.roots` | array of string | no | PEM certificates of the trusted Fulcio roots |
+| `keys` | array of string | no | PEM public keys (PKIX; ECDSA, RSA or Ed25519) |
+| `require_verified_provenance` | boolean | no | Refuse to promote a docker image without verified SLSA provenance (PROVENANCE_REQUIRED); pushes are never blocked |
 
 ### AuditEntry
 
@@ -282,6 +296,28 @@ Partial update: an absent field is left alone, a string sets the runtime overrid
 | `product_name` | string | no | 1-64 characters, no control characters. Nullable. Maximum length: 64. |
 | `source_url` | string | no | http(s) URL; cannot be empty. Nullable. |
 | `support_url` | string | no | http(s) or mailto URL; empty string hides the link. Nullable. |
+
+### BundleCheck
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `details_url` | string | yes | - |
+| `expires_at` | string (date-time) | yes | Nullable. |
+| `name` | string | yes | - |
+| `reported_by` | string | yes | - |
+| `status` | string | yes | One of: `pending`, `success`, `failure`, `error`. |
+| `summary` | string | yes | - |
+| `updated_at` | string (date-time) | yes | - |
+
+### BundleCheckReport
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `details_url` | string (uri) | no | Absolute http(s) URL. Maximum length: 2048. |
+| `expires_at` | string (date-time) | no | Must be in the future; the check stops counting after it. Nullable. |
+| `name` | string | yes | Check name, matched against a stage's `required_checks`. Maximum length: 64. |
+| `status` | string | yes | One of: `pending`, `success`, `failure`, `error`. |
+| `summary` | string | no | Maximum length: 2000. |
 
 ### BundlePromotion
 
@@ -573,18 +609,19 @@ One curation rule of a proxy repository. Package and version patterns are globs 
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `blob_refs_deleted` | integer | yes | Blob records of the repository no manifest references any more |
-| `blobs` | array of [DockerGCBlob](#dockergcblob) | yes | - |
-| `blobs_freed` | integer | yes | Storage objects removed; in a dry run an upper bound that ignores sharing with other repositories |
-| `bytes_freed` | integer (int64) | yes | - |
-| `dry_run` | boolean | yes | - |
-| `failures` | integer | yes | Storage deletions that failed (logged server-side; the orphan collector retries them) |
-| `grace_period_seconds` | integer (int64) | yes | - |
-| `manifests` | array of [DockerGCManifest](#dockergcmanifest) | yes | - |
-| `manifests_deleted` | integer | yes | Untagged manifests deleted (would be, in a dry run) |
-| `manifests_missing_body` | integer | yes | Manifests whose body is missing from storage; while any exists, no blob of the repository is swept |
-| `repository` | string | yes | - |
-| `truncated` | boolean | yes | manifests/blobs are capped at 1000 entries each |
+| `blob_refs_deleted` | integer | no | Blob records of the repository no manifest references any more |
+| `blobs` | array of [DockerGCBlob](#dockergcblob) | no | - |
+| `blobs_freed` | integer | no | Storage objects removed; in a dry run an upper bound that ignores sharing with other repositories |
+| `bytes_freed` | integer (int64) | no | - |
+| `dry_run` | boolean | no | - |
+| `failures` | integer | no | Storage deletions that failed (logged server-side; the orphan collector retries them) |
+| `grace_period_seconds` | integer (int64) | no | - |
+| `manifests` | array of [DockerGCManifest](#dockergcmanifest) | no | - |
+| `manifests_deleted` | integer | no | Manifests deleted (would be, in a dry run): untagged ones and expired ones |
+| `manifests_expired` | integer | yes | Of manifests_deleted, the manifests removed because their quay.expires-after deadline passed (repositories with honour_quay_expiry only), with their referrers and dependent signature manifests |
+| `manifests_missing_body` | integer | no | Manifests whose body is missing from storage; while any exists, no blob of the repository is swept |
+| `repository` | string | no | - |
+| `truncated` | boolean | no | manifests/blobs are capped at 1000 entries each |
 
 ### DockerGCRequest
 
@@ -763,6 +800,25 @@ A signing key. Private key material is never part of the API.
 | `source` | string | no | One of: `imported`, `generated`, `auto`, `config`. |
 | `user_id` | string | no | - |
 
+### GateCheck
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `detail` | string | yes | Short client-safe sentence. |
+| `name` | string | yes | One of: `vulnerabilities`, `license`, `quarantine`, `attestations`. |
+| `pass` | boolean | yes | - |
+
+### GateResponse
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `checks` | array of [GateCheck](#gatecheck) | yes | - |
+| `digest` | string | yes | - |
+| `pass` | boolean | yes | True only when every check passed. |
+| `reason` | string | no | `<check>: <detail>` of the first failing check; absent on pass. |
+| `scan_id` | string (uuid) | no | Latest scan; absent when none. |
+| `scan_status` | string | yes | Status of the latest scan of the image (`pending`, `scanning`, `completed`, `partial`, `failed`), `none` when it was never scanned. |
+
 ### Group
 
 | Field | Type | Required | Description |
@@ -806,6 +862,17 @@ A signing key. Private key material is never part of the API.
 | `published_at` | string (date-time) | no | The publish time the upstream states, when known. |
 | `reasons` | array of [AvailabilityReason](#availabilityreason) | yes | Never empty. |
 | `version` | string | yes | - |
+
+### InTotoStatement
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `_type` | string | yes | - |
+| `predicate` | object | yes | - |
+| `predicateType` | string | yes | - |
+| `subject` | array of object | yes | - |
+| `subject[].digest` | map of string | no | - |
+| `subject[].name` | string | no | - |
 
 ### LicenseBlockedError
 
@@ -921,11 +988,26 @@ Result of POST .../license/scan: the recorded license scan plus the policy viola
 | `public_key` | string | yes | Public key in Nix format, name:base64, to add to trusted-public-keys |
 | `updated_at` | string (date-time) | yes | - |
 
+### OCIAttestation
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `created_at` | string (date-time) | yes | When the envelope was first seen; keyless certificates are judged at this time |
+| `digest` | string | yes | Digest of the envelope layer |
+| `image` | string | yes | - |
+| `issuer` | string | yes | OIDC issuer recorded in the certificate |
+| `kind` | string | yes | One of: `signature`, `attestation`, `sbom`. |
+| `predicate_type` | string | yes | - |
+| `signer_identity` | string | yes | Certificate SAN (keyless), or key:`<sha256 of the DER public key>` for a trusted static key; empty when unknown |
+| `subject` | string | yes | Digest of the image manifest the attachment is about |
+| `verified` | boolean | yes | - |
+| `verify_error` | string | yes | Why the attachment did not verify; empty when it did |
+
 ### OIDCCondition
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `claim` | string | yes | Token claim name, for example `repository`, `ref` or `environment`. |
+| `claim` | string | yes | Token claim name or dotted path into nested claims, for example `repository`, `ref` or `kubernetes.io.namespace`. A literal top-level key (which may itself contain dots) wins over walking the path; the longest literal key wins. Only strings, numbers, booleans and arrays of those match; an object never does. |
 | `patterns` | array of string | yes | Globs (`*` any run of characters including `/`, `?` one character); the claim must match one of them. Case-sensitive. |
 
 ### OIDCConfig
@@ -957,6 +1039,15 @@ OIDC/OAuth 2.0 provider settings. client_secret is write-only: responses carry h
 | `userinfo_url` | string | no | type oauth2: userinfo endpoint (subject is sub, else id). |
 | `username_claim` | string | no | - |
 
+### OIDCDiscovery
+
+Where a trust policy gets the issuer's signing keys.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `jwks` | object | no | Static mode only (required there, rejected otherwise): a JWK Set with 1-32 public asymmetric signing keys, at most 64 KiB. Private and symmetric keys are refused. |
+| `mode` | string | yes | `anonymous` reads `{issuer}/.well-known/openid-configuration` and its `jwks_uri` without credentials. `static` verifies against `jwks` and never contacts the issuer (the `iss` claim must still equal `issuer`). `serviceaccount` reads the same documents with OpenArtifact's own projected service account token as Bearer and trusts the in-pod cluster CA in addition to the system roots (Kubernetes API servers). One of: `anonymous`, `static`, `serviceaccount`. Default: `anonymous`. |
+
 ### OIDCExchangeResponse
 
 | Field | Type | Required | Description |
@@ -970,13 +1061,15 @@ OIDC/OAuth 2.0 provider settings. client_secret is write-only: responses carry h
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| `allow_private_issuer` | boolean | no | Let the issuer and its `jwks_uri` resolve to private, loopback or cluster-internal addresses for this policy only (link-local and cloud-metadata addresses stay blocked). https is still required except on loopback. Not allowed with `discovery.mode` `static`. Admin only. Default: `false`. |
 | `audience` | string | no | The `aud` value the CI job requests; matched exactly. |
 | `conditions` | array of [OIDCCondition](#oidccondition) | no | All conditions must hold. Policies of a shared issuer (GitHub Actions, gitlab.com) need one on an identity claim such as `repository`, `sub` or `project_path`, whose patterns do not start with a wildcard. |
 | `created_at` | string (date-time) | no | - |
 | `created_by` | string | no | - |
+| `discovery` | [OIDCDiscovery](#oidcdiscovery) | no | - |
 | `enabled` | boolean | no | Default: `true`. |
 | `id` | string (uuid) | no | - |
-| `issuer` | string (uri) | no | Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com` or `https://gitlab.com`. Must be https and pass the outbound-request (SSRF) check. |
+| `issuer` | string (uri) | no | Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com`, `https://gitlab.com` or `https://kubernetes.default.svc`. Must be https and, unless `discovery.mode` is `static`, pass the outbound-request (SSRF) check (relaxed by `allow_private_issuer`). |
 | `name` | string | no | Unique name: 1-64 letters, digits, dot, dash or underscore. |
 | `service_account` | string | no | Name of the service account. |
 | `service_account_id` | string (uuid) | no | - |
@@ -1166,6 +1259,7 @@ Vulnerability counts by severity.
 |---|---|---|---|
 | `name` | string | yes | - |
 | `repo_id` | string | no | UUID of the repository the stage must promote into; empty for any. |
+| `required_checks` | array of string | no | Names of bundle checks that must be a live `success` before a promotion into this stage (422 CHECKS_REQUIRED otherwise). Always present in responses; `[]` when none. Items: maximum length: 64. |
 
 ### PresignedPart
 
@@ -1696,6 +1790,7 @@ Counts only; no finding ids, titles or other details.
 | `description` | string | no | Repository description |
 | `federated` | boolean | no | True when federation is enabled: the repository keeps a change log that peer instances pull to stay in sync. Hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw only. Peers and tokens are managed under /api/v1/repositories/{name}/federation. |
 | `format` | string | yes | Package format. One of: `ansible`, `apk`, `cargo`, `composer`, `conan`, `conda`, `deb`, `docker`, `go`, `helm`, `huggingface`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `pacman`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. |
+| `honour_quay_expiry` | boolean | no | Hosted docker repositories only (400 validation_failed otherwise when true, and when combined with immutable_releases=true). When true, a manifest carrying the quay.expires-after annotation (or image config label) is deleted with its tags and dependents once that time has passed. |
 | `id` | string (uuid) | yes | Repository unique identifier |
 | `immutable_releases` | boolean | no | When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true. |
 | `max_stale_seconds` | integer | no | Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000. |
@@ -2282,6 +2377,7 @@ Verdict of an exploitation gate on one scan: it passes when the scan completed a
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `checked` | integer | yes | Number of findings of the scan that were checked. |
+| `checks` | array of [GateCheck](#gatecheck) | yes | What the gate looked at; one `vulnerabilities` check for a scan gate. |
 | `criteria` | object | yes | The conditions that were applied. |
 | `criteria.epss_min` | number | yes | Null when not set. Nullable. |
 | `criteria.kev` | boolean | yes | - |
@@ -2295,6 +2391,15 @@ Verdict of an exploitation gate on one scan: it passes when the scan completed a
 | `pass` | boolean | yes | True when the scan is `completed`, the requested feeds are loaded and `failed` is empty. |
 | `reason` | string | no | Why the gate could not vouch for the scan (scan not completed, feed not loaded); absent otherwise. |
 | `scan_status` | string | yes | Status of the scan that was gated: `pending`, `scanning`, `completed`, `partial` or `failed`. |
+
+### VulnScanImportRequest
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `digest` | string | yes | Manifest digest of the scanned image. Pattern: `^sha256:[0-9a-f]{64}$`. |
+| `format` | string | yes | One of: `sarif`, `osv-scanner`, `oa`. |
+| `result` | any | yes | The scan result as JSON in the declared format. `oa`: `{"vulnerabilities":[{"id","severity","summary","cvss","fixed_in","package","references","aliases"}]}`. |
+| `scanner` | string | no | Optional tool label; the scan's scanner becomes `external:<label>` (default: the format). Pattern: `^[a-z0-9][a-z0-9._-]{0,31}$`. |
 
 ### VulnScanOverviewRow
 
@@ -2329,12 +2434,14 @@ A vulnerability scan without its findings (`vulnerabilities`), with the name and
 
 ### VulnScanRequest
 
+`package_name` and `package_version` are required except for ecosystem `docker`, which scans the packages of an image's SBOM: `artifact_id` is then the manifest digest (`sha256:<hex>`).
+
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `artifact_id` | string | yes | - |
 | `ecosystem` | string | yes | - |
-| `package_name` | string | yes | - |
-| `package_version` | string | yes | - |
+| `package_name` | string | no | - |
+| `package_version` | string | no | - |
 | `scanner` | string | no | Single scanner. Still accepted; merged with `scanners`. One of: `osv`, `trivy`, `grype`. |
 | `scanners` | array of string | no | Scanners to run. Merged with `scanner`; de-duplicated and sorted. Defaults to `osv` when neither is given. Items: one of: `osv`, `trivy`, `grype`. |
 
@@ -2409,7 +2516,7 @@ Whether one vulnerability scanner can run on the server. Fixed, client-safe text
 | `content_type` | string | yes | - |
 | `created_at` | string (date-time) | yes | - |
 | `enabled` | boolean | yes | - |
-| `events` | array of string | yes | Items: one of: `artifact.uploaded`, `artifact.deleted`, `repository.created`, `repository.deleted`, `artifact.restored`, `artifact.purged`, `repository.restored`, `repository.purged`, `bundle.promoted`, `vulnerability.new`. |
+| `events` | array of string | yes | Items: one of: `artifact.uploaded`, `artifact.deleted`, `repository.created`, `repository.deleted`, `artifact.restored`, `artifact.purged`, `repository.restored`, `repository.purged`, `bundle.promoted`, `vulnerability.new`, `scan.completed`, `vulnerability.found`, `quarantine.changed`, `bundle.check_updated`. |
 | `has_secret` | boolean | yes | Secret is write-only and never returned |
 | `id` | string (uuid) | yes | - |
 | `max_retries` | integer | yes | - |

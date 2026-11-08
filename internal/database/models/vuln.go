@@ -20,6 +20,10 @@ type Vulnerability struct {
 	// Aliases are the other ids the scanner knows the vulnerability by (a GHSA
 	// id lists its CVE); the exploitation feeds are keyed by CVE id.
 	Aliases []string `json:"aliases,omitempty"`
+	// Package is the affected package ("name@version") of a finding in a scan
+	// of a container image, which covers many packages; empty in the scan of one
+	// package.
+	Package string `json:"package,omitempty"`
 }
 
 // VulnScanResult represents a vulnerability scan result for an artifact.

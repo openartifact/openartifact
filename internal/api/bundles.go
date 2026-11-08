@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/bundlechecks"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
@@ -49,7 +50,9 @@ type BundlesStore interface {
 	GetPromotionPipelineByName(ctx context.Context, name string) (*models.PromotionPipeline, error)
 	GetReleaseBundle(ctx context.Context, name string, version string) (*models.ReleaseBundle, error)
 	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+	ListBundleChecks(ctx context.Context, bundleID string) ([]*models.BundleCheck, error)
 	ListBundleItems(ctx context.Context, bundleID string) ([]*models.ReleaseBundleItem, error)
+	UpsertBundleCheck(ctx context.Context, c *models.BundleCheck) error
 	ListBundlePromotions(ctx context.Context, bundleID string) ([]*models.BundlePromotion, error)
 	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
 	ListPromotionPipelines(ctx context.Context) ([]*models.PromotionPipeline, error)
@@ -78,6 +81,8 @@ type BundlesHandler struct {
 	db        BundlesStore
 	workers   *lifecycle.Workers
 	licenses  promote.LicenseSource
+
+	provenance ProvenanceGate
 }
 
 const (
@@ -146,6 +151,10 @@ func (h *BundlesHandler) validateStages(ctx context.Context, stages []models.Pip
 
 		seen[stage.Name] = struct{}{}
 
+		if msg := bundlechecks.ValidateRequired(stage.RequiredChecks); msg != "" {
+			return "stages[" + strconv.Itoa(i) + "]: " + msg, nil
+		}
+
 		if stage.RepositoryID == "" {
 			continue
 		}
@@ -171,7 +180,7 @@ func NewBundlesHandler(db BundlesStore, log *logger.Logger, evaluator *auth.Eval
 	return &BundlesHandler{repoAccess: newRepoAccess(db, log, evaluator), promoter: promote.NewEngine(db, log, nil, nil), db: db}
 }
 
-// WithPublisher enables the bundle.promoted webhook event.
+// WithPublisher enables the bundle.promoted and bundle.check_updated webhook events.
 func (h *BundlesHandler) WithPublisher(p webhook.Publisher) *BundlesHandler {
 	h.publisher = p
 	return h
@@ -244,6 +253,10 @@ func (h *BundlesHandler) RegisterAuthed(r chi.Router) {
 
 	// Promotion history
 	r.Get("/api/v1/bundles/{name}/{version}/promotions", h.handleListPromotions)
+
+	// Required external checks
+	r.Get("/api/v1/bundles/{name}/{version}/checks", h.handleListChecks)
+	r.Post("/api/v1/bundles/{name}/{version}/checks", h.handleReportCheck)
 }
 
 // ============================================================================
@@ -1058,7 +1071,7 @@ func (h *BundlesHandler) validatePromotionStage(
 		return validationFailure("target_repo does not match the repository configured for to_stage")
 	}
 
-	return nil
+	return h.requiredChecksFailure(ctx, bundle, pipeline.Stages[toIdx])
 }
 
 // resolvePromotionTarget finds the repository a promotion writes to: the named
@@ -1167,6 +1180,11 @@ func (h *BundlesHandler) handlePromote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if fail := h.validatePromotionStage(ctx, bundle, targetRepo, body.ToStage); fail != nil {
+		writeError(w, fail.status, fail.code, fail.msg)
+		return
+	}
+
+	if fail := h.provenanceFailure(ctx, bundle, targetRepo); fail != nil {
 		writeError(w, fail.status, fail.code, fail.msg)
 		return
 	}
@@ -1284,9 +1302,13 @@ func pipelineToMap(p *models.PromotionPipeline) map[string]any {
 		_ = json.Unmarshal(p.StagesRaw, &p.Stages)
 	}
 
-	stages := p.Stages
-	if stages == nil {
-		stages = []models.PipelineStage{}
+	stages := make([]models.PipelineStage, len(p.Stages))
+	copy(stages, p.Stages)
+
+	for i := range stages {
+		if stages[i].RequiredChecks == nil {
+			stages[i].RequiredChecks = []string{}
+		}
 	}
 
 	return map[string]any{

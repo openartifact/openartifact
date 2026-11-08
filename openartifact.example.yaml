@@ -177,6 +177,10 @@ auth:
   legacyApiKeyEnabled: false  # default false; true accepts server.apiKey (deprecated, full admin)
   sessionDurationHours: 24
   argon2MaxConcurrent: 0  # concurrent password hashes (64 MiB each; more logins wait); 0 = CPU count clamped to 2..4; env OPENARTIFACT_ARGON2_MAX_CONCURRENT
+  # Kubernetes service account token and CA for CI OIDC trust policies with discovery mode "serviceaccount"
+  # (the token is read for every request); defaults shown. Env OPENARTIFACT_OIDC_SERVICEACCOUNT_{TOKEN,CA}_FILE
+  # oidcServiceAccountTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+  # oidcServiceAccountCaFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
   # hmacKey: "CHANGE_ME"  # optional; unset = random key generated once, persisted in system_settings
   # samlSpCert: ""         # PEM SAML SP certificate; unset = self-signed pair generated once, persisted encrypted
   # samlSpKey: ""          # PEM SAML SP key; regenerating means re-registering the cert at the IdP
@@ -273,6 +277,11 @@ workers:
   # long fails the fetch and releases the requests waiting on it (reset on every
   # read; 0 disables).
   proxyUpstreamStallTimeout: 60s
+  # Go proxy and group repositories relay the checksum database under
+  # /repos/<name>/sumdb/<host>/ (the GOPROXY sumdb protocol). Only these hosts are
+  # relayed (always over https); any other host is 404. An empty list turns the
+  # relay off.
+  proxyGoSumdbHosts: [sum.golang.org]
   # Abandoned docker blob uploads idle longer than dockerUploadTtl are deleted
   # with their data (0 disables the sweeper). An in-progress upload is one
   # object of the blob store, so any replica can take any request of a push.
@@ -423,3 +432,12 @@ exploit:
   epssUrl: https://epss.empiricalsecurity.com/epss_scores-current.csv.gz                       # https; gzip CSV, a mirror serves the same file
   interval: 24h            # pause between imports, at least 1h
   epssThreshold: 0.1       # EPSS score (above 0, at most 1) from which a finding outside KEV ranks above its severity
+
+# Quay-compatible API facade for the Konflux image-controller (Konflux's
+# quayapiurl is https://<host>/quay/api/v1). A token with global manage
+# permission can create registry robot accounts through it; their tokens are
+# stored sealed, so OPENARTIFACT_SECRET_KEY is required. See
+# docs/integrations/konflux-image-controller.md.
+quayApi:
+  enabled: false           # true mounts /quay/api/v1
+  organizations: []        # hosted docker repositories usable as the Quay organization; empty allows all of them

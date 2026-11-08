@@ -7,6 +7,7 @@ package config
 import (
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1297,5 +1298,53 @@ func TestProxyUpstreamStallTimeoutConfig(t *testing.T) {
 
 	if err := cfg.Validate(); !errors.Is(err, errNegativeStallTimeout) {
 		t.Fatalf("Validate() = %v, want errNegativeStallTimeout", err)
+	}
+}
+
+func TestProxyGoSumdbHostsConfig(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := cfg.Workers.ProxyGoSumdbHosts; !slices.Equal(got, []string{"sum.golang.org"}) {
+		t.Fatalf("default = %v, want [sum.golang.org]", got)
+	}
+
+	for _, tt := range []struct {
+		name, env string
+		want      []string
+		invalid   bool
+	}{
+		{"list", " sum.golang.org, db.example:8443 ,", []string{"sum.golang.org", "db.example:8443"}, false},
+		{"empty turns the relay off", "", nil, false},
+		{"scheme", "https://sum.golang.org", nil, true},
+		{"path", "db.example/sumdb", nil, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("OPENARTIFACT_PROXY_GO_SUMDB_HOSTS", tt.env)
+
+			cfg, err := Load("")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			err = cfg.Validate()
+			if tt.invalid {
+				if !errors.Is(err, errBadGoSumdbHost) {
+					t.Fatalf("Validate() = %v, want errBadGoSumdbHost", err)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Validate() = %v", err)
+			}
+
+			if got := cfg.Workers.ProxyGoSumdbHosts; !slices.Equal(got, tt.want) {
+				t.Errorf("hosts = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

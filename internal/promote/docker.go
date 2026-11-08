@@ -11,9 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/itempath"
+	"github.com/openartifact/openartifact/internal/ociref"
 )
 
 // dockerPromoter promotes docker/OCI images.
@@ -29,6 +31,12 @@ import (
 //   - the config and layer blobs: a docker_blobs row (same blobs row, new
 //     repository) and the docker_blob_images link of the image, unless the
 //     destination already holds the digest;
+//   - its dependents (copyDependents): the referrer manifests (subject_digest =
+//     the digest) and the cosign / referrers-tag-schema tags (ociref.CosignTags)
+//     with the manifests they point at, for the item and for each child of an
+//     index; one level only, a dependent's own dependents are not followed.
+//     They go through the same manifest/blob copy, so quarantine, quota and
+//     tag-conflict rules apply to them exactly as to the item;
 //   - the live source tags pointing at the item's manifest (not at index
 //     children), unless the destination already has the tag name for the image:
 //     on the same digest it is reported as existing, on another digest it is a
@@ -255,7 +263,7 @@ func (r *dockerRun) promoteRoot(ctx context.Context, root dockerManifest) error 
 		version = root.tags[0].Name
 	}
 
-	return r.copyManifest(ctx, root, version, tagged > 0)
+	return r.copyManifest(ctx, root, version, tagged > 0, true)
 }
 
 // copyTags copies the live source tags of the item manifest and returns how
@@ -350,7 +358,8 @@ func (r *dockerRun) insertTag(ctx context.Context, name string, t dockerTag) (bo
 // copyManifest copies manifest m (once per Promote call) with its blobs and, for
 // an index, its children. changed marks a manifest whose destination row
 // already existed but that the promotion still changed (it gained tags).
-func (r *dockerRun) copyManifest(ctx context.Context, m dockerManifest, version string, changed bool) error {
+// withDependents also copies the referrers and cosign tags of m and its children.
+func (r *dockerRun) copyManifest(ctx context.Context, m dockerManifest, version string, changed, withDependents bool) error {
 	if _, done := r.seen[m.id]; done {
 		return nil
 	}
@@ -380,12 +389,127 @@ func (r *dockerRun) copyManifest(ctx context.Context, m dockerManifest, version 
 	}
 
 	for _, child := range children {
-		if err := r.copyManifest(ctx, child, "", false); err != nil {
+		if err := r.copyManifest(ctx, child, "", false, false); err != nil {
 			return err
 		}
 	}
 
+	if !withDependents {
+		return nil
+	}
+
+	return r.copyDependents(ctx, append([]dockerManifest{m}, children...))
+}
+
+// copyDependents copies, for every subject manifest, the live manifests of its
+// image that name it as their OCI subject and the cosign / referrers-tag-schema
+// tags that exist on the source with the manifests they point at. The copied
+// dependents do not copy dependents of their own.
+func (r *dockerRun) copyDependents(ctx context.Context, subjects []dockerManifest) error {
+	for _, s := range subjects {
+		referrers, err := r.queryManifests(ctx, dockerReferrersSQL, r.req.Src.ID, s.image, s.digest)
+		if err != nil {
+			return fmt.Errorf("select referrers of docker manifest %s: %w", s.digest, err)
+		}
+
+		for _, ref := range referrers {
+			if err := r.copyManifest(ctx, ref, "", false, false); err != nil {
+				return err
+			}
+		}
+
+		tagged, err := r.dependentTags(ctx, s)
+		if err != nil {
+			return err
+		}
+
+		for _, target := range tagged {
+			if err := r.copyDependentTag(ctx, target); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
+}
+
+// dependentTags returns the manifests the live cosign / referrers-schema tags
+// of subject s point at, each carrying the one tag that selected it.
+func (r *dockerRun) dependentTags(ctx context.Context, s dockerManifest) ([]dockerManifest, error) {
+	rows, err := r.tx.QueryContext(ctx, dockerDependentTagsSQL, r.req.Src.ID, s.image, dependentTagNames(s.digest))
+	if err != nil {
+		return nil, fmt.Errorf("select cosign tags of docker manifest %s: %w", s.digest, err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	var out []dockerManifest
+
+	for rows.Next() {
+		var (
+			m dockerManifest
+			t dockerTag
+		)
+
+		if err := rows.Scan(&t.ID, &t.Name, &m.id, &m.image, &m.digest, &m.sha, &m.size); err != nil {
+			return nil, fmt.Errorf("scan cosign tag of docker manifest %s: %w", s.digest, err)
+		}
+
+		m.tags = []dockerTag{t}
+		out = append(out, m)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read cosign tags of docker manifest %s: %w", s.digest, err)
+	}
+
+	return out, nil
+}
+
+// dependentTagNames is the comma-joined list of tag names that can hold
+// dependents of digest (tag names never contain a comma).
+func dependentTagNames(digest string) string {
+	return strings.Join(ociref.CosignTags(digest), ",")
+}
+
+// copyDependentTag copies the tag of target (its only tag) and the manifest it
+// points at. A tag already on another digest is a conflict, as for any tag.
+func (r *dockerRun) copyDependentTag(ctx context.Context, target dockerManifest) error {
+	r.addKeys(target.quarantineKeys(r.req.Src.Name, true)...)
+
+	tag := target.tags[0]
+
+	created, err := r.copyTag(ctx, target, tag)
+	if err != nil {
+		return err
+	}
+
+	return r.copyManifest(ctx, target, tag.Name, created, false)
+}
+
+// queryManifests runs a statement returning manifest rows (id, image, digest,
+// sha256, size).
+func (r *dockerRun) queryManifests(ctx context.Context, query string, args ...any) ([]dockerManifest, error) {
+	rows, err := r.tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	var out []dockerManifest
+
+	for rows.Next() {
+		var m dockerManifest
+
+		if err := rows.Scan(&m.id, &m.image, &m.digest, &m.sha, &m.size); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+
+		out = append(out, m)
+	}
+
+	return out, rows.Err()
 }
 
 // account records the outcome for manifest m: Copied (and charged: its size and

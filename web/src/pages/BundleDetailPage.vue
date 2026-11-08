@@ -105,6 +105,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <BundlePromotionsTable :promotions="detail.promotions.value" />
         </template>
 
+        <template #panel-checks>
+          <BundleChecksTable :checks="checks.checks.value" :loading="checks.loading.value" :error="checks.error.value" />
+        </template>
+
         <template #panel-security>
           <BundleScansTable :rows="scans.rows.value" :loading="scans.loading.value" />
         </template>
@@ -142,8 +146,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :repos="detail.repos.value"
       :item-count="itemCount ?? 0"
       :scans="scans.rows.value"
+      :checks="checks.checks.value"
       @close="promoteOpen = false"
       @promoted="onPromoted"
+      @checks-stale="checks.reload()"
     />
 
     <ConfirmDialog
@@ -174,6 +180,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { PlusIcon } from '@heroicons/vue/24/outline'
 import AppButton from '../components/AppButton.vue'
+import BundleChecksTable from '../components/bundles/BundleChecksTable.vue'
 import BundleItemsDrawer from '../components/bundles/BundleItemsDrawer.vue'
 import BundleLifecycle from '../components/bundles/BundleLifecycle.vue'
 import BundleMoreMenu, { type MoreMenuItem } from '../components/bundles/BundleMoreMenu.vue'
@@ -201,6 +208,7 @@ import {
   type BundleItem,
 } from '../api/bundles'
 import { useBundleDetail } from '../composables/useBundleDetail'
+import { useBundleChecks } from '../composables/useBundleChecks'
 import { useBundleDownloads } from '../composables/useBundleDownloads'
 import { useBundleScans } from '../composables/useBundleScans'
 import { useLocalList } from '../composables/useLocalList'
@@ -228,6 +236,7 @@ const version = computed(() => String(route.params.version))
 
 const detail = useBundleDetail(() => name.value, () => version.value)
 const bundle = detail.bundle
+const checks = useBundleChecks(() => name.value, () => version.value)
 
 // The item count is unknown (null) until the items loaded; it only gates the seal action.
 const itemCount = ref<number | null>(null)
@@ -263,6 +272,7 @@ const tabs = computed<TabDef[]>(() => {
   return [
     { id: 'items', label: t('bundles.tab.items'), count: itemCount.value ?? undefined },
     { id: 'promotions', label: t('bundles.tab.promotions'), count: detail.promotions.value.length },
+    { id: 'checks', label: t('bundles.tab.checks'), count: checks.checks.value.length },
     {
       id: 'security',
       label: t('bundles.tab.security'),
@@ -299,6 +309,11 @@ const promoteOpen = ref(false)
 const archiveOpen = ref(false)
 const deleteOpen = ref(false)
 const busy = ref(false)
+
+// The promote drawer shows the live state of the target stage's required checks.
+watch(promoteOpen, (open) => {
+  if (open) void checks.reload()
+})
 
 function onMenu(id: string): void {
   if (id === 'manifest') void downloadManifest()

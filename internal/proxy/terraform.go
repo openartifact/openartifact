@@ -678,7 +678,7 @@ func (s *Service) serveTFModuleDownload(w http.ResponseWriter, r *http.Request, 
 	file := terraform.ModuleFileName(p.name, p.system, p.version, src.ext)
 
 	key := tfModuleArchiveKey(p.name, p.system, p.version, file)
-	if quarantine.Enforce(w, r, s.db, repo.ID, quarantine.PathKeys(key)...) {
+	if s.enforceQuarantine(w, r, repo, key, quarantine.PathKeys(key)) {
 		return
 	}
 
@@ -765,7 +765,7 @@ func (s *Service) serveTFProviderPackage(w http.ResponseWriter, r *http.Request,
 	platform := p.os + "_" + p.arch
 
 	zipKey := tfZipKey(p.name, p.version, platform, doc.Filename)
-	if quarantine.Enforce(w, r, s.db, repo.ID, quarantine.PathKeys(zipKey)...) {
+	if s.enforceQuarantine(w, r, repo, zipKey, quarantine.PathKeys(zipKey)) {
 		return
 	}
 
@@ -1177,7 +1177,7 @@ func (s *Service) tfZipQuarantined(w http.ResponseWriter, r *http.Request, repo 
 		keys = quarantine.PathKeys(zipKey, entry.ID)
 	}
 
-	return quarantine.Enforce(w, r, s.db, repo.ID, keys...)
+	return s.enforceQuarantine(w, r, repo, zipKey, keys)
 }
 
 // TerraformHooks is the proxy hooks of the terraform format.

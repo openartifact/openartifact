@@ -162,3 +162,151 @@ func RepositoryPayload(eventType, name, format, repoType string) map[string]any 
 		"type":       repoType,
 	}
 }
+
+// ScanKind names what a scan examines.
+type ScanKind string
+
+const (
+	ScanKindVulnerability ScanKind = "vulnerability"
+	ScanKindLicense       ScanKind = "license"
+	ScanKindSecret        ScanKind = "secret"
+)
+
+// ScanCompleted describes a scan that reached a final status: the subject of
+// the scan.completed and vulnerability.found events.
+type ScanCompleted struct {
+	Repository string // repository name
+	Format     string // repository format
+	RepoType   string // "hosted", "proxy" or "group"
+	ScanID     string // id of the stored scan result
+	Kind       ScanKind
+	Status     string // scan_status of the stored result (completed, partial, failed, clean, flagged)
+	ArtifactID string // the scan's artifact identifier
+	Package    string // package name, when the scan names one
+	Version    string // package version, when the scan names one
+	// Counts are the findings of the scan: critical, high, medium, low and
+	// total for a vulnerability scan; findings for a secret scan; licenses for
+	// a license scan.
+	Counts map[string]int
+}
+
+// ScanPayload builds the JSON payload of a scan.completed or
+// vulnerability.found event (event names which).
+func ScanPayload(event string, s ScanCompleted) map[string]any {
+	counts := make(map[string]any, len(s.Counts))
+	for k, v := range s.Counts {
+		counts[k] = v
+	}
+
+	scan := map[string]any{
+		"id":          s.ScanID,
+		"kind":        string(s.Kind),
+		"status":      s.Status,
+		"artifact_id": s.ArtifactID,
+		"counts":      counts,
+	}
+
+	if s.Package != "" {
+		scan["package"] = s.Package
+	}
+
+	if s.Version != "" {
+		scan["version"] = s.Version
+	}
+
+	return map[string]any{
+		"event":      event,
+		"timestamp":  time.Now().UTC().Format(time.RFC3339),
+		"repository": s.Repository,
+		"format":     s.Format,
+		"type":       s.RepoType,
+		"scan":       scan,
+	}
+}
+
+// QuarantineChange describes an artifact quarantined or released.
+type QuarantineChange struct {
+	Repository  string
+	Format      string
+	RepoType    string
+	Quarantined bool // the new state: true quarantined, false released
+	Kind        ScanKind
+	ArtifactID  string
+	Package     string
+	Version     string
+	Reason      string // why: "review by an administrator", "blocking license policy"
+	Actor       string // the user or token that did it; empty for the system
+}
+
+// QuarantineChangedPayload builds the JSON payload of a quarantine.changed event.
+func QuarantineChangedPayload(q QuarantineChange) map[string]any {
+	state := "released"
+	if q.Quarantined {
+		state = "quarantined"
+	}
+
+	block := map[string]any{
+		"state":       state,
+		"kind":        string(q.Kind),
+		"artifact_id": q.ArtifactID,
+		"reason":      q.Reason,
+		"actor":       q.Actor,
+	}
+
+	if q.Package != "" {
+		block["package"] = q.Package
+	}
+
+	if q.Version != "" {
+		block["version"] = q.Version
+	}
+
+	return map[string]any{
+		"event":      EventQuarantineChanged,
+		"timestamp":  time.Now().UTC().Format(time.RFC3339),
+		"repository": q.Repository,
+		"format":     q.Format,
+		"type":       q.RepoType,
+		"quarantine": block,
+	}
+}
+
+// BundleCheckUpdate describes a check result reported against a release bundle.
+type BundleCheckUpdate struct {
+	Repository string // first source repository of the bundle; empty when it has no items
+	Format     string
+	Bundle     string
+	Version    string
+	Check      string
+	Status     string
+	Summary    string
+	DetailsURL string
+	ReportedBy string
+	ExpiresAt  *time.Time
+}
+
+// BundleCheckUpdatedPayload builds the JSON payload of a bundle.check_updated event.
+func BundleCheckUpdatedPayload(c BundleCheckUpdate) map[string]any {
+	check := map[string]any{
+		"name":        c.Check,
+		"status":      c.Status,
+		"summary":     c.Summary,
+		"details_url": c.DetailsURL,
+		"reported_by": c.ReportedBy,
+		"expires_at":  nil,
+	}
+
+	if c.ExpiresAt != nil {
+		check["expires_at"] = c.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+
+	return map[string]any{
+		"event":      EventBundleCheckUpdated,
+		"timestamp":  time.Now().UTC().Format(time.RFC3339),
+		"repository": c.Repository,
+		"format":     c.Format,
+		"type":       "hosted",
+		"bundle":     map[string]any{"name": c.Bundle, "version": c.Version},
+		"check":      check,
+	}
+}

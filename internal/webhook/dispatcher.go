@@ -49,6 +49,22 @@ const (
 	// affected by. It is delivered to the webhooks of the repository holding
 	// the version and the global ones.
 	EventVulnerabilityNew = "vulnerability.new"
+	// EventScanCompleted fires when a vulnerability, license or secret scan of
+	// an artifact reaches a final status. It is delivered to the webhooks of
+	// the scanned repository and the global ones.
+	EventScanCompleted = "scan.completed"
+	// EventVulnerabilityFound fires when a vulnerability scan that completed
+	// (or completed partially) found at least one advisory. Unlike
+	// vulnerability.new, which reports advisories a re-match newly attributes
+	// to a stored version, it reports the findings of one scan.
+	EventVulnerabilityFound = "vulnerability.found"
+	// EventQuarantineChanged fires when an artifact is quarantined or released
+	// from quarantine, by a person or by a blocking license policy.
+	EventQuarantineChanged = "quarantine.changed"
+	// EventBundleCheckUpdated fires when an external check is reported against
+	// a release bundle. It is delivered to the webhooks of the bundle's first
+	// source repository and the global ones.
+	EventBundleCheckUpdated = "bundle.check_updated"
 )
 
 const (

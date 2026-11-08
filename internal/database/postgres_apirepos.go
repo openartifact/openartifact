@@ -168,9 +168,10 @@ func (p *RepositoryStore) createRepository(ctx context.Context, repo *models.Rep
 		ctx,
 		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username,
 			upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, min_age_hours, curation_mode,
-			blocked, project_id, presign_downloads, trash_retention_days, immutable_releases, merge_proxy_versions, sign_packages) VALUES
+			blocked, project_id, presign_downloads, trash_retention_days, immutable_releases, merge_proxy_versions, sign_packages,
+			honour_quay_expiry) VALUES
 			(gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14, $15,
-			$16, $17, $18, $19, $20) RETURNING id, created_at, updated_at`,
+			$16, $17, $18, $19, $20, $21) RETURNING id, created_at, updated_at`,
 		repo.Name,
 		repo.Format,
 		repo.Description,
@@ -191,6 +192,7 @@ func (p *RepositoryStore) createRepository(ctx context.Context, repo *models.Rep
 		repo.ImmutableReleases,
 		repo.MergeProxyVersions,
 		repo.SignPackages,
+		repo.HonourQuayExpiry,
 	).Scan(&repo.ID, &repo.CreatedAt, &repo.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to create repository: %w", err)

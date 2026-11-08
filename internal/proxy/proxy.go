@@ -149,6 +149,10 @@ type Service struct {
 	// (GOSUMDB=off) verifies their structure only.
 	sumdb *sumDB
 
+	// sumdbUpstreams maps the checksum databases a Go proxy relays (see
+	// gosumdb_serve.go) to the base URL each is fetched from.
+	sumdbUpstreams map[string]string
+
 	// curation supplies the curation rules of proxy repositories (WithCuration).
 	curation CurationSource
 
@@ -198,7 +202,7 @@ var renderIDs atomic.Uint64 //nolint:gochecknoglobals // process-wide counter
 func NewService(log *logger.Logger, db ServiceStore, blobStore storage.BlobStore) *Service {
 	client := upstreamClient(DefaultUpstreamStallTimeout)
 
-	return &Service{
+	s := &Service{
 		renderID:  renderIDs.Add(1),
 		log:       log,
 		db:        db,
@@ -213,6 +217,8 @@ func NewService(log *logger.Logger, db ServiceStore, blobStore storage.BlobStore
 		fetches:    base.NewGate(maxConcurrentFetches),
 		sumdb:      newSumDB(os.Getenv("GOSUMDB"), client, log),
 	}
+
+	return s.WithGoSumdbHosts([]string{sumdbName})
 }
 
 func upstreamClient(stall time.Duration) *http.Client {
@@ -297,7 +303,7 @@ func (s *Service) serveResolved(
 ) {
 	entry, fromCache := res.entry, res.fromCache
 
-	if quarantine.Enforce(w, r, s.db, repo.ID, quarantine.PathKeys(key, entry.ID)...) {
+	if s.enforceQuarantine(w, r, repo, key, quarantine.PathKeys(key, entry.ID)) {
 		return
 	}
 
@@ -334,7 +340,7 @@ func (s *Service) serveResolved(
 
 		entry = res.entry
 
-		if quarantine.Enforce(w, r, s.db, repo.ID, quarantine.PathKeys(key, entry.ID)...) {
+		if s.enforceQuarantine(w, r, repo, key, quarantine.PathKeys(key, entry.ID)) {
 			return
 		}
 
@@ -365,8 +371,6 @@ func (s *Service) writeResolveError(w http.ResponseWriter, r *http.Request, err 
 	case errors.Is(err, errNotFound):
 		http.NotFound(w, r)
 	case writeGateError(w, err):
-	case errors.Is(err, errTooNew):
-		http.Error(w, errTooNew.Error(), http.StatusForbidden)
 	case errors.Is(err, errUpstream):
 		http.Error(w, "upstream repository error", http.StatusBadGateway)
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):

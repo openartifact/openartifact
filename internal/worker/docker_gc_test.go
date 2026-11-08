@@ -30,6 +30,10 @@ func TestSelectUnreferencedManifests(t *testing.T) {
 		return func(g *models.DockerGCManifest) { g.SubjectDigest = s }
 	}
 
+	dependentOf := func(s ...string) func(*models.DockerGCManifest) {
+		return func(g *models.DockerGCManifest) { g.DependentOf = s }
+	}
+
 	tests := []struct {
 		name      string
 		manifests []*models.DockerGCManifest
@@ -92,6 +96,46 @@ func TestSelectUnreferencedManifests(t *testing.T) {
 			manifests: []*models.DockerGCManifest{
 				m("img", nil), m("sbom", subject("img")), m("new", func(g *models.DockerGCManifest) { young(g); subject("img")(g) }),
 			},
+		},
+		{
+			name: "signature held only by a dependent tag follows a kept subject",
+			manifests: []*models.DockerGCManifest{
+				m("img", tagged), m("sig", dependentOf("img")), m("lonely", nil),
+			},
+			want: []string{"lonely"},
+		},
+		{
+			name: "signature of a collected subject is collected with it",
+			manifests: []*models.DockerGCManifest{
+				m("img", nil), m("sig", dependentOf("img")),
+			},
+			want: []string{"img", "sig"},
+		},
+		{
+			name:      "signature whose subject no longer exists is collected",
+			manifests: []*models.DockerGCManifest{m("sig", dependentOf("gone"))},
+			want:      []string{"sig"},
+		},
+		{
+			name: "a signature does not keep its own subject",
+			manifests: []*models.DockerGCManifest{
+				m("img", nil), m("sig", func(g *models.DockerGCManifest) { dependentOf("img")(g); young(g) }),
+			},
+			want: []string{"img"},
+		},
+		{
+			name: "signature of a signature follows the chain",
+			manifests: []*models.DockerGCManifest{
+				m("img", tagged), m("sig", dependentOf("img")), m("sigsig", dependentOf("sig")),
+			},
+		},
+		{
+			name: "dependent lookup stays inside the image",
+			manifests: []*models.DockerGCManifest{
+				{ID: "1", Image: "app", Digest: "img", Tagged: true},
+				{ID: "2", Image: "other", Digest: "sig", DependentOf: []string{"img"}},
+			},
+			want: []string{"2"},
 		},
 		{
 			name: "same digest in another image is independent",

@@ -269,6 +269,20 @@ type BlobReplicationState struct {
 	LastVerify      []byte     `db:"last_verify" json:"last_verify"`
 }
 
+// Latest result of each named external check reported against a release bundle; gates promotion into stages that require it.
+type BundleCheck struct {
+	ID         string     `db:"id" json:"id"`
+	BundleID   string     `db:"bundle_id" json:"bundle_id"`
+	Name       string     `db:"name" json:"name"`
+	Status     string     `db:"status" json:"status"`
+	Summary    string     `db:"summary" json:"summary"`
+	DetailsUrl string     `db:"details_url" json:"details_url"`
+	ReportedBy string     `db:"reported_by" json:"reported_by"`
+	ExpiresAt  *time.Time `db:"expires_at" json:"expires_at"`
+	CreatedAt  time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt  time.Time  `db:"updated_at" json:"updated_at"`
+}
+
 // Immutable audit trail of every bundle promotion attempt
 type BundlePromotion struct {
 	ID           string     `db:"id" json:"id"`
@@ -427,6 +441,8 @@ type DockerManifest struct {
 	Image     string     `db:"image" json:"image"`
 	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at"`
 	DeletedBy *string    `db:"deleted_by" json:"deleted_by"`
+	// Deadline derived from the quay.expires-after annotation or image label at push time; NULL when the manifest declares none. Only enforced in repositories with honour_quay_expiry.
+	ExpiresAt *time.Time `db:"expires_at" json:"expires_at"`
 }
 
 // References held by a manifest body: kind=blob (config, layers), kind=manifest (index children); kind=indexed marks the manifest as fully indexed.
@@ -696,6 +712,29 @@ type NixSigningKey struct {
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// Signatures, in-toto attestations and SBOMs attached to docker images, with their verification result
+type OciAttestation struct {
+	ID            string `db:"id" json:"id"`
+	RepositoryID  string `db:"repository_id" json:"repository_id"`
+	Image         string `db:"image" json:"image"`
+	SubjectDigest string `db:"subject_digest" json:"subject_digest"`
+	// sha256:<hex> of the signed envelope (the layer blob that carries it)
+	AttestationDigest string `db:"attestation_digest" json:"attestation_digest"`
+	// Latest docker manifest that carries the envelope (the cosign tag manifest or the referrer)
+	ManifestID     string `db:"manifest_id" json:"manifest_id"`
+	PredicateType  string `db:"predicate_type" json:"predicate_type"`
+	Kind           string `db:"kind" json:"kind"`
+	SignerIdentity string `db:"signer_identity" json:"signer_identity"`
+	Issuer         string `db:"issuer" json:"issuer"`
+	Verified       bool   `db:"verified" json:"verified"`
+	VerifyError    string `db:"verify_error" json:"verify_error"`
+	// Blob store key (sha256 hex) of the envelope
+	PayloadBlob string `db:"payload_blob" json:"payload_blob"`
+	// When the envelope was first seen; the verification time of a short-lived Fulcio certificate
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+}
+
 // Rules exchanging a CI OIDC ID token for a short-lived token of a service account.
 type OidcTrustPolicy struct {
 	ID               string          `db:"id" json:"id"`
@@ -709,6 +748,12 @@ type OidcTrustPolicy struct {
 	CreatedBy        string          `db:"created_by" json:"created_by"`
 	CreatedAt        time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt        time.Time       `db:"updated_at" json:"updated_at"`
+	// anonymous, static or serviceaccount: how the issuer keys are found
+	DiscoveryMode string `db:"discovery_mode" json:"discovery_mode"`
+	// Public JWKS of the static discovery mode; NULL otherwise
+	Jwks []byte `db:"jwks" json:"jwks"`
+	// The issuer and its jwks_uri may resolve to private or loopback addresses
+	AllowPrivateIssuer bool `db:"allow_private_issuer" json:"allow_private_issuer"`
 }
 
 type OsvAdvisory struct {
@@ -982,6 +1027,46 @@ type ProxyCacheEntry struct {
 	UpdatedAt time.Time  `db:"updated_at" json:"updated_at"`
 }
 
+type QuayNotification struct {
+	ID               string          `db:"id" json:"id"`
+	QuayRepositoryID string          `db:"quay_repository_id" json:"quay_repository_id"`
+	Title            string          `db:"title" json:"title"`
+	Event            string          `db:"event" json:"event"`
+	Method           string          `db:"method" json:"method"`
+	Config           json.RawMessage `db:"config" json:"config"`
+	EventConfig      json.RawMessage `db:"event_config" json:"event_config"`
+	CreatedAt        time.Time       `db:"created_at" json:"created_at"`
+}
+
+type QuayRepository struct {
+	ID            string    `db:"id" json:"id"`
+	RepositoryID  string    `db:"repository_id" json:"repository_id"`
+	Name          string    `db:"name" json:"name"`
+	Description   string    `db:"description" json:"description"`
+	ReadTargetID  string    `db:"read_target_id" json:"read_target_id"`
+	WriteTargetID string    `db:"write_target_id" json:"write_target_id"`
+	CreatedAt     time.Time `db:"created_at" json:"created_at"`
+}
+
+type QuayRobot struct {
+	ID           string    `db:"id" json:"id"`
+	RepositoryID string    `db:"repository_id" json:"repository_id"`
+	Name         string    `db:"name" json:"name"`
+	Description  string    `db:"description" json:"description"`
+	UserID       string    `db:"user_id" json:"user_id"`
+	TokenID      *string   `db:"token_id" json:"token_id"`
+	TokenEnc     string    `db:"token_enc" json:"token_enc"`
+	CreatedAt    time.Time `db:"created_at" json:"created_at"`
+}
+
+type QuayTeam struct {
+	ID           string    `db:"id" json:"id"`
+	RepositoryID string    `db:"repository_id" json:"repository_id"`
+	Name         string    `db:"name" json:"name"`
+	GroupID      string    `db:"group_id" json:"group_id"`
+	CreatedAt    time.Time `db:"created_at" json:"created_at"`
+}
+
 // Quota usage already in storage_quotas counters but not (yet) backed by package rows, or the reverse; see migration 061
 type QuotaPending struct {
 	ID            int64     `db:"id" json:"id"`
@@ -1138,12 +1223,21 @@ type Repository struct {
 	Federated    bool   `db:"federated" json:"federated"`
 	MinAgeHours  int32  `db:"min_age_hours" json:"min_age_hours"`
 	CurationMode string `db:"curation_mode" json:"curation_mode"`
+	// Hosted docker repositories only: delete manifests once their quay.expires-after deadline (docker_manifests.expires_at) has passed.
+	HonourQuayExpiry bool `db:"honour_quay_expiry" json:"honour_quay_expiry"`
 }
 
 type RepositoryAttestationAttach struct {
 	RepositoryID string    `db:"repository_id" json:"repository_id"`
 	Enabled      bool      `db:"enabled" json:"enabled"`
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// Per-repository trust configuration for attestation verification (public keys, Fulcio roots and identities)
+type RepositoryAttestationTrust struct {
+	RepositoryID string          `db:"repository_id" json:"repository_id"`
+	Config       json.RawMessage `db:"config" json:"config"`
+	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 // Per-repository Dependency-Track overrides; empty/NULL fields inherit the global settings. api_key is encrypted.

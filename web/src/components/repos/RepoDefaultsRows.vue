@@ -91,6 +91,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <input v-model="form.signPackages" type="checkbox" class="mt-0.5 h-4 w-4 rounded accent-[rgb(var(--color-primary))]" />
         <span>{{ t('repos.settings.signPackages') }}<span class="block text-xs text-muted">{{ t('repos.settings.signPackagesHint') }}</span></span>
       </label>
+      <label v-if="quayExpirable" class="flex min-h-11 items-start gap-3 text-sm text-foreground">
+        <input v-model="form.honourQuayExpiry" type="checkbox" class="mt-0.5 h-4 w-4 rounded accent-[rgb(var(--color-primary))]" />
+        <span>{{ t('repos.settings.honourQuayExpiry') }}<span class="block text-xs text-muted">{{ t('repos.settings.honourQuayExpiryHint') }}</span></span>
+      </label>
       <label class="flex min-h-11 items-start gap-3 text-sm text-foreground">
         <input v-model="form.immutableReleases" type="checkbox" class="mt-0.5 h-4 w-4 rounded accent-[rgb(var(--color-primary))]" />
         <span>{{ t('repos.settings.immutableReleases') }}<span class="block text-xs text-muted">{{ t('repos.settings.immutableReleasesHint') }}</span></span>
@@ -166,6 +170,7 @@ watch(
 
 const publicAllowed = computed(() => policyAllowsPublic(props.policy))
 const signable = computed(() => form.value.type === 'hosted' && form.value.format === 'rpm')
+const quayExpirable = computed(() => form.value.type === 'hosted' && form.value.format === 'docker')
 const canFederate = computed(() => federationAvailable(form.value.type, form.value.format))
 const upstreamHint = computed(() => {
   if (form.value.format === 'pacman') return t('rl.upstream.pacman')

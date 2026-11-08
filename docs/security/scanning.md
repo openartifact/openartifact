@@ -44,6 +44,7 @@ Scans are started through the API and never run on upload. The one automatic che
 | [Secrets](#secret-scans) | text or metadata JSON you send | built-in rules |
 | [Licenses](#license-scans-and-policies) | `artifact_id` | the stored package file ([how](licenses.md)) and the artifact's [properties](../repositories/properties.md) |
 | [SBOM](sbom.md) | `artifact_id`, format | the stored package file and the `dependencies` property |
+| [Container images](#container-images) | manifest digest | the SBOM pushed with the image |
 
 Vulnerability scans look up the name and version you pass. Secret scans inspect only the content you pass.
 
@@ -128,6 +129,72 @@ When the release is not known:
 `trivy` does not support Fedora. A Fedora rpm is replaced by `osv` for `trivy`, while `grype` still scans it.
 
 A stored scan does not keep the release it ran against. Reports and exports name a deb or rpm with a generic Package URL such as `pkg:generic/openssl@3.0.11-1?ecosystem=deb`.
+
+### Container images
+
+A docker repository is scanned from the SBOM its image was pushed with, not from a package name: see [container image SBOMs](sbom.md#container-image-sboms) for how an SBOM is ingested. When an SBOM arrives, OpenArtifact starts a scan of the image with `osv`. You can also start one yourself, with an admin:
+
+```sh
+curl -sS -X POST -H 'Authorization: Bearer <TOKEN>' -H 'Content-Type: application/json' \
+  HOST/api/v1/repositories/REPO/vuln/scan \
+  -d '{"ecosystem":"docker","artifact_id":"sha256:<manifest digest>","scanners":["osv"]}'
+```
+
+`artifact_id` is the manifest digest, which is also what [quarantine](#quarantine) blocks. `package_name` and `package_version` are not used. An image without an ingested SBOM answers `422 no_sbom`. The scan looks up every package of the SBOM once, like a scan of one package, and stores the findings with the affected `package` (`name@version`). It ends as any other scan does: the result is stored, webhook events fire (`scan.completed`, `vulnerability.found`) and the scan hook runs.
+
+Each Package URL type of the SBOM is mapped to an ecosystem:
+
+| Package URL type | Scanned as | Notes |
+|---|---|---|
+| `npm`, `pypi`, `maven`, `cargo`, `gem`, `nuget`, `golang` | npm, PyPI, Maven, crates.io, RubyGems, NuGet, Go | answered from the [OSV mirror](osv-mirror.md) when it is enabled, by `api.osv.dev` otherwise |
+| `composer` | Packagist | OSV only |
+| `deb` | Debian | the `distro` qualifier or the release tag of the version selects the release for `grype` and `trivy`; `osv` matches by name and version |
+| `rpm` | RPM | `distro` qualifier or the `.elN` / `.fcN` / `.amznN` tag of the release; `epoch` qualifier |
+| `apk` and every other type | not scanned | no scanner of OpenArtifact has Alpine advisories; import the result of a scanner that does (below) |
+
+Components that are not scanned never count as clean: the scan names them in `scan_error` (`not scanned (no scanner covers them): 12 apk, 3 none`, `none` is a component without a Package URL). When no package of the SBOM can be scanned the scan is `failed`. Scans of an image time out after 20 minutes.
+
+### Importing a scan result
+
+A scanner that ran elsewhere (Trivy or Grype in CI, Konflux's scan tasks) can report its result instead:
+
+```sh
+curl -sS -X POST -H 'Authorization: Bearer <TOKEN>' -H 'Content-Type: application/json' \
+  HOST/api/v1/repositories/REPO/vuln/scans/import \
+  -d '{"format":"sarif","digest":"sha256:<manifest digest>","scanner":"trivy","result":<the SARIF document>}'
+```
+
+The call needs **write** access to the repository, so a deploy token can make it. `format` is one of:
+
+| Format | Input |
+|---|---|
+| `sarif` | SARIF 2.x. A result's severity comes from the `security-severity` score of the result or its rule, then a severity word in the rule's tags, then the SARIF `level`. A `Fixed Version: x` line in the rule help or message becomes `fixed_in`. |
+| `osv-scanner` | the JSON output of `osv-scanner` |
+| `oa` | `{"vulnerabilities":[{"id","severity","summary","cvss","fixed_in","package","references","aliases"}]}` |
+
+The body is limited to 32 MiB and 50 000 findings. The result is stored as a completed scan of the digest with the scanner `external:<scanner>` (`external:<format>` without `scanner`), so the gate, quarantine, exports and webhooks treat it like a scan of this server. A document that cannot be read answers `422 invalid_scan_result`. The newest scan of a digest is the one the gate uses.
+
+### Gates for pipelines
+
+Two read-only endpoints answer pass or fail for a pipeline. Both need only **read** access to the repository, so a read token or an anonymous call to a public repository works.
+
+`GET /api/v1/repositories/{name}/vuln/scans/{id}/gate` checks one stored scan against the [exploitation criteria](exploit-signals.md) (`kev`, `epss_min`, `min_priority`; at least one is required) and answers `pass`, `failed` findings, `reason` and one entry in `checks`.
+
+`GET /api/v1/repositories/{name}/gate?digest=sha256:<hex>` is the verdict for one image:
+
+```json
+{"pass":false,"reason":"quarantine: the image is quarantined","digest":"sha256:...","scan_status":"completed",
+ "scan_id":"...","checks":[{"name":"vulnerabilities","pass":true,"detail":"..."},{"name":"quarantine","pass":false,"detail":"..."}]}
+```
+
+| Check | Passes when |
+|---|---|
+| `vulnerabilities` | the latest scan of the digest is `completed` or `partial` and no finding meets the criteria; without `kev`, `epss_min` or `min_priority` the criteria are `min_priority=high`. An image that was never scanned fails: `scan_status` is `none`. |
+| `license` | no blocking [license policy](#license-scans-and-policies) is violated by the licenses of the SBOM; with a blocking policy and no SBOM the check fails |
+| `quarantine` | the image is not [quarantined](#quarantine) |
+| `attestations` | the image has at least one signature or attestation and none failed verification; reported only when attestation indexing is available |
+
+`pass` is true only when every check passes, and `reason` names the first that does not. A failing gate is still HTTP 200. The CLI wraps both calls: `oa gate REPO --digest sha256:<hex>` exits 1 when `pass` is false.
 
 ### The overview across repositories
 
@@ -343,6 +410,8 @@ Quarantining a vulnerability, secret or license scan result makes the server ref
 HTTP/1.1 403 Forbidden
 {"error":"artifact is quarantined","code":"ARTIFACT_QUARANTINED"}
 ```
+
+A proxy or group repository answers with the [block-reason contract](../repositories/hosted-proxy-group.md#blocked-downloads) instead: `403`, the header `X-OA-Block-Reason: quarantine` (`license` when only a license result holds the artifact) and `"code":"BLOCKED_BY_POLICY"` in the body. Docker proxies keep the registry `DENIED` error.
 
 To release an artifact, set `quarantined` back to `false`. For a vulnerability or secret scan you can also delete the result. License results cannot be deleted; approve them with `POST …/license/scans/{id}/quarantine` (see [Quarantine after upload](#quarantine-after-upload)).
 

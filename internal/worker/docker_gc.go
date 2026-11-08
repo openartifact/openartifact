@@ -73,9 +73,13 @@ type DockerGCReport struct {
 	DryRun      bool
 	GracePeriod time.Duration
 
-	// ManifestsDeleted counts the untagged manifests deleted (or, in a dry run,
-	// that would be).
+	// ManifestsDeleted counts the manifests deleted (or, in a dry run, that
+	// would be): the untagged ones and the expired ones.
 	ManifestsDeleted int
+	// ManifestsExpired counts, among ManifestsDeleted, the manifests removed
+	// because their quay.expires-after deadline passed, with their referrers,
+	// signatures and attestations.
+	ManifestsExpired int
 	// BlobRefsDeleted counts the blob records of the repository deleted because
 	// no manifest references them any more.
 	BlobRefsDeleted int
@@ -265,7 +269,7 @@ func (w *DockerGCWorker) RunRepo(ctx context.Context, repo *models.Repository, o
 	if r.report.ManifestsDeleted > 0 || r.report.BlobRefsDeleted > 0 {
 		w.log.Infow("docker gc finished",
 			"repository", repo.Name, "dry_run", opts.DryRun,
-			"manifests", r.report.ManifestsDeleted, "blob_refs", r.report.BlobRefsDeleted,
+			"manifests", r.report.ManifestsDeleted, "expired", r.report.ManifestsExpired, "blob_refs", r.report.BlobRefsDeleted,
 			"blobs_freed", r.report.BlobsFreed, "bytes_freed", r.report.BytesFreed,
 			"failures", r.report.Failures)
 	}
@@ -288,6 +292,11 @@ func (r *dockerGCRun) run(ctx context.Context) error {
 		return err
 	}
 
+	expired, err := r.expireManifests(ctx)
+	if err != nil {
+		return err
+	}
+
 	manifests, err := r.w.db.ListDockerGCManifests(ctx, r.repo.ID, r.opts.Grace)
 	if err != nil {
 		return fmt.Errorf("docker gc: %w", err)
@@ -296,7 +305,7 @@ func (r *dockerGCRun) run(ctx context.Context) error {
 	doomed := selectUnreferencedManifests(manifests)
 
 	if r.opts.DryRun {
-		return r.planDryRun(ctx, doomed)
+		return r.planDryRun(ctx, expired, doomed)
 	}
 
 	if err := r.deleteManifests(ctx, doomed); err != nil {
@@ -369,11 +378,53 @@ func (w *DockerGCWorker) readManifestRefs(ctx context.Context, sha string) (mode
 	return ocimanifest.ParseRefs(body), true, nil
 }
 
-// planDryRun reports what a real run would delete, deleting nothing.
-func (r *dockerGCRun) planDryRun(ctx context.Context, doomed []*models.DockerGCManifest) error {
-	ids := make([]string, len(doomed))
-	for i, m := range doomed {
-		ids[i] = m.ID
+// expireManifests removes the manifests of a repository that honours
+// quay.expires-after whose deadline passed, with their tags and dependents,
+// without the grace period (the push declared the deadline; the layers they
+// leave still wait out the blob grace in the sweep after). With a dry run it
+// returns the manifests it would remove and removes nothing. It runs before the
+// regular collection, under the same repository lock, so a manifest expiring
+// and one left untagged are never judged twice.
+func (r *dockerGCRun) expireManifests(ctx context.Context) ([]*models.DockerGCManifest, error) {
+	if !r.repo.HonourQuayExpiry || r.repo.ImmutableReleases {
+		return nil, nil
+	}
+
+	expired, err := r.w.db.ExpireDockerManifests(ctx, r.repo.ID, r.opts.DryRun)
+	if err != nil {
+		return nil, fmt.Errorf("docker gc: %w", err)
+	}
+
+	r.report.ManifestsExpired += len(expired)
+
+	if !r.opts.DryRun {
+		r.account(ctx, expired)
+	}
+
+	return expired, nil
+}
+
+// planDryRun reports what a real run would delete, deleting nothing: the
+// manifests that expired and the unreferenced ones.
+func (r *dockerGCRun) planDryRun(ctx context.Context, expired, doomed []*models.DockerGCManifest) error {
+	gone := make(map[string]struct{}, len(expired))
+	ids := make([]string, 0, len(expired)+len(doomed))
+
+	for _, m := range expired {
+		gone[m.ID] = struct{}{}
+		ids = append(ids, m.ID)
+
+		r.addManifest(m)
+		r.countFreed(m.BlobSHA256, m.Size)
+	}
+
+	for _, m := range doomed {
+		if _, dup := gone[m.ID]; dup {
+			continue
+		}
+
+		ids = append(ids, m.ID)
+
 		r.addManifest(m)
 		r.countFreed(m.BlobSHA256, m.Size)
 	}
@@ -407,22 +458,27 @@ func (r *dockerGCRun) deleteManifests(ctx context.Context, doomed []*models.Dock
 			return fmt.Errorf("docker gc: %w", err)
 		}
 
-		// Only the rows this transaction removed give quota back: each was
-		// metered as its body's bytes and one artifact.
-		var freed int64
-		for _, m := range deleted {
-			freed += m.Size
-		}
-
-		r.releaseQuota(ctx, freed, len(deleted))
-
-		for _, m := range deleted {
-			r.addManifest(m)
-			r.releaseBlob(ctx, m.BlobSHA256, m.Size)
-		}
+		r.account(ctx, deleted)
 	}
 
 	return nil
+}
+
+// account records manifests this run just deleted: it gives their quota back
+// (only the rows the transaction removed were metered, each as its body's bytes
+// and one artifact), reports them and drops their bodies from storage.
+func (r *dockerGCRun) account(ctx context.Context, deleted []*models.DockerGCManifest) {
+	var freed int64
+	for _, m := range deleted {
+		freed += m.Size
+	}
+
+	r.releaseQuota(ctx, freed, len(deleted))
+
+	for _, m := range deleted {
+		r.addManifest(m)
+		r.releaseBlob(ctx, m.BlobSHA256, m.Size)
+	}
 }
 
 // releaseQuota returns the usage of rows registry GC just deleted from the
@@ -543,14 +599,22 @@ type imageDigest struct{ image, digest string }
 // that are not kept. Kept manifests are the tagged and the young ones plus
 // whatever they are tied to, transitively and within one image: the children
 // of a kept index, the subject of a kept referrer and the referrers of a kept
-// subject. Indexes come first in the result so a chunked delete never sees a
+// subject, and the manifests held only by dependent tags (cosign signatures,
+// attestations, SBOMs) of a kept subject; a dependent never keeps its subject,
+// so those of a collected subject are collected with it. Indexes come first in the result so a chunked delete never sees a
 // still-listed parent for an already-deleted child.
 func selectUnreferencedManifests(manifests []*models.DockerGCManifest) []*models.DockerGCManifest {
 	byKey := make(map[imageDigest]int, len(manifests))
 	referrers := make(map[imageDigest][]int)
+	dependents := make(map[imageDigest][]int)
 
 	for i, m := range manifests {
 		byKey[imageDigest{m.Image, m.Digest}] = i
+
+		for _, subject := range m.DependentOf {
+			key := imageDigest{m.Image, subject}
+			dependents[key] = append(dependents[key], i)
+		}
 
 		if m.SubjectDigest != "" {
 			subject := imageDigest{m.Image, m.SubjectDigest}
@@ -593,6 +657,10 @@ func selectUnreferencedManifests(manifests []*models.DockerGCManifest) []*models
 		}
 
 		for _, j := range referrers[imageDigest{m.Image, m.Digest}] {
+			mark(j)
+		}
+
+		for _, j := range dependents[imageDigest{m.Image, m.Digest}] {
 			mark(j)
 		}
 	}

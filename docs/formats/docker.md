@@ -124,6 +124,8 @@ Errors use the registry JSON shape `{"errors":[{"code","message","detail"}]}`. A
 
 Signature, SBOM and attestation manifests that carry a `subject` are listed through `referrers`. Proxies pass `referrers` through live.
 
+`GET /v2/<name>/referrers/<digest>?artifactType=<type>` keeps only the referrers of that artifact type (the manifest's `artifactType`, or the media type of its config when it declares none). A response that was filtered carries `OCI-Filters-Applied: artifactType`; an empty list is a valid answer.
+
 <a id="proxy-and-group-repositories"></a>
 ## Proxy
 
@@ -192,6 +194,7 @@ Deleting a tag, or pushing a new image to an existing tag, leaves the old manife
 - a tag of the same image points at it;
 - it is a child of a kept index or manifest list (a multi-arch image keeps its per-platform manifests);
 - it is the `subject` of a kept manifest, or a referrer (signature, SBOM, attestation) of a kept subject: the pair lives and dies together;
+- it is held only by a [dependent tag](#signatures-attestations-and-cleanup-policies) (a cosign signature, attestation or SBOM) and its subject is kept;
 - it is tied to a manifest in one of the previous ways, directly or through several steps.
 
 After the manifests, a blob record of the repository is deleted when no remaining manifest of the repository references it **and** no client has used it within the grace period. A blob counts as used when it is uploaded, re-pushed, mounted or probed with `HEAD`. The storage object is removed only when no other repository or format still references the same content. Layers uploaded but never referenced by a manifest, for example by an aborted push, are collected the same way once they are older than the grace period.
@@ -226,7 +229,8 @@ The response reports:
 | `repository` | the repository name |
 | `dry_run` | whether this was a preview |
 | `grace_period_seconds` | the grace period used |
-| `manifests_deleted` | manifests removed |
+| `manifests_deleted` | manifests removed, expired ones included |
+| `manifests_expired` | manifests removed because their [`quay.expires-after`](#quay-image-expiry) deadline passed (repositories that opt in only) |
 | `blob_refs_deleted` | blob records of this repository removed |
 | `blobs_freed`, `bytes_freed` | storage objects actually removed; in a dry run an upper bound that ignores sharing with other repositories |
 | `failures` | storage deletions that failed and were logged; a later cleanup pass retries them |
@@ -244,13 +248,49 @@ The response reports:
 
 **Consequences.** A reference by digest to an untagged manifest (`image@sha256:...`) stops resolving once the grace period has passed. Pin by tag, or keep a tag on anything that must stay pullable.
 
+### Signatures, attestations and cleanup policies
+
+Cosign stores signatures, attestations and SBOMs as tags named after the subject digest: `sha256-<hex>.sig`, `.att`, `.sbom`, `.src`, and `sha256-<hex>` for the referrers tag schema. These **dependent tags** are not images of their own:
+
+- A [cleanup policy](../repositories/cleanup-and-quotas.md) never ranks them: they do not count towards `keep_last_n`, are not aged by `keep_since_days` and are not matched by `name_pattern`.
+- They are kept while their subject is. When a run removes the tags that held an image, its dependent tags are removed with them (the dry run lists them); so are dependent tags whose subject manifest no longer exists. An image another live tag still holds, directly or through an index that lists it, keeps its signatures. An image that was only ever referenced by digest keeps its signatures until registry garbage collection removes it.
+- Registry garbage collection treats a manifest held only by dependent tags as held only as long as the subject is: a subject that is collected takes its signature manifests and tags with it, and a signature whose subject no longer exists is collected. A dependent never keeps its subject alive. A subject pinned by a release bundle keeps its signatures.
+
+<a id="quay-image-expiry"></a>
+### Quay image expiry
+
+Konflux builds push throw-away images with `quay.expires-after` set to a duration such as `90m`, `2d` or `1w`. A hosted Docker repository with `honour_quay_expiry` enabled deletes them when the time has passed. The setting is off by default and is set like any other [repository setting](../integrations/api.md) (API, declarative, `oa repo update --honour-quay-expiry`, or the repository settings in the web UI). It is accepted only for hosted Docker repositories and cannot be combined with immutable releases.
+
+- **Where it is read.** On every manifest push the registry reads the `quay.expires-after` annotation of the manifest and, for an image manifest, the label of the same name in its config; the earlier deadline wins. The deadline is the push time plus the duration (`\d+` followed by `s`, `m`, `h`, `d` or `w`). An unparsable or zero value never expires anything. Pushing the same manifest again restarts the countdown. Enabling the setting does not backfill images pushed before.
+- **What is deleted.** The registry garbage collection worker, in its next pass for the repository, deletes the expired manifest, every tag that points at it (trashed ones too), its referrers, the manifests held only by its dependent tags, and the children of an expired index that nothing else lists. This ignores the garbage collection grace period. The layers it leaves behind wait out the usual blob grace period before they are removed.
+- **What is kept.** A manifest a [release bundle](../repositories/release-bundles.md) pins is never deleted, and neither is a child of an index that has no deadline, a later one, or is pinned itself.
+- **Reports.** The `registry-gc` response counts them in `manifests_expired` (they are included in `manifests_deleted`), and a dry run lists them.
+- **Promotion.** A promoted image keeps its `quay.expires-after` label and annotation. The destination applies the deadline only if it has `honour_quay_expiry` enabled too; otherwise the copy never expires.
+
+## Promotion
+
+[Promoting a release bundle](../repositories/release-bundles.md#promoting-a-bundle) copies a docker image to the target repository as metadata rows over the same blobs.
+
+### Signatures, attestations and referrers
+
+A promoted image carries what verifies it, so `cosign verify` and `oras discover` work against the target:
+
+- **Referrers.** Every live manifest of the image whose `subject` is the promoted manifest. For an image index, also the referrers of each child manifest.
+- **Cosign tags.** The `sha256-<hex>.sig`, `.att`, `.sbom` and `.src` tags and the referrers-tag-schema tag `sha256-<hex>` of the promoted manifest, and of each child of an index, together with the manifests they point at.
+- **One level.** Dependents of dependents (a referrer of a signature) are not followed.
+- **Same rules.** Their blobs go through the same quarantine, licence, immutability and quota checks as the image itself and are counted in the promotion result. A cosign tag already on another digest in the target is a conflict, as for any tag.
+- **Idempotent.** Promoting again, or into a target that already holds some of them, copies only what is missing.
+- **Expiry.** Manifest bytes and the `quay.expires-after` label are never rewritten. The expiry time recorded for a manifest is copied only when the target repository has `honour_quay_expiry` enabled; otherwise the copy never expires.
+
 ## Boot from an image
 
 Images built for bootc or `rpm-ostree` are ordinary OCI images with `ostree.*` annotations. The registry needs no special setup for them: store them in a hosted repository, or proxy a registry that holds them. For a private repository, give the client the same token as for `docker login` (Basic, the token as password). Use HTTPS in production.
 
 ## Signing
 
-The registry does not verify image signatures. Signature artifacts (for example cosign signatures stored as tags) are stored like any other manifest and are listed through `referrers` when they carry a `subject`. The client verifies them.
+The registry never refuses a push because of a signature. Signature artifacts (for example cosign signatures stored as tags) are stored like any other manifest and are listed through `referrers` when they carry a `subject`.
+
+A hosted repository can additionally index and verify the cosign and Tekton Chains signatures, SLSA provenance and SBOMs of its images against keys or Fulcio identities you configure, and can refuse to promote an image without verified provenance: see [Image attestations](../security/attestations.md).
 
 OpenArtifact can also attach the signed SBOM and VEX of an image itself, as referrers: see [Attaching to an OCI image](../security/sbom.md#attach-to-an-image-hosted-docker-repositories). GPG signing covers only Debian and RPM ([signing](../security/signing.md)).
 

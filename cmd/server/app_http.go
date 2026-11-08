@@ -55,6 +55,11 @@ func (a *app) buildHTTP() (*api.HTTPServer, error) {
 	}
 
 	a.registerRepositoryRoutes()
+
+	if err := a.registerQuayAPI(); err != nil {
+		return nil, err
+	}
+
 	a.registerSupplyChainRoutes()
 	a.registerDependencyTrack()
 	a.registerWebhooksAndBackup()
@@ -163,6 +168,7 @@ func (a *app) setupAuthorization() error {
 		LegacyAPIKeyEnabled: cfg.Auth.LegacyAPIKeyEnabled,
 		AllowAnonymousRead:  cfg.Auth.AllowAnonymousRead,
 		MCPPath:             cfg.MCP.HTTPPath,
+		QuayAPIPath:         a.quayAPIPath(),
 		SPAHandler:          w.spaHandler,
 		ClientBaseURL:       cfg.ClientBaseURL(),
 	}

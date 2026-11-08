@@ -79,7 +79,7 @@ func (s *Service) ociCurationRefusal(w http.ResponseWriter, r *http.Request, rep
 	}
 
 	if ge, ok := errors.AsType[*gateError](err); ok {
-		ocipath.WriteError(w, http.StatusForbidden, "DENIED", ge.hold.Detail)
+		ge.block().WriteOCI(w)
 		return true
 	}
 

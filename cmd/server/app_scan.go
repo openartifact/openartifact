@@ -86,8 +86,11 @@ func (a *app) buildVulnScanning() *api.VulnHandler {
 	handler := api.NewVulnHandler(a.db, a.log, a.web.evaluator, scanners).
 		WithTasks(a.tasks).
 		WithScanHook(a.onScanned).
+		WithPublisher(a.workers.webhook).
 		WithExploit(a.workers.exploit).
 		WithOSVMirror(a.cfg.OSVMirror)
+
+	a.attachImageSBOMs(handler)
 
 	if requests := a.workers.requests; requests != nil {
 		scanners.LogStatus()

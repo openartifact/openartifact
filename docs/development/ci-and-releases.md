@@ -154,7 +154,7 @@ gh workflow run pages.yml -R openartifact/openartifact.github.io
 
 ## Releases
 
-`release.yml` runs on a `vX.Y.Z[-pre]` tag, or manually with an existing tag. Bump the top-level `VERSION` file first.
+`release.yml` runs on a `vX.Y.Z[-pre]` tag, or manually with an existing tag. Bump the top-level `VERSION` file first, together with the `ghcr.io/openartifact/oa-tekton:<version>` image defaults in `integrations/tekton/` and `scripts/smoke/oci-supplychain.sh`: the verify job fails when they differ. `tekton-catalog.yml` then publishes that image and the catalog bundles for the tag.
 
 1. **ci-gate.** Waits up to 80 minutes for the `CI` workflow to succeed on the tagged commit. It fails when CI failed or never ran; nothing is published before that.
 2. **verify.** The `VERSION` file must equal the tag without `v`. Runs `go vet` and `go test -race`. A tag with a `-suffix` is a prerelease and does not get the `latest` image tag. Neither does a stable tag that is not the highest stable `vX.Y.Z` tag of the repository, so re-releasing an older tag never moves `latest` back.

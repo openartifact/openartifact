@@ -9,7 +9,7 @@ import { PACKAGE_TABS, packageTabDefs } from '../packageTabs'
 describe('packageTabDefs', () => {
   const tabs = packageTabDefs({ canSeeActivity: true, canSeeSbom: true, versionCount: 12, fileCount: 3, securityFlag: '2 critical' })
 
-  it('lists the seven tabs with overview first', () => {
+  it('lists the tabs with overview first', () => {
     expect(tabs.map((tab) => tab.id)).toEqual([...PACKAGE_TABS])
     expect(tabs[0]!.id).toBe('overview')
   })
@@ -30,6 +30,13 @@ describe('packageTabDefs', () => {
     expect(packageTabDefs({ canSeeActivity: true, canSeeSbom: false }).find((tab) => tab.id === 'sbom')!.hidden).toBe(true)
     expect(tabs.find((tab) => tab.id === 'sbom')!.hidden).toBe(false)
   })
+})
+
+it('shows the attestations tab for docker images only', () => {
+  const find = (docker?: boolean) => packageTabDefs({ canSeeActivity: true, canSeeSbom: true, canSeeAttestations: docker }).find((tab) => tab.id === 'attestations')!
+  expect(find(true).hidden).toBe(false)
+  expect(find(false).hidden).toBe(true)
+  expect(find().hidden).toBe(true)
 })
 
 describe('tab resolution', () => {

@@ -29,6 +29,9 @@ const (
 type PipelineStage struct {
 	Name         string `json:"name"`
 	RepositoryID string `json:"repo_id"`
+	// RequiredChecks names the external checks (BundleCheck) that must all be
+	// a live success before a bundle is promoted into the stage.
+	RequiredChecks []string `json:"required_checks"`
 }
 
 type PromotionPipeline struct {

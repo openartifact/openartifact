@@ -127,6 +127,24 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
+### Unreleased
+
+**What you must do**
+
+- Check clients that parse the body of a proxy or group download refused by a policy (curation, quarantine, license or vulnerability block): it is now `403` with a JSON body (`code: BLOCKED_BY_POLICY`) and an `X-OA-Block-Reason` header. Docker keeps the OCI `DENIED` error.
+- Nothing else is required. Migrations `020` to `025` are additive: `020` adds key discovery settings to CI OIDC trust policies, `021` adds the `honour_quay_expiry` repository setting and the manifest expiry (`021_docker_quay_expiry_index.no_tx.sql` builds its index without locking writes), `022` adds the attestation tables, `024` adds bundle checks and the `bundle.check_reported` audit action, and `025` adds the tables of the Quay API facade. There is no migration `023`.
+
+**Changes.**
+
+- **Konflux and Tekton.** A Tekton catalog (`integrations/tekton/`) and the `ghcr.io/openartifact/oa-tekton` image publish, gate and promote from a pipeline, and an optional Quay-compatible API (`quayApi.enabled`) lets the Konflux image-controller provision repositories and robot accounts. See [Konflux](../integrations/konflux.md), [Tekton](../integrations/tekton.md) and [Konflux image-controller](../integrations/konflux-image-controller.md).
+- **CI OIDC.** Trust policies can discover keys anonymously, from a static key set or with the server's Kubernetes service account, and match dotted claim paths. See [CI](../integrations/ci.md#kubernetes-and-tekton-service-accounts).
+- **Attestations.** Signatures and in-toto attestations pushed next to an image are verified and listed, a repository can define its attestation trust, and promotion can require provenance (`422 PROVENANCE_REQUIRED`). See [Attestations](../security/attestations.md).
+- **Bundle checks.** CI reports named checks on a bundle (`oa bundle check report`); a stage with `required_checks` refuses promotion until they pass (`422 CHECKS_REQUIRED`).
+- **Scanning.** Docker images are scanned from an attached SBOM when present, and `POST /api/v1/repositories/{name}/vuln/scans/import` accepts SARIF and osv-scanner results with `write` access. The gate endpoints now need only `read` on the repository.
+- **Webhooks.** New events `scan.completed`, `vulnerability.found`, `quarantine.changed` and `bundle.check_updated`.
+- **Registry.** Cosign signature tags follow their image through cleanup, garbage collection and promotion, the referrers API filters by `artifactType`, and repositories with `honour_quay_expiry` delete images after their `quay.expires-after` label.
+- **Hermetic builds.** RubyGems answers `/downloads/{file}`, and the Go proxy relays checksum database lookups (`workers.proxyGoSumdbHosts`, default `sum.golang.org`).
+
 ### 0.20.0
 
 **What you must do**

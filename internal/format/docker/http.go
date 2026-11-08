@@ -111,6 +111,8 @@ type HTTPHandler struct {
 	uploads storage.UploadStore
 	// sessions serialises the requests this replica serves on one upload.
 	sessions uploadLocks
+	// hooks runs the manifest push hooks (AddManifestPutHook).
+	hooks *hookRunner
 }
 
 // DefaultUploadDir is where in-progress blob uploads are kept on this host when
@@ -130,7 +132,9 @@ const (
 )
 
 func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore) *HTTPHandler {
-	return &HTTPHandler{log: log, db: db, blobStore: blobStore, uploads: storage.UploadsFor(blobStore, DefaultUploadDir)}
+	return &HTTPHandler{
+		log: log, db: db, blobStore: blobStore, uploads: storage.UploadsFor(blobStore, DefaultUploadDir), hooks: newHookRunner(log),
+	}
 }
 
 // SetUploadStore sets where the data of in-progress blob uploads is kept;
@@ -499,21 +503,10 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Read manifest body
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxManifestBytes))
-	if err != nil {
-		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			h.errorResponse(w, http.StatusRequestEntityTooLarge, "SIZE_INVALID", "manifest too large")
-
-			return
-		}
-
-		h.log.Errorw("failed to read manifest body", "error", err)
-		h.errorResponse(w, http.StatusBadRequest, "DIGEST_INVALID", "failed to read body")
-
+	body, ok := h.readManifestBody(w, r)
+	if !ok {
 		return
 	}
-	defer func() { _ = r.Body.Close() }()
 
 	// Compute SHA256 digest
 	hash := sha256.Sum256(body)
@@ -542,7 +535,9 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 		subjectDigest = meta.Subject.Digest
 	}
 
-	if licensepolicy.Enforce(w, r, h.db, h.log, repo.ID, h.declaredLicenses(r.Context(), repo.ID, meta)...) {
+	labels := &labelReader{read: func(ctx context.Context) map[string]string { return h.configLabels(ctx, repo.ID, meta) }}
+
+	if licensepolicy.Enforce(w, r, h.db, h.log, repo.ID, declaredLicenses(meta, labels.get(r.Context()))...) {
 		return
 	}
 
@@ -579,18 +574,16 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 		UpdatedAt:     time.Now(),
 	}
 
+	if repo.HonourQuayExpiry {
+		manifest.ExpiresAt = quayExpiresAt(manifest.UpdatedAt, meta, func() map[string]string { return labels.get(r.Context()) })
+	}
+
 	if err := h.storeManifest(r.Context(), manifest, digestHex, contentType, body); err != nil {
 		if reserved {
 			h.releaseQuota(r.Context(), repo.ID, manifest.Size, 1)
 		}
 
-		if errors.Is(err, database.ErrDockerBlobsMissing) {
-			h.errorResponse(w, http.StatusBadRequest, "MANIFEST_BLOB_UNKNOWN", "manifest references a blob that is not in the image")
-			return
-		}
-
-		h.log.Errorw("failed to store manifest", "digest", digest, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+		h.manifestStoreFailed(w, digest, err)
 
 		return
 	}
@@ -624,6 +617,13 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 
 	repoName, _ := ocipath.SplitName(name)
 
+	tagName := reference
+	if strings.HasPrefix(reference, "sha256:") {
+		tagName = ""
+	}
+
+	h.hooks.fire(r.Context(), newManifestEvent(repo.ID, repoName, image, tagName, digest, contentType, body, meta, labels.get))
+
 	webhook.Emit(
 		r.Context(),
 		h.publisher,
@@ -644,6 +644,40 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Docker-Content-Digest", digest)
 	w.Header().Set("Content-Length", "0")
 	w.WriteHeader(http.StatusCreated)
+}
+
+// readManifestBody reads a pushed manifest, answering the client itself when
+// the body is too large or unreadable.
+func (h *HTTPHandler) readManifestBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	defer func() { _ = r.Body.Close() }()
+
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxManifestBytes))
+	if err != nil {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			h.errorResponse(w, http.StatusRequestEntityTooLarge, "SIZE_INVALID", "manifest too large")
+
+			return nil, false
+		}
+
+		h.log.Errorw("failed to read manifest body", "error", err)
+		h.errorResponse(w, http.StatusBadRequest, "DIGEST_INVALID", "failed to read body")
+
+		return nil, false
+	}
+
+	return body, true
+}
+
+// manifestStoreFailed answers a push whose manifest could not be stored.
+func (h *HTTPHandler) manifestStoreFailed(w http.ResponseWriter, digest string, err error) {
+	if errors.Is(err, database.ErrDockerBlobsMissing) {
+		h.errorResponse(w, http.StatusBadRequest, "MANIFEST_BLOB_UNKNOWN", "manifest references a blob that is not in the image")
+
+		return
+	}
+
+	h.log.Errorw("failed to store manifest", "digest", digest, "error", err)
+	h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 }
 
 // storeManifest persists the manifest content in the blob store
@@ -1825,6 +1859,10 @@ func (h *HTTPHandler) handleGetReferrers(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// ?artifactType= keeps only the referrers of that artifact type; the
+	// response says so, as the distribution spec requires of a registry that
+	// filtered.
+	filter := r.URL.Query().Get("artifactType")
 	manifests := make([]map[string]any, 0, len(referrers))
 
 	for _, m := range referrers {
@@ -1835,27 +1873,11 @@ func (h *HTTPHandler) handleGetReferrers(w http.ResponseWriter, r *http.Request)
 		}
 
 		// artifactType/annotations require reading the manifest content
-		// itself; a store error here shouldn't fail the whole listing.
-		content, getErr := h.blobStore.Get(r.Context(), manifestBlobKey(m.Digest))
-		if getErr != nil {
-			h.log.Warnw("failed to load referrer content", "digest", m.Digest, "error", getErr)
-			manifests = append(manifests, entry)
-
-			continue
-		}
-
-		manifestBody, readErr := io.ReadAll(io.LimitReader(content, maxManifestBytes))
-		_ = content.Close()
-
-		if readErr == nil {
-			meta := parseOCIManifestMeta(manifestBody)
-
-			artifactType := meta.ArtifactType
-			if artifactType == "" && meta.Config != nil {
-				artifactType = meta.Config.MediaType
-			}
-
-			if artifactType != "" {
+		// itself; a store error here shouldn't fail the whole listing (but a
+		// referrer whose type is unknown cannot match a filter).
+		meta, loaded := h.referrerMeta(r.Context(), m.Digest)
+		if loaded {
+			if artifactType := meta.referrerArtifactType(); artifactType != "" {
 				entry["artifactType"] = artifactType
 			}
 
@@ -1864,7 +1886,15 @@ func (h *HTTPHandler) handleGetReferrers(w http.ResponseWriter, r *http.Request)
 			}
 		}
 
+		if filter != "" && (!loaded || meta.referrerArtifactType() != filter) {
+			continue
+		}
+
 		manifests = append(manifests, entry)
+	}
+
+	if filter != "" {
+		w.Header().Set("Oci-Filters-Applied", "artifactType")
 	}
 
 	resp := map[string]any{
@@ -1879,4 +1909,24 @@ func (h *HTTPHandler) handleGetReferrers(w http.ResponseWriter, r *http.Request)
 	if encErr := json.NewEncoder(w).Encode(resp); encErr != nil {
 		_ = encErr // response header already written
 	}
+}
+
+// referrerMeta reads the stored body of a referrer manifest for the metadata
+// the Referrers API lists. loaded is false when the body is unreadable.
+func (h *HTTPHandler) referrerMeta(ctx context.Context, digest string) (ociManifestMeta, bool) {
+	content, err := h.blobStore.Get(ctx, manifestBlobKey(digest))
+	if err != nil {
+		h.log.Warnw("failed to load referrer content", "digest", digest, "error", err)
+		return ociManifestMeta{}, false
+	}
+
+	body, err := io.ReadAll(io.LimitReader(content, maxManifestBytes))
+	_ = content.Close()
+
+	if err != nil {
+		h.log.Warnw("failed to read referrer content", "digest", digest, "error", err)
+		return ociManifestMeta{}, false
+	}
+
+	return parseOCIManifestMeta(body), true
 }

@@ -72,7 +72,8 @@ spdx3-validate --json sbom.spdx3.json -s 3.0.1
 | conan | quoted `name/version` references in the `requires` of `conanfile.py` | `tool_requires` and `test_requires` are skipped; the recipe is never executed |
 | conda | `depends` of `info/index.json` | only `==x.y.z` pins a version |
 | deb | `Pre-Depends` and `Depends` of the control file | the first of a set of alternatives; purls use the namespace `ubuntu` when the version or maintainer says so, `debian` otherwise |
-| docker, raw, terraform | not read | components come from the `dependencies` property only |
+| docker | not read from the manifest | components come from the `dependencies` property; the SBOM a build pushes with an image is [ingested](#container-image-sboms) instead |
+| raw, terraform | not read | components come from the `dependencies` property only |
 | go | `require` of `go.mod` (the `.mod` file or the one inside the module zip) | exact versions |
 | helm | `Chart.yaml` and `requirements.yaml` dependencies, `Chart.lock` when present | the lock pins versions |
 | ivy | `ivy.xml` dependencies | |
@@ -84,6 +85,24 @@ spdx3-validate --json sbom.spdx3.json -s 3.0.1
 | rubygems | runtime dependencies of the gemspec | only `= x.y.z` pins a version |
 
 A dependency whose manifest gives only a version range has no `version` and a purl without one; the range is kept in the CycloneDX component property `openartifact:version_range`. A file that cannot be read (damaged, not the archive its name says) leaves the properties as the only source and is logged. A file that cannot be read **safely** (a manifest or lockfile over 8 MiB, a decompressed stream over the limit, an archive with two candidates for the same manifest) fails the request with `422 unsafe_artifact`. At most 10 000 dependencies are listed per artifact. See [properties](../repositories/properties.md).
+
+## Container image SBOMs
+
+A container build usually publishes an SBOM next to its image. OpenArtifact reads it when it is pushed to a hosted docker repository, stores it as an SBOM report of the image and uses its packages for [vulnerability scans](scanning.md#container-images) and license evaluation. The image is identified by its manifest digest (`sha256:<hex>`), which is the `artifact_id` of the report and of the scans.
+
+An SBOM is recognised in three forms:
+
+| Pushed as | How it is found |
+|---|---|
+| a cosign SBOM tag, `sha256-<hex>.sbom` (`cosign attach sbom`) | the layers of the tagged manifest hold the raw SPDX or CycloneDX document |
+| a cosign attestation tag, `sha256-<hex>.att` (`cosign attest`) | each layer is a DSSE envelope; the in-toto statement must have the predicate type `https://spdx.dev/Document` or `https://cyclonedx.org/bom`, with or without a version suffix (`/v1.5`) |
+| an OCI referrer (`subject` set) | the `artifactType` is `application/spdx+json`, `text/spdx+json`, `application/vnd.cyclonedx+json` or `text/spdx`, or a Sigstore bundle whose `dev.sigstore.bundle.predicateType` annotation is one of the predicates above |
+
+A layer may be bare SPDX 2.x JSON, SPDX 3 JSON, SPDX tag-value or CycloneDX JSON, or any of these inside a Sigstore bundle, DSSE envelope or in-toto statement (cosign's SPDX predicate wrapper, `{"Data": ...}`, included). A statement with another predicate type (provenance, vulnerability scan) is ignored. Parsing is bounded: a document or envelope over 32 MiB, or one that names more than 100 000 components, is refused as a whole instead of being read in part, and at most 16 layers of a manifest are read. A document that cannot be read never fails the push; it is logged.
+
+Every ingested document is kept as written (without its envelope). An image holds one report per SBOM format and spec version, so an SPDX 2.3 and a CycloneDX 1.5 document sit side by side, and a newer document of the same format and version replaces the older; the packages of all reports are merged, without duplicates, when a scan or a gate reads them. Signatures and attestations that OpenArtifact indexes itself are not read as SBOMs.
+
+The components' Package URLs and licenses are what the scans use: see the [table of ecosystems](scanning.md#container-images). Components without a Package URL, and Alpine (`apk`) packages, are listed in the SBOM but not scanned.
 
 ## VEX
 

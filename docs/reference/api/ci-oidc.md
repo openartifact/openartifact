@@ -70,10 +70,12 @@ Trust the ID tokens of a CI system that match the conditions and map them to a s
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| `allow_private_issuer` | boolean | no | Let the issuer and its `jwks_uri` resolve to private, loopback or cluster-internal addresses for this policy only (link-local and cloud-metadata addresses stay blocked). https is still required except on loopback. Not allowed with `discovery.mode` `static`. Admin only. Default: `false`. |
 | `audience` | string | yes | The `aud` value the CI job requests; matched exactly. |
 | `conditions` | array of [OIDCCondition](schemas.md#oidccondition) | yes | All conditions must hold. Policies of a shared issuer (GitHub Actions, gitlab.com) need one on an identity claim such as `repository`, `sub` or `project_path`, whose patterns do not start with a wildcard. |
+| `discovery` | [OIDCDiscovery](schemas.md#oidcdiscovery) | no | How the issuer's signing keys are found. Defaults to `{"mode":"anonymous"}`. A PATCH replaces the whole object: omit `jwks` to clear it. |
 | `enabled` | boolean | no | Default: `true`. |
-| `issuer` | string (uri) | yes | Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com` or `https://gitlab.com`. Must be https and pass the outbound-request (SSRF) check. |
+| `issuer` | string (uri) | yes | Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com`, `https://gitlab.com` or `https://kubernetes.default.svc`. Must be https and, unless `discovery.mode` is `static`, pass the outbound-request (SSRF) check (relaxed by `allow_private_issuer`). |
 | `name` | string | yes | Unique name: 1-64 letters, digits, dot, dash or underscore. |
 | `service_account_id` | string (uuid) | yes | - |
 | `token_ttl_seconds` | integer | no | Lifetime of exchanged tokens. Default: `900`. Minimum: 60. Maximum: 3600. |
@@ -83,7 +85,7 @@ Trust the ID tokens of a CI system that match the conditions and map them to a s
 | Status | Description | Body |
 |---|---|---|
 | `201` | Trust policy created | `application/json`: [OIDCTrustPolicy](schemas.md#oidctrustpolicy) |
-| `400` | Invalid request, including an issuer that fails the outbound-request check or a missing identity condition for a shared issuer | `application/json`: [Error](schemas.md#error) |
+| `400` | Invalid request, including an issuer that fails the outbound-request check (unless `allow_private_issuer` or the static mode applies), an invalid or non-public `discovery.jwks`, or a missing identity condition for a shared issuer | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `409` | A trust policy with this name exists | `application/json`: [Error](schemas.md#error) |
 
@@ -125,10 +127,12 @@ Change any field of a trust policy; omitted fields keep their value (admin only)
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| `allow_private_issuer` | boolean | no | Let the issuer and its `jwks_uri` resolve to private, loopback or cluster-internal addresses for this policy only (link-local and cloud-metadata addresses stay blocked). https is still required except on loopback. Not allowed with `discovery.mode` `static`. Admin only. Default: `false`. |
 | `audience` | string | no | The `aud` value the CI job requests; matched exactly. |
 | `conditions` | array of [OIDCCondition](schemas.md#oidccondition) | no | All conditions must hold. Policies of a shared issuer (GitHub Actions, gitlab.com) need one on an identity claim such as `repository`, `sub` or `project_path`, whose patterns do not start with a wildcard. |
+| `discovery` | [OIDCDiscovery](schemas.md#oidcdiscovery) | no | How the issuer's signing keys are found. Defaults to `{"mode":"anonymous"}`. A PATCH replaces the whole object: omit `jwks` to clear it. |
 | `enabled` | boolean | no | Default: `true`. |
-| `issuer` | string (uri) | no | Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com` or `https://gitlab.com`. Must be https and pass the outbound-request (SSRF) check. |
+| `issuer` | string (uri) | no | Issuer URL exactly as in the `iss` claim of the tokens, for example `https://token.actions.githubusercontent.com`, `https://gitlab.com` or `https://kubernetes.default.svc`. Must be https and, unless `discovery.mode` is `static`, pass the outbound-request (SSRF) check (relaxed by `allow_private_issuer`). |
 | `name` | string | no | Unique name: 1-64 letters, digits, dot, dash or underscore. |
 | `service_account_id` | string (uuid) | no | - |
 | `token_ttl_seconds` | integer | no | Lifetime of exchanged tokens. Default: `900`. Minimum: 60. Maximum: 3600. |

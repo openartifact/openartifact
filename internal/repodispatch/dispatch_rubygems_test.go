@@ -111,6 +111,10 @@ func TestRubyGemsProxyAndGroupThroughDispatch(t *testing.T) {
 	}{
 		{"proxy info", "/repos/mirror/info/remote", 200, "1.0.0 |checksum:"},
 		{"proxy gem", "/repos/mirror/gems/remote-1.0.0.gem", 200, gemRemoteFile},
+		{"proxy gem by the downloads alias", "/repos/mirror/downloads/remote-1.0.0.gem", 200, gemRemoteFile},
+		{"proxy unknown gem by the downloads alias", "/repos/mirror/downloads/nothing-1.0.0.gem", 404, ""},
+		{"group gem from the proxy by the downloads alias", "/repos/all/downloads/remote-1.0.0.gem", 200, gemRemoteFile},
+		{"group gem from the hosted member by the downloads alias", "/repos/all/downloads/local-2.0.0.gem", 200, gemLocalFile},
 		{"group info from the proxy", "/repos/all/info/remote", 200, "1.0.0 |checksum:"},
 		{"group info from the hosted member", "/repos/all/info/local", 200, "2.0.0 |checksum:"},
 		{"group gem from the proxy", "/repos/all/gems/remote-1.0.0.gem", 200, gemRemoteFile},

@@ -241,6 +241,10 @@ linters:
       - path: "internal/format/gomod/http\\.go"
         linters:
           - tagliatelle
+      # The Quay API names a notification's event configuration eventConfig; the image-controller decodes that key
+      - path: "internal/quayapi/notification\\.go"
+        linters:
+          - tagliatelle
       - path: "internal/database/interfaces\\.go"
         linters:
           - tagliatelle

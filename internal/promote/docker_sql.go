@@ -41,10 +41,12 @@ SELECT EXISTS (SELECT 1 FROM docker_manifest_refs WHERE manifest_id = $1::uuid A
 // dockerInsertManifestSQL copies source manifest $2 into repository $1. It
 // returns the new row id, or no row when the destination already holds a live
 // manifest with that image and digest (digest = content, so that is the same
-// manifest). subject_digest (referrers) is copied with the row.
+// manifest). subject_digest (referrers) is copied with the row;
+// expires_at only when the destination honours quay expiry (else NULL).
 const dockerInsertManifestSQL = `
-INSERT INTO docker_manifests (repository_id, image, digest, media_type, size, subject_digest, blob_id)
-SELECT $1::uuid, s.image, s.digest, s.media_type, s.size, s.subject_digest, s.blob_id
+INSERT INTO docker_manifests (repository_id, image, digest, media_type, size, subject_digest, blob_id, expires_at)
+SELECT $1::uuid, s.image, s.digest, s.media_type, s.size, s.subject_digest, s.blob_id,
+       CASE WHEN (SELECT d.honour_quay_expiry FROM repositories d WHERE d.id = $1::uuid) THEN s.expires_at END
   FROM docker_manifests s
  WHERE s.id = $2::uuid
 ON CONFLICT (repository_id, image, digest) WHERE deleted_at IS NULL DO NOTHING
@@ -154,3 +156,25 @@ SELECT t.id::text, t.manifest_digest, COALESCE(b.sha256, ''), COALESCE(m.size, 0
                               AND m.digest = t.manifest_digest AND m.deleted_at IS NULL
   LEFT JOIN blobs b ON b.id = m.blob_id
  WHERE t.repository_id = $1::uuid AND t.image = $2 AND t.name = $3 AND t.deleted_at IS NULL`
+
+// dockerReferrersSQL lists the live manifests of image $2 in source repository
+// $1 whose OCI subject is digest $3.
+const dockerReferrersSQL = `
+SELECT m.id::text, m.image, m.digest, b.sha256, m.size
+  FROM docker_manifests m
+  JOIN blobs b ON b.id = m.blob_id
+ WHERE m.repository_id = $1::uuid AND m.image = $2 AND m.subject_digest = $3 AND m.deleted_at IS NULL
+ ORDER BY m.digest`
+
+// dockerDependentTagsSQL lists the live tags of image $2 in source repository
+// $1 whose name is in the comma-separated list $3, with the live manifest each
+// points at (a tag on a missing manifest is skipped).
+const dockerDependentTagsSQL = `
+SELECT t.id::text, t.name, m.id::text, m.image, m.digest, b.sha256, m.size
+  FROM docker_tags t
+  JOIN docker_manifests m ON m.repository_id = t.repository_id AND m.image = t.image
+                         AND m.digest = t.manifest_digest AND m.deleted_at IS NULL
+  JOIN blobs b ON b.id = m.blob_id
+ WHERE t.repository_id = $1::uuid AND t.image = $2 AND t.deleted_at IS NULL
+   AND t.name = ANY (string_to_array($3, ','))
+ ORDER BY t.name`

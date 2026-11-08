@@ -96,6 +96,14 @@ jobs:
             echo "::error::VERSION file ($file) does not match tag ($tag)"
             exit 1
           fi
+          # The Tekton catalog defaults to the oa-tekton image of its own release.
+          stale=$(grep -rnoE 'ghcr\.io/openartifact/oa-tekton:[^"[:space:]]+' integrations/tekton scripts/smoke |
+            grep -vF "oa-tekton:$file" || true)
+          if [ -n "$stale" ]; then
+            echo "::error::Tekton catalog image tags do not match VERSION ($file):"
+            echo "$stale"
+            exit 1
+          fi
           case "$tag" in
             *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
             *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;

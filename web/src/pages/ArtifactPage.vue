@@ -85,6 +85,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <template #panel-dependencies><ArtifactDependenciesTab /></template>
             <template #panel-security><ArtifactSecurityTab /></template>
             <template #panel-sbom><ArtifactSbomTab /></template>
+            <template #panel-attestations><ArtifactAttestationsTab /></template>
             <template #panel-activity><ArtifactActivityTab /></template>
           </AppTabs>
         </div>
@@ -123,6 +124,7 @@ const ArtifactFilesTab = asyncTab(() => import('../components/artifact/ArtifactF
 const ArtifactDependenciesTab = asyncTab(() => import('../components/artifact/ArtifactDependenciesTab.vue'))
 const ArtifactSecurityTab = asyncTab(() => import('../components/artifact/ArtifactSecurityTab.vue'))
 const ArtifactSbomTab = asyncTab(() => import('../components/artifact/ArtifactSbomTab.vue'))
+const ArtifactAttestationsTab = asyncTab(() => import('../components/artifact/ArtifactAttestationsTab.vue'))
 const ArtifactActivityTab = asyncTab(() => import('../components/artifact/ArtifactActivityTab.vue'))
 
 const route = useRoute()
@@ -163,6 +165,7 @@ const tabs = computed(() =>
     securityFlag: securityFlag(summary.value),
     canSeeActivity: caps.value.maintain,
     canSeeSbom: caps.value.admin,
+    canSeeAttestations: format.value === 'docker',
   }),
 )
 

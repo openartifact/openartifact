@@ -1,0 +1,185 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: oa-publish
+  labels:
+    app.kubernetes.io/version: "0.1"
+  annotations:
+    tekton.dev/pipelines.minVersion: 0.62.0
+    tekton.dev/tags: openartifact, publish
+spec:
+  description: >-
+    Publish build output to a hosted OpenArtifact repository: files from a Trusted Artifact are uploaded with
+    oa upload, an image is copied by digest with skopeo. The task authenticates by exchanging its pod
+    ServiceAccount token, so no registry secret is needed.
+  params:
+    - name: SERVER
+      type: string
+      description: OpenArtifact base URL.
+    - name: REPOSITORY
+      type: string
+      description: Hosted repository that receives the files (file mode).
+    - name: POLICY
+      type: string
+      default: ""
+      description: OIDC trust policy name; empty lets the server match the token.
+    - name: SOURCE_ARTIFACT
+      type: string
+      description: Trusted Artifact (oci:...@sha256:...) of the build source or output; the files to upload are paths below it.
+    - name: FILES
+      type: array
+      default: []
+      description: Paths or globs below the source artifact to upload with oa upload.
+    - name: SOURCE_IMAGE
+      type: string
+      default: ""
+      description: Image pullspec with digest to copy into a docker repository (image mode).
+    - name: TARGET_IMAGE
+      type: string
+      default: ""
+      description: Destination pullspec, for example artifacts.example.com/team/app:1.0.
+    - name: SNAPSHOT_FILE
+      type: string
+      default: ""
+      description: >-
+        Konflux Snapshot JSON file below the source artifact. Every component containerImage is copied to
+        TARGET_PREFIX/<component name>@<digest> (snapshot mode).
+    - name: TARGET_PREFIX
+      type: string
+      default: ""
+      description: Registry path (host/repository[/path]) that receives snapshot components.
+    - name: VERSION
+      type: string
+      default: ""
+    - name: BUILD_NAME
+      type: string
+      default: ""
+    - name: BUILD_NUMBER
+      type: string
+      default: ""
+    - name: VCS_REVISION
+      type: string
+      default: ""
+    - name: CA_FILE
+      type: string
+      default: ""
+      description: PEM bundle trusted for the OpenArtifact server.
+    - name: IMAGE
+      type: string
+      default: ghcr.io/openartifact/oa-tekton:0.21.0
+  results:
+    - name: ARTIFACT_OUTPUTS
+      description: JSON document of the uploaded files.
+    - name: IMAGE_URL
+      description: Pullspec of the copied image (space separated in snapshot mode), empty in file mode.
+    - name: IMAGE_DIGEST
+      description: Digest of the copied image manifest (space separated in snapshot mode), empty in file mode.
+  stepTemplate:
+    volumeMounts:
+      - name: workdir
+        mountPath: /var/workdir
+      - name: oa-auth
+        mountPath: /oa-auth
+  steps:
+    - name: use-trusted-artifact
+      image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:6df16e808f147926a2ba5f88588350bd8f77e73fde43614e79ddbd6e2b097d2e
+      args:
+        - use
+        - $(params.SOURCE_ARTIFACT)=/var/workdir/source
+    - name: exchange
+      ref:
+        name: oa-exchange-token
+      params:
+        - name: server
+          value: $(params.SERVER)
+        - name: policy
+          value: $(params.POLICY)
+        - name: caFile
+          value: $(params.CA_FILE)
+      volumeMounts:
+        - name: oa-token
+          mountPath: /var/run/secrets/openartifact
+          readOnly: true
+    - name: upload
+      ref:
+        name: oa-upload
+      workingDir: /var/workdir/source
+      params:
+        - name: server
+          value: $(params.SERVER)
+        - name: repository
+          value: $(params.REPOSITORY)
+        - name: files
+          value: ["$(params.FILES[*])"]
+        - name: version
+          value: $(params.VERSION)
+        - name: buildName
+          value: $(params.BUILD_NAME)
+        - name: buildNumber
+          value: $(params.BUILD_NUMBER)
+        - name: vcsRevision
+          value: $(params.VCS_REVISION)
+        - name: caFile
+          value: $(params.CA_FILE)
+    - name: copy-image
+      image: $(params.IMAGE)
+      workingDir: /var/workdir/source
+      env:
+        - name: SOURCE_IMAGE
+          value: $(params.SOURCE_IMAGE)
+        - name: TARGET_IMAGE
+          value: $(params.TARGET_IMAGE)
+        - name: SNAPSHOT_FILE
+          value: $(params.SNAPSHOT_FILE)
+        - name: TARGET_PREFIX
+          value: $(params.TARGET_PREFIX)
+        - name: CA_FILE
+          value: $(params.CA_FILE)
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+        : > "$(results.IMAGE_URL.path)"
+        : > "$(results.IMAGE_DIGEST.path)"
+        [ -z "$CA_FILE" ] || export SSL_CERT_FILE="$CA_FILE"
+        auth=/oa-auth/docker/config.json
+        pairs=()
+        [ -z "$SOURCE_IMAGE" ] || pairs+=("$SOURCE_IMAGE $TARGET_IMAGE")
+        if [ -n "$SNAPSHOT_FILE" ]; then
+          while read -r name image; do
+            # skopeo cannot push to a digest reference; the registry keeps the digest, the tag is a handle.
+            hex="${image##*@sha256:}"
+            pairs+=("$image $TARGET_PREFIX/$name:build-${hex:0:12}")
+          done < <(jq -r '.components[] | "\(.name) \(.containerImage)"' "$SNAPSHOT_FILE")
+        fi
+        urls=() digests=()
+        for pair in "${pairs[@]}"; do
+          read -r src dst <<<"$pair"
+          skopeo copy --all --preserve-digests --dest-authfile "$auth" "docker://$src" "docker://$dst"
+          urls+=("$dst")
+          digests+=("sha256:$(skopeo inspect --raw --authfile "$auth" "docker://$dst" | sha256sum | cut -d' ' -f1)")
+        done
+        printf %s "${urls[*]:-}" > "$(results.IMAGE_URL.path)"
+        printf %s "${digests[*]:-}" > "$(results.IMAGE_DIGEST.path)"
+    - name: outputs
+      image: $(params.IMAGE)
+      script: |
+        #!/bin/sh
+        set -eu
+        cp "$(steps.upload.results.uploaded.path)" "$(results.ARTIFACT_OUTPUTS.path)"
+  volumes:
+    - name: oa-token
+      projected:
+        sources:
+          - serviceAccountToken:
+              audience: openartifact
+              expirationSeconds: 600
+              path: token
+    - name: oa-auth
+      emptyDir:
+        medium: Memory
+    - name: workdir
+      emptyDir: {}

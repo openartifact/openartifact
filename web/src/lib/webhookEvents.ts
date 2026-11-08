@@ -14,6 +14,10 @@ export const WEBHOOK_EVENTS = [
   'repository.purged',
   'bundle.promoted',
   'vulnerability.new',
+  'scan.completed',
+  'vulnerability.found',
+  'quarantine.changed',
+  'bundle.check_updated',
 ] as const
 
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number]

@@ -50,8 +50,8 @@ func GlobMatch(pattern, s string) bool {
 
 // claimStrings renders a claim value as the strings a pattern is matched
 // against: a string is itself, a boolean or number its JSON text, an array each
-// of its scalar elements. Anything else (an object, null, a missing claim)
-// yields none and so never matches.
+// of its scalar elements. Anything else (an object, an object in an array, null,
+// a missing claim) yields none and so never matches: name a field of the object.
 func claimStrings(v any) []string {
 	switch c := v.(type) {
 	case string:
@@ -76,6 +76,32 @@ func claimStrings(v any) []string {
 	return nil
 }
 
+// claimValue returns the claim a condition names: the top-level key spelled
+// exactly as path when there is one, else the claim reached by walking path
+// through nested objects, where a dot separates the key of one object from the
+// next and a key may itself contain dots ("kubernetes.io.namespace" is
+// claims["kubernetes.io"]["namespace"]; where several keys fit, the longest
+// wins). Nil when there is none.
+func claimValue(claims map[string]any, path string) any {
+	if v, ok := claims[path]; ok {
+		return v
+	}
+
+	for i := len(path) - 1; i > 0; i-- {
+		if path[i] != '.' {
+			continue
+		}
+
+		if sub, ok := claims[path[:i]].(map[string]any); ok {
+			if v := claimValue(sub, path[i+1:]); v != nil {
+				return v
+			}
+		}
+	}
+
+	return nil
+}
+
 // ConditionsMatch reports whether claims satisfy every condition: each named
 // claim must be present and one of its values must match one of the
 // condition's patterns.
@@ -94,7 +120,7 @@ func ConditionsMatch(conditions []models.OIDCCondition, claims map[string]any) b
 }
 
 func conditionMatches(c models.OIDCCondition, claims map[string]any) bool {
-	for _, value := range claimStrings(claims[c.Claim]) {
+	for _, value := range claimStrings(claimValue(claims, c.Claim)) {
 		for _, pattern := range c.Patterns {
 			if GlobMatch(pattern, value) {
 				return true

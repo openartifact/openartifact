@@ -38,6 +38,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <ApkKeyPanel v-if="repo.format === 'apk' && repo.repo_type !== 'proxy'" :repo="repo.name" />
     <NixKeyPanel v-if="repo.format === 'nix' && repo.repo_type !== 'proxy'" :repo="repo.name" />
 
+    <RepoAttestationTrust v-if="trusts" :repo="repo.name" />
+
     <RepoCurationSection v-if="curates" :repo="repo" @saved="(r) => emit('saved', r)" />
 
     <section class="space-y-4 rounded-lg border border-border bg-surface p-5" :aria-label="t('repoDetail.tab.cleanup')">
@@ -74,6 +76,7 @@ import FormField from '../FormField.vue'
 import RepoDeleteDialog from '../RepoDeleteDialog.vue'
 import ApkKeyPanel from './ApkKeyPanel.vue'
 import NixKeyPanel from './NixKeyPanel.vue'
+import RepoAttestationTrust from './RepoAttestationTrust.vue'
 import QuotaBar from './QuotaBar.vue'
 import RepoCleanupTab from './RepoCleanupTab.vue'
 import RepoCurationSection from './RepoCurationSection.vue'
@@ -106,6 +109,9 @@ const router = useRouter()
 
 // Curation rules decide what a proxy may serve: only the repository's maintainers and global admins manage them.
 const curates = computed(() => props.repo.repo_type === 'proxy' && (session.isAdmin || props.repo.permissions?.admin === true))
+
+// The attestation trust is read and written by the repository's admins (and global admins), docker repositories only.
+const trusts = computed(() => props.repo.format === 'docker' && (session.isAdmin || props.repo.permissions?.admin === true))
 
 const form = ref(repoFormFrom(props.repo))
 const initial = ref(JSON.stringify(form.value))

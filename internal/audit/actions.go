@@ -105,6 +105,9 @@ const (
 	ActionBundleSealed   = "bundle.sealed"
 	ActionBundleArchived = "bundle.archived"
 	ActionBundlePromoted = "bundle.promoted"
+	// ActionBundleCheckReported records a required external check reported
+	// against a release bundle.
+	ActionBundleCheckReported = "bundle.check_reported"
 
 	// HTTP audit: the middleware logs method:path for generic request auditing.
 
@@ -218,7 +221,7 @@ var KnownActions = []string{
 
 	ActionScanVulnDetected, ActionScanVulnResolved, ActionScanSecretDetected, ActionScanQuarantineApply,
 
-	ActionBundleCreated, ActionBundleSealed, ActionBundleArchived, ActionBundlePromoted,
+	ActionBundleCreated, ActionBundleSealed, ActionBundleArchived, ActionBundlePromoted, ActionBundleCheckReported,
 
 	ActionHTTPRequest,
 

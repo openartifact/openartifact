@@ -792,6 +792,20 @@ func TestRepositoryValidate(t *testing.T) {
 			obj:     &Object{Name: "r", Spec: map[string]any{"format": "deb", "sign_packages": true}},
 			wantErr: "sign_packages is only valid for hosted rpm",
 		},
+		{
+			name:    "honour_quay_expiry on hosted raw",
+			obj:     &Object{Name: "r", Spec: map[string]any{"format": "raw", "honour_quay_expiry": true}},
+			wantErr: "honour_quay_expiry is only valid for hosted docker",
+		},
+		{
+			name:    "honour_quay_expiry with immutable_releases",
+			obj:     &Object{Name: "r", Spec: map[string]any{"format": "docker", "honour_quay_expiry": true, "immutable_releases": true}},
+			wantErr: "cannot be combined with immutable_releases",
+		},
+		{
+			name: "honour_quay_expiry on hosted docker",
+			obj:  &Object{Name: "r", Spec: map[string]any{"format": "docker", "honour_quay_expiry": true}},
+		},
 		{name: "sign_packages on hosted rpm", obj: &Object{Name: "r", Spec: map[string]any{"format": "rpm", "sign_packages": true}}},
 		{
 			name:    "proxy of an unsupported format",

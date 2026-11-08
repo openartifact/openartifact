@@ -368,7 +368,7 @@ func (s *Service) serveRubyGemsInfo(
 		return
 	}
 
-	if quarantine.Enforce(w, r, s.db, repo.ID, quarantine.PathKeys(key, loaded.entry.ID)...) {
+	if s.enforceQuarantine(w, r, repo, key, quarantine.PathKeys(key, loaded.entry.ID)) {
 		return
 	}
 

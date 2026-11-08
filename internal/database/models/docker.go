@@ -74,6 +74,9 @@ type DockerManifest struct {
 	RequiredBlobs []string  `db:"-"`
 	CreatedAt     time.Time `db:"created_at"`
 	UpdatedAt     time.Time `db:"updated_at"`
+	// ExpiresAt is the quay.expires-after deadline the manifest declared when it
+	// was pushed; nil when it declares none (or its repository does not honour it).
+	ExpiresAt *time.Time `db:"expires_at"`
 	// Inserted is set by CreateDockerManifest: true when the call created the
 	// live row, false when it refreshed an existing one. Callers that meter
 	// storage quota reserve only for a row they inserted.
@@ -101,6 +104,11 @@ type DockerGCManifest struct {
 	Young bool
 	// Children are the digests of the manifests an index references.
 	Children []string
+	// DependentOf are the subject digests of the live dependent tags (cosign
+	// .sig/.att/.sbom/.src, referrers tag schema) pointing at the manifest, when
+	// those subjects are still to be judged by this GC run. Tagged is false then
+	// unless some other tag holds the manifest.
+	DependentOf []string
 }
 
 // DockerGCBlob is a blob record of a repository as seen by registry GC.

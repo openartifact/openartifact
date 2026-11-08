@@ -55,6 +55,7 @@ type promotedOut struct {
 // bundleOut is the document every bundle command and promote print under
 // --format json; the optional parts belong to one command each.
 type bundleOut struct {
+	ID           string          `json:"id,omitempty"`
 	Bundle       string          `json:"bundle"`
 	Version      string          `json:"version"`
 	State        string          `json:"state"`
@@ -72,6 +73,7 @@ type bundleOut struct {
 
 // bundleDoc is the server's representation of a bundle.
 type bundleDoc struct {
+	ID           string  `json:"id"`
 	Name         string  `json:"name"`
 	Version      string  `json:"version"`
 	Description  string  `json:"description"`
@@ -93,7 +95,7 @@ func deref(s *string) string {
 
 func (a *ciAPI) bundleOut(d bundleDoc) bundleOut {
 	return bundleOut{
-		Bundle: d.Name, Version: d.Version, State: d.State,
+		ID: d.ID, Bundle: d.Name, Version: d.Version, State: d.State,
 		URL:         a.t.c.baseURL + "/bundles/" + url.PathEscape(d.Name) + "/" + url.PathEscape(d.Version),
 		Description: d.Description, PipelineID: deref(d.PipelineID), CurrentStage: deref(d.CurrentStage),
 		CreatedBy: d.CreatedBy, SealedAt: deref(d.SealedAt), GPGKeyID: deref(d.GPGKeyID),
@@ -135,6 +137,7 @@ func newBundleCmd(a *app) *cobra.Command {
 		bundleAddCmd(a),
 		bundleSealCmd(a),
 		bundleShowCmd(a),
+		bundleCheckCmd(a),
 	)
 }
 
@@ -195,6 +198,7 @@ type bundleAddOptions struct {
 	name, version string
 	repos         []string
 	paths         []string
+	digests       []string
 	fromBuild     string
 }
 
@@ -202,6 +206,7 @@ type bundleAddOptions struct {
 func bindBundleAddFlags(fs *pflag.FlagSet, o *bundleAddOptions) {
 	fs.StringArrayVarP(&o.repos, "repo", "r", nil, "Repository of the artifacts (repeatable with --from-build to limit the search)")
 	fs.StringArrayVar(&o.paths, "path", nil, "Artifact path in --repo (repeatable)")
+	fs.StringArrayVar(&o.digests, "digest", nil, "Image manifest digest sha256:... in the docker --repo (repeatable)")
 	fs.StringVar(
 		&o.fromBuild,
 		"from-build",
@@ -216,8 +221,14 @@ func (o *bundleAddOptions) withArgs(args []string) error {
 	o.name, o.version = args[0], args[1]
 
 	switch {
-	case o.fromBuild != "" && len(o.paths) > 0:
-		return cliError("--from-build and --path are exclusive")
+	case o.fromBuild != "" && (len(o.paths) > 0 || len(o.digests) > 0):
+		return cliError("--from-build, --path and --digest are exclusive")
+	case len(o.paths) > 0 && len(o.digests) > 0:
+		return cliError("--from-build, --path and --digest are exclusive")
+	case len(o.digests) > 0:
+		if len(o.repos) != 1 {
+			return cliError("--digest needs exactly one --repo")
+		}
 	case o.fromBuild != "":
 		if i := strings.LastIndexByte(o.fromBuild, '/'); i <= 0 || i == len(o.fromBuild)-1 {
 			return cliErrorf("--from-build wants NAME/NUMBER, got %q", o.fromBuild)
@@ -243,8 +254,9 @@ func bundleAddCmd(a *app) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "add <name> <version>",
-		Short: "Add artifacts to a draft bundle, by path or by the build that produced them",
-		Long: "Add artifacts to a draft bundle: either --repo R with one or more --path P, or --from-build NAME/NUMBER " +
+		Short: "Add artifacts to a draft bundle, by path, by image digest or by the build that produced them",
+		Long: "Add artifacts to a draft bundle: either --repo R with one or more --path P, --repo R with one or more " +
+			"image manifest digests (--digest sha256:..., docker repositories), or --from-build NAME/NUMBER " +
 			"(optionally limited to the repositories named by --repo).",
 		Args:              usageArgs(2, 2),
 		ValidArgsFunction: bundleNameVersion(),
@@ -270,10 +282,13 @@ func bundleAdd(ctx context.Context, api *ciAPI, o bundleAddOptions) (bundleOut, 
 		err     error
 	)
 
-	if o.fromBuild != "" {
+	switch {
+	case o.fromBuild != "":
 		i := strings.LastIndexByte(o.fromBuild, '/')
 		sources, err = sourcesFromBuild(ctx, api, o.repos, o.fromBuild[:i], o.fromBuild[i+1:])
-	} else {
+	case len(o.digests) > 0:
+		sources, err = sourcesFromDigests(ctx, api, o.repos[0], o.digests)
+	default:
 		sources, err = sourcesFromPaths(ctx, api, o.repos[0], o.paths)
 	}
 
@@ -362,10 +377,37 @@ func listedMatcher(f importFormat, p string) (string, func(ciPackage) bool, erro
 	}
 
 	return "", nil, fmt.Errorf(
-		"%w: --path works for deb, ivy, maven, raw, rpm and sbt repositories, not %s (use --from-build)",
+		"%w: --path works for deb, ivy, maven, raw, rpm and sbt repositories, not %s (use --digest for docker, or --from-build)",
 		errBundlePath,
 		f,
 	)
+}
+
+// sourcesFromDigests builds the items for image manifests of a docker
+// repository: a docker bundle item is the manifest digest, which also locates
+// it, so there is no listing to search.
+func sourcesFromDigests(ctx context.Context, api *ciAPI, repoName string, digests []string) ([]bundleSource, error) {
+	repo, err := api.repo(ctx, repoName)
+	if err != nil {
+		return nil, err
+	}
+
+	if importFormat(repo.Format) != formatDocker {
+		return nil, fmt.Errorf("%w: --digest works for docker repositories, %s is %s", errBundlePath, repo.Name, repo.Format)
+	}
+
+	out := make([]bundleSource, 0, len(digests))
+
+	for _, d := range digests {
+		hexPart, ok := strings.CutPrefix(strings.ToLower(d), "sha256:")
+		if !ok || len(hexPart) != ociDigestHexLen || strings.Trim(hexPart, "0123456789abcdef") != "" {
+			return nil, cliErrorf("--digest wants sha256:<64 hex characters>, got %q", d)
+		}
+
+		out = append(out, bundleSource{repo: repo, pkg: ciPackage{SHA256: hexPart}, path: "sha256:" + hexPart})
+	}
+
+	return out, nil
 }
 
 func sourcesFromPaths(ctx context.Context, api *ciAPI, repoName string, paths []string) ([]bundleSource, error) {

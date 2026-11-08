@@ -45,3 +45,57 @@ spec:
       patterns: ["refs/tags/v*"]
   token_ttl_seconds: 900
   enabled: true
+---
+# Tekton and other Kubernetes pipelines: every pod can have a projected service
+# account token whose audience is this server. The cluster API server is the
+# issuer; OpenArtifact reads its keys with its own service account token
+# (discovery mode serviceaccount, see "Kubernetes and Tekton service accounts"
+# in docs/integrations/ci.md). The API server lives on a cluster-internal
+# address, so the policy opts into private issuers. A claim may be a dotted
+# path into nested claims: kubernetes.io.namespace is the "namespace" key of
+# the "kubernetes.io" claim.
+apiVersion: openartifact.io/v1
+kind: OIDCTrustPolicy
+metadata:
+  name: tekton-team-a
+spec:
+  issuer: https://kubernetes.default.svc
+  audience: https://oa.example.com
+  service_account: ci-publisher
+  discovery:
+    mode: serviceaccount
+  allow_private_issuer: true
+  conditions:
+    - claim: sub
+      patterns: ["system:serviceaccount:team-a:build-pipeline-*"]
+    - claim: kubernetes.io.namespace
+      patterns: [team-a]
+  token_ttl_seconds: 600
+  enabled: true
+---
+# A cluster whose issuer is not reachable from here (or does not serve
+# discovery anonymously) can be trusted from a key set stored on the policy:
+# static mode never contacts the issuer, takes public keys only, and the token's
+# iss claim must still equal the issuer below. Export the set from the cluster
+# with: kubectl get --raw /openid/v1/jwks
+apiVersion: openartifact.io/v1
+kind: OIDCTrustPolicy
+metadata:
+  name: tekton-edge-cluster
+spec:
+  issuer: https://oidc.edge.example.com
+  audience: https://oa.example.com
+  service_account: ci-publisher
+  discovery:
+    mode: static
+    jwks:
+      keys:
+        - kty: RSA
+          use: sig
+          alg: RS256
+          kid: edge-2024
+          e: AQAB
+          n: sXchDaQebHnPiGvyDOAT4saGEUetSyo9MKLOoWFsueri23bOdgWp4Dy1WlUzewbgBHod5pcM9H95GQRV3JDXboIRROSBigeC5yjU1hGzHHyXss8UDprecbAYxknTcQkhslANGRUZmdTOQ5qTRsLAt6BTYuyvVRdhS8exSZEy_c4gs_7svlJJQ4H9_NxsiIoLwAEk7-Q3UXERGYw_75IDrGA84-lA_-Ct4eTlXHBIY2EaV7t7LjJaynVJCpkv4LKjTTAumiGUIuQhrNhZLuF_RJLqHpM2kgWFLU7-VTdL1VbC2tejvcI2BlMkEpk1BzBZI0KQB0GaDWFLN-aEAw3vRw
+  conditions:
+    - claim: sub
+      patterns: ["system:serviceaccount:team-a:*"]

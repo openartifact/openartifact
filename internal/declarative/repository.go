@@ -127,6 +127,7 @@ func (repositoryKind) Schema() *Field {
 		"immutable_releases":         repoBoolField(),
 		"merge_proxy_versions":       repoBoolField(),
 		"sign_packages":              repoBoolField(),
+		"honour_quay_expiry":         repoBoolField(),
 		repoFieldQuota: {Type: TObject, Fields: map[string]*Field{
 			"max_size_bytes":         repoIntField(0),
 			"max_artifact_count":     repoIntField(0),
@@ -229,6 +230,15 @@ func repoValidateType(o *Object, repoType, format string) []error {
 
 	if _, ok := o.Spec["sign_packages"]; ok && (repoType != repoTypeHosted || !repotype.PackageSigning(format)) {
 		add("sign_packages is only valid for hosted rpm repositories")
+	}
+
+	if Bool(o.Spec, "honour_quay_expiry") {
+		switch {
+		case repoType != repoTypeHosted || format != "docker":
+			add("honour_quay_expiry is only valid for hosted docker repositories")
+		case Bool(o.Spec, "immutable_releases"):
+			add("honour_quay_expiry cannot be combined with immutable_releases")
+		}
 	}
 
 	if msg := unsupportedRepoType(repoType, format); msg != "" {
@@ -378,6 +388,7 @@ type repoAPI struct {
 	ImmutableReleases       bool    `json:"immutable_releases"`
 	MergeProxyVersions      bool    `json:"merge_proxy_versions"`
 	SignPackages            bool    `json:"sign_packages"`
+	HonourQuayExpiry        bool    `json:"honour_quay_expiry"`
 	UpstreamURL             string  `json:"upstream_url"`
 	UpstreamUsername        string  `json:"upstream_username"`
 	CacheTTLSeconds         *int    `json:"cache_ttl_seconds"`
@@ -445,6 +456,10 @@ func (r *repoAPI) spec() map[string]any {
 	case repoTypeHosted:
 		if repotype.PackageSigning(r.Format) {
 			s["sign_packages"] = r.SignPackages
+		}
+
+		if r.Format == "docker" {
+			s["honour_quay_expiry"] = r.HonourQuayExpiry
 		}
 	}
 

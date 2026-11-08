@@ -321,6 +321,25 @@ func TestLatestUnknownModuleIs404(t *testing.T) {
 	}
 }
 
+// A hosted repository holds private modules the checksum database does not
+// know and relays nothing of it: the sumdb proxy protocol is 404, which makes
+// the go command ask the database directly.
+func TestHostedHasNoChecksumDatabase(t *testing.T) {
+	router, db, _, _ := newTestRouter(t)
+	db.seed(testModule, "v1.0.0")
+
+	for _, p := range []string{
+		"sumdb/sum.golang.org/supported",
+		"sumdb/sum.golang.org/latest",
+		"sumdb/sum.golang.org/lookup/" + testModule + "@v1.0.0",
+		"sumdb/sum.golang.org/tile/8/0/000",
+	} {
+		if w := serve(router, http.MethodGet, "/repos/myrepo/"+p, nil); w.Code != http.StatusNotFound {
+			t.Errorf("GET %s: status = %d, want 404", p, w.Code)
+		}
+	}
+}
+
 // Go case-encodes uppercase letters in URL paths ("!r" = "R"): both the module
 // path and the version. The stored values are the decoded ones, and everything
 // answers to the encoded URL the go command builds.

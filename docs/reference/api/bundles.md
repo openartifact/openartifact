@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Bundles API
 
-19 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+21 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -138,6 +138,59 @@ Archive bundle
 |---|---|---|
 | `200` | Success | `application/json`: [ReleaseBundle](schemas.md#releasebundle) |
 | `default` | Error | `application/json`: [Error](schemas.md#error) |
+
+### `GET /api/v1/bundles/{name}/{version}/checks`
+
+List bundle checks
+
+Checks reported against the bundle, ordered by name. Readable by anyone who can see the bundle, and by a principal holding `write` on every source repository.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+| `version` | path | string | yes | - |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | Checks | `application/json`: object |
+| `404` | Bundle not found, or not visible to the caller | `application/json`: [Error](schemas.md#error) |
+
+Fields of the `200` response (`application/json`):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `checks` | array of [BundleCheck](schemas.md#bundlecheck) | yes | - |
+
+### `POST /api/v1/bundles/{name}/{version}/checks`
+
+Report a bundle check
+
+Creates or replaces the check of that name (one row per bundle and name). Requires administrator, or `write` on the source repository of every item of the bundle (a deploy token or OIDC-exchanged CI token). Emits the `bundle.check_updated` webhook event and an audit event. A stage whose `required_checks` lists the name refuses promotion until the check is `success` and unexpired.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+| `version` | path | string | yes | - |
+
+**Request body** (required)
+
+`application/json`: [BundleCheckReport](schemas.md#bundlecheckreport)
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | Stored check | `application/json`: [BundleCheck](schemas.md#bundlecheck) |
+| `400` | Invalid name, status, summary, details_url or expires_at (code validation_failed) | `application/json`: [Error](schemas.md#error) |
+| `403` | The bundle is visible but the caller lacks write access to every source repository | `application/json`: [Error](schemas.md#error) |
+| `404` | Bundle not found, or not visible to the caller | `application/json`: [Error](schemas.md#error) |
+| `409` | The bundle is archived | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/bundles/{name}/{version}/items`
 
@@ -291,7 +344,7 @@ Copies every item of a sealed bundle into target_repo and moves the bundle to to
 | `403` | Not an admin; an item is quarantined in its source (ARTIFACT_QUARANTINED); or a license policy of the target blocks it (LICENSE_BLOCKED) | `application/json`: [Error](schemas.md#error) |
 | `404` | Bundle or target repository not found | `application/json`: [Error](schemas.md#error) |
 | `409` | Bundle not sealed or changed concurrently; to_stage does not follow the current stage; an item no longer exists in its source repository (artifact_missing); the target holds different content at the same coordinates (artifact_conflict), or the target has immutable releases and the version is a release (immutable_release) | `application/json`: [Error](schemas.md#error) |
-| `422` | A target repository has a blocking license policy and the license of a promoted package file cannot be read (LICENSE_METADATA_UNREADABLE); nothing is copied | `application/json`: [Error](schemas.md#error) |
+| `422` | A target repository has a blocking license policy and the license of a promoted package file cannot be read (LICENSE_METADATA_UNREADABLE); nothing is copied; a required check of the target stage is missing, failed, pending or expired (CHECKS_REQUIRED); a docker item has no verified SLSA provenance while the source or target repository's attestation trust requires it (PROVENANCE_REQUIRED) | `application/json`: [Error](schemas.md#error) |
 | `507` | The target repository's storage quota would be exceeded (quota_exceeded) | `application/json`: [Error](schemas.md#error) |
 | `default` | Error | `application/json`: [Error](schemas.md#error) |
 

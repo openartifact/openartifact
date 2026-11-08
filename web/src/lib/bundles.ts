@@ -2,9 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { t, type TranslationKey } from '../i18n'
+import { t, tp, type TranslationKey } from '../i18n'
 import type {
   Bundle,
+  BundleCheck,
+  BundleCheckStatus,
   BundleItemInput,
   BundlePromotion,
   BundleState,
@@ -218,4 +220,92 @@ export function candidateToItem(c: ItemCandidate, repoIdByName: ReadonlyMap<stri
   }
   if (Number.isFinite(c.size) && c.size >= 0) item.size_bytes = c.size
   return item
+}
+
+/** Limits of a stage's required check names (the server enforces the same ones). */
+export const CHECK_NAME_MAX = 64
+export const REQUIRED_CHECKS_MAX = 20
+
+const CHECK_NAME_FORBIDDEN = /[\s\p{Cc}]/u
+
+/**
+ * Reads the required checks a stage form holds: names separated by commas and/or whitespace. Names are
+ * trimmed; an empty text is no checks. `error` is the translated reason the list is refused, else null.
+ */
+export function parseRequiredChecks(text: string): { names: string[]; error: string | null } {
+  const names = text.split(/[,\s]+/).filter((n) => n !== '')
+  const seen = new Set<string>()
+  for (const name of names) {
+    if (CHECK_NAME_FORBIDDEN.test(name)) return { names, error: tp('bundles.pipeline.checks.invalid', { name }) }
+    if (name.length > CHECK_NAME_MAX) return { names, error: tp('bundles.pipeline.checks.tooLong', { name, max: CHECK_NAME_MAX }) }
+    if (seen.has(name)) return { names, error: tp('bundles.pipeline.checks.duplicate', { name }) }
+    seen.add(name)
+  }
+  if (names.length > REQUIRED_CHECKS_MAX) return { names, error: tp('bundles.pipeline.checks.tooMany', { max: REQUIRED_CHECKS_MAX }) }
+  return { names, error: null }
+}
+
+export function checkVariant(status: BundleCheckStatus): BadgeVariant {
+  switch (status) {
+    case 'success':
+      return 'success'
+    case 'failure':
+    case 'error':
+      return 'danger'
+    default:
+      return 'warning'
+  }
+}
+
+export function checkLabel(status: BundleCheckStatus): string {
+  switch (status) {
+    case 'success':
+      return t('bundles.check.success')
+    case 'failure':
+      return t('bundles.check.failure')
+    case 'error':
+      return t('bundles.check.error')
+    default:
+      return t('bundles.check.pending')
+  }
+}
+
+/** True when the check has an expiry that is not after `now` (an expired check no longer counts). */
+export function checkExpired(c: Pick<BundleCheck, 'expires_at'>, now = Date.now()): boolean {
+  if (!c.expires_at) return false
+  const at = Date.parse(c.expires_at)
+  return Number.isFinite(at) && at <= now
+}
+
+/** The details URL when it is http(s), else null: a reported check must not make the page link to javascript: and the like. */
+export function safeDetailsUrl(url: string | undefined): string | null {
+  if (!url) return null
+  try {
+    const u = new URL(url)
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : null
+  } catch {
+    return null
+  }
+}
+
+/** What a required check currently is for a promotion: its reported status, or why it does not count. */
+export type RequiredCheckState = BundleCheckStatus | 'missing' | 'expired'
+
+/** The state of each required check, in the stage's order. Only a `success` that has not expired passes. */
+export function requiredCheckStates(required: readonly string[], checks: readonly BundleCheck[], now = Date.now()): { name: string; state: RequiredCheckState }[] {
+  return required.map((name) => {
+    const found = checks.find((c) => c.name === name)
+    if (!found) return { name, state: 'missing' }
+    return { name, state: checkExpired(found, now) ? 'expired' : found.status }
+  })
+}
+
+export function requiredCheckVariant(state: RequiredCheckState): BadgeVariant {
+  return state === 'missing' || state === 'expired' ? 'neutral' : checkVariant(state)
+}
+
+export function requiredCheckLabel(state: RequiredCheckState): string {
+  if (state === 'missing') return t('bundles.check.missing')
+  if (state === 'expired') return t('bundles.check.expired')
+  return checkLabel(state)
 }

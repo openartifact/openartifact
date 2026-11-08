@@ -48,6 +48,9 @@ type Deps struct {
 	DockerUploadDir string
 	// DockerAuthorizer checks read access to a cross-repository mount source.
 	DockerAuthorizer formatdocker.Authorizer
+	// DockerManifestHooks are called after every committed docker manifest
+	// push (formatdocker.ManifestPutHook); the server fills them at startup.
+	DockerManifestHooks []formatdocker.ManifestPutHook
 
 	// APKKeys and NixKeys provide the signing keys of apk and nix repositories.
 	APKKeys formatapk.KeyProvider
