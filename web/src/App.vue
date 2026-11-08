@@ -80,7 +80,11 @@ const route = useRoute()
 const ui = useUIStore()
 const session = useSessionStore()
 
-const showShell = computed(() => route.meta.layout !== 'blank')
+// The app mounts before the first navigation resolves (main.ts), while the router guard still waits
+// for /auth/me. Until then the route is the router's start location, which matches nothing: the
+// shell waits for a resolved route, so a signed-out visitor never sees the navigation before the
+// login page, and a signed-in one never sees it drawn for the wrong role.
+const showShell = computed(() => route.matched.length > 0 && route.meta.layout !== 'blank')
 const isMobile = useMediaQuery('(max-width: 767px)')
 
 function focusMain(): void {

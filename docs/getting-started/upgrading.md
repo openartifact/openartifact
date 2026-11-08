@@ -143,6 +143,7 @@ Newest first. Each version starts with **What you must do**; the text below it l
 - **Scanning.** Docker images are scanned from an attached SBOM when present, and `POST /api/v1/repositories/{name}/vuln/scans/import` accepts SARIF and osv-scanner results with `write` access. The gate endpoints now need only `read` on the repository.
 - **Webhooks.** New events `scan.completed`, `vulnerability.found`, `quarantine.changed` and `bundle.check_updated`.
 - **Registry.** Cosign signature tags follow their image through cleanup, garbage collection and promotion, the referrers API filters by `artifactType`, and repositories with `honour_quay_expiry` delete images after their `quay.expires-after` label.
+- **Web UI.** Reloading a page no longer shows the navigation for a moment before the login page, or with administrator entries locked for an administrator, while the session is checked.
 - **Hermetic builds.** RubyGems answers `/downloads/{file}`, and the Go proxy relays checksum database lookups (`workers.proxyGoSumdbHosts`, default `sum.golang.org`).
 
 ### 0.20.0
