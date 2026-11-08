@@ -240,7 +240,6 @@ func (m *sessionMockDB) CreateDockerBlob(_ context.Context, _ *models.DockerBlob
 func (m *sessionMockDB) GetDockerBlob(_ context.Context, _, _ string) (*models.DockerBlob, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) DeleteDockerBlob(_ context.Context, _, _ string) error { return nil }
 func (m *sessionMockDB) ListDockerBlobs(_ context.Context, _ string) ([]*models.DockerBlob, error) {
 	return nil, nil
 }
@@ -705,10 +704,6 @@ func (m *sessionMockDB) GetReleaseBundle(ctx context.Context, name, version stri
 
 func (m *sessionMockDB) GetReleaseBundleByID(ctx context.Context, id string) (*models.ReleaseBundle, error) {
 	return nil, nil
-}
-
-func (m *sessionMockDB) UpdateReleaseBundle(ctx context.Context, b *models.ReleaseBundle) error {
-	return nil
 }
 
 func (m *sessionMockDB) DeleteReleaseBundle(ctx context.Context, id string) error {

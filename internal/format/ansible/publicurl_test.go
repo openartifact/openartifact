@@ -23,8 +23,7 @@ import (
 func handlerFor(t *testing.T, explicit string) http.Handler {
 	t.Helper()
 
-	db := &ansibleDB{DB: formattest.NewDB()}
-	db.Repo.Format = FormatName
+	db := &ansibleDB{DB: formattest.NewDB("ansible")}
 
 	h := NewHTTPHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), explicit)
 

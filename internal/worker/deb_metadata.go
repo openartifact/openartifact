@@ -344,12 +344,8 @@ func (w *DebMetadataWorker) generateDistribution(
 	blobs["dists/"+dist.Name+"/Release"] = []byte(releaseContent)
 
 	if signer != nil {
-		signed, err := formatdeb.NewReleaseSigner(signer).SignRelease([]byte(releaseContent))
-		if err != nil {
-			w.log.Warnw("failed to sign release", "dist", dist.Name, "error", err)
-		} else {
-			blobs["dists/"+dist.Name+"/InRelease"] = signed.InRelease
-			blobs["dists/"+dist.Name+"/Release.gpg"] = signed.ReleaseGPG
+		if err := addSignedRelease(blobs, "dists/"+dist.Name+"/", []byte(releaseContent), signer); err != nil {
+			return fmt.Errorf("deb worker: dist %s: %w", dist.Name, err)
 		}
 	}
 

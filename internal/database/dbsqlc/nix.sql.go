@@ -63,7 +63,7 @@ WITH stale AS (
 DELETE FROM nix_pending_nars pn
 USING stale
 WHERE pn.repository_id = stale.repository_id AND pn.sha256 = stale.sha256
-RETURNING pn.sha256
+RETURNING pn.repository_id, pn.sha256, pn.reserved_bytes
 `
 
 type DeleteStaleNixPendingNarsParams struct {
@@ -71,19 +71,25 @@ type DeleteStaleNixPendingNarsParams struct {
 	BatchLimit int32     `db:"batch_limit" json:"batch_limit"`
 }
 
-func (q *Queries) DeleteStaleNixPendingNars(ctx context.Context, arg DeleteStaleNixPendingNarsParams) ([]string, error) {
+type DeleteStaleNixPendingNarsRow struct {
+	RepositoryID  string `db:"repository_id" json:"repository_id"`
+	Sha256        string `db:"sha256" json:"sha256"`
+	ReservedBytes int64  `db:"reserved_bytes" json:"reserved_bytes"`
+}
+
+func (q *Queries) DeleteStaleNixPendingNars(ctx context.Context, arg DeleteStaleNixPendingNarsParams) ([]DeleteStaleNixPendingNarsRow, error) {
 	rows, err := q.db.Query(ctx, deleteStaleNixPendingNars, arg.Before, arg.BatchLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []string{}
+	items := []DeleteStaleNixPendingNarsRow{}
 	for rows.Next() {
-		var sha256 string
-		if err := rows.Scan(&sha256); err != nil {
+		var i DeleteStaleNixPendingNarsRow
+		if err := rows.Scan(&i.RepositoryID, &i.Sha256, &i.ReservedBytes); err != nil {
 			return nil, err
 		}
-		items = append(items, sha256)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -205,7 +211,7 @@ func (q *Queries) GetNixPathByNarFile(ctx context.Context, arg GetNixPathByNarFi
 }
 
 const getNixPendingNar = `-- name: GetNixPendingNar :one
-SELECT pn.repository_id, pn.sha256, pn.nar_file, b.blob_key, b.size_bytes, pn.created_at
+SELECT pn.repository_id, pn.sha256, pn.nar_file, b.blob_key, b.size_bytes, pn.reserved_bytes, pn.created_at
 FROM nix_pending_nars pn
 JOIN blobs b ON b.id = pn.blob_id
 WHERE pn.repository_id = $1 AND pn.sha256 = $2
@@ -217,12 +223,13 @@ type GetNixPendingNarParams struct {
 }
 
 type GetNixPendingNarRow struct {
-	RepositoryID string    `db:"repository_id" json:"repository_id"`
-	Sha256       string    `db:"sha256" json:"sha256"`
-	NarFile      string    `db:"nar_file" json:"nar_file"`
-	BlobKey      string    `db:"blob_key" json:"blob_key"`
-	SizeBytes    int64     `db:"size_bytes" json:"size_bytes"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
+	RepositoryID  string    `db:"repository_id" json:"repository_id"`
+	Sha256        string    `db:"sha256" json:"sha256"`
+	NarFile       string    `db:"nar_file" json:"nar_file"`
+	BlobKey       string    `db:"blob_key" json:"blob_key"`
+	SizeBytes     int64     `db:"size_bytes" json:"size_bytes"`
+	ReservedBytes int64     `db:"reserved_bytes" json:"reserved_bytes"`
+	CreatedAt     time.Time `db:"created_at" json:"created_at"`
 }
 
 func (q *Queries) GetNixPendingNar(ctx context.Context, arg GetNixPendingNarParams) (GetNixPendingNarRow, error) {
@@ -234,6 +241,7 @@ func (q *Queries) GetNixPendingNar(ctx context.Context, arg GetNixPendingNarPara
 		&i.NarFile,
 		&i.BlobKey,
 		&i.SizeBytes,
+		&i.ReservedBytes,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -316,27 +324,32 @@ func (q *Queries) ListNixPaths(ctx context.Context, repositoryID string) ([]List
 	return items, nil
 }
 
-const putNixPendingNar = `-- name: PutNixPendingNar :exec
-INSERT INTO nix_pending_nars (repository_id, sha256, nar_file, blob_id)
-VALUES ($1, $2, $3, $4)
+const putNixPendingNar = `-- name: PutNixPendingNar :execrows
+INSERT INTO nix_pending_nars (repository_id, sha256, nar_file, blob_id, reserved_bytes)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (repository_id, sha256) DO NOTHING
 `
 
 type PutNixPendingNarParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Sha256       string `db:"sha256" json:"sha256"`
-	NarFile      string `db:"nar_file" json:"nar_file"`
-	BlobID       string `db:"blob_id" json:"blob_id"`
+	RepositoryID  string `db:"repository_id" json:"repository_id"`
+	Sha256        string `db:"sha256" json:"sha256"`
+	NarFile       string `db:"nar_file" json:"nar_file"`
+	BlobID        string `db:"blob_id" json:"blob_id"`
+	ReservedBytes int64  `db:"reserved_bytes" json:"reserved_bytes"`
 }
 
-func (q *Queries) PutNixPendingNar(ctx context.Context, arg PutNixPendingNarParams) error {
-	_, err := q.db.Exec(ctx, putNixPendingNar,
+func (q *Queries) PutNixPendingNar(ctx context.Context, arg PutNixPendingNarParams) (int64, error) {
+	result, err := q.db.Exec(ctx, putNixPendingNar,
 		arg.RepositoryID,
 		arg.Sha256,
 		arg.NarFile,
 		arg.BlobID,
+		arg.ReservedBytes,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const replaceNixSigningKey = `-- name: ReplaceNixSigningKey :exec

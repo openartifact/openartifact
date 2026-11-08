@@ -16,9 +16,15 @@ import (
 )
 
 // ResolveRepo loads a repository by name. It returns nil without an error when
-// the repository does not exist.
+// the repository does not exist or its format is not the handler's: callers
+// answer 404 for both, so a handler never acts on another format's data.
 func (h *Handler) ResolveRepo(ctx context.Context, name string) (*models.Repository, error) {
-	return h.DB.GetRepositoryByName(ctx, name)
+	repo, err := h.DB.GetRepositoryByName(ctx, name)
+	if err != nil || repo == nil || repo.Format != h.Format {
+		return nil, err
+	}
+
+	return repo, nil
 }
 
 // SharedCacheable reports whether the response to r may be stored by shared

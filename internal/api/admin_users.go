@@ -308,6 +308,11 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
+		if errors.Is(err, database.ErrLastAdmin) {
+			writeError(w, http.StatusConflict, "conflict", "cannot disable the last enabled admin")
+			return
+		}
+
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return

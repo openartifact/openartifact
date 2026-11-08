@@ -350,6 +350,10 @@ func (p *NPMStore) DeleteNPMVersions(ctx context.Context, packageID string, vers
 		return nil
 	}
 
+	if err := lockForPrune(ctx, q, versionIDs); err != nil {
+		return err
+	}
+
 	if _, err := q.PruneEmptyVersions(ctx, versionIDs); err != nil {
 		return fmt.Errorf("failed to delete npm version: %w", err)
 	}

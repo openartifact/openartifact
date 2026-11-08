@@ -32,7 +32,7 @@ type helmDB struct {
 }
 
 func newHelmDB() *helmDB {
-	return &helmDB{DB: formattest.NewDB(), charts: map[string]*models.HelmChart{}}
+	return &helmDB{DB: formattest.NewDB("helm"), charts: map[string]*models.HelmChart{}}
 }
 
 func chartKey(name, version string) string { return name + "@" + version }

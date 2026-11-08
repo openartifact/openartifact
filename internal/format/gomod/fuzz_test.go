@@ -518,8 +518,7 @@ func (d *fuzzModDB) DecrementStorageUsage(_ context.Context, _ string, size int6
 // newFuzzRouter mounts the module routes the way cmd/server does (GET catch-all
 // plus the shared PUT) over an in-memory database and blob store.
 func newFuzzRouter() (http.Handler, *fuzzModDB, *formattest.BlobStore) {
-	db := &fuzzModDB{DB: formattest.NewDB()}
-	db.Repo.Format = "go"
+	db := &fuzzModDB{DB: formattest.NewDB("go")}
 	bs := formattest.NewBlobStore()
 	h := NewHTTPHandler(&logger.Logger{SugaredLogger: zap.NewNop().Sugar()}, db, bs, "http://localhost")
 	h.SetPublisher(&formattest.Publisher{})

@@ -149,7 +149,17 @@ func (d *authzMockDB) SealReleaseBundle(_ context.Context, id, _ string, _ time.
 	return true, nil
 }
 
-func (d *authzMockDB) UpdateReleaseBundle(context.Context, *models.ReleaseBundle) error { return nil }
+func (d *authzMockDB) ArchiveReleaseBundle(_ context.Context, id, _ string, _ time.Time) (bool, error) {
+	for _, b := range d.bundles {
+		if b.ID == id && b.State == models.BundleStateSealed {
+			b.State = models.BundleStateArchived
+
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
 
 func (d *authzMockDB) DeleteReleaseBundle(_ context.Context, id string) error {
 	for k, b := range d.bundles {

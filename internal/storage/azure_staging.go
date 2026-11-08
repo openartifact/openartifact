@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -477,7 +478,7 @@ func (a *AzureBlobStore) CompleteMultipart(ctx context.Context, id, _ string, si
 		return err
 	}
 
-	if _, err := a.putBlockList(ctx, key, blockIDs); err != nil {
+	if _, err := a.putBlockList(ctx, key, blockIDs, nil); err != nil {
 		return err
 	}
 
@@ -593,9 +594,10 @@ func partList(numbers []int) string {
 }
 
 // putBlockList commits the blocks, in order, as the content of blob (Put Block
-// List). Latest picks the uncommitted block of an id over a committed one. It
-// returns the ETag of the committed blob.
-func (a *AzureBlobStore) putBlockList(ctx context.Context, blob string, blockIDs []string) (string, error) {
+// List). Latest picks the uncommitted block of an id over a committed one. The
+// extra headers (blob metadata) are sent with the commit. It returns the ETag
+// of the committed blob.
+func (a *AzureBlobStore) putBlockList(ctx context.Context, blob string, blockIDs []string, extra map[string]string) (string, error) {
 	var sb strings.Builder
 
 	sb.WriteString(`<?xml version="1.0" encoding="utf-8"?><BlockList>`)
@@ -608,11 +610,14 @@ func (a *AzureBlobStore) putBlockList(ctx context.Context, blob string, blockIDs
 
 	body := sb.String()
 
+	header := map[string]string{"Content-Type": "application/xml", "x-ms-blob-content-type": "application/octet-stream"}
+	maps.Copy(header, extra)
+
 	resp, err := a.do(ctx, azureCall{
 		method: http.MethodPut,
 		blob:   blob,
 		query:  url.Values{"comp": {"blocklist"}},
-		header: map[string]string{"Content-Type": "application/xml", "x-ms-blob-content-type": "application/octet-stream"},
+		header: header,
 		body:   strings.NewReader(body),
 		length: int64(len(body)),
 	})

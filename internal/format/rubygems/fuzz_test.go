@@ -245,7 +245,9 @@ func FuzzGemspecMetadata(f *testing.F) {
 		meta := parseGemspecMetadata(data)
 		checkMetadata(t, meta)
 
-		if raw, ok := meta["raw_metadata"]; ok && (raw != string(data) || len(meta) != 1) {
+		// The fallback is the sole raw_metadata key; a decoded payload may
+		// carry a key of that name itself.
+		if raw, ok := meta["raw_metadata"]; ok && len(meta) == 1 && raw != string(data) {
 			t.Fatalf("raw_metadata fallback is not the payload: %v", meta)
 		}
 
@@ -452,7 +454,7 @@ func pgRejects(g *models.RubyGem) error {
 }
 
 func newFuzzGemHandler() (*HTTPHandler, *fuzzGemsDB, *formattest.BlobStore) {
-	db := &fuzzGemsDB{DB: formattest.NewDB()}
+	db := &fuzzGemsDB{DB: formattest.NewDB("rubygems")}
 	bs := formattest.NewBlobStore()
 	h := NewHTTPHandler(&logger.Logger{SugaredLogger: zap.NewNop().Sugar()}, db, bs, "http://localhost")
 	h.SetPublisher(&formattest.Publisher{})

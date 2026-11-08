@@ -75,7 +75,7 @@ type HTTPHandler struct {
 
 // NewHTTPHandler creates the handler.
 func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
+	return &HTTPHandler{Handler: base.New(FormatName, log, db, blobStore, baseURL), DB: db}
 }
 
 // SetRegenerator sets the worker that regenerates the databases after an
@@ -110,7 +110,7 @@ func (h *HTTPHandler) resolveRepo(w http.ResponseWriter, r *http.Request) *model
 		return nil
 	}
 
-	if repo == nil || repo.Format != FormatName {
+	if repo == nil {
 		http.NotFound(w, r)
 		return nil
 	}

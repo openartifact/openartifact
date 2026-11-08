@@ -17,7 +17,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </AppButton>
     </div>
 
-    <p class="text-sm text-muted" data-testid="graph-stats">{{ tp('artifact.graph.stats', { nodes: String(nodes.length), edges: String(links.length), vulnerable: String(vulnerableCount) }) }}</p>
+    <p class="text-sm text-muted" data-testid="graph-stats">{{ tp('artifact.graph.stats', { nodes: nodes.length, edges: links.length, vulnerable: vulnerableCount }) }}</p>
 
     <StateBlock v-if="nodes.length === 0" variant="empty" :title="t('artifact.graph.empty')" :hint="vulnerableOnly ? t('artifact.graph.noVulnerable') : t('artifact.graph.emptyHint')" />
     <div v-else class="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_260px]">
@@ -66,7 +66,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div class="space-y-4 text-sm">
         <div v-if="selected" class="border-l-2 border-primary pl-3" data-testid="graph-selected">
           <p class="break-all font-mono text-xs font-medium text-foreground">{{ selected }}</p>
-          <p class="mt-1 text-xs text-muted">{{ tp('artifact.graph.degree', { out: String(selectedOut), in: String(selectedIn) }) }}</p>
+          <p class="mt-1 text-xs text-muted">{{ tp('artifact.graph.degree', { out: selectedOut, in: selectedIn }) }}</p>
         </div>
         <p v-else class="text-xs text-muted">{{ t('artifact.graph.hint') }}</p>
         <ul class="space-y-1 text-xs text-muted" :aria-label="t('artifact.graph.legend')">

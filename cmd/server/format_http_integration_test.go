@@ -17,6 +17,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -579,4 +580,137 @@ func TestRawDownloadValidatorsAndRange(t *testing.T) {
 	// An empty file and an empty range request are served.
 	s.mustDo(http.StatusCreated, http.MethodPut, "/repos/raw/r/empty", nil, "Content-Type", "text/plain")
 	s.mustDo(http.StatusOK, http.MethodGet, "/repos/raw/r/empty", nil)
+}
+
+// pypiUpload is the multipart body twine sends for one distribution.
+func pypiUpload(t *testing.T, name, version, filename string, content []byte) ([]byte, string) {
+	t.Helper()
+
+	var buf bytes.Buffer
+
+	mw := multipart.NewWriter(&buf)
+
+	for k, v := range map[string]string{":action": "file_upload", "name": name, "version": version, "filetype": "sdist"} {
+		if err := mw.WriteField(k, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	fw, err := mw.CreateFormFile("content", filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := fw.Write(content); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	return buf.Bytes(), mw.FormDataContentType()
+}
+
+// TestCrossFormatRoutesAreRefused: the shared and isolated routes of a format
+// answer 404 for a repository of another format, instead of reading or
+// rewriting that repository's files.
+func TestCrossFormatRoutesAreRefused(t *testing.T) {
+	s := newFormatServer(t)
+	s.repo("np", "npm")
+	s.repo("py", "pypi")
+	s.repo("hm", "helm")
+
+	dist := []byte("sdist bytes")
+	body, ctype := pypiUpload(t, "demo", "1.0", "demo-1.0.tar.gz", dist)
+
+	// A pypi upload into an npm repository is refused; into a pypi one it works.
+	s.mustDo(http.StatusNotFound, http.MethodPost, "/repos/np/legacy/", body, "Content-Type", ctype)
+	s.mustDo(http.StatusOK, http.MethodPost, "/repos/py/legacy/", body, "Content-Type", ctype)
+
+	// Neither raw nor maven writes reach the pypi repository's files.
+	s.mustDo(
+		http.StatusNotFound,
+		http.MethodPut,
+		"/repos/raw/py/demo/1.0/demo-1.0.tar.gz",
+		[]byte("replaced"),
+		"Content-Type",
+		"text/plain",
+	)
+	s.mustDo(http.StatusNotFound, http.MethodPut, "/repos/maven/py/com/acme/lib/1.0/lib-1.0.jar", []byte("jar"))
+
+	_, got := s.mustDo(http.StatusOK, http.MethodGet, "/repos/py/files/demo-1.0.tar.gz", nil)
+	if !bytes.Equal(got, dist) {
+		t.Errorf("pypi file after the refused writes = %q, want the uploaded bytes", got)
+	}
+
+	// The read side: a helm index of a pypi repository, a pypi file of an npm one.
+	s.mustDo(http.StatusNotFound, http.MethodGet, "/repos/py/index.yaml", nil)
+	s.mustDo(http.StatusOK, http.MethodGet, "/repos/hm/index.yaml", nil)
+	s.mustDo(http.StatusNotFound, http.MethodGet, "/repos/np/files/demo-1.0.tar.gz", nil)
+	s.mustDo(http.StatusNotFound, http.MethodDelete, "/repos/np/files/demo-1.0.tar.gz", nil)
+}
+
+// TestDockerBlobDeleteIsPerImage: deleting a blob through one image drops that
+// image's link only while another image still holds the blob, and is refused
+// while a manifest of the image references it.
+func TestDockerBlobDeleteIsPerImage(t *testing.T) {
+	s := newFormatServer(t)
+	s.repo("reg", "docker")
+
+	push := func(image string, blob []byte) string {
+		t.Helper()
+
+		sum := sha256.Sum256(blob)
+		digest := "sha256:" + hex.EncodeToString(sum[:])
+
+		h, _ := s.mustDo(http.StatusAccepted, http.MethodPost, "/v2/reg/"+image+"/blobs/uploads/", nil)
+		s.mustDo(http.StatusCreated, http.MethodPut, h.Get("Location")+"?digest="+digest, blob)
+
+		return digest
+	}
+
+	layer := bytes.Repeat([]byte("shared layer"), 100)
+	digest := push("team-a/app", layer)
+	push("team-b/app", layer)
+
+	blobURL := func(image string) string { return "/v2/reg/" + image + "/blobs/" + digest }
+
+	// Image A deletes the shared layer: B still serves it.
+	s.mustDo(http.StatusAccepted, http.MethodDelete, blobURL("team-a/app"), nil)
+	s.mustDo(http.StatusNotFound, http.MethodGet, blobURL("team-a/app"), nil)
+
+	_, got := s.mustDo(http.StatusOK, http.MethodGet, blobURL("team-b/app"), nil)
+	if !bytes.Equal(got, layer) {
+		t.Fatalf("image B's layer = %d bytes after A's delete, want the %d it pushed", len(got), len(layer))
+	}
+
+	// B holds the last link: its delete removes the record.
+	s.mustDo(http.StatusAccepted, http.MethodDelete, blobURL("team-b/app"), nil)
+	s.mustDo(http.StatusNotFound, http.MethodGet, blobURL("team-b/app"), nil)
+
+	// A blob a manifest of the image references cannot be deleted.
+	config := []byte(`{"architecture":"amd64","os":"linux"}`)
+	configDigest := push("team-c/app", config)
+
+	manifest, err := json.Marshal(map[string]any{
+		"schemaVersion": 2,
+		"mediaType":     "application/vnd.oci.image.manifest.v1+json",
+		"config": map[string]any{
+			"mediaType": "application/vnd.oci.image.config.v1+json",
+			"digest":    configDigest,
+			"size":      len(config),
+		},
+		"layers": []any{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s.mustDo(http.StatusCreated, http.MethodPut, "/v2/reg/team-c/app/manifests/v1", manifest,
+		"Content-Type", "application/vnd.oci.image.manifest.v1+json")
+
+	configURL := "/v2/reg/team-c/app/blobs/" + configDigest
+	s.mustDo(http.StatusConflict, http.MethodDelete, configURL, nil)
+	s.mustDo(http.StatusOK, http.MethodGet, configURL, nil)
 }

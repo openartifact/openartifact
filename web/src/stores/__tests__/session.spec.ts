@@ -129,7 +129,7 @@ describe('useSessionStore', () => {
     expect(store.isAdmin).toBe(true)
   })
 
-  it('isAdmin is true when user is in admin group', () => {
+  it('isAdmin ignores membership of a group named admin', () => {
     const store = useSessionStore()
     store.user = {
       id: '1',
@@ -138,7 +138,7 @@ describe('useSessionStore', () => {
       groups: ['admin'],
     } as User
 
-    expect(store.isAdmin).toBe(true)
+    expect(store.isAdmin).toBe(false)
   })
 
   it('isAdmin is false when user is not admin', () => {

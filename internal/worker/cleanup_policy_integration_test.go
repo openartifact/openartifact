@@ -692,3 +692,88 @@ func TestCleanupPolicyDockerTags(t *testing.T) {
 		t.Errorf("tags live: old app %v (want false), new app %v, other %v (want true)", live(appOld), live(appNew), live(otherOnly))
 	}
 }
+
+// A docker image a release bundle pins keeps its tag through a cleanup policy
+// and its manifest through a registry GC, like a bundled package file.
+func TestCleanupAndGCKeepBundledDockerImage(t *testing.T) {
+	s := newCleanupSeed(t)
+	ctx := context.Background()
+
+	repo := s.formatRepo("docker-bundled", "docker")
+
+	manifest := func(image, digest string) string {
+		s.t.Helper()
+
+		blobID, sha := s.blob("manifest "+digest, time.Hour)
+		s.exec(`INSERT INTO docker_manifests (repository_id, image, digest, media_type, blob_id, updated_at)
+		        VALUES ($1, $2, $3, 'application/vnd.oci.image.manifest.v1+json', $4, now() - interval '30 days')`,
+			repo.ID, image, digest, blobID)
+
+		return sha
+	}
+
+	tag := func(name, digest string) string {
+		s.t.Helper()
+
+		var id string
+		if err := s.pg.GetDB().QueryRowContext(ctx,
+			`INSERT INTO docker_tags (repository_id, image, name, manifest_digest, created_at, updated_at)
+			 VALUES ($1, 'app', $2, $3, now() - interval '30 days', now() - interval '30 days') RETURNING id`,
+			repo.ID, name, digest).Scan(&id); err != nil {
+			s.t.Fatalf("insert tag: %v", err)
+		}
+
+		return id
+	}
+
+	pinnedSHA := manifest("app", "sha256:pinned")
+	manifest("app", "sha256:plain")
+	manifest("app", "sha256:newest")
+
+	pinned, plain, newest := tag("v1", "sha256:pinned"), tag("v2", "sha256:plain"), tag("v3", "sha256:newest")
+	s.exec(`UPDATE docker_tags SET updated_at = now() WHERE id = $1`, newest)
+
+	var bundleID string
+	if err := s.pg.GetDB().QueryRowContext(ctx,
+		`INSERT INTO release_bundles (name, version) VALUES ('b', '1') RETURNING id`).Scan(&bundleID); err != nil {
+		t.Fatal(err)
+	}
+
+	s.exec(
+		`INSERT INTO release_bundle_items (bundle_id, source_repo_id, sha256, artifact_path, format) VALUES ($1, $2, $3, 'app', 'docker')`,
+		bundleID,
+		repo.ID,
+		pinnedSHA,
+	)
+
+	if deleted, err := s.w.runPolicy(ctx, s.policy(repo.ID, new(1), nil, "")); err != nil || deleted != 1 {
+		t.Fatalf("runPolicy = %d, %v; want 1", deleted, err)
+	}
+
+	live := func(id string) bool {
+		return s.count(`SELECT COUNT(*) FROM docker_tags WHERE id = $1`, id) == 1
+	}
+
+	if !live(pinned) || live(plain) || !live(newest) {
+		t.Fatalf("tags live: pinned %v (want true), plain %v (want false), newest %v (want true)", live(pinned), live(plain), live(newest))
+	}
+
+	s.exec(`DELETE FROM docker_tags WHERE id = $1`, pinned)
+
+	gc := NewDockerGCWorker(s.pg, s.blobs, testLogger(t), time.Hour, 0)
+	if _, err := gc.RunRepo(ctx, repo, DockerGCOptions{}); err != nil {
+		t.Fatalf("RunRepo: %v", err)
+	}
+
+	manifests := func(digest string) int {
+		return s.count(`SELECT COUNT(*) FROM docker_manifests WHERE repository_id = $1 AND digest = $2`, repo.ID, digest)
+	}
+
+	if manifests("sha256:pinned") != 1 {
+		t.Error("GC removed the manifest of the bundled image")
+	}
+
+	if manifests("sha256:plain") != 0 {
+		t.Error("GC kept the untagged manifest of an unbundled image")
+	}
+}

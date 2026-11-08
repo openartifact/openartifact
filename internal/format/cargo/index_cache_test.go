@@ -30,7 +30,7 @@ func (d *indexCountingDB) ListCargoIndexVersions(ctx context.Context, repoID, na
 func newIndexHandler(t *testing.T) (*HTTPHandler, *indexCountingDB) {
 	t.Helper()
 
-	db := &indexCountingDB{cargoDB: &cargoDB{DB: formattest.NewDB()}}
+	db := &indexCountingDB{cargoDB: &cargoDB{DB: formattest.NewDB("cargo")}}
 	h := NewHTTPHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), "http://localhost")
 	h.SetPublisher(&formattest.Publisher{})
 

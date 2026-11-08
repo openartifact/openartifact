@@ -21,6 +21,7 @@
   "session.probeFailed": "세션을 확인할 수 없습니다",
   "session.probeFailedHint": "서버가 응답하지 않았습니다. 다시 이동하면 확인을 재시도합니다.",
   "session.expired": "세션이 만료되었습니다. 다시 로그인하세요.",
+  "session.passwordChangeRequired": "계속하기 전에 비밀번호를 변경해야 합니다.",
   "nav.repositories": "저장소",
   "nav.settings": "설정",
   "nav.security": "보안",

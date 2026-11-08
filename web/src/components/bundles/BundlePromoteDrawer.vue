@@ -137,7 +137,7 @@ async function submit(): Promise<void> {
     )
     toasts.success(
       tp('bundles.promote.done', { stage: toStage.value }),
-      tp('bundles.promote.summary', { copied: String(res.copied ?? 0), existing: String(res.existing ?? 0), replaced: String(res.replaced ?? 0) }),
+      tp('bundles.promote.summary', { copied: res.copied ?? 0, existing: res.existing ?? 0, replaced: res.replaced ?? 0 }),
     )
     emit('promoted')
   } catch (err) {

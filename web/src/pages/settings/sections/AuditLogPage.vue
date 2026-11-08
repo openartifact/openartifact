@@ -42,7 +42,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </FilterBar>
 
     <p v-if="hiddenCount > 0 && hideHttp" class="mb-3 text-sm text-muted" role="status" data-testid="audit-hidden">
-      {{ tp('sx.audit.http.hidden', { n: String(hiddenCount) }) }}
+      {{ tp('sx.audit.http.hidden', { n: hiddenCount }) }}
       <button
         type="button"
         class="rounded text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary max-md:min-h-11"

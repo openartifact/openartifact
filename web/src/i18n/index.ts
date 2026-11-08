@@ -78,7 +78,13 @@ export function t(key: TranslationKey): string {
  * concatenating translated fragments.
  */
 export function tp(key: TranslationKey, params: Params): string {
-  return interpolate(t(key), params)
+  return interpolate(t(key), localize(params))
+}
+
+/** Numbers become text with the active language's digit grouping; strings pass through. */
+function localize(params: Params): Params {
+  const format = new Intl.NumberFormat(active.value.tag)
+  return Object.fromEntries(Object.entries(params).map(([k, v]) => [k, typeof v === 'number' ? format.format(v) : v]))
 }
 
 /**
@@ -90,7 +96,7 @@ export function tp(key: TranslationKey, params: Params): string {
 export function tpn(key: PluralKey, count: number, params: Params = {}): string {
   const message = pluralMessage(englishMessages, active.value, key, count) ?? key
 
-  return interpolate(message, { n: String(count), count: String(count), ...params })
+  return interpolate(message, localize({ n: count, count, ...params }))
 }
 
 /** Lookup for keys assembled at runtime (e.g. `status.${state}`); falls back to the key itself. */

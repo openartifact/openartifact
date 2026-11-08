@@ -2277,7 +2277,7 @@ Includes all fields of [User](#user).
 
 ### VulnGateResponse
 
-Verdict of an exploitation gate on one scan: it passes when no finding meets any of the conditions.
+Verdict of an exploitation gate on one scan: it passes when the scan completed and no finding meets any of the conditions. A scan that is not `completed`, or a requested `kev`/`epss_min` condition whose feed is not loaded, never passes.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
@@ -2291,7 +2291,10 @@ Verdict of an exploitation gate on one scan: it passes when no finding meets any
 | `failed[].id` | string | yes | - |
 | `failed[].priority` | [ExploitPriority](#exploitpriority) | yes | - |
 | `failed[].reasons` | array of string | yes | The conditions it meets: `kev`, `epss>=<min>`, `priority>=<min_priority>`. |
-| `pass` | boolean | yes | True when `failed` is empty. |
+| `failed_scanners` | array of string | yes | Scanners that could not run for the scan. |
+| `pass` | boolean | yes | True when the scan is `completed`, the requested feeds are loaded and `failed` is empty. |
+| `reason` | string | no | Why the gate could not vouch for the scan (scan not completed, feed not loaded); absent otherwise. |
+| `scan_status` | string | yes | Status of the scan that was gated: `pending`, `scanning`, `completed`, `partial` or `failed`. |
 
 ### VulnScanOverviewRow
 
@@ -2422,14 +2425,16 @@ Whether one vulnerability scanner can run on the server. Fixed, client-safe text
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| `attempt_count` | integer | no | - |
 | `created_at` | string (date-time) | no | - |
-| `event` | string | no | - |
+| `delivered_at` | string (date-time) | no | Nullable. |
+| `event_type` | string | no | - |
 | `id` | string (uuid) | no | - |
-| `request_body` | string | no | - |
-| `request_headers` | string | no | - |
-| `response_body` | string | no | - |
-| `response_headers` | string | no | - |
-| `status` | string | no | - |
-| `status_code` | integer | no | - |
+| `next_retry_at` | string (date-time) | no | Nullable. |
+| `payload` | object | no | - |
+| `response_body` | string | no | The receiver's last reply, capped at 64 KiB; invalid UTF-8 is replaced and NUL bytes are dropped |
+| `response_status` | integer | no | HTTP status of the receiver's last reply; 0 before the first reply |
+| `status` | string | no | One of: `pending`, `success`, `failed`. |
+| `updated_at` | string (date-time) | no | - |
 | `webhook_id` | string (uuid) | no | - |
 

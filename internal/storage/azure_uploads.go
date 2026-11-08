@@ -242,7 +242,7 @@ func (a *AzureBlobStore) completedUpload(ctx context.Context, key string, st azu
 
 // commitUpload commits blockIDs as the blob key and describes it.
 func (a *AzureBlobStore) commitUpload(ctx context.Context, key string, blockIDs []string, size int64) (StagedObject, error) {
-	etag, err := a.putBlockList(ctx, key, blockIDs)
+	etag, err := a.putBlockList(ctx, key, blockIDs, nil)
 	if err != nil {
 		return StagedObject{}, err
 	}

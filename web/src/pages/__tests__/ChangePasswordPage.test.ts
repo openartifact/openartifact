@@ -179,6 +179,23 @@ describe('ChangePasswordPage submit', () => {
     w.unmount()
   })
 
+  it('says it could not verify, not "not applied", when /auth/me fails transiently, and retries', async () => {
+    let up = false
+    const { w, router, session } = await mountPage({
+      me: () => (up ? json({ id: 'u', username: 'bob' }) : json({ error: 'bad gateway' }, 502)),
+    })
+    await fill(w, OLD, LONG, LONG)
+    expect(session.isAuthenticated).toBe(true)
+    expect(router.currentRoute.value.path).toBe('/change-password')
+    expect(w.text()).toContain('could not be reached')
+    up = true
+    const buttons = w.findAll('button')
+    await buttons.find((b) => b.text() === 'Retry')!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/')
+    w.unmount()
+  })
+
   it('returns to login when the session is gone after the change', async () => {
     const { w, router, session } = await mountPage({ me: () => json({ error: 'unauthorized' }, 401) })
     await fill(w, OLD, LONG, LONG)

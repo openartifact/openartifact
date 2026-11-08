@@ -71,8 +71,7 @@ type tfDB struct {
 }
 
 func newTFDB() *tfDB {
-	d := &tfDB{DB: formattest.NewDB(), clock: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}
-	d.Repo.Format = formatName
+	d := &tfDB{DB: formattest.NewDB("terraform"), clock: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}
 
 	return d
 }

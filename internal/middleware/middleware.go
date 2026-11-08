@@ -5,6 +5,7 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 	"slices"
 	"time"
@@ -72,6 +73,12 @@ func RecoveryMiddleware(log *logger.Logger) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if err := recover(); err != nil {
+					// net/http's sentinel for "abort the connection": a handler
+					// uses it so a truncated stream does not look complete.
+					if e, ok := err.(error); ok && errors.Is(e, http.ErrAbortHandler) {
+						panic(err)
+					}
+
 					requestID := requestIDOf(r.Header)
 					log.Errorw("panic recovered",
 						"request_id", requestID,

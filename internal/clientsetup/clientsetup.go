@@ -447,8 +447,8 @@ func APKBuilder(c target) []Snippet {
 			Configure: fmt.Sprintf(
 				"# the group signs its indexes with its own key, not its members'\n"+
 					"# private repository: put the credentials in the URL, %[3]s/v3.20/main, "+
-					"and fetch the key with wget --user <USERNAME> --password <TOKEN>\n"+
-					"wget -O /etc/apk/keys/openartifact-%[2]s.rsa.pub %[1]s/public.key\n"+
+					"and send the token as a bearer header when fetching the key\n"+
+					"wget --header \"Authorization: Bearer <TOKEN>\" -O /etc/apk/keys/openartifact-%[2]s.rsa.pub %[1]s/public.key\n"+
 					"echo \"%[1]s/v3.20/main\" >> /etc/apk/repositories\napk update\napk add PACKAGE",
 				c.base, c.repo, c.authBase,
 			),
@@ -459,8 +459,8 @@ func APKBuilder(c target) []Snippet {
 		Client: "apk",
 		Configure: fmt.Sprintf(
 			"# private repository: put the credentials in the URL, %[3]s/v3.20/main, "+
-				"and fetch the key with wget --user <USERNAME> --password <TOKEN>\n"+
-				"wget -O /etc/apk/keys/openartifact-%[2]s.rsa.pub %[1]s/public.key\n"+
+				"and send the token as a bearer header when fetching the key\n"+
+				"wget --header \"Authorization: Bearer <TOKEN>\" -O /etc/apk/keys/openartifact-%[2]s.rsa.pub %[1]s/public.key\n"+
 				"echo \"%[1]s/v3.20/main\" >> /etc/apk/repositories\napk update\napk add PACKAGE",
 			c.base, c.repo, c.authBase,
 		),

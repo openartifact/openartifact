@@ -133,7 +133,7 @@ func TestUploadCreateFailureReleasesQuotaAndBlob(t *testing.T) {
 		"duplicate race":  {database.ErrDuplicate, http.StatusConflict},
 	} {
 		t.Run(name, func(t *testing.T) {
-			db := &condaDB{DB: formattest.NewDB()}
+			db := &condaDB{DB: formattest.NewDB("conda")}
 			bs := formattest.NewBlobStore()
 			h := NewHTTPHandler(formattest.NewLogger(t), &failingCreateDB{condaDB: db, err: tc.err}, bs, "http://localhost")
 

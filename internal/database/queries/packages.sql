@@ -50,6 +50,23 @@ RETURNING id, created_at, updated_at;
 DELETE FROM package_files WHERE repository_id = sqlc.arg(repository_id) AND id = ANY(sqlc.arg(ids)::uuid[])
 RETURNING id, version_id, blob_id;
 
+-- The prune statements below decide on emptiness with a snapshot that cannot
+-- see a concurrent writer's uncommitted file. Locking the rows first (packages
+-- before versions, each in id order: the order writePackageTx takes them)
+-- makes the DELETE wait for that writer's commit, and run as a later statement
+-- with a snapshot that sees the file.
+-- name: LockPackagesOfVersions :exec
+SELECT p.id FROM packages p
+WHERE p.id IN (SELECT v.package_id FROM package_versions v WHERE v.id = ANY(sqlc.arg(ids)::uuid[]))
+ORDER BY p.id
+FOR UPDATE OF p;
+
+-- name: LockVersions :exec
+SELECT v.id FROM package_versions v
+WHERE v.id = ANY(sqlc.arg(ids)::uuid[])
+ORDER BY v.id
+FOR UPDATE OF v;
+
 -- name: PruneEmptyVersions :many
 DELETE FROM package_versions v
 WHERE v.id = ANY(sqlc.arg(ids)::uuid[])

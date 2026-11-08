@@ -224,6 +224,10 @@ jobs:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
           images: ${{ env.IMAGE }}
+          # `latest` comes only from the explicit raw tag below; the action's
+          # default would also tag every stable semver build `latest`.
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}},value=${{ env.REF }}
             type=semver,pattern={{major}}.{{minor}},value=${{ env.REF }}

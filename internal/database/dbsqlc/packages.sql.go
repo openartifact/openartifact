@@ -186,6 +186,35 @@ func (q *Queries) InsertVersion(ctx context.Context, arg InsertVersionParams) (s
 	return id, err
 }
 
+const lockPackagesOfVersions = `-- name: LockPackagesOfVersions :exec
+SELECT p.id FROM packages p
+WHERE p.id IN (SELECT v.package_id FROM package_versions v WHERE v.id = ANY($1::uuid[]))
+ORDER BY p.id
+FOR UPDATE OF p
+`
+
+// The prune statements below decide on emptiness with a snapshot that cannot
+// see a concurrent writer's uncommitted file. Locking the rows first (packages
+// before versions, each in id order: the order writePackageTx takes them)
+// makes the DELETE wait for that writer's commit, and run as a later statement
+// with a snapshot that sees the file.
+func (q *Queries) LockPackagesOfVersions(ctx context.Context, ids []string) error {
+	_, err := q.db.Exec(ctx, lockPackagesOfVersions, ids)
+	return err
+}
+
+const lockVersions = `-- name: LockVersions :exec
+SELECT v.id FROM package_versions v
+WHERE v.id = ANY($1::uuid[])
+ORDER BY v.id
+FOR UPDATE OF v
+`
+
+func (q *Queries) LockVersions(ctx context.Context, ids []string) error {
+	_, err := q.db.Exec(ctx, lockVersions, ids)
+	return err
+}
+
 const pruneEmptyPackages = `-- name: PruneEmptyPackages :exec
 DELETE FROM packages p
 WHERE p.id = ANY($1::uuid[])

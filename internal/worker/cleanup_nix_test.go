@@ -10,19 +10,29 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 type nixPendingDB struct {
 	CleanupStore
 
-	batches [][]string
-	calls   int
-	before  time.Time
-	limit   int
+	batches   [][]models.NixPendingNar
+	calls     int
+	before    time.Time
+	limit     int
+	released  int64 // bytes handed back to the quota
+	artifacts int   // artifact slots handed back with them
 }
 
-func (d *nixPendingDB) DeleteStaleNixPendingNars(_ context.Context, before time.Time, limit int) ([]string, error) {
+func (d *nixPendingDB) DecrementStorageUsage(_ context.Context, _ string, size int64, count int) error {
+	d.released += size
+	d.artifacts += count
+
+	return nil
+}
+
+func (d *nixPendingDB) DeleteStaleNixPendingNars(_ context.Context, before time.Time, limit int) ([]models.NixPendingNar, error) {
 	d.calls++
 	d.before = before
 	d.limit = limit
@@ -42,12 +52,16 @@ func TestSweepNixPendingNarsIfDue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	full := make([]string, nixPendingBatch)
+	full := make([]models.NixPendingNar, nixPendingBatch)
 	for i := range full {
-		full[i] = strings.Repeat("a", 63) + string(rune('a'+i%6))
+		full[i] = models.NixPendingNar{
+			RepositoryID: "repo", SHA256: strings.Repeat("a", 63) + string(rune('a'+i%6)), ReservedBytes: 10,
+		}
 	}
 
-	db := &nixPendingDB{batches: [][]string{full, {strings.Repeat("b", 64)}}}
+	db := &nixPendingDB{
+		batches: [][]models.NixPendingNar{full, {{RepositoryID: "repo", SHA256: strings.Repeat("b", 64), ReservedBytes: 10}}},
+	}
 	store := &countingStore{}
 	w := NewCleanupWorker(db, store, log)
 	now := time.Now()
@@ -57,6 +71,15 @@ func TestSweepNixPendingNarsIfDue(t *testing.T) {
 	if db.calls != 2 || store.deletes != nixPendingBatch+1 {
 		t.Fatalf("first tick: db calls=%d blob deletes=%d; want 2/%d (a full batch is followed by another)",
 			db.calls, store.deletes, nixPendingBatch+1)
+	}
+
+	if want := int64(10 * (nixPendingBatch + 1)); db.released != want || db.artifacts != 0 {
+		t.Errorf(
+			"released %d bytes / %d artifacts, want %d / 0: swept NARs hand back their staged bytes only",
+			db.released,
+			db.artifacts,
+			want,
+		)
 	}
 
 	if want := now.Add(-nixPendingMaxAge); !db.before.Equal(want) || db.limit != nixPendingBatch {

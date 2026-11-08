@@ -36,7 +36,7 @@ func (d *listCountingDB) ListCondaPackages(ctx context.Context, repoID, platform
 func newCountingHandler(t *testing.T) (*HTTPHandler, *listCountingDB) {
 	t.Helper()
 
-	db := &listCountingDB{condaDB: &condaDB{DB: formattest.NewDB()}}
+	db := &listCountingDB{condaDB: &condaDB{DB: formattest.NewDB("conda")}}
 
 	return NewHTTPHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), "http://localhost"), db
 }

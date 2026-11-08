@@ -84,7 +84,7 @@ type HTTPStore interface {
 	// CountFileDownload counts one download of a package file; it is batched and
 	// written to the database with the next flush.
 	CountFileDownload(fileID string)
-	PutNixPendingNar(ctx context.Context, n *models.NixPendingNar) error
+	PutNixPendingNar(ctx context.Context, n *models.NixPendingNar) (bool, error)
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
 	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
 }
@@ -100,7 +100,7 @@ type HTTPHandler struct {
 
 // NewHTTPHandler creates the handler.
 func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
+	return &HTTPHandler{Handler: base.New(FormatName, log, db, blobStore, baseURL), DB: db}
 }
 
 // WithMetrics counts a committed path (a narinfo PUT) as an upload.
@@ -203,7 +203,7 @@ func (h *HTTPHandler) Guard(next http.Handler) http.Handler {
 		name := rctx.URLParam("name")
 
 		repo, err := h.ResolveRepo(r.Context(), name)
-		if err != nil || repo == nil || repo.Format != FormatName {
+		if err != nil || repo == nil {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -242,7 +242,7 @@ func (h *HTTPHandler) serve(w http.ResponseWriter, r *http.Request, name string,
 		return
 	}
 
-	if repo == nil || repo.Format != FormatName {
+	if repo == nil {
 		http.NotFound(w, r)
 		return
 	}

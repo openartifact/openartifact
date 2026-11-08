@@ -94,38 +94,34 @@ func nixPathFromRow[R nixPathRow](in R) *models.NixPath {
 }
 
 // PutNixPendingNar stores a NAR file that awaits its narinfo. It is idempotent
-// per (repository, sha256).
-func (p *NixStore) PutNixPendingNar(ctx context.Context, n *models.NixPendingNar) error {
+// per (repository, sha256): the result is false when the file was already
+// staged, and the row (with its reservation) is left as it was.
+func (p *NixStore) PutNixPendingNar(ctx context.Context, n *models.NixPendingNar) (bool, error) {
 	blobID, err := p.upsertBlobWithMediaType(ctx, n.SHA256, n.BlobKey, nixMediaType, n.SizeBytes)
 	if err != nil {
-		return fmt.Errorf("failed to upsert blob for nix nar: %w", err)
+		return false, fmt.Errorf("failed to upsert blob for nix nar: %w", err)
 	}
 
-	err = p.q.PutNixPendingNar(ctx, dbsqlc.PutNixPendingNarParams{
-		RepositoryID: n.RepositoryID, Sha256: n.SHA256, NarFile: n.NarFile, BlobID: blobID,
+	inserted, err := p.q.PutNixPendingNar(ctx, dbsqlc.PutNixPendingNarParams{
+		RepositoryID: n.RepositoryID, Sha256: n.SHA256, NarFile: n.NarFile, BlobID: blobID, ReservedBytes: n.ReservedBytes,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to stage nix nar: %w", err)
+		return false, fmt.Errorf("failed to stage nix nar: %w", err)
 	}
 
-	return nil
+	return inserted > 0, nil
 }
 
 // GetNixPendingNar returns the staged NAR file, or (nil, nil).
 func (p *NixStore) GetNixPendingNar(ctx context.Context, repoID, sha256 string) (*models.NixPendingNar, error) {
 	row, err := p.q.GetNixPendingNar(ctx, dbsqlc.GetNixPendingNarParams{RepositoryID: repoID, Sha256: sha256})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get nix pending nar: %w", err)
-	}
-
-	return &models.NixPendingNar{
-		RepositoryID: row.RepositoryID, SHA256: row.Sha256, NarFile: row.NarFile,
-		BlobKey: row.BlobKey, SizeBytes: row.SizeBytes, CreatedAt: row.CreatedAt,
-	}, nil
+	return mapRow(row, err, "get nix pending nar", func(row dbsqlc.GetNixPendingNarRow) *models.NixPendingNar {
+		return &models.NixPendingNar{
+			RepositoryID: row.RepositoryID, SHA256: row.Sha256, NarFile: row.NarFile,
+			BlobKey: row.BlobKey, SizeBytes: row.SizeBytes, ReservedBytes: row.ReservedBytes, CreatedAt: row.CreatedAt,
+		}
+	})
 }
 
 // GetNixPathByNarFile returns a live path whose NAR file is narFile, or (nil, nil).
@@ -230,16 +226,22 @@ func (p *NixStore) DeleteNixPath(ctx context.Context, repoID, id string) error {
 }
 
 // DeleteStaleNixPendingNars deletes up to limit staging rows older than before
-// and returns the sha256 of their NAR files so the caller can delete the blobs.
-func (p *NixStore) DeleteStaleNixPendingNars(ctx context.Context, before time.Time, limit int) ([]string, error) {
-	shas, err := p.q.DeleteStaleNixPendingNars(ctx, dbsqlc.DeleteStaleNixPendingNarsParams{
+// and returns their repository, sha256 and reserved bytes, so the caller can
+// delete the blobs and hand the reservations back.
+func (p *NixStore) DeleteStaleNixPendingNars(ctx context.Context, before time.Time, limit int) ([]models.NixPendingNar, error) {
+	rows, err := p.q.DeleteStaleNixPendingNars(ctx, dbsqlc.DeleteStaleNixPendingNarsParams{
 		Before: before, BatchLimit: int32(limit), //nolint:gosec // a small batch size
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete stale nix pending nars: %w", err)
 	}
 
-	return shas, nil
+	out := make([]models.NixPendingNar, len(rows))
+	for i, r := range rows {
+		out[i] = models.NixPendingNar{RepositoryID: r.RepositoryID, SHA256: r.Sha256, ReservedBytes: r.ReservedBytes}
+	}
+
+	return out, nil
 }
 
 // GetNixSigningKey returns the repository's signing key, or (nil, nil).

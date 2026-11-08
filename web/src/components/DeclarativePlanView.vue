@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <section class="rounded-lg border border-border bg-surface" :aria-label="t('sx.declarative.plan')" data-testid="declarative-plan">
     <header class="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3">
       <h2 class="mr-auto text-sm font-semibold text-foreground">{{ applied ? t('sx.declarative.result') : t('sx.declarative.plan') }}</h2>
-      <StatusBadge v-for="c in counts" :key="c.action" :label="tp('sx.declarative.count', { count: String(c.count), action: t(`sx.declarative.action.${c.action}`) })" :variant="ACTION_VARIANT[c.action]" />
+      <StatusBadge v-for="c in counts" :key="c.action" :label="tp('sx.declarative.count', { count: c.count, action: t(`sx.declarative.action.${c.action}`) })" :variant="ACTION_VARIANT[c.action]" />
     </header>
 
     <div v-if="plan.code === 'manifest_invalid'" class="space-y-2 border-b border-border px-5 py-4" role="alert" data-testid="plan-problems">
@@ -38,7 +38,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
 
     <p v-if="applied" class="border-b border-border px-5 py-3 text-sm text-muted" role="status" data-testid="plan-outcome">
-      {{ tp('sx.declarative.outcome', { applied: String(outcome.applied), failed: String(outcome.failed), skipped: String(outcome.skipped) }) }}
+      {{ tp('sx.declarative.outcome', { applied: outcome.applied, failed: outcome.failed, skipped: outcome.skipped }) }}
     </p>
 
     <p v-if="!plan.code && !plan.changes && !applied" class="px-5 py-4 text-sm text-muted" data-testid="plan-nochanges">
@@ -76,7 +76,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <div v-if="quiet > 0" class="border-t border-border px-5 py-2">
       <button type="button" class="text-sm text-primary hover:underline" data-testid="toggle-unchanged" @click="showQuiet = !showQuiet">
-        {{ showQuiet ? t('sx.declarative.hideUnchanged') : tp('sx.declarative.showUnchanged', { count: String(quiet) }) }}
+        {{ showQuiet ? t('sx.declarative.hideUnchanged') : tp('sx.declarative.showUnchanged', { count: quiet }) }}
       </button>
     </div>
   </section>

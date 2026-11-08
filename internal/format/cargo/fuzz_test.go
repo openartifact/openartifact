@@ -155,7 +155,7 @@ func FuzzPublishFrame(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, body []byte) {
-		db := &cargoDB{DB: formattest.NewDB()}
+		db := &cargoDB{DB: formattest.NewDB("cargo")}
 		bs := formattest.NewBlobStore()
 		pub := &formattest.Publisher{}
 		h := NewHTTPHandler(log, db, bs, "http://localhost")

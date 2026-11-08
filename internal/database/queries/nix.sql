@@ -43,13 +43,13 @@ JOIN blobs b ON b.id = f.blob_id
 WHERE f.repository_id = $1 AND f.deleted_at IS NULL
 ORDER BY f.path;
 
--- name: PutNixPendingNar :exec
-INSERT INTO nix_pending_nars (repository_id, sha256, nar_file, blob_id)
-VALUES ($1, $2, $3, $4)
+-- name: PutNixPendingNar :execrows
+INSERT INTO nix_pending_nars (repository_id, sha256, nar_file, blob_id, reserved_bytes)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (repository_id, sha256) DO NOTHING;
 
 -- name: GetNixPendingNar :one
-SELECT pn.repository_id, pn.sha256, pn.nar_file, b.blob_key, b.size_bytes, pn.created_at
+SELECT pn.repository_id, pn.sha256, pn.nar_file, b.blob_key, b.size_bytes, pn.reserved_bytes, pn.created_at
 FROM nix_pending_nars pn
 JOIN blobs b ON b.id = pn.blob_id
 WHERE pn.repository_id = $1 AND pn.sha256 = $2;
@@ -67,7 +67,7 @@ WITH stale AS (
 DELETE FROM nix_pending_nars pn
 USING stale
 WHERE pn.repository_id = stale.repository_id AND pn.sha256 = stale.sha256
-RETURNING pn.sha256;
+RETURNING pn.repository_id, pn.sha256, pn.reserved_bytes;
 
 -- name: GetNixSigningKey :one
 SELECT repository_id, key_name, public_key, private_key, created_by, created_at, updated_at

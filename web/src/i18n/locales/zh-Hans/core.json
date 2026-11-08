@@ -21,6 +21,7 @@
   "session.probeFailed": "无法验证您的会话",
   "session.probeFailedHint": "服务器没有响应。再次导航将重试检查。",
   "session.expired": "会话已过期，请重新登录。",
+  "session.passwordChangeRequired": "继续之前，您必须更改密码。",
   "nav.repositories": "仓库",
   "nav.settings": "设置",
   "nav.security": "安全",

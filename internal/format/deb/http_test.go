@@ -32,7 +32,7 @@ func poolRequest() *http.Request {
 
 func TestPoolFileQuarantine(t *testing.T) {
 	for _, key := range []string{"pkg-1", "pool/main/h/hello/hello_1.0_amd64.deb", "hello_1.0_amd64.deb"} {
-		db := &poolDB{DB: formattest.NewDB()}
+		db := &poolDB{DB: formattest.NewDB("deb")}
 		bs := formattest.NewBlobStore()
 		bs.Blobs["abc"] = []byte("deb-bytes")
 		db.Keys[key] = true
@@ -47,7 +47,7 @@ func TestPoolFileQuarantine(t *testing.T) {
 }
 
 func TestPoolFileNotQuarantined(t *testing.T) {
-	db := &poolDB{DB: formattest.NewDB()}
+	db := &poolDB{DB: formattest.NewDB("deb")}
 	bs := formattest.NewBlobStore()
 	bs.Blobs["abc"] = []byte("deb-bytes")
 

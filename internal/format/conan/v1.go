@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"net/http"
 	"net/url"
 	"slices"
@@ -326,6 +327,13 @@ func (h *HTTPHandler) handleV1RemovePackages(w http.ResponseWriter, r *http.Requ
 // returns false when that fails.
 func (h *HTTPHandler) readV1Body(w http.ResponseWriter, r *http.Request, v any) bool {
 	defer func() { _ = r.Body.Close() }()
+
+	// A cross-site form cannot send application/json without a CORS preflight,
+	// so requiring it keeps a forged form post from reaching the delete routes.
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+		http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
+		return false
+	}
 
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxV1RequestBytes))
 	if err := dec.Decode(v); err != nil {

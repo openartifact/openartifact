@@ -68,10 +68,10 @@ describe('AppSidebar', () => {
     expect(wrapper.get('[data-testid="nav-settings"]').text()).toContain('Instance settings are managed by administrators')
   })
 
-  it('treats membership of the admin group as admin', () => {
+  it('does not treat membership of a group named admin as admin', () => {
     session.user = makeUser({ is_admin: false, groups: ['admin'] })
     const { wrapper } = mountSidebar()
-    expect(wrapper.find('a[href="/bundles"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/bundles"]').exists()).toBe(false)
   })
 
   it('marks the active area from the route prefix, Repositories included on artifact pages', async () => {

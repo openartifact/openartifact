@@ -121,7 +121,7 @@ func (h *MavenUploadHandler) resolveRepoID(ctx context.Context, name string) (st
 		return "", err
 	}
 
-	if repo == nil {
+	if repo == nil || repo.Format != "maven" {
 		return "", nil
 	}
 
@@ -347,13 +347,6 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:           time.Now(),
 	}
 
-	// Snapshot overwrite size must be resolved before the row is replaced.
-	var oldSize int64
-
-	if existing != nil {
-		oldSize = h.blobSize(r.Context(), existing.BlobID, existing.SHA256)
-	}
-
 	var (
 		stage     string
 		insertErr error
@@ -417,15 +410,16 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 
 	committed = true
 
-	if existing != nil {
-		// Snapshot overwrite: the old content no longer counts, and its blob
-		// may now be unreferenced.
-		if relErr := quota.Release(r.Context(), h.db, repoID, oldSize); relErr != nil {
+	if replaced := art.Replaced; replaced != nil {
+		// Snapshot overwrite: the content the write really replaced no longer
+		// counts (a concurrent overwrite may have changed it since the read
+		// above), and its blob may now be unreferenced.
+		if relErr := quota.Release(r.Context(), h.db, repoID, replaced.SizeBytes); relErr != nil {
 			h.log.Warnw("failed to release quota for replaced artifact", "repository", repoName, "error", relErr)
 		}
 
-		if delErr := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, existing.SHA256); delErr != nil {
-			h.log.Warnw("failed to clean up replaced blob", "sha256", existing.SHA256, "error", delErr)
+		if delErr := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, replaced.SHA256); delErr != nil {
+			h.log.Warnw("failed to clean up replaced blob", "sha256", replaced.SHA256, "error", delErr)
 		}
 	}
 

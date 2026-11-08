@@ -24,13 +24,14 @@ export function mergeAreas(files: readonly Messages[]): Messages {
   return merged
 }
 
-export type Params = Readonly<Record<string, string>>
+/** Placeholder values: text as is, numbers rendered by the caller's locale (see `localize` in index.ts). */
+export type Params = Readonly<Record<string, string | number>>
 
 const PLACEHOLDER = /\{(\w+)\}/g
 
 /** Fills `{name}` placeholders; an unknown name stays as written. */
 export function interpolate(message: string, params: Params): string {
-  return message.replace(PLACEHOLDER, (match, name: string) => params[name] ?? match)
+  return message.replace(PLACEHOLDER, (match, name: string) => (params[name] === undefined ? match : String(params[name])))
 }
 
 /** The message of the active locale, else the English one; undefined when neither has the key. */

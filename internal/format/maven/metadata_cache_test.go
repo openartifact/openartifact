@@ -40,7 +40,7 @@ func newMetadataRouter(tb testing.TB, xml []byte, sha string) (http.Handler, *ma
 	tb.Helper()
 
 	db := &mavenMockDB{
-		repo: &models.Repository{ID: "repo-1", Name: "r"},
+		repo: &models.Repository{ID: "repo-1", Name: "r", Format: "maven"},
 		meta: &models.RepoMetadata{ID: "m", RepositoryID: "repo-1", Path: "x", BlobSHA256: sha, BlobSize: int64(len(xml))},
 	}
 	bs := &countingBlobStore{mavenMockBlobStore: &mavenMockBlobStore{blobs: map[string][]byte{sha: xml}}}

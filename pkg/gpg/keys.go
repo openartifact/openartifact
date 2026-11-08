@@ -157,6 +157,10 @@ func checkSigningEntity(entity *openpgp.Entity, now time.Time) error {
 		return ErrKeyExpired
 	}
 
+	if key, ok := entity.SigningKey(now); !ok || key.PrivateKey == nil || key.PrivateKey.Encrypted {
+		return ErrKeyCannotSign
+	}
+
 	return nil
 }
 

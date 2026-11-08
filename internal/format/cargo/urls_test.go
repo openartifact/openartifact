@@ -23,7 +23,7 @@ import (
 func urlRouter(t *testing.T, explicit string, trusted func(*http.Request) bool) http.Handler {
 	t.Helper()
 
-	h := NewHTTPHandler(formattest.NewLogger(t), &cargoDB{DB: formattest.NewDB()}, formattest.NewBlobStore(), explicit)
+	h := NewHTTPHandler(formattest.NewLogger(t), &cargoDB{DB: formattest.NewDB("cargo")}, formattest.NewBlobStore(), explicit)
 
 	router := chi.NewRouter()
 	router.Route("/repos/{name}", h.RegisterRepoRoutes)

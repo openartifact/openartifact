@@ -1206,3 +1206,38 @@ func TestAzureStagingIsNotListedAsBlobs(t *testing.T) {
 		t.Errorf("List = %v", ids)
 	}
 }
+
+// A body above the single Put Blob limit is stored in blocks, with the same
+// content and metadata as a plain Put.
+func TestAzurePutAboveSinglePutLimitUsesBlocks(t *testing.T) {
+	t.Parallel()
+
+	f, s := newAzureFixture(t, fakeAzureOptions{})
+	s.maxPutBlob = 10
+
+	content := []byte("more than ten bytes")
+	sha := sha256Hex(content)
+	meta := map[string]string{"sha256": sha, "format": "raw"}
+
+	if _, err := s.Put(t.Context(), bytes.NewReader(content), meta); err != nil {
+		t.Fatal(err)
+	}
+
+	if f.opCount("put-blob") != 0 || f.opCount("put-block") == 0 || f.opCount("put-block-list") != 1 {
+		t.Errorf("ops put-blob=%d put-block=%d put-block-list=%d, want a block upload",
+			f.opCount("put-blob"), f.opCount("put-block"), f.opCount("put-block-list"))
+	}
+
+	rc, err := s.Get(t.Context(), sha)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := readAll(t, rc); !bytes.Equal(got, content) {
+		t.Errorf("content = %q, want %q", got, content)
+	}
+
+	if want := map[string]string{"format": "raw"}; !maps.Equal(f.blob(azureBlobKey(sha)).meta, want) {
+		t.Errorf("metadata = %v, want %v", f.blob(azureBlobKey(sha)).meta, want)
+	}
+}

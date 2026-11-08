@@ -111,7 +111,7 @@ func TestHandleGet_MavenMetadataChecksums(t *testing.T) {
 	sha256Hex := "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 	bs := &mavenMockBlobStore{blobs: map[string][]byte{sha256Hex: xmlData}}
 	db := &mavenMockDB{
-		repo: &models.Repository{ID: "repo-1", Name: "myrepo"},
+		repo: &models.Repository{ID: "repo-1", Name: "myrepo", Format: "maven"},
 		meta: &models.RepoMetadata{
 			ID:           "meta-1",
 			RepositoryID: "repo-1",
@@ -187,7 +187,7 @@ func TestHandleGet_Quarantine(t *testing.T) {
 			art:         &models.MavenArtifact{BlobID: "uuid", SHA256: sum, RepoPath: "com/example/a/1.0/a-1.0.jar"},
 			quarantined: quarantined,
 		}
-		db.repo = &models.Repository{ID: "repo-1", Name: "myrepo"}
+		db.repo = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "maven"}
 
 		log, _ := logger.New("info", "json", "stdout")
 		router := chi.NewRouter()
@@ -227,7 +227,7 @@ func TestHandleGet_ArtifactChecksumsDerivedFromBlob(t *testing.T) {
 			SHA1: hex.EncodeToString(sha1Sum[:]),
 		},
 	}
-	db.repo = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repo = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "maven"}
 
 	log, err := logger.New("info", "json", "stdout")
 	if err != nil {

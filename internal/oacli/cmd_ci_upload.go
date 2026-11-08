@@ -446,12 +446,15 @@ func expandUploadFiles(patterns []string) ([]string, error) {
 // globFiles returns the regular files matching pattern, walking from the
 // longest directory prefix that holds no wildcard.
 func globFiles(pattern string) ([]string, error) {
-	re, err := globRegexp(filepath.ToSlash(pattern))
+	// WalkDir yields cleaned paths, so a leading "./" must not stay in the pattern.
+	pattern = path.Clean(filepath.ToSlash(pattern))
+
+	re, err := globRegexp(pattern)
 	if err != nil {
 		return nil, err
 	}
 
-	root := globRoot(filepath.ToSlash(pattern))
+	root := globRoot(pattern)
 
 	var out []string
 

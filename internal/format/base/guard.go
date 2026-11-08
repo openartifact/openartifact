@@ -14,11 +14,10 @@ import (
 // format whose paths clash with the wildcard routes the other formats register
 // at the same depth. A request is claimed (answered by serve) when classify
 // recognises the path below the repository and {name} is a repository of the
-// format, and passed on untouched otherwise. Mount it before the per-format
-// routes.
+// handler's format (h.Format), and passed on untouched otherwise. Mount it
+// before the per-format routes.
 func Guard[R any](
 	h *Handler,
-	format string,
 	classify func(path string) (R, bool),
 	serve func(w http.ResponseWriter, r *http.Request, repoName string, route R),
 ) func(http.Handler) http.Handler {
@@ -39,7 +38,7 @@ func Guard[R any](
 			name := rctx.URLParam("name")
 
 			repo, err := h.ResolveRepo(r.Context(), name)
-			if err != nil || repo == nil || repo.Format != format {
+			if err != nil || repo == nil {
 				next.ServeHTTP(w, r)
 				return
 			}

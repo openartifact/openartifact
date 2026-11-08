@@ -74,7 +74,7 @@ func (d *nugetDB) CountFileDownload(string) {}
 func newTestHandler(t *testing.T) (*HTTPHandler, *nugetDB, *formattest.BlobStore, *formattest.Publisher) {
 	t.Helper()
 
-	db := &nugetDB{DB: formattest.NewDB()}
+	db := &nugetDB{DB: formattest.NewDB("nuget")}
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
@@ -242,7 +242,7 @@ func TestPushLicensePolicy(t *testing.T) {
 
 	for _, c := range policytest.Cases("GPL-3.0") {
 		t.Run(c.Name, func(t *testing.T) {
-			inner := &nugetDB{DB: formattest.NewDB()}
+			inner := &nugetDB{DB: formattest.NewDB("nuget")}
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
@@ -266,7 +266,7 @@ func TestPushLicensePolicyNoEnforceableLicenseAdmitted(t *testing.T) {
 				Want:     policytest.Admitted,
 				Policies: []*models.LicensePolicy{policytest.Policy("block", []string{"MIT"}, nil)},
 			}
-			inner := &nugetDB{DB: formattest.NewDB()}
+			inner := &nugetDB{DB: formattest.NewDB("nuget")}
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
@@ -288,7 +288,7 @@ func TestPushLicensePolicyLicenseURL(t *testing.T) {
 	for name, url := range urls {
 		for _, c := range policytest.Cases("GPL-3.0-only") {
 			t.Run(name+"/"+c.Name, func(t *testing.T) {
-				inner := &nugetDB{DB: formattest.NewDB()}
+				inner := &nugetDB{DB: formattest.NewDB("nuget")}
 				bs := formattest.NewBlobStore()
 				pub := &formattest.Publisher{}
 
@@ -306,7 +306,7 @@ func TestPushRejectsAmbiguousNuspec(t *testing.T) {
 		archivetest.File("Other.nuspec", nuspecWithLicense(`<license type="expression">GPL-3.0-only</license>`)),
 	)
 
-	inner := &nugetDB{DB: formattest.NewDB()}
+	inner := &nugetDB{DB: formattest.NewDB("nuget")}
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 

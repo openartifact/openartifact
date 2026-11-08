@@ -35,7 +35,7 @@ FROM package_files f
 JOIN package_versions v ON v.id = f.version_id
 JOIN packages p ON p.id = v.package_id
 JOIN blobs b ON b.id = f.blob_id
-WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND f.filename = $2
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND f.filename = $2 AND p.format = 'pypi'
 ORDER BY f.created_at, f.id
 LIMIT 2
 `

@@ -75,7 +75,7 @@ type HTTPHandler struct {
 
 // NewHTTPHandler creates the handler.
 func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
+	return &HTTPHandler{Handler: base.New(FormatName, log, db, blobStore, baseURL), DB: db}
 }
 
 // route registers h for pattern with and without the trailing slash: the
@@ -120,7 +120,7 @@ func (h *HTTPHandler) resolveRepo(w http.ResponseWriter, r *http.Request) *model
 		return nil
 	}
 
-	if repo == nil || repo.Format != FormatName {
+	if repo == nil {
 		writeError(w, http.StatusNotFound, "not_found", "Not found.", "")
 		return nil
 	}

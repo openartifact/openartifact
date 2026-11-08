@@ -128,7 +128,7 @@ const pending = computed(() => status.value?.pending ?? [])
 const pendingCaption = computed(() => {
   const total = status.value?.pending_total ?? 0
   if (total <= pending.value.length) return String(total)
-  return tp('tiering.mover.pendingOf', { n: String(pending.value.length), total: String(total) })
+  return tp('tiering.mover.pendingOf', { n: pending.value.length, total: total })
 })
 
 const counters = computed(() => {

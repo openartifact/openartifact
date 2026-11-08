@@ -52,13 +52,15 @@ LEFT JOIN auth_users us ON us.id = rb.sealer_id
 LEFT JOIN auth_users ua ON ua.id = rb.archiver_id
 WHERE rb.id = $1;
 
--- name: UpdateReleaseBundle :exec
+-- Archives a sealed bundle. It touches only the archive columns and is guarded
+-- by the state, so a promotion that committed its current_stage in between is
+-- not overwritten; no row is affected when the bundle is not sealed any more.
+-- name: ArchiveReleaseBundle :execrows
 UPDATE release_bundles AS rb
-SET description = $1, state = $2, pipeline_id = $3, current_stage = $4,
-    sealed_at = $5, sealer_id = (SELECT au.id FROM auth_users au WHERE au.username = $6),
-    archived_at = $7, archiver_id = (SELECT au.id FROM auth_users au WHERE au.username = $8),
-    gpg_key_id = $9, gpg_signature = $10, updated_at = now()
-WHERE rb.id = $11;
+SET state = 'archived', archived_at = sqlc.arg(archived_at),
+    archiver_id = (SELECT au.id FROM auth_users au WHERE au.username = sqlc.arg(archived_by)),
+    updated_at = now()
+WHERE rb.id = sqlc.arg(id) AND rb.state = 'sealed';
 
 -- name: DeleteReleaseBundle :exec
 DELETE FROM release_bundles WHERE id = $1;

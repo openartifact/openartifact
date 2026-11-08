@@ -42,6 +42,10 @@ func (q *quotaFake) DecrementStorageUsage(_ context.Context, _ string, size int6
 	return nil
 }
 
+func (q *quotaFake) GetOrCreateStorageQuota(context.Context, string) (*models.StorageQuota, error) {
+	return &models.StorageQuota{MaxSizeBytes: q.limit, CurrentSizeBytes: q.used, CurrentArtifactCount: q.artifacts}, nil
+}
+
 const quotaTarget = "/repos/myrepo/dir/file.txt"
 
 func put(h *HTTPHandler, body string) int {
@@ -204,4 +208,45 @@ func TestCommitQuota(t *testing.T) {
 			t.Errorf("used=%d artifacts=%d, want 5/1", db.used, db.artifacts)
 		}
 	})
+}
+
+func TestPutOnFullRepositoryIsRefusedBeforeSpooling(t *testing.T) {
+	h, db, bs, _ := newTestHandler(t)
+	db.limit = 4
+
+	if code := put(h, "hello"); code != http.StatusInsufficientStorage {
+		t.Fatalf("status = %d, want 507", code)
+	}
+
+	if len(bs.Blobs) != 0 || db.art != nil {
+		t.Errorf("blobs=%d art=%v; want nothing staged", len(bs.Blobs), db.art)
+	}
+}
+
+// replacingDB reports the content the upsert replaced, which differs from the
+// row read before the write when a concurrent overwrite got in between.
+type replacingDB struct {
+	rawDB
+
+	replaced *models.ReplacedBlob
+}
+
+func (d *replacingDB) UpsertRawArtifactReplacing(ctx context.Context, a *models.RawArtifact) (*models.ReplacedBlob, error) {
+	return d.replaced, d.UpsertRawArtifact(ctx, a)
+}
+
+func TestOverwriteReleasesTheRowActuallyReplaced(t *testing.T) {
+	db := &replacingDB{DB: formattest.NewDB("raw"), replaced: &models.ReplacedBlob{SHA256: "bb", SizeBytes: 7}}
+	db.used, db.artifacts = 7, 1
+	h := NewHTTPHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), "http://localhost")
+
+	// Nothing was stored when the write started, so only the row the upsert
+	// reports can be given back.
+	if code := put(h, "hello"); code != http.StatusCreated {
+		t.Fatalf("status = %d", code)
+	}
+
+	if db.used != 5 || db.artifacts != 1 {
+		t.Errorf("quota used=%d artifacts=%d, want 5/1", db.used, db.artifacts)
+	}
 }

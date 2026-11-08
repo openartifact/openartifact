@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 )
@@ -47,11 +48,17 @@ func (e *exporter) exportAccessControl(ctx context.Context, tw *tar.Writer, mani
 	}
 
 	assignments, err := e.db.ListPermissionAssignments(ctx)
+	assignments = slices.DeleteFunc(assignments, func(a *models.PermissionAssignment) bool {
+		return a.PrincipalType == "user" && !e.archivesUser(a.PrincipalID)
+	})
+
 	if err := writeListedTable(e, tw, manifest, "permission_assignments", assignments, err); err != nil {
 		return err
 	}
 
 	memberships, err := e.db.ListUserGroupMemberships(ctx)
+	memberships = slices.DeleteFunc(memberships, func(m *models.UserGroup) bool { return !e.archivesUser(m.UserID) })
+
 	if err := writeListedTable(e, tw, manifest, "user_groups", memberships, err); err != nil {
 		return err
 	}

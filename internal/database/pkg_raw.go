@@ -6,11 +6,14 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -45,21 +48,68 @@ type rawFileAttrs struct {
 	Metadata    map[string]any `json:"metadata"`
 }
 
+// ErrRawPathForeign is returned by UpsertRawArtifact when the live file at the
+// path belongs to a package of another format, which a raw write never
+// rewrites.
+var ErrRawPathForeign = errors.New("raw path is held by a file of another format")
+
 // UpsertRawArtifact inserts or updates a raw artifact.
 func (p *RawStore) UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error {
-	_, err := p.writeRawArtifact(ctx, artifact, false)
+	_, _, err := p.writeRawArtifact(ctx, artifact, false)
 
 	return err
+}
+
+// UpsertRawArtifactReplacing is UpsertRawArtifact that also returns the
+// content the write replaced (nil when the path was free). Writers of one path
+// are serialized, so the answer is the row this very write took over and the
+// caller can give exactly its usage back.
+func (p *RawStore) UpsertRawArtifactReplacing(ctx context.Context, artifact *models.RawArtifact) (*models.ReplacedBlob, error) {
+	_, replaced, err := p.writeRawArtifact(ctx, artifact, false)
+
+	return replaced, err
+}
+
+// lockPathContent serializes, until the transaction ends, the writers of the
+// live file at path and returns the content it holds now (nil when the path is
+// free). Without the lock two overwrites of one path both read the same
+// replaced row, and the usage of the content the first wrote is never given
+// back.
+func lockPathContent(ctx context.Context, tx pgx.Tx, q *dbsqlc.Queries, repoID, path string) (*models.ReplacedBlob, error) {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('file:' || $1 || ':' || $2, 0))`, repoID, path); err != nil {
+		return nil, fmt.Errorf("lock file path: %w", err)
+	}
+
+	row, err := q.GetRawArtifact(ctx, dbsqlc.GetRawArtifactParams{RepositoryID: repoID, Path: path})
+	if isNoRows(err) {
+		return nil, nil //nolint:nilnil // the path is free
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("read replaced file: %w", err)
+	}
+
+	return &models.ReplacedBlob{SHA256: row.Sha256, SizeBytes: row.SizeBytes}, nil
 }
 
 // InsertRawArtifactIfAbsent inserts a raw artifact only when no live row
 // exists at its path, in one atomic statement. It reports whether the row was
 // inserted; false means the path is taken and nothing was changed.
 func (p *RawStore) InsertRawArtifactIfAbsent(ctx context.Context, artifact *models.RawArtifact) (bool, error) {
-	return p.writeRawArtifact(ctx, artifact, true)
+	inserted, _, err := p.writeRawArtifact(ctx, artifact, true)
+
+	return inserted, err
 }
 
-func (p *RawStore) writeRawArtifact(ctx context.Context, artifact *models.RawArtifact, ifAbsent bool) (bool, error) {
+// writeRawArtifact writes the file; replaced is the content an upsert took
+// over (always nil for ifAbsent, which never replaces).
+func (p *RawStore) writeRawArtifact(
+	ctx context.Context,
+	artifact *models.RawArtifact,
+	ifAbsent bool,
+) (bool, *models.ReplacedBlob, error) {
+	var replaced *models.ReplacedBlob
+
 	metadata := artifact.Metadata
 	if metadata == nil {
 		metadata = map[string]any{}
@@ -67,12 +117,12 @@ func (p *RawStore) writeRawArtifact(ctx context.Context, artifact *models.RawArt
 
 	attrs, err := json.Marshal(rawFileAttrs{ContentType: artifact.ContentType, Metadata: metadata})
 	if err != nil {
-		return false, fmt.Errorf("failed to marshal metadata: %w", err)
+		return false, nil, fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
 	blobID, err := p.upsertBlobWithMediaType(ctx, artifact.SHA256, artifact.BlobKey, artifact.ContentType, artifact.SizeBytes)
 	if err != nil {
-		return false, fmt.Errorf("failed to upsert blob for raw artifact: %w", err)
+		return false, nil, fmt.Errorf("failed to upsert blob for raw artifact: %w", err)
 	}
 
 	// Callers (the raw PUT handler) leave the timestamps unset; storing the
@@ -93,7 +143,7 @@ func (p *RawStore) writeRawArtifact(ctx context.Context, artifact *models.RawArt
 
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
-		return false, fmt.Errorf("failed to begin raw artifact write: %w", err)
+		return false, nil, fmt.Errorf("failed to begin raw artifact write: %w", err)
 	}
 
 	defer func() { _ = tx.Rollback(ctx) }()
@@ -108,12 +158,12 @@ func (p *RawStore) writeRawArtifact(ctx context.Context, artifact *models.RawArt
 		Attrs:        json.RawMessage(`{}`),
 	})
 	if err != nil {
-		return false, fmt.Errorf("failed to upsert raw package: %w", err)
+		return false, nil, fmt.Errorf("failed to upsert raw package: %w", err)
 	}
 
 	versionID, _, err := p.liveVersion(ctx, q, &PackageWrite{RepoID: artifact.RepositoryID}, pkgID, json.RawMessage(`{}`))
 	if err != nil {
-		return false, fmt.Errorf("failed to resolve raw version: %w", err)
+		return false, nil, fmt.Errorf("failed to resolve raw version: %w", err)
 	}
 
 	inserted := true
@@ -129,29 +179,49 @@ func (p *RawStore) writeRawArtifact(ctx context.Context, artifact *models.RawArt
 			CreatedAt:    artifact.CreatedAt,
 		})
 		if err != nil {
-			return false, fmt.Errorf("failed to insert raw artifact: %w", err)
+			return false, nil, fmt.Errorf("failed to insert raw artifact: %w", err)
 		}
 
 		inserted = n > 0
-	} else if _, err := q.UpsertRawFile(ctx, dbsqlc.UpsertRawFileParams{
-		ID:           id,
-		VersionID:    versionID,
-		RepositoryID: artifact.RepositoryID,
-		Path:         artifact.Path,
-		BlobID:       &blobID,
-		Attrs:        attrs,
-		CreatedAt:    artifact.CreatedAt,
-	}); err != nil {
-		return false, fmt.Errorf("failed to upsert raw artifact: %w", err)
+	} else {
+		replaced, err = upsertRawFile(ctx, tx, q, dbsqlc.UpsertRawFileParams{
+			ID:           id,
+			VersionID:    versionID,
+			RepositoryID: artifact.RepositoryID,
+			Path:         artifact.Path,
+			BlobID:       &blobID,
+			Attrs:        attrs,
+			CreatedAt:    artifact.CreatedAt,
+		})
+		if err != nil {
+			return false, nil, err
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return false, fmt.Errorf("failed to commit raw artifact write: %w", err)
+		return false, nil, fmt.Errorf("failed to commit raw artifact write: %w", err)
 	}
 
 	artifact.BlobID = blobID
 
-	return inserted, nil
+	return inserted, replaced, nil
+}
+
+// upsertRawFile writes the file of a path after taking the path's lock and
+// returns the content it replaced.
+func upsertRawFile(ctx context.Context, tx pgx.Tx, q *dbsqlc.Queries, params dbsqlc.UpsertRawFileParams) (*models.ReplacedBlob, error) {
+	replaced, err := lockPathContent(ctx, tx, q, params.RepositoryID, params.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := q.UpsertRawFile(ctx, params); errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrRawPathForeign
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to upsert raw artifact: %w", err)
+	}
+
+	return replaced, nil
 }
 
 // rawRow lists the sqlc row types rawFromRow converts; they share the columns of GetRawArtifactRow.

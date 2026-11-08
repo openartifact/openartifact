@@ -12,20 +12,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-for="(row, i) in rows" :key="row.id" class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2">
         <input
           v-model="row.key"
-          :aria-label="tp('artifact.props.nameOf', { n: String(i + 1) })"
+          :aria-label="tp('artifact.props.nameOf', { n: i + 1 })"
           spellcheck="false"
           :class="[INPUT_CLASS, 'font-mono max-md:h-11']"
         />
         <input
           v-model="row.value"
-          :aria-label="tp('artifact.props.valueOf', { n: String(i + 1) })"
+          :aria-label="tp('artifact.props.valueOf', { n: i + 1 })"
           spellcheck="false"
           :class="[INPUT_CLASS, 'font-mono max-md:h-11']"
         />
         <button
           type="button"
           class="inline-flex h-9 w-9 items-center justify-center rounded text-muted hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary max-md:h-11 max-md:w-11"
-          :aria-label="tp('artifact.props.remove', { n: String(i + 1) })"
+          :aria-label="tp('artifact.props.remove', { n: i + 1 })"
           @click="rows.splice(i, 1)"
         >
           <XMarkIcon class="h-4 w-4" aria-hidden="true" />

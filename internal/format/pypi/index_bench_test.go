@@ -156,7 +156,7 @@ func benchServe(b *testing.B, db *benchPyPIDB, target string) {
 // repositories with 200, 2000 and 10000 projects.
 func BenchmarkHandleSimpleIndex(b *testing.B) {
 	for _, projects := range []int{200, 2000, 10000} {
-		db := &benchPyPIDB{DB: formattest.NewDB(), all: benchPyPIProjects(projects * 2)}
+		db := &benchPyPIDB{DB: formattest.NewDB("pypi"), all: benchPyPIProjects(projects * 2)}
 
 		b.Run(fmt.Sprintf("projects=%d", projects), func(b *testing.B) {
 			benchServe(b, db, "/repos/myrepo/simple/")
@@ -169,7 +169,7 @@ func BenchmarkHandleSimpleIndex(b *testing.B) {
 // sdist each).
 func BenchmarkHandlePackageIndex(b *testing.B) {
 	for _, releases := range []int{10, 300, 2000} {
-		db := &benchPyPIDB{DB: formattest.NewDB(), versions: benchPyPIVersions(releases * 2)}
+		db := &benchPyPIDB{DB: formattest.NewDB("pypi"), versions: benchPyPIVersions(releases * 2)}
 
 		b.Run(fmt.Sprintf("releases=%d", releases), func(b *testing.B) {
 			benchServe(b, db, "/repos/myrepo/simple/demo/")
@@ -181,7 +181,7 @@ func BenchmarkHandlePackageIndex(b *testing.B) {
 // /json/{pkg}) with the same release counts.
 func BenchmarkHandleJSON(b *testing.B) {
 	for _, releases := range []int{10, 300, 2000} {
-		db := &benchPyPIDB{DB: formattest.NewDB(), versions: benchPyPIVersions(releases * 2)}
+		db := &benchPyPIDB{DB: formattest.NewDB("pypi"), versions: benchPyPIVersions(releases * 2)}
 
 		b.Run(fmt.Sprintf("releases=%d", releases), func(b *testing.B) {
 			benchServe(b, db, "/repos/myrepo/json/demo")

@@ -35,7 +35,7 @@ const props = defineProps<{ cells: HealthCell[] }>()
 
 const summary = computed(() => {
   const bad = unhealthyCount(props.cells)
-  return bad === 0 ? t('dashboard.health.summary.ok') : tp('dashboard.health.summary.bad', { count: String(bad) })
+  return bad === 0 ? t('dashboard.health.summary.ok') : tp('dashboard.health.summary.bad', { count: bad })
 })
 
 const key = (cell: HealthCell, part: string): TranslationKey => `dashboard.health.${cell.id}.${part}` as TranslationKey

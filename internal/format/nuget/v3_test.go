@@ -170,7 +170,7 @@ func (d *memDB) SearchNuGetPackages(_ context.Context, _, query string, skip, ta
 func newV3Handler(t *testing.T) (*HTTPHandler, *memDB, *formattest.BlobStore, *formattest.Publisher) {
 	t.Helper()
 
-	db := &memDB{DB: formattest.NewDB()}
+	db := &memDB{DB: formattest.NewDB("nuget")}
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
@@ -183,7 +183,7 @@ func newV3Handler(t *testing.T) (*HTTPHandler, *memDB, *formattest.BlobStore, *f
 func newHandlerOnly(t *testing.T) *HTTPHandler {
 	t.Helper()
 
-	return NewHTTPHandler(formattest.NewLogger(t), &memDB{DB: formattest.NewDB()}, formattest.NewBlobStore(), "http://localhost")
+	return NewHTTPHandler(formattest.NewLogger(t), &memDB{DB: formattest.NewDB("nuget")}, formattest.NewBlobStore(), "http://localhost")
 }
 
 func nuspecFor(id, version, description string) string {

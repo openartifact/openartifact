@@ -140,6 +140,13 @@ func TestStartupFailureExitsNonZero(t *testing.T) {
 			wantCode: 1,
 			wantOut:  "usage: openartifact-server verify",
 		},
+		{
+			name:     "unknown positional argument",
+			env:      unreachableDBEnv(filepath.Join(dir, "unk.log")),
+			args:     []string{"migrate"},
+			wantCode: 1,
+			wantOut:  `unknown command "migrate"`,
+		},
 	}
 
 	for _, tt := range tests {

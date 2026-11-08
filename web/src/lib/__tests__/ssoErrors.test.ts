@@ -20,6 +20,12 @@ describe('ssoErrorMessage', () => {
     expect(msg).not.toContain('<img')
   })
 
+  it('does not read inherited object keys as codes', () => {
+    for (const code of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      expect(ssoErrorMessage(code)).toBe(t('login.ssoError.generic'))
+    }
+  })
+
   it('has no message for an absent or non-string value', () => {
     expect(ssoErrorMessage(undefined)).toBeUndefined()
     expect(ssoErrorMessage('')).toBeUndefined()

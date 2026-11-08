@@ -12,6 +12,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -57,6 +58,8 @@ type regFakeDB struct {
 	// upsertBlobs makes CreateDockerBlob refresh an existing row like the real
 	// ON CONFLICT query instead of failing on a duplicate.
 	upsertBlobs bool
+	// createBlobErr fails CreateDockerBlob.
+	createBlobErr error
 	// createManifestErr fails CreateDockerManifest.
 	createManifestErr error
 	// insertedOverride, when set, is what CreateDockerManifest reports as
@@ -92,6 +95,10 @@ func (d *regFakeDB) GetDockerBlob(_ context.Context, repoID, digest string) (*mo
 }
 
 func (d *regFakeDB) CreateDockerBlob(_ context.Context, b *models.DockerBlob) error {
+	if d.createBlobErr != nil {
+		return d.createBlobErr
+	}
+
 	k := scoped(b.RepositoryID, b.Digest)
 
 	_, dup := d.blobs[k]
@@ -112,15 +119,40 @@ func (d *regFakeDB) CreateDockerBlob(_ context.Context, b *models.DockerBlob) er
 	return nil
 }
 
-func (d *regFakeDB) DeleteDockerBlob(_ context.Context, repoID, digest string) error {
+// DeleteDockerBlobFromImage mirrors the real delete: a blob a manifest of the
+// image references is refused, the image's link goes, and the row goes only
+// when no other image links the blob and no manifest references it.
+func (d *regFakeDB) DeleteDockerBlobFromImage(_ context.Context, repoID, image, digest string) (database.DockerBlobDeletion, error) {
+	for _, m := range d.manifests {
+		if m.RepositoryID == repoID && m.Image == image && m.Refs != nil && slices.Contains(m.Refs.Blobs, digest) {
+			return database.DockerBlobInUse, nil
+		}
+	}
+
+	delete(d.links, scoped(repoID, scoped(image, digest)))
+
+	held := false
+
+	for k := range d.links {
+		held = held || (strings.HasPrefix(k, repoID+"|") && strings.HasSuffix(k, "|"+digest))
+	}
+
+	for _, m := range d.manifests {
+		held = held || (m.RepositoryID == repoID && m.Refs != nil && slices.Contains(m.Refs.Blobs, digest))
+	}
+
+	if held {
+		return database.DockerBlobUnlinked, nil
+	}
+
 	k := scoped(repoID, digest)
 	if _, ok := d.blobs[k]; !ok {
-		return database.ErrDockerRowNotFound
+		return 0, database.ErrDockerRowNotFound
 	}
 
 	delete(d.blobs, k)
 
-	return nil
+	return database.DockerBlobRemoved, nil
 }
 
 // DockerBlobVisible and LinkDockerBlob mirror docker_blob_images: a blob is

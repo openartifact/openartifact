@@ -34,10 +34,10 @@ describe('cleanup policy helpers', () => {
     expect(cleanupFormValid({ ...f, name: '  ', keep_days: 3 })).toBe(false)
   })
 
-  it('sends only the rule of the selected type', () => {
+  it('sends the rule of the selected type and null for the other, so an update clears it', () => {
     const f = { ...emptyCleanupForm(), name: 'n', keep_count: 4, keep_days: 9 }
-    expect(cleanupPayload(f)).toEqual({ name: 'n', enabled: true, name_pattern: '', keep_last_n: 4 })
-    expect(cleanupPayload({ ...f, type: 'keep-by-age', enabled: false })).toEqual({ name: 'n', enabled: false, name_pattern: '', keep_since_days: 9 })
+    expect(cleanupPayload(f)).toEqual({ name: 'n', enabled: true, name_pattern: '', keep_last_n: 4, keep_since_days: null })
+    expect(cleanupPayload({ ...f, type: 'keep-by-age', enabled: false })).toEqual({ name: 'n', enabled: false, name_pattern: '', keep_since_days: 9, keep_last_n: null })
   })
 
   it('round-trips a policy into a form', () => {

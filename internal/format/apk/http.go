@@ -96,7 +96,7 @@ type HTTPHandler struct {
 // NewHTTPHandler builds the handler. Wire the key service and the regeneration
 // worker with WithKeys and WithRegenerator before serving.
 func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
+	return &HTTPHandler{Handler: base.New("apk", log, db, blobStore, baseURL), DB: db}
 }
 
 // WithKeys wires the signing key service that backs the public key downloads.

@@ -28,7 +28,7 @@ func (d *poolFilesDB) GetComponentByFilename(_ context.Context, _, filename stri
 // TestPoolFileQuarantinedByRowID: a scan keyed by the package's row id (the id
 // the package listing shows) blocks the download of that file only.
 func TestPoolFileQuarantinedByRowID(t *testing.T) {
-	db := &poolFilesDB{DB: formattest.NewDB(), rows: map[string]*models.Component{
+	db := &poolFilesDB{DB: formattest.NewDB("deb"), rows: map[string]*models.Component{
 		"hello_1.0_amd64.deb": {ID: "file-1", SHA256: "abc"},
 		"hello_1.1_amd64.deb": {ID: "file-2", SHA256: "abc"},
 	}}

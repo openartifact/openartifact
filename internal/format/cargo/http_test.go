@@ -226,7 +226,7 @@ func (d *cargoDB) CountFileDownload(string) {}
 func newCargoHandler(t *testing.T) (*HTTPHandler, *cargoDB, *formattest.BlobStore, *formattest.Publisher) {
 	t.Helper()
 
-	db := &cargoDB{DB: formattest.NewDB()}
+	db := &cargoDB{DB: formattest.NewDB("cargo")}
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
@@ -362,7 +362,7 @@ func TestPublishLicensePolicy(t *testing.T) {
 	for _, s := range scenarios {
 		for _, c := range s.cases {
 			t.Run(s.name+"/"+c.Name, func(t *testing.T) {
-				inner := &cargoDB{DB: formattest.NewDB()}
+				inner := &cargoDB{DB: formattest.NewDB("cargo")}
 				bs := formattest.NewBlobStore()
 				pub := &formattest.Publisher{}
 
@@ -402,7 +402,7 @@ func TestPublishLicensePolicyExpressionWithDeniedIdentifier(t *testing.T) {
 		Policies: []*models.LicensePolicy{policytest.Policy("block", nil, []string{"GPL-3.0"})},
 	}
 
-	inner := &cargoDB{DB: formattest.NewDB()}
+	inner := &cargoDB{DB: formattest.NewDB("cargo")}
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 
@@ -420,7 +420,7 @@ func TestPublishLicensePolicyNoLicenseAdmitted(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := policytest.Case{Want: policytest.Admitted, Policies: policies}
-			inner := &cargoDB{DB: formattest.NewDB()}
+			inner := &cargoDB{DB: formattest.NewDB("cargo")}
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
@@ -520,7 +520,7 @@ func TestPublishLicensePolicyReadsTheCrate(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := policytest.Case{Want: tc.want, Policies: deny}
-			inner := &cargoDB{DB: formattest.NewDB()}
+			inner := &cargoDB{DB: formattest.NewDB("cargo")}
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
@@ -541,7 +541,7 @@ func TestPublishRejectsUnsafeCrates(t *testing.T) {
 
 	for name, crate := range crates {
 		t.Run(name, func(t *testing.T) {
-			inner := &cargoDB{DB: formattest.NewDB()}
+			inner := &cargoDB{DB: formattest.NewDB("cargo")}
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
@@ -570,7 +570,7 @@ func TestPublishUnderivableLicenses(t *testing.T) {
 	for name, crate := range crates {
 		for _, c := range policytest.UnderivableCases() {
 			t.Run(name+"/"+c.Name, func(t *testing.T) {
-				inner := &cargoDB{DB: formattest.NewDB()}
+				inner := &cargoDB{DB: formattest.NewDB("cargo")}
 				bs := formattest.NewBlobStore()
 				pub := &formattest.Publisher{}
 

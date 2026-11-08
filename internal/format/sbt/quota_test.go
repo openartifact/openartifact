@@ -133,7 +133,7 @@ func TestOverwriteOverQuotaKeepsPreviousUsage(t *testing.T) {
 }
 
 func TestUploadCreateFailureReleasesQuota(t *testing.T) {
-	db := &sbtDB{DB: formattest.NewDB()}
+	db := &sbtDB{DB: formattest.NewDB("sbt")}
 	h := NewHTTPHandler(formattest.NewLogger(t), &failingCreateDB{sbtDB: db}, formattest.NewBlobStore(), "http://localhost")
 
 	if w := send(t, h, http.MethodPut, artifactURL, "data"); w.Code != http.StatusInternalServerError {

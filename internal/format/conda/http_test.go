@@ -104,7 +104,7 @@ func (d *condaDB) DeleteCondaPackage(_ context.Context, id string) error {
 func newTestHandler(t *testing.T) (*HTTPHandler, *condaDB, *formattest.BlobStore, *formattest.Publisher) {
 	t.Helper()
 
-	db := &condaDB{DB: formattest.NewDB()}
+	db := &condaDB{DB: formattest.NewDB("conda")}
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")

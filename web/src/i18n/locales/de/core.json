@@ -21,6 +21,7 @@
   "session.probeFailed": "Ihre Sitzung konnte nicht überprüft werden",
   "session.probeFailedHint": "Der Server hat nicht geantwortet. Beim erneuten Navigieren wird die Prüfung wiederholt.",
   "session.expired": "Ihre Sitzung ist abgelaufen. Melden Sie sich erneut an.",
+  "session.passwordChangeRequired": "Sie müssen Ihr Passwort ändern, bevor Sie fortfahren.",
   "nav.repositories": "Repositories",
   "nav.settings": "Einstellungen",
   "nav.security": "Sicherheit",

@@ -379,8 +379,12 @@ describe('DashboardPage loading and refresh', () => {
   it('shows a loading state until the sources answer', async () => {
     setActivePinia(createPinia())
     useSessionStore().user = ADMIN
-    const { promise: gate, resolve: release } = Promise.withResolvers<Response>()
-    spyOn(globalThis, 'fetch').mockImplementation((async () => gate) as never)
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>()
+    const respond = answer(HEALTHY_ADMIN)
+    spyOn(globalThis, 'fetch').mockImplementation((async (...args: unknown[]) => {
+      await gate
+      return (respond as (...a: unknown[]) => unknown)(...args)
+    }) as never)
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: DashboardPage }] })
     await router.push('/')
     await router.isReady()
@@ -388,7 +392,7 @@ describe('DashboardPage loading and refresh', () => {
     await flushPromises()
     expect(w.findAll('[aria-busy="true"]').length).toBeGreaterThan(0)
     expect(w.text()).not.toContain('All clear')
-    release(json({}))
+    release()
     await flushPromises()
     expect(w.text()).toContain('All clear')
     w.unmount()

@@ -48,7 +48,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           />
         </FormField>
         <p v-if="errorMsg" role="alert" class="text-sm text-danger text-center">{{ errorMsg }}</p>
-        <AppButton variant="primary" size="md" block type="submit" :disabled="loading">
+        <div v-if="verifyPending" role="alert" class="space-y-2 text-center">
+          <p class="text-sm text-muted">{{ t('auth.passwordVerifyFailed') }}</p>
+          <AppButton variant="secondary" size="sm" @click="finish">{{ t('ui.state.retry') }}</AppButton>
+        </div>
+        <AppButton variant="primary" size="md" block type="submit" :disabled="loading || verifyPending">
           {{ loading ? t('common.saving') : t('auth.changePasswordCta') }}
         </AppButton>
         <AppButton variant="ghost" block @click="handleLogout">
@@ -83,23 +87,31 @@ const handleLogout = useSignOut()
 const { form, errors, loading, submit } = usePasswordChange()
 const errorMsg = ref('')
 
+const verifyPending = ref(false)
+
+/** Refreshes the user after a successful change and leaves for the app, or says why it cannot. */
+async function finish(): Promise<void> {
+  await session.fetchMe()
+  if (session.probeFailed) {
+    // The new password is in effect; only the refresh of the user failed.
+    verifyPending.value = true
+    return
+  }
+  verifyPending.value = false
+  if (!session.isAuthenticated || session.mustChangePassword) {
+    // The password change itself succeeded, but we cannot continue into the app.
+    session.clearSession()
+    toasts.warning(t('auth.passwordNotApplied'))
+    await router.replace({ name: 'login' })
+    return
+  }
+  await router.replace(safeNextPath(route.query.next))
+}
+
 async function handleSubmit(): Promise<void> {
   errorMsg.value = ''
-  await submit(
-    async () => {
-      await session.fetchMe()
-      if (!session.isAuthenticated || session.mustChangePassword) {
-        // The password change itself succeeded, but we cannot continue into the app.
-        session.clearSession()
-        toasts.warning(t('auth.passwordNotApplied'))
-        await router.replace({ name: 'login' })
-        return
-      }
-      await router.replace(safeNextPath(route.query.next))
-    },
-    (message) => {
-      errorMsg.value = message
-    },
-  )
+  await submit(finish, (message) => {
+    errorMsg.value = message
+  })
 }
 </script>

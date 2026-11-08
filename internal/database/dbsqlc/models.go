@@ -681,6 +681,8 @@ type NixPendingNar struct {
 	NarFile      string    `db:"nar_file" json:"nar_file"`
 	BlobID       string    `db:"blob_id" json:"blob_id"`
 	CreatedAt    time.Time `db:"created_at" json:"created_at"`
+	// Bytes reserved in the repository storage quota while the NAR waits for its narinfo
+	ReservedBytes int64 `db:"reserved_bytes" json:"reserved_bytes"`
 }
 
 // Nix narinfo signing keys; private_key is sealed with internal/crypto.

@@ -38,7 +38,7 @@ func (w *discardWriter) Write(p []byte) (int, error) {
 func benchPackages(b *testing.B, n, payload int) (*memDB, *formattest.BlobStore) {
 	b.Helper()
 
-	db := &memDB{DB: formattest.NewDB()}
+	db := &memDB{DB: formattest.NewDB("nuget")}
 	bs := formattest.NewBlobStore()
 
 	for i := range n {

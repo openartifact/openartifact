@@ -122,7 +122,7 @@ func (d *pypiDB) DeletePyPIPackage(_ context.Context, _, _, _, filename string) 
 func newTestHandler(t *testing.T) (*HTTPHandler, *pypiDB, *formattest.BlobStore, *formattest.Publisher) {
 	t.Helper()
 
-	db := &pypiDB{DB: formattest.NewDB()}
+	db := &pypiDB{DB: formattest.NewDB("pypi")}
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
@@ -309,7 +309,7 @@ func TestUploadLicensePolicy(t *testing.T) {
 	for formName, fields := range forms {
 		for _, c := range policytest.Cases("GPL-3.0") {
 			t.Run(formName+"/"+c.Name, func(t *testing.T) {
-				inner := &pypiDB{DB: formattest.NewDB()}
+				inner := &pypiDB{DB: formattest.NewDB("pypi")}
 				bs := formattest.NewBlobStore()
 				pub := &formattest.Publisher{}
 
@@ -336,7 +336,7 @@ func TestUploadLicensePolicyNoEnforceableLicenseAdmitted(t *testing.T) {
 				Want:     policytest.Admitted,
 				Policies: []*models.LicensePolicy{policytest.Policy("block", []string{"MIT"}, nil)},
 			}
-			inner := &pypiDB{DB: formattest.NewDB()}
+			inner := &pypiDB{DB: formattest.NewDB("pypi")}
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
@@ -549,7 +549,7 @@ func TestUploadLicensePolicyReadsTheArtifact(t *testing.T) {
 	for name, metadata := range wheels {
 		for _, c := range policytest.Cases("GPL-3.0-only") {
 			t.Run(name+"/"+c.Name, func(t *testing.T) {
-				inner := &pypiDB{DB: formattest.NewDB()}
+				inner := &pypiDB{DB: formattest.NewDB("pypi")}
 				bs := formattest.NewBlobStore()
 				pub := &formattest.Publisher{}
 
@@ -588,7 +588,7 @@ func TestUploadLicensePolicyArtifactBeatsFormFields(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := policytest.Case{Want: tc.want, Policies: denyGPL}
-			inner := &pypiDB{DB: formattest.NewDB()}
+			inner := &pypiDB{DB: formattest.NewDB("pypi")}
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
@@ -605,7 +605,7 @@ func TestUploadLicensePolicyDjangoStyleBSD(t *testing.T) {
 	metadata := "License: BSD\nClassifier: License :: OSI Approved :: BSD License\n"
 
 	c := policytest.Case{Want: policytest.Blocked, Policies: []*models.LicensePolicy{policytest.Policy("block", nil, []string{"BSD"})}}
-	inner := &pypiDB{DB: formattest.NewDB()}
+	inner := &pypiDB{DB: formattest.NewDB("pypi")}
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 
@@ -624,7 +624,7 @@ func TestUploadSdistLicenseFromPKGINFO(t *testing.T) {
 		Want:     policytest.Blocked,
 		Policies: []*models.LicensePolicy{policytest.Policy("block", nil, []string{"GPL-3.0-only"})},
 	}
-	inner := &pypiDB{DB: formattest.NewDB()}
+	inner := &pypiDB{DB: formattest.NewDB("pypi")}
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 
@@ -648,7 +648,7 @@ func TestUploadRejectsUnsafeArchives(t *testing.T) {
 
 	for name, wheel := range archives {
 		t.Run(name, func(t *testing.T) {
-			inner := &pypiDB{DB: formattest.NewDB()}
+			inner := &pypiDB{DB: formattest.NewDB("pypi")}
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
@@ -682,7 +682,7 @@ func TestUploadUnderivableLicenses(t *testing.T) {
 	for name, f := range files {
 		for _, c := range policytest.UnderivableCases() {
 			t.Run(name+"/"+c.Name, func(t *testing.T) {
-				inner := &pypiDB{DB: formattest.NewDB()}
+				inner := &pypiDB{DB: formattest.NewDB("pypi")}
 				bs := formattest.NewBlobStore()
 				pub := &formattest.Publisher{}
 

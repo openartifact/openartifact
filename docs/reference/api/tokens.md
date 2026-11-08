@@ -217,7 +217,7 @@ Create an API token for a user (admin only)
 
 Revoke user's token
 
-Revoke an API token for a user (admin only)
+Revoke an API token of a user. Allowed for an administrator, and for the token's owner in an interactive session.
 
 **Parameters**
 

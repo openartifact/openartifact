@@ -75,7 +75,7 @@ type HTTPStore interface {
 	) (bool, error)
 	CreateDockerUpload(ctx context.Context, upload *models.DockerUpload) error
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
-	DeleteDockerBlob(ctx context.Context, repoID string, digest string) error
+	DeleteDockerBlobFromImage(ctx context.Context, repoID string, image string, digest string) (database.DockerBlobDeletion, error)
 	DeleteDockerManifest(ctx context.Context, repoID string, image string, digest string) error
 	DeleteDockerTag(ctx context.Context, repoID string, image string, name string) error
 	DeleteDockerTagsByDigest(ctx context.Context, repoID string, image string, digest string) error
@@ -1218,11 +1218,13 @@ func (h *HTTPHandler) handleDeleteBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete the per-repo registry row first so BlobReferenceCount no
-	// longer sees it, then let SafeDeleteBlob decide whether the underlying
-	// storage content is still referenced elsewhere (cross-repo dedup)
-	// before reclaiming it.
-	if err := h.db.DeleteDockerBlob(r.Context(), repo.ID, digest); err != nil {
+	// Drop the image's link; the repository's registry row goes only when no
+	// other image or manifest holds the blob, so BlobReferenceCount no longer
+	// sees it, and SafeDeleteBlob then decides whether the underlying storage
+	// content is still referenced elsewhere (cross-repo dedup) before
+	// reclaiming it.
+	deletion, err := h.db.DeleteDockerBlobFromImage(r.Context(), repo.ID, image, digest)
+	if err != nil {
 		if errors.Is(err, database.ErrDockerRowNotFound) {
 			h.errorResponse(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob not found")
 			return
@@ -1231,6 +1233,16 @@ func (h *HTTPHandler) handleDeleteBlob(w http.ResponseWriter, r *http.Request) {
 		h.log.Errorw("failed to delete blob from db", "digest", digest, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 
+		return
+	}
+
+	switch deletion {
+	case database.DockerBlobInUse:
+		h.errorResponse(w, http.StatusConflict, "DENIED", "blob is referenced by a manifest; delete the manifest first")
+		return
+	case database.DockerBlobUnlinked:
+		// Other images or manifests still hold the blob: only this image lost it.
+		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 

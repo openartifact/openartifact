@@ -63,7 +63,19 @@ func newEnv(t *testing.T) *env {
 func (e *env) do(method, target, body string) *httptest.ResponseRecorder {
 	e.t.Helper()
 
-	return formattest.Do(e.h.RegisterRepoRoutes, formattest.Request(method, target, strings.NewReader(body)))
+	return e.doType(method, target, body, "application/json")
+}
+
+// doType is do with an explicit Content-Type ("" sends none).
+func (e *env) doType(method, target, body, contentType string) *httptest.ResponseRecorder {
+	e.t.Helper()
+
+	req := formattest.Request(method, target, strings.NewReader(body))
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+
+	return formattest.Do(e.h.RegisterRepoRoutes, req)
 }
 
 // doAs is do with an authenticated principal on the request context.

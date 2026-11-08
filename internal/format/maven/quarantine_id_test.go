@@ -37,7 +37,7 @@ func TestDownloadQuarantinedByRowID(t *testing.T) {
 	const sum = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 
 	db := &mavenByPathDB{arts: map[string]*models.MavenArtifact{}}
-	db.repo = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repo = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "maven"}
 
 	for _, v := range []struct{ id, version string }{{"file-1", "1.0"}, {"file-2", "1.1"}} {
 		p := "com/example/a/" + v.version + "/a-" + v.version + ".jar"

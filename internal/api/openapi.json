@@ -2004,28 +2004,45 @@
             "type": "string",
             "format": "uuid"
           },
-          "event": {
+          "event_type": {
             "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "pending",
+              "success",
+              "failed"
+            ]
           },
-          "request_headers": {
-            "type": "string"
-          },
-          "request_body": {
-            "type": "string"
-          },
-          "response_headers": {
-            "type": "string"
+          "response_status": {
+            "type": "integer",
+            "description": "HTTP status of the receiver's last reply; 0 before the first reply"
           },
           "response_body": {
-            "type": "string"
+            "type": "string",
+            "description": "The receiver's last reply, capped at 64 KiB; invalid UTF-8 is replaced and NUL bytes are dropped"
           },
-          "status_code": {
+          "attempt_count": {
             "type": "integer"
           },
+          "next_retry_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "delivered_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
           "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
             "type": "string",
             "format": "date-time"
           }
@@ -5181,11 +5198,26 @@
       },
       "VulnGateResponse": {
         "type": "object",
-        "description": "Verdict of an exploitation gate on one scan: it passes when no finding meets any of the conditions.",
+        "description": "Verdict of an exploitation gate on one scan: it passes when the scan completed and no finding meets any of the conditions. A scan that is not `completed`, or a requested `kev`/`epss_min` condition whose feed is not loaded, never passes.",
         "properties": {
           "pass": {
             "type": "boolean",
-            "description": "True when `failed` is empty."
+            "description": "True when the scan is `completed`, the requested feeds are loaded and `failed` is empty."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the gate could not vouch for the scan (scan not completed, feed not loaded); absent otherwise."
+          },
+          "scan_status": {
+            "type": "string",
+            "description": "Status of the scan that was gated: `pending`, `scanning`, `completed`, `partial` or `failed`."
+          },
+          "failed_scanners": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Scanners that could not run for the scan."
           },
           "criteria": {
             "type": "object",
@@ -5251,6 +5283,8 @@
         },
         "required": [
           "pass",
+          "scan_status",
+          "failed_scanners",
           "criteria",
           "checked",
           "failed"
@@ -14477,7 +14511,7 @@
     "/api/v1/users/{id}/tokens/{tokenId}": {
       "delete": {
         "summary": "Revoke user's token",
-        "description": "Revoke an API token for a user (admin only)",
+        "description": "Revoke an API token of a user. Allowed for an administrator, and for the token's owner in an interactive session.",
         "tags": [
           "Users",
           "Tokens"
@@ -26558,7 +26592,7 @@
     "/api/v1/repositories/{name}/debs/{id}": {
       "delete": {
         "summary": "Delete a DEB package",
-        "description": "Delete a package from a hosted repository. Requires write access.",
+        "description": "Delete a package from a hosted repository. Requires delete access.",
         "tags": [
           "Repositories"
         ],
@@ -26706,7 +26740,7 @@
       },
       "delete": {
         "summary": "Delete a package",
-        "description": "Delete a package row (an id of the package listing) from a hosted repository of any format: into the trash when the repository keeps one, else for good, refreshing the format's generated metadata. A conan recipe revision goes with its files. Released versions of immutable repositories answer 409 unless an admin passes force. Requires write access.",
+        "description": "Delete a package row (an id of the package listing) from a hosted repository of any format: into the trash when the repository keeps one, else for good, refreshing the format's generated metadata. A conan recipe revision goes with its files. Released versions of immutable repositories answer 409 unless an admin passes force. Requires delete access.",
         "tags": [
           "Repositories"
         ],

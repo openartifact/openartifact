@@ -117,7 +117,7 @@ export function healthRows(info: AdminSystemInfo, security: SecurityHealthState)
     sub: t('sx.health.jobs.sub'),
     status: h.scans_failed_24h > 0 ? 'warn' : 'ok',
     detail:
-      (idle ? t('sx.health.jobs.idle') : tp('sx.health.jobs.detail', { pending: String(h.scans_pending), failed: String(h.scans_failed_24h) })) +
+      (idle ? t('sx.health.jobs.idle') : tp('sx.health.jobs.detail', { pending: h.scans_pending, failed: h.scans_failed_24h })) +
       (h.last_scan_at ? ` ${tp('sx.health.jobs.lastScan', { time: utc(h.last_scan_at) })}` : ''),
   })
 
@@ -128,7 +128,7 @@ export function healthRows(info: AdminSystemInfo, security: SecurityHealthState)
     status: h.unscanned_repositories > 0 ? 'warn' : 'ok',
     detail:
       h.unscanned_repositories > 0
-        ? tp('sx.health.unscanned.detail', { n: String(h.unscanned_repositories) })
+        ? tp('sx.health.unscanned.detail', { n: h.unscanned_repositories })
         : t('sx.health.unscanned.none'),
     to: '/security',
     toLabel: t('sx.health.details'),
@@ -145,8 +145,8 @@ export interface HealthSummary {
 /** One line for the whole page: unavailable beats warnings beats healthy. */
 export function healthSummary(rows: readonly Pick<HealthRow, 'status'>[]): HealthSummary {
   const bad = rows.filter((r) => r.status === 'bad').length
-  if (bad > 0) return { status: 'bad', text: bad === 1 ? t('sx.health.unavailableOne') : tp('sx.health.unavailable', { n: String(bad) }) }
+  if (bad > 0) return { status: 'bad', text: bad === 1 ? t('sx.health.unavailableOne') : tp('sx.health.unavailable', { n: bad }) }
   const warn = rows.filter((r) => r.status === 'warn').length
-  if (warn > 0) return { status: 'warn', text: warn === 1 ? t('sx.health.warning') : tp('sx.health.warnings', { n: String(warn) }) }
+  if (warn > 0) return { status: 'warn', text: warn === 1 ? t('sx.health.warning') : tp('sx.health.warnings', { n: warn }) }
   return { status: 'ok', text: t('sx.health.allHealthy') }
 }

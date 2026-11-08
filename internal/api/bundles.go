@@ -64,8 +64,8 @@ type BundlesStore interface {
 	RemoveBundleItem(ctx context.Context, bundleID string, sha256 string) error
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
 	SealReleaseBundle(ctx context.Context, bundleID string, sealedBy string, sealedAt time.Time, sig *models.BundleSignature) (bool, error)
+	ArchiveReleaseBundle(ctx context.Context, bundleID string, archivedBy string, archivedAt time.Time) (bool, error)
 	PatchPromotionPipeline(ctx context.Context, id string, patch database.PipelinePatch) (*models.PromotionPipeline, error)
-	UpdateReleaseBundle(ctx context.Context, b *models.ReleaseBundle) error
 }
 
 type BundlesHandler struct {
@@ -1190,16 +1190,23 @@ func (h *BundlesHandler) handleArchive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
-	bundle.State = models.BundleStateArchived
-	bundle.ArchivedAt = &now
-	bundle.ArchivedBy = &p.Username
-	bundle.UpdatedAt = now
 
-	if err := h.db.UpdateReleaseBundle(ctx, bundle); err != nil {
+	archived, err := h.db.ArchiveReleaseBundle(ctx, bundle.ID, p.Username, now)
+	if err != nil {
 		h.dbError(w, "archive bundle: db error", err)
 
 		return
 	}
+
+	if !archived {
+		writeError(w, http.StatusConflict, "conflict", "can only archive sealed bundles")
+		return
+	}
+
+	bundle.State = models.BundleStateArchived
+	bundle.ArchivedAt = &now
+	bundle.ArchivedBy = &p.Username
+	bundle.UpdatedAt = now
 
 	auditAdmin(r, audit.ActionBundleArchived, "bundle", bundle.ID, "bundle "+bundle.Name+" "+bundle.Version+" archived")
 

@@ -37,7 +37,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <template v-if="s.kind === 'personal'">
           <span class="text-sm text-foreground">{{ t('tok.scope.personal') }}</span>
           <span class="block text-xs text-muted">
-            {{ s.scopes > 0 ? tp('tok.scope.limited', { count: String(s.scopes) }) : t('tok.scope.full') }}
+            {{ s.scopes > 0 ? tp('tok.scope.limited', { count: s.scopes }) : t('tok.scope.full') }}
           </span>
         </template>
         <template v-else-if="s.kind === 'project'">

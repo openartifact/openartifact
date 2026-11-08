@@ -58,6 +58,9 @@ type AzureBlobStore struct {
 	now func() time.Time
 	// copyPollInterval is the first wait between polls of a pending copy.
 	copyPollInterval time.Duration
+	// maxPutBlob is the largest body Put sends as one Put Blob; larger blobs
+	// are staged in blocks.
+	maxPutBlob int64
 }
 
 // NewAzureBlobStore creates a new Azure Blob Storage backend. The blob service
@@ -115,6 +118,7 @@ func NewAzureBlobStore(cfg StorageConfig) (*AzureBlobStore, error) {
 		client:           newStreamingHTTPClient(cfg.dialGuardedTransport()),
 		now:              time.Now,
 		copyPollInterval: azureCopyPollInterval,
+		maxPutBlob:       azureMaxPutBlob,
 	}, nil
 }
 
@@ -397,6 +401,10 @@ func (a *AzureBlobStore) Put(ctx context.Context, data io.Reader, metadata map[s
 		return sha, nil
 	}
 
+	if size > a.maxPutBlob {
+		return sha, a.putInBlocks(ctx, azureBlobKey(sha), spool, azureMetaHeaders(metadata))
+	}
+
 	headers := map[string]string{
 		"x-ms-blob-type": "BlockBlob",
 		"Content-Type":   "application/octet-stream",
@@ -420,6 +428,45 @@ func (a *AzureBlobStore) Put(ctx context.Context, data io.Reader, metadata map[s
 	}
 
 	return sha, nil
+}
+
+// putInBlocks stores r as the blob key in blocks (Put Block, then Put Block
+// List), for bodies above the limit of a single Put Blob. meta are the
+// x-ms-meta-* headers of the committed blob.
+func (a *AzureBlobStore) putInBlocks(ctx context.Context, key string, r io.Reader, meta map[string]string) error {
+	bufp := a.getUploadBuffer()
+	defer a.putUploadBuffer(bufp)
+
+	var blockIDs []string
+
+	for {
+		n, err := io.ReadFull(r, *bufp)
+		last := errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
+
+		if err != nil && !last {
+			return fmt.Errorf("azure: read spool: %w", err)
+		}
+
+		if n > 0 {
+			if len(blockIDs) == azureMaxBlocks {
+				return ErrUploadTooLarge
+			}
+
+			blockIDs = append(blockIDs, azureBlockID(len(blockIDs)+1))
+
+			if err := a.putBlock(ctx, key, blockIDs[len(blockIDs)-1], (*bufp)[:n]); err != nil {
+				return err
+			}
+		}
+
+		if last {
+			break
+		}
+	}
+
+	_, err := a.putBlockList(ctx, key, blockIDs, meta)
+
+	return err
 }
 
 // Get retrieves a blob by its SHA-256 identifier.

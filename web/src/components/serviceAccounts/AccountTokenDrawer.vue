@@ -18,7 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </FormField>
       <FormField :label="t('tok.create.expires')" id="sa-token-expiry">
         <select id="sa-token-expiry" v-model.number="days" :class="INPUT_CLASS">
-          <option v-for="d in EXPIRY_PRESETS" :key="d" :value="d">{{ d === 0 ? t('tok.expiry.never') : tp('tok.expiry.days', { count: String(d) }) }}</option>
+          <option v-for="d in EXPIRY_PRESETS" :key="d" :value="d">{{ d === 0 ? t('tok.expiry.never') : tp('tok.expiry.days', { count: d }) }}</option>
         </select>
         <p v-if="days === 0" class="text-xs text-warning" data-testid="no-expiry-warning">{{ t('tok.create.noExpiryWarning') }}</p>
       </FormField>

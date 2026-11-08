@@ -12,7 +12,7 @@ import { useToastStore } from './stores/toast'
 import { useBrandingStore } from './stores/branding'
 import { useSessionStore } from './stores/session'
 import { preloadRouteChunks } from './lib/startup'
-import { isSessionExpired } from './api/client'
+import { isSessionExpired, isPasswordChangeRequired } from './api/client'
 import { initI18n, t } from './i18n'
 import { captureInstallPrompt } from './composables/useInstallPrompt'
 import { retireServiceWorkers, startServiceWorkerForServer } from './pwa/register'
@@ -53,7 +53,7 @@ app.use(router)
 // lifecycle hooks and async setup. Shows a toast and logs to console.
 app.config.errorHandler = (err, _instance, info) => {
   // An expired session already redirected to /login; a toast on top is noise.
-  if (isSessionExpired(err)) return
+  if (isSessionExpired(err) || isPasswordChangeRequired(err)) return
   // Vue swallows these, so the telemetry error listener never sees them.
   recordError(err)
   const toast = useToastStore()
@@ -64,7 +64,7 @@ app.config.errorHandler = (err, _instance, info) => {
 
 // Catch unhandled promise rejections that escape Vue's error boundary.
 window.addEventListener('unhandledrejection', (event) => {
-  if (isSessionExpired(event.reason)) return
+  if (isSessionExpired(event.reason) || isPasswordChangeRequired(event.reason)) return
   const toast = useToastStore()
   const message = event.reason instanceof Error ? event.reason.message : String(event.reason)
   toast.error(t('shell.unexpectedError'), message)

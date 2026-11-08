@@ -19,6 +19,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -453,12 +454,9 @@ func (d *Dispatcher) deliver(wh *models.Webhook, delivery *models.WebhookDeliver
 	if err != nil {
 		d.log.Errorw("failed to read response body", "webhook_id", wh.ID, "error", err)
 	}
-	if len(respBody) > maxWebhookResponseBodySize {
-		respBody = append(respBody[:maxWebhookResponseBodySize-len(webhookResponseTruncatedMarker)], webhookResponseTruncatedMarker...)
-	}
 
 	delivery.ResponseStatus = resp.StatusCode
-	delivery.ResponseBody = string(respBody)
+	delivery.ResponseBody = responseBodyText(respBody)
 	delivery.AttemptCount++
 
 	// Check if successful
@@ -526,4 +524,24 @@ func computeHMAC(secret []byte, parts ...[]byte) string {
 	}
 
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// responseBodyText turns a receiver's reply into text the delivery row can
+// store: invalid UTF-8 is replaced and NUL dropped (Postgres text rejects
+// both, which would lose the whole delivery result), and a body over the cap
+// is cut on a rune boundary and marked as truncated.
+func responseBodyText(raw []byte) string {
+	text := strings.ToValidUTF8(string(raw), "\uFFFD")
+	text = strings.ReplaceAll(text, "\x00", "")
+
+	if len(text) <= maxWebhookResponseBodySize {
+		return text
+	}
+
+	cut := maxWebhookResponseBodySize - len(webhookResponseTruncatedMarker)
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+
+	return text[:cut] + webhookResponseTruncatedMarker
 }

@@ -124,27 +124,102 @@ func (p *DockerStore) GetDockerBlob(ctx context.Context, repoID, digest string) 
 	}, nil
 }
 
-// ErrDockerRowNotFound is returned by DeleteDockerBlob and DeleteDockerManifest
+// ErrDockerRowNotFound is returned by DeleteDockerBlobFromImage and DeleteDockerManifest
 // when no row matched: a concurrent request removed it first. Callers release
 // the row's storage quota only when the delete removed it.
 var ErrDockerRowNotFound = errors.New("docker row not found")
 
-// DeleteDockerBlob removes the repository's row for the blob and returns
-// ErrDockerRowNotFound when there was none.
-func (p *DockerStore) DeleteDockerBlob(ctx context.Context, repoID, digest string) error {
-	n, err := p.q.DeleteDockerBlob(ctx, dbsqlc.DeleteDockerBlobParams{
-		RepositoryID: repoID,
-		Digest:       digest,
-	})
+// DockerBlobDeletion is what DeleteDockerBlobFromImage did.
+type DockerBlobDeletion int
+
+const (
+	// DockerBlobUnlinked: the image no longer reaches the blob, but other
+	// images or manifests still hold the repository's record of it.
+	DockerBlobUnlinked DockerBlobDeletion = iota + 1
+	// DockerBlobRemoved: nothing held the blob, so the repository's record is
+	// gone. The caller releases its storage quota and bytes.
+	DockerBlobRemoved
+	// DockerBlobInUse: a live manifest of the image references the blob (or the
+	// blob has no image link and another image's manifest does); nothing was
+	// changed.
+	DockerBlobInUse
+)
+
+// DeleteDockerBlobFromImage deletes the blob for one image: it drops the
+// image's link, and the repository's record of the blob only when no other
+// image link and no manifest holds it. A blob a live manifest of the image
+// references is refused with DockerBlobInUse. It returns ErrDockerRowNotFound
+// when the record vanished meanwhile. It runs under the repository's exclusive
+// docker lock, so a concurrent manifest push cannot reference the blob between
+// the checks and the delete.
+func (p *DockerStore) DeleteDockerBlobFromImage(ctx context.Context, repoID, image, digest string) (DockerBlobDeletion, error) {
+	tx, err := p.beginDockerGCTx(ctx, repoID)
 	if err != nil {
-		return fmt.Errorf("failed to delete docker blob: %w", err)
+		return 0, err
 	}
 
-	if n == 0 {
-		return ErrDockerRowNotFound
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+
+	q := p.q.WithTx(tx)
+
+	inUse, err := q.DockerImageReferencesBlob(
+		ctx,
+		dbsqlc.DockerImageReferencesBlobParams{RepositoryID: repoID, Image: image, Digest: digest},
+	)
+	if err != nil {
+		return 0, fmt.Errorf("check docker blob references: %w", err)
 	}
 
-	return nil
+	if inUse {
+		return DockerBlobInUse, nil
+	}
+
+	if _, err := q.DeleteDockerBlobImageLink(
+		ctx,
+		dbsqlc.DeleteDockerBlobImageLinkParams{RepositoryID: repoID, Image: image, Digest: digest},
+	); err != nil {
+		return 0, fmt.Errorf("unlink docker blob: %w", err)
+	}
+
+	held, err := q.DockerBlobStillHeld(ctx, dbsqlc.DockerBlobStillHeldParams{RepositoryID: repoID, Digest: digest})
+	if err != nil {
+		return 0, fmt.Errorf("check docker blob holders: %w", err)
+	}
+
+	result := DockerBlobUnlinked
+
+	if held {
+		// A blob without any image link predates image links and stays visible
+		// to every image: unlinking cannot hide it from this one.
+		visible, err := q.DockerBlobVisibleToImage(
+			ctx,
+			dbsqlc.DockerBlobVisibleToImageParams{RepositoryID: repoID, Image: image, Digest: digest},
+		)
+		if err != nil {
+			return 0, fmt.Errorf("check docker blob image link: %w", err)
+		}
+
+		if visible != nil && *visible {
+			return DockerBlobInUse, nil
+		}
+	} else {
+		n, err := q.DeleteDockerBlob(ctx, dbsqlc.DeleteDockerBlobParams{RepositoryID: repoID, Digest: digest})
+		if err != nil {
+			return 0, fmt.Errorf("failed to delete docker blob: %w", err)
+		}
+
+		if n == 0 {
+			return 0, ErrDockerRowNotFound
+		}
+
+		result = DockerBlobRemoved
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit docker blob delete: %w", err)
+	}
+
+	return result, nil
 }
 
 func (p *DockerStore) ListDockerBlobs(ctx context.Context, repoID string) ([]*models.DockerBlob, error) {

@@ -111,7 +111,7 @@ func (*blockingBody) Close() error { return nil }
 func TestNPMPublishReadsBodyBeforeTakingSlot(t *testing.T) {
 	dir := spoolDir(t)
 
-	h := NewNPMUploadHandler(formattest.NewLogger(t), &npmPublishDB{DB: formattest.NewDB()}, formattest.NewBlobStore(), nil)
+	h := NewNPMUploadHandler(formattest.NewLogger(t), &npmPublishDB{DB: formattest.NewDB("npm")}, formattest.NewBlobStore(), nil)
 	for range cap(h.publishSlots) {
 		h.publishSlots <- struct{}{}
 	}

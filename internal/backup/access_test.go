@@ -311,3 +311,30 @@ func restoreInto(t *testing.T, src, dst *fakeDB) {
 		t.Fatalf("RunRestore: %v", err)
 	}
 }
+
+// Service accounts are not archived, so the grants and group links of one must
+// be left out of the archive instead of making every restore end incomplete.
+func TestBackupExport_DropsServiceAccountGrants(t *testing.T) {
+	ctx := context.Background()
+	src := newFakeDB("src")
+
+	alice, _ := src.CreateUser(ctx, &models.User{Username: "alice"})
+	devs, _ := src.CreateGroup(ctx, &models.Group{Name: "devs"})
+	deploy, _ := src.CreatePermissionTarget(
+		ctx,
+		&models.PermissionTarget{Name: "deploy", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"read"}},
+	)
+
+	const serviceAccountID = "service-account-not-in-users"
+
+	_ = src.GetOrCreatePermissionAssignment(ctx, deploy.ID, "user", alice.ID)
+	_ = src.GetOrCreatePermissionAssignment(ctx, deploy.ID, "user", serviceAccountID)
+	acc(src).memberships = append(acc(src).memberships, &models.UserGroup{UserID: serviceAccountID, GroupID: devs.ID})
+
+	dst := newFakeDB("dst")
+	restoreInto(t, src, dst)
+
+	if len(acc(dst).assignments) != 1 || len(acc(dst).memberships) != 0 {
+		t.Fatalf("restored assignments %+v, memberships %+v; want only alice's assignment", acc(dst).assignments, acc(dst).memberships)
+	}
+}

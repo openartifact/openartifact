@@ -13,6 +13,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div class="h-8 w-full rounded skel" />
     </div>
 
+    <!-- The quota could not be read: not the same as "none configured", and nothing here may overwrite it. -->
+    <div v-else-if="loadError" class="bg-surface rounded-xl border border-border" data-testid="quota-load-error">
+      <StateBlock variant="error" :hint="t('quota.loadFailed')">
+        <template #action>
+          <AppButton variant="secondary" @click="load">{{ t('ui.state.retry') }}</AppButton>
+        </template>
+      </StateBlock>
+    </div>
+
     <!-- No quota configured -->
     <div
       v-else-if="!configured"
@@ -161,7 +170,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <AppButton :disabled="!formSize" :loading="saving" @click="saveQuota">
+            <AppButton :disabled="!formSize || loadError" :loading="saving" @click="saveQuota">
               {{ t('common.save') }}
             </AppButton>
             <AppButton variant="danger-outline" @click="removeModal = true">
@@ -212,7 +221,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
-        <AppButton :disabled="!formSize" :loading="saving" @click="saveQuota">
+        <AppButton :disabled="!formSize || loadError" :loading="saving" @click="saveQuota">
           {{ t('quota.set') }}
         </AppButton>
         <AppButton variant="ghost" @click="showForm = false">
@@ -247,6 +256,7 @@ import {
 } from '@heroicons/vue/24/outline'
 import AppButton from '../AppButton.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
+import StateBlock from '../ui/StateBlock.vue'
 import { formatBytes, formatOneDecimal, SIZE_UNITS, splitBytes, toBytes, type SizeUnit } from '../../lib/quota'
 
 // ─── Props ─────────────────────────────────────────────────────────────────────
@@ -262,6 +272,7 @@ const loading = ref(true)
 const saving = ref(false)
 const removing = ref(false)
 const showForm = ref(false)
+const loadError = ref(false)
 const removeModal = ref(false)
 
 const formSize = ref<number>(10)
@@ -309,6 +320,7 @@ function populateForm(q: RepoQuota): void {
 
 async function load(): Promise<void> {
   loading.value = true
+  loadError.value = false
   try {
     const res = await getRepoQuota(props.repoName)
     quota.value = res ?? null
@@ -317,6 +329,7 @@ async function load(): Promise<void> {
     if (err instanceof ApiError && (err.status === 404 || err.status === 204)) {
       quota.value = null
     } else {
+      loadError.value = true
       toasts.error(t('quota.loadFailed'))
     }
   } finally {
@@ -325,7 +338,7 @@ async function load(): Promise<void> {
 }
 
 async function saveQuota(): Promise<void> {
-  if (!formSize.value) return
+  if (!formSize.value || loadError.value) return
   saving.value = true
   try {
     const res = await setRepoQuota(props.repoName, bytesFromForm())

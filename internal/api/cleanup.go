@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -178,15 +179,42 @@ func (b *cleanupPolicyBody) policy(repoID string) *models.CleanupPolicy {
 	}
 }
 
+// optionalInt is a tri-state JSON integer: absent keeps the stored value, an
+// explicit null clears it (Value nil), a number sets it.
+type optionalInt struct {
+	Set   bool
+	Value *int
+}
+
+// UnmarshalJSON records that the key was present. encoding/json calls it for
+// an explicit null too, but never for an absent key.
+func (o *optionalInt) UnmarshalJSON(data []byte) error {
+	o.Set = true
+
+	if string(data) == "null" {
+		o.Value = nil
+		return nil
+	}
+
+	var n int
+	if err := json.Unmarshal(data, &n); err != nil {
+		return err
+	}
+
+	o.Value = &n
+
+	return nil
+}
+
 // cleanupPolicyPatch is the partial-update body of a cleanup policy.
 type cleanupPolicyPatch struct {
-	Name                    *string `json:"name"`
-	Enabled                 *bool   `json:"enabled"`
-	KeepLastN               *int    `json:"keep_last_n"`
-	KeepSinceDays           *int    `json:"keep_since_days"`
-	KeepDownloadedSinceDays *int    `json:"keep_downloaded_since_days"`
-	NamePattern             *string `json:"name_pattern"`
-	ScheduleCron            *string `json:"schedule_cron"`
+	Name                    *string     `json:"name"`
+	Enabled                 *bool       `json:"enabled"`
+	KeepLastN               optionalInt `json:"keep_last_n"`
+	KeepSinceDays           optionalInt `json:"keep_since_days"`
+	KeepDownloadedSinceDays optionalInt `json:"keep_downloaded_since_days"`
+	NamePattern             *string     `json:"name_pattern"`
+	ScheduleCron            *string     `json:"schedule_cron"`
 }
 
 // apply copies the provided fields onto policy.
@@ -199,16 +227,16 @@ func (b *cleanupPolicyPatch) apply(policy *models.CleanupPolicy) {
 		policy.Enabled = *b.Enabled
 	}
 
-	if b.KeepLastN != nil {
-		policy.KeepLastN = b.KeepLastN
+	if b.KeepLastN.Set {
+		policy.KeepLastN = b.KeepLastN.Value
 	}
 
-	if b.KeepSinceDays != nil {
-		policy.KeepSinceDays = b.KeepSinceDays
+	if b.KeepSinceDays.Set {
+		policy.KeepSinceDays = b.KeepSinceDays.Value
 	}
 
-	if b.KeepDownloadedSinceDays != nil {
-		policy.KeepDownloadedSinceDays = b.KeepDownloadedSinceDays
+	if b.KeepDownloadedSinceDays.Set {
+		policy.KeepDownloadedSinceDays = b.KeepDownloadedSinceDays.Value
 	}
 
 	if b.NamePattern != nil {
@@ -226,8 +254,8 @@ func (b *cleanupPolicyPatch) apply(policy *models.CleanupPolicy) {
 // onlyDisables reports whether the patch (already applied to policy) merely
 // disabled the policy.
 func (b *cleanupPolicyPatch) onlyDisables(policy *models.CleanupPolicy) bool {
-	return !policy.Enabled && b.Name == nil && b.KeepLastN == nil && b.KeepSinceDays == nil &&
-		b.KeepDownloadedSinceDays == nil && b.NamePattern == nil && b.ScheduleCron == nil
+	return !policy.Enabled && b.Name == nil && !b.KeepLastN.Set && !b.KeepSinceDays.Set &&
+		!b.KeepDownloadedSinceDays.Set && b.NamePattern == nil && b.ScheduleCron == nil
 }
 
 // codeUnsupportedFormat is the error code for operations the repository's format does not support.

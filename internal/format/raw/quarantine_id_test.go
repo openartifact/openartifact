@@ -26,7 +26,7 @@ func (d *rawByPathDB) GetRawArtifact(_ context.Context, _, path string) (*models
 // TestDownloadQuarantinedByRowID: a scan keyed by the artifact's row id (the id
 // the package listing shows) blocks the GET and HEAD of that artifact only.
 func TestDownloadQuarantinedByRowID(t *testing.T) {
-	db := &rawByPathDB{rawDB: &rawDB{DB: formattest.NewDB()}, arts: map[string]*models.RawArtifact{
+	db := &rawByPathDB{rawDB: &rawDB{DB: formattest.NewDB("raw")}, arts: map[string]*models.RawArtifact{
 		"a/one.txt": {ID: "file-1", Path: "a/one.txt", BlobKey: "abc", SHA256: "abc", SizeBytes: 3, ContentType: "text/plain"},
 		"a/two.txt": {ID: "file-2", Path: "a/two.txt", BlobKey: "abc", SHA256: "abc", SizeBytes: 3, ContentType: "text/plain"},
 	}}

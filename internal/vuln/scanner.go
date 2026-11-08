@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/osv"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/telemetry"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -133,6 +134,16 @@ const maxOSVPages = 10
 // maxOSVResponseBytes bounds one page of the OSV API answer.
 const maxOSVResponseBytes = 8 << 20
 
+// osvAffected is one affected entry of an OSV advisory.
+type osvAffected struct {
+	Package struct {
+		Name      string `json:"name"`
+		Ecosystem string `json:"ecosystem"`
+	} `json:"package"`
+	Ranges   json.RawMessage `json:"ranges"`
+	Versions []string        `json:"versions"`
+}
+
 // osvVulnerability represents a vulnerability from OSV API.
 type osvVulnerability struct {
 	ID       string   `json:"id"`
@@ -142,15 +153,7 @@ type osvVulnerability struct {
 		Type  string `json:"type"`
 		Score string `json:"score"`
 	} `json:"severity"`
-	Affected []struct {
-		Ranges []struct {
-			Type   string `json:"type"`
-			Events []struct {
-				Introduced string `json:"introduced"`
-				Fixed      string `json:"fixed"`
-			} `json:"events"`
-		} `json:"ranges"`
-	} `json:"affected"`
+	Affected   []osvAffected `json:"affected"`
 	References []struct {
 		URL string `json:"url"`
 	} `json:"references"`
@@ -211,7 +214,7 @@ func (s *OSVScanner) Scan(ctx context.Context, pkg Package) ([]models.Vulnerabil
 			vuln.Severity, vuln.CVSS = parseSeverityFromOSV(osvVuln.Severity, osvVuln.DatabaseSpecific.Severity)
 
 			// Extract fixed version
-			vuln.FixedIn = extractFixedVersionFromOSV(osvVuln.Affected)
+			vuln.FixedIn = extractFixedVersionFromOSV(osvVuln.Affected, osvEcosystem, packageName, version)
 
 			vulns = append(vulns, vuln)
 		}
@@ -736,29 +739,21 @@ func extractReferencesFromOSV(refs []struct {
 	return urls
 }
 
-// extractFixedVersionFromOSV extracts the fixed version from OSV affected ranges.
-func extractFixedVersionFromOSV(affected []struct {
-	Ranges []struct {
-		Type   string `json:"type"`
-		Events []struct {
-			Introduced string `json:"introduced"`
-			Fixed      string `json:"fixed"`
-		} `json:"events"`
-	} `json:"ranges"`
-}) string {
-	for _, aff := range affected {
-		for _, r := range aff.Ranges {
-			if r.Type == "ECOSYSTEM" {
-				for _, event := range r.Events {
-					if event.Fixed != "" {
-						return event.Fixed
-					}
-				}
-			}
-		}
+// extractFixedVersionFromOSV returns the lowest fixed version above the queried
+// version among the entries that name the queried package.
+func extractFixedVersionFromOSV(affected []osvAffected, ecosystem, name, version string) string {
+	entries := make([]models.OSVAffected, 0, len(affected))
+
+	for _, a := range affected {
+		entries = append(entries, models.OSVAffected{
+			Ecosystem: a.Package.Ecosystem,
+			Name:      a.Package.Name,
+			Ranges:    a.Ranges,
+			Versions:  a.Versions,
+		})
 	}
 
-	return ""
+	return osv.FixedVersion(entries, ecosystem, name, version)
 }
 
 var errInvalidPackage = errors.New("package name or version contains unsupported characters")

@@ -734,10 +734,12 @@ func TestNixStoreRoundTrip(t *testing.T) { //nolint:gocyclo,cyclop // one round 
 	stage := func(np *models.NixPath) {
 		t.Helper()
 
-		if err := pg.PutNixPendingNar(ctx, &models.NixPendingNar{
+		inserted, err := pg.PutNixPendingNar(ctx, &models.NixPendingNar{
 			RepositoryID: repo, SHA256: np.SHA256, NarFile: np.NarFile, BlobKey: np.BlobKey, SizeBytes: np.SizeBytes,
-		}); err != nil {
-			t.Fatal(err)
+			ReservedBytes: np.SizeBytes,
+		})
+		if err != nil || !inserted {
+			t.Fatalf("stage: inserted=%v err=%v", inserted, err)
 		}
 	}
 

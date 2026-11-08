@@ -53,7 +53,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </select>
       </FormField>
 
-      <FormField :label="t('sa.policy.ttl')" id="policy-ttl" :error="fieldError('ttl')" :hint="tp('sa.policy.ttlHint', { min: String(MIN_TTL_MINUTES), max: String(MAX_TTL_MINUTES) })">
+      <FormField :label="t('sa.policy.ttl')" id="policy-ttl" :error="fieldError('ttl')" :hint="tp('sa.policy.ttlHint', { min: MIN_TTL_MINUTES, max: MAX_TTL_MINUTES })">
         <div class="flex items-center gap-2">
           <input
             id="policy-ttl"

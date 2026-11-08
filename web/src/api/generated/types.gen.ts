@@ -885,14 +885,24 @@ export type Webhook = {
 export type WebhookDelivery = {
     id?: string;
     webhook_id?: string;
-    event?: string;
-    status?: string;
-    request_headers?: string;
-    request_body?: string;
-    response_headers?: string;
+    event_type?: string;
+    payload?: {
+        [key: string]: unknown;
+    };
+    status?: 'pending' | 'success' | 'failed';
+    /**
+     * HTTP status of the receiver's last reply; 0 before the first reply
+     */
+    response_status?: number;
+    /**
+     * The receiver's last reply, capped at 64 KiB; invalid UTF-8 is replaced and NUL bytes are dropped
+     */
     response_body?: string;
-    status_code?: number;
+    attempt_count?: number;
+    next_retry_at?: string | null;
+    delivered_at?: string | null;
     created_at?: string;
+    updated_at?: string;
 };
 
 export type Token = {
@@ -2314,13 +2324,25 @@ export type AnnotatedVulnerability = {
 } & ExploitAnnotation;
 
 /**
- * Verdict of an exploitation gate on one scan: it passes when no finding meets any of the conditions.
+ * Verdict of an exploitation gate on one scan: it passes when the scan completed and no finding meets any of the conditions. A scan that is not `completed`, or a requested `kev`/`epss_min` condition whose feed is not loaded, never passes.
  */
 export type VulnGateResponse = {
     /**
-     * True when `failed` is empty.
+     * True when the scan is `completed`, the requested feeds are loaded and `failed` is empty.
      */
     pass: boolean;
+    /**
+     * Why the gate could not vouch for the scan (scan not completed, feed not loaded); absent otherwise.
+     */
+    reason?: string;
+    /**
+     * Status of the scan that was gated: `pending`, `scanning`, `completed`, `partial` or `failed`.
+     */
+    scan_status: string;
+    /**
+     * Scanners that could not run for the scan.
+     */
+    failed_scanners: Array<string>;
     /**
      * The conditions that were applied.
      */

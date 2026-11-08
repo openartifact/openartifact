@@ -12,7 +12,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div>
     <p class="mb-2 text-xs text-muted" role="status" data-testid="search-count">
-      {{ tp(isChecksum ? 'search.count.checksum' : 'search.count.packages', { total: String(list.total.value) }) }}
+      {{ tp(isChecksum ? 'search.count.checksum' : 'search.count.packages', { total: list.total.value }) }}
     </p>
     <ListTable
       :columns="columns"

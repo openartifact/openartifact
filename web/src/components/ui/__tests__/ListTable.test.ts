@@ -112,6 +112,14 @@ describe('ListTable', () => {
     expect(w.text()).not.toMatch(/Load more/)
   })
 
+  it('keeps the load-more control when a cursor page came back empty but more rows exist', async () => {
+    const w = render({ paging: 'cursor', rows: [], hasMore: true })
+    await w.findAll('button').find((b) => /load more/i.test(b.text()))!.trigger('click')
+    expect(w.emitted('load-more')).toHaveLength(1)
+    await w.setProps({ hasMore: false })
+    expect(w.text()).not.toMatch(/Load more/)
+  })
+
   it('selects rows, all rows, and reports the selection', async () => {
     const w = render({ selectable: true, selected: [] })
     const boxes = w.findAll('input[type=checkbox]')

@@ -43,11 +43,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <StateBlock v-else variant="empty" :title="emptyTitle" :hint="emptyHint" :command="emptyCommand">
         <template v-if="$slots['empty-action']" #action><slot name="empty-action" /></template>
       </StateBlock>
+      <!-- A page can come back empty after client-side filtering while older rows remain. -->
+      <div v-if="paging === 'cursor' && more" class="flex justify-center border-t border-border px-4 py-3">
+        <AppButton variant="secondary" size="sm" class="max-md:h-11" :loading="loading" @click="loadMore">
+          {{ t('ui.table.loadMore') }}
+        </AppButton>
+      </div>
     </div>
 
     <div v-else class="overflow-hidden rounded-lg border border-border bg-surface" :class="{ 'opacity-70': loading }">
       <div v-if="selectable && selected.length > 0" class="border-b border-border bg-primary-soft px-4 py-2 text-sm text-primary" role="status">
-        {{ tp('ui.table.selected', { count: String(selected.length) }) }}
+        {{ tp('ui.table.selected', { count: selected.length }) }}
       </div>
       <TableScroller :fit-from="768">
         <table class="min-w-full divide-y divide-border max-md:block">
@@ -129,7 +135,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <AppButton variant="secondary" size="sm" class="max-md:h-11" :disabled="currentPage <= 1" @click="goto(currentPage - 1)">
             {{ t('ui.table.previous') }}
           </AppButton>
-          <span class="text-xs">{{ tp('ui.table.page', { page: String(currentPage), pages: String(pages) }) }}</span>
+          <span class="text-xs">{{ tp('ui.table.page', { page: currentPage, pages: pages }) }}</span>
           <AppButton variant="secondary" size="sm" class="max-md:h-11" :disabled="currentPage >= pages" @click="goto(currentPage + 1)">
             {{ t('ui.table.next') }}
           </AppButton>
@@ -238,10 +244,10 @@ const dir = computed(() => props.query?.dir.value ?? props.dir)
 const pages = computed(() => Math.max(1, Math.ceil(total.value / limit.value)))
 
 const summary = computed(() => {
-  if (paging.value === 'cursor') return tp('ui.table.showingCount', { count: String(rows.value.length) })
+  if (paging.value === 'cursor') return tp('ui.table.showingCount', { count: rows.value.length })
   const from = (currentPage.value - 1) * limit.value + 1
   const to = Math.min(from + rows.value.length - 1, total.value)
-  return tp('ui.table.showing', { from: String(from), to: String(to), total: String(total.value) })
+  return tp('ui.table.showing', { from: from, to: to, total: total.value })
 })
 
 // Mobile card layout: the first cell is the title (order 0, takes the free width), the actions cell sits

@@ -19,12 +19,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       aria-valuemin="0"
       aria-valuemax="100"
       :aria-valuenow="Math.min(share.percent, 100)"
-      :aria-valuetext="tp('quota.percentUsed', { n: String(share.percent) })"
+      :aria-valuetext="tp('quota.percentUsed', { n: share.percent })"
     >
       <div class="h-full rounded-full" :class="BAR[share.level]" :style="{ width: `${Math.min(share.percent, 100)}%` }" />
     </div>
     <p class="mt-0.5 text-micro" :class="share.level === 'full' ? 'font-medium text-danger' : share.level === 'warn' ? 'font-medium text-warning' : 'text-muted'">
-      {{ tp('quota.percentUsed', { n: String(share.percent) }) }}
+      {{ tp('quota.percentUsed', { n: share.percent }) }}
     </p>
   </div>
 </template>

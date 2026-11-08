@@ -474,8 +474,8 @@ func TestQuotaDeleteBlobReleasesBytesOnce(t *testing.T) {
 // goneBlobDB loses every blob delete race.
 type goneBlobDB struct{ *regFakeDB }
 
-func (d *goneBlobDB) DeleteDockerBlob(context.Context, string, string) error {
-	return database.ErrDockerRowNotFound
+func (d *goneBlobDB) DeleteDockerBlobFromImage(context.Context, string, string, string) (database.DockerBlobDeletion, error) {
+	return 0, database.ErrDockerRowNotFound
 }
 
 // mount POSTs a cross-repository mount of layer into dst/<image> from src/app.

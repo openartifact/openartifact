@@ -51,7 +51,8 @@ type bundlesScansMockDB struct {
 	deleteVulnCalled          bool
 	sealCalled                bool
 	createPromotionCalled     bool
-	updateBundleCalled        bool
+	archiveCalled             bool
+	archiveRefused            bool
 	setPropsCalls             int
 	setPropsReplace           bool
 	setPropsArg               map[string]string
@@ -111,9 +112,9 @@ func (db *bundlesScansMockDB) CreateBundlePromotion(_ context.Context, _ *models
 	return nil
 }
 
-func (db *bundlesScansMockDB) UpdateReleaseBundle(_ context.Context, _ *models.ReleaseBundle) error {
-	db.updateBundleCalled = true
-	return nil
+func (db *bundlesScansMockDB) ArchiveReleaseBundle(_ context.Context, _, _ string, _ time.Time) (bool, error) {
+	db.archiveCalled = true
+	return !db.archiveRefused, nil
 }
 
 func (db *bundlesScansMockDB) SetArtifactProperties(_ context.Context, _, _ string, props map[string]string, replace bool) error {
@@ -251,7 +252,7 @@ func TestBundlePromoteRejectsUnknownStage(t *testing.T) {
 		t.Errorf("unknown stage: status = %d, want 400 (%s)", rw.Code, rw.Body.String())
 	}
 
-	if db.createPromotionCalled || db.updateBundleCalled {
+	if db.createPromotionCalled || db.archiveCalled {
 		t.Error("a rejected promotion was recorded")
 	}
 }
@@ -368,5 +369,45 @@ func TestLicenseScanRejectsClientMetadata(t *testing.T) {
 	rw = serveAs(h.RegisterRoutes, http.MethodPost, "/api/v1/repositories/repo/license/scan", `{"artifact_id":""}`)
 	if rw.Code != http.StatusBadRequest {
 		t.Errorf("empty artifact_id: status = %d, want 400", rw.Code)
+	}
+}
+
+func TestBundleArchive(t *testing.T) {
+	tests := []struct {
+		name       string
+		state      models.BundleState
+		refused    bool
+		wantStatus int
+		wantCalled bool
+	}{
+		{name: "sealed", state: models.BundleStateSealed, wantStatus: http.StatusOK, wantCalled: true},
+		{name: "draft is refused before the update", state: models.BundleStateDraft, wantStatus: http.StatusConflict},
+		{
+			name:       "no longer sealed at update time",
+			state:      models.BundleStateSealed,
+			refused:    true,
+			wantStatus: http.StatusConflict,
+			wantCalled: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := &bundlesScansMockDB{
+				bundle:         &models.ReleaseBundle{ID: "55555555-5555-5555-5555-555555555555", Name: "b", Version: "1", State: tt.state},
+				archiveRefused: tt.refused,
+			}
+			log, ev := newBundlesScansEnv(t, db)
+			h := NewBundlesHandler(db, log, ev)
+
+			rw := serveAs(h.RegisterAuthed, http.MethodPost, "/api/v1/bundles/b/1/archive", "")
+			if rw.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d (%s)", rw.Code, tt.wantStatus, rw.Body.String())
+			}
+
+			if db.archiveCalled != tt.wantCalled {
+				t.Errorf("ArchiveReleaseBundle called = %v, want %v", db.archiveCalled, tt.wantCalled)
+			}
+		})
 	}
 }

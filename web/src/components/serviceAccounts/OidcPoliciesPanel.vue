@@ -37,7 +37,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <template #cell-account="{ row }">
         <router-link :to="accountPath(row.service_account_id)" class="font-mono text-ui text-primary hover:underline">{{ row.service_account }}</router-link>
       </template>
-      <template #cell-ttl="{ row }"><span class="tabular-nums">{{ tp('sa.policy.ttlValue', { minutes: String(Math.round(row.token_ttl_seconds / 60)) }) }}</span></template>
+      <template #cell-ttl="{ row }"><span class="tabular-nums">{{ tp('sa.policy.ttlValue', { minutes: Math.round(row.token_ttl_seconds / 60) }) }}</span></template>
       <template #cell-enabled="{ row }">
         <StatusBadge :label="row.enabled ? t('sa.policy.statusEnabled') : t('sa.policy.statusDisabled')" :variant="row.enabled ? 'success' : 'neutral'" />
       </template>

@@ -151,6 +151,10 @@ func trashFilesExec(ctx context.Context, tx sqlTx, repoID string, ids []string, 
 		}
 	}
 
+	if err := lockVersionsTx(ctx, tx, versionIDs); err != nil {
+		return err
+	}
+
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE package_versions v SET deleted_at = now(), deleted_by = $2
 		 WHERE v.id = ANY($1::uuid[]) AND v.deleted_at IS NULL
@@ -304,11 +308,38 @@ func restoreFilesExec(ctx context.Context, tx sqlTx, item *models.TrashItem) err
 	return runHooks(ctx, tx, desc.OnRestore, item.ID)
 }
 
+// lockVersionsTx locks the packages of the given versions and then the versions
+// (the order writePackageTx takes them in, each in id order) so the emptiness
+// check of the statement that follows runs with a snapshot that sees the
+// committed files of a concurrent writer; see lockForPrune.
+func lockVersionsTx(ctx context.Context, tx sqlTx, versionIDs []string) error {
+	ids := uuidArray(versionIDs)
+
+	if _, err := tx.ExecContext(ctx,
+		`SELECT p.id FROM packages p
+		  WHERE p.id IN (SELECT v.package_id FROM package_versions v WHERE v.id = ANY($1::uuid[]))
+		  ORDER BY p.id FOR UPDATE OF p`, ids); err != nil {
+		return fmt.Errorf("lock packages: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`SELECT v.id FROM package_versions v WHERE v.id = ANY($1::uuid[])
+		  ORDER BY v.id FOR UPDATE OF v`, ids); err != nil {
+		return fmt.Errorf("lock versions: %w", err)
+	}
+
+	return nil
+}
+
 // pruneEmptyTx deletes the given versions that hold no file any more, then the
 // packages of those versions that hold no version any more.
 func pruneEmptyTx(ctx context.Context, tx sqlTx, versionIDs []string) error {
 	if len(versionIDs) == 0 {
 		return nil
+	}
+
+	if err := lockVersionsTx(ctx, tx, versionIDs); err != nil {
+		return err
 	}
 
 	rows, err := tx.QueryContext(ctx,

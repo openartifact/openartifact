@@ -13,8 +13,9 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
-// ErrLastAdmin is returned when deleting the last enabled admin user.
-var ErrLastAdmin = errors.New("cannot delete the last enabled admin")
+// ErrLastAdmin is returned when a change would leave no enabled admin: deleting
+// or disabling the last admin user, or removing its admin-all assignment.
+var ErrLastAdmin = errors.New("cannot remove the last enabled admin")
 
 // ErrDuplicate is returned by Create*Package when an insert hits the unique
 // constraint (ON CONFLICT), so callers can distinguish an idempotent duplicate

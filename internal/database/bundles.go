@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/itempath"
 )
@@ -220,20 +221,24 @@ func (p *BundleStore) GetReleaseBundleByID(ctx context.Context, id string) (*mod
 	return b, nil
 }
 
-func (p *BundleStore) UpdateReleaseBundle(ctx context.Context, b *models.ReleaseBundle) error {
-	_, err := p.db.ExecContext(ctx,
-		`UPDATE release_bundles
-		 SET description=$1, state=$2, pipeline_id=$3, current_stage=$4,
-		     sealed_at=$5, sealer_id=(SELECT id FROM auth_users WHERE username = $6),
-		     archived_at=$7, archiver_id=(SELECT id FROM auth_users WHERE username = $8),
-		     gpg_key_id=$9, gpg_signature=$10, updated_at=now()
-		 WHERE id=$11`,
-		b.Description, b.State, b.PipelineID, b.CurrentStage,
-		b.SealedAt, b.SealedBy, b.ArchivedAt, b.ArchivedBy,
-		b.GPGKeyID, b.GPGSignature, b.ID,
-	)
+// ArchiveReleaseBundle moves a sealed bundle to archived with a conditional
+// UPDATE of the archive columns only, so a concurrent promotion's progress is
+// kept. It reports false when the bundle is not sealed (any more).
+func (p *BundleStore) ArchiveReleaseBundle(
+	ctx context.Context,
+	bundleID, archivedBy string,
+	archivedAt time.Time,
+) (bool, error) {
+	n, err := p.q.ArchiveReleaseBundle(ctx, dbsqlc.ArchiveReleaseBundleParams{
+		ID:         bundleID,
+		ArchivedAt: &archivedAt,
+		ArchivedBy: archivedBy,
+	})
+	if err != nil {
+		return false, fmt.Errorf("failed to archive release bundle: %w", err)
+	}
 
-	return err
+	return n > 0, nil
 }
 
 func (p *BundleStore) DeleteReleaseBundle(ctx context.Context, id string) error {

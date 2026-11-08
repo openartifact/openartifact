@@ -417,7 +417,7 @@ type formatStore interface {
 		version string,
 	) ([]*models.TerraformProvider, error)
 	MarkPackumentStale(ctx context.Context, packageID string) error
-	PutNixPendingNar(ctx context.Context, n *models.NixPendingNar) error
+	PutNixPendingNar(ctx context.Context, n *models.NixPendingNar) (bool, error)
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
 	RubyGemsSpecsStamp(ctx context.Context, repoID string) (string, error)
 	SearchCargoCrateSummaries(ctx context.Context, repoID string, query string, limit int) ([]*models.CargoCrateSummary, int, error)
@@ -448,9 +448,10 @@ type DB struct {
 	Repo *models.Repository
 }
 
-// NewDB returns a DB serving repository "myrepo" (ID "repo-1").
-func NewDB() *DB {
-	d := &DB{Repo: &models.Repository{ID: "repo-1", Name: "myrepo"}}
+// NewDB returns a DB serving repository "myrepo" (ID "repo-1") of the given
+// format: a handler serves a repository of its own format only.
+func NewDB(format string) *DB {
+	d := &DB{Repo: &models.Repository{ID: "repo-1", Name: "myrepo", Format: format}}
 	d.Keys = map[string]bool{}
 
 	return d

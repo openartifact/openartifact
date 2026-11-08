@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
+	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 // The generic package tables (packages, package_versions, package_files; see
@@ -106,6 +107,9 @@ type FileWritten struct {
 	ID        string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	// Replaced is the content the write took the path over from (nil when the
+	// path was free); only the overwriting writers fill it.
+	Replaced *models.ReplacedBlob
 }
 
 // jsonOrEmpty marshals v as a JSON object ("{}" for nil).
@@ -388,11 +392,32 @@ func versionIDsOf(rows []dbsqlc.DeletePackageFilesByIDRow) []string {
 	return ids
 }
 
+// lockForPrune locks the packages of the given versions and then the versions
+// themselves, the order writePackageTx takes them in. The emptiness check of
+// the delete that follows would not see a concurrent writer's uncommitted file;
+// the lock waits for that writer to commit, so the delete (a later statement,
+// with a fresh snapshot) does.
+func lockForPrune(ctx context.Context, q *dbsqlc.Queries, versionIDs []string) error {
+	if err := q.LockPackagesOfVersions(ctx, versionIDs); err != nil {
+		return fmt.Errorf("lock packages: %w", err)
+	}
+
+	if err := q.LockVersions(ctx, versionIDs); err != nil {
+		return fmt.Errorf("lock versions: %w", err)
+	}
+
+	return nil
+}
+
 // pruneEmpty removes the given versions when they have no file left, and then
 // the packages that have no version left.
 func pruneEmpty(ctx context.Context, q *dbsqlc.Queries, versionIDs []string) error {
 	if len(versionIDs) == 0 {
 		return nil
+	}
+
+	if err := lockForPrune(ctx, q, versionIDs); err != nil {
+		return err
 	}
 
 	pkgIDs, err := q.PruneEmptyVersions(ctx, versionIDs)

@@ -62,21 +62,30 @@ export async function listArtifactActivity(
   return { entries: res.data ?? [], hasMore, nextCursor: hasMore ? (res.next_cursor ?? null) : null }
 }
 
+/** Outcome of {@link setVersionQuarantine}: how many scan results changed and how many writes failed. */
+export interface QuarantineOutcome {
+  applied: number
+  failed: number
+  /** The first rejection, when any write failed. */
+  error?: unknown
+}
+
 /**
  * Quarantines or releases every scan result of the given files (vulnerability,
- * license and secret scans each keep their own flag). Returns how many results
- * changed: 0 means there is nothing scanned to quarantine, or nothing to release.
+ * license and secret scans each keep their own flag). Every write is attempted
+ * even when another fails; `applied + failed === 0` means there is nothing
+ * scanned to quarantine, or nothing to release.
  */
-export async function setVersionQuarantine(repo: string, fileIds: readonly string[], quarantined: boolean): Promise<number> {
+export async function setVersionQuarantine(repo: string, fileIds: readonly string[], quarantined: boolean): Promise<QuarantineOutcome> {
   const ids = new Set(fileIds)
   const [vuln, license, secret] = await Promise.all([listVulnScans(repo), listLicenseScans(repo), listSecretScans(repo)])
   const pending = (scans: Array<{ id: string; artifact_id: string; quarantined: boolean }>) =>
     scans.filter((s) => ids.has(s.artifact_id) && s.quarantined !== quarantined)
-  const changes = [
+  const results = await Promise.allSettled([
     ...pending(vuln).map((s) => setVulnQuarantine(repo, s.id, quarantined)),
     ...pending(license).map((s) => setLicenseQuarantine(repo, s.id, quarantined)),
     ...pending(secret).map((s) => setSecretQuarantine(repo, s.id, quarantined)),
-  ]
-  await Promise.all(changes)
-  return changes.length
+  ])
+  const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+  return { applied: results.length - rejected.length, failed: rejected.length, error: rejected[0]?.reason }
 }

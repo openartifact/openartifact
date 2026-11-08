@@ -188,6 +188,16 @@ func (db *authzFakeDB) GetGroupByID(_ context.Context, id string) (*models.Group
 	return &models.Group{ID: id}, nil
 }
 
+func (db *authzFakeDB) DeletePermissionTarget(_ context.Context, id string) error {
+	if err := db.failing("DeletePermissionTarget"); err != nil {
+		return err
+	}
+
+	delete(db.targets, id)
+
+	return nil
+}
+
 func (db *authzFakeDB) GetPermissionTargetByID(_ context.Context, id string) (*models.PermissionTarget, error) {
 	if err := db.failing("GetPermissionTargetByID"); err != nil {
 		return nil, err
@@ -1658,4 +1668,71 @@ func assertSessionRevocation(t *testing.T, h *authzHarness, changed, allGone boo
 	if keptHash != "" && h.db.keptSession[idAliceUser] != keptHash {
 		t.Errorf("kept session hash = %q, want %q", h.db.keptSession[idAliceUser], keptHash)
 	}
+}
+
+func TestSeededPermissionTargetsAreImmutable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		target       string
+		method, body string
+		want         int
+	}{
+		{"delete admin-all", "admin-all", http.MethodDelete, "", http.StatusConflict},
+		{"delete anonymous-read", "anonymous-read", http.MethodDelete, "", http.StatusConflict},
+		{"rename admin-all", "admin-all", http.MethodPatch, `{"name":"x"}`, http.StatusConflict},
+		{"shrink admin-all actions", "admin-all", http.MethodPatch, `{"actions":["read"]}`, http.StatusConflict},
+		{"narrow admin-all filter", "admin-all", http.MethodPatch, `{"repository_filter":"a"}`, http.StatusConflict},
+		{"narrow anonymous-read path", "anonymous-read", http.MethodPatch, `{"path_pattern":"a"}`, http.StatusConflict},
+		{"delete ordinary target", "ops", http.MethodDelete, "", http.StatusNoContent},
+		{"rename ordinary target", "ops", http.MethodPatch, `{"name":"renamed"}`, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newAuthzHarness(t)
+			h.seedTarget(idTargetA, tt.target)
+
+			wantStatus(t, h.do(authzCall{
+				method: tt.method, path: "/api/v1/permission-targets/" + idTargetA, body: tt.body, principal: azAdmin(),
+			}), tt.want)
+
+			if tt.want == http.StatusConflict {
+				got, ok := h.db.targets[idTargetA]
+				if !ok || got.Name != tt.target {
+					t.Errorf("seeded target changed or removed: %+v", got)
+				}
+			}
+		})
+	}
+}
+
+func TestUnassignLastAdminIsConflict(t *testing.T) {
+	t.Parallel()
+
+	h := newAuthzHarness(t)
+	h.seedTarget(idTargetA, "admin-all")
+	h.db.assignments[permAssignKey{idTargetA, "user", idAliceUser}] = true
+	h.db.fail["DeletePermissionAssignment"] = database.ErrLastAdmin
+
+	wantStatus(t, h.do(authzCall{
+		method:    http.MethodDelete,
+		path:      "/api/v1/permission-targets/" + idTargetA + "/assignments?principal_type=user&principal_id=" + idAliceUser,
+		principal: azAdmin(),
+	}), http.StatusConflict)
+}
+
+func TestPatchUserDisablingLastAdminIsConflict(t *testing.T) {
+	t.Parallel()
+
+	h := newAuthzHarness(t)
+	h.seedUser(idAliceUser, "alice", nil)
+	h.db.fail["PatchUser"] = database.ErrLastAdmin
+
+	wantStatus(t, h.do(authzCall{
+		method: http.MethodPatch, path: "/api/v1/users/" + idAliceUser, body: `{"disabled":true}`, principal: azAdmin(),
+	}), http.StatusConflict)
 }

@@ -50,7 +50,7 @@ type stampDB struct {
 	hideFilesFromList bool
 }
 
-func newStampDB() *stampDB { return &stampDB{DB: formattest.NewDB()} }
+func newStampDB() *stampDB { return &stampDB{DB: formattest.NewDB("pypi")} }
 
 func (d *stampDB) publish(project, version, ext string) {
 	f := benchPyPIFile(project, version, ext)

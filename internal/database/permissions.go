@@ -170,16 +170,37 @@ func (p *PermissionStore) CreatePermissionAssignment(ctx context.Context, assign
 	return nil
 }
 
+// DeletePermissionAssignment removes one assignment. Removing the admin-all
+// grant of the last enabled admin returns ErrLastAdmin.
 func (p *PermissionStore) DeletePermissionAssignment(ctx context.Context, targetID, principalType, principalID string) error {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
-	err := p.q.DeletePermissionAssignment(ctx, dbsqlc.DeletePermissionAssignmentParams{
-		PermissionTargetID: targetID,
-		PrincipalType:      principalType,
-		PrincipalID:        principalID,
-	})
+	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("failed to delete permission assignment: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	before, err := lockAndCountAdmins(ctx, tx)
+	if err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM permission_assignments
+		WHERE permission_target_id = $1 AND principal_type = $2 AND principal_id = $3`,
+		targetID, principalType, principalID,
+	); err != nil {
+		return fmt.Errorf("failed to delete permission assignment: %w", err)
+	}
+
+	if err := requireAdminRemains(ctx, tx, before); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to delete permission assignment: %w", err)
 	}
 

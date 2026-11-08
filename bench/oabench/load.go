@@ -205,7 +205,11 @@ func runLoad(args []string) error {
 	pid := fs.Int("pid", 0, "server PID for RSS/CPU sampling")
 	metricsURL := fs.String("metrics", "", "server /metrics URL for allocs/request (needs anonymous metrics or -metrics-token)")
 	metricsTok := fs.String("metrics-token", "", "bearer token for /metrics")
-	pprofURL := fs.String("pprof", "", "server pprof base URL (e.g. http://127.0.0.1:8080/debug/pprof); needs -pprof-token")
+	pprofURL := fs.String(
+		"pprof",
+		"",
+		"server pprof base URL (e.g. http://127.0.0.1:8080/api/v1/admin/pprof); needs -pprof-token (an admin token; a worker process serves /debug/pprof with the /metrics token)",
+	)
 	pprofTok := fs.String("pprof-token", "", "bearer token for pprof")
 	profDir := fs.String("profile-dir", "", "write per-scenario CPU/heap/alloc/mutex/block/goroutine profiles here")
 	jsonOut := fs.String("json", "", "write results as JSON to this file")

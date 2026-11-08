@@ -619,6 +619,10 @@ func (h *HTTPHandler) commitFailed(w http.ResponseWriter, r *http.Request, repoI
 		h.discardOrphan(r.Context(), computedHex)
 		h.log.Errorw("failed to store blob", "digest", digest, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+		// The upload file may already be hard-linked as the blob under its
+		// digest: a later PATCH would append to that shared inode. Drop the
+		// session even when the client has gone away.
+		h.discardUpload(context.WithoutCancel(r.Context()), repoID, uploadUUID)
 	}
 }
 

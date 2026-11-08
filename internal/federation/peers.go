@@ -217,43 +217,32 @@ func (s *Store) UpdatePeer(ctx context.Context, repoID, id string, patch PeerPat
 		cur.Name = *patch.Name
 	}
 
-	secrets, err := cur.Secrets()
-	if err != nil {
-		// A secret that cannot be opened (the key changed) may be replaced.
-		secrets = PeerSecrets{}
-	}
-
-	if patch.BaseURL != nil && strings.TrimRight(*patch.BaseURL, "/") != strings.TrimRight(cur.BaseURL, "/") {
-		if patch.Token == nil {
-			return nil, fmt.Errorf("%w: the token must be sent again when base_url changes", ErrInvalid)
-		}
-
-		secrets.Token = ""
+	if patch.BaseURL != nil && strings.TrimRight(*patch.BaseURL, "/") != strings.TrimRight(cur.BaseURL, "/") && patch.Token == nil {
+		return nil, fmt.Errorf("%w: the token must be sent again when base_url changes", ErrInvalid)
 	}
 
 	apply(&cur.BaseURL, patch.BaseURL)
 	apply(&cur.CAPEM, patch.CAPEM)
-	apply(&secrets.Token, patch.Token)
-	apply(&secrets.ClientCert, patch.ClientCert)
-	apply(&secrets.ClientKey, patch.ClientKey)
 
 	if patch.Enabled != nil {
 		cur.Enabled = *patch.Enabled
 	}
 
-	tokenEnc, err := crypto.Encrypt(secrets.Token)
+	// A secret the patch does not carry keeps its stored ciphertext untouched,
+	// so a patch made while the encryption key is wrong cannot destroy it.
+	tokenEnc, err := sealPatched(cur.TokenEnc, patch.Token, "peer token")
 	if err != nil {
-		return nil, fmt.Errorf("encrypt peer token: %w", err)
+		return nil, err
 	}
 
-	certEnc, err := crypto.Encrypt(secrets.ClientCert)
+	certEnc, err := sealPatched(cur.ClientCertEnc, patch.ClientCert, "client certificate")
 	if err != nil {
-		return nil, fmt.Errorf("encrypt client certificate: %w", err)
+		return nil, err
 	}
 
-	keyEnc, err := crypto.Encrypt(secrets.ClientKey)
+	keyEnc, err := sealPatched(cur.ClientKeyEnc, patch.ClientKey, "client key")
 	if err != nil {
-		return nil, fmt.Errorf("encrypt client key: %w", err)
+		return nil, err
 	}
 
 	_, err = s.db.ExecContext(ctx,
@@ -274,6 +263,21 @@ func (s *Store) UpdatePeer(ctx context.Context, repoID, id string, patch PeerPat
 	}
 
 	return s.GetPeer(ctx, repoID, id)
+}
+
+// sealPatched encrypts the patched secret, or returns the stored ciphertext
+// when the patch leaves it alone.
+func sealPatched(stored string, patched *string, what string) (string, error) {
+	if patched == nil {
+		return stored, nil
+	}
+
+	enc, err := crypto.Encrypt(*patched)
+	if err != nil {
+		return "", fmt.Errorf("encrypt %s: %w", what, err)
+	}
+
+	return enc, nil
 }
 
 func apply(dst *string, src *string) {

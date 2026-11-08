@@ -108,8 +108,7 @@ func newTestDB(t *testing.T) (*HTTPHandler, *pacmanDB) {
 func newTestHandler(t *testing.T) (*HTTPHandler, *pacmanDB, *formattest.BlobStore, *formattest.Publisher, *regenRecorder) {
 	t.Helper()
 
-	db := &pacmanDB{DB: formattest.NewDB(), pkgs: map[string]*models.PacmanPackage{}, meta: map[string]*models.RepoMetadata{}}
-	db.Repo.Format = FormatName
+	db := &pacmanDB{DB: formattest.NewDB("pacman"), pkgs: map[string]*models.PacmanPackage{}, meta: map[string]*models.RepoMetadata{}}
 
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}

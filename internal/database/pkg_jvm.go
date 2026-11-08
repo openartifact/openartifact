@@ -60,6 +60,11 @@ func (p *core) upsertPackageFile(
 	q := p.q.WithTx(tx)
 
 	overwrite := func() (*FileWritten, error) {
+		replaced, err := lockPathContent(ctx, tx, q, w.RepoID, f.Path)
+		if err != nil {
+			return nil, err
+		}
+
 		row, err := q.OverwritePackageFileByPath(ctx, dbsqlc.OverwritePackageFileByPathParams{
 			BlobID: &blobID, Attrs: attrs, Checksums: sums, RepositoryID: w.RepoID, Path: f.Path,
 		})
@@ -71,7 +76,7 @@ func (p *core) upsertPackageFile(
 			return nil, fmt.Errorf("overwrite package file: %w", err)
 		}
 
-		return &FileWritten{ID: row.ID, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}, nil
+		return &FileWritten{ID: row.ID, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, Replaced: replaced}, nil
 	}
 
 	written, err := overwrite()

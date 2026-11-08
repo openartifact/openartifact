@@ -93,7 +93,7 @@ type HTTPHandler struct {
 
 func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
 	return &HTTPHandler{
-		Handler:    base.New(log, db, blobStore, baseURL),
+		Handler:    base.New("nuget", log, db, blobStore, baseURL),
 		maxPush:    maxNuGetPackageBytes,
 		deps:       newDepCache(depCacheEntries),
 		nuspecGate: base.NewGate(maxConcurrentNuspecReads), DB: db,

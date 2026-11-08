@@ -24,7 +24,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <dt class="text-muted" :title="t('repoDetail.proxy.maxStaleHint')">{{ t('repoDetail.proxy.maxStale') }}</dt>
       <dd class="text-foreground">{{ repo.max_stale_seconds ? formatDuration(repo.max_stale_seconds) : t('repoDetail.proxy.maxStaleOff') }}</dd>
       <dt class="text-muted" :title="t('repoDetail.proxy.minAgeHint')">{{ t('repoDetail.proxy.minAge') }}</dt>
-      <dd class="text-foreground">{{ repo.min_age_hours ? tp('repoDetail.proxy.minAgeValue', { hours: String(repo.min_age_hours) }) : t('repoDetail.proxy.minAgeOff') }}</dd>
+      <dd class="text-foreground">{{ repo.min_age_hours ? tp('repoDetail.proxy.minAgeValue', { hours: repo.min_age_hours }) : t('repoDetail.proxy.minAgeOff') }}</dd>
       <dt class="text-muted">{{ t('repoDetail.proxy.blocked') }}</dt>
       <dd :class="repo.blocked ? 'font-medium text-danger' : 'text-foreground'" data-testid="proxy-blocked">{{ repo.blocked ? t('repoDetail.proxy.blockedYes') : t('repoDetail.proxy.blockedNo') }}</dd>
     </dl>

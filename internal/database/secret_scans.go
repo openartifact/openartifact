@@ -72,7 +72,8 @@ func (p *SecretScanStore) CreateSecretScanResult(ctx context.Context, result *mo
 		INSERT INTO secret_results (scan_job_id, findings, finding_count, quarantined)
 		SELECT job.id, $6, $7, $8 FROM job
 		ON CONFLICT (scan_job_id) DO UPDATE SET
-			findings = EXCLUDED.findings, finding_count = EXCLUDED.finding_count, quarantined = EXCLUDED.quarantined
+			findings = EXCLUDED.findings, finding_count = EXCLUDED.finding_count,
+				quarantined = secret_results.quarantined OR EXCLUDED.quarantined
 		RETURNING id`,
 		result.RepositoryID, result.ArtifactID, secretScanStatusToJob(result.ScanStatus), result.ScanError, scannedAt,
 		findingsJSON, result.FindingCount, result.Quarantined,

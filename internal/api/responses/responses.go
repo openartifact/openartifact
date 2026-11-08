@@ -842,12 +842,17 @@ type VulnGateFailure struct {
 }
 
 // VulnGateResponse is the verdict of a gate check on one scan: Pass is true
-// when no finding meets any condition.
+// when the scan completed and no finding meets any condition. A scan that did
+// not complete, or a kev/epss_min condition whose feed is not loaded, is not a
+// pass: Reason says why.
 type VulnGateResponse struct {
-	Pass     bool              `json:"pass"`
-	Criteria VulnGateCriteria  `json:"criteria"`
-	Checked  int               `json:"checked"`
-	Failed   []VulnGateFailure `json:"failed"`
+	Pass           bool              `json:"pass"`
+	Reason         string            `json:"reason,omitempty"`
+	ScanStatus     string            `json:"scan_status"`
+	FailedScanners []string          `json:"failed_scanners"`
+	Criteria       VulnGateCriteria  `json:"criteria"`
+	Checked        int               `json:"checked"`
+	Failed         []VulnGateFailure `json:"failed"`
 }
 
 // ExploitFeedResponse is the state of one exploitation-signal feed.

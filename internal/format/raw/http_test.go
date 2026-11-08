@@ -45,7 +45,7 @@ func (d *rawDB) DeleteRawArtifact(_ context.Context, _, _ string) error {
 func newTestHandler(t *testing.T) (*HTTPHandler, *rawDB, *formattest.BlobStore, *formattest.Publisher) {
 	t.Helper()
 
-	db := &rawDB{DB: formattest.NewDB()}
+	db := &rawDB{DB: formattest.NewDB("raw")}
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
@@ -192,7 +192,7 @@ func (d *listDB) ListRawArtifacts(_ context.Context, _, prefix string) ([]*model
 
 // FMTA-10: listing "docs/" must not include siblings sharing the string prefix.
 func TestListDirectoryMatchesWholeSegment(t *testing.T) {
-	db := &listDB{DB: formattest.NewDB(), paths: []string{"docs/a.txt", "docs-old/b.txt", "docs/sub/c.txt", "docsx"}}
+	db := &listDB{DB: formattest.NewDB("raw"), paths: []string{"docs/a.txt", "docs-old/b.txt", "docs/sub/c.txt", "docsx"}}
 	h := NewHTTPHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), "http://localhost")
 
 	w := formattest.Do(h.RegisterRepoRoutes, formattest.Request(http.MethodGet, "/repos/myrepo/docs/", nil))

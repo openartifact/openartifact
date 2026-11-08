@@ -70,7 +70,7 @@ type HTTPHandler struct {
 }
 
 func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, ""), DB: db}
+	return &HTTPHandler{Handler: base.New("maven", log, db, blobStore, ""), DB: db}
 }
 
 // RegisterRepoRoutes registers Maven-specific routes on the provided sub-router.

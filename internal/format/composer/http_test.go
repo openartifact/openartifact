@@ -126,8 +126,7 @@ func (d *composerDB) DeleteComposerPackage(_ context.Context, _, id string) erro
 func newTestHandler(t *testing.T) (*HTTPHandler, *composerDB, *formattest.BlobStore, *formattest.Publisher) {
 	t.Helper()
 
-	db := &composerDB{DB: formattest.NewDB()}
-	db.Repo.Format = FormatName
+	db := &composerDB{DB: formattest.NewDB("composer")}
 
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}

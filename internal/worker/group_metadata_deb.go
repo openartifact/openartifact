@@ -354,12 +354,8 @@ func (j *groupJob) buildDebDist(ctx context.Context, dist string, hosted map[str
 	j.blobs["dists/"+dist+"/Release"] = release
 
 	if j.signer != nil {
-		signed, err := formatdeb.NewReleaseSigner(j.signer).SignRelease(release)
-		if err != nil {
-			j.w.log.Warnw("group worker: failed to sign release", "group", j.group.Name, "dist", dist, "error", err)
-		} else {
-			j.blobs["dists/"+dist+"/InRelease"] = signed.InRelease
-			j.blobs["dists/"+dist+"/Release.gpg"] = signed.ReleaseGPG
+		if err := addSignedRelease(j.blobs, "dists/"+dist+"/", release, j.signer); err != nil {
+			return false, fmt.Errorf("group worker: %s/%s: %w", j.group.Name, dist, err)
 		}
 	}
 

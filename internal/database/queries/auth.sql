@@ -139,10 +139,6 @@ INSERT INTO permission_assignments (permission_target_id, principal_type, princi
 VALUES ($1, $2, $3)
 ON CONFLICT (permission_target_id, principal_type, principal_id) DO NOTHING;
 
--- name: DeletePermissionAssignment :exec
-DELETE FROM permission_assignments
-WHERE permission_target_id = sqlc.arg(permission_target_id)::uuid AND principal_type = sqlc.arg(principal_type) AND principal_id = sqlc.arg(principal_id)::uuid;
-
 -- name: GetPermissionTargetsForPrincipal :many
 SELECT DISTINCT pt.id, pt.name, pt.repository_filter, pt.path_pattern, pt.actions, pt.created_at, pt.updated_at
 FROM permission_targets pt
