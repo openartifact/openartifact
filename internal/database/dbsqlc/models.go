@@ -134,6 +134,8 @@ type AuthSsoProvider struct {
 	CreatedAt          time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt          time.Time       `db:"updated_at" json:"updated_at"`
 	PermissionMapping  json.RawMessage `db:"permission_mapping" json:"permission_mapping"`
+	// Icon key chosen by an admin (see internal/auth ssoicon.go); empty means automatic
+	Icon string `db:"icon" json:"icon"`
 }
 
 // Personal access tokens and deploy tokens stored as SHA-256 hashes

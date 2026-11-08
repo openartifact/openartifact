@@ -8,11 +8,12 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import LoginPage from '../LoginPage.vue'
 import { t } from '../../i18n'
+import { ssoIcon } from '../../lib/brandIcons'
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
-const PROVIDERS = [{ slug: 'corp', kind: 'oidc', display_name: 'Corp SSO' }]
+const PROVIDERS = [{ slug: 'corp', kind: 'oidc', display_name: 'Corp SSO', icon: 'openid' }]
 
 async function mountLogin(path: string, providers: unknown[] = PROVIDERS) {
   setActivePinia(createPinia())
@@ -64,5 +65,19 @@ describe('LoginPage SSO', () => {
       expect(w.get('a[href^="/api/v1/auth/sso/"]').attributes('href')).toBe('/api/v1/auth/sso/oidc/corp/login')
       w.unmount()
     }
+  })
+
+  it('draws the icon the API names, not one guessed from the slug or the name', async () => {
+    const { w } = await mountLogin('/login', [
+      { slug: 'github-mirror', kind: 'oidc', display_name: 'GitHub', icon: 'okta' },
+      { slug: 'plain', kind: 'saml', display_name: 'Plain', icon: 'saml' },
+    ])
+    const links = w.findAll('a[href^="/api/v1/auth/sso/"]')
+    expect(links).toHaveLength(2)
+    expect(links[0].get('path').attributes('d')).toBe((ssoIcon('okta') as { path: string }).path)
+    // A generic protocol icon is an outline heroicon: no filled brand path.
+    expect(links[1].find('svg').exists()).toBe(true)
+    expect(links[1].find('svg').attributes('aria-hidden')).toBe('true')
+    w.unmount()
   })
 })

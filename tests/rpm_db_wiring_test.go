@@ -1309,6 +1309,10 @@ func (m *MockDatabase) PatchSSOProvider(
 		p.DisplayName = *patch.DisplayName
 	}
 
+	if patch.Icon != nil {
+		p.Icon = *patch.Icon
+	}
+
 	for dst, src := range map[*json.RawMessage]json.RawMessage{
 		&p.OIDCConfig: patch.OIDCConfig, &p.SAMLConfig: patch.SAMLConfig, &p.ClaimMapping: patch.ClaimMapping,
 	} {

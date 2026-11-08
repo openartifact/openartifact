@@ -13,8 +13,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :class="provider.enabled ? 'bg-success' : 'bg-muted'"
     />
     <div class="pl-2">
-      <div class="flex items-start justify-between mb-3">
-        <h3 class="font-semibold text-foreground">{{ provider.display_name }}</h3>
+      <div class="flex items-start justify-between gap-2 mb-3">
+        <div class="flex min-w-0 items-center gap-2.5">
+          <SsoIcon :icon="provider.resolved_icon" size="lg" class="shrink-0 text-foreground" />
+          <div class="min-w-0">
+            <h3 class="font-semibold text-foreground truncate" :title="provider.display_name">{{ provider.display_name }}</h3>
+            <p class="text-caption text-muted truncate" data-testid="sso-vendor">{{ ssoVendorLabel(provider) }}</p>
+          </div>
+        </div>
         <span class="font-mono text-micro px-1.5 py-0.5 rounded bg-surface-hover text-muted">
           {{ provider.kind.toUpperCase() }}
         </span>
@@ -80,10 +86,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { BoltIcon, PencilIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import AppButton from '../../../components/AppButton.vue'
 import AppToggle from '../../../components/AppToggle.vue'
+import SsoIcon from '../../../components/SsoIcon.vue'
 import type { SSOProvider } from '../../../api/sso'
 import { t } from '../../../i18n'
 import { timeAgo } from '../../../lib/datetime'
-import type { SSOTestOutcome } from '../../../lib/ssoProviderForm'
+import { ssoVendorLabel, type SSOTestOutcome } from '../../../lib/ssoProviderForm'
 
 defineProps<{ provider: SSOProvider; testResult?: SSOTestOutcome; testing: boolean }>()
 const emit = defineEmits<{ test: []; edit: []; toggle: []; delete: [] }>()

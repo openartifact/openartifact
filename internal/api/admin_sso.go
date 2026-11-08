@@ -85,6 +85,8 @@ const (
 	maxSSOFieldLen       = 512
 )
 
+var errSSOIconInvalid = errors.New("icon must be empty (automatic) or one of the documented icon keys")
+
 var errIdentityURLNotHTTPS = errors.New("URL must use https (http is only allowed for a loopback host)")
 
 // requireHTTPSIdentityURL rejects plain-http IdP trust-root URLs: discovery
@@ -243,6 +245,11 @@ func (h *AdminSSOHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !auth.ValidSSOIcon(body.Icon) {
+		writeError(w, http.StatusBadRequest, "validation_failed", errSSOIconInvalid.Error())
+		return
+	}
+
 	if err := validateStringMap("group_mapping", body.GroupMapping); err != nil {
 		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 		return
@@ -311,7 +318,7 @@ func (h *AdminSSOHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 	auditAdmin(r, audit.ActionSSOProviderCreated, "sso_provider", body.ID, "sso provider "+body.Slug+" created")
 
-	writeJSON(w, http.StatusCreated, ssoProviderToResponse(&body))
+	writeJSON(w, http.StatusCreated, h.providerResponse(&body))
 }
 
 func (h *AdminSSOHandler) handleList(w http.ResponseWriter, r *http.Request) {
@@ -329,7 +336,7 @@ func (h *AdminSSOHandler) handleList(w http.ResponseWriter, r *http.Request) {
 
 	resp := make([]any, 0, len(providers))
 	for _, p := range providers {
-		resp = append(resp, ssoProviderToResponse(p))
+		resp = append(resp, h.providerResponse(p))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"providers": resp})
@@ -348,6 +355,7 @@ func (h *AdminSSOHandler) handlePublicList(w http.ResponseWriter, r *http.Reques
 			"slug":         p.Slug,
 			"kind":         p.Kind,
 			"display_name": p.DisplayName,
+			"icon":         auth.ResolveSSOIcon(p),
 		})
 	}
 
@@ -374,13 +382,20 @@ func (h *AdminSSOHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, ssoProviderToResponse(provider))
+	writeJSON(w, http.StatusOK, h.providerResponse(provider))
 }
 
 // patchString decodes a JSON string patch field; ok is false on a type error.
 func patchString(raw json.RawMessage) (string, bool) {
 	var s string
 	return s, json.Unmarshal(raw, &s) == nil
+}
+
+// patchIcon decodes the icon patch field; valid is false for a non-string or
+// an unknown key. The empty string (automatic) is valid.
+func patchIcon(raw json.RawMessage) (string, bool) {
+	s, ok := patchString(raw)
+	return s, ok && auth.ValidSSOIcon(s)
 }
 
 func patchBool(raw json.RawMessage) (bool, bool) {
@@ -522,7 +537,7 @@ func (h *AdminSSOHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 
 	auditAdmin(r, audit.ActionSSOProviderUpdated, "sso_provider", existing.ID, "sso provider "+existing.Slug+" updated")
 
-	writeJSON(w, http.StatusOK, ssoProviderToResponse(existing))
+	writeJSON(w, http.StatusOK, h.providerResponse(existing))
 }
 
 // buildSSOPatch validates patch against the stored provider, exactly as create
@@ -544,6 +559,15 @@ func buildSSOPatch(
 		}
 
 		out.DisplayName = &s
+	}
+
+	if v, ok := patch["icon"]; ok {
+		icon, valid := patchIcon(v)
+		if !valid {
+			return invalid(errSSOIconInvalid.Error())
+		}
+
+		out.Icon = &icon
 	}
 
 	for field, dst := range map[string]**bool{
@@ -595,6 +619,16 @@ func buildSSOPatch(
 		out.ClaimMapping = v
 	}
 
+	if err := patchMappings(patch, &out); err != nil {
+		return invalid(err.Error())
+	}
+
+	return out, nil
+}
+
+// patchMappings validates the group and permission mapping fields present in
+// patch and stores them in out.
+func patchMappings(patch map[string]json.RawMessage, out *database.SSOProviderPatch) error {
 	for field, dst := range map[string]**map[string]string{
 		"group_mapping":      &out.GroupMapping,
 		"permission_mapping": &out.PermissionMapping,
@@ -602,18 +636,18 @@ func buildSSOPatch(
 		if v, ok := patch[field]; ok {
 			var m map[string]string
 			if err := json.Unmarshal(v, &m); err != nil {
-				return invalid(field + " must be an object of strings")
+				return fmt.Errorf("%s must be an object of strings", field) //nolint:err113 // client validation message
 			}
 
 			if err := validateStringMap(field, m); err != nil {
-				return invalid(err.Error())
+				return err
 			}
 
 			*dst = &m
 		}
 	}
 
-	return out, nil
+	return nil
 }
 
 func (h *AdminSSOHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
@@ -716,6 +750,21 @@ func (h *AdminSSOHandler) writeTestResult(
 	})
 }
 
+// providerResponse is the admin view of p, with the icon the login page shows
+// and the URL to register with the identity provider.
+func (h *AdminSSOHandler) providerResponse(p *models.SSOProvider) responses.SSOProviderResponse {
+	resp := ssoProviderToResponse(p)
+	resp.ResolvedIcon = auth.ResolveSSOIcon(p)
+
+	if p.Kind == "saml" {
+		resp.CallbackURL = auth.SAMLACSURL(h.baseURL, p.Slug)
+	} else {
+		resp.CallbackURL = auth.OIDCCallbackURL(h.baseURL, p.Slug)
+	}
+
+	return resp
+}
+
 func ssoProviderToResponse(p *models.SSOProvider) responses.SSOProviderResponse {
 	var oidcCfg map[string]any
 
@@ -755,6 +804,7 @@ func ssoProviderToResponse(p *models.SSOProvider) responses.SSOProviderResponse 
 		Slug:               p.Slug,
 		Kind:               p.Kind,
 		DisplayName:        p.DisplayName,
+		Icon:               p.Icon,
 		Enabled:            p.Enabled,
 		OIDCConfig:         oidcCfg,
 		SAMLConfig:         samlCfg,

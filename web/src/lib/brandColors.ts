@@ -2,9 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Accent colours for storage backends, AI providers and SSO providers.
+// Accent colours for storage backends and AI providers.
 // The hex values below are third-party brand colours (Google, Microsoft,
-// OpenAI, GitHub, GitLab, ...) that must not follow the app theme; every
+// OpenAI, ...) that must not follow the app theme; every
 // other entry uses a theme token via its CSS variable so it adapts to both
 // themes.
 
@@ -12,8 +12,6 @@ const cssVar = (name: string): string => `rgb(var(--color-${name}))`
 
 /** Fallback for unknown kinds/providers. */
 const FALLBACK_COLOR = cssVar('muted')
-/** Fallback for SSO providers without a known brand. */
-const SSO_FALLBACK_COLOR = cssVar('primary')
 
 /** WCAG relative luminance (0 black .. 1 white) of an sRGB colour given as 0..255 channels. */
 export function relativeLuminance(r: number, g: number, b: number): number {
@@ -46,33 +44,10 @@ const AI_PROVIDER_COLORS: Record<string, string> = {
   custom: cssVar('primary'),
 }
 
-/** Matched by substring against the lower-cased provider slug. */
-const SSO_PROVIDER_COLORS: Record<string, string> = {
-  google: '#4285f4',
-  github: '#24292f',
-  gitlab: '#fc6d26',
-  microsoft: '#00a4ef',
-  azure: '#0078d4',
-  okta: '#007dc1',
-  auth0: '#eb5424',
-  keycloak: '#4d9a00',
-  onelogin: '#1e3a5f',
-  ping: '#e8401c',
-  adfs: '#0078d4',
-}
-
 export function storageBackendColor(kind: string): string {
   return STORAGE_BACKEND_COLORS[kind] ?? FALLBACK_COLOR
 }
 
 export function aiProviderColor(key: string): string {
   return AI_PROVIDER_COLORS[key] ?? FALLBACK_COLOR
-}
-
-export function ssoProviderColor(slug: string): string {
-  const key = slug.toLowerCase()
-  for (const [k, v] of Object.entries(SSO_PROVIDER_COLORS)) {
-    if (key.includes(k)) return v
-  }
-  return SSO_FALLBACK_COLOR
 }

@@ -130,8 +130,8 @@ func LoadSAMLProviderRow(
 		return nil, fmt.Errorf("unmarshal saml_config: %w", err)
 	}
 
-	entityID := baseURL + "/api/v1/auth/sso/saml/" + slug + "/metadata"
-	acsURL := baseURL + "/api/v1/auth/sso/saml/" + slug + "/acs"
+	entityID := SAMLEntityID(baseURL, slug)
+	acsURL := SAMLACSURL(baseURL, slug)
 
 	idpMeta, err := samlMetadata.metadata(ctx, samlCfg, log)
 	if err != nil {

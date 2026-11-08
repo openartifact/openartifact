@@ -46,6 +46,7 @@ Create a new SSO provider (admin only)
 | `config` | object | no | - |
 | `display_name` | string | yes | - |
 | `enabled` | boolean | no | - |
+| `icon` | string | no | Icon key for the login button. Empty means automatic: the icon is derived from the provider configuration (see resolved_icon). Vendors without a bundled glyph resolve to openid or saml. One of: ``, `google`, `github`, `gitlab`, `okta`, `auth0`, `keycloak`, `authentik`, `gitea`, `bitbucket`, `atlassian`, `openshift`, `openstack`, `openid`, `ldap`, `saml`, `key`. |
 | `kind` | string | yes | One of: `oidc`, `saml`. |
 | `slug` | string | yes | - |
 
@@ -99,6 +100,7 @@ Update an SSO provider (admin only)
 | `config` | object | no | - |
 | `display_name` | string | no | - |
 | `enabled` | boolean | no | - |
+| `icon` | string | no | Icon key for the login button. Empty means automatic: the icon is derived from the provider configuration (see resolved_icon). Vendors without a bundled glyph resolve to openid or saml. One of: ``, `google`, `github`, `gitlab`, `okta`, `auth0`, `keycloak`, `authentik`, `gitea`, `bitbucket`, `atlassian`, `openshift`, `openstack`, `openid`, `ldap`, `saml`, `key`. |
 
 **Responses**
 
@@ -239,6 +241,7 @@ Fields of the `200` response (`application/json`):
 |---|---|---|---|
 | `providers` | array of object | yes | - |
 | `providers[].display_name` | string | no | - |
+| `providers[].icon` | string | no | The icon key of the login button, resolved from the provider configuration; never empty. One of: `google`, `github`, `gitlab`, `okta`, `auth0`, `keycloak`, `authentik`, `gitea`, `bitbucket`, `atlassian`, `openshift`, `openstack`, `openid`, `ldap`, `saml`, `key`. |
 | `providers[].kind` | string | no | One of: `oidc`, `saml`. |
 | `providers[].slug` | string | no | - |
 

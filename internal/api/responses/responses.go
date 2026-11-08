@@ -207,10 +207,18 @@ type StorageBackendUsage struct {
 
 // SSOProviderResponse represents an SSO provider in API responses.
 type SSOProviderResponse struct {
-	ID                 string            `json:"id"`
-	Slug               string            `json:"slug"`
-	Kind               string            `json:"kind"`
-	DisplayName        string            `json:"display_name"`
+	ID          string `json:"id"`
+	Slug        string `json:"slug"`
+	Kind        string `json:"kind"`
+	DisplayName string `json:"display_name"`
+	// Icon is the key an admin chose; empty means automatic.
+	Icon string `json:"icon"`
+	// ResolvedIcon is the icon the login page shows: Icon when set, else the
+	// one derived from the provider configuration.
+	ResolvedIcon string `json:"resolved_icon"`
+	// CallbackURL is the redirect URI (OIDC) or assertion consumer service URL
+	// (SAML) to register with the identity provider.
+	CallbackURL        string            `json:"callback_url"`
 	Enabled            bool              `json:"enabled"`
 	OIDCConfig         map[string]any    `json:"oidc_config,omitempty"`
 	SAMLConfig         map[string]any    `json:"saml_config,omitempty"`

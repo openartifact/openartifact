@@ -10,10 +10,13 @@ import (
 )
 
 type SSOProvider struct {
-	ID                 string            `json:"id,omitempty"`
-	Slug               string            `json:"slug"`
-	Kind               string            `json:"kind"`
-	DisplayName        string            `json:"display_name"`
+	ID          string `json:"id,omitempty"`
+	Slug        string `json:"slug"`
+	Kind        string `json:"kind"`
+	DisplayName string `json:"display_name"`
+	// Icon is the key an admin picked for the login button; empty means
+	// automatic (auth.ResolveSSOIcon).
+	Icon               string            `json:"icon,omitempty"`
 	Enabled            bool              `json:"enabled"`
 	OIDCConfig         json.RawMessage   `json:"oidc_config,omitempty"`
 	SAMLConfig         json.RawMessage   `json:"saml_config,omitempty"`

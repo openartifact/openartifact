@@ -24,7 +24,7 @@ const ssoOIDCSecret = "oidc_config.client_secret" //nolint:gosec // field path, 
 // the slug; "enabled" is left out because the server forces true on create.
 func ssoCreateKeys() []string {
 	return []string{
-		"kind", "display_name", "oidc_config", "saml_config", "claim_mapping",
+		"kind", "display_name", "icon", "oidc_config", "saml_config", "claim_mapping",
 		"group_mapping", "permission_mapping", "auto_provision_users", "link_by_email",
 	}
 }
@@ -106,6 +106,7 @@ func (ssoKind) Schema() *Field {
 	return &Field{Type: TObject, Fields: map[string]*Field{
 		"kind":                 {Type: TString, Required: true, Immutable: true, Enum: []string{"oidc", "saml"}},
 		"display_name":         {Type: TString, Required: true},
+		"icon":                 {Type: TString},
 		"enabled":              ssoBool(),
 		"oidc_config":          {Type: TObject, Fields: ssoOIDCFields()},
 		"saml_config":          {Type: TObject, Fields: ssoSAMLFields()},
@@ -263,6 +264,7 @@ func ssoLive(m map[string]any) *Live {
 	spec := map[string]any{
 		"kind":                 Str(m, "kind"),
 		"display_name":         Str(m, "display_name"),
+		"icon":                 Str(m, "icon"),
 		"enabled":              Bool(m, "enabled"),
 		"auto_provision_users": Bool(m, "auto_provision_users"),
 		"link_by_email":        Bool(m, "link_by_email"),

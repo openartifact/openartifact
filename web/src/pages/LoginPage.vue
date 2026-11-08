@@ -151,25 +151,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               :href="ssoLoginUrl(provider)"
               class="group h-10 rounded-md border border-border bg-surface hover:bg-surface-hover transition-colors flex items-center gap-2.5 px-3 text-sm"
             >
-              <!-- Provider icon -->
-              <svg
-                v-if="ssoBrandIcon(provider.slug)"
-                :viewBox="ssoBrandIcon(provider.slug)!.viewBox"
-                class="w-6 h-6 shrink-0"
-                aria-hidden="true"
-                fill="currentColor"
-                :style="{ color: providerColor(provider.slug) }"
-              >
-                <path :d="ssoBrandIcon(provider.slug)!.path" />
-              </svg>
-              <span
-                v-else
-                class="w-5 h-5 rounded-sm flex items-center justify-center text-white text-micro font-bold shrink-0"
-                :style="{ backgroundColor: providerColor(provider.slug) }"
-                aria-hidden="true"
-              >
-                {{ provider.display_name.charAt(0).toUpperCase() }}
-              </span>
+              <SsoIcon :icon="provider.icon" size="lg" class="shrink-0 text-foreground" />
               <span class="font-medium text-foreground">{{ tp('login.continueWith', { name: provider.display_name }) }}</span>
               <span class="ml-auto text-micro font-mono text-muted">{{ provider.kind.toUpperCase() }}</span>
             </a>
@@ -200,11 +182,10 @@ import type { SSOProvider } from '../api/auth'
 import { useSessionStore } from '../stores/session'
 import { useLoginDraft } from '../composables/useLoginDraft'
 import FormatBadge from '../components/FormatBadge.vue'
+import SsoIcon from '../components/SsoIcon.vue'
 import { t, tp } from '../i18n'
-import { ssoBrandIcon } from '../lib/brandIcons'
 import { ALL_FORMATS } from '../lib/formats'
 import { useBrandingStore } from '../stores/branding'
-import { ssoProviderColor } from '../lib/brandColors'
 import { safeNextPath } from '../lib/safeRedirect'
 import { ssoErrorMessage } from '../lib/ssoErrors'
 import AppButton from '../components/AppButton.vue'
@@ -224,8 +205,6 @@ const loading = ref(false)
 const errorMsg = ref('')
 const showPassword = ref(false)
 const ssoProviders = ref<SSOProvider[]>([])
-
-const providerColor = ssoProviderColor
 
 /** The SSO login URL; the server brings the user back to the page they came for (`next`). */
 function ssoLoginUrl(provider: SSOProvider): string {

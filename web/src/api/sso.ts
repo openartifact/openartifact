@@ -40,6 +40,8 @@ export interface SSOConfigInput {
   slug: string
   kind: 'oidc' | 'saml'
   display_name: string
+  /** Icon key (see `SSO_ICON_KEYS`); `""` is automatic. Always sent, so a PATCH can go back to automatic. */
+  icon?: string
   oidc_config?: OIDCConfigInput
   saml_config?: SAMLConfigInput
   auto_provision_users?: boolean
@@ -53,6 +55,12 @@ export interface SSOProvider {
   kind: 'oidc' | 'saml'
   display_name: string
   enabled: boolean
+  /** Stored icon key; `""` is automatic. */
+  icon: string
+  /** The icon the login page shows (the stored one, else derived from the settings); never empty. */
+  resolved_icon: string
+  /** Redirect URI (OIDC) or ACS URL (SAML) to register with the identity provider, built from BASE_URL. */
+  callback_url: string
   oidc_config?: OIDCConfigInput & { has_secret?: boolean }
   saml_config?: SAMLConfigInput
   auto_provision_users: boolean
