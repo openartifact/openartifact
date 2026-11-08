@@ -57,6 +57,7 @@ Create a new SSO provider (admin only)
 | `201` | SSO provider created | `application/json`: [SSOProvider](schemas.md#ssoprovider) |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
+| `409` | An SSO provider with this slug already exists (error code conflict) | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/admin/sso-providers/{slug}`
 

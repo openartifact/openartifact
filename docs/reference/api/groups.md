@@ -53,6 +53,7 @@ Create a new group
 | `201` | Group created | `application/json`: [Group](schemas.md#group) |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `409` | A global group with this name already exists (error code conflict) | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/groups/{id}`
 
@@ -104,6 +105,7 @@ Update a group
 | `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Group not found | - |
+| `409` | A global group with this name already exists (error code conflict) | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/groups/{id}`
 
