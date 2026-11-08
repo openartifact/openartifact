@@ -105,7 +105,7 @@ SAML is implemented with [crewjam/saml](https://github.com/crewjam/saml) through
 
 ### Logout
 
-`POST /api/v1/auth/logout` and `POST /api/v1/auth/sso/oidc/{slug}/logout` require a same-origin request. For an OIDC SSO session whose IdP advertises `end_session_endpoint` the response is `200 {"end_session_url": "..."}` and the web UI navigates there. The URL carries `id_token_hint` (the token stored for that session), `client_id` and `post_logout_redirect_uri` = `BASE_URL/login`, which **must be registered** at the IdP as a post-logout redirect URI. Otherwise the response is `204` and only the local session ends. A hint or redirect supplied in the request body is ignored. Google has no `end_session_endpoint`; SAML sign-out is local only (no SLO).
+`POST /api/v1/auth/logout` and `POST /api/v1/auth/sso/oidc/{slug}/logout` require a same-origin request. For an OIDC SSO session whose IdP advertises `end_session_endpoint` the response is `200 {"end_session_url": "..."}` and the web UI navigates there. The URL carries `id_token_hint` (the token stored for that session), `client_id` and `post_logout_redirect_uri` = `BASE_URL/login`, which **must be registered** at the IdP as a post-logout redirect URI. Otherwise the response is `204` and only the local session ends. A hint or redirect supplied in the request body is ignored. Google and Dex (v2.46.1) have no `end_session_endpoint`; SAML sign-out is local only (no SLO).
 
 Sessions are rotated on every SSO login: the pre-login session is revoked and a new session and CSRF token are issued.
 
@@ -127,6 +127,7 @@ Status from vendor documentation; "unverified" means not confirmed in vendor doc
 | OneLogin OIDC / SAML | yes | unverified | unverified | unverified | SAML opt-in |
 | Authentik OIDC / SAML | yes | `groups` claim (needs `groups` scope) | yes | JWKS / metadata URL | SAML opt-in |
 | Zitadel OIDC | yes | roles claim is an object, not a list: needs an Action (unverified) | yes | JWKS | n/a |
+| Dex OIDC (LDAP connector) | yes (live test) | `groups` claim (needs `groups` scope) | local only (no `end_session_endpoint`, live test) | JWKS | n/a |
 | GitHub (OAuth2) | yes (`allowed_orgs`) | orgs and teams | local only | n/a | n/a |
 
 ## Vendor setup
@@ -422,7 +423,60 @@ OpenArtifact provider (`POST /api/v1/admin/sso-providers`):
 }
 ```
 
-Add `"scopes": ["openid", "email", "profile", "groups"]` to `oidc_config` (the default scopes no longer include `groups`); the default claims (`preferred_username`, `email`, `name`, `groups`) match what Dex issues; Dex sets `email_verified` for LDAP users according to its own connector settings, so check them before you turn on `link_by_email`. The issuer is SSRF-checked: if Dex is only reachable on a private network (for example an in-cluster Service), set `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`.
+Add `"scopes": ["openid", "email", "profile", "groups"]` to `oidc_config`: Dex only sends the `groups` claim when the scope is requested, and the default scopes do not include it (without it, no group sync happens and existing memberships stay). The default claim names (`preferred_username`, `email`, `name`, `groups`) match what Dex issues. The issuer is SSRF-checked: if Dex is only reachable on a private network (for example an in-cluster Service), set `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`.
+
+What Dex v2.46.1 sends for an LDAP user, as seen by a live test against OpenLDAP (the user's `uid`, `mail`, `cn` and group `cn` values):
+
+| Claim | Value |
+|---|---|
+| `sub` | opaque; derived from `idAttr` and the connector `id` |
+| `preferred_username` | `preferredUsernameAttr` (`uid`) |
+| `email` | `emailAttr` (`mail`) |
+| `email_verified` | always `true` |
+| `name` | `nameAttr` (`cn`) |
+| `groups` | the group `nameAttr` values, only with the `groups` scope |
+
+- **Stable identity.** OpenArtifact binds the account to `sub`. Pick an `idAttr` that never changes and never rename the connector `id`: either change gives every user a new `sub`, so they sign in as new accounts.
+- **`email_verified` is always `true`.** Dex does not check the address, it passes on what the directory holds. With `link_by_email` on, the first login of an LDAP user takes over the local account that has the same email, and the directory's `mail` attribute decides which account that is. Turn `link_by_email` on only when users cannot edit their own `mail`.
+- **`link_by_email` off.** An LDAP user whose email already belongs to a local account is refused with `sso_login_denied`, and no second account is created. With it on, the login binds that account (it keeps its username), and the groups follow `group_mapping`.
+- **Wrong password.** Dex shows its login form again. OpenArtifact is never called back, so no user or session is created.
+- **Logout is local.** Dex v2.46.1 does not advertise an `end_session_endpoint`, so `POST /api/v1/auth/sso/oidc/{slug}/logout` answers `204` and ends only the OpenArtifact session (see [Logout](#logout)).
+
+### Try it locally
+
+The `dex` profile of `docker/docker-compose.yml` starts Dex and an OpenLDAP with two demo users. It does not change a plain `docker compose up`.
+
+```sh
+docker compose -f docker/docker-compose.yml --env-file docker/.env --profile dex up -d dex openldap
+curl -s http://127.0.0.1:5556/dex/.well-known/openid-configuration
+```
+
+Dex listens on `127.0.0.1:5556` with issuer `http://127.0.0.1:5556/dex`. Create the provider with the body below (slug `dex`, client secret `dex-dev-secret`, or the value of `OPENARTIFACT_DEX_CLIENT_SECRET` in `docker/.env`). The Dex client accepts the callback of an OpenArtifact on port 8080 at `127.0.0.1` or `localhost`.
+
+```json
+{
+  "slug": "dex",
+  "kind": "oidc",
+  "display_name": "Dex (demo LDAP)",
+  "oidc_config": {
+    "issuer": "http://127.0.0.1:5556/dex",
+    "client_id": "openartifact",
+    "client_secret": "dex-dev-secret",
+    "scopes": ["openid", "email", "profile", "groups"]
+  },
+  "group_mapping": { "artifact-admins": "admins", "developers": "developers" },
+  "auto_provision_users": true
+}
+```
+
+| User | Password | Groups |
+|---|---|---|
+| `alice` | `alice-pass` | `artifact-admins`, `developers` |
+| `bob` | `bob-pass` | `developers` |
+
+Run the server on the same host (`make build`), with `BASE_URL=http://127.0.0.1:8080` and `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true` (the issuer is a loopback address, which the SSRF check refuses by default). The `openartifact` compose service cannot use this Dex: inside its container `127.0.0.1` is the container itself, and OpenArtifact accepts plain `http` only for a loopback issuer.
+
+The credentials are for a demo only, and the config lives in `docker/dex/`. Stop and remove the two containers with `docker compose -f docker/docker-compose.yml --env-file docker/.env --profile dex rm -sfv dex openldap`.
 
 ## Provisioning rules
 

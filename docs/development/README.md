@@ -153,6 +153,7 @@ Unit tests need nothing external. For the browser, API-fuzz and property suites 
 - With `CI` set (GitHub Actions sets it), a missing variable makes the test fail instead of skipping, so a misconfigured pipeline cannot silently skip integration tests.
 - DB and S3 tests, and the migration runner tests, are behind the `integration` build tag: run them with `-tags=integration` (`make test-integration`).
 - The S3 test backend is [Garage](https://garagehq.deuxfleurs.fr/) (`dxflrs/garage`); MinIO no longer ships images. The `integration-shard` job in [`ci.yml`](../../.github/workflows/ci.yml) shows how to bootstrap a single-node Garage (layout, bucket, imported key).
+- `tests/integration/dex_sso_integration_test.go` signs in through Dex and OpenLDAP containers and also needs `TEST_DATABASE_URL`. It takes the images, the LDIF seed and the Dex config from the `dex` profile of `docker/docker-compose.yml` and `docker/dex/`, so a Dependabot bump of those images is tested by it.
 - `tests/integration/` starts its own Postgres through testcontainers and needs a container runtime. Under rootless podman:
 
 ```sh

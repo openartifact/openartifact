@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Dex in front of the demo OpenLDAP of the `dex` compose profile; the Dex
+# integration test (tests/integration/dex_sso_integration_test.go) loads this
+# file and only swaps the issuer, the client secret and the redirect URI.
+# Demo credentials only. See docs/security/sso.md#try-it-locally.
+
+# Must be the URL the browser and OpenArtifact both reach Dex at. OpenArtifact
+# accepts plain http only for a loopback issuer.
+issuer: http://127.0.0.1:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  # LDAP users are the only login: go straight back to OpenArtifact after the
+  # password form, without Dex's "Grant access" page.
+  skipApprovalScreen: true
+  responseTypes: [code]
+
+enablePasswordDB: false
+
+connectors:
+  - type: ldap
+    id: ldap
+    name: Demo directory
+    config:
+      host: openldap:389
+      insecureNoSSL: true
+      bindDN: cn=admin,dc=example,dc=org
+      bindPW: admin-dev
+      usernamePrompt: Username
+      userSearch:
+        baseDN: ou=people,dc=example,dc=org
+        filter: "(objectClass=inetOrgPerson)"
+        username: uid
+        idAttr: uid
+        emailAttr: mail
+        nameAttr: cn
+        preferredUsernameAttr: uid
+      groupSearch:
+        baseDN: ou=groups,dc=example,dc=org
+        filter: "(objectClass=groupOfNames)"
+        userMatchers:
+          - userAttr: DN
+            groupAttr: member
+        nameAttr: cn
+
+staticClients:
+  - id: openartifact
+    name: OpenArtifact
+    secretEnv: OPENARTIFACT_DEX_CLIENT_SECRET
+    redirectURIs:
+      - http://127.0.0.1:8080/api/v1/auth/sso/oidc/dex/callback
+      - http://localhost:8080/api/v1/auth/sso/oidc/dex/callback
