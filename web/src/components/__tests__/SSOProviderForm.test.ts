@@ -29,4 +29,17 @@ describe('SSOProviderForm Dex preset', () => {
     expect(form.oidc_config.dex_connector_id).toBe('')
     expect(wrapper.find('#oidc-dex_connector_id').exists()).toBe(false)
   })
+
+  it('drops the Entra and Google settings when switching a plain OIDC provider to Dex', async () => {
+    const { form, wrapper } = mountForm()
+    await wrapper.get('#oidc-allowed_tenants').setValue('tenant-a')
+    await wrapper.get('#oidc-hosted_domain').setValue('example.org')
+    form.oidc_config.graph_groups = true
+    await wrapper.get('#oidc-type').setValue('dex')
+    expect(wrapper.find('#oidc-allowed_tenants').exists()).toBe(false)
+    expect(wrapper.find('#oidc-hosted_domain').exists()).toBe(false)
+    expect(form.oidc_config.allowed_tenants).toBe('')
+    expect(form.oidc_config.hosted_domain).toBe('')
+    expect(form.oidc_config.graph_groups).toBe(false)
+  })
 })

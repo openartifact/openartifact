@@ -113,7 +113,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <AppToggle v-model="form.oidc_config.require_email_verified" labelledby="sso-emailverified-label" />
         <span id="sso-emailverified-label" class="text-sm font-medium text-foreground">{{ t('adm.sso.field.requireEmailVerified') }}</span>
       </div>
-      <div v-if="form.oidc_config.type === ''" class="flex items-center gap-3">
+      <div v-if="form.oidc_config.type === '' && !form.oidc_config.dex" class="flex items-center gap-3">
         <AppToggle v-model="form.oidc_config.graph_groups" labelledby="sso-graphgroups-label" />
         <span id="sso-graphgroups-label" class="text-sm font-medium text-foreground">{{ t('adm.sso.field.graphGroups') }}</span>
       </div>
@@ -192,13 +192,15 @@ const oidcExtraFields = computed<ExtraField[]>(() => {
         { key: 'userinfo_url', label: t('adm.sso.field.userinfoUrl'), url: true, required: true },
       ]
     default:
+      // Behind Dex the issuer is Dex, so the Entra and Google checks never apply.
+      if (form.value.oidc_config.dex) {
+        return [
+          { key: 'dex_connector_id', label: t('adm.sso.field.dexConnectorId'), hint: t('adm.sso.field.dexConnectorIdHint'), required: true },
+          { ...scopes, hint: t('adm.sso.field.dexScopesHint') },
+        ]
+      }
       return [
-        ...(form.value.oidc_config.dex
-          ? [
-              { key: 'dex_connector_id', label: t('adm.sso.field.dexConnectorId'), hint: t('adm.sso.field.dexConnectorIdHint'), required: true } as ExtraField,
-              { ...scopes, hint: t('adm.sso.field.dexScopesHint') },
-            ]
-          : [scopes]),
+        scopes,
         { key: 'allowed_tenants', label: t('adm.sso.field.allowedTenants'), hint: t('adm.sso.field.allowedTenantsHint') },
         { key: 'hosted_domain', label: t('adm.sso.field.hostedDomain'), hint: t('adm.sso.field.hostedDomainHint') },
         { key: 'graph_endpoint', label: t('adm.sso.field.graphEndpoint'), hint: t('adm.sso.field.graphEndpointHint'), url: true },
@@ -213,7 +215,15 @@ function setPreset(value: string): void {
   const oidc = form.value.oidc_config
   oidc.dex = value === 'dex'
   oidc.type = value === 'dex' ? '' : (value as OIDCType)
-  if (!oidc.dex) oidc.dex_connector_id = ''
+  if (!oidc.dex) {
+    oidc.dex_connector_id = ''
+    return
+  }
+  // Hidden for Dex: drop them so a switch from plain OIDC does not save stale values.
+  oidc.allowed_tenants = ''
+  oidc.hosted_domain = ''
+  oidc.graph_endpoint = ''
+  oidc.graph_groups = false
 }
 
 const inputClass =
