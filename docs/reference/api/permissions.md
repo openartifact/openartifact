@@ -131,6 +131,7 @@ Delete a permission target
 | `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Permission target not found | - |
+| `409` | The seeded admin-all and anonymous-read targets cannot be deleted (error code conflict) | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/permission-targets/{id}/assignments`
 
@@ -218,4 +219,5 @@ Remove a permission assignment
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | The addressed resource was not found | `application/json`: [Error](schemas.md#error) |
+| `409` | Removing the assignment would leave no enabled admin (error code conflict) | `application/json`: [Error](schemas.md#error) |
 

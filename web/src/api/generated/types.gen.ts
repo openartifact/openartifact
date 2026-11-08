@@ -7236,6 +7236,10 @@ export type PatchApiV1UsersByIdErrors = {
      * User not found
      */
     404: unknown;
+    /**
+     * Another user has this email, or the change would disable the last enabled admin (error code conflict)
+     */
+    409: Error;
 };
 
 export type PatchApiV1UsersByIdError = PatchApiV1UsersByIdErrors[keyof PatchApiV1UsersByIdErrors];
@@ -7867,6 +7871,10 @@ export type PostApiV1GroupsErrors = {
      * Forbidden
      */
     403: Error;
+    /**
+     * A global group with this name already exists (error code conflict)
+     */
+    409: Error;
 };
 
 export type PostApiV1GroupsError = PostApiV1GroupsErrors[keyof PostApiV1GroupsErrors];
@@ -7975,6 +7983,10 @@ export type PatchApiV1GroupsByIdErrors = {
      * Group not found
      */
     404: unknown;
+    /**
+     * A global group with this name already exists (error code conflict)
+     */
+    409: Error;
 };
 
 export type PatchApiV1GroupsByIdError = PatchApiV1GroupsByIdErrors[keyof PatchApiV1GroupsByIdErrors];
@@ -8493,6 +8505,10 @@ export type DeleteApiV1PermissionTargetsByIdErrors = {
      * Permission target not found
      */
     404: unknown;
+    /**
+     * The seeded admin-all and anonymous-read targets cannot be deleted (error code conflict)
+     */
+    409: Error;
 };
 
 export type DeleteApiV1PermissionTargetsByIdError = DeleteApiV1PermissionTargetsByIdErrors[keyof DeleteApiV1PermissionTargetsByIdErrors];
@@ -8610,6 +8626,10 @@ export type DeleteApiV1PermissionTargetsByIdAssignmentsErrors = {
      * The addressed resource was not found
      */
     404: Error;
+    /**
+     * Removing the assignment would leave no enabled admin (error code conflict)
+     */
+    409: Error;
 };
 
 export type DeleteApiV1PermissionTargetsByIdAssignmentsError = DeleteApiV1PermissionTargetsByIdAssignmentsErrors[keyof DeleteApiV1PermissionTargetsByIdAssignmentsErrors];
@@ -10363,6 +10383,10 @@ export type PostApiV1AdminSsoProvidersErrors = {
      * Admin access required
      */
     403: unknown;
+    /**
+     * An SSO provider with this slug already exists (error code conflict)
+     */
+    409: Error;
 };
 
 export type PostApiV1AdminSsoProvidersError = PostApiV1AdminSsoProvidersErrors[keyof PostApiV1AdminSsoProvidersErrors];

@@ -124,6 +124,7 @@ Update a user (admin only). Setting `disabled: true` keeps the account, blocks l
 | `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | User not found | - |
+| `409` | Another user has this email, or the change would disable the last enabled admin (error code conflict) | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/users/{id}`
 
