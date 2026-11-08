@@ -54,70 +54,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
     </fieldset>
 
-    <template v-if="form.kind === 'oidc'">
-      <div>
-        <label for="oidc-type" class="block text-sm font-medium text-foreground mb-2">{{ t('adm.sso.field.type') }}</label>
-        <select id="oidc-type" :value="preset" :class="inputClass" @change="setPreset(($event.target as HTMLSelectElement).value)">
-          <option value="">{{ t('adm.sso.type.oidc') }}</option>
-          <option value="dex">{{ t('adm.sso.type.dex') }}</option>
-          <option value="github">{{ t('adm.sso.type.github') }}</option>
-          <option value="oauth2">{{ t('adm.sso.type.oauth2') }}</option>
-        </select>
-      </div>
-      <div v-if="form.oidc_config.type === ''">
-        <label for="issuer" class="block text-sm font-medium text-foreground mb-2">{{ t('adm.sso.field.issuer') }}</label>
-        <input
-          id="issuer"
-          v-model="form.oidc_config.issuer"
-          type="url"
-          required
-          :class="inputClass"
-          placeholder="https://accounts.google.com"
-        />
-      </div>
-      <div>
-        <label for="client-id" class="block text-sm font-medium text-foreground mb-2">{{ t('adm.sso.field.clientId') }}</label>
-        <input
-          id="client-id"
-          v-model="form.oidc_config.client_id"
-          type="text"
-          required
-          :class="inputClass"
-        />
-      </div>
-      <div>
-        <label for="client-secret" class="block text-sm font-medium text-foreground mb-2">{{ t('adm.sso.field.clientSecret') }}</label>
-        <input
-          id="client-secret"
-          v-model="form.oidc_config.client_secret"
-          type="password"
-          autocomplete="new-password"
-          :required="!editing"
-          :class="inputClass"
-          placeholder="••••••••••••••••"
-        />
-        <p v-if="editing" class="text-xs text-muted mt-1">{{ t('adm.sso.field.secretEditHint') }}</p>
-      </div>
-      <div v-for="field in oidcExtraFields" :key="field.key">
-        <label :for="`oidc-${field.key}`" class="block text-sm font-medium text-foreground mb-2">{{ field.label }}</label>
-        <input
-          :id="`oidc-${field.key}`"
-          v-model="form.oidc_config[field.key]"
-          :type="field.url ? 'url' : 'text'"
-          :required="field.required"
-          :class="inputClass"
-        />
-        <p v-if="field.hint" class="text-xs text-muted mt-1">{{ field.hint }}</p>
-      </div>
-      <div class="flex items-center gap-3">
-        <AppToggle v-model="form.oidc_config.require_email_verified" labelledby="sso-emailverified-label" />
-        <span id="sso-emailverified-label" class="text-sm font-medium text-foreground">{{ t('adm.sso.field.requireEmailVerified') }}</span>
-      </div>
-      <div v-if="form.oidc_config.type === '' && !form.oidc_config.dex" class="flex items-center gap-3">
-        <AppToggle v-model="form.oidc_config.graph_groups" labelledby="sso-graphgroups-label" />
-        <span id="sso-graphgroups-label" class="text-sm font-medium text-foreground">{{ t('adm.sso.field.graphGroups') }}</span>
-      </div>
-    </template>
+    <SSOPresetFields v-if="form.kind === 'oidc'" v-model="form" :editing="editing" />
 
     <template v-else>
       <div>
@@ -141,6 +78,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
     </template>
 
+    <SSOIconPicker v-model="form.icon" :resolved="editing?.resolved_icon" />
+
+    <SSOCallbackUrl :url="callbackUrl" :kind="form.kind" :exact="!!editing?.callback_url" />
+
+    <SSODexSnippet v-if="form.kind === 'oidc' && form.oidc_config.preset === 'dex'" :form="form" :callback-url="callbackUrl" />
+
     <div class="flex items-center gap-3">
       <AppToggle v-model="form.auto_provision_users" labelledby="sso-autoprovision-label" />
       <span id="sso-autoprovision-label" class="text-sm font-medium text-foreground">{{ t('adm.sso.field.autoProvision') }}</span>
@@ -156,77 +99,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { computed } from 'vue'
 import AppToggle from '../../../components/AppToggle.vue'
-import type { OIDCType, SSOProvider } from '../../../api/sso'
-import type { OIDCTextKey } from '../../../lib/ssoOidcForm'
+import type { SSOProvider } from '../../../api/sso'
+import { ssoCallbackUrl } from '../../../lib/ssoPresets'
 import type { SSOFormState } from '../../../lib/ssoProviderForm'
 import { t } from '../../../i18n'
+import SSOCallbackUrl from './SSOCallbackUrl.vue'
+import SSODexSnippet from './SSODexSnippet.vue'
+import SSOIconPicker from './SSOIconPicker.vue'
+import SSOPresetFields from './SSOPresetFields.vue'
 
-defineProps<{ editing: SSOProvider | null }>()
+const props = defineProps<{ editing: SSOProvider | null }>()
 const emit = defineEmits<{ submit: [] }>()
 const form = defineModel<SSOFormState>({ required: true })
 
-interface ExtraField {
-  key: OIDCTextKey
-  label: string
-  hint?: string
-  url?: boolean
-  required?: boolean
-}
-
-// The settings that apply to the selected provider type, after the common ones.
-const oidcExtraFields = computed<ExtraField[]>(() => {
-  const scopes: ExtraField = { key: 'scopes', label: t('adm.sso.field.scopes'), hint: t('adm.sso.field.scopesHint') }
-  switch (form.value.oidc_config.type) {
-    case 'github':
-      return [
-        scopes,
-        { key: 'allowed_orgs', label: t('adm.sso.field.allowedOrgs'), hint: t('adm.sso.field.allowedOrgsHint'), required: true },
-        { key: 'auth_base_url', label: t('adm.sso.field.authBaseUrl'), hint: t('adm.sso.field.authBaseUrlHint'), url: true },
-        { key: 'api_base_url', label: t('adm.sso.field.apiBaseUrl'), hint: t('adm.sso.field.apiBaseUrlHint'), url: true },
-      ]
-    case 'oauth2':
-      return [
-        scopes,
-        { key: 'authorization_url', label: t('adm.sso.field.authorizationUrl'), url: true, required: true },
-        { key: 'token_url', label: t('adm.sso.field.tokenUrl'), url: true, required: true },
-        { key: 'userinfo_url', label: t('adm.sso.field.userinfoUrl'), url: true, required: true },
-      ]
-    default:
-      // Behind Dex the issuer is Dex, so the Entra and Google checks never apply.
-      if (form.value.oidc_config.dex) {
-        return [
-          { key: 'dex_connector_id', label: t('adm.sso.field.dexConnectorId'), hint: t('adm.sso.field.dexConnectorIdHint'), required: true },
-          { ...scopes, hint: t('adm.sso.field.dexScopesHint') },
-        ]
-      }
-      return [
-        scopes,
-        { key: 'allowed_tenants', label: t('adm.sso.field.allowedTenants'), hint: t('adm.sso.field.allowedTenantsHint') },
-        { key: 'hosted_domain', label: t('adm.sso.field.hostedDomain'), hint: t('adm.sso.field.hostedDomainHint') },
-        { key: 'graph_endpoint', label: t('adm.sso.field.graphEndpoint'), hint: t('adm.sso.field.graphEndpointHint'), url: true },
-      ]
-  }
-})
-
-// The provider type select: "dex" is a plain OIDC provider (type '') signing in through one Dex connector.
-const preset = computed(() => (form.value.oidc_config.dex ? 'dex' : form.value.oidc_config.type))
-
-function setPreset(value: string): void {
-  const oidc = form.value.oidc_config
-  oidc.dex = value === 'dex'
-  oidc.type = value === 'dex' ? '' : (value as OIDCType)
-  if (!oidc.dex) {
-    oidc.dex_connector_id = ''
-    return
-  }
-  // Hidden for Dex: drop them so a switch from plain OIDC does not save stale values.
-  oidc.allowed_tenants = ''
-  oidc.hosted_domain = ''
-  oidc.graph_endpoint = ''
-  oidc.graph_groups = false
-}
-
-const inputClass =
-  'w-full px-3 py-2 bg-bg border border-border-strong rounded-lg text-sm font-mono text-foreground placeholder-muted focus:ring-2 focus:ring-primary focus:border-primary'
-
+// A saved provider shows the exact URL the server built from BASE_URL; a new one the URL of the page's origin.
+const callbackUrl = computed(
+  () => props.editing?.callback_url || ssoCallbackUrl(window.location.origin, form.value.kind, form.value.slug),
+)
 </script>

@@ -25,7 +25,7 @@ func scanSSOProvider(row interface {
 	var oidcConfig, samlConfig, claimMapping, groupMappingRaw, permissionMappingRaw []byte
 
 	err := row.Scan(
-		&p.ID, &p.Slug, &p.Kind, &p.DisplayName, &p.Enabled,
+		&p.ID, &p.Slug, &p.Kind, &p.DisplayName, &p.Icon, &p.Enabled,
 		&oidcConfig, &samlConfig, &claimMapping, &groupMappingRaw, &permissionMappingRaw,
 		&p.AutoProvisionUsers, &p.LinkByEmail, &p.CreatedAt, &p.UpdatedAt,
 	)
@@ -73,13 +73,14 @@ func (p *SSOStore) CreateSSOProvider(ctx context.Context, provider *models.SSOPr
 
 	return p.db.QueryRowContext(
 		ctx,
-		`INSERT INTO auth_sso_providers (slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping,
+		`INSERT INTO auth_sso_providers (slug, kind, display_name, icon, enabled, oidc_config, saml_config, claim_mapping, group_mapping,
 			permission_mapping, auto_provision_users, link_by_email)
-		VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb, $11, $12)
 		RETURNING id, created_at, updated_at`,
 		provider.Slug,
 		provider.Kind,
 		provider.DisplayName,
+		provider.Icon,
 		provider.Enabled,
 		provider.OIDCConfig,
 		provider.SAMLConfig,
@@ -94,7 +95,7 @@ func (p *SSOStore) CreateSSOProvider(ctx context.Context, provider *models.SSOPr
 func (p *SSOStore) GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error) {
 	row := p.db.QueryRowContext(
 		ctx,
-		`SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping,
+		`SELECT id, slug, kind, display_name, icon, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping,
 			auto_provision_users, link_by_email, created_at, updated_at
 		FROM auth_sso_providers WHERE slug = $1`,
 		slug,
@@ -117,6 +118,7 @@ func (p *SSOStore) GetSSOProviderBySlug(ctx context.Context, slug string) (*mode
 // nil map writes JSON null.
 type SSOProviderPatch struct {
 	DisplayName        *string
+	Icon               *string
 	Enabled            *bool
 	AutoProvisionUsers *bool
 	LinkByEmail        *bool
@@ -168,19 +170,21 @@ func (p *SSOStore) PatchSSOProvider(ctx context.Context, id string, patch SSOPro
 		ctx,
 		`UPDATE auth_sso_providers SET
 			display_name = COALESCE($2, display_name),
-			enabled = COALESCE($3, enabled),
-			oidc_config = COALESCE($4::jsonb, oidc_config),
-			saml_config = COALESCE($5::jsonb, saml_config),
-			claim_mapping = COALESCE($6::jsonb, claim_mapping),
-			group_mapping = COALESCE($7::jsonb, group_mapping),
-			permission_mapping = COALESCE($8::jsonb, permission_mapping),
-			auto_provision_users = COALESCE($9, auto_provision_users),
-			link_by_email = COALESCE($10, link_by_email)
+			icon = COALESCE($3, icon),
+			enabled = COALESCE($4, enabled),
+			oidc_config = COALESCE($5::jsonb, oidc_config),
+			saml_config = COALESCE($6::jsonb, saml_config),
+			claim_mapping = COALESCE($7::jsonb, claim_mapping),
+			group_mapping = COALESCE($8::jsonb, group_mapping),
+			permission_mapping = COALESCE($9::jsonb, permission_mapping),
+			auto_provision_users = COALESCE($10, auto_provision_users),
+			link_by_email = COALESCE($11, link_by_email)
 		WHERE id = $1
-		RETURNING id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping,
+		RETURNING id, slug, kind, display_name, icon, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping,
 			auto_provision_users, link_by_email, created_at, updated_at`,
 		id,
 		patch.DisplayName,
+		patch.Icon,
 		patch.Enabled,
 		rawOptional(patch.OIDCConfig),
 		rawOptional(patch.SAMLConfig),
@@ -208,7 +212,7 @@ func (p *SSOStore) DeleteSSOProvider(ctx context.Context, id string) error {
 func (p *SSOStore) ListEnabledSSOProviders(ctx context.Context) ([]*models.SSOProvider, error) {
 	rows, err := p.db.QueryContext(
 		ctx,
-		`SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping,
+		`SELECT id, slug, kind, display_name, icon, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping,
 			auto_provision_users, link_by_email, created_at, updated_at
 		FROM auth_sso_providers WHERE enabled = TRUE ORDER BY slug ASC`,
 	)
@@ -223,7 +227,7 @@ func (p *SSOStore) ListEnabledSSOProviders(ctx context.Context) ([]*models.SSOPr
 func (p *SSOStore) ListAllSSOProviders(ctx context.Context) ([]*models.SSOProvider, error) {
 	rows, err := p.db.QueryContext(
 		ctx,
-		`SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping,
+		`SELECT id, slug, kind, display_name, icon, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping,
 			auto_provision_users, link_by_email, created_at, updated_at
 		FROM auth_sso_providers ORDER BY slug ASC`,
 	)

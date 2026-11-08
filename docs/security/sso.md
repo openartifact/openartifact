@@ -10,7 +10,7 @@ Sign in through an external identity provider; provisioned users get a normal se
 
 Providers are database rows managed through the admin API (admin only), not config-file entries. Sessions, CSRF and tokens behave as for local login: see [authentication.md](authentication.md).
 
-Contents: [Prerequisites](#prerequisites) · [Provider API](#provider-api) · [`oidc_config`](#oidc_config) · [`saml_config`](#saml_config) · [Logout](#logout) · [Vendor compatibility](#vendor-compatibility) · [Vendor setup](#vendor-setup) · [Dex](#dex) · [Provisioning rules](#provisioning-rules) · [Groups and permissions](#groups-and-permissions)
+Contents: [Prerequisites](#prerequisites) · [Provider API](#provider-api) · [`oidc_config`](#oidc_config) · [`saml_config`](#saml_config) · [Logout](#logout) · [Admin UI: presets, icons and the callback URL](#admin-ui-presets-icons-and-the-callback-url) · [Vendor compatibility](#vendor-compatibility) · [Vendor setup](#vendor-setup) · [Dex](#dex) · [Provisioning rules](#provisioning-rules) · [Groups and permissions](#groups-and-permissions)
 
 ## Prerequisites
 
@@ -30,7 +30,7 @@ No manual step is needed for multi-replica deployments.
 | `POST/GET /api/v1/admin/sso-providers` | create / list |
 | `GET/PATCH/DELETE /api/v1/admin/sso-providers/{slug}` | read / update / delete |
 | `POST /api/v1/admin/sso-providers/{slug}/test` | OIDC discovery / SAML IdP metadata check; returns `{ok,kind}` or `{ok:false,error,…}` |
-| `GET /api/v1/auth/sso/providers` | public: `slug`, `kind`, `display_name` of enabled providers (for the login page) |
+| `GET /api/v1/auth/sso/providers` | public: `slug`, `kind`, `display_name` and `icon` of enabled providers (for the login page) |
 
 Create body:
 
@@ -39,6 +39,7 @@ Create body:
 | `slug` | `^[a-z0-9_-]{1,64}$`, used in URLs |
 | `kind` | `oidc` or `saml` (GitHub and generic OAuth2 use `kind: oidc` with `oidc_config.type`) |
 | `display_name` | shown on the login page |
+| `icon` | optional icon key for the login button; empty (the default) picks one automatically, see [Admin UI](#admin-ui-presets-icons-and-the-callback-url) |
 | `enabled` | optional, default `true`; `false` creates the provider disabled, so the login page does not list it |
 | `oidc_config` / `saml_config` | see below; the one matching `kind` |
 | `group_mapping` | IdP group → local group name |
@@ -46,7 +47,7 @@ Create body:
 | `auto_provision_users` | create unknown users on first login |
 | `link_by_email` | link to an existing local user with the same IdP-verified email. Local users cannot change their own email (only an admin can), so a user cannot pre-claim another person's address to be linked to their SSO identity |
 
-`PATCH` toggles `enabled` later. Mappings accept at most 256 entries, keys and values up to 512 characters. A `claim_mapping` field is stored and returned but not used by login.
+`PATCH` changes only the fields it names, for example `enabled` or `icon` (an empty `icon` returns to automatic). Admin responses also carry `resolved_icon` (the icon the login page shows) and `callback_url` (the redirect URI for OIDC, the ACS URL for SAML, built from `BASE_URL`). Mappings accept at most 256 entries, keys and values up to 512 characters. A `claim_mapping` field is stored and returned but not used by login.
 
 ### `oidc_config`
 
@@ -109,6 +110,41 @@ SAML is implemented with [crewjam/saml](https://github.com/crewjam/saml) through
 `POST /api/v1/auth/logout` and `POST /api/v1/auth/sso/oidc/{slug}/logout` require a same-origin request. For an OIDC SSO session whose IdP advertises `end_session_endpoint` the response is `200 {"end_session_url": "..."}` and the web UI navigates there. The URL carries `id_token_hint` (the token stored for that session), `client_id` and `post_logout_redirect_uri` = `BASE_URL/login`, which **must be registered** at the IdP as a post-logout redirect URI. Otherwise the response is `204` and only the local session ends. A hint or redirect supplied in the request body is ignored. Google and Dex (v2.46.1) have no `end_session_endpoint`; SAML sign-out is local only (no SLO).
 
 Sessions are rotated on every SSO login: the pre-login session is revoked and a new session and CSRF token are issued.
+
+## Admin UI: presets, icons and the callback URL
+
+The provider form (Settings, SSO) starts from a vendor preset. A preset fills in the type and scopes, shows only the settings that vendor needs, and writes the issuer format as a placeholder with a hint. It never saves a placeholder: the issuer and the client credentials stay empty until you type them. Presets are a convenience of the form; the stored provider is the plain [provider body](#provider-api), and editing an existing provider opens it as generic OIDC (or GitHub, OAuth2 or Dex when it has those settings).
+
+| Preset | Fills in | Issuer shown as |
+|---|---|---|
+| Google | standard scopes; `hosted_domain` field | `https://accounts.google.com` (fixed, prefilled) |
+| Microsoft Entra | `allowed_tenants` and group-overage fields | `https://login.microsoftonline.com/<tenant-id>/v2.0` |
+| Okta | `groups` scope | `https://<org>.okta.com` |
+| Keycloak | standard scopes | `https://<host>/realms/<realm>` |
+| Auth0 | standard scopes | `https://<tenant>.auth0.com/` |
+| Authentik | `groups` scope | `https://<host>/application/o/<slug>/` |
+| GitHub | `type: github`, organisations, Enterprise Server URLs | not used |
+| Generic OIDC / generic OAuth2 | the plain fields | your issuer / the three endpoint URLs |
+| Dex | connector id, `federated:id` scope | your Dex issuer |
+
+For Dex, pick the connector type (LDAP, GitHub, GitLab, Google, Microsoft, OpenID Connect, password database or other). The form proposes the connector type as the connector id and the matching icon, and shows a Dex configuration snippet (see [Dex](#dex)).
+
+### Icons
+
+The login page shows an icon on each provider's button. Leave `icon` empty and OpenArtifact picks one, in this order:
+
+1. The GitHub type shows the GitHub icon.
+2. A Dex connector id containing `github`, `gitlab`, `google`, `ldap`, `bitbucket`, `gitea`, `openshift`, `keystone` (OpenStack), `atlassian` or `crowd` (Atlassian) shows that vendor.
+3. The issuer, or for SAML the metadata URL: `accounts.google.com` (Google), `okta.com` and `oktapreview.com` hosts (Okta), `auth0.com` hosts (Auth0), `gitlab.com`, `github.com`, a path containing `/realms/` (Keycloak) or `/application/o/` (authentik).
+4. Otherwise the OpenID icon for OIDC and the SAML icon for SAML.
+
+Set `icon` to override that. The keys are `google`, `github`, `gitlab`, `okta`, `auth0`, `keycloak`, `authentik`, `gitea`, `bitbucket`, `atlassian`, `openshift`, `openstack`, `openid`, `ldap`, `saml` and `key`; any other value is rejected with `validation_failed`.
+
+The icons come from the open-source Simple Icons set, which has no glyph for Microsoft Entra ID, Ping, OneLogin, JumpCloud, Duo or Dex. Those providers show the generic OpenID or SAML icon, or the `key` icon if you pick it. OpenArtifact does not ship its own versions of vendor logos. The same applies to a self-hosted GitLab, Gitea or Keycloak behind a custom domain: the icon is guessed from the host, so set `icon` explicitly when it is not recognised.
+
+### Callback URL
+
+Every provider needs one URL registered at the identity provider: the redirect URI for OIDC, the ACS URL for SAML. The edit form and the provider card show it with a copy button; the API returns it as `callback_url`. It is built from `BASE_URL`, so it is only right once `BASE_URL` is set to the public address (see [Prerequisites](#prerequisites)). Before the first save the form shows the address you are browsing from, which may differ.
 
 ## Vendor compatibility
 
@@ -409,6 +445,8 @@ With `dex_connector_id` set:
 - **Scope of the field.** It is only valid for standard OIDC providers (`type` empty), and the id is 1 to 64 letters, digits, `_` or `-`.
 
 Per-connector providers also let you set `group_mapping`, `auto_provision_users` and `link_by_email` per source.
+
+The Dex provider form generates the Dex side for you: a `staticClients` entry (the client id, the name, this provider's callback URL as `redirectURIs`, and `secretEnv` naming an environment variable, never the secret itself) and a skeleton of the chosen connector with `$ENV_VAR` placeholders. Copy it into Dex's config and fill in the placeholders. The skeletons follow the [Dex connector documentation](https://dexidp.io/docs/connectors/); check them against the Dex version you run.
 
 ### What Dex sends
 

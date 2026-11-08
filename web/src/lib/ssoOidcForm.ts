@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { OIDCConfigInput, OIDCType } from '../api/sso'
+import { guessDexConnectorType, inferPreset, type DexConnectorType, type SSOPresetId } from './ssoPresets'
 
 // List-valued settings are edited as one comma/space-separated text field.
 export type OIDCTextKey =
@@ -17,8 +18,10 @@ interface OIDCForm extends Record<OIDCTextKey, string> {
   client_secret: string
   require_email_verified: boolean
   graph_groups: boolean
-  /** UI only: the Dex preset (a plain OIDC provider signing in through one Dex connector). */
-  dex: boolean
+  /** UI only, never stored: the vendor preset that decides which settings are shown. `dex` is a plain OIDC provider signing in through one Dex connector. */
+  preset: SSOPresetId
+  /** UI only, never stored: the Dex connector type behind the `dex` preset. */
+  dex_connector_type: DexConnectorType
 }
 
 const DEX_CONNECTOR_RE = /^[A-Za-z0-9_-]{1,64}$/
@@ -29,7 +32,7 @@ export function emptyOIDCForm(): OIDCForm {
     scopes: '', allowed_tenants: '', allowed_orgs: '', hosted_domain: '', graph_endpoint: '',
     authorization_url: '', token_url: '', userinfo_url: '', auth_base_url: '', api_base_url: '',
     dex_connector_id: '',
-    require_email_verified: false, graph_groups: false, dex: false,
+    require_email_verified: false, graph_groups: false, preset: 'oidc', dex_connector_type: 'other',
   }
 }
 
@@ -60,7 +63,7 @@ export function buildOIDCPayload(f: OIDCForm, includeSecret: boolean): OIDCConfi
     token_url: f.type === 'oauth2' ? f.token_url : '',
     userinfo_url: f.type === 'oauth2' ? f.userinfo_url : '',
     scopes: splitList(f.scopes),
-    dex_connector_id: oidc && f.dex ? f.dex_connector_id.trim() : '',
+    dex_connector_id: oidc && f.preset === 'dex' ? f.dex_connector_id.trim() : '',
   }
   if (includeSecret) payload.client_secret = f.client_secret
   return payload
@@ -83,7 +86,8 @@ export function oidcFormFrom(cfg: OIDCConfigInput | undefined): OIDCForm {
   form.auth_base_url = cfg.auth_base_url ?? ''
   form.api_base_url = cfg.api_base_url ?? ''
   form.dex_connector_id = cfg.dex_connector_id ?? ''
-  form.dex = form.type === '' && form.dex_connector_id !== ''
+  form.preset = inferPreset(cfg)
+  form.dex_connector_type = guessDexConnectorType(form.dex_connector_id)
   form.scopes = (cfg.scopes ?? []).join(' ')
   form.allowed_tenants = (cfg.allowed_tenants ?? []).join(', ')
   form.allowed_orgs = (cfg.allowed_orgs ?? []).join(', ')
@@ -94,7 +98,7 @@ export type OIDCFormError = 'dexConnectorInvalid' | 'dexScopesFederated'
 
 /** Mirrors the server's Dex checks; returns the error to show, or null when the form is valid. */
 export function validateOIDCForm(f: OIDCForm): OIDCFormError | null {
-  if (f.type !== '' || !f.dex) return null
+  if (f.type !== '' || f.preset !== 'dex') return null
   if (!DEX_CONNECTOR_RE.test(f.dex_connector_id.trim())) return 'dexConnectorInvalid'
   const scopes = splitList(f.scopes)
   if (scopes.length > 0 && !scopes.includes('federated:id')) return 'dexScopesFederated'

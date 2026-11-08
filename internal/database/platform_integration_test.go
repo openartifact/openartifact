@@ -9,6 +9,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"slices"
 	"testing"
 	"time"
@@ -485,5 +486,49 @@ func TestListEnabledSSOProvidersSkipsDisabled(t *testing.T) {
 	all, err := pg.ListAllSSOProviders(context.Background())
 	if err != nil || len(all) != 2 {
 		t.Errorf("all providers = %d, %v", len(all), err)
+	}
+}
+
+// The icon column defaults to automatic (empty), is written by create and by a
+// column-wise patch, and a patch of other columns leaves it alone.
+func TestSSOProviderIconColumn(t *testing.T) {
+	pg := newQuotaTestDB(t, 4)
+	ctx := context.Background()
+
+	seed(t, pg.GetDB(), `INSERT INTO auth_sso_providers (slug, kind, display_name, oidc_config) VALUES ('legacy', 'oidc', 'Legacy', '{}')`)
+
+	legacy, err := pg.GetSSOProviderBySlug(ctx, "legacy")
+	if err != nil || legacy == nil || legacy.Icon != "" {
+		t.Fatalf("a provider created without an icon must read empty: %+v, %v", legacy, err)
+	}
+
+	created := &models.SSOProvider{
+		Slug: "kc", Kind: "oidc", DisplayName: "KC", Icon: "keycloak", Enabled: true,
+		OIDCConfig: json.RawMessage(`{}`), GroupMapping: map[string]string{}, PermissionMapping: map[string]string{},
+	}
+	if err := pg.CreateSSOProvider(ctx, created); err != nil {
+		t.Fatalf("CreateSSOProvider: %v", err)
+	}
+
+	got, err := pg.GetSSOProviderBySlug(ctx, "kc")
+	if err != nil || got == nil || got.Icon != "keycloak" {
+		t.Fatalf("created icon = %+v, %v", got, err)
+	}
+
+	name := "Renamed"
+
+	got, err = pg.PatchSSOProvider(ctx, created.ID, SSOProviderPatch{DisplayName: &name})
+	if err != nil || got == nil || got.Icon != "keycloak" {
+		t.Fatalf("a patch without icon must keep it: %+v, %v", got, err)
+	}
+
+	got, err = pg.PatchSSOProvider(ctx, created.ID, SSOProviderPatch{Icon: new("")})
+	if err != nil || got == nil || got.Icon != "" || got.DisplayName != name {
+		t.Fatalf("an empty icon patch must clear only the icon: %+v, %v", got, err)
+	}
+
+	listed, err := pg.ListEnabledSSOProviders(ctx)
+	if err != nil || len(listed) == 0 {
+		t.Fatalf("ListEnabledSSOProviders: %d, %v", len(listed), err)
 	}
 }

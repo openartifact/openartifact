@@ -1783,16 +1783,19 @@ Catalog figures of a repository. Only present in the repository list (GET /api/v
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `auto_provision_users` | boolean | no | - |
+| `callback_url` | string | no | The redirect URI (OIDC) or assertion consumer service URL (SAML) to register with the identity provider, built from BASE_URL. |
 | `claim_mapping` | object | no | - |
 | `created_at` | string (date-time) | no | - |
 | `display_name` | string | no | - |
 | `enabled` | boolean | no | - |
 | `group_mapping` | map of string | no | - |
+| `icon` | string | no | Icon key for the login button. Empty means automatic: the icon is derived from the provider configuration (see resolved_icon). Vendors without a bundled glyph resolve to openid or saml. One of: ``, `google`, `github`, `gitlab`, `okta`, `auth0`, `keycloak`, `authentik`, `gitea`, `bitbucket`, `atlassian`, `openshift`, `openstack`, `openid`, `ldap`, `saml`, `key`. |
 | `id` | string (uuid) | no | - |
 | `kind` | string | no | One of: `oidc`, `saml`. |
 | `link_by_email` | boolean | no | - |
 | `oidc_config` | [OIDCConfig](#oidcconfig) | no | - |
 | `permission_mapping` | map of string | no | - |
+| `resolved_icon` | string | no | The icon the login page shows: icon when set, else the one derived from the configuration. Never empty. One of: `google`, `github`, `gitlab`, `okta`, `auth0`, `keycloak`, `authentik`, `gitea`, `bitbucket`, `atlassian`, `openshift`, `openstack`, `openid`, `ldap`, `saml`, `key`. |
 | `saml_config` | object | no | SAML settings (kind=saml). At least one IdP metadata source is required on create; the URL wins when both are set. |
 | `saml_config.allow_idp_initiated` | boolean | no | Accept IdP-initiated (unsolicited) responses, e.g. from an IdP app tile. Off by default: such responses are not bound to a login request this server started, so login CSRF is possible. Signature, audience, recipient and replay checks still apply. |
 | `saml_config.email_attribute` | string | no | Assertion attribute Name for the email (default mail). |

@@ -1624,6 +1624,18 @@ export type SsoProvider = {
     slug?: string;
     kind?: 'oidc' | 'saml';
     display_name?: string;
+    /**
+     * Icon key for the login button. Empty means automatic: the icon is derived from the provider configuration (see resolved_icon). Vendors without a bundled glyph resolve to openid or saml.
+     */
+    icon?: '' | 'google' | 'github' | 'gitlab' | 'okta' | 'auth0' | 'keycloak' | 'authentik' | 'gitea' | 'bitbucket' | 'atlassian' | 'openshift' | 'openstack' | 'openid' | 'ldap' | 'saml' | 'key';
+    /**
+     * The icon the login page shows: icon when set, else the one derived from the configuration. Never empty.
+     */
+    readonly resolved_icon?: 'google' | 'github' | 'gitlab' | 'okta' | 'auth0' | 'keycloak' | 'authentik' | 'gitea' | 'bitbucket' | 'atlassian' | 'openshift' | 'openstack' | 'openid' | 'ldap' | 'saml' | 'key';
+    /**
+     * The redirect URI (OIDC) or assertion consumer service URL (SAML) to register with the identity provider, built from BASE_URL.
+     */
+    readonly callback_url?: string;
     enabled?: boolean;
     oidc_config?: OidcConfig;
     /**
@@ -3597,6 +3609,10 @@ export type SsoProviderWritable = {
     slug?: string;
     kind?: 'oidc' | 'saml';
     display_name?: string;
+    /**
+     * Icon key for the login button. Empty means automatic: the icon is derived from the provider configuration (see resolved_icon). Vendors without a bundled glyph resolve to openid or saml.
+     */
+    icon?: '' | 'google' | 'github' | 'gitlab' | 'okta' | 'auth0' | 'keycloak' | 'authentik' | 'gitea' | 'bitbucket' | 'atlassian' | 'openshift' | 'openstack' | 'openid' | 'ldap' | 'saml' | 'key';
     enabled?: boolean;
     oidc_config?: OidcConfigWritable;
     /**
@@ -4045,6 +4061,10 @@ export type GetApiV1AuthSsoProvidersResponses = {
             slug?: string;
             display_name?: string;
             kind?: 'oidc' | 'saml';
+            /**
+             * The icon key of the login button, resolved from the provider configuration; never empty.
+             */
+            icon?: 'google' | 'github' | 'gitlab' | 'okta' | 'auth0' | 'keycloak' | 'authentik' | 'gitea' | 'bitbucket' | 'atlassian' | 'openshift' | 'openstack' | 'openid' | 'ldap' | 'saml' | 'key';
         }>;
     };
 };
@@ -10298,6 +10318,10 @@ export type PostApiV1AdminSsoProvidersData = {
         slug: string;
         kind: 'oidc' | 'saml';
         display_name: string;
+        /**
+         * Icon key for the login button. Empty means automatic: the icon is derived from the provider configuration (see resolved_icon). Vendors without a bundled glyph resolve to openid or saml.
+         */
+        icon?: '' | 'google' | 'github' | 'gitlab' | 'okta' | 'auth0' | 'keycloak' | 'authentik' | 'gitea' | 'bitbucket' | 'atlassian' | 'openshift' | 'openstack' | 'openid' | 'ldap' | 'saml' | 'key';
         enabled?: boolean;
         config?: {
             [key: string]: unknown;
@@ -10403,6 +10427,10 @@ export type GetApiV1AdminSsoProvidersBySlugResponse = GetApiV1AdminSsoProvidersB
 export type PatchApiV1AdminSsoProvidersBySlugData = {
     body: {
         display_name?: string;
+        /**
+         * Icon key for the login button. Empty means automatic: the icon is derived from the provider configuration (see resolved_icon). Vendors without a bundled glyph resolve to openid or saml.
+         */
+        icon?: '' | 'google' | 'github' | 'gitlab' | 'okta' | 'auth0' | 'keycloak' | 'authentik' | 'gitea' | 'bitbucket' | 'atlassian' | 'openshift' | 'openstack' | 'openid' | 'ldap' | 'saml' | 'key';
         enabled?: boolean;
         config?: {
             [key: string]: unknown;

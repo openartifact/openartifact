@@ -99,20 +99,20 @@ describe('oidcFormFrom', () => {
 })
 
 describe('Dex connector', () => {
-  const dexForm = () => ({ ...emptyOIDCForm(), issuer: 'https://dex.example', client_id: 'c', dex: true, dex_connector_id: 'github-main' })
+  const dexForm = () => ({ ...emptyOIDCForm(), issuer: 'https://dex.example', client_id: 'c', preset: 'dex' as const, dex_connector_type: 'other' as const, dex_connector_id: 'github-main' })
 
   it('round-trips dex_connector_id from config to form to payload', () => {
     const form = oidcFormFrom({ type: '', issuer: 'https://dex.example', client_id: 'c', dex_connector_id: 'github-main' })
-    expect(form.dex).toBe(true)
+    expect(form.preset).toBe('dex')
     expect(form.dex_connector_id).toBe('github-main')
     expect(buildOIDCPayload(form, false).dex_connector_id).toBe('github-main')
   })
 
   it('sends an empty value when empty, when the preset is off, and for other types, so a PATCH clears it', () => {
     expect(buildOIDCPayload({ ...dexForm(), dex_connector_id: '' }, false).dex_connector_id).toBe('')
-    expect(buildOIDCPayload({ ...dexForm(), dex: false }, false).dex_connector_id).toBe('')
+    expect(buildOIDCPayload({ ...dexForm(), preset: 'oidc' as const }, false).dex_connector_id).toBe('')
     expect(buildOIDCPayload({ ...dexForm(), type: 'github' }, false).dex_connector_id).toBe('')
-    expect(oidcFormFrom({ type: '', client_id: 'c' }).dex).toBe(false)
+    expect(oidcFormFrom({ type: '', client_id: 'c' }).preset).toBe('oidc')
   })
 
   it('validates the connector ID charset and length', () => {

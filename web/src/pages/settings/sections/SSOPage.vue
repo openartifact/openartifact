@@ -84,10 +84,8 @@ import {
   saveSSOProvider,
   testSSOProvider,
   updateSSOProvider,
-  type SSOConfigInput,
   type SSOProvider,
 } from '../../../api/sso'
-import { buildOIDCPayload, validateOIDCForm } from '../../../lib/ssoOidcForm'
 import AppButton from '../../../components/AppButton.vue'
 import SSOProviderCard from './SSOProviderCard.vue'
 import SSOProviderForm from './SSOProviderForm.vue'
@@ -98,7 +96,7 @@ import { useDocsLink } from '../../../composables/useDocsLink'
 import { useToastStore } from '../../../stores/toast'
 import { t } from '../../../i18n'
 import { formatTime } from '../../../lib/datetime'
-import { emptyForm, formFromProvider, type SSOTestOutcome } from '../../../lib/ssoProviderForm'
+import { buildSSOConfig, emptyForm, formFromProvider, type SSOTestOutcome } from '../../../lib/ssoProviderForm'
 
 const toasts = useToastStore()
 const docsUrl = useDocsLink('settings-sso')
@@ -150,47 +148,20 @@ function closeDrawer(): void {
   drawerOpen.value = false
 }
 
-// Builds the top-level config fields shared by POST and PATCH. On edit the
-// stored client secret cannot be read back: leaving it blank keeps it (the
-// server merges the patch) unless the type, issuer or client ID changed.
-function buildConfig(): Partial<SSOConfigInput> | null {
-  const f = form.value
-  const config: Partial<SSOConfigInput> = {
-    auto_provision_users: f.auto_provision_users,
-    link_by_email: f.link_by_email,
-  }
-  if (f.kind === 'saml') {
-    config.saml_config = { ...f.saml_config }
-    return config
-  }
-  const invalid = validateOIDCForm(f.oidc_config)
-  if (invalid) {
-    toasts.error(invalid === 'dexConnectorInvalid' ? t('adm.sso.error.dexConnectorInvalid') : t('adm.sso.error.dexScopesFederated'))
-    return null
-  }
-  const existing = editingProvider.value?.oidc_config
-  if (f.oidc_config.client_secret || !editingProvider.value) {
-    config.oidc_config = buildOIDCPayload(f.oidc_config, true)
-    return config
-  }
-  // The stored secret cannot be read back and the server keeps it when it is
-  // omitted, but pointing the stored secret at another issuer/client is refused.
-  const changed =
-    f.oidc_config.type !== (existing?.type ?? '') ||
-    f.oidc_config.issuer !== (existing?.issuer ?? '') ||
-    f.oidc_config.client_id !== (existing?.client_id ?? '')
-  if (changed) {
-    toasts.error(t('adm.sso.secretRequired'))
-    return null
-  }
-  config.oidc_config = buildOIDCPayload(f.oidc_config, false)
-  return config
-}
+const CONFIG_ERRORS = {
+  dexConnectorInvalid: 'adm.sso.error.dexConnectorInvalid',
+  dexScopesFederated: 'adm.sso.error.dexScopesFederated',
+  secretRequired: 'adm.sso.secretRequired',
+} as const
 
 async function saveProvider(): Promise<void> {
   if (saving.value) return
-  const config = buildConfig()
-  if (!config) return
+  const built = buildSSOConfig(form.value, editingProvider.value)
+  if ('error' in built) {
+    toasts.error(t(CONFIG_ERRORS[built.error]))
+    return
+  }
+  const { config } = built
   saving.value = true
   try {
     if (editingProvider.value) {

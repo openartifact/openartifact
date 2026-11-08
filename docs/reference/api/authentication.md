@@ -109,6 +109,7 @@ Fields of the `200` response (`application/json`):
 |---|---|---|---|
 | `providers` | array of object | yes | - |
 | `providers[].display_name` | string | no | - |
+| `providers[].icon` | string | no | The icon key of the login button, resolved from the provider configuration; never empty. One of: `google`, `github`, `gitlab`, `okta`, `auth0`, `keycloak`, `authentik`, `gitea`, `bitbucket`, `atlassian`, `openshift`, `openstack`, `openid`, `ldap`, `saml`, `key`. |
 | `providers[].kind` | string | no | One of: `oidc`, `saml`. |
 | `providers[].slug` | string | no | - |
 

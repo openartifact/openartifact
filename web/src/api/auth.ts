@@ -10,7 +10,8 @@ export interface SSOProvider {
   slug: string
   kind: 'oidc' | 'saml'
   display_name: string
-  enabled: boolean
+  /** Icon key (see `SSO_ICON_KEYS`), resolved by the server from the provider settings; never empty. */
+  icon: string
 }
 
 export function login(credentials: { username: string; password: string }): Promise<User> {

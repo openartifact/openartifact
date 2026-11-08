@@ -3617,6 +3617,57 @@
           "display_name": {
             "type": "string"
           },
+          "icon": {
+            "type": "string",
+            "description": "Icon key for the login button. Empty means automatic: the icon is derived from the provider configuration (see resolved_icon). Vendors without a bundled glyph resolve to openid or saml.",
+            "enum": [
+              "",
+              "google",
+              "github",
+              "gitlab",
+              "okta",
+              "auth0",
+              "keycloak",
+              "authentik",
+              "gitea",
+              "bitbucket",
+              "atlassian",
+              "openshift",
+              "openstack",
+              "openid",
+              "ldap",
+              "saml",
+              "key"
+            ]
+          },
+          "resolved_icon": {
+            "type": "string",
+            "readOnly": true,
+            "description": "The icon the login page shows: icon when set, else the one derived from the configuration. Never empty.",
+            "enum": [
+              "google",
+              "github",
+              "gitlab",
+              "okta",
+              "auth0",
+              "keycloak",
+              "authentik",
+              "gitea",
+              "bitbucket",
+              "atlassian",
+              "openshift",
+              "openstack",
+              "openid",
+              "ldap",
+              "saml",
+              "key"
+            ]
+          },
+          "callback_url": {
+            "type": "string",
+            "readOnly": true,
+            "description": "The redirect URI (OIDC) or assertion consumer service URL (SAML) to register with the identity provider, built from BASE_URL."
+          },
           "enabled": {
             "type": "boolean"
           },
@@ -8368,6 +8419,28 @@
                             "enum": [
                               "oidc",
                               "saml"
+                            ]
+                          },
+                          "icon": {
+                            "type": "string",
+                            "description": "The icon key of the login button, resolved from the provider configuration; never empty.",
+                            "enum": [
+                              "google",
+                              "github",
+                              "gitlab",
+                              "okta",
+                              "auth0",
+                              "keycloak",
+                              "authentik",
+                              "gitea",
+                              "bitbucket",
+                              "atlassian",
+                              "openshift",
+                              "openstack",
+                              "openid",
+                              "ldap",
+                              "saml",
+                              "key"
                             ]
                           }
                         }
@@ -18958,6 +19031,29 @@
                   "display_name": {
                     "type": "string"
                   },
+                  "icon": {
+                    "type": "string",
+                    "description": "Icon key for the login button. Empty means automatic: the icon is derived from the provider configuration (see resolved_icon). Vendors without a bundled glyph resolve to openid or saml.",
+                    "enum": [
+                      "",
+                      "google",
+                      "github",
+                      "gitlab",
+                      "okta",
+                      "auth0",
+                      "keycloak",
+                      "authentik",
+                      "gitea",
+                      "bitbucket",
+                      "atlassian",
+                      "openshift",
+                      "openstack",
+                      "openid",
+                      "ldap",
+                      "saml",
+                      "key"
+                    ]
+                  },
                   "enabled": {
                     "type": "boolean"
                   },
@@ -19081,6 +19177,29 @@
                 "properties": {
                   "display_name": {
                     "type": "string"
+                  },
+                  "icon": {
+                    "type": "string",
+                    "description": "Icon key for the login button. Empty means automatic: the icon is derived from the provider configuration (see resolved_icon). Vendors without a bundled glyph resolve to openid or saml.",
+                    "enum": [
+                      "",
+                      "google",
+                      "github",
+                      "gitlab",
+                      "okta",
+                      "auth0",
+                      "keycloak",
+                      "authentik",
+                      "gitea",
+                      "bitbucket",
+                      "atlassian",
+                      "openshift",
+                      "openstack",
+                      "openid",
+                      "ldap",
+                      "saml",
+                      "key"
+                    ]
                   },
                   "enabled": {
                     "type": "boolean"

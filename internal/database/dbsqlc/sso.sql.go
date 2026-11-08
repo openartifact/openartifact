@@ -12,8 +12,8 @@ import (
 )
 
 const createSSOProvider = `-- name: CreateSSOProvider :one
-INSERT INTO auth_sso_providers (slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping, auto_provision_users, link_by_email)
-VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11)
+INSERT INTO auth_sso_providers (slug, kind, display_name, icon, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping, auto_provision_users, link_by_email)
+VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb, $11, $12)
 RETURNING id, created_at, updated_at
 `
 
@@ -21,12 +21,13 @@ type CreateSSOProviderParams struct {
 	Slug               string          `db:"slug" json:"slug"`
 	Kind               string          `db:"kind" json:"kind"`
 	DisplayName        string          `db:"display_name" json:"display_name"`
+	Icon               string          `db:"icon" json:"icon"`
 	Enabled            bool            `db:"enabled" json:"enabled"`
-	Column5            json.RawMessage `db:"column_5" json:"column_5"`
 	Column6            json.RawMessage `db:"column_6" json:"column_6"`
 	Column7            json.RawMessage `db:"column_7" json:"column_7"`
 	Column8            json.RawMessage `db:"column_8" json:"column_8"`
 	Column9            json.RawMessage `db:"column_9" json:"column_9"`
+	Column10           json.RawMessage `db:"column_10" json:"column_10"`
 	AutoProvisionUsers bool            `db:"auto_provision_users" json:"auto_provision_users"`
 	LinkByEmail        bool            `db:"link_by_email" json:"link_by_email"`
 }
@@ -42,12 +43,13 @@ func (q *Queries) CreateSSOProvider(ctx context.Context, arg CreateSSOProviderPa
 		arg.Slug,
 		arg.Kind,
 		arg.DisplayName,
+		arg.Icon,
 		arg.Enabled,
-		arg.Column5,
 		arg.Column6,
 		arg.Column7,
 		arg.Column8,
 		arg.Column9,
+		arg.Column10,
 		arg.AutoProvisionUsers,
 		arg.LinkByEmail,
 	)
@@ -66,7 +68,7 @@ func (q *Queries) DeleteSSOProvider(ctx context.Context, id string) error {
 }
 
 const getSSOProviderBySlug = `-- name: GetSSOProviderBySlug :one
-SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping, auto_provision_users, link_by_email, created_at, updated_at
+SELECT id, slug, kind, display_name, icon, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping, auto_provision_users, link_by_email, created_at, updated_at
 FROM auth_sso_providers WHERE slug = $1
 `
 
@@ -75,6 +77,7 @@ type GetSSOProviderBySlugRow struct {
 	Slug               string          `db:"slug" json:"slug"`
 	Kind               string          `db:"kind" json:"kind"`
 	DisplayName        string          `db:"display_name" json:"display_name"`
+	Icon               string          `db:"icon" json:"icon"`
 	Enabled            bool            `db:"enabled" json:"enabled"`
 	OidcConfig         []byte          `db:"oidc_config" json:"oidc_config"`
 	SamlConfig         []byte          `db:"saml_config" json:"saml_config"`
@@ -95,6 +98,7 @@ func (q *Queries) GetSSOProviderBySlug(ctx context.Context, slug string) (GetSSO
 		&i.Slug,
 		&i.Kind,
 		&i.DisplayName,
+		&i.Icon,
 		&i.Enabled,
 		&i.OidcConfig,
 		&i.SamlConfig,
@@ -110,7 +114,7 @@ func (q *Queries) GetSSOProviderBySlug(ctx context.Context, slug string) (GetSSO
 }
 
 const listAllSSOProviders = `-- name: ListAllSSOProviders :many
-SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping, auto_provision_users, link_by_email, created_at, updated_at
+SELECT id, slug, kind, display_name, icon, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping, auto_provision_users, link_by_email, created_at, updated_at
 FROM auth_sso_providers ORDER BY slug ASC
 `
 
@@ -119,6 +123,7 @@ type ListAllSSOProvidersRow struct {
 	Slug               string          `db:"slug" json:"slug"`
 	Kind               string          `db:"kind" json:"kind"`
 	DisplayName        string          `db:"display_name" json:"display_name"`
+	Icon               string          `db:"icon" json:"icon"`
 	Enabled            bool            `db:"enabled" json:"enabled"`
 	OidcConfig         []byte          `db:"oidc_config" json:"oidc_config"`
 	SamlConfig         []byte          `db:"saml_config" json:"saml_config"`
@@ -145,6 +150,7 @@ func (q *Queries) ListAllSSOProviders(ctx context.Context) ([]ListAllSSOProvider
 			&i.Slug,
 			&i.Kind,
 			&i.DisplayName,
+			&i.Icon,
 			&i.Enabled,
 			&i.OidcConfig,
 			&i.SamlConfig,
@@ -167,7 +173,7 @@ func (q *Queries) ListAllSSOProviders(ctx context.Context) ([]ListAllSSOProvider
 }
 
 const listEnabledSSOProviders = `-- name: ListEnabledSSOProviders :many
-SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping, auto_provision_users, link_by_email, created_at, updated_at
+SELECT id, slug, kind, display_name, icon, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping, auto_provision_users, link_by_email, created_at, updated_at
 FROM auth_sso_providers WHERE enabled = TRUE ORDER BY slug ASC
 `
 
@@ -176,6 +182,7 @@ type ListEnabledSSOProvidersRow struct {
 	Slug               string          `db:"slug" json:"slug"`
 	Kind               string          `db:"kind" json:"kind"`
 	DisplayName        string          `db:"display_name" json:"display_name"`
+	Icon               string          `db:"icon" json:"icon"`
 	Enabled            bool            `db:"enabled" json:"enabled"`
 	OidcConfig         []byte          `db:"oidc_config" json:"oidc_config"`
 	SamlConfig         []byte          `db:"saml_config" json:"saml_config"`
@@ -202,6 +209,7 @@ func (q *Queries) ListEnabledSSOProviders(ctx context.Context) ([]ListEnabledSSO
 			&i.Slug,
 			&i.Kind,
 			&i.DisplayName,
+			&i.Icon,
 			&i.Enabled,
 			&i.OidcConfig,
 			&i.SamlConfig,

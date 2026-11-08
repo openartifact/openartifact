@@ -151,7 +151,7 @@ func LoadOIDCProviderRow(ctx context.Context, row *models.SSOProvider, baseURL s
 	}
 
 	cfg.ClientSecret = secret
-	redirectURL := baseURL + "/api/v1/auth/sso/oidc/" + slug + "/callback"
+	redirectURL := OIDCCallbackURL(baseURL, slug)
 
 	var p *OIDCProvider
 

@@ -131,11 +131,12 @@ Newest first. Each version starts with **What you must do**; the text below it l
 
 **What you must do**
 
-- Nothing is required. Migration `015` builds indexes without locking writes (`CREATE INDEX CONCURRENTLY`), which can take a while on a large `proxy_cache` or `package_versions` table. Migration `016` merges global groups that share a name into the oldest one (members, project grants and permission assignments move to it) and then makes global group names unique. Migration `017` adds the image to Docker upload sessions; a layer push that was in progress during the upgrade is restarted by the client.
+- Nothing is required. Migration `015` builds indexes without locking writes (`CREATE INDEX CONCURRENTLY`), which can take a while on a large `proxy_cache` or `package_versions` table. Migration `016` merges global groups that share a name into the oldest one (members, project grants and permission assignments move to it) and then makes global group names unique. Migration `017` adds the image to Docker upload sessions; a layer push that was in progress during the upgrade is restarted by the client. Migration `018` adds an `icon` column to SSO providers (empty, so the login page picks the icon automatically); it is additive.
 
 **Changes.**
 
 - **Dex.** OIDC providers have a new optional `oidc_config.dex_connector_id` that ties a provider to one connector of a Dex server and checks it on login. Existing providers are unchanged, and no action is required. See [Dex](../security/sso.md#dex).
+- **SSO icons.** SSO providers have an optional `icon`, and the login page shows the vendor icon. Providers keep working unchanged: the icon is derived from the configuration unless you set one. The public provider list gains `icon`, and the admin API gains `icon`, `resolved_icon` and `callback_url`. The admin form also gets vendor presets and, for Dex, a generated Dex configuration snippet. See [Admin UI](../security/sso.md#admin-ui-presets-icons-and-the-callback-url).
 - **Groups.** Creating a global group with the name of an existing one answers `409`; SSO provisioning no longer creates duplicates under concurrent logins.
 - **npm.** Publishing a version with build metadata (`1.0.0+build`) is refused with `400`: npm strips it, so two such versions collided.
 - **Cargo.** Publishing a crate whose name differs from an existing one only in `-` versus `_` is refused, as crates.io does.
