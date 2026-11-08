@@ -13,28 +13,30 @@ import (
 const acquireDockerUploadLease = `-- name: AcquireDockerUploadLease :one
 UPDATE docker_uploads
 SET lease_token = $1::uuid, lease_until = now() + make_interval(secs => $2::float8)
-WHERE repository_id = $3 AND upload_uuid = $4
+WHERE repository_id = $3 AND image = $4::text AND upload_uuid = $5
   AND (lease_until IS NULL OR lease_until < now())
-RETURNING id, repository_id, upload_uuid, "offset", created_at, updated_at, hash_state, stage_state, lease_token, lease_until
+RETURNING id, repository_id, upload_uuid, "offset", created_at, updated_at, hash_state, stage_state, lease_token, lease_until, image
 `
 
 type AcquireDockerUploadLeaseParams struct {
 	Token        string  `db:"token" json:"token"`
 	TtlSeconds   float64 `db:"ttl_seconds" json:"ttl_seconds"`
 	RepositoryID string  `db:"repository_id" json:"repository_id"`
+	Image        string  `db:"image" json:"image"`
 	UploadUuid   string  `db:"upload_uuid" json:"upload_uuid"`
 }
 
 // Takes the session's lease for one request and returns the session as it is
 // now (offset, hash state and stage state included), so the holder never works
 // from a position another request has already moved. No row means the session
-// does not exist or a live lease holds it; a lease whose holder died is taken
+// does not exist (for this image) or a live lease holds it; a lease whose holder died is taken
 // over once lease_until has passed.
 func (q *Queries) AcquireDockerUploadLease(ctx context.Context, arg AcquireDockerUploadLeaseParams) (DockerUpload, error) {
 	row := q.db.QueryRow(ctx, acquireDockerUploadLease,
 		arg.Token,
 		arg.TtlSeconds,
 		arg.RepositoryID,
+		arg.Image,
 		arg.UploadUuid,
 	)
 	var i DockerUpload
@@ -49,6 +51,7 @@ func (q *Queries) AcquireDockerUploadLease(ctx context.Context, arg AcquireDocke
 		&i.StageState,
 		&i.LeaseToken,
 		&i.LeaseUntil,
+		&i.Image,
 	)
 	return i, err
 }
@@ -233,8 +236,8 @@ func (q *Queries) CreateDockerManifest(ctx context.Context, arg CreateDockerMani
 }
 
 const createDockerUpload = `-- name: CreateDockerUpload :one
-INSERT INTO docker_uploads (repository_id, upload_uuid, "offset")
-VALUES ($1, $2, $3)
+INSERT INTO docker_uploads (repository_id, image, upload_uuid, "offset")
+VALUES ($1, $4::text, $2, $3)
 RETURNING id, created_at, updated_at
 `
 
@@ -242,6 +245,7 @@ type CreateDockerUploadParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
 	UploadUuid   string `db:"upload_uuid" json:"upload_uuid"`
 	Offset       int64  `db:"offset" json:"offset"`
+	Image        string `db:"image" json:"image"`
 }
 
 type CreateDockerUploadRow struct {
@@ -251,7 +255,12 @@ type CreateDockerUploadRow struct {
 }
 
 func (q *Queries) CreateDockerUpload(ctx context.Context, arg CreateDockerUploadParams) (CreateDockerUploadRow, error) {
-	row := q.db.QueryRow(ctx, createDockerUpload, arg.RepositoryID, arg.UploadUuid, arg.Offset)
+	row := q.db.QueryRow(ctx, createDockerUpload,
+		arg.RepositoryID,
+		arg.UploadUuid,
+		arg.Offset,
+		arg.Image,
+	)
 	var i CreateDockerUploadRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
 	return i, err
@@ -774,18 +783,22 @@ func (q *Queries) GetDockerTag(ctx context.Context, arg GetDockerTagParams) (Doc
 }
 
 const getDockerUpload = `-- name: GetDockerUpload :one
-SELECT id, repository_id, upload_uuid, "offset", created_at, updated_at, hash_state, stage_state, lease_token, lease_until
+SELECT id, repository_id, upload_uuid, "offset", created_at, updated_at, hash_state, stage_state, lease_token, lease_until, image
 FROM docker_uploads
-WHERE repository_id = $1 AND upload_uuid = $2
+WHERE repository_id = $1 AND image = $3::text AND upload_uuid = $2
 `
 
 type GetDockerUploadParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
 	UploadUuid   string `db:"upload_uuid" json:"upload_uuid"`
+	Image        string `db:"image" json:"image"`
 }
 
+// A session belongs to the image it was started for: asked through another
+// image, or for a session that predates the image column (NULL), it is not
+// found.
 func (q *Queries) GetDockerUpload(ctx context.Context, arg GetDockerUploadParams) (DockerUpload, error) {
-	row := q.db.QueryRow(ctx, getDockerUpload, arg.RepositoryID, arg.UploadUuid)
+	row := q.db.QueryRow(ctx, getDockerUpload, arg.RepositoryID, arg.UploadUuid, arg.Image)
 	var i DockerUpload
 	err := row.Scan(
 		&i.ID,
@@ -798,6 +811,7 @@ func (q *Queries) GetDockerUpload(ctx context.Context, arg GetDockerUploadParams
 		&i.StageState,
 		&i.LeaseToken,
 		&i.LeaseUntil,
+		&i.Image,
 	)
 	return i, err
 }

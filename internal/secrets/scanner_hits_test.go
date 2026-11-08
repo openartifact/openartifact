@@ -123,7 +123,9 @@ func TestScanText_HintsMaskSecretsBeyondTheCap(t *testing.T) {
 func TestScanText_HintMergesAdjacentSecrets(t *testing.T) {
 	scanner := newTestScanner(t)
 
-	first, second := "npm_"+strings.Repeat("a", 36), "npm_"+strings.Repeat("b", 36)
+	// Different token kinds: a token has no fixed length, so two npm tokens
+	// back to back are one token.
+	first, second := "npm_"+strings.Repeat("a", 36), "ghp_"+strings.Repeat("b", 36)
 
 	for name, text := range map[string]string{
 		"adjacent":  first + second,

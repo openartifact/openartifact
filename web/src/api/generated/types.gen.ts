@@ -12513,6 +12513,10 @@ export type PostApiV1BundlesByNameByVersionPromoteErrors = {
      */
     409: Error;
     /**
+     * A target repository has a blocking license policy and the license of a promoted package file cannot be read (LICENSE_METADATA_UNREADABLE); nothing is copied
+     */
+    422: Error;
+    /**
      * The target repository's storage quota would be exceeded (quota_exceeded)
      */
     507: Error;

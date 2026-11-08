@@ -168,7 +168,7 @@ A move that completes while a download starts is invisible to the client. The so
 
 A new blob is written to the primary store. A re-upload of a blob that already has a record is written to the tier that record places it on, so it never creates a second copy. See [writes that race a move](#writes-that-race-a-move).
 
-Deletes keep their usual semantics: a blob is removed only through the lock-protected, reference-counted path described in [deduplication and deletion](storage.md#deduplication-and-deletion). That removes every copy on every tier. Deleting a blob removes its record at once and queues the bytes of every tier that has a copy for [deferred removal](#deferred-removal-of-the-old-copy). If the blob's placement points at a tier this server cannot resolve, the delete fails and keeps the record, so the bytes are never orphaned. Listing and existence checks look at all tiers.
+Deletes keep their usual semantics: a blob is removed only through the lock-protected, reference-counted path described in [deduplication and deletion](storage.md#deduplication-and-deletion). That removes every copy on every tier. Deleting a blob removes its record at once and queues the bytes of every tier that has a copy for [deferred removal](#deferred-removal-of-the-old-copy). If the blob's placement points at a tier this server cannot resolve, the delete fails and keeps the record, so the bytes are never orphaned. The deferred removal asks every tier that may hold the bytes: when one of them fails, the removal stays queued and is retried instead of being reported as done. Listing and existence checks look at all tiers.
 
 ### Promote-on-read
 

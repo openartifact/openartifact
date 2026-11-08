@@ -627,3 +627,53 @@ func TestScanText_LineHintMasksNeighbouringSecretsAndStaysUTF8(t *testing.T) {
 		}
 	}
 }
+
+// TestScanText_HintsNeverKeepTokenTails checks that a token longer than a
+// pattern's nominal length, or containing hyphens, is masked whole in the line
+// hint: no part of it may be stored.
+func TestScanText_HintsNeverKeepTokenTails(t *testing.T) {
+	scanner := newTestScanner(t)
+
+	tests := []struct {
+		name, kind, token string
+	}{
+		{"slack hyphenated", "slack_token", "xoxb-" + strings.Repeat("1", 12) + "-" + strings.Repeat("2", 13) + "-TAILTAILTAIL"},
+		{"github long", "github_token", "ghp_" + strings.Repeat("a", 36) + "TAILTAILTAIL"},
+		{"github fine-grained", "github_fine_grained_token", "github_pat_" + strings.Repeat("a", 22) + "_TAILTAILTAIL"},
+		{"npm long", "npm_token", "npm_" + strings.Repeat("a", 36) + "TAILTAILTAIL"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings := scanner.ScanText("token " + tt.token + " end")
+
+			var found bool
+
+			for _, f := range findings {
+				if f.Type == tt.kind {
+					found = true
+				}
+
+				if strings.Contains(f.LineHint, "TAIL") {
+					t.Errorf("hint of %s keeps a token tail: %q", f.Type, f.LineHint)
+				}
+			}
+
+			if !found {
+				t.Errorf("no %s finding in %+v", tt.kind, findings)
+			}
+		})
+	}
+}
+
+func TestScanText_PrivateKeyHeaders(t *testing.T) {
+	scanner := newTestScanner(t)
+
+	for _, kind := range []string{"ENCRYPTED PRIVATE KEY", "PGP PRIVATE KEY BLOCK", "RSA PRIVATE KEY"} {
+		findings := scanner.ScanText("-----BEGIN " + kind + "-----\nabc\n")
+
+		if len(findings) != 1 || findings[0].Type != "private_key" {
+			t.Errorf("%s: findings = %+v, want one private_key", kind, findings)
+		}
+	}
+}

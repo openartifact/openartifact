@@ -154,9 +154,57 @@ func (db *projectsMockDB) CreateProject(_ context.Context, project *models.Proje
 	return nil
 }
 
-func (db *projectsMockDB) UpdateProject(_ context.Context, project *models.Project) error {
-	db.updated = project
-	return nil
+// PatchProject mirrors the store: only the columns named in patch change.
+func (db *projectsMockDB) PatchProject(_ context.Context, id string, patch database.ProjectPatch) (*models.Project, error) {
+	for name, stored := range db.projects {
+		if stored.ID != id {
+			continue
+		}
+
+		p := *stored
+
+		if patch.DisplayName != nil {
+			p.DisplayName = patch.DisplayName
+		}
+
+		if patch.Description != nil {
+			p.Description = patch.Description
+		}
+
+		if patch.AllowedFormats != nil {
+			p.AllowedFormats = *patch.AllowedFormats
+			if len(p.AllowedFormats) == 0 {
+				p.AllowedFormats = nil
+			}
+		}
+
+		if patch.AllowedRepoTypes != nil {
+			p.AllowedRepoTypes = patch.AllowedRepoTypes
+		}
+
+		if patch.RepoNamePrefix != nil {
+			p.RepoNamePrefix = *patch.RepoNamePrefix
+		}
+
+		if patch.AllowPublicRepos != nil {
+			p.AllowPublicRepos = *patch.AllowPublicRepos
+		}
+
+		if patch.MaxRepositories != nil {
+			p.MaxRepositories = *patch.MaxRepositories
+		}
+
+		if patch.TokenMaxTTLDays != nil {
+			p.TokenMaxTTLDays = *patch.TokenMaxTTLDays
+		}
+
+		db.projects[name] = &p
+		db.updated = &p
+
+		return &p, nil
+	}
+
+	return nil, nil
 }
 
 func (db *projectsMockDB) DeleteProject(_ context.Context, id string) error {

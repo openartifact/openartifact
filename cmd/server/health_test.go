@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -99,5 +100,23 @@ func TestProbeAliasesAreRegistered(t *testing.T) {
 		if !a.web.router.Match(chi.NewRouteContext(), http.MethodGet, path) {
 			t.Errorf("GET %s has no route", path)
 		}
+	}
+}
+
+// /ready is unauthenticated too: probing the bucket is cached, so requests do
+// not turn into backend round trips, and a failing bucket reports not ready.
+func TestStorageHealthOfReadyIsCached(t *testing.T) {
+	store := &failingProbe{}
+	a, _ := newTestApp(t, nil)
+	a.store.ready = storage.NewHealthProbe(store, readyProbeTTL, healthProbeTimeout)
+
+	for range 20 {
+		if err := a.storageHealth(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/ready", http.NoBody)); err == nil {
+			t.Fatal("a failing bucket reported ready")
+		}
+	}
+
+	if store.calls != 1 {
+		t.Errorf("backend probed %d times for 20 requests, want 1", store.calls)
 	}
 }

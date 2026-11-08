@@ -63,7 +63,7 @@
   "sx.cleanup.disabled": "Wyłączona",
   "sx.cleanup.noRule": "Brak reguły",
   "sx.cleanup.empty": "Brak polityk czyszczenia",
-  "sx.cleanup.emptyHint": "Polityki czyszczenia automatycznie usuwają stare wersje, na przykład „zachowaj ostatnie 5”. Usunięte wersje trafiają najpierw do kosza, więc pomyłki można naprawić. Dodaj politykę na karcie Czyszczenie hostowanego repozytorium.",
+  "sx.cleanup.emptyHint": "Polityki czyszczenia automatycznie usuwają stare wersje, na przykład „zachowaj ostatnie 5”. Usunięte wersje trafiają najpierw do kosza, więc pomyłki można naprawić. Dodaj politykę w sekcji Czyszczenie na karcie Ustawienia hostowanego repozytorium.",
   "sx.cleanup.partial": "Nie udało się odczytać polityk: {names}.",
   "sx.cleanup.scope": "Polityki są przechowywane osobno dla każdego repozytorium; ta lista zbiera je ze wszystkich hostowanych repozytoriów. Domyślnymi politykami projektu zarządza się w projekcie.",
   "sx.scanners.summary.ready": "Gotowe skanery: {ready} z {total}",

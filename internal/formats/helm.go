@@ -12,6 +12,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/plugin"
 	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/group"
+	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/pkgdeps"
 	"github.com/openartifact/openartifact/internal/proxy"
 )
@@ -22,6 +23,7 @@ func helmFormat() plugin.Format {
 		plugin.Analysis{
 			Manifest: &manifest.HelmRule,
 			Deps:     &pkgdeps.HelmHooks,
+			License:  &licensemeta.HelmHooks,
 		},
 		clientsetup.HelmBuilder, proxy.HelmHooks, &group.HelmHooks, helmStorage())
 }

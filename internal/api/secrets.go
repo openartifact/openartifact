@@ -95,6 +95,9 @@ func (h *SecretsHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		findings = append(findings, h.scanner.ScanMetadata(body.Metadata)...)
 	}
 
+	// Each scan call caps its own findings; the stored result is capped overall.
+	findings = findings[:min(len(findings), secrets.MaxFindings)]
+
 	// Determine scan status
 	scanStatus := "clean"
 	if len(findings) > 0 {

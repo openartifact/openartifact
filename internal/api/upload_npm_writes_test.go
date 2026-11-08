@@ -202,7 +202,7 @@ func (d *npmMemDB) CreateNPMVersion(_ context.Context, v *models.NPMVersion) (*m
 	return v, nil
 }
 
-func (d *npmMemDB) DeleteNPMVersion(_ context.Context, pkgID, version string) error {
+func (d *npmMemDB) DeleteNPMVersions(_ context.Context, pkgID string, versions []string) error {
 	if err := d.failure("DeleteNPMVersion"); err != nil {
 		return err
 	}
@@ -210,7 +210,10 @@ func (d *npmMemDB) DeleteNPMVersion(_ context.Context, pkgID, version string) er
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	d.versions[pkgID] = slices.DeleteFunc(d.versions[pkgID], func(v *models.NPMVersion) bool { return v.Version == version })
+	d.versions[pkgID] = slices.DeleteFunc(
+		d.versions[pkgID],
+		func(v *models.NPMVersion) bool { return slices.Contains(versions, v.Version) },
+	)
 
 	return nil
 }

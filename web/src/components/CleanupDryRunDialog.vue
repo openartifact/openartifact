@@ -23,7 +23,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <section v-for="repo in repositories" :key="repo.repository" data-testid="dryrun-repo">
         <h3 class="text-sm font-semibold text-foreground">
           <span class="font-mono">{{ repo.repository }}</span>
-          <span class="text-muted font-normal"> · {{ repo.format }} · {{ repo.rows }}</span>
+          <span class="text-muted font-normal"> · {{ repo.format }} · {{ formatNumber(repo.rows) }}</span>
         </h3>
         <ul v-if="repo.items.length" class="mt-1 divide-y divide-border rounded-lg border border-border">
           <li v-for="it in repo.items" :key="it.id" class="px-3 py-1.5 text-sm font-mono text-muted" data-testid="dryrun-item">
@@ -45,6 +45,7 @@ import AdminDialog from './AdminDialog.vue'
 import AppButton from './AppButton.vue'
 import type { CleanupPreview } from '../api/generated'
 import { t, tpn } from '../i18n'
+import { formatNumber } from '../lib/intl'
 
 const props = defineProps<{ open: boolean; title: string; repositories: CleanupPreview[] }>()
 const emit = defineEmits<{ (e: 'close'): void }>()

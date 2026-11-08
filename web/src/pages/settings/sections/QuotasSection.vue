@@ -37,7 +37,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </FilterBar>
 
     <p v-if="truncated" class="mb-3 text-sm text-muted" data-testid="quota-truncated">
-      {{ tp('sx.quotas.truncated', { shown: String(all.length), total: String(total) }) }}
+      {{ tp('sx.quotas.truncated', { shown: formatNumber(all.length), total: formatNumber(total) }) }}
     </p>
 
     <ListTable
@@ -61,7 +61,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <template #cell-used="{ row }">
         <span class="tabular-nums">{{ formatBytes((row as QuotaOverviewItem).used_bytes) }}</span>
         <p v-if="(row as QuotaOverviewItem).artifact_count !== undefined" class="text-xs text-muted tabular-nums">
-          {{ tp('sx.quotas.artifacts', { n: String((row as QuotaOverviewItem).artifact_count) }) }}
+          {{ tp('sx.quotas.artifacts', { n: formatNumber((row as QuotaOverviewItem).artifact_count) }) }}
         </p>
       </template>
 
@@ -69,7 +69,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <span v-if="(row as QuotaOverviewItem).limit_bytes" class="tabular-nums">{{ formatBytes((row as QuotaOverviewItem).limit_bytes!) }}</span>
         <span v-else class="text-muted">{{ t('sx.quotas.noSizeLimit') }}</span>
         <p v-if="(row as QuotaOverviewItem).max_artifact_count" class="text-xs text-muted tabular-nums">
-          {{ tp('sx.quotas.maxArtifacts', { max: String((row as QuotaOverviewItem).max_artifact_count) }) }}
+          {{ tp('sx.quotas.maxArtifacts', { max: formatNumber((row as QuotaOverviewItem).max_artifact_count) }) }}
         </p>
       </template>
 
@@ -118,6 +118,7 @@ import { enumParam, strParam } from '../../../composables/useUrlState'
 import { formatBytes } from '../../../lib/quota'
 import { compareQuotas, quotaCounts, quotaKey, quotaState, type QuotaState } from '../../../lib/quotaOverview'
 import { t, tp } from '../../../i18n'
+import { formatNumber } from '../../../lib/intl'
 
 const SCOPES = ['all', 'repository', 'project', 'near'] as const
 type QuotaScope = (typeof SCOPES)[number]
@@ -165,9 +166,9 @@ const columns: ListColumn[] = [
   { key: 'actions', label: t('sx.quotas.col.actions'), actions: true },
 ]
 
-/** Where the limit is edited: the repository configuration or the project usage tab. */
+/** Where the limit is edited: the repository's Settings tab or the project usage tab. */
 function openTarget(q: QuotaOverviewItem): string {
   const name = encodeURIComponent(q.name)
-  return q.scope === 'project' ? `/projects/${name}?tab=usage` : `/repos/${name}?tab=configuration`
+  return q.scope === 'project' ? `/projects/${name}?tab=usage` : `/repos/${name}?tab=settings`
 }
 </script>

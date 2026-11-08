@@ -980,6 +980,56 @@ func (q *Queries) ListUsersByGroup(ctx context.Context, groupID string) ([]ListU
 	return items, nil
 }
 
+const patchPermissionTarget = `-- name: PatchPermissionTarget :one
+UPDATE permission_targets SET
+       name = COALESCE($1, name),
+       repository_filter = COALESCE($2, repository_filter),
+       path_pattern = COALESCE($3, path_pattern),
+       actions = COALESCE($4::text[], actions)
+WHERE id = $5
+RETURNING id, name, repository_filter, path_pattern, actions, created_at, updated_at
+`
+
+type PatchPermissionTargetParams struct {
+	Name             *string  `db:"name" json:"name"`
+	RepositoryFilter *string  `db:"repository_filter" json:"repository_filter"`
+	PathPattern      *string  `db:"path_pattern" json:"path_pattern"`
+	Actions          []string `db:"actions" json:"actions"`
+	ID               string   `db:"id" json:"id"`
+}
+
+type PatchPermissionTargetRow struct {
+	ID               string    `db:"id" json:"id"`
+	Name             string    `db:"name" json:"name"`
+	RepositoryFilter string    `db:"repository_filter" json:"repository_filter"`
+	PathPattern      string    `db:"path_pattern" json:"path_pattern"`
+	Actions          []string  `db:"actions" json:"actions"`
+	CreatedAt        time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt        time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// Column-wise edit: a NULL argument leaves the stored value alone.
+func (q *Queries) PatchPermissionTarget(ctx context.Context, arg PatchPermissionTargetParams) (PatchPermissionTargetRow, error) {
+	row := q.db.QueryRow(ctx, patchPermissionTarget,
+		arg.Name,
+		arg.RepositoryFilter,
+		arg.PathPattern,
+		arg.Actions,
+		arg.ID,
+	)
+	var i PatchPermissionTargetRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.RepositoryFilter,
+		&i.PathPattern,
+		&i.Actions,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const removeUserFromGroup = `-- name: RemoveUserFromGroup :exec
 DELETE FROM auth_user_groups WHERE user_id = $1 AND group_id = $2
 `
@@ -1000,44 +1050,6 @@ UPDATE auth_tokens SET revoked_at = now() WHERE id = $1
 
 func (q *Queries) RevokeToken(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, revokeToken, id)
-	return err
-}
-
-const updateGroup = `-- name: UpdateGroup :exec
-UPDATE auth_groups SET name = $2, description = $3 WHERE id = $1
-`
-
-type UpdateGroupParams struct {
-	ID          string  `db:"id" json:"id"`
-	Name        string  `db:"name" json:"name"`
-	Description *string `db:"description" json:"description"`
-}
-
-func (q *Queries) UpdateGroup(ctx context.Context, arg UpdateGroupParams) error {
-	_, err := q.db.Exec(ctx, updateGroup, arg.ID, arg.Name, arg.Description)
-	return err
-}
-
-const updatePermissionTarget = `-- name: UpdatePermissionTarget :exec
-UPDATE permission_targets SET name = $2, repository_filter = $3, path_pattern = $4, actions = $5 WHERE id = $1
-`
-
-type UpdatePermissionTargetParams struct {
-	ID               string   `db:"id" json:"id"`
-	Name             string   `db:"name" json:"name"`
-	RepositoryFilter string   `db:"repository_filter" json:"repository_filter"`
-	PathPattern      string   `db:"path_pattern" json:"path_pattern"`
-	Actions          []string `db:"actions" json:"actions"`
-}
-
-func (q *Queries) UpdatePermissionTarget(ctx context.Context, arg UpdatePermissionTargetParams) error {
-	_, err := q.db.Exec(ctx, updatePermissionTarget,
-		arg.ID,
-		arg.Name,
-		arg.RepositoryFilter,
-		arg.PathPattern,
-		arg.Actions,
-	)
 	return err
 }
 

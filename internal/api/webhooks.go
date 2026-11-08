@@ -16,6 +16,7 @@ import (
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/crypto"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -31,7 +32,7 @@ type WebhooksStore interface {
 	GetWebhook(ctx context.Context, id string) (*models.Webhook, error)
 	ListWebhookDeliveries(ctx context.Context, webhookID string, limit int) ([]*models.WebhookDelivery, error)
 	ListWebhooks(ctx context.Context, repoID string) ([]*models.Webhook, error)
-	UpdateWebhook(ctx context.Context, wh *models.Webhook) error
+	PatchWebhook(ctx context.Context, id string, patch database.WebhookPatch) (*models.Webhook, error)
 }
 
 type WebhooksHandler struct {
@@ -415,6 +416,88 @@ func (h *WebhooksHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, webhookToResponse(wh))
 }
 
+// webhookUpdateRequest is the PATCH body: omitted fields are left unchanged.
+type webhookUpdateRequest struct {
+	Name           *string   `json:"name"`
+	URL            *string   `json:"url"`
+	Secret         *string   `json:"secret"`
+	Enabled        *bool     `json:"enabled"`
+	Events         *[]string `json:"events"`
+	ContentType    *string   `json:"content_type"`
+	PayloadFormat  *string   `json:"payload_format"`
+	SSLVerify      *bool     `json:"ssl_verify"`
+	MaxRetries     *int      `json:"max_retries"`
+	TimeoutSeconds *int      `json:"timeout_seconds"`
+}
+
+// buildWebhookPatch validates the set fields of req and stores them in patch
+// (the secret encrypted). It returns the validation message, or "" on success.
+func (h *WebhooksHandler) buildWebhookPatch(ctx context.Context, req *webhookUpdateRequest, patch *database.WebhookPatch) string {
+	if req.Name != nil {
+		name, err := normalizeWebhookName(*req.Name)
+		if err != nil {
+			return err.Error()
+		}
+
+		patch.Name = &name
+	}
+
+	if req.URL != nil {
+		if err := validateWebhookURL(ctx, *req.URL); err != nil {
+			return "invalid url: " + err.Error()
+		}
+
+		patch.URL = req.URL
+	}
+
+	if req.Secret != nil {
+		enc, err := encryptWebhookSecret(*req.Secret)
+		if err != nil {
+			h.log.Errorw("update webhook: secret encryption failed", "error", err)
+			return "invalid secret"
+		}
+
+		patch.SetSecret, patch.SecretEnc = true, enc
+	}
+
+	if req.Events != nil {
+		events, err := normalizeWebhookEvents(*req.Events)
+		if err != nil {
+			return err.Error()
+		}
+
+		patch.Events = events
+	}
+
+	if req.ContentType != nil {
+		if err := validateWebhookContentType(*req.ContentType); err != nil {
+			return err.Error()
+		}
+
+		patch.ContentType = req.ContentType
+	}
+
+	if req.PayloadFormat != nil {
+		if err := validateWebhookPayloadFormat(*req.PayloadFormat); err != nil {
+			return err.Error()
+		}
+
+		patch.PayloadFormat = req.PayloadFormat
+	}
+
+	if req.MaxRetries != nil {
+		n := clampInt(*req.MaxRetries, 0, maxWebhookRetries)
+		patch.MaxRetries = &n
+	}
+
+	if req.TimeoutSeconds != nil {
+		n := clampInt(*req.TimeoutSeconds, 1, webhook.MaxTimeoutSeconds)
+		patch.TimeoutSeconds = &n
+	}
+
+	return ""
+}
+
 // handleUpdate updates a webhook. Omitted fields are left unchanged; an empty
 // "secret" clears the signing secret.
 func (h *WebhooksHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
@@ -423,104 +506,34 @@ func (h *WebhooksHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Name           *string   `json:"name"`
-		URL            *string   `json:"url"`
-		Secret         *string   `json:"secret"`
-		Enabled        *bool     `json:"enabled"`
-		Events         *[]string `json:"events"`
-		ContentType    *string   `json:"content_type"`
-		PayloadFormat  *string   `json:"payload_format"`
-		SSLVerify      *bool     `json:"ssl_verify"`
-		MaxRetries     *int      `json:"max_retries"`
-		TimeoutSeconds *int      `json:"timeout_seconds"`
-	}
+	var req webhookUpdateRequest
 
 	if !decodeWebhookBody(w, r, &req) {
 		return
 	}
 
-	if req.Name != nil {
-		name, err := normalizeWebhookName(*req.Name)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
-			return
-		}
-
-		wh.Name = name
+	patch := database.WebhookPatch{
+		Enabled:   req.Enabled,
+		SSLVerify: req.SSLVerify,
 	}
 
-	if req.URL != nil {
-		if err := validateWebhookURL(r.Context(), *req.URL); err != nil {
-			writeError(w, http.StatusBadRequest, "validation_failed", "invalid url: "+err.Error())
-			return
-		}
-
-		wh.URL = *req.URL
+	if msg := h.buildWebhookPatch(r.Context(), &req, &patch); msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
+		return
 	}
 
-	if req.Secret != nil {
-		enc, err := encryptWebhookSecret(*req.Secret)
-		if err != nil {
-			h.log.Errorw("update webhook: secret encryption failed", "error", err)
-			writeError(w, http.StatusBadRequest, "validation_failed", "invalid secret")
-
-			return
-		}
-
-		wh.SecretEnc = enc
-	}
-
-	if req.Enabled != nil {
-		wh.Enabled = *req.Enabled
-	}
-
-	if req.Events != nil {
-		events, err := normalizeWebhookEvents(*req.Events)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
-			return
-		}
-
-		wh.Events = events
-	}
-
-	if req.ContentType != nil {
-		if err := validateWebhookContentType(*req.ContentType); err != nil {
-			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
-			return
-		}
-
-		wh.ContentType = *req.ContentType
-	}
-
-	if req.PayloadFormat != nil {
-		if err := validateWebhookPayloadFormat(*req.PayloadFormat); err != nil {
-			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
-			return
-		}
-
-		wh.PayloadFormat = *req.PayloadFormat
-	}
-
-	if req.SSLVerify != nil {
-		wh.SSLVerify = *req.SSLVerify
-	}
-
-	if req.MaxRetries != nil {
-		wh.MaxRetries = clampInt(*req.MaxRetries, 0, maxWebhookRetries)
-	}
-
-	if req.TimeoutSeconds != nil {
-		wh.TimeoutSeconds = clampInt(*req.TimeoutSeconds, 1, webhook.MaxTimeoutSeconds)
-	}
-
-	if err := h.db.UpdateWebhook(r.Context(), wh); err != nil {
+	updated, err := h.db.PatchWebhook(r.Context(), wh.ID, patch)
+	if err != nil {
 		h.dbError(w, "update webhook: db error", err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, webhookToResponse(wh))
+	if updated == nil {
+		writeError(w, http.StatusNotFound, "not_found", "webhook not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, webhookToResponse(updated))
 }
 
 // handleDelete deletes a webhook.

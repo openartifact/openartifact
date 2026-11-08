@@ -17,9 +17,6 @@ FROM promotion_pipelines pp
 LEFT JOIN auth_users u ON u.id = pp.creator_id
 WHERE pp.id = $1;
 
--- name: UpdatePromotionPipeline :exec
-UPDATE promotion_pipelines SET name = $1, description = $2, stages = $3, updated_at = now() WHERE id = $4;
-
 -- name: DeletePromotionPipeline :exec
 DELETE FROM promotion_pipelines WHERE id = $1;
 

@@ -174,6 +174,7 @@ func (p *DockerStore) ListDockerBlobs(ctx context.Context, repoID string) ([]*mo
 func (p *DockerStore) CreateDockerUpload(ctx context.Context, upload *models.DockerUpload) error {
 	row, err := p.q.CreateDockerUpload(ctx, dbsqlc.CreateDockerUploadParams{
 		RepositoryID: upload.RepositoryID,
+		Image:        upload.Image,
 		UploadUuid:   upload.UploadUUID,
 		Offset:       upload.Offset,
 	})
@@ -181,9 +182,13 @@ func (p *DockerStore) CreateDockerUpload(ctx context.Context, upload *models.Doc
 	return finishCreate(insertedRow(row), err, "create docker upload", &upload.ID, &upload.CreatedAt, &upload.UpdatedAt)
 }
 
-func (p *DockerStore) GetDockerUpload(ctx context.Context, repositoryID, uploadUUID string) (*models.DockerUpload, error) {
+// GetDockerUpload returns the session started for image in the repository, nil
+// when there is none: a session asked through another image, or one that
+// predates the image column, does not exist for the caller.
+func (p *DockerStore) GetDockerUpload(ctx context.Context, repositoryID, image, uploadUUID string) (*models.DockerUpload, error) {
 	row, err := p.q.GetDockerUpload(ctx, dbsqlc.GetDockerUploadParams{
 		RepositoryID: repositoryID,
+		Image:        image,
 		UploadUuid:   uploadUUID,
 	})
 
@@ -191,9 +196,15 @@ func (p *DockerStore) GetDockerUpload(ctx context.Context, repositoryID, uploadU
 }
 
 func dockerUploadFromRow(row dbsqlc.DockerUpload) *models.DockerUpload {
+	var image string
+	if row.Image != nil {
+		image = *row.Image
+	}
+
 	return &models.DockerUpload{
 		ID:           row.ID,
 		RepositoryID: row.RepositoryID,
+		Image:        image,
 		UploadUUID:   row.UploadUuid,
 		Offset:       row.Offset,
 		HashState:    row.HashState,
@@ -205,15 +216,16 @@ func dockerUploadFromRow(row dbsqlc.DockerUpload) *models.DockerUpload {
 
 // AcquireDockerUploadLease takes the session's lease for token (a UUID) for ttl
 // and returns the session as it stands, so the caller starts from the committed
-// position. It returns nil when the session does not exist or another live
-// lease holds it.
+// position. It returns nil when the session does not exist for image or another
+// live lease holds it.
 func (p *DockerStore) AcquireDockerUploadLease(
 	ctx context.Context,
-	repositoryID, uploadUUID, token string,
+	repositoryID, image, uploadUUID, token string,
 	ttl time.Duration,
 ) (*models.DockerUpload, error) {
 	row, err := p.q.AcquireDockerUploadLease(ctx, dbsqlc.AcquireDockerUploadLeaseParams{
 		RepositoryID: repositoryID,
+		Image:        image,
 		UploadUuid:   uploadUUID,
 		Token:        token,
 		TtlSeconds:   ttl.Seconds(),

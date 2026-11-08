@@ -84,7 +84,7 @@ func newBundleEnv(t *testing.T, n int) *bundleEnv {
 	ctx := context.Background()
 	regen := &fakeRegen{}
 	env := &bundleEnv{
-		h: h, engine: NewEngine(h.pg, h.log, regen.workers()), src: h.repo("maven", false), dst: h.repo("maven", true), regen: regen,
+		h: h, engine: NewEngine(h.pg, h.log, regen.workers(), nil), src: h.repo("maven", false), dst: h.repo("maven", true), regen: regen,
 	}
 
 	pipeline := &models.PromotionPipeline{
@@ -318,7 +318,7 @@ func TestEnginePromoteLicensePolicy(t *testing.T) {
 		t.Fatalf("CreateLicensePolicy: %v", err)
 	}
 
-	env := &bundleEnv{h: h, engine: NewEngine(h.pg, h.log, nil), src: src, dst: dst}
+	env := &bundleEnv{h: h, engine: NewEngine(h.pg, h.log, nil, nil), src: src, dst: dst}
 	env.seal([]string{sha}, "pypi", "shop-1.0.whl")
 
 	_, err := env.engine.Promote(ctx, env.params())

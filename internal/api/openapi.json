@@ -22650,6 +22650,16 @@
               }
             }
           },
+          "422": {
+            "description": "A target repository has a blocking license policy and the license of a promoted package file cannot be read (LICENSE_METADATA_UNREADABLE); nothing is copied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "507": {
             "description": "The target repository's storage quota would be exceeded (quota_exceeded)",
             "content": {

@@ -82,7 +82,7 @@ type ProjectsStore interface {
 		warnThresholdPercent int,
 	) (*models.ProjectQuota, error)
 	UpdateCleanupPolicy(ctx context.Context, policy *models.CleanupPolicy) error
-	UpdateProject(ctx context.Context, project *models.Project) error
+	PatchProject(ctx context.Context, id string, patch database.ProjectPatch) (*models.Project, error)
 }
 
 // ProjectsHandler serves /api/v1/projects: projects, their members and the
@@ -232,6 +232,31 @@ func (pp *projectPolicy) apply(project *models.Project) {
 	if pp.TokenMaxTTLDays != nil {
 		project.TokenMaxTTLDays = *pp.TokenMaxTTLDays
 	}
+}
+
+// patch is the column-wise form of apply: only the set fields, de-duplicated.
+func (pp *projectPolicy) patch() database.ProjectPatch {
+	patch := database.ProjectPatch{
+		RepoNamePrefix:   pp.RepoNamePrefix,
+		AllowPublicRepos: pp.AllowPublicRepos,
+		MaxRepositories:  pp.MaxRepositories,
+		TokenMaxTTLDays:  pp.TokenMaxTTLDays,
+	}
+
+	if pp.AllowedFormats != nil {
+		formats := []string{}
+		if len(*pp.AllowedFormats) > 0 {
+			formats = dedupe(*pp.AllowedFormats)
+		}
+
+		patch.AllowedFormats = &formats
+	}
+
+	if pp.AllowedRepoTypes != nil {
+		patch.AllowedRepoTypes = dedupe(*pp.AllowedRepoTypes)
+	}
+
+	return patch
 }
 
 // policyChanges names the policy fields whose value differs between two
@@ -716,23 +741,20 @@ func (h *ProjectsHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	project := access.project
-	before := *project
+	before := *access.project
 
-	if req.DisplayName != nil {
-		project.DisplayName = req.DisplayName
-	}
+	patch := req.patch()
+	patch.DisplayName = req.DisplayName
+	patch.Description = req.Description
 
-	if req.Description != nil {
-		project.Description = req.Description
-	}
-
-	req.apply(project)
-
-	project.UpdatedAt = time.Now()
-
-	if err := h.db.UpdateProject(r.Context(), project); err != nil {
+	project, err := h.db.PatchProject(r.Context(), before.ID, patch)
+	if err != nil {
 		h.dbError(w, "update project", err)
+		return
+	}
+
+	if project == nil {
+		writeError(w, http.StatusNotFound, "not_found", "project not found")
 		return
 	}
 

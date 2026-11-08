@@ -303,3 +303,39 @@ func TestStorageBackendsReportUsage(t *testing.T) {
 		t.Errorf("get: %d %s", one.Code, one.Body)
 	}
 }
+
+// TestStorageGCSCamelCaseHMACSecretsAreSealedAndHidden covers the camelCase
+// spellings the storage readers accept: they must be encrypted at rest and
+// absent from the API response like their snake_case twins.
+func TestStorageGCSCamelCaseHMACSecretsAreSealedAndHidden(t *testing.T) {
+	if err := crypto.Init("0123456789abcdef0123456789abcdef"); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = crypto.Init("") })
+
+	raw := []byte(`{"bucket":"b","hmacKey":"hmac-key-plain","hmacSecret":"hmac-secret-plain"}`)
+
+	stored, err := prepareStorageConfig(context.Background(), "gcs", raw, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(string(stored), "plain") {
+		t.Fatalf("stored config holds a plaintext secret: %s", stored)
+	}
+
+	resp := storageBackendToResponse(&models.StorageBackend{Kind: "gcs", Config: stored})
+	out, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(string(out), "enc:v") || strings.Contains(string(out), "plain") {
+		t.Errorf("response leaks a secret: %s", out)
+	}
+
+	if resp.Config["has_hmacKey"] != true || resp.Config["has_hmacSecret"] != true {
+		t.Errorf("response config = %v, want has_hmacKey and has_hmacSecret", resp.Config)
+	}
+}

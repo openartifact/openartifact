@@ -66,8 +66,8 @@ func (f *fakeDB) uploadMatches(repositoryID, uploadUUID string) bool {
 	return true
 }
 
-func (f *fakeDB) GetDockerUpload(_ context.Context, repositoryID, uploadUUID string) (*models.DockerUpload, error) {
-	if !f.uploadMatches(repositoryID, uploadUUID) {
+func (f *fakeDB) GetDockerUpload(_ context.Context, repositoryID, image, uploadUUID string) (*models.DockerUpload, error) {
+	if !f.uploadMatches(repositoryID, uploadUUID) || f.upload.Image != image {
 		return nil, nil
 	}
 
@@ -79,9 +79,10 @@ func (f *fakeDB) uploadKey(repositoryID, uploadUUID string) string {
 }
 
 func (f *fakeDB) AcquireDockerUploadLease(
-	_ context.Context, repositoryID, uploadUUID, token string, ttl time.Duration,
+	_ context.Context, repositoryID, image, uploadUUID, token string, ttl time.Duration,
 ) (*models.DockerUpload, error) {
-	if !f.uploadMatches(repositoryID, uploadUUID) || !f.acquire(f.uploadKey(repositoryID, uploadUUID), token, ttl) {
+	if !f.uploadMatches(repositoryID, uploadUUID) || f.upload.Image != image ||
+		!f.acquire(f.uploadKey(repositoryID, uploadUUID), token, ttl) {
 		return nil, nil
 	}
 

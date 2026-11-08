@@ -59,6 +59,13 @@ func TestWritePromoteErrorMapsEveryFailure(t *testing.T) {
 			"LICENSE_BLOCKED",
 			"GPL-3.0",
 		},
+		{
+			"license unreadable",
+			item(fmt.Errorf("%w: %w", promote.ErrLicenseUnreadable, errUnderivable)),
+			http.StatusUnprocessableEntity,
+			licensepolicy.CodeMetadataUnreadable,
+			"cannot be read",
+		},
 		{"missing source artifact", item(promote.ErrItemNotFound), http.StatusConflict, "artifact_missing", "no longer exists"},
 		{"concurrent change", promote.ErrStageChanged, http.StatusConflict, "conflict", "concurrent"},
 		{"not sealed", promote.ErrBundleState, http.StatusConflict, "conflict", "concurrent"},

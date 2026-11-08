@@ -63,7 +63,7 @@
   "sx.cleanup.disabled": "Disattivata",
   "sx.cleanup.noRule": "Nessuna regola",
   "sx.cleanup.empty": "Nessuna policy di pulizia",
-  "sx.cleanup.emptyHint": "Le policy di pulizia eliminano automaticamente le vecchie versioni, ad esempio \"conserva le ultime 5\". Le versioni eliminate vanno prima nel cestino, quindi gli errori sono recuperabili. Aggiungi una policy nella scheda Pulizia di un repository hosted.",
+  "sx.cleanup.emptyHint": "Le policy di pulizia eliminano automaticamente le vecchie versioni, ad esempio \"conserva le ultime 5\". Le versioni eliminate vanno prima nel cestino, quindi gli errori sono recuperabili. Aggiungi una policy nella sezione Pulizia della scheda Impostazioni di un repository hosted.",
   "sx.cleanup.partial": "Impossibile leggere le policy di: {names}.",
   "sx.cleanup.scope": "Le policy sono conservate per repository; questo elenco le raccoglie da ogni repository hosted. Le policy predefinite dei progetti si gestiscono nel progetto.",
   "sx.scanners.summary.ready": "{ready} scanner su {total} pronti",

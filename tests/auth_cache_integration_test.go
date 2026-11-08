@@ -139,9 +139,8 @@ func TestAuthCache_PermissionsVisible(t *testing.T) {
 		t.Fatalf("grant not visible after CreatePermissionAssignment: %v", ts)
 	}
 
-	pt.Actions = []string{"read", "write"}
-	if err := f.pg.UpdatePermissionTarget(ctx, pt); err != nil {
-		t.Fatalf("UpdatePermissionTarget: %v", err)
+	if _, err := f.pg.PatchPermissionTarget(ctx, pt.ID, database.PermissionTargetPatch{Actions: []string{"read", "write"}}); err != nil {
+		t.Fatalf("PatchPermissionTarget: %v", err)
 	}
 
 	if ts, _ := f.pg.GetPermissionTargetsForPrincipal(ctx, f.user.ID, nil); len(ts) != 1 || len(ts[0].Actions) != 2 {

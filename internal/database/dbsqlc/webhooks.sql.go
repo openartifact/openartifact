@@ -426,31 +426,62 @@ func (q *Queries) ListWebhooksForEvent(ctx context.Context, arg ListWebhooksForE
 	return items, nil
 }
 
-const updateWebhook = `-- name: UpdateWebhook :exec
-UPDATE webhooks
-SET name = $2, url = $3, secret_enc = $4, enabled = $5, events = $6, content_type = $7, payload_format = $8, ssl_verify = $9, max_retries = $10, timeout_seconds = $11, updated_at = now()
-WHERE id = $1
+const patchWebhook = `-- name: PatchWebhook :one
+UPDATE webhooks SET
+       name = COALESCE($1, name),
+       url = COALESCE($2, url),
+       secret_enc = CASE WHEN $3::bool THEN $4 ELSE secret_enc END,
+       enabled = COALESCE($5, enabled),
+       events = COALESCE($6::text[], events),
+       content_type = COALESCE($7, content_type),
+       payload_format = COALESCE($8, payload_format),
+       ssl_verify = COALESCE($9, ssl_verify),
+       max_retries = COALESCE($10::int, max_retries),
+       timeout_seconds = COALESCE($11::int, timeout_seconds),
+       updated_at = now()
+WHERE id = $12
+RETURNING id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled,
+          COALESCE(events, '{}') AS events, content_type, payload_format, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
 `
 
-type UpdateWebhookParams struct {
-	ID             string   `db:"id" json:"id"`
-	Name           string   `db:"name" json:"name"`
-	Url            string   `db:"url" json:"url"`
+type PatchWebhookParams struct {
+	Name           *string  `db:"name" json:"name"`
+	Url            *string  `db:"url" json:"url"`
+	SetSecret      bool     `db:"set_secret" json:"set_secret"`
 	SecretEnc      *string  `db:"secret_enc" json:"secret_enc"`
-	Enabled        bool     `db:"enabled" json:"enabled"`
+	Enabled        *bool    `db:"enabled" json:"enabled"`
 	Events         []string `db:"events" json:"events"`
-	ContentType    string   `db:"content_type" json:"content_type"`
-	PayloadFormat  string   `db:"payload_format" json:"payload_format"`
-	SslVerify      bool     `db:"ssl_verify" json:"ssl_verify"`
-	MaxRetries     int32    `db:"max_retries" json:"max_retries"`
-	TimeoutSeconds int32    `db:"timeout_seconds" json:"timeout_seconds"`
+	ContentType    *string  `db:"content_type" json:"content_type"`
+	PayloadFormat  *string  `db:"payload_format" json:"payload_format"`
+	SslVerify      *bool    `db:"ssl_verify" json:"ssl_verify"`
+	MaxRetries     *int32   `db:"max_retries" json:"max_retries"`
+	TimeoutSeconds *int32   `db:"timeout_seconds" json:"timeout_seconds"`
+	ID             string   `db:"id" json:"id"`
 }
 
-func (q *Queries) UpdateWebhook(ctx context.Context, arg UpdateWebhookParams) error {
-	_, err := q.db.Exec(ctx, updateWebhook,
-		arg.ID,
+type PatchWebhookRow struct {
+	ID             string      `db:"id" json:"id"`
+	RepositoryID   interface{} `db:"repository_id" json:"repository_id"`
+	Name           string      `db:"name" json:"name"`
+	Url            string      `db:"url" json:"url"`
+	SecretEnc      string      `db:"secret_enc" json:"secret_enc"`
+	Enabled        bool        `db:"enabled" json:"enabled"`
+	Events         []string    `db:"events" json:"events"`
+	ContentType    string      `db:"content_type" json:"content_type"`
+	PayloadFormat  string      `db:"payload_format" json:"payload_format"`
+	SslVerify      bool        `db:"ssl_verify" json:"ssl_verify"`
+	MaxRetries     int32       `db:"max_retries" json:"max_retries"`
+	TimeoutSeconds int32       `db:"timeout_seconds" json:"timeout_seconds"`
+	CreatedAt      time.Time   `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time   `db:"updated_at" json:"updated_at"`
+}
+
+// Column-wise edit: a NULL argument leaves the stored value alone; the secret is only written when set_secret is true.
+func (q *Queries) PatchWebhook(ctx context.Context, arg PatchWebhookParams) (PatchWebhookRow, error) {
+	row := q.db.QueryRow(ctx, patchWebhook,
 		arg.Name,
 		arg.Url,
+		arg.SetSecret,
 		arg.SecretEnc,
 		arg.Enabled,
 		arg.Events,
@@ -459,8 +490,26 @@ func (q *Queries) UpdateWebhook(ctx context.Context, arg UpdateWebhookParams) er
 		arg.SslVerify,
 		arg.MaxRetries,
 		arg.TimeoutSeconds,
+		arg.ID,
 	)
-	return err
+	var i PatchWebhookRow
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.Name,
+		&i.Url,
+		&i.SecretEnc,
+		&i.Enabled,
+		&i.Events,
+		&i.ContentType,
+		&i.PayloadFormat,
+		&i.SslVerify,
+		&i.MaxRetries,
+		&i.TimeoutSeconds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateWebhookDelivery = `-- name: UpdateWebhookDelivery :exec

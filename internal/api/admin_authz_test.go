@@ -218,15 +218,40 @@ func (db *authzFakeDB) GetPermissionTargetByName(_ context.Context, name string)
 	return nil, nil
 }
 
-func (db *authzFakeDB) UpdatePermissionTarget(_ context.Context, t *models.PermissionTarget) error {
-	if err := db.failing("UpdatePermissionTarget"); err != nil {
-		return err
+// PatchPermissionTarget mirrors the store: only the columns named in patch change.
+func (db *authzFakeDB) PatchPermissionTarget(
+	_ context.Context, id string, patch database.PermissionTargetPatch,
+) (*models.PermissionTarget, error) {
+	if err := db.failing("PatchPermissionTarget"); err != nil {
+		return nil, err
 	}
 
-	cp := *t
-	db.targets[t.ID] = &cp
+	stored, ok := db.targets[id]
+	if !ok {
+		return nil, nil
+	}
 
-	return nil
+	cp := *stored
+
+	if patch.Name != nil {
+		cp.Name = *patch.Name
+	}
+
+	if patch.RepositoryFilter != nil {
+		cp.RepositoryFilter = *patch.RepositoryFilter
+	}
+
+	if patch.PathPattern != nil {
+		cp.PathPattern = *patch.PathPattern
+	}
+
+	if patch.Actions != nil {
+		cp.Actions = patch.Actions
+	}
+
+	db.targets[id] = &cp
+
+	return &cp, nil
 }
 
 func (db *authzFakeDB) CreatePermissionAssignment(_ context.Context, a *models.PermissionAssignment) error {
@@ -561,7 +586,7 @@ func TestPermissionTargetPatch(t *testing.T) {
 			"update error",
 			idTargetA,
 			`{"name":"x"}`,
-			map[string]error{"UpdatePermissionTarget": errFakeDB},
+			map[string]error{"PatchPermissionTarget": errFakeDB},
 			http.StatusInternalServerError,
 			"ops",
 			[]string{"read"},
@@ -570,7 +595,7 @@ func TestPermissionTargetPatch(t *testing.T) {
 			"update unique violation",
 			idTargetA,
 			`{"name":"x"}`,
-			map[string]error{"UpdatePermissionTarget": uniq},
+			map[string]error{"PatchPermissionTarget": uniq},
 			http.StatusConflict,
 			"ops",
 			[]string{"read"},

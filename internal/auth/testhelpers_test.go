@@ -137,7 +137,7 @@ func (m *tokenMockDB) GetNPMVersion(_ context.Context, _, _ string) (*models.NPM
 func (m *tokenMockDB) GetNPMVersionsByPackage(_ context.Context, _ string) ([]*models.NPMVersion, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) DeleteNPMVersion(_ context.Context, _, _ string) error { return nil }
+func (m *tokenMockDB) DeleteNPMVersions(_ context.Context, _ string, _ []string) error { return nil }
 func (m *tokenMockDB) UpsertNPMDistTag(_ context.Context, _ *models.NPMDistTag) (*models.NPMDistTag, error) {
 	return nil, nil
 }
@@ -171,7 +171,6 @@ func (m *tokenMockDB) CreateGroup(_ context.Context, _ *models.Group) (*models.G
 func (m *tokenMockDB) GetGroupByID(_ context.Context, _ string) (*models.Group, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) UpdateGroup(_ context.Context, _ *models.Group) error     { return nil }
 func (m *tokenMockDB) DeleteGroup(_ context.Context, _ string) error            { return nil }
 func (m *tokenMockDB) ListGroups(_ context.Context) ([]*models.Group, error)    { return nil, nil }
 func (m *tokenMockDB) AddUserToGroup(_ context.Context, _, _ string) error      { return nil }
@@ -239,9 +238,6 @@ func (m *tokenMockDB) GetPermissionTargetByID(_ context.Context, _ string) (*mod
 func (m *tokenMockDB) GetPermissionTargetByName(_ context.Context, _ string) (*models.PermissionTarget, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) UpdatePermissionTarget(_ context.Context, _ *models.PermissionTarget) error {
-	return nil
-}
 func (m *tokenMockDB) DeletePermissionTarget(_ context.Context, _ string) error { return nil }
 func (m *tokenMockDB) ListPermissionTargets(_ context.Context) ([]*models.PermissionTarget, error) {
 	return nil, nil
@@ -266,8 +262,7 @@ func (m *tokenMockDB) CreateSSOProvider(_ context.Context, _ *models.SSOProvider
 func (m *tokenMockDB) GetSSOProviderBySlug(_ context.Context, _ string) (*models.SSOProvider, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) UpdateSSOProvider(_ context.Context, _ *models.SSOProvider) error { return nil }
-func (m *tokenMockDB) DeleteSSOProvider(_ context.Context, _ string) error              { return nil }
+func (m *tokenMockDB) DeleteSSOProvider(_ context.Context, _ string) error { return nil }
 func (m *tokenMockDB) ListEnabledSSOProviders(_ context.Context) ([]*models.SSOProvider, error) {
 	return nil, nil
 }
@@ -330,10 +325,6 @@ func (m *tokenMockDB) GetPromotionPipelineByName(ctx context.Context, name strin
 
 func (m *tokenMockDB) GetPromotionPipelineByID(ctx context.Context, id string) (*models.PromotionPipeline, error) {
 	return nil, nil
-}
-
-func (m *tokenMockDB) UpdatePromotionPipeline(ctx context.Context, p *models.PromotionPipeline) error {
-	return nil
 }
 
 func (m *tokenMockDB) DeletePromotionPipeline(ctx context.Context, id string) error {
@@ -407,10 +398,10 @@ func (m *tokenMockDB) ListDockerBlobs(_ context.Context, _ string) ([]*models.Do
 }
 
 func (m *tokenMockDB) CreateDockerUpload(_ context.Context, _ *models.DockerUpload) error { return nil }
-func (m *tokenMockDB) GetDockerUpload(_ context.Context, _, _ string) (*models.DockerUpload, error) {
+func (m *tokenMockDB) GetDockerUpload(_ context.Context, _, _, _ string) (*models.DockerUpload, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) AcquireDockerUploadLease(_ context.Context, _, _, _ string, _ time.Duration) (*models.DockerUpload, error) {
+func (m *tokenMockDB) AcquireDockerUploadLease(_ context.Context, _, _, _, _ string, _ time.Duration) (*models.DockerUpload, error) {
 	return nil, nil
 }
 func (m *tokenMockDB) RenewDockerUploadLease(_ context.Context, _, _, _ string, _ time.Duration) (bool, error) {
@@ -539,8 +530,7 @@ func (m *tokenMockDB) CreateWebhook(_ context.Context, _ *models.Webhook) error 
 func (m *tokenMockDB) GetWebhook(_ context.Context, _ string) (*models.Webhook, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) UpdateWebhook(_ context.Context, _ *models.Webhook) error { return nil }
-func (m *tokenMockDB) DeleteWebhook(_ context.Context, _ string) error          { return nil }
+func (m *tokenMockDB) DeleteWebhook(_ context.Context, _ string) error { return nil }
 func (m *tokenMockDB) ListWebhooks(_ context.Context, _ string) ([]*models.Webhook, error) {
 	return nil, nil
 }
@@ -690,8 +680,7 @@ func (m *tokenMockDB) GetProject(_ context.Context, _ string) (*models.Project, 
 func (m *tokenMockDB) GetProjectByName(_ context.Context, _ string) (*models.Project, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) UpdateProject(_ context.Context, _ *models.Project) error { return nil }
-func (m *tokenMockDB) DeleteProject(_ context.Context, _ string) error          { return nil }
+func (m *tokenMockDB) DeleteProject(_ context.Context, _ string) error { return nil }
 func (m *tokenMockDB) ListProjects(_ context.Context, _ string) ([]*models.Project, error) {
 	return nil, nil
 }

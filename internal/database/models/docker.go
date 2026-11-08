@@ -35,8 +35,11 @@ type DockerBlob struct {
 type DockerUpload struct {
 	ID           string `db:"id"`
 	RepositoryID string `db:"repository_id"`
-	UploadUUID   string `db:"upload_uuid"`
-	Offset       int64  `db:"offset"`
+	// Image is the image the session was started for; every request on the
+	// session must come through it.
+	Image      string `db:"image"`
+	UploadUUID string `db:"upload_uuid"`
+	Offset     int64  `db:"offset"`
 	// HashState is the marshalled sha256 state of the first Offset bytes; empty
 	// while Offset is 0.
 	HashState []byte `db:"hash_state"`

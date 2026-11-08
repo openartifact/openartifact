@@ -91,7 +91,10 @@ jobs:
           LP_VERSION: ${{ env.LIGHTPANDA_VERSION }}
           LP_SHA256: ${{ env.LIGHTPANDA_SHA256 }}
         run: |
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/lightpanda" \
+          # GitHub release downloads answer 5xx for minutes at a time; the
+          # default backoff (1+2+4 s) gives up long before they recover.
+          curl -fsSL --retry 8 --retry-delay 15 --retry-max-time 300 --retry-all-errors \
+            -o "$RUNNER_TEMP/lightpanda" \
             "https://github.com/lightpanda-io/browser/releases/download/${LP_VERSION}/lightpanda-x86_64-linux"
           echo "${LP_SHA256}  $RUNNER_TEMP/lightpanda" | sha256sum --check --strict -
           chmod +x "$RUNNER_TEMP/lightpanda"
@@ -226,7 +229,10 @@ jobs:
           LP_VERSION: ${{ env.LIGHTPANDA_VERSION }}
           LP_SHA256: ${{ env.LIGHTPANDA_SHA256 }}
         run: |
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/lightpanda" \
+          # GitHub release downloads answer 5xx for minutes at a time; the
+          # default backoff (1+2+4 s) gives up long before they recover.
+          curl -fsSL --retry 8 --retry-delay 15 --retry-max-time 300 --retry-all-errors \
+            -o "$RUNNER_TEMP/lightpanda" \
             "https://github.com/lightpanda-io/browser/releases/download/${LP_VERSION}/lightpanda-x86_64-linux"
           echo "${LP_SHA256}  $RUNNER_TEMP/lightpanda" | sha256sum --check --strict -
           chmod +x "$RUNNER_TEMP/lightpanda"

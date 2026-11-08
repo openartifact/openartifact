@@ -57,11 +57,34 @@ func SpelledVersion(project, filename string) string {
 				return parts[1]
 			}
 
+			stem = stripBuildTags(suffix, stem)
+
 			break
 		}
 	}
 
 	return versionAfterName(project, stem)
+}
+
+// stripBuildTags drops what binary distributions append after the version:
+// eggs ("name-1.0-py3.8[-platform].egg") and Windows installers
+// ("name-1.0.win-amd64[-py3.8].exe|msi") would otherwise spell versions such as
+// "1.0-py3.8" that no version rule or minimum-age grouping matches.
+func stripBuildTags(suffix, stem string) string {
+	switch suffix {
+	case ".egg":
+		for i := len(stem) - 4; i > 0; i-- {
+			if stem[i] == '-' && stem[i+1] == 'p' && stem[i+2] == 'y' && stem[i+3] >= '0' && stem[i+3] <= '9' {
+				return stem[:i]
+			}
+		}
+	case ".exe", ".msi":
+		if i := strings.LastIndex(stem, ".win"); i > 0 {
+			return stem[:i]
+		}
+	}
+
+	return stem
 }
 
 // versionAfterName returns the part of an sdist-style stem after the project

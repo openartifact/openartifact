@@ -149,6 +149,8 @@ func TestCargoCrate(t *testing.T) {
 		{"legacy slash", "[package]\nname = \"c\"\nlicense = \"MIT/Apache-2.0\"\n", []string{"MIT OR Apache-2.0"}},
 		{"license-file only", "[package]\nname = \"c\"\nlicense-file = \"LICENSE\"\n", nil},
 		{"no license", "[package]\nname = \"c\"\n", nil},
+		{"deprecated project table", "[project]\nname = \"c\"\nlicense = \"GPL-3.0-only\"\n", []string{"GPL-3.0-only"}},
+		{"package wins over project", "[package]\nlicense = \"MIT\"\n[project]\nlicense = \"GPL-3.0-only\"\n", []string{"MIT"}},
 	}
 
 	for _, tc := range tests {
@@ -165,6 +167,16 @@ func TestCargoCrate(t *testing.T) {
 			equal(t, tc.want, res.Licenses)
 		})
 	}
+
+	t.Run("a license that is not a string is an error, not a clean crate", func(t *testing.T) {
+		t.Parallel()
+
+		for _, license := range []string{"license.workspace = true", "license = 5", "license = [\"MIT\"]"} {
+			data := buildTarGz(t, file("c-1.0.0/Cargo.toml", "[package]\nname = \"c\"\n"+license+"\n"))
+			_, err := read(t, "cargo", "c-1.0.0.crate", data)
+			hasError(t, err)
+		}
+	})
 
 	t.Run("malformed Cargo.toml is an error, not a license", func(t *testing.T) {
 		t.Parallel()
@@ -650,4 +662,42 @@ func TestExpected(t *testing.T) {
 	for _, tc := range tests {
 		equal(t, tc.want, licensemeta.Expected(tc.format, tc.filename), tc.format+" "+tc.filename)
 	}
+}
+
+func TestHelmChartLicenseAnnotation(t *testing.T) {
+	t.Parallel()
+
+	chart := func(chartYAML string) []byte {
+		return buildTarGz(
+			t,
+			file("demo/Chart.yaml", chartYAML),
+			file("demo/charts/sub/Chart.yaml", "annotations:\n  artifacthub.io/license: GPL-3.0\n"),
+		)
+	}
+
+	tests := []struct {
+		name, chartYAML string
+		want            []string
+	}{
+		{"annotation", "name: demo\nversion: 1.0.0\nannotations:\n  artifacthub.io/license: Apache-2.0\n", []string{"Apache-2.0"}},
+		{"blank annotation", "name: demo\nversion: 1.0.0\nannotations:\n  artifacthub.io/license: \" \"\n", nil},
+		{"no annotation", "name: demo\nversion: 1.0.0\n", nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := read(t, "helm", "demo-1.0.0.tgz", chart(tc.chartYAML))
+			noError(t, err)
+			equal(t, tc.want, res.Licenses)
+		})
+	}
+
+	t.Run("a chart without Chart.yaml has no metadata", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := read(t, "helm", "demo-1.0.0.tgz", buildTarGz(t, file("demo/values.yaml", "a: 1\n")))
+		errorIs(t, err, licensemeta.ErrNoMetadata)
+	})
 }

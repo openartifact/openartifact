@@ -133,8 +133,8 @@ func TestWebhookPayloadFormatPersists(t *testing.T) {
 		t.Fatalf("default format = %q, err %v", got.PayloadFormat, err)
 	}
 
-	got.PayloadFormat = models.PayloadFormatCloudEvents
-	if err := pg.UpdateWebhook(ctx, got); err != nil {
+	format := models.PayloadFormatCloudEvents
+	if _, err := pg.PatchWebhook(ctx, got.ID, database.WebhookPatch{PayloadFormat: &format}); err != nil {
 		t.Fatal(err)
 	}
 

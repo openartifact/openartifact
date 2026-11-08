@@ -17,6 +17,31 @@ func uploadID(loc string) string { return loc[strings.LastIndex(loc, "/")+1:] }
 // uploadCount is how many uploads the registry's upload store holds.
 func (g *registry) uploadCount() int { return len(uploadObjects(g.t, g.h)) }
 
+// requireSessionUnknownVia checks that status, extend, complete and cancel
+// through target (another repository's or image's URL of an open session) are
+// all answered 404 BLOB_UPLOAD_UNKNOWN.
+func requireSessionUnknownVia(t *testing.T, g *registry, target string, layer []byte) {
+	t.Helper()
+
+	tests := []struct {
+		name, method, target, body string
+	}{
+		{"status", http.MethodGet, target, ""},
+		{"patch", http.MethodPatch, target, "evil"},
+		{"complete", http.MethodPut, target + "?digest=" + digestOf(layer), string(layer)},
+		{"cancel", http.MethodDelete, target, ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := g.do(tc.method, tc.target, tc.body)
+			if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "BLOB_UPLOAD_UNKNOWN") {
+				t.Fatalf("%s = %d %s, want 404 BLOB_UPLOAD_UNKNOWN", tc.name, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 // A session belongs to the repository that opened it: no other repository can
 // read, extend, complete or cancel it, and it keeps working for its owner.
 func TestUploadSession_NotUsableFromAnotherRepository(t *testing.T) {
@@ -29,24 +54,7 @@ func TestUploadSession_NotUsableFromAnotherRepository(t *testing.T) {
 		t.Fatalf("patch = %d", rec.Code)
 	}
 
-	foreign := strings.Replace(loc, "/v2/a/", "/v2/b/", 1)
-	tests := []struct {
-		name, method, target, body string
-	}{
-		{"status", http.MethodGet, foreign, ""},
-		{"patch", http.MethodPatch, foreign, "evil"},
-		{"complete", http.MethodPut, foreign + "?digest=" + digestOf(layer), string(layer)},
-		{"cancel", http.MethodDelete, foreign, ""},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			rec := g.do(tc.method, tc.target, tc.body)
-			if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "BLOB_UPLOAD_UNKNOWN") {
-				t.Fatalf("%s via other repo = %d %s, want 404 BLOB_UPLOAD_UNKNOWN", tc.name, rec.Code, rec.Body.String())
-			}
-		})
-	}
+	requireSessionUnknownVia(t, g, strings.Replace(loc, "/v2/a/", "/v2/b/", 1), layer)
 
 	if got := g.uploadCount(); got != 1 {
 		t.Fatalf("chunk objects = %d, want the owner's one; foreign requests must not touch it", got)
@@ -63,6 +71,39 @@ func TestUploadSession_NotUsableFromAnotherRepository(t *testing.T) {
 
 	if rec := g.do(http.MethodGet, "/v2/b/app/blobs/"+digestOf(layer), ""); rec.Code != http.StatusNotFound {
 		t.Fatalf("blob visible from repo b = %d, want 404", rec.Code)
+	}
+}
+
+// A session also belongs to the image it was started for: another image of the
+// same repository can neither read, extend, complete nor cancel it, however it
+// learned the UUID, and the owner's push is unaffected.
+func TestUploadSession_NotUsableFromAnotherImage(t *testing.T) {
+	layer := []byte("layer owned by image app")
+	db := newRegFakeDB("a")
+	g := newRegistry(t, db)
+
+	loc := startUpload(t, g, "a/app")
+	if rec := g.do(http.MethodPatch, loc, "layer owned"); rec.Code != http.StatusAccepted {
+		t.Fatalf("patch = %d", rec.Code)
+	}
+
+	requireSessionUnknownVia(t, g, strings.Replace(loc, "/v2/a/app/", "/v2/a/other/", 1), layer)
+	requireSessionUnknownVia(t, g, strings.Replace(loc, "/v2/a/app/", "/v2/a/", 1), layer)
+
+	if got := g.uploadCount(); got != 1 {
+		t.Fatalf("upload objects = %d, want the owner's one; foreign requests must not touch it", got)
+	}
+
+	if len(db.blobs) != 0 {
+		t.Fatalf("blob rows = %d after foreign attempts, want none", len(db.blobs))
+	}
+
+	if rec := g.do(http.MethodPut, loc+"?digest="+digestOf(layer), string(layer[len("layer owned"):])); rec.Code != http.StatusCreated {
+		t.Fatalf("owner complete = %d; body=%s", rec.Code, rec.Body.String())
+	}
+
+	if rec := g.do(http.MethodGet, "/v2/a/other/blobs/"+digestOf(layer), ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("blob visible from the other image = %d, want 404", rec.Code)
 	}
 }
 

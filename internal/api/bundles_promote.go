@@ -16,6 +16,7 @@ import (
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/promote"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/trash"
@@ -205,6 +206,9 @@ func (h *BundlesHandler) writePromoteError(w http.ResponseWriter, bundle *models
 	case errors.As(err, &blocked):
 		writeError(w, http.StatusForbidden, "LICENSE_BLOCKED",
 			"a license policy of the target repository blocks "+strings.Join(blocked.Licenses, ", ")+which)
+	case errors.Is(err, promote.ErrLicenseUnreadable):
+		writeError(w, http.StatusUnprocessableEntity, licensepolicy.CodeMetadataUnreadable,
+			"the target repository has a blocking license policy and the license of an item cannot be read from its package file"+which)
 	case errors.Is(err, promote.ErrItemNotFound):
 		writeError(w, http.StatusConflict, "artifact_missing", "a bundle item no longer exists in its source repository"+which)
 	case errors.Is(err, promote.ErrBundleState), errors.Is(err, promote.ErrStageChanged):

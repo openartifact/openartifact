@@ -22,6 +22,7 @@ The request's own fields are only a **fallback**, used when the file is readable
 | Format | File read | Order |
 |---|---|---|
 | Cargo | `Cargo.toml` of the `.crate` | `package.license`; a legacy `MIT/Apache-2.0` is read as `MIT OR Apache-2.0`. `license-file` alone declares nothing. Fallback: `license` in the publish metadata |
+| Helm | `Chart.yaml` of the chart (root only, not subcharts) | the `artifacthub.io/license` annotation: Chart.yaml has no license field |
 | Ivy | the stored module descriptor, `ivy.xml` or `ivy-<revision>.xml` (a scan reads it; an upload is checked as in [Scanning](scanning.md#blocking-licenses)) | each `<license name>` of `<info>`; the `url` when a license has no name and the URL is a canonical one. Other files of the module (jars, checksums, `ivysettings.xml`) are judged through the descriptor |
 | Maven | the uploaded `.pom`, or the `META-INF/maven/**/pom.xml` embedded in a stored `.jar` | each `<license><name>`; the `<url>` when a license has no name and the URL is a canonical one |
 | npm | `package.json` of the tarball (depth one: `package/package.json`) | `license` (a string or `{"type": …}`), else the legacy `licenses` array. Fallback: the version manifest in the publish JSON |
@@ -29,7 +30,7 @@ The request's own fields are only a **fallback**, used when the file is readable
 | PyPI | wheel: `*.dist-info/METADATA`; sdist: `PKG-INFO` of a `.tar.gz` or `.zip` | `License-Expression` ([PEP 639](https://peps.python.org/pep-0639/)); else a short, single-line `License:` (at most 100 characters, not `UNKNOWN`: longer values are the license text); else the `License ::` classifiers that name a license. The first step that yields something wins. Form fallback: `license_expression`, `license`, `classifiers` |
 | RubyGems | `metadata.gz` of the `.gem` | the gemspec `licenses` |
 
-Other formats keep their own readers (Conda, Debian, Docker, Helm, RPM; see [Scanning](scanning.md#blocking-licenses)); Conan, Go, raw and Terraform packages declare no license, so use [properties](../repositories/properties.md).
+Other formats keep their own readers (Conda, Debian, Docker, RPM; see [Scanning](scanning.md#blocking-licenses)); Conan, Go, raw and Terraform packages declare no license, so use [properties](../repositories/properties.md).
 
 ## Names that are not SPDX
 
@@ -50,7 +51,7 @@ A client can send a file this server cannot read but that its own tools do read 
 | yes | refused: `422`, code `LICENSE_METADATA_UNREADABLE`, nothing stored | refused: `422 unreadable_artifact`; a property change is saved but not evaluated |
 | no | admitted on the client's fields | evaluated on the artifact's license properties |
 
-This applies to Cargo package files, stored Ivy descriptors, Maven `.pom` files and the package files of npm, NuGet, PyPI and RubyGems (scans); a Maven jar, a checksum or `maven-metadata.xml` is judged through its `.pom`. A readable file that simply declares no license is not refused: it cannot hide a license, and the client's fields are the fallback as before. To publish such a file under a blocking policy, add the license to the package metadata in a form this server reads.
+This applies to Cargo package files, stored Ivy descriptors, Maven `.pom` files and the package files of Helm, npm, NuGet, PyPI and RubyGems (scans); a Maven jar, a checksum or `maven-metadata.xml` is judged through its `.pom`. A readable file that simply declares no license is not refused: it cannot hide a license, and the client's fields are the fallback as before. To publish such a file under a blocking policy, add the license to the package metadata in a form this server reads.
 
 Every license scan result says where its licenses came from in `license_source`:
 
@@ -58,6 +59,15 @@ Every license scan result says where its licenses came from in `license_source`:
 - `client_declared`: they only come from what a client declared (the artifact's [license properties](../repositories/properties.md)), because the file declares no license, cannot be read while no blocking policy applies, or is of a format that has no license metadata (raw, Go, Conan, Terraform). The scan page labels these results.
 
 Results stored before this field existed are `client_declared`.
+
+## Promotion
+
+[Promoting a release bundle](../reference/api/bundles.md) checks the target's license policies on the licenses of what is copied:
+
+- Cargo, Composer, npm, PyPI, RubyGems, Ansible, Conda, apk, Pacman, Debian and RPM keep the license they were uploaded with in their stored rows (the upload read it from the package file), and that is what the promotion judges.
+- Helm, NuGet, Maven, sbt and Ivy are read from the stored package file, exactly as a license scan reads it (a Maven jar is judged through the `.pom` of its version, with the parent poms resolved). The [license properties](../repositories/properties.md) of the file count too, as in a scan.
+
+If such a file cannot be read, or cannot be read safely, while the target has a blocking policy, the promotion is refused with `422` and code `LICENSE_METADATA_UNREADABLE`, as an upload would be; nothing is copied. Without a blocking policy it proceeds on the file's license properties.
 
 ## Maven parent poms
 

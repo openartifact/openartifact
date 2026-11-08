@@ -747,8 +747,11 @@ func (m *MockDatabase) UpdateNPMVersionManifest(ctx context.Context, packageID, 
 	return nil
 }
 
-func (m *MockDatabase) DeleteNPMVersion(ctx context.Context, packageID, version string) error {
-	delete(m.npmVersions, packageID+":"+version)
+func (m *MockDatabase) DeleteNPMVersions(ctx context.Context, packageID string, versions []string) error {
+	for _, version := range versions {
+		delete(m.npmVersions, packageID+":"+version)
+	}
+
 	return nil
 }
 
@@ -937,9 +940,21 @@ func (m *MockDatabase) GetGroupByID(ctx context.Context, id string) (*models.Gro
 	return m.authGroups[id], nil
 }
 
-func (m *MockDatabase) UpdateGroup(ctx context.Context, group *models.Group) error {
-	m.authGroups[group.ID] = group
-	return nil
+func (m *MockDatabase) PatchGroup(ctx context.Context, id string, patch database.GroupPatch) (*models.Group, error) {
+	g := m.authGroups[id]
+	if g == nil {
+		return nil, nil
+	}
+
+	if patch.Name != nil {
+		g.Name = *patch.Name
+	}
+
+	if patch.Description != nil {
+		g.Description = patch.Description
+	}
+
+	return g, nil
 }
 
 func (m *MockDatabase) DeleteGroup(ctx context.Context, id string) error {
@@ -1138,11 +1153,33 @@ func (m *MockDatabase) GetPermissionTargetByName(ctx context.Context, name strin
 	return m.permissionTargetsByName[name], nil
 }
 
-func (m *MockDatabase) UpdatePermissionTarget(ctx context.Context, target *models.PermissionTarget) error {
-	m.permissionTargets[target.ID] = target
-	m.permissionTargetsByName[target.Name] = target
+func (m *MockDatabase) PatchPermissionTarget(
+	ctx context.Context, id string, patch database.PermissionTargetPatch,
+) (*models.PermissionTarget, error) {
+	t := m.permissionTargets[id]
+	if t == nil {
+		return nil, nil
+	}
 
-	return nil
+	if patch.Name != nil {
+		delete(m.permissionTargetsByName, t.Name)
+		t.Name = *patch.Name
+		m.permissionTargetsByName[t.Name] = t
+	}
+
+	if patch.RepositoryFilter != nil {
+		t.RepositoryFilter = *patch.RepositoryFilter
+	}
+
+	if patch.PathPattern != nil {
+		t.PathPattern = *patch.PathPattern
+	}
+
+	if patch.Actions != nil {
+		t.Actions = patch.Actions
+	}
+
+	return t, nil
 }
 
 func (m *MockDatabase) DeletePermissionTarget(ctx context.Context, id string) error {
@@ -1250,6 +1287,47 @@ func (m *MockDatabase) CreateSSOProvider(ctx context.Context, provider *models.S
 
 func (m *MockDatabase) GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error) {
 	return m.ssoProvidersBySlug[slug], nil
+}
+
+func (m *MockDatabase) PatchSSOProvider(
+	ctx context.Context, id string, patch database.SSOProviderPatch,
+) (*models.SSOProvider, error) {
+	p := m.ssoProviders[id]
+	if p == nil {
+		return nil, nil
+	}
+
+	for dst, src := range map[*bool]*bool{
+		&p.Enabled: patch.Enabled, &p.AutoProvisionUsers: patch.AutoProvisionUsers, &p.LinkByEmail: patch.LinkByEmail,
+	} {
+		if src != nil {
+			*dst = *src
+		}
+	}
+
+	if patch.DisplayName != nil {
+		p.DisplayName = *patch.DisplayName
+	}
+
+	for dst, src := range map[*json.RawMessage]json.RawMessage{
+		&p.OIDCConfig: patch.OIDCConfig, &p.SAMLConfig: patch.SAMLConfig, &p.ClaimMapping: patch.ClaimMapping,
+	} {
+		if src != nil {
+			*dst = src
+		}
+	}
+
+	if patch.GroupMapping != nil {
+		p.GroupMapping = *patch.GroupMapping
+	}
+
+	if patch.PermissionMapping != nil {
+		p.PermissionMapping = *patch.PermissionMapping
+	}
+
+	p.UpdatedAt = time.Now()
+
+	return p, nil
 }
 
 func (m *MockDatabase) UpdateSSOProvider(ctx context.Context, provider *models.SSOProvider) error {
@@ -1402,10 +1480,6 @@ func (m *MockDatabase) GetPromotionPipelineByID(ctx context.Context, id string) 
 	return nil, nil
 }
 
-func (m *MockDatabase) UpdatePromotionPipeline(ctx context.Context, p *models.PromotionPipeline) error {
-	return nil
-}
-
 func (m *MockDatabase) DeletePromotionPipeline(ctx context.Context, id string) error {
 	return nil
 }
@@ -1528,13 +1602,13 @@ func (m *MockDatabase) ListDockerBlobs(ctx context.Context, repoID string) ([]*m
 func (m *MockDatabase) CreateDockerUpload(ctx context.Context, upload *models.DockerUpload) error {
 	return nil
 }
-func (m *MockDatabase) GetDockerUpload(ctx context.Context, repositoryID, uploadUUID string) (*models.DockerUpload, error) {
+func (m *MockDatabase) GetDockerUpload(ctx context.Context, repositoryID, image, uploadUUID string) (*models.DockerUpload, error) {
 	return nil, nil
 }
 
 func (m *MockDatabase) AcquireDockerUploadLease(
 	ctx context.Context,
-	repositoryID, uploadUUID, token string,
+	repositoryID, image, uploadUUID, token string,
 	ttl time.Duration,
 ) (*models.DockerUpload, error) {
 	return nil, nil
@@ -1694,8 +1768,7 @@ func (m *MockDatabase) CreateWebhook(ctx context.Context, wh *models.Webhook) er
 func (m *MockDatabase) GetWebhook(ctx context.Context, id string) (*models.Webhook, error) {
 	return nil, nil
 }
-func (m *MockDatabase) UpdateWebhook(ctx context.Context, wh *models.Webhook) error { return nil }
-func (m *MockDatabase) DeleteWebhook(ctx context.Context, id string) error          { return nil }
+func (m *MockDatabase) DeleteWebhook(ctx context.Context, id string) error { return nil }
 func (m *MockDatabase) ListWebhooks(ctx context.Context, repoID string) ([]*models.Webhook, error) {
 	return nil, nil
 }
@@ -1909,9 +1982,6 @@ func (m *MockDatabase) GetProject(ctx context.Context, id string) (*models.Proje
 }
 func (m *MockDatabase) GetProjectByName(ctx context.Context, name string) (*models.Project, error) {
 	return nil, nil
-}
-func (m *MockDatabase) UpdateProject(ctx context.Context, org *models.Project) error {
-	return nil
 }
 func (m *MockDatabase) DeleteProject(ctx context.Context, id string) error { return nil }
 func (m *MockDatabase) ListProjects(ctx context.Context, userID string) ([]*models.Project, error) {

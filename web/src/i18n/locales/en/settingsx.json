@@ -63,7 +63,7 @@
   "sx.cleanup.disabled": "Disabled",
   "sx.cleanup.noRule": "No rule",
   "sx.cleanup.empty": "No cleanup policies",
-  "sx.cleanup.emptyHint": "Cleanup policies delete old versions automatically, for example \"keep the last 5\". Deleted versions go to the trash first, so mistakes are recoverable. Add a policy on the Cleanup tab of a hosted repository.",
+  "sx.cleanup.emptyHint": "Cleanup policies delete old versions automatically, for example \"keep the last 5\". Deleted versions go to the trash first, so mistakes are recoverable. Add a policy in the Cleanup section of a hosted repository's Settings tab.",
   "sx.cleanup.partial": "Could not read the policies of: {names}.",
   "sx.cleanup.scope": "Policies are kept per repository; this list gathers them from every hosted repository. Project default policies are managed on the project.",
   "sx.scanners.summary.ready": "{ready} of {total} scanners ready",

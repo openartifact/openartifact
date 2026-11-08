@@ -25,26 +25,29 @@ WHERE dbb.repository_id = $1
 ORDER BY dbb.created_at DESC;
 
 -- name: CreateDockerUpload :one
-INSERT INTO docker_uploads (repository_id, upload_uuid, "offset")
-VALUES ($1, $2, $3)
+INSERT INTO docker_uploads (repository_id, image, upload_uuid, "offset")
+VALUES ($1, sqlc.arg(image)::text, $2, $3)
 RETURNING id, created_at, updated_at;
 
 -- name: GetDockerUpload :one
-SELECT id, repository_id, upload_uuid, "offset", created_at, updated_at, hash_state, stage_state, lease_token, lease_until
+-- A session belongs to the image it was started for: asked through another
+-- image, or for a session that predates the image column (NULL), it is not
+-- found.
+SELECT id, repository_id, upload_uuid, "offset", created_at, updated_at, hash_state, stage_state, lease_token, lease_until, image
 FROM docker_uploads
-WHERE repository_id = $1 AND upload_uuid = $2;
+WHERE repository_id = $1 AND image = sqlc.arg(image)::text AND upload_uuid = $2;
 
 -- name: AcquireDockerUploadLease :one
 -- Takes the session's lease for one request and returns the session as it is
 -- now (offset, hash state and stage state included), so the holder never works
 -- from a position another request has already moved. No row means the session
--- does not exist or a live lease holds it; a lease whose holder died is taken
+-- does not exist (for this image) or a live lease holds it; a lease whose holder died is taken
 -- over once lease_until has passed.
 UPDATE docker_uploads
 SET lease_token = sqlc.arg(token)::uuid, lease_until = now() + make_interval(secs => sqlc.arg(ttl_seconds)::float8)
-WHERE repository_id = sqlc.arg(repository_id) AND upload_uuid = sqlc.arg(upload_uuid)
+WHERE repository_id = sqlc.arg(repository_id) AND image = sqlc.arg(image)::text AND upload_uuid = sqlc.arg(upload_uuid)
   AND (lease_until IS NULL OR lease_until < now())
-RETURNING id, repository_id, upload_uuid, "offset", created_at, updated_at, hash_state, stage_state, lease_token, lease_until;
+RETURNING id, repository_id, upload_uuid, "offset", created_at, updated_at, hash_state, stage_state, lease_token, lease_until, image;
 
 -- name: RenewDockerUploadLease :execrows
 -- Extends the lease of a long request. Zero rows: the lease was lost (it

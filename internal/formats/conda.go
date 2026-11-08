@@ -44,5 +44,8 @@ func condaStorage() storage.Storage {
 			},
 			Deps: fromF("depends"), Decoder: "conda-specs",
 		},
+		// The upload read the license from the package's info/index.json and kept
+		// it in the file's index_extra: what the upload was judged on.
+		Promotion: storage.Promotion{Licenses: licenseList("s.attrs->'index_extra'->'license'")},
 	}
 }

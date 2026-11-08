@@ -399,6 +399,14 @@ func TestPromoteExtractsLicensesPerFormat(t *testing.T) {
 		{"composer", `{"composer_json": {"license": "MIT"}}`, []string{"MIT"}},
 		{"composer", `{"composer_json": {"license": ["MIT", "GPL-2.0"]}}`, []string{"MIT", "GPL-2.0"}},
 		{"composer", `{"composer_json": {}}`, nil},
+		{"npm", `{"manifest_json": {"license": "MIT"}}`, []string{"MIT"}},
+		{"npm", `{"manifest_json": {"license": {"type": "ISC", "url": "x"}}}`, []string{"ISC"}},
+		{"npm", `{"manifest_json": {"licenses": [{"type": "MIT"}, "Apache-2.0"]}}`, []string{"MIT", "Apache-2.0"}},
+		{"npm", `{"manifest_json": {"license": " ", "licenses": [{"type": "BSD-2-Clause"}]}}`, []string{"BSD-2-Clause"}},
+		{"npm", `{"manifest_json": {"name": "shop"}}`, nil},
+		{"ansible", `{"metadata": {"license": ["GPL-3.0-or-later", "MIT"]}}`, []string{"GPL-3.0-or-later", "MIT"}},
+		{"ansible", `{"metadata": {"license": "MIT"}}`, []string{"MIT"}},
+		{"ansible", `{"metadata": {"license": []}}`, nil},
 	}
 
 	// One database for all cases: the shared server has a connection limit.
@@ -410,6 +418,39 @@ func TestPromoteExtractsLicensesPerFormat(t *testing.T) {
 			src, dst := h.repo(tc.format, false), h.repo(tc.format, false)
 			blob, sha := h.blob("content " + tc.format + tc.meta)
 			h.file(src.ID, blob, fileSeed{pkg: "shop", version: "1.0", path: "shop-1.0.pkg", versionMeta: tc.meta})
+
+			res, err := promoteFiles(t, h, src, dst, sha, "", false)
+			if err != nil {
+				t.Fatalf("promote: %v", err)
+			}
+
+			if !slices.Equal(res.Licenses, tc.want) {
+				t.Errorf("licenses = %v, want %v", res.Licenses, tc.want)
+			}
+		})
+	}
+}
+
+// TestPromoteExtractsCondaLicensesFromTheFileRow: a conda package keeps the
+// license its info/index.json declared in the file row.
+func TestPromoteExtractsCondaLicensesFromTheFileRow(t *testing.T) {
+	cases := []struct {
+		attrs string
+		want  []string
+	}{
+		{`{"index_extra": {"license": "GPL-3.0-only"}}`, []string{"GPL-3.0-only"}},
+		{`{"index_extra": {"license": ""}}`, nil},
+		{`{"index_extra": {}}`, nil},
+	}
+
+	h := newHarness(t)
+
+	for _, tc := range cases {
+		t.Run(tc.attrs, func(t *testing.T) {
+			h.t = t
+			src, dst := h.repo("conda", false), h.repo("conda", false)
+			blob, sha := h.blob("conda " + tc.attrs)
+			h.file(src.ID, blob, fileSeed{pkg: "shop", version: "1.0", path: "linux-64/shop-1.0-0.conda", attrs: tc.attrs})
 
 			res, err := promoteFiles(t, h, src, dst, sha, "", false)
 			if err != nil {

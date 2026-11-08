@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -21,8 +22,11 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
+	"github.com/openartifact/openartifact/internal/license"
+	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/promote"
 	"github.com/openartifact/openartifact/internal/quarantine"
+	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -60,7 +64,7 @@ type BundlesStore interface {
 	RemoveBundleItem(ctx context.Context, bundleID string, sha256 string) error
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
 	SealReleaseBundle(ctx context.Context, bundleID string, sealedBy string, sealedAt time.Time, sig *models.BundleSignature) (bool, error)
-	UpdatePromotionPipeline(ctx context.Context, p *models.PromotionPipeline) error
+	PatchPromotionPipeline(ctx context.Context, id string, patch database.PipelinePatch) (*models.PromotionPipeline, error)
 	UpdateReleaseBundle(ctx context.Context, b *models.ReleaseBundle) error
 }
 
@@ -72,6 +76,8 @@ type BundlesHandler struct {
 	promoter  *promote.Engine
 	publisher webhook.Publisher
 	db        BundlesStore
+	workers   *lifecycle.Workers
+	licenses  promote.LicenseSource
 }
 
 const (
@@ -162,7 +168,7 @@ func (h *BundlesHandler) validateStages(ctx context.Context, stages []models.Pip
 }
 
 func NewBundlesHandler(db BundlesStore, log *logger.Logger, evaluator *auth.Evaluator) *BundlesHandler {
-	return &BundlesHandler{repoAccess: newRepoAccess(db, log, evaluator), promoter: promote.NewEngine(db, log, nil), db: db}
+	return &BundlesHandler{repoAccess: newRepoAccess(db, log, evaluator), promoter: promote.NewEngine(db, log, nil, nil), db: db}
 }
 
 // WithPublisher enables the bundle.promoted webhook event.
@@ -175,8 +181,38 @@ func (h *BundlesHandler) WithPublisher(p webhook.Publisher) *BundlesHandler {
 // indexes, ...) in the target repository after a promotion, through the Changed
 // lifecycle hook of each format over the metadata workers.
 func (h *BundlesHandler) WithWorkers(w *lifecycle.Workers) *BundlesHandler {
-	h.promoter = promote.NewEngine(h.db, h.log, w)
+	h.workers = w
+	h.promoter = promote.NewEngine(h.db, h.log, h.workers, h.licenses)
+
 	return h
+}
+
+// WithLicenseFiles enables the license policy of the target on the promotion of
+// the formats that keep their license in the package file alone (helm, nuget,
+// maven, ivy, sbt): the stored file is read from blobs, as a license scan does.
+// Without it such a promotion fails rather than skip the policy.
+func (h *BundlesHandler) WithLicenseFiles(db LicenseStore, blobs storage.BlobStore) *BundlesHandler {
+	h.licenses = promoteLicenses{src: artifactLicenseSource{db: db, blobs: blobs, log: h.log, detector: license.NewDetector(h.log)}}
+	h.promoter = promote.NewEngine(h.db, h.log, h.workers, h.licenses)
+
+	return h
+}
+
+// promoteLicenses reads the licenses of the files a promotion judges the way a
+// license scan reads them.
+type promoteLicenses struct{ src artifactLicenseSource }
+
+func (p promoteLicenses) Licenses(ctx context.Context, repoID, artifactID string) ([]string, error) {
+	res, err := p.src.licenses(ctx, repoID, artifactID)
+
+	switch {
+	case errors.Is(err, errUnderivable), licensemeta.Unsafe(err):
+		return nil, fmt.Errorf("%w: %w", promote.ErrLicenseUnreadable, err)
+	case err != nil:
+		return nil, err
+	}
+
+	return res.Licenses, nil
 }
 
 func (h *BundlesHandler) RegisterAuthed(r chi.Router) {
@@ -358,10 +394,6 @@ func (h *BundlesHandler) handleUpdatePipeline(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if body.Description != nil {
-		pipeline.Description = *body.Description
-	}
-
 	if body.Stages != nil {
 		msg, err := h.validateStages(ctx, *body.Stages)
 		if err != nil {
@@ -374,29 +406,25 @@ func (h *BundlesHandler) handleUpdatePipeline(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusBadRequest, "validation_failed", msg)
 			return
 		}
-
-		pipeline.Stages = *body.Stages
-
-		stagesJSON, err := json.Marshal(pipeline.Stages)
-		if err != nil {
-			h.log.Errorw("update pipeline: marshal stages error", "error", err)
-			writeError(w, http.StatusBadRequest, "bad_request", "invalid stages")
-
-			return
-		}
-
-		pipeline.StagesRaw = stagesJSON
 	}
 
-	pipeline.UpdatedAt = time.Now()
-
-	if err := h.db.UpdatePromotionPipeline(ctx, pipeline); err != nil {
+	updated, err := h.db.PatchPromotionPipeline(
+		ctx,
+		pipeline.ID,
+		database.PipelinePatch{Description: body.Description, Stages: body.Stages},
+	)
+	if err != nil {
 		h.dbError(w, "update pipeline: db error", err)
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, pipelineToMap(pipeline))
+	if updated == nil {
+		writeError(w, http.StatusNotFound, "not_found", "pipeline not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, pipelineToMap(updated))
 }
 
 func (h *BundlesHandler) handleDeletePipeline(w http.ResponseWriter, r *http.Request) {

@@ -234,8 +234,8 @@ func TestNPMStoreRoundTrip(t *testing.T) {
 
 	etag = npmUpdatedAt(t, pg, pkg.ID)
 
-	if err := pg.DeleteNPMVersion(ctx, pkg.ID, "1.0.0"); err != nil {
-		t.Fatalf("DeleteNPMVersion: %v", err)
+	if err := pg.DeleteNPMVersions(ctx, pkg.ID, []string{"1.0.0"}); err != nil {
+		t.Fatalf("DeleteNPMVersions: %v", err)
 	}
 
 	if !npmUpdatedAt(t, pg, pkg.ID).After(etag) {
@@ -336,8 +336,8 @@ func TestNPMTrashedVersionHidesTag(t *testing.T) {
 	}
 
 	// Hard-deleting the live incarnation keeps the tag for the trashed one.
-	if err := pg.DeleteNPMVersion(ctx, pkg.ID, "1.0.0"); err != nil {
-		t.Fatalf("DeleteNPMVersion: %v", err)
+	if err := pg.DeleteNPMVersions(ctx, pkg.ID, []string{"1.0.0"}); err != nil {
+		t.Fatalf("DeleteNPMVersions: %v", err)
 	}
 
 	if n := npmCount(t, pg, `SELECT count(*) FROM package_tags WHERE package_id = $1`, pkg.ID); n != 1 {

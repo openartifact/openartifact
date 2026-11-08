@@ -63,7 +63,7 @@
   "sx.cleanup.disabled": "Désactivée",
   "sx.cleanup.noRule": "Aucune règle",
   "sx.cleanup.empty": "Aucune politique de nettoyage",
-  "sx.cleanup.emptyHint": "Les politiques de nettoyage suppriment automatiquement les anciennes versions, par exemple « conserver les 5 dernières ». Les versions supprimées vont d'abord dans la corbeille, les erreurs sont donc récupérables. Ajoutez une politique dans l'onglet Nettoyage d'un dépôt hébergé.",
+  "sx.cleanup.emptyHint": "Les politiques de nettoyage suppriment automatiquement les anciennes versions, par exemple « conserver les 5 dernières ». Les versions supprimées vont d'abord dans la corbeille, les erreurs sont donc récupérables. Ajoutez une politique dans la section Nettoyage de l'onglet Paramètres d'un dépôt hébergé.",
   "sx.cleanup.partial": "Impossible de lire les politiques de : {names}.",
   "sx.cleanup.scope": "Les politiques sont conservées par dépôt ; cette liste les rassemble depuis tous les dépôts hébergés. Les politiques par défaut des projets se gèrent dans le projet.",
   "sx.scanners.summary.ready": "{ready} scanners prêts sur {total}",

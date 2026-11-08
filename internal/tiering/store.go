@@ -520,8 +520,12 @@ func (s *Store) settleWrite(ctx context.Context, sha string, written *Tier) erro
 
 // Delete implements storage.BlobStore: every tier's copy is removed. A failure
 // on the primary store or on the tier the blob is placed on is returned (the
-// caller keeps its row and retries); a failure on any other tier is logged only,
-// since an unreachable tier must not make unrelated deletes fail.
+// caller keeps its row and retries). A blob without a placement row (the
+// deletion sweeper runs after the row was dropped) may have its only copy on any
+// tier, so there every failure is returned and the sweeper retries; swallowing
+// one would orphan the bytes for good. With a known placement a failure on
+// another tier is logged only: a stray copy there is queued for deletion on its
+// own, and an unreachable tier must not make unrelated deletes fail.
 func (s *Store) Delete(ctx context.Context, id string) error {
 	snap := s.reg.Snapshot()
 	primary := snap.Primary()
@@ -561,7 +565,7 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 			continue
 		}
 
-		if t.Primary() || perr != nil || (found && t.BackendID == placed) {
+		if t.Primary() || perr != nil || !found || t.BackendID == placed {
 			errs = append(errs, fmt.Errorf("delete from tier %s: %w", t.Name, err))
 
 			continue

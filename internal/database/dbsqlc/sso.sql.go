@@ -223,48 +223,6 @@ func (q *Queries) ListEnabledSSOProviders(ctx context.Context) ([]ListEnabledSSO
 	return items, nil
 }
 
-const updateSSOProvider = `-- name: UpdateSSOProvider :exec
-UPDATE auth_sso_providers
-SET slug = $2, kind = $3, display_name = $4, enabled = $5,
-    oidc_config = $6::jsonb, saml_config = $7::jsonb, claim_mapping = $8::jsonb,
-    group_mapping = $9::jsonb, permission_mapping = $10::jsonb,
-    auto_provision_users = $11, link_by_email = $12
-WHERE id = $1
-`
-
-type UpdateSSOProviderParams struct {
-	ID                 string          `db:"id" json:"id"`
-	Slug               string          `db:"slug" json:"slug"`
-	Kind               string          `db:"kind" json:"kind"`
-	DisplayName        string          `db:"display_name" json:"display_name"`
-	Enabled            bool            `db:"enabled" json:"enabled"`
-	Column6            json.RawMessage `db:"column_6" json:"column_6"`
-	Column7            json.RawMessage `db:"column_7" json:"column_7"`
-	Column8            json.RawMessage `db:"column_8" json:"column_8"`
-	Column9            json.RawMessage `db:"column_9" json:"column_9"`
-	Column10           json.RawMessage `db:"column_10" json:"column_10"`
-	AutoProvisionUsers bool            `db:"auto_provision_users" json:"auto_provision_users"`
-	LinkByEmail        bool            `db:"link_by_email" json:"link_by_email"`
-}
-
-func (q *Queries) UpdateSSOProvider(ctx context.Context, arg UpdateSSOProviderParams) error {
-	_, err := q.db.Exec(ctx, updateSSOProvider,
-		arg.ID,
-		arg.Slug,
-		arg.Kind,
-		arg.DisplayName,
-		arg.Enabled,
-		arg.Column6,
-		arg.Column7,
-		arg.Column8,
-		arg.Column9,
-		arg.Column10,
-		arg.AutoProvisionUsers,
-		arg.LinkByEmail,
-	)
-	return err
-}
-
 const updateUserSSO = `-- name: UpdateUserSSO :exec
 UPDATE auth_users SET external_id = $2, provider_slug = $3 WHERE id = $1
 `

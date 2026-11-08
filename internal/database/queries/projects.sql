@@ -12,11 +12,20 @@ FROM projects WHERE id = $1;
 SELECT *
 FROM projects WHERE name = $1;
 
--- name: UpdateProject :exec
-UPDATE projects SET display_name = $1, description = $2, owner_id = $3,
-       allowed_formats = $4, allowed_repo_types = $5, repo_name_prefix = $6, allow_public_repos = $7,
-       max_repositories = $8, token_max_ttl_days = $9, updated_at = now()
-WHERE id = $10;
+-- name: PatchProject :one
+-- Column-wise edit: a NULL argument leaves the stored value alone, so a concurrent edit of other columns survives.
+UPDATE projects SET
+       display_name = COALESCE(sqlc.narg(display_name), display_name),
+       description = COALESCE(sqlc.narg(description), description),
+       allowed_formats = CASE WHEN sqlc.arg(set_allowed_formats)::bool THEN sqlc.narg(allowed_formats)::text[] ELSE allowed_formats END,
+       allowed_repo_types = COALESCE(sqlc.narg(allowed_repo_types)::text[], allowed_repo_types),
+       repo_name_prefix = COALESCE(sqlc.narg(repo_name_prefix), repo_name_prefix),
+       allow_public_repos = COALESCE(sqlc.narg(allow_public_repos), allow_public_repos),
+       max_repositories = COALESCE(sqlc.narg(max_repositories)::int, max_repositories),
+       token_max_ttl_days = COALESCE(sqlc.narg(token_max_ttl_days)::int, token_max_ttl_days),
+       updated_at = now()
+WHERE id = sqlc.arg(id)
+RETURNING *;
 
 -- name: DeleteProject :exec
 DELETE FROM projects WHERE id = $1;

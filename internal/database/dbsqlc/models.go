@@ -468,6 +468,8 @@ type DockerUpload struct {
 	LeaseToken *string `db:"lease_token" json:"lease_token"`
 	// When the lease expires if its holder dies; NULL when idle
 	LeaseUntil *time.Time `db:"lease_until" json:"lease_until"`
+	// Image the session was started for; NULL for sessions that predate the column, which no request can reach
+	Image *string `db:"image" json:"image"`
 }
 
 // FIRST EPSS scores (probability and percentile) keyed by upper-case CVE id; generation is the import that last saw the row.

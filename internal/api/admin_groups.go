@@ -35,7 +35,7 @@ type AdminGroupsStore interface {
 	ListUsersByGroup(ctx context.Context, groupID string) ([]*models.User, error)
 	RemoveUserFromGroup(ctx context.Context, userID string, groupID string) error
 	SetGroupMembers(ctx context.Context, groupID string, userIDs []string) error
-	UpdateGroup(ctx context.Context, group *models.Group) error
+	PatchGroup(ctx context.Context, id string, patch database.GroupPatch) (*models.Group, error)
 }
 
 type AdminGroupsHandler struct {
@@ -118,20 +118,6 @@ func (h *AdminGroupsHandler) handlePatch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	id := urlparams.Vars(r)["id"]
-	ctx := r.Context()
-
-	group, err := h.db.GetGroupByID(ctx, id)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-		return
-	}
-
-	if group == nil {
-		writeError(w, http.StatusNotFound, "not_found", "group not found")
-		return
-	}
-
 	var body struct {
 		Name        *string `json:"name"`
 		Description *string `json:"description"`
@@ -141,21 +127,15 @@ func (h *AdminGroupsHandler) handlePatch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if body.Name != nil {
-		if !groupNameRe().MatchString(*body.Name) {
-			writeError(w, http.StatusBadRequest, "validation_failed", "group name must be 2-64 alphanumeric/dash/underscore characters")
-			return
-		}
-
-		group.Name = *body.Name
+	if body.Name != nil && !groupNameRe().MatchString(*body.Name) {
+		writeError(w, http.StatusBadRequest, "validation_failed", "group name must be 2-64 alphanumeric/dash/underscore characters")
+		return
 	}
 
-	if body.Description != nil {
-		group.Description = body.Description
-	}
+	patch := database.GroupPatch{Name: body.Name, Description: body.Description}
 
-	group.UpdatedAt = time.Now()
-	if err := h.db.UpdateGroup(ctx, group); err != nil {
+	group, err := h.db.PatchGroup(r.Context(), urlparams.Vars(r)["id"], patch)
+	if err != nil {
 		if database.IsUniqueViolation(err) {
 			writeError(w, http.StatusConflict, "conflict", "a group with this name already exists")
 			return
@@ -163,6 +143,11 @@ func (h *AdminGroupsHandler) handlePatch(w http.ResponseWriter, r *http.Request)
 
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
+		return
+	}
+
+	if group == nil {
+		writeError(w, http.StatusNotFound, "not_found", "group not found")
 		return
 	}
 

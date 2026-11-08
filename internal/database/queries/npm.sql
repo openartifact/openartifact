@@ -115,19 +115,20 @@ WITH changed AS (
 UPDATE packages SET updated_at = now() WHERE id IN (SELECT package_id FROM changed);
 
 -- name: DeleteNPMLiveVersionFiles :many
--- Hard delete of the file of the live version (the quota trigger releases its
--- usage); the version itself goes in PruneEmptyVersions.
+-- Hard delete of the files of the live versions among the given keys (the quota
+-- trigger releases their usage); the versions themselves go in PruneEmptyVersions.
 DELETE FROM package_files f
 USING package_versions v
-WHERE f.version_id = v.id AND v.package_id = $1 AND v.version_key = $2 AND v.deleted_at IS NULL
+WHERE f.version_id = v.id AND v.package_id = sqlc.arg(package_id) AND v.version_key = ANY(sqlc.arg(version_keys)::text[])
+  AND v.deleted_at IS NULL
 RETURNING f.version_id;
 
--- name: DeleteNPMTagsOfVersion :exec
+-- name: DeleteNPMTagsOfVersions :exec
 -- Tags are keyed by the version string, so they do not follow the version row.
 -- A trashed incarnation of the same version keeps them (a restore brings them
 -- back).
 DELETE FROM package_tags t
-WHERE t.package_id = $1 AND t.version = $2
+WHERE t.package_id = sqlc.arg(package_id) AND t.version = ANY(sqlc.arg(versions)::text[])
   AND NOT EXISTS (SELECT 1 FROM package_versions v WHERE v.package_id = t.package_id AND v.version_key = t.version);
 
 -- name: UpsertNPMDistTag :one

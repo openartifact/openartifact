@@ -99,27 +99,57 @@ func (p *ProjectStore) GetProjectByName(ctx context.Context, name string) (*mode
 	return projectFromRow(&row), nil
 }
 
-func (p *ProjectStore) UpdateProject(ctx context.Context, project *models.Project) error {
-	// owner_id changes what members may do.
-	defer p.authCache.invalidate()
+// ProjectPatch names the columns an edit writes; nil fields leave the stored
+// value alone. A non-nil AllowedFormats replaces the list, an empty one
+// meaning every format (NULL).
+type ProjectPatch struct {
+	DisplayName      *string
+	Description      *string
+	AllowedFormats   *[]string
+	AllowedRepoTypes []string
+	RepoNamePrefix   *string
+	AllowPublicRepos *bool
+	MaxRepositories  *int
+	TokenMaxTTLDays  *int
+}
 
-	err := p.q.UpdateProject(ctx, dbsqlc.UpdateProjectParams{
-		DisplayName:      project.DisplayName,
-		Description:      project.Description,
-		OwnerID:          project.OwnerID,
-		AllowedFormats:   project.AllowedFormats,
-		AllowedRepoTypes: project.AllowedRepoTypes,
-		RepoNamePrefix:   project.RepoNamePrefix,
-		AllowPublicRepos: project.AllowPublicRepos,
-		MaxRepositories:  int32(project.MaxRepositories), //nolint:gosec // validated range by callers, column is integer
-		TokenMaxTtlDays:  int32(project.TokenMaxTTLDays), //nolint:gosec // validated range by callers, column is integer
-		ID:               project.ID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to update project: %w", err)
+// int32Ptr narrows a range-validated column value.
+func int32Ptr(v *int) *int32 {
+	if v == nil {
+		return nil
 	}
 
-	return nil
+	n := int32(*v) //nolint:gosec // validated range by callers, column is integer
+
+	return &n
+}
+
+// PatchProject writes only the columns in patch, so a concurrent edit of other
+// columns is not reverted by a stale snapshot. It returns the updated row, or
+// nil when the project does not exist.
+func (p *ProjectStore) PatchProject(ctx context.Context, id string, patch ProjectPatch) (*models.Project, error) {
+	// Policy changes what members may do.
+	defer p.authCache.invalidate()
+
+	arg := dbsqlc.PatchProjectParams{
+		ID:                id,
+		DisplayName:       patch.DisplayName,
+		Description:       patch.Description,
+		SetAllowedFormats: patch.AllowedFormats != nil,
+		AllowedRepoTypes:  patch.AllowedRepoTypes,
+		RepoNamePrefix:    patch.RepoNamePrefix,
+		AllowPublicRepos:  patch.AllowPublicRepos,
+		MaxRepositories:   int32Ptr(patch.MaxRepositories),
+		TokenMaxTtlDays:   int32Ptr(patch.TokenMaxTTLDays),
+	}
+
+	if patch.AllowedFormats != nil && len(*patch.AllowedFormats) > 0 {
+		arg.AllowedFormats = *patch.AllowedFormats
+	}
+
+	row, err := p.q.PatchProject(ctx, arg)
+
+	return mapRow(row, err, "update project", func(r dbsqlc.Project) *models.Project { return projectFromRow(&r) })
 }
 
 func (p *ProjectStore) DeleteProject(ctx context.Context, id string) error {

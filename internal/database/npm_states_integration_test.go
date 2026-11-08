@@ -57,8 +57,8 @@ func TestGetNPMVersionStates(t *testing.T) {
 		}
 	}
 
-	if err := pg.DeleteNPMVersion(ctx, pkg.ID, "1.5.0"); err != nil {
-		t.Fatalf("DeleteNPMVersion: %v", err)
+	if err := pg.DeleteNPMVersions(ctx, pkg.ID, []string{"1.5.0"}); err != nil {
+		t.Fatalf("DeleteNPMVersions: %v", err)
 	}
 
 	states, err := pg.GetNPMVersionStates(ctx, pkg.ID)

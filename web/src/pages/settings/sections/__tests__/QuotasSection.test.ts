@@ -85,7 +85,7 @@ describe('QuotasSection', () => {
     serve(QUOTAS)
     const w = await mountPage()
     const hrefs = w.findAll('tbody a').map((a) => a.attributes('href'))
-    expect(hrefs).toContain('/repos/full?tab=configuration')
+    expect(hrefs).toContain('/repos/full?tab=settings')
     expect(hrefs).toContain('/projects/team?tab=usage')
     w.unmount()
   })
@@ -93,7 +93,7 @@ describe('QuotasSection', () => {
   it('tells when there are more quotas than were loaded', async () => {
     serve(QUOTAS, 2500)
     const w = await mountPage()
-    expect(w.find('[data-testid="quota-truncated"]').text()).toContain('first 4 of 2500')
+    expect(w.find('[data-testid="quota-truncated"]').text()).toContain('first 4 of 2,500')
     w.unmount()
   })
 

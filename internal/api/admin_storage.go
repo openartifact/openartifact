@@ -78,7 +78,7 @@ var validStorageKinds = map[string]bool{
 //nolint:gochecknoglobals // immutable lookup table
 var storageSecretFields = []string{
 	"access_key", "accessKey", "secret_key", "secretKey", "password", "account_key", "accountKey",
-	"connStr", "conn_str", "creds", "credentials_json", "sas_token", "hmac_key", "hmac_secret",
+	"connStr", "conn_str", "creds", "credentials_json", "sas_token", "hmac_key", "hmacKey", "hmac_secret", "hmacSecret",
 }
 
 // reservedStorageBackendName reports whether name is a path segment with a
