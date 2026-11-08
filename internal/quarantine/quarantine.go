@@ -112,8 +112,9 @@ func EnforceWith(w http.ResponseWriter, r *http.Request, db Checker, repoID stri
 // recorded under: as given, without a leading slash, and with a leading slash.
 // Empty paths are skipped and the result has no duplicates.
 func PathKeys(paths ...string) []string {
-	keys := make([]string, 0, len(paths)*3)
-	seen := make(map[string]struct{}, len(paths)*3)
+	var keys []string
+
+	seen := map[string]struct{}{}
 
 	add := func(k string) {
 		if k == "" || k == "/" {

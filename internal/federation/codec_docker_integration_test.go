@@ -804,13 +804,15 @@ func TestDockerTableColumnsAreDecided(t *testing.T) {
 
 	want := map[string][]string{
 		// replicated: image, digest, media_type, size, subject_digest, blob_id, created_at.
-		// local: id, repository_id, updated_at, deleted_at, deleted_by.
+		// local: id, repository_id, updated_at, deleted_at, deleted_by, and expires_at (set by this
+		// instance's push hook from the quay.expires-after label, only where the repository honours it).
 		"docker_manifests": {
 			"blob_id",
 			"created_at",
 			"deleted_at",
 			"deleted_by",
 			"digest",
+			"expires_at",
 			"id",
 			"image",
 			"media_type",

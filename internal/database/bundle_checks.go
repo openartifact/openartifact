@@ -40,20 +40,15 @@ func (p *BundleStore) ListBundleChecks(ctx context.Context, bundleID string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("failed to list bundle checks: %w", err)
 	}
-	defer rows.Close()
 
-	var out []*models.BundleCheck
+	return collectRows(rows, "failed to scan bundle check", "failed to list bundle checks",
+		func(row rowScanner) (*models.BundleCheck, error) {
+			c := &models.BundleCheck{}
+			if err := row.Scan(&c.ID, &c.BundleID, &c.Name, &c.Status, &c.Summary, &c.DetailsURL, &c.ReportedBy,
+				&c.ExpiresAt, &c.CreatedAt, &c.UpdatedAt); err != nil {
+				return nil, err //nolint:wrapcheck // collectRows wraps with the caller's message
+			}
 
-	for rows.Next() {
-		c := &models.BundleCheck{}
-
-		if err := rows.Scan(&c.ID, &c.BundleID, &c.Name, &c.Status, &c.Summary, &c.DetailsURL, &c.ReportedBy,
-			&c.ExpiresAt, &c.CreatedAt, &c.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("failed to scan bundle check: %w", err)
-		}
-
-		out = append(out, c)
-	}
-
-	return out, rows.Err() //nolint:wrapcheck // plain iteration error
+			return c, nil
+		})
 }
