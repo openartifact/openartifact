@@ -68,5 +68,8 @@
   "shell.action.repoSettings": "Abrir los ajustes de {name}",
   "shell.action.repoCopyInstall": "Copiar el comando de instalación de {name}",
   "shell.action.repoCopied": "Comando de instalación de {name} copiado",
-  "shell.action.signOut": "Cerrar sesión"
+  "shell.action.signOut": "Cerrar sesión",
+  "shell.demo.banner": "Demo con datos de ejemplo que se ejecuta en tu navegador. Los cambios se pierden al recargar.",
+  "shell.demo.install": "Instalar OpenArtifact",
+  "shell.demo.unavailable": "No disponible en la demo. Instala OpenArtifact para probarlo."
 }

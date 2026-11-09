@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 .PHONY: help build build-slim vet-tags run test test-integration test-coverage test-race clean lint fmt vet sec check deps \
-        docker-build docker-run docker-stop docker-up migrate web-build web-dev build-cli completions generate docs-gen docs-check deadcode dup dup-baseline bench bench-load
+        docker-build docker-run docker-stop docker-up migrate web-build web-dev web-demo build-cli completions generate docs-gen docs-check deadcode dup dup-baseline bench bench-load
 
 # Variables
 BINARY_NAME=openartifact
@@ -71,6 +71,7 @@ help:
 	@echo "  docker-stop     - Stop Docker container"
 	@echo "  docker-up       - Build and start the compose stack with version/commit/build time stamped"
 	@echo "  migrate         - Run migrations (go run ./cmd/server -migrate)"
+	@echo "  web-demo        - Build the static web UI demo (in-memory backend) to web/dist-demo (OA_DEMO_BASE sets the base path)"
 	@echo "  help            - Show this help message"
 
 web-build:
@@ -80,6 +81,9 @@ web-build:
 web-dev:
 	@echo "Starting web dev server..."
 	cd web && bun run dev
+
+web-demo:
+	cd web && bun install && bun run build:demo
 
 build: web-build
 	@echo "Building $(BINARY_NAME)..."

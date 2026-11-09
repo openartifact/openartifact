@@ -68,5 +68,8 @@
   "shell.action.repoSettings": "Einstellungen von {name} öffnen",
   "shell.action.repoCopyInstall": "Installationsbefehl für {name} kopieren",
   "shell.action.repoCopied": "Installationsbefehl für {name} kopiert",
-  "shell.action.signOut": "Abmelden"
+  "shell.action.signOut": "Abmelden",
+  "shell.demo.banner": "Demo mit Beispieldaten, läuft in Ihrem Browser. Änderungen gehen beim Neuladen verloren.",
+  "shell.demo.install": "OpenArtifact installieren",
+  "shell.demo.unavailable": "In der Demo nicht verfügbar. Installieren Sie OpenArtifact, um dies auszuprobieren."
 }

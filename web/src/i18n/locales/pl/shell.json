@@ -36,9 +36,9 @@
   "shell.palette.noResultsHint": "Spróbuj nazwy pakietu, repozytorium lub ustawienia, np. „retention”.",
   "shell.palette.noActions": "Brak pasujących akcji",
   "shell.palette.count_one": "{n} wynik",
+  "shell.palette.count_other": "{n} wyniku",
   "shell.palette.count_few": "{n} wyniki",
   "shell.palette.count_many": "{n} wyników",
-  "shell.palette.count_other": "{n} wyniku",
   "shell.palette.tooBroad": "Zbyt wiele pasujących pakietów. Zawęź zapytanie, na przykład przez name:, format: lub repo:.",
   "shell.palette.partialError": "Nie udało się wczytać niektórych wyników.",
   "shell.palette.retry": "Ponów",
@@ -70,5 +70,8 @@
   "shell.action.repoSettings": "Otwórz ustawienia: {name}",
   "shell.action.repoCopyInstall": "Kopiuj polecenie instalacji: {name}",
   "shell.action.repoCopied": "Skopiowano polecenie instalacji: {name}",
-  "shell.action.signOut": "Wyloguj się"
+  "shell.action.signOut": "Wyloguj się",
+  "shell.demo.banner": "Demo z przykładowymi danymi, działające w przeglądarce. Zmiany znikają po przeładowaniu.",
+  "shell.demo.install": "Zainstaluj OpenArtifact",
+  "shell.demo.unavailable": "Niedostępne w wersji demo. Zainstaluj OpenArtifact, aby to wypróbować."
 }

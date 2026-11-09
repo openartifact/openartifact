@@ -126,12 +126,18 @@ export function setClientSpanFactory(start: ((method: string) => ClientSpan) | u
   startClientSpan = start
 }
 
-/**
- * Sends a same-origin API call with the standard headers (CSRF, XHR marker,
- * cookies, and traceparent while telemetry is on) and handles an expired
- * session: a 401 outside the auth probes clears the session, redirects to
- * login and throws.
- */
+/** What answers an API call: the network, or the in-memory backend of the static demo build (web/src/demo). */
+export type Transport = (path: string, init: RequestInit) => Promise<Response>
+
+// Reads the global at call time: tests replace globalThis.fetch.
+const network: Transport = (path, init) => fetch(path, init)
+let transport = network
+
+/** Replaces the network under every API call, uploads included (the demo build); undefined restores the network. */
+export function setTransport(next?: Transport): void {
+  transport = next ?? network
+}
+
 /** The headers every API call carries: the XHR marker, the CSRF token, and `extra` (which wins). */
 function standardHeaders(extra?: HeadersInit): Headers {
   const headers = new Headers(extra)
@@ -165,6 +171,12 @@ async function rejectExpired(path: string, status: number, body: () => Promise<u
   throw new ApiError(t('session.expired'), 401, SESSION_EXPIRED)
 }
 
+/**
+ * Sends a same-origin API call with the standard headers (CSRF, XHR marker,
+ * cookies, and traceparent while telemetry is on) and handles an expired
+ * session: a 401 outside the auth probes clears the session, redirects to
+ * login and throws.
+ */
 async function send(path: string, init: RequestInit): Promise<Response> {
   const headers = standardHeaders(init.headers)
 
@@ -173,7 +185,7 @@ async function send(path: string, init: RequestInit): Promise<Response> {
 
   let res: Response
   try {
-    res = await fetch(path, {
+    res = await transport(path, {
       ...init,
       headers,
       credentials: 'include',
@@ -247,6 +259,14 @@ export interface UploadOptions {
  * and expired-session handling as request(). Resolves on a 2xx answer.
  */
 export function upload(path: string, opts: UploadOptions): Promise<void> {
+  // A replaced transport has no upload progress to report: it takes the body like any other call.
+  if (transport !== network) {
+    return send(path, { method: opts.method ?? 'POST', body: opts.body, headers: opts.headers, signal: opts.signal }).then(
+      async (res) => {
+        if (!res.ok) throw await apiError(res)
+      },
+    )
+  }
   return new Promise<void>((resolve, reject) => {
     const method = opts.method ?? 'POST'
     const xhr = new XMLHttpRequest()

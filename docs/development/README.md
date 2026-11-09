@@ -104,6 +104,19 @@ The UI registers its service worker only in a production build served by a stamp
 
 Start the server on `:8080` for the dev server to talk to. Build the server with `-tags dev` and set `OPENARTIFACT_DEV=1` to make it proxy UI requests to `http://localhost:5173` instead of serving the embedded build (release binaries ignore the variable).
 
+### Static demo build
+
+`bun run build:demo` (or `make web-demo`) builds the UI with no server behind it into `web/dist-demo`. The project site serves it under `/demo/`. Set `OA_DEMO_BASE` to the path it is served from (default `/`):
+
+```sh
+OA_DEMO_BASE=/demo/ bun run build:demo
+```
+
+- **Backend.** `src/demo` answers every API call from memory, through the transport hook in `src/api/client.ts`. The data is seeded on load; writes change it until the page reloads. The fixtures and handlers are typed with the generated API types, so `bun run typecheck` fails when the API drifts. A call without a handler gets a 501 `demo_unavailable` error, which pages render like any other failure.
+- **Normal builds.** They contain none of it: the demo code sits behind `import.meta.env.MODE === 'demo'` and dynamic imports.
+- **Routing and service worker.** The demo routes by URL hash (`/demo/#/repos`), because static hosting has no SPA fallback. It registers no service worker or web manifest.
+- **Curated pages.** These must work completely: the dashboard, repositories (list, detail, settings), packages (detail, versions, search), security, users, groups and projects. `src/demo/__tests__/coverage.test.ts` mounts the app on each of them and fails on any call the demo does not answer. When a curated page starts calling a new endpoint, add a handler under `src/demo/routes`.
+
 ### Binary size
 
 `make build`, `docker/Dockerfile` and `.goreleaser.yml` produce the same shape of binary: `CGO_ENABLED=0`, `-trimpath`, `-ldflags "-s -w"` (no symbol table, no DWARF) plus the version `-X` flags. The server is additionally built with `-tags grpcnotrace`, which drops gRPC's `net/trace` debug pages: `EnableTracing` is never set, and with the pages gone `html/template` leaves the binary and the linker can discard methods nothing calls (about 9 MB). Add the tag when you build the server by hand for a size comparison.

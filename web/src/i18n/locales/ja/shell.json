@@ -67,5 +67,8 @@
   "shell.action.repoSettings": "{name} の設定を開く",
   "shell.action.repoCopyInstall": "{name} のインストールコマンドをコピー",
   "shell.action.repoCopied": "{name} のインストールコマンドをコピーしました",
-  "shell.action.signOut": "サインアウト"
+  "shell.action.signOut": "サインアウト",
+  "shell.demo.banner": "サンプルデータを使ったデモで、ブラウザー内で動作します。変更は再読み込みすると失われます。",
+  "shell.demo.install": "OpenArtifact をインストール",
+  "shell.demo.unavailable": "デモでは利用できません。試すには OpenArtifact をインストールしてください。"
 }

@@ -63,6 +63,8 @@ web/coverage/
 # after emptying the directory).
 web/dist/*
 !web/dist/.gitkeep
+# Static demo build (bun run build:demo)
+web/dist-demo/
 
 # Browser e2e output (failure reports, monkey walk logs) and the last monkey seed
 /web/test-results/
