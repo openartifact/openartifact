@@ -26,6 +26,7 @@ import (
 type EngineStore interface {
 	quarantine.Checker
 	BeginTx(ctx context.Context) (database.Transaction, error)
+	ConsumePendingUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
 	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
@@ -171,6 +172,11 @@ func (e *Engine) Promote(ctx context.Context, p Params) (*Report, error) {
 
 		return nil, fmt.Errorf("commit promotion: %w", err)
 	}
+
+	// The rows were written before the reservation existed, so the quota
+	// triggers had no pending entry to consume; the reservation's entry would
+	// otherwise be counted on top of the rows by the reconcile until it ages out.
+	e.settle(ctx, p.Target.ID, total)
 
 	e.notify(regen)
 
@@ -378,6 +384,18 @@ func (e *Engine) refund(ctx context.Context, repoID string, u Usage) {
 	// ReleaseN is detached from ctx cancellation and bounded by its own timeout.
 	if err := quota.ReleaseN(ctx, e.db, repoID, u.Bytes, u.Artifacts); err != nil {
 		e.log.Errorw("promote: release quota reservation", "repo_id", repoID, "error", err)
+	}
+}
+
+// settle consumes the reservation's pending entry once its rows are committed.
+// A failure is only logged: the entry expires and the reconcile repairs it.
+func (e *Engine) settle(ctx context.Context, repoID string, u Usage) {
+	if u.Bytes == 0 && u.Artifacts == 0 {
+		return
+	}
+
+	if err := quota.ConsumeN(ctx, e.db, repoID, u.Bytes, u.Artifacts); err != nil {
+		e.log.Warnw("promote: consume quota reservation", "repo_id", repoID, "error", err)
 	}
 }
 

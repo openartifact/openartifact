@@ -809,7 +809,7 @@ func newBackupCmd(a *app) *cobra.Command {
 			Args:              usageArgs(2, 2),
 			ValidArgsFunction: positional(backupIDs, files),
 			Run: func(_ *cobra.Command, args []string) {
-				downloadFile(a.client, base+escape(args[0])+"/download", args[1])
+				downloadFile(a.client, base+escape(args[0])+"/download", args[1], 0o600)
 			},
 		},
 		&cobra.Command{
@@ -1042,7 +1042,7 @@ func auditExport(client *Client, format, since, until, actor, action, output str
 		return
 	}
 
-	n, err := downloadTo(resp, output)
+	n, err := downloadTo(resp, output, 0o600)
 	if err != nil {
 		dief("%v", err)
 	}

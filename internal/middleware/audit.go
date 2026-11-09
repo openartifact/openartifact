@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/audit"
@@ -38,6 +39,7 @@ func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func
 			}
 
 			r = r.WithContext(audit.WithRequest(r.Context(), req))
+			markAudited(r.Context())
 
 			wrapped := httpx.WrapStatus(w)
 			next.ServeHTTP(wrapped, r)
@@ -334,4 +336,102 @@ func peekLoginUsername(r *http.Request) string {
 	}
 
 	return name
+}
+
+// denialState is shared between DenialAuditMiddleware and the layers inside
+// it: RBAC records the principal it resolved and AuditMiddleware marks that it
+// audited the request, so a request refused before it is still recorded once.
+type denialState struct {
+	mu       sync.Mutex
+	username string
+	tokenID  string
+	audited  bool
+}
+
+type denialStateKey struct{}
+
+// noteAuditPrincipal tells DenialAuditMiddleware who made the request. A no-op
+// outside that middleware.
+func noteAuditPrincipal(ctx context.Context, p *auth.Principal) {
+	st, _ := ctx.Value(denialStateKey{}).(*denialState)
+	if st == nil || p == nil || p.IsAnonymous {
+		return
+	}
+
+	st.mu.Lock()
+	st.username, st.tokenID = p.Username, p.TokenID
+	st.mu.Unlock()
+}
+
+// markAudited records that AuditMiddleware wrote the request's event.
+func markAudited(ctx context.Context) {
+	if st, _ := ctx.Value(denialStateKey{}).(*denialState); st != nil {
+		st.mu.Lock()
+		st.audited = true
+		st.mu.Unlock()
+	}
+}
+
+// DenialAuditMiddleware records a mutating request refused with 401 or 403
+// before AuditMiddleware ran (RBAC denial, CSRF failure), which that
+// middleware sits too deep in the chain to see. Install it outside RBAC.
+func DenialAuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func(http.Handler) http.Handler {
+	var proxies *TrustedProxies
+	if len(trusted) > 0 {
+		proxies = trusted[0]
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+			default:
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			st := &denialState{}
+			r = r.WithContext(context.WithValue(r.Context(), denialStateKey{}, st))
+			wrapped := httpx.WrapStatus(w)
+			next.ServeHTTP(wrapped, r)
+
+			status := wrapped.Status()
+			if status != http.StatusUnauthorized && status != http.StatusForbidden {
+				return
+			}
+
+			st.mu.Lock()
+			username, audited := st.username, st.audited
+			st.mu.Unlock()
+
+			if audited {
+				return
+			}
+
+			actor := "anonymous"
+			if username != "" {
+				actor = username
+			}
+
+			clientIP := ClientIP(r, proxies)
+			path := r.URL.Path
+
+			if rctx := chi.RouteContext(r.Context()); rctx != nil {
+				if p := rctx.RoutePattern(); p != "" {
+					path = strings.TrimSuffix(p, "/*")
+				}
+			}
+
+			details, _ := json.Marshal(map[string]any{"method": r.Method, "path": path, "status": status, "error": true})
+
+			auditLogger.Log(r.Context(), audit.AuditEvent{
+				Action:    audit.ActionHTTPRequest,
+				Actor:     actor,
+				Details:   string(details),
+				IPAddress: &clientIP,
+				Status:    status,
+				Method:    r.Method,
+			})
+		})
+	}
 }

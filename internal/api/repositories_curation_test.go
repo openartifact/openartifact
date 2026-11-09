@@ -28,6 +28,14 @@ func TestCreateCurationMode(t *testing.T) {
 		{"proxy absent is off", `{"name":"p","format":"npm",` + proxy + `}`, http.StatusCreated, "off"},
 		{"proxy unknown mode", `{"name":"p","format":"npm",` + proxy + `,"curation_mode":"greylist"}`, http.StatusBadRequest, ""},
 		{"proxy empty mode", `{"name":"p","format":"npm",` + proxy + `,"curation_mode":""}`, http.StatusBadRequest, ""},
+		{
+			"terraform denylist rejected",
+			`{"name":"p","format":"terraform",` + proxy + `,"curation_mode":"denylist"}`,
+			http.StatusBadRequest,
+			"",
+		},
+		{"nix allowlist rejected", `{"name":"p","format":"nix",` + proxy + `,"curation_mode":"allowlist"}`, http.StatusBadRequest, ""},
+		{"terraform off", `{"name":"p","format":"terraform",` + proxy + `,"curation_mode":"off"}`, http.StatusCreated, "off"},
 		{"hosted rejected", `{"name":"h","format":"npm","curation_mode":"denylist"}`, http.StatusBadRequest, ""},
 		{"group rejected", `{"name":"g","format":"npm","repo_type":"group","curation_mode":"denylist"}`, http.StatusBadRequest, ""},
 	}

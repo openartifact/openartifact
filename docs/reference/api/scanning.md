@@ -205,6 +205,8 @@ List license scans for a repository
 | Name | In | Type | Required | Description |
 |---|---|---|---|---|
 | `name` | path | string | yes | - |
+| `page` | query | integer | no | Default: `1`. Minimum: 1. |
+| `per_page` | query | integer | no | Default: `50`. Minimum: 1. Maximum: 100. |
 
 **Responses**
 
@@ -219,7 +221,11 @@ Fields of the `200` response (`application/json`):
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| `has_more` | boolean | no | - |
+| `page` | integer | no | - |
+| `per_page` | integer | no | - |
 | `scans` | array of [LicenseScanResult](schemas.md#licensescanresult) | no | - |
+| `total` | integer | no | - |
 
 ### `GET /api/v1/repositories/{name}/license/scans/{id}`
 

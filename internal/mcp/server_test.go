@@ -170,10 +170,12 @@ func withPrincipal(next http.Handler) http.Handler {
 // the names in denied, reached through the real MCP HTTP handler.
 type fakeSearcher struct{}
 
-func (fakeSearcher) Search(context.Context, search.SearchFilter, int, int, map[uuid.UUID]struct{}) ([]search.SearchResult, error) {
+func (fakeSearcher) SearchPage(
+	context.Context, search.SearchFilter, search.PageOptions, int, int, map[uuid.UUID]struct{},
+) ([]search.SearchResult, int64, error) {
 	return []search.SearchResult{
 		{Repository: "web-npm", Format: "npm", Name: "left-pad", Version: "1.0.0", Path: "left-pad-1.0.0.tgz", SHA256: "aa", Size: 10},
-	}, nil
+	}, 1, nil
 }
 
 func newHarness(t *testing.T, db *mockDB, denied ...string) *harness {
@@ -833,6 +835,16 @@ func TestTriggerAIAnalysisValidatesFormat(t *testing.T) {
 		text, isErr := h.call(t, "trigger_ai_analysis", args(format))
 		if !isErr || !strings.Contains(text, "not enabled") {
 			t.Errorf("format %q: got (%q, %v), want to reach the AI-enabled check", format, text, isErr)
+		}
+	}
+}
+
+func TestSearchArtifactsRejectsEmptyQuery(t *testing.T) {
+	h := newHarness(t, fixtureDB())
+
+	for _, q := range []string{"", "   "} {
+		if _, isErr := h.call(t, "search_artifacts", map[string]any{"query": q}); !isErr {
+			t.Errorf("query %q: want tool error", q)
 		}
 	}
 }

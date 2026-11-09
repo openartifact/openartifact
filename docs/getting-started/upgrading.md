@@ -1198,7 +1198,7 @@ Migrations `041` (scan overview index, `CREATE INDEX CONCURRENTLY`), `051` (webh
 #### Webhook payload formats (migration `051`)
 
 - New per-webhook `payload_format`: `openartifact` (the default, body unchanged), `cloudevents`, `slack`, `teams` or `discord`; see [webhooks](../operations/webhooks.md#payload-formats). Existing webhooks keep `openartifact`, so nothing changes until a format is chosen. Migration `051` adds the column with a CHECK constraint (a metadata-only change on a small table).
-- **`artifact.downloaded` is no longer an accepted event.** It could be subscribed to but nothing ever emitted it; creating or updating a webhook with it now fails with 400, and migration `051` removes it from existing subscriptions. A webhook that subscribed only to it is left with no events and never fires. The `artifact.downloaded` action of the [audit log](../operations/monitoring.md) is unrelated and unchanged.
+- **`artifact.downloaded` is no longer an accepted event.** It could be subscribed to but nothing ever emitted it; creating or updating a webhook with it now fails with 400, and migration `051` removes it from existing subscriptions. A webhook that subscribed only to it is left with no events and never fires. The audit log does not record downloads either; use the download metrics.
 
 ### 0.6.0
 

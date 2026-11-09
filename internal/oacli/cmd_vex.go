@@ -163,7 +163,7 @@ func vexGet(client *Client, base string, q url.Values, output string) {
 		return
 	}
 
-	n, err := downloadTo(resp, output)
+	n, err := downloadTo(resp, output, 0o644)
 	if err != nil {
 		dief("%v", err)
 	}

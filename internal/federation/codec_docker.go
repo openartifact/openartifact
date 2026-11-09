@@ -144,19 +144,26 @@ func (dockerCodec) Usage(ctx context.Context, q Querier, repoID, key string, c *
 	}
 
 	// Layers and config the repository holds already are not new usage; the
-	// quota triggers count docker_blobs rows with count 0 (migration 061).
+	// quota triggers count docker_blobs rows with count 0 and the manifest row
+	// with count 1 (migration 061), one reservation per row.
 	held, err := dockerHeldDigests(ctx, q, repoID, d.Blobs)
 	if err != nil {
 		return nil, err
 	}
 
+	out := make([]Reservation, 0, len(d.Blobs)+1)
+
 	for _, b := range d.Blobs {
-		if !held[b.Digest] {
-			size += b.Size
+		if held[b.Digest] {
+			continue
 		}
+
+		held[b.Digest] = true
+
+		out = append(out, Reservation{Size: b.Size})
 	}
 
-	return []Reservation{{Size: size, Count: 1}}, nil
+	return append(out, Reservation{Size: size, Count: 1}), nil
 }
 
 func (dockerCodec) LockTables() []string { return []string{"docker_manifests", "docker_tags"} }
@@ -518,11 +525,18 @@ type dockerBlobRow struct {
 	Size   int64  `json:"size"`
 }
 
+// dockerSHA256Digest is the registry digest of content with the given sha256 hex.
+func dockerSHA256Digest(hex string) string { return "sha256:" + hex }
+
 // validateDockerManifest checks a unit against its key and resolves the blobs
 // it references to blobs.id.
 func validateDockerManifest(d *dockerManifestData, image, digest string, blobIDs map[string]string) (string, []dockerBlobRow, error) {
 	if d.Image != image || d.Digest != digest {
 		return "", nil, fmt.Errorf("%w: unit data does not match key %s", ErrInvalid, dockerManifestKey(image, digest))
+	}
+
+	if want := dockerSHA256Digest(d.BlobID); d.Digest != want {
+		return "", nil, fmt.Errorf("%w: manifest digest %s is not the sha256 of its body", ErrInvalid, d.Digest)
 	}
 
 	manifestBlob, ok := blobIDs[d.BlobID]
@@ -539,6 +553,10 @@ func validateDockerManifest(d *dockerManifestData, image, digest string, blobIDs
 	rows := make([]dockerBlobRow, 0, len(d.Blobs))
 
 	for _, b := range d.Blobs {
+		if b.Digest != dockerSHA256Digest(b.SHA256) {
+			return "", nil, fmt.Errorf("%w: blob digest %s is not the sha256 of its content", ErrInvalid, b.Digest)
+		}
+
 		id, ok := blobIDs[b.SHA256]
 		if !ok {
 			return "", nil, fmt.Errorf("%w: blob %s of unit %s was not provided", ErrInvalid, b.SHA256, dockerManifestKey(image, digest))
@@ -640,7 +658,7 @@ func writeDockerManifestRow(
 }
 
 // writeDockerBlobRows records the repository's docker_blobs rows exactly as
-// CreateDockerBlob does: an existing row keeps its size and is marked as just
+// CreateDockerBlob does: an existing row keeps its blob and size and is marked as just
 // used, so registry GC keeps it for its grace period.
 func writeDockerBlobRows(ctx context.Context, tx *sql.Tx, repoID string, rows []dockerBlobRow) error {
 	if len(rows) == 0 {
@@ -656,7 +674,7 @@ func writeDockerBlobRows(ctx context.Context, tx *sql.Tx, repoID string, rows []
 		`INSERT INTO docker_blobs (repository_id, digest, blob_id, size_bytes)
 		 SELECT $1::uuid, e->>'digest', (e->>'blob_id')::uuid, (e->>'size')::bigint
 		   FROM jsonb_array_elements($2::jsonb) e
-		 ON CONFLICT (repository_id, digest) DO UPDATE SET blob_id = EXCLUDED.blob_id, last_used_at = now(),
+		 ON CONFLICT (repository_id, digest) DO UPDATE SET last_used_at = now(),
 		     size_bytes = COALESCE(docker_blobs.size_bytes, EXCLUDED.size_bytes)`,
 		repoID, arg)
 	if err != nil {

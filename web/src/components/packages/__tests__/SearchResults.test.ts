@@ -93,7 +93,7 @@ describe('SearchResults: package mode', () => {
 
   it('pages through results 20 at a time and requests the next page from the server', async () => {
     const { wrapper, urls } = await mountSearch('/?q=lib', (url) => {
-      const page = Number(url.searchParams.get('page') ?? '1')
+      const page = Number(url.searchParams.get('offset') ?? '0') / 20 + 1
       return json({ packages: [group(`pkg-${page}`)], total: 45 })
     })
     expect(urls[0].searchParams.get('limit')).toBe('20')
@@ -102,7 +102,7 @@ describe('SearchResults: package mode', () => {
     const next = wrapper.findAll('button').find((b) => b.text() === 'Next')!
     await next.trigger('click')
     await flushPromises()
-    expect(urls[urls.length - 1].searchParams.get('page')).toBe('2')
+    expect(urls[urls.length - 1].searchParams.get('offset')).toBe('20')
     expect(wrapper.text()).toContain('pkg-2')
     expect(wrapper.text()).toContain('Page 2 of 3')
   })

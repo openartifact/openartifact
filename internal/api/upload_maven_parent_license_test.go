@@ -213,7 +213,13 @@ func (d *mavenRepoDB) CreateLicenseScanResult(_ context.Context, r *models.Licen
 	return nil
 }
 
-func (d *mavenRepoDB) ListLicenseScanResults(_ context.Context, repoID string) ([]*models.LicenseScanResult, error) {
+func (d *mavenRepoDB) ListLicenseScanResultsPage(_ context.Context, repoID string, _, _ int) ([]*models.LicenseScanResult, int, error) {
+	out, err := d.ListUnresolvedLicenseScanResults(context.Background(), repoID, 0)
+
+	return out, len(out), err
+}
+
+func (d *mavenRepoDB) ListUnresolvedLicenseScanResults(_ context.Context, repoID string, _ int) ([]*models.LicenseScanResult, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 

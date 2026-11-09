@@ -226,11 +226,11 @@ func multipartStream(file io.Reader, fileName string) (io.ReadCloser, string) {
 // downloadTo streams the response body into a temp file beside dest and
 // renames it onto dest only after a complete, synced write.
 //
-// The file is created with the owner-only mode of os.CreateTemp, so exports and
-// private artifacts are never wider than 0600. Replacing an existing regular
-// file keeps that file's mode. A device or pipe (/dev/null, /dev/stdout, a
-// FIFO) is written to directly: renaming a temp file over it would replace it.
-func downloadTo(resp *http.Response, dest string) (int64, error) {
+// A new file gets mode (0600 for backups and audit exports, 0644 otherwise).
+// Replacing an existing regular file keeps that file's mode. A device or pipe
+// (/dev/null, /dev/stdout, a FIFO) is written to directly: renaming a temp
+// file over it would replace it.
+func downloadTo(resp *http.Response, dest string, mode os.FileMode) (int64, error) {
 	fi, statErr := os.Stat(dest)
 	if statErr == nil && !fi.Mode().IsRegular() {
 		return copyToSpecial(resp, dest)
@@ -259,10 +259,13 @@ func downloadTo(resp *http.Response, dest string) (int64, error) {
 		return fail(fmt.Errorf("%w: got %d of %d bytes", io.ErrUnexpectedEOF, n, resp.ContentLength))
 	}
 
+	perm := mode.Perm()
 	if statErr == nil {
-		if err := f.Chmod(fi.Mode().Perm()); err != nil {
-			return fail(fmt.Errorf("chmod: %w", err))
-		}
+		perm = fi.Mode().Perm()
+	}
+
+	if err := f.Chmod(perm); err != nil {
+		return fail(fmt.Errorf("chmod: %w", err))
 	}
 
 	if err := f.Sync(); err != nil {

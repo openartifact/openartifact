@@ -404,7 +404,9 @@ func expandUploadFiles(patterns []string) ([]string, error) {
 	}
 
 	for _, pat := range patterns {
-		if !strings.ContainsAny(pat, "*?[") {
+		// A file that literally exists wins over the glob reading of its name
+		// (build[1].tar.gz), so such a file is never silently skipped.
+		if fi, err := os.Stat(pat); !strings.ContainsAny(pat, "*?[") || (err == nil && fi.Mode().IsRegular()) {
 			info, err := os.Stat(pat)
 			if err != nil {
 				return nil, err

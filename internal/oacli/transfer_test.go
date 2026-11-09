@@ -59,7 +59,7 @@ func TestDownloadToAtomic(t *testing.T) {
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		n, err := downloadTo(resp, dest)
+		n, err := downloadTo(resp, dest, 0o600)
 		if err != nil || n != int64(len(payload)) {
 			t.Fatalf("n=%d err=%v", n, err)
 		}
@@ -93,7 +93,7 @@ func TestDownloadToAtomic(t *testing.T) {
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		if _, err := downloadTo(resp, dest); err == nil {
+		if _, err := downloadTo(resp, dest, 0o600); err == nil {
 			t.Fatal("expected error for truncated body")
 		}
 
@@ -119,7 +119,7 @@ func TestDownloadToAtomic(t *testing.T) {
 			Body:          io.NopCloser(&failingReader{data: []byte("partial")}),
 		}
 
-		if _, err := downloadTo(resp, dest); !errors.Is(err, errBoom) {
+		if _, err := downloadTo(resp, dest, 0o600); !errors.Is(err, errBoom) {
 			t.Fatalf("err = %v", err)
 		}
 

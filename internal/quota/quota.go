@@ -88,6 +88,32 @@ func ChargeN(ctx context.Context, db ChargeNStore, repoID string, size int64, co
 	return nil
 }
 
+// ConsumeNStore is the part of the database ConsumeN needs.
+type ConsumeNStore interface {
+	ConsumePendingUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+}
+
+// ConsumeN marks a reservation made with EnforceN as backed by committed rows
+// whose insert could not consume it itself (the rows were written before the
+// reservation was made): the usage stays counted, only the reservation's
+// pending ledger entry goes, so the reconcile does not count it twice. Like
+// ReleaseN it is detached from ctx cancellation and time-bounded.
+func ConsumeN(ctx context.Context, db ConsumeNStore, repoID string, size int64, count int) error {
+	size, count = max(size, 0), max(count, 0)
+	if size == 0 && count == 0 {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+	defer cancel()
+
+	if err := db.ConsumePendingUsage(ctx, repoID, size, count); err != nil {
+		return fmt.Errorf("consume quota reservation: %w", err)
+	}
+
+	return nil
+}
+
 // ReleaseStore is the part of the database Release needs.
 type ReleaseStore interface {
 	ReleaseNStore

@@ -209,24 +209,33 @@ const repoColumns = computed<ListColumn[]>(() => [
   { key: 'created', label: t('projects.repos.column.created'), dropOrder: 1 },
 ])
 
+let reposGeneration = 0
+let accessGeneration = 0
+
 async function loadRepos(): Promise<void> {
+  const generation = ++reposGeneration
   try {
     const res = await listProjectRepositories(projectName.value, { page: repoPage.value, limit: PAGE_SIZE })
+    if (generation !== reposGeneration) return
     repos.value = res.repositories
     repoTotal.value = res.total
     reposError.value = ''
   } catch {
+    if (generation !== reposGeneration) return
     repos.value = []
     reposError.value = t('projects.repos.loadFailed')
   }
 }
 
 async function loadAccess(): Promise<void> {
+  const generation = ++accessGeneration
   try {
     const [m, g] = await Promise.all([listProjectMembers(projectName.value), listProjectGroups(projectName.value)])
+    if (generation !== accessGeneration) return
     members.value = m
     groups.value = g
   } catch {
+    if (generation !== accessGeneration) return
     members.value = []
     groups.value = []
   }

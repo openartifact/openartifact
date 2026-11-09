@@ -10,13 +10,16 @@ import (
 	"unicode"
 
 	"github.com/openartifact/openartifact/internal/repotype"
+	"github.com/openartifact/openartifact/pkg/gemversion"
 	"github.com/openartifact/openartifact/pkg/maven"
+	"github.com/openartifact/openartifact/pkg/nuget"
+	"github.com/openartifact/openartifact/pkg/pyversion"
 )
 
 // versionAtLeast reports whether version >= fixed. ok is false when the two
 // cannot be compared reliably (non-numeric leading component), in which case
-// callers must not claim the vulnerability is fixed. Maven-style formats use
-// the Maven comparator; everything else compares dot/dash separated tokens
+// callers must not claim the vulnerability is fixed. Formats with their own
+// ordering (maven, pypi, gem, nuget, deb, rpm, pacman) use it; everything else compares dot/dash separated tokens
 // numerically, with a trailing alphabetic tail ("rc1", "beta") sorting before
 // the bare release.
 func versionAtLeast(format, version, fixed string) (bool, bool) {
@@ -25,8 +28,41 @@ func versionAtLeast(format, version, fixed string) (bool, bool) {
 		return false, false
 	}
 
-	if s, _ := repotype.Lookup(strings.ToLower(format)); s.Versioning == repotype.VersionMaven {
+	name := strings.ToLower(format)
+	s, _ := repotype.Lookup(name)
+
+	switch {
+	case s.Versioning == repotype.VersionMaven:
 		return maven.CompareVersions(version, fixed) >= 0, true
+	case s.Versioning == repotype.VersionPEP440:
+		if !pyversion.Valid(version) || !pyversion.Valid(fixed) {
+			return false, false
+		}
+
+		return pyversion.Compare(version, fixed) >= 0, true
+	case s.Versioning == repotype.VersionGem:
+		if !gemValid(version) || !gemValid(fixed) {
+			return false, false
+		}
+
+		return gemversion.Compare(version, fixed) >= 0, true
+	case name == "nuget":
+		if _, ok := nuget.Normalize(version); !ok {
+			return false, false
+		}
+
+		if _, ok := nuget.Normalize(fixed); !ok {
+			return false, false
+		}
+
+		return nuget.CompareStrings(version, fixed) >= 0, true
+	case name == "deb":
+		return dpkgCompare(version, fixed) >= 0, true
+	case name == "rpm", name == "pacman":
+		return rpmCompare(version, fixed) >= 0, true
+	case name == "apk":
+		// apk orders "_rc"/"_p" suffixes and "-rN" releases its own way.
+		return false, false
 	}
 
 	a, aok := versionTokens(version)
@@ -164,9 +200,12 @@ func tailOrder(rest []vtoken) int {
 }
 
 func cmpInt(a, b int) int {
-	if a < b {
+	switch {
+	case a < b:
 		return -1
+	case a > b:
+		return 1
 	}
 
-	return 1
+	return 0
 }

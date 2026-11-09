@@ -7,6 +7,7 @@ package oacli
 import (
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -328,7 +329,7 @@ func sbomDownloadCmd(a *app) *cobra.Command {
 			path += "?attest=" + url.QueryEscape(*attest)
 		}
 
-		downloadFile(a.client, path, args[2])
+		downloadFile(a.client, path, args[2], 0o644)
 	}
 
 	return cmd
@@ -478,7 +479,7 @@ func newLicenseCmd(a *app) *cobra.Command {
 		"License scanning",
 		scan,
 		leafCmd("list <repo>", "List license scans", 1, 1, repos, func(_ *cobra.Command, args []string) {
-			listGeneric(a.client, repoPath(args[0], "license/scans"), "scans",
+			printTable(fetchAllPages(a.client, repoPath(args[0], "license/scans"), "scans", "per_page", 100),
 				[]string{"ID", "ARTIFACT", "STATUS", "LICENSES", "CREATED"},
 				[]string{"id", "artifact_id", "scan_status", "licenses", "created_at"}, a.outFmt)
 		}),
@@ -751,6 +752,10 @@ func quotaSetCmd(a *app) *cobra.Command {
 				dief("invalid unit: %s (use MB, GB, or TB)", *unit)
 			}
 
+			if *limit < 0 || *limit > math.MaxInt64/mult {
+				dief("--limit %d %s is out of range", *limit, strings.ToUpper(*unit))
+			}
+
 			body["max_size_bytes"] = *limit * mult
 		}
 
@@ -853,7 +858,7 @@ func newDeltaCmd(a *app) *cobra.Command {
 
 		q := url.Values{}
 		q.Set("from", *fromSHA)
-		downloadFile(a.client, repoPath(args[0], "packages/"+escape(args[1])+"/delta?"+q.Encode()), args[2])
+		downloadFile(a.client, repoPath(args[0], "packages/"+escape(args[1])+"/delta?"+q.Encode()), args[2], 0o644)
 	}
 
 	return parentCmd(

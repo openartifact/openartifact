@@ -406,7 +406,7 @@ func (i *Importer) removeStale(ctx context.Context, ecosystem string, stale map[
 // applyArchive reads the records of the archive modified at or after since and
 // stores them in batches. It takes the id of every record it meets, parsed or
 // not, off stale, and returns the new high-water mark and the number of
-// records the archive lists.
+// records that parsed.
 func (i *Importer) applyArchive(
 	ctx context.Context, archive string, since *time.Time, res *Result, stale map[string]struct{},
 ) (*time.Time, int, error) {
@@ -418,7 +418,7 @@ func (i *Importer) applyArchive(
 
 	highWater := since
 	batch := make([]models.OSVAdvisory, 0, batchSize)
-	read := 0
+	read, seen := 0, 0
 
 	var decompressed int64
 
@@ -442,7 +442,7 @@ func (i *Importer) applyArchive(
 			continue
 		}
 
-		if read++; read > maxRecords {
+		if seen++; seen > maxRecords {
 			return nil, 0, fmt.Errorf("%w: more than %d records", ErrArchiveTooLarge, maxRecords)
 		}
 
@@ -458,7 +458,9 @@ func (i *Importer) applyArchive(
 
 		if err != nil {
 			// The id of a record that does not parse is its file name, which OSV
-			// sets to "<id>.json": it must not count as deleted.
+			// sets to "<id>.json": it must not count as deleted. It is not
+			// counted as listed either, so an archive of only corrupt records
+			// never prunes.
 			delete(stale, strings.TrimSuffix(path.Base(f.Name), ".json"))
 
 			if res.Skipped++; res.Skipped <= maxLoggedSkips {
@@ -467,6 +469,8 @@ func (i *Importer) applyArchive(
 
 			continue
 		}
+
+		read++
 
 		delete(stale, adv.ID)
 

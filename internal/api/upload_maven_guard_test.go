@@ -98,3 +98,27 @@ func TestMavenDelete_GuardLookupFailureIsInternalError(t *testing.T) {
 		t.Errorf("body = %q, want %q", body, "internal error")
 	}
 }
+
+func TestMavenPut_ArtifactLevelMetadataAndChecksumsAreAcknowledged(t *testing.T) {
+	log, err := logger.New("error", "json", "stderr")
+	if err != nil {
+		t.Fatalf("logger: %v", err)
+	}
+
+	router := chi.NewRouter()
+	NewMavenUploadHandler(log, &mavenGuardDB{}, nil, nil).Register(router)
+
+	for _, path := range []string{
+		"/repos/maven/releases/junit/junit/maven-metadata.xml",
+		"/repos/maven/releases/junit/junit/maven-metadata.xml.sha1",
+		"/repos/maven/releases/junit/junit/maven-metadata.xml.md5",
+		"/repos/maven/releases/com/acme/app/maven-metadata.xml",
+	} {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodPut, path, strings.NewReader("x")))
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("PUT %s = %d, want 200; body %s", path, rec.Code, rec.Body.String())
+		}
+	}
+}

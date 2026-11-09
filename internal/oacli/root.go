@@ -198,7 +198,9 @@ func (a *app) preRun(cmd *cobra.Command, _ []string) error {
 		// A corrupt config must not block the commands that repair it
 		// (`auth login` rewrites it); everything else needs it.
 		if !repairsConfig(cmd) {
-			return fmt.Errorf("loading config: %w (fix or delete %s; `oa auth login` rewrites it)", err, configPath())
+			path, _ := configPath()
+
+			return fmt.Errorf("loading config: %w (fix or delete %s; `oa auth login` rewrites it)", err, path)
 		}
 
 		cfg = &Config{Server: defaultServer}

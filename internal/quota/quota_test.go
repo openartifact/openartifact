@@ -146,3 +146,60 @@ func TestReleaseNIsBounded(t *testing.T) {
 		t.Fatal("release context has no deadline")
 	}
 }
+
+type consumeMockDB struct {
+	calls     int
+	size      int64
+	count     int
+	liveCtx   bool
+	returnErr error
+}
+
+func (m *consumeMockDB) ConsumePendingUsage(ctx context.Context, _ string, size int64, count int) error {
+	m.calls++
+	m.size, m.count = size, count
+	m.liveCtx = ctx.Err() == nil
+
+	return m.returnErr
+}
+
+func TestConsumeN(t *testing.T) {
+	tests := []struct {
+		name      string
+		size      int64
+		count     int
+		err       error
+		wantCalls int
+		wantSize  int64
+		wantCount int
+		wantErr   bool
+	}{
+		{name: "consumes the reservation", size: 100, count: 2, wantCalls: 1, wantSize: 100, wantCount: 2},
+		{name: "nothing reserved is a no-op", wantCalls: 0},
+		{name: "negative values clamp to zero", size: -5, count: -1, wantCalls: 0},
+		{name: "store error surfaces", size: 1, count: 1, err: errors.New("boom"), wantCalls: 1, wantSize: 1, wantCount: 1, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := &consumeMockDB{returnErr: tt.err}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel() // a hung-up client must not stop the consume
+
+			err := ConsumeN(ctx, db, "repo", tt.size, tt.count)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ConsumeN err = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if db.calls != tt.wantCalls || db.size != tt.wantSize || db.count != tt.wantCount {
+				t.Fatalf("store got calls=%d size=%d count=%d, want %d/%d/%d",
+					db.calls, db.size, db.count, tt.wantCalls, tt.wantSize, tt.wantCount)
+			}
+
+			if db.calls > 0 && !db.liveCtx {
+				t.Fatal("store context was cancelled with the request")
+			}
+		})
+	}
+}

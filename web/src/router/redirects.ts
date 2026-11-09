@@ -80,9 +80,15 @@ const legacyArtifactRedirect: NavigationGuard = (to) => {
   let pkg = String(to.params.pkg)
   let legacy = false
   const m = LEGACY_ARTIFACT.exec(to.path)
-  if (m && LEGACY_FORMAT_IDS.has(decodeURIComponent(m[1]))) {
-    pkg = decodeURIComponent(m[2])
-    legacy = true
+  try {
+    if (m && LEGACY_FORMAT_IDS.has(decodeURIComponent(m[1]))) {
+      pkg = decodeURIComponent(m[2])
+      legacy = true
+    }
+  } catch (err) {
+    // A malformed escape (`%zz`) is not a legacy URL: let the route render its own not-found.
+    if (err instanceof URIError) return true
+    throw err
   }
   const version = typeof to.query.version === 'string' && to.query.version !== '' ? to.query.version : undefined
   if (!legacy && version === undefined) return true

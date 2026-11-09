@@ -10800,6 +10800,25 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
           }
         ],
         "responses": {
@@ -10815,6 +10834,18 @@
                       "items": {
                         "$ref": "#/components/schemas/LicenseScanResult"
                       }
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "per_page": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "has_more": {
+                      "type": "boolean"
                     }
                   }
                 }

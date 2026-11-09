@@ -9,7 +9,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -36,9 +35,10 @@ func (p *LicenseStore) SetLicenseScanQuarantine(ctx context.Context, repoID, id 
 
 // CreateLicenseScanResult creates a new license scan result (UPSERT).
 func (p *LicenseStore) CreateLicenseScanResult(ctx context.Context, result *models.LicenseScanResult) error {
-	var scannedAt time.Time
+	// A nil ScannedAt (a job still scanning) is stored as NULL, not the zero time.
+	scannedAt := sql.NullTime{}
 	if result.ScannedAt != nil {
-		scannedAt = *result.ScannedAt
+		scannedAt = sql.NullTime{Time: *result.ScannedAt, Valid: true}
 	}
 
 	err := p.db.QueryRowContext(ctx, `
@@ -107,6 +107,75 @@ func (p *LicenseStore) ListLicenseScanResults(ctx context.Context, repoID string
 		JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
 		WHERE sj.scan_type = 'license' AND ref.repository_id = $1
 		ORDER BY sj.created_at DESC`, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list license scan results: %w", err)
+	}
+	defer rows.Close()
+
+	var results []*models.LicenseScanResult
+
+	for rows.Next() {
+		result, err := scanLicenseResult(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan license scan result: %w", err)
+		}
+
+		results = append(results, result)
+	}
+
+	return results, rows.Err()
+}
+
+// ListLicenseScanResultsPage lists one page of a repository's license scan
+// results, newest first, with the total number of results.
+func (p *LicenseStore) ListLicenseScanResultsPage(
+	ctx context.Context, repoID string, limit, offset int,
+) ([]*models.LicenseScanResult, int, error) {
+	var total int
+
+	err := p.db.QueryRowContext(ctx, `
+		SELECT count(*)
+		FROM license_results lr
+		JOIN scan_jobs sj ON sj.id = lr.scan_job_id
+		JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
+		WHERE sj.scan_type = 'license' AND ref.repository_id = $1`, repoID).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to count license scan results: %w", err)
+	}
+
+	results, err := p.queryLicenseResults(ctx, `
+		SELECT `+licenseResultColumns+`
+		FROM license_results lr
+		JOIN scan_jobs sj ON sj.id = lr.scan_job_id
+		JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
+		WHERE sj.scan_type = 'license' AND ref.repository_id = $1
+		ORDER BY sj.created_at DESC, lr.id
+		LIMIT $2 OFFSET $3`, repoID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return results, total, nil
+}
+
+// ListUnresolvedLicenseScanResults lists up to limit completed license scan
+// results of a repository that found no license, newest first.
+func (p *LicenseStore) ListUnresolvedLicenseScanResults(
+	ctx context.Context, repoID string, limit int,
+) ([]*models.LicenseScanResult, error) {
+	return p.queryLicenseResults(ctx, `
+		SELECT `+licenseResultColumns+`
+		FROM license_results lr
+		JOIN scan_jobs sj ON sj.id = lr.scan_job_id
+		JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
+		WHERE sj.scan_type = 'license' AND ref.repository_id = $1
+		  AND sj.status = 'completed' AND cardinality(lr.licenses) = 0
+		ORDER BY sj.created_at DESC, lr.id
+		LIMIT $2`, repoID, limit)
+}
+
+func (p *LicenseStore) queryLicenseResults(ctx context.Context, query string, args ...any) ([]*models.LicenseScanResult, error) {
+	rows, err := p.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list license scan results: %w", err)
 	}

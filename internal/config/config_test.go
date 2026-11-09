@@ -1348,3 +1348,40 @@ func TestProxyGoSumdbHostsConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestValidate_MCPHTTPPath(t *testing.T) {
+	tests := []struct {
+		path    string
+		wantErr bool
+	}{
+		{"/mcp", false},
+		{"/tools/mcp", false},
+		{"mcp", true},
+		{"", true},
+		{"/", true},
+		{"/mcp/", true},
+		{"/api", true},
+		{"/api/v1/mcp", true},
+		{"/repos/x", true},
+		{"/v2", true},
+		{"/federation/x", true},
+		{"/.well-known/mcp", true},
+		{"/apix", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			cfg, err := Load("")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			cfg.MCP.Enabled = true
+			cfg.MCP.HTTPPath = tt.path
+
+			if err := cfg.validateMCP(); (err != nil) != tt.wantErr {
+				t.Fatalf("validateMCP(%q) error = %v, wantErr %v", tt.path, err, tt.wantErr)
+			}
+		})
+	}
+}

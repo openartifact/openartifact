@@ -76,12 +76,13 @@ type BlobReader interface {
 // ArtifactSearcher runs the cross-repository artifact search restricted to the
 // given readable repositories.
 type ArtifactSearcher interface {
-	Search(
+	SearchPage(
 		ctx context.Context,
 		filter search.SearchFilter,
+		opts search.PageOptions,
 		limit, offset int,
 		readableRepos map[uuid.UUID]struct{},
-	) ([]search.SearchResult, error)
+	) ([]search.SearchResult, int64, error)
 }
 
 const (

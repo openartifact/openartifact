@@ -5276,7 +5276,10 @@ export type GetApiV1RepositoriesByNameLicenseScansData = {
     path: {
         name: string;
     };
-    query?: never;
+    query?: {
+        page?: number;
+        per_page?: number;
+    };
     url: '/api/v1/repositories/{name}/license/scans';
 };
 
@@ -5303,6 +5306,10 @@ export type GetApiV1RepositoriesByNameLicenseScansResponses = {
      */
     200: {
         scans?: Array<LicenseScanResult>;
+        page?: number;
+        per_page?: number;
+        total?: number;
+        has_more?: boolean;
     };
 };
 

@@ -271,7 +271,15 @@ func (s *Service) renewDigestEntry(ctx context.Context, repo *models.Repository,
 		return
 	}
 
-	renewed := *entry
+	// Renew only a row that still exists with the same blob: the entry was
+	// read before the write, and a blind upsert would resurrect a row a purge
+	// or eviction deleted meanwhile.
+	current, err := s.db.GetProxyCacheEntry(ctx, repo.ID, entry.CacheKey)
+	if err != nil || current == nil || current.BlobKey != entry.BlobKey {
+		return
+	}
+
+	renewed := *current
 	renewed.ExpiresAt = time.Now().Add(ttl)
 
 	if err := s.db.UpsertProxyCacheEntry(ctx, &renewed); err != nil {

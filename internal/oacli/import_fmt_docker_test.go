@@ -722,6 +722,11 @@ func TestImportDockerIdentityPrefersTheComponent(t *testing.T) {
 		t.Fatalf("identity = %+v, %v", id, ok)
 	}
 
+	a.Component = sourceComponent{Name: "smoke/../evil", Version: "1.0"}
+	if id, ok := dockerIdentity(a); !ok || id != (dockerTagID{Image: "smoke/hello", Tag: "1.0"}) {
+		t.Fatalf("identity with a traversing component = %+v, %v", id, ok)
+	}
+
 	a.Component = sourceComponent{}
 	if id, ok := dockerIdentity(a); !ok || id != (dockerTagID{Image: "smoke/hello", Tag: "1.0"}) {
 		t.Fatalf("identity without a component = %+v, %v", id, ok)

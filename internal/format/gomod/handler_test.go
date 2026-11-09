@@ -114,3 +114,40 @@ func TestParseModuleZip(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckModuleZipEntriesCapsUncompressedSize(t *testing.T) {
+	const prefix = "github.com/foo/bar@v1.0.0/"
+
+	var buf bytes.Buffer
+
+	zw := zip.NewWriter(&buf)
+
+	for _, name := range []string{"a", "b"} {
+		w, err := zw.CreateHeader(&zip.FileHeader{Name: prefix + name, Method: zip.Deflate})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Zeros deflate to almost nothing; 300 MiB each exceeds the 500 MiB cap together.
+		chunk := make([]byte, 1<<20)
+		for range 300 {
+			if _, err := w.Write(chunk); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	data := buf.Bytes()
+
+	if err := checkModuleZipEntries(bytes.NewReader(data), int64(len(data)), prefix); !errors.Is(err, errZipTooLarge) {
+		t.Errorf("err = %v, want errZipTooLarge", err)
+	}
+
+	if err := checkModuleZipEntries(bytes.NewReader(data), int64(len(data)), "other@v1.0.0/"); !errors.Is(err, errEntryOutsideModule) {
+		t.Errorf("err = %v, want errEntryOutsideModule", err)
+	}
+}

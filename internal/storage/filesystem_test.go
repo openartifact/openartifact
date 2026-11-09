@@ -357,6 +357,27 @@ func putLegacyAliased(t *testing.T, store *FilesystemStore, id string, data []by
 	}
 }
 
+// waitAliasIndex blocks until the background alias scan has landed.
+func waitAliasIndex(t *testing.T, store *FilesystemStore) {
+	t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+
+	for time.Now().Before(deadline) {
+		store.aliases.mu.Lock()
+		built := store.aliases.built
+		store.aliases.mu.Unlock()
+
+		if built {
+			return
+		}
+
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	t.Fatal("alias index was not built in time")
+}
+
 func TestFilesystem_ExistsBySHA256_AliasIndex(t *testing.T) {
 	store := newTestFilesystemStore(t)
 	ctx := context.Background()
@@ -365,7 +386,14 @@ func TestFilesystem_ExistsBySHA256_AliasIndex(t *testing.T) {
 	dataA := []byte("alias blob A")
 	putLegacyAliased(t, store, sha64, dataA)
 
-	// First lookup builds the index from the sidecars.
+	// First lookup starts the background build and reports a miss; the index
+	// answers once the walk has finished.
+	if _, ok, err := store.ExistsBySHA256(ctx, sha256Hex(dataA)); err != nil || ok {
+		t.Fatalf("lookup before build = (%v, %v), want a miss", ok, err)
+	}
+
+	waitAliasIndex(t, store)
+
 	id, ok, err := store.ExistsBySHA256(ctx, sha256Hex(dataA))
 	if err != nil || !ok || id != sha64 {
 		t.Fatalf("lookup A = (%q, %v, %v), want (%q, true, nil)", id, ok, err, sha64)
@@ -387,6 +415,9 @@ func TestFilesystem_ExistsBySHA256_AliasIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewFilesystemStore: %v", err)
 	}
+
+	fresh.ExistsBySHA256(ctx, sha256Hex(dataA))
+	waitAliasIndex(t, fresh)
 
 	if id, ok, err = fresh.ExistsBySHA256(ctx, sha256Hex(dataA)); err != nil || !ok || id != sha64 {
 		t.Fatalf("fresh lookup A = (%q, %v, %v)", id, ok, err)

@@ -10,6 +10,8 @@ import (
 	"path"
 	"sort"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
 // A docker repository is not a set of files: a tag names a manifest (or an index
@@ -103,7 +105,10 @@ func dockerIdentity(a sourceAsset) (dockerTagID, bool) {
 		return dockerTagID{}, false
 	}
 
-	if c, ok := dockerTagOf(a.Component.Name, a.Component.Version); ok {
+	// Component names come from the source server; one that is not a plain
+	// image path and tag segment must not reach the destination URL.
+	if c, ok := dockerTagOf(a.Component.Name, a.Component.Version); ok &&
+		pathseg.Path(c.Image) && pathseg.Name(c.Tag) {
 		return c, true
 	}
 

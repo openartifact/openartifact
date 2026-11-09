@@ -232,7 +232,7 @@ func (j *groupJob) loadHostedDeb(ctx context.Context) (map[string]map[string]*de
 
 // buildDeb generates every distribution of the group: the hosted members' ones
 // and the extra ones (named by an earlier request) that some member has.
-func (j *groupJob) buildDeb(ctx context.Context, extra []string) error {
+func (j *groupJob) buildDeb(ctx context.Context, extra, known []string) error {
 	j.hostedNames = make(map[string]struct{})
 
 	hosted, err := j.loadHostedDeb(ctx)
@@ -265,6 +265,8 @@ func (j *groupJob) buildDeb(ctx context.Context, extra []string) error {
 
 	sort.Strings(ordered)
 
+	var unfound []string
+
 	for _, dist := range ordered {
 		found, err := j.buildDebDist(ctx, dist, hosted)
 		if err != nil {
@@ -273,6 +275,19 @@ func (j *groupJob) buildDeb(ctx context.Context, extra []string) error {
 
 		if found {
 			j.dists = append(j.dists, dist)
+		} else {
+			unfound = append(unfound, dist)
+		}
+	}
+
+	// A distribution whose proxy members could not be read keeps its previous
+	// files for the retry.
+	if j.partial {
+		for _, dist := range unfound {
+			if slices.Contains(known, dist) {
+				j.dists = append(j.dists, dist)
+				j.keepDirs = append(j.keepDirs, "dists/"+dist+"/")
+			}
 		}
 	}
 
