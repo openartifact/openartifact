@@ -42,7 +42,7 @@ type LicenseStore interface {
 	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
 	ListLicenseScanResultsPage(ctx context.Context, repoID string, limit, offset int) ([]*models.LicenseScanResult, int, error)
 	ListUnresolvedLicenseScanResults(ctx context.Context, repoID string, limit int) ([]*models.LicenseScanResult, error)
-	SearchByProperty(ctx context.Context, repoID string, key string, value string) ([]string, error)
+	SearchByProperty(ctx context.Context, repoID string, key string, value string) ([]models.PropertyMatch, error)
 	SetArtifactProperties(ctx context.Context, repoID string, artifactID string, props map[string]string, replace bool) error
 	SetLicenseScanQuarantine(ctx context.Context, repoID string, id string, quarantined bool) error
 	UpdateLicensePolicy(ctx context.Context, policy *models.LicensePolicy) error

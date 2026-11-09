@@ -750,7 +750,7 @@ func (m *provMockDB) DeleteArtifactProperty(_ context.Context, _, _, _ string) e
 func (m *provMockDB) ListArtifactProperties(_ context.Context, _, _ string) (map[string]string, error) {
 	return nil, nil
 }
-func (m *provMockDB) SearchByProperty(_ context.Context, _, _, _ string) ([]string, error) {
+func (m *provMockDB) SearchByProperty(_ context.Context, _, _, _ string) ([]models.PropertyMatch, error) {
 	return nil, nil
 }
 

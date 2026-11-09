@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
+	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 // PropertyStore owns artifact properties.
@@ -47,9 +48,11 @@ func (p *PropertyStore) ListArtifactProperties(ctx context.Context, repoID, arti
 	return result, nil
 }
 
-// SearchByProperty searches for artifacts by property key and value.
-func (p *PropertyStore) SearchByProperty(ctx context.Context, repoID, key, value string) ([]string, error) {
-	result, err := p.q.SearchByProperty(ctx, dbsqlc.SearchByPropertyParams{
+// SearchByProperty returns the artifacts of a repository whose property key equals value,
+// sorted by id, each resolved to the stored file it names when there is one (see
+// models.PropertyMatch).
+func (p *PropertyStore) SearchByProperty(ctx context.Context, repoID, key, value string) ([]models.PropertyMatch, error) {
+	rows, err := p.q.SearchByProperty(ctx, dbsqlc.SearchByPropertyParams{
 		RepositoryID: repoID,
 		Key:          key,
 		Value:        value,
@@ -58,7 +61,17 @@ func (p *PropertyStore) SearchByProperty(ctx context.Context, repoID, key, value
 		return nil, fmt.Errorf("failed to search by property: %w", err)
 	}
 
-	return result, nil
+	out := make([]models.PropertyMatch, 0, len(rows))
+	for _, r := range rows {
+		m := models.PropertyMatch{ArtifactID: r.ArtifactID}
+		if r.PackageName != nil {
+			m.Name, m.Version, m.Format = r.PackageName, r.PackageVersion, r.PackageFormat
+		}
+
+		out = append(out, m)
+	}
+
+	return out, nil
 }
 
 const upsertArtifactPropertySQL = `

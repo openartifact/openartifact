@@ -1436,6 +1436,23 @@ func TestContractRepoFeatures(t *testing.T) {
 			out: "a2",
 		},
 		{
+			name: "props search prints the name an id resolves to",
+			args: []string{"props", "search", "r", "status", "approved"},
+			replies: map[string]reply{"GET /api/v1/repositories/{name}/artifacts/search": ok(
+				`{"artifact_ids":["f1","build-482"],"artifacts":[` +
+					`{"artifact_id":"f1","name":"landing/v2/index.html","version":"","format":"raw"},` +
+					`{"artifact_id":"build-482"}]}`,
+			)},
+			calls: []call{
+				{
+					method:  "GET",
+					pattern: "/api/v1/repositories/{name}/artifacts/search",
+					query:   map[string]string{"key": "status", "value": "approved"},
+				},
+			},
+			out: "landing/v2/index.html",
+		},
+		{
 			name: "delta list reads data",
 			args: []string{"delta", "list", "r", "p1"},
 			replies: map[string]reply{

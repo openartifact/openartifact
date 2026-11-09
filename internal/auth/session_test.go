@@ -521,7 +521,7 @@ func (m *sessionMockDB) DeleteArtifactProperty(_ context.Context, _, _, _ string
 func (m *sessionMockDB) ListArtifactProperties(_ context.Context, _, _ string) (map[string]string, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) SearchByProperty(_ context.Context, _, _, _ string) ([]string, error) {
+func (m *sessionMockDB) SearchByProperty(_ context.Context, _, _, _ string) ([]models.PropertyMatch, error) {
 	return nil, nil
 }
 

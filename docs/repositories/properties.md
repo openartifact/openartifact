@@ -10,7 +10,7 @@ Properties are free-form string key/value pairs attached to an artifact. They ca
 
 ## Model
 
-- A property belongs to one artifact of one repository. The artifact is identified by `artifact_id`, a string of at most 1024 bytes (valid UTF-8, no control characters), URL-escaped in the path. The web UI and `oa import` use the package's id as shown in the package list (the `id` of the package, or the id returned by an upload: the `X-OA-Artifact-Id` response header on Maven `PUT`, `id` in the JSON body of Debian, raw and RPM uploads). The server does not check that the id names an existing package; properties are stored against `(repository, artifact_id)` and are deleted with the repository.
+- A property belongs to one artifact of one repository. The artifact is identified by `artifact_id`, a string of at most 1024 bytes (valid UTF-8, no control characters), URL-escaped in the path. The web UI and `oa import` use the id shown in the package list, which is the id of the version's first file (or the id returned by an upload: the `X-OA-Artifact-Id` response header on Maven `PUT`, `id` in the JSON body of Debian, raw and RPM uploads). The server does not check that the id names an existing package; properties are stored against `(repository, artifact_id)` and are deleted with the repository.
 - Keys: 1-255 bytes, valid UTF-8, no control characters. Values: strings of at most 4096 bytes, valid UTF-8, no NUL. At most 100 properties per request. A non-string value is `400 bad_request`.
 - A request body is a flat JSON map of strings, or the same map wrapped as `{"properties": {...}}` (the shape the web UI sends).
 - Permissions are those of the repository, not the global `manage` permission: reading properties and searching need `read` on the repository, setting, replacing and removing them need `annotate` or `write` (either one) on the repository. `annotate` allows changing properties only, never uploading or deleting packages, so a target with `read` and `annotate` suits a process that records metadata (including the license keys below) on existing artifacts. Deploy tokens can use them, which is what `oa upload` does to record build properties from CI. See [RBAC](../security/rbac.md).
@@ -23,7 +23,7 @@ Properties are free-form string key/value pairs attached to an artifact. They ca
 | `PUT /api/v1/repositories/{repo}/artifacts/{artifact_id}/properties` | Replaces all properties atomically (existing keys not in the body are removed). Returns the new map. |
 | `PATCH /api/v1/repositories/{repo}/artifacts/{artifact_id}/properties` | Upserts the given keys, leaves the others. Returns the full map. |
 | `DELETE /api/v1/repositories/{repo}/artifacts/{artifact_id}/properties/{key}` | Removes one key; `204`, also when it did not exist. |
-| `GET /api/v1/repositories/{repo}/artifacts/search?key=K&value=V` | Artifact ids whose property `K` equals `V` exactly: `{"artifact_ids": [...]}` (sorted, deduplicated). Both parameters are required. |
+| `GET /api/v1/repositories/{repo}/artifacts/search?key=K&value=V` | Artifacts whose property `K` equals `V` exactly: `{"artifact_ids": [...], "artifacts": [...]}`, sorted and deduplicated. Both parameters are required. See [search results](#search-results). |
 
 ```sh
 AID=<ARTIFACT_ID>
@@ -41,6 +41,23 @@ curl -X DELETE HOST/api/v1/repositories/REPO/artifacts/$AID/properties/vcs.revis
   -H "Authorization: Bearer <TOKEN>"
 ```
 
+### Search results
+
+`artifact_ids` lists the matching ids. `artifacts` lists the same ids in the same order, and says what each one is when it can:
+
+```json
+{
+  "artifact_ids": ["0b7e5c2a-3f1d-4c8e-9a6b-1d2e3f4a5b6c", "build-482"],
+  "artifacts": [
+    {"artifact_id": "0b7e5c2a-3f1d-4c8e-9a6b-1d2e3f4a5b6c", "name": "landing/v2/index.html", "version": "", "format": "raw"},
+    {"artifact_id": "build-482"}
+  ]
+}
+```
+
+- An id that is the id of a file stored in the same repository, the id the web UI and `oa` use, carries the `name`, `version` and `format` of that file's package version. Raw files have an empty `version`.
+- Any other id carries only `artifact_id`: ids written by external tools, ids of deleted files, and file ids of another repository.
+
 ## CLI
 
 ```sh
@@ -50,7 +67,7 @@ oa props delete REPO ARTIFACT_ID KEY
 oa props search REPO KEY VALUE               # ids of the artifacts whose KEY equals VALUE
 ```
 
-`oa props search` prints the matching artifact ids under an `ARTIFACT_ID` heading, or a JSON array of ids with `--format json`. All flags: [CLI reference](../reference/cli.md#oa-props-search).
+`oa props search` prints a table of the matching artifact ids with the package name each one names (`NAME`, empty when the id names no stored file), or a JSON array of the ids with `--format json`. All flags: [CLI reference](../reference/cli.md#oa-props-search).
 
 ## Properties that other features read
 

@@ -194,6 +194,36 @@ export type SearchError = {
     narrow_by?: Array<string>;
 };
 
+export type PropertySearchResult = {
+    /**
+     * Ids of the matching artifacts, sorted
+     */
+    artifact_ids: Array<string>;
+    /**
+     * The same ids in the same order, each resolved to the stored file it names when there is one
+     */
+    artifacts: Array<PropertySearchArtifact>;
+};
+
+export type PropertySearchArtifact = {
+    /**
+     * The id the properties are stored under
+     */
+    artifact_id: string;
+    /**
+     * Package name of the file this id names; absent when the id names no live file of the repository
+     */
+    name?: string;
+    /**
+     * Package version of that file (empty for formats without versions, such as raw); absent when unresolved
+     */
+    version?: string;
+    /**
+     * Package format of that file; absent when unresolved
+     */
+    format?: string;
+};
+
 export type Error = {
     /**
      * Error code
@@ -7412,8 +7442,10 @@ export type GetApiV1RepositoriesByNameArtifactsSearchResponses = {
     /**
      * Search results
      */
-    200: unknown;
+    200: PropertySearchResult;
 };
+
+export type GetApiV1RepositoriesByNameArtifactsSearchResponse = GetApiV1RepositoriesByNameArtifactsSearchResponses[keyof GetApiV1RepositoriesByNameArtifactsSearchResponses];
 
 export type GetApiV1SearchData = {
     body?: never;

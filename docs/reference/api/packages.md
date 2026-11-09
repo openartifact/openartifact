@@ -42,7 +42,7 @@ Fields of the `200` response (`application/json`):
 
 Search artifacts
 
-Search artifacts by properties
+The artifacts of the repository whose property key equals value exactly, sorted by id. artifact_ids lists their ids; artifacts lists the same ids, each with the name, version and format of the package version it names when the id is the id of a live file of this repository (the listing item id the web UI and oa store properties under). Other ids, such as ones written by external tools, carry only artifact_id.
 
 **Security:** `bearerAuth` or `cookieAuth` or .
 
@@ -58,7 +58,7 @@ Search artifacts by properties
 
 | Status | Description | Body |
 |---|---|---|
-| `200` | Search results | - |
+| `200` | Search results | `application/json`: [PropertySearchResult](schemas.md#propertysearchresult) |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |

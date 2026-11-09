@@ -555,6 +555,53 @@
           "error"
         ]
       },
+      "PropertySearchResult": {
+        "type": "object",
+        "properties": {
+          "artifact_ids": {
+            "type": "array",
+            "description": "Ids of the matching artifacts, sorted",
+            "items": {
+              "type": "string"
+            }
+          },
+          "artifacts": {
+            "type": "array",
+            "description": "The same ids in the same order, each resolved to the stored file it names when there is one",
+            "items": {
+              "$ref": "#/components/schemas/PropertySearchArtifact"
+            }
+          }
+        },
+        "required": [
+          "artifact_ids",
+          "artifacts"
+        ]
+      },
+      "PropertySearchArtifact": {
+        "type": "object",
+        "properties": {
+          "artifact_id": {
+            "type": "string",
+            "description": "The id the properties are stored under"
+          },
+          "name": {
+            "type": "string",
+            "description": "Package name of the file this id names; absent when the id names no live file of the repository"
+          },
+          "version": {
+            "type": "string",
+            "description": "Package version of that file (empty for formats without versions, such as raw); absent when unresolved"
+          },
+          "format": {
+            "type": "string",
+            "description": "Package format of that file; absent when unresolved"
+          }
+        },
+        "required": [
+          "artifact_id"
+        ]
+      },
       "Error": {
         "type": "object",
         "properties": {
@@ -14629,7 +14676,7 @@
     "/api/v1/repositories/{name}/artifacts/search": {
       "get": {
         "summary": "Search artifacts",
-        "description": "Search artifacts by properties",
+        "description": "The artifacts of the repository whose property key equals value exactly, sorted by id. artifact_ids lists their ids; artifacts lists the same ids, each with the name, version and format of the package version it names when the id is the id of a live file of this repository (the listing item id the web UI and oa store properties under). Other ids, such as ones written by external tools, carry only artifact_id.",
         "tags": [
           "Repositories",
           "Packages"
@@ -14662,7 +14709,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Search results"
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PropertySearchResult"
+                }
+              }
+            }
           },
           "400": {
             "description": "Invalid request",

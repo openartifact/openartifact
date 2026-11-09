@@ -1984,7 +1984,7 @@ func (m *MockDatabase) DeleteArtifactProperty(ctx context.Context, repoID, artif
 func (m *MockDatabase) ListArtifactProperties(ctx context.Context, repoID, artifactID string) (map[string]string, error) {
 	return nil, nil
 }
-func (m *MockDatabase) SearchByProperty(ctx context.Context, repoID, key, value string) ([]string, error) {
+func (m *MockDatabase) SearchByProperty(ctx context.Context, repoID, key, value string) ([]models.PropertyMatch, error) {
 	return nil, nil
 }
 
