@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -66,6 +68,9 @@ func TestManifestPutHookSeesTheCommittedPush(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("hook calls = %d, want 2", len(got))
 	}
+
+	// Hooks run asynchronously, so the two pushes' events arrive in either order.
+	slices.SortFunc(got, func(a, b ManifestEvent) int { return strings.Compare(b.Tag, a.Tag) })
 
 	for _, tt := range []struct {
 		ev      ManifestEvent
