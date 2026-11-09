@@ -54,6 +54,9 @@ database:
   # Extra libpq connection parameters (env: DB_OPTIONS=key=value,key=value).
   # options:
   #   connect_timeout: "5"
+  # Limit of each of the two connection pools (pgx and database/sql): one
+  # replica can hold up to 2 x maxOpenConns PostgreSQL connections. Size
+  # max_connections (and memory) for replicas x 2 x maxOpenConns.
   maxOpenConns: 25
   maxIdleConns: 5
   connMaxLifetimeMinutes: 30
