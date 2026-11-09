@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -32,9 +33,16 @@ import (
 //	bob    no project role; reads acme-docs through a permission target only
 //	carol  developer of globex through the group "reviewers"
 //	boss   global admin (admin-all), no project role
+//	svc    service account of acme (developer), also listed as a viewer of sara
+//
+// and alice again through a scoped token (scope: her "loose" target) and a deploy
+// token, boss through a deploy token, a legacy API key principal and an anonymous caller.
 type projectFilterWorld struct {
-	handler *Handler
-	users   map[string]*auth.Principal
+	handler   *Handler
+	pg        *database.PostgresDB
+	evaluator *auth.Evaluator
+	log       *logger.Logger
+	users     map[string]*auth.Principal
 }
 
 func newProjectFilterWorld(t *testing.T) *projectFilterWorld {
@@ -53,6 +61,9 @@ func newProjectFilterWorld(t *testing.T) *projectFilterWorld {
 	}
 	alice, bob, carol, boss := user("alice"), user("bob"), user("carol"), user("boss")
 
+	svc, err := pg.CreateUser(ctx, &models.User{Username: "acme-ci", Kind: models.UserKindServiceAccount})
+	must(t, err)
+
 	project := func(name string, owner *models.User) string {
 		p := &models.Project{Name: name}
 		if owner != nil {
@@ -69,6 +80,8 @@ func newProjectFilterWorld(t *testing.T) *projectFilterWorld {
 
 	must(t, pg.AddProjectMember(ctx, acme, alice.ID, models.ProjectRoleOwner))
 	must(t, pg.AddProjectMember(ctx, sara, alice.ID, models.ProjectRoleViewer))
+	must(t, pg.AddProjectMember(ctx, acme, svc.ID, models.ProjectRoleDeveloper))
+	must(t, pg.AddProjectMember(ctx, sara, svc.ID, models.ProjectRoleViewer))
 
 	reviewers, err := pg.CreateGroup(ctx, &models.Group{Name: "reviewers"})
 	must(t, err)
@@ -83,7 +96,7 @@ func newProjectFilterWorld(t *testing.T) *projectFilterWorld {
 	}
 
 	grantRead(t, pg, "bob-acme", "acme-docs", bob.ID)
-	grantRead(t, pg, "alice-loose", "loose", alice.ID)
+	aliceLoose := grantRead(t, pg, "alice-loose", "loose", alice.ID)
 	grantRead(t, pg, "alice-globex", "globex-docs", alice.ID)
 
 	adminAll, err := pg.GetPermissionTargetByName(ctx, "admin-all")
@@ -99,11 +112,28 @@ func newProjectFilterWorld(t *testing.T) *projectFilterWorld {
 		return &auth.Principal{UserID: &u.ID, Username: u.Username, GroupIDs: groups, Credential: auth.CredentialSession}
 	}
 
+	token := func(u *models.User, kind string, scopes ...string) *auth.Principal {
+		p := principal(u)
+		p.Credential, p.TokenKind, p.TokenScopes = auth.CredentialBearerToken, kind, scopes
+
+		return p
+	}
+
+	service := principal(svc)
+	service.Credential, service.TokenKind, service.ServiceProjectID = auth.CredentialBearerToken, auth.TokenKindAccess, acme
+
+	ev := auth.NewEvaluator(pg, log, false)
+
 	return &projectFilterWorld{
-		handler: NewHandler(pg.GetDB(), auth.NewEvaluator(pg, log, false), log),
+		handler: NewHandler(pg.GetDB(), ev, log), pg: pg, evaluator: ev, log: log,
 		users: map[string]*auth.Principal{
 			"alice": principal(alice), "bob": principal(bob), "carol": principal(carol, reviewers.ID),
 			"boss": principal(boss), "anonymous": {IsAnonymous: true},
+			"alice-scoped": token(alice, auth.TokenKindAccess, aliceLoose),
+			"alice-deploy": token(alice, auth.TokenKindDeploy),
+			"boss-deploy":  token(boss, auth.TokenKindDeploy),
+			"svc":          service,
+			"legacy":       {IsLegacy: true, Username: "api-key", Credential: auth.CredentialLegacy},
 		},
 	}
 }
@@ -123,7 +153,8 @@ func seedProjectRepo(t *testing.T, pg *database.PostgresDB, name string, project
 	}))
 }
 
-func grantRead(t *testing.T, pg *database.PostgresDB, name, repo, userID string) {
+// grantRead gives userID read on repo through a new permission target and returns its id.
+func grantRead(t *testing.T, pg *database.PostgresDB, name, repo, userID string) string {
 	t.Helper()
 
 	ctx := context.Background()
@@ -134,6 +165,8 @@ func grantRead(t *testing.T, pg *database.PostgresDB, name, repo, userID string)
 	must(t, pg.CreatePermissionAssignment(ctx, &models.PermissionAssignment{
 		PermissionTargetID: target.ID, PrincipalType: "user", PrincipalID: userID,
 	}))
+
+	return target.ID
 }
 
 func must(t *testing.T, err error) {
@@ -209,6 +242,17 @@ func TestSearchProjectFilters(t *testing.T) {
 		{"admin: viewer finds nothing, deliberately", "boss", "q=readme&project_role=viewer", nil},
 		{"admin: any project", "boss", "q=readme&project=globex", []string{"globex-docs"}},
 		{"anonymous", "anonymous", "q=readme&project=acme", nil},
+		{"scoped token: unfiltered, only its scope", "alice-scoped", "q=readme", []string{"loose"}},
+		{"scoped token: no project role", "alice-scoped", "q=readme&project_role=owner", nil},
+		{"scoped token: by project", "alice-scoped", "q=readme&project=acme", nil},
+		{"deploy token: no project role", "alice-deploy", "q=readme&project_role=owner", nil},
+		{"deploy token: by project", "alice-deploy", "q=readme&project=acme", nil},
+		{"deploy token of an admin: not an owner anywhere", "boss-deploy", "q=readme&project_role=owner", nil},
+		{"service account: its own project", "svc", "q=readme&project_role=developer", []string{"acme-docs"}},
+		{"service account: other memberships ignored", "svc", "q=readme&project_role=viewer", nil},
+		{"service account: other project", "svc", "q=readme&project=sara", nil},
+		{"legacy API key: owner everywhere", "legacy", "q=readme&project_role=owner", []string{"acme-docs", "globex-docs", "sara-docs"}},
+		{"legacy API key: viewer finds nothing", "legacy", "q=readme&project_role=viewer", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pkgs, _, body := w.search(t, tc.who, tc.query)
@@ -248,5 +292,44 @@ func TestSearchUnknownAndForeignProjectLookTheSame(t *testing.T) {
 
 	if foreign != `{"packages":[],"repositories":[],"total":0}`+"\n" {
 		t.Errorf("answer %s, want empty lists", foreign)
+	}
+}
+
+// TestProjectScopeUsesProjects: project:<project> is suggested on query_too_broad only
+// to callers that hold a project role.
+func TestProjectScopeUsesProjects(t *testing.T) {
+	w := newProjectFilterWorld(t)
+	scope := NewProjectScope(w.pg.GetDB(), w.evaluator)
+
+	for who, want := range map[string]bool{
+		"alice": true, "carol": true, "boss": true, "svc": true, "legacy": true,
+		"bob": false, "anonymous": false, "alice-deploy": false, "boss-deploy": false, "alice-scoped": false,
+	} {
+		got, err := scope.UsesProjects(middleware.WithPrincipal(context.Background(), w.users[who]))
+		if err != nil || got != want {
+			t.Errorf("%s: UsesProjects = %v, %v; want %v", who, got, err, want)
+		}
+	}
+}
+
+// TestSearchProjectFilterKeepsCachedReadableSet: the readable set is cached per
+// principal and shared between requests; a filtered request must not shrink it for
+// the next unfiltered one.
+func TestSearchProjectFilterKeepsCachedReadableSet(t *testing.T) {
+	w := newProjectFilterWorld(t)
+	w.handler = NewHandler(w.pg.GetDB(), w.evaluator, w.log, WithAuthCache(&fakeAuthCache{ttl: time.Hour}))
+
+	all := []string{"acme-docs", "globex-docs", "loose", "sara-docs"}
+
+	if pkgs, _, _ := w.search(t, "alice", "q=readme"); !slices.Equal(pkgs, all) {
+		t.Fatalf("first unfiltered search %v, want %v", pkgs, all)
+	}
+
+	if pkgs, _, _ := w.search(t, "alice", "q=readme&project_role=viewer"); !slices.Equal(pkgs, []string{"sara-docs"}) {
+		t.Fatalf("filtered search %v, want [sara-docs]", pkgs)
+	}
+
+	if pkgs, _, _ := w.search(t, "alice", "q=readme"); !slices.Equal(pkgs, all) {
+		t.Errorf("unfiltered search after a filtered one %v, want %v: the cached set was modified", pkgs, all)
 	}
 }

@@ -27,7 +27,9 @@ type TooBroadBody struct {
 }
 
 // narrowingFilters returns the filters of the search the query has not applied.
-func narrowingFilters(filter SearchFilter) []string {
+// project:<project> is offered only when usesProjects: a caller without any project
+// role (anonymous, a deploy token, ...) gets nothing from a project filter.
+func narrowingFilters(filter SearchFilter, usesProjects bool) []string {
 	out := []string{}
 
 	if filter.Name == "" {
@@ -42,7 +44,7 @@ func narrowingFilters(filter SearchFilter) []string {
 		out = append(out, "repo:<repository>")
 	}
 
-	if len(filter.Projects) == 0 {
+	if len(filter.Projects) == 0 && usesProjects {
 		out = append(out, "project:<project>")
 	}
 
@@ -54,9 +56,10 @@ func narrowingFilters(filter SearchFilter) []string {
 }
 
 // TooBroadMessage is the error text for a query that matches more than
-// MaxSearchResults packages, naming the filters that would narrow it.
-func TooBroadMessage(filter SearchFilter) string {
-	narrow := narrowingFilters(filter)
+// MaxSearchResults packages, naming the filters that would narrow it (see
+// narrowingFilters for usesProjects).
+func TooBroadMessage(filter SearchFilter, usesProjects bool) string {
+	narrow := narrowingFilters(filter, usesProjects)
 
 	msg := "query matches more than " + strconv.Itoa(MaxSearchResults) + " packages"
 	if len(narrow) > 0 {
@@ -67,11 +70,11 @@ func TooBroadMessage(filter SearchFilter) string {
 }
 
 // writeTooBroad answers a search that matches more than MaxSearchResults.
-func writeTooBroad(w http.ResponseWriter, filter SearchFilter) {
+func writeTooBroad(w http.ResponseWriter, filter SearchFilter, usesProjects bool) {
 	httpx.WriteJSON(w, http.StatusBadRequest, TooBroadBody{
-		Error:      TooBroadMessage(filter),
+		Error:      TooBroadMessage(filter, usesProjects),
 		Code:       "query_too_broad",
 		MaxResults: MaxSearchResults,
-		NarrowBy:   narrowingFilters(filter),
+		NarrowBy:   narrowingFilters(filter, usesProjects),
 	})
 }

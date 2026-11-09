@@ -17,13 +17,13 @@ type SearchFilter struct {
 	Flagged bool
 	// Projects keeps the repositories of these projects (name or slug), and
 	// ProjectRoles those of the projects where the caller's effective role is one
-	// of these. Both only narrow the readable set; see narrowToProjects.
+	// of these. Both only narrow the readable set; see ProjectScope.NarrowToProjects.
 	Projects     []string
 	ProjectRoles []string
 }
 
-// projectScoped reports whether a project filter applies.
-func (f SearchFilter) projectScoped() bool {
+// ProjectScoped reports whether a project filter applies.
+func (f SearchFilter) ProjectScoped() bool {
 	return len(f.Projects) > 0 || len(f.ProjectRoles) > 0
 }
 

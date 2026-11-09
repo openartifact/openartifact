@@ -189,7 +189,7 @@ export type SearchError = {
      */
     max_results?: number;
     /**
-     * query_too_broad only: the filters the query does not use yet (name:<package>, format:<format>, repo:<repository> in q, flagged=true); empty when it already uses all of them
+     * query_too_broad only: the filters the query does not use yet (name:<package>, format:<format>, repo:<repository> and project:<project> in q, flagged=true; project:<project> only for a caller that holds a project role); empty when it already uses all of them
      */
     narrow_by?: Array<string>;
 };

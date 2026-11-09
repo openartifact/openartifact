@@ -159,8 +159,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// The project filters narrow the readable set itself, so the package and the
 	// repository hits below both honour them.
-	if filter.projectScoped() {
-		readableRepos, err = h.narrowToProjects(ctx, principal, readableRepos, filter)
+	if filter.ProjectScoped() {
+		readableRepos, err = h.projectScope().NarrowToProjects(ctx, readableRepos, filter)
 		if err != nil {
 			h.log.Errorw("resolve project roles failed", "error", err)
 			httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "permission resolution failed")
@@ -178,7 +178,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if count > MaxSearchResults {
-		writeTooBroad(w, filter)
+		usesProjects, err := h.projectScope().UsesProjects(ctx)
+		if err != nil {
+			h.log.Errorw("resolve project roles failed", "error", err)
+		}
+
+		writeTooBroad(w, filter, usesProjects)
+
 		return
 	}
 
@@ -209,6 +215,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = encErr // response header already written
 	}
 }
+
+// projectScope applies the project filters for this handler's database and evaluator.
+func (h *Handler) projectScope() *ProjectScope { return NewProjectScope(h.db, h.evaluator) }
 
 // parseFilter builds the search filter from q and the filter parameters (format,
 // repo, project, project_role, flagged); on a bad value it writes the 400 and

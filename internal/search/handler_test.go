@@ -380,3 +380,44 @@ func TestHandlerRejectsUnknownProjectRole(t *testing.T) {
 		}
 	}
 }
+
+// TestHandlerCapsProjectFilterValues: project and project_role take at most
+// maxFilterValues values each, like format and repo.
+func TestHandlerCapsProjectFilterValues(t *testing.T) {
+	for _, param := range []string{"project", "project_role"} {
+		value := "acme"
+		if param == "project_role" {
+			value = "viewer"
+		}
+
+		target := "/api/v1/search?q=test" + strings.Repeat("&"+param+"="+value, maxFilterValues+1)
+
+		h, cleanup := newTestHandler(t, &mockSearcher{count: 1})
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, requestWithPrincipal("GET", target, adminPrincipal()))
+		cleanup()
+
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_filter") {
+			t.Errorf("%d %s values: status %d body %s, want 400 invalid_filter", maxFilterValues+1, param, w.Code, w.Body.String())
+		}
+	}
+}
+
+// TestHandlerTooBroadNoProjectHintWithoutRoles: a caller that holds no project role
+// is not told to narrow with project:, which can't match for it. Here the request has
+// no principal; the integration test covers anonymous callers and deploy tokens.
+func TestHandlerTooBroadNoProjectHintWithoutRoles(t *testing.T) {
+	h, cleanup := newTestHandler(t, &mockSearcher{count: MaxSearchResults + 1})
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, requestWithPrincipal("GET", "/api/v1/search?q=test", nil))
+
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "query_too_broad") {
+		t.Fatalf("status %d body %s, want query_too_broad", w.Code, w.Body.String())
+	}
+
+	if strings.Contains(w.Body.String(), "project:") {
+		t.Errorf("body %s suggests project: to a caller without project roles", w.Body.String())
+	}
+}

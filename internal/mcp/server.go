@@ -62,6 +62,17 @@ type Authorizer func(ctx context.Context, repoName, action string) bool
 // permission evaluation per repository.
 type ReadFilterFunc func(ctx context.Context) (func(repo *models.Repository) (bool, error), error)
 
+// ProjectScope applies the project: and project_role: qualifiers of a search for the
+// caller identified by ctx (search.ProjectScope satisfies it).
+type ProjectScope interface {
+	// NarrowToProjects returns the repositories of readable the project filters
+	// keep; it never adds one and never modifies readable.
+	NarrowToProjects(ctx context.Context, readable map[uuid.UUID]struct{}, filter search.SearchFilter) (map[uuid.UUID]struct{}, error)
+	// UsesProjects reports whether the caller holds a project role, so that
+	// project:<project> is worth suggesting.
+	UsesProjects(ctx context.Context) (bool, error)
+}
+
 // RepoAdminFunc reports whether the caller identified by ctx may administer the
 // named repository: a global admin, or a maintainer of its project. It gates
 // the activity categories reserved to repository admins.
@@ -175,6 +186,7 @@ type Server struct {
 	authorizer Authorizer            // nil denies every repository-scoped call
 	readFilter ReadFilterFunc        // nil hides every repository from listings
 	searcher   ArtifactSearcher      // nil disables cross-repository search
+	projects   ProjectScope          // nil: a search with project: or project_role: finds nothing
 	repoAdmin  RepoAdminFunc         // nil: nobody administers a repository
 	blobs      BlobReader            // nil: stored SBOM documents cannot be read
 	upstream   api.PublishTimeSource // nil: no proxy service (publish times unknown, no upstream versions)
@@ -241,6 +253,10 @@ func (s *Server) SetReadFilter(f ReadFilterFunc) { s.readFilter = f }
 
 // SetSearcher installs the SQL search backend for cross-repository search.
 func (s *Server) SetSearcher(a ArtifactSearcher) { s.searcher = a }
+
+// SetProjectScope installs the project filters of cross-repository search. Without
+// it a search that uses project: or project_role: finds nothing.
+func (s *Server) SetProjectScope(p ProjectScope) { s.projects = p }
 
 // SetRepoAdmin installs the repository-admin check that opens the
 // administrator-only categories of get_repository_activity. Without it only the

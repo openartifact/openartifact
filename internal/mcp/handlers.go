@@ -222,13 +222,20 @@ func (s *Server) searchAllRepos(ctx context.Context, query, format string) ([]se
 		filter.Formats = append(filter.Formats, format)
 	}
 
+	// project: and project_role: narrow the readable set exactly as on GET /api/v1/search.
+	if filter.ProjectScoped() {
+		if readable, err = s.narrowToProjects(ctx, readable, filter); err != nil {
+			return nil, err
+		}
+	}
+
 	results, total, err := s.searcher.SearchPage(ctx, filter, search.PageOptions{}, maxSearchHits, 0, readable)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // logged by the caller with context
 	}
 
 	if total > search.MaxSearchResults {
-		return nil, &tooBroadError{msg: search.TooBroadMessage(filter)}
+		return nil, &tooBroadError{msg: search.TooBroadMessage(filter, s.usesProjects(ctx))}
 	}
 
 	hits := make([]searchHit, 0, len(results))
@@ -245,6 +252,30 @@ func (s *Server) searchAllRepos(ctx context.Context, query, format string) ([]se
 	}
 
 	return hits, nil
+}
+
+// narrowToProjects applies the project filters; without a ProjectScope they keep nothing.
+func (s *Server) narrowToProjects(
+	ctx context.Context,
+	readable map[uuid.UUID]struct{},
+	filter search.SearchFilter,
+) (map[uuid.UUID]struct{}, error) {
+	if s.projects == nil {
+		return map[uuid.UUID]struct{}{}, nil
+	}
+
+	return s.projects.NarrowToProjects(ctx, readable, filter) //nolint:wrapcheck // logged by the caller with context
+}
+
+// usesProjects reports whether project:<project> is worth suggesting to the caller.
+func (s *Server) usesProjects(ctx context.Context) bool {
+	if s.projects == nil {
+		return false
+	}
+
+	ok, err := s.projects.UsesProjects(ctx)
+
+	return err == nil && ok
 }
 
 // readableRepos returns every repository (optionally of one format) the caller
