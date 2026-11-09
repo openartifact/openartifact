@@ -38,6 +38,10 @@ type fakePeer struct {
 	srv  *Server
 	http *httptest.Server
 
+	// handlers tracks the requests still being served: the client can have the
+	// whole body before the handler has counted its last write.
+	handlers sync.WaitGroup
+
 	mu       sync.Mutex
 	requests []string // the Range header of each request ("" for none)
 	sent     int64    // body bytes written to clients
@@ -67,6 +71,9 @@ func newFakePeer(t *testing.T, content []byte) *fakePeer {
 }
 
 func (p *fakePeer) handle(w http.ResponseWriter, r *http.Request) {
+	p.handlers.Add(1)
+	defer p.handlers.Done()
+
 	p.mu.Lock()
 	p.requests = append(p.requests, r.Header.Get("Range"))
 	n := len(p.requests)
@@ -88,7 +95,10 @@ func (p *fakePeer) ranges() []string {
 	return append([]string(nil), p.requests...)
 }
 
+// bytesSent waits for the requests in flight, so their last writes are counted.
 func (p *fakePeer) bytesSent() int64 {
+	p.handlers.Wait()
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
