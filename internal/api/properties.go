@@ -341,17 +341,35 @@ func (h *PropertiesHandler) handleSearchByProperty(w http.ResponseWriter, r *htt
 		return
 	}
 
-	artifactIDs, err := h.db.SearchByProperty(r.Context(), repo.ID, key, value)
+	matches, err := h.db.SearchByProperty(r.Context(), repo.ID, key, value)
 	if err != nil {
 		h.dbError(w, "search by property: db error", err)
 		return
 	}
 
-	if artifactIDs == nil {
-		artifactIDs = []string{}
+	writeJSON(w, http.StatusOK, propertySearchResponse(matches))
+}
+
+// propertySearchArtifact is one entry of the artifacts list of a property search: always
+// the id, plus the name, version and format of the stored file it names, when it names one.
+type propertySearchArtifact struct {
+	ArtifactID string  `json:"artifact_id"`
+	Name       *string `json:"name,omitempty"`
+	Version    *string `json:"version,omitempty"`
+	Format     *string `json:"format,omitempty"`
+}
+
+// propertySearchResponse keeps artifact_ids as it was and adds artifacts next to it.
+func propertySearchResponse(matches []models.PropertyMatch) map[string]any {
+	ids := make([]string, 0, len(matches))
+	artifacts := make([]propertySearchArtifact, 0, len(matches))
+
+	for _, m := range matches {
+		ids = append(ids, m.ArtifactID)
+		artifacts = append(artifacts, propertySearchArtifact{
+			ArtifactID: m.ArtifactID, Name: m.Name, Version: m.Version, Format: m.Format,
+		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"artifact_ids": artifactIDs,
-	})
+	return map[string]any{"artifact_ids": ids, "artifacts": artifacts}
 }

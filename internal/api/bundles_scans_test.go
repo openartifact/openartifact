@@ -44,7 +44,8 @@ type bundlesScansMockDB struct {
 	bundle   *models.ReleaseBundle
 	pipeline *models.PromotionPipeline
 
-	props map[string]string
+	props         map[string]string
+	searchMatches []models.PropertyMatch
 
 	deleteLicensePolicyCalled bool
 	deleteVulnErr             error
@@ -58,6 +59,10 @@ type bundlesScansMockDB struct {
 	setPropsArg               map[string]string
 	sbomBlob                  string
 	deleteSBOMCalled          bool
+}
+
+func (db *bundlesScansMockDB) SearchByProperty(context.Context, string, string, string) ([]models.PropertyMatch, error) {
+	return db.searchMatches, nil
 }
 
 func (db *bundlesScansMockDB) BundleItemStored(context.Context, string, string, string, string, string) (bool, error) {

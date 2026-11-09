@@ -63,9 +63,20 @@ func (q *Queries) ListArtifactProperties(ctx context.Context, arg ListArtifactPr
 }
 
 const searchByProperty = `-- name: SearchByProperty :many
-SELECT DISTINCT ar.artifact_path AS artifact_id FROM artifact_properties ap
-JOIN artifact_refs ar ON ar.id = ap.artifact_ref_id
-WHERE ap.repository_id = $1 AND ap.key = $2 AND ap.value = $3 ORDER BY ar.artifact_path
+SELECT m.artifact_id::text AS artifact_id,
+       p.name AS package_name, pv.version AS package_version, p.format AS package_format
+FROM (
+    SELECT DISTINCT ar.artifact_path AS artifact_id FROM artifact_properties ap
+    JOIN artifact_refs ar ON ar.id = ap.artifact_ref_id
+    WHERE ap.repository_id = $1 AND ap.key = $2 AND ap.value = $3
+) m
+LEFT JOIN package_files pf
+    ON pf.id = (CASE WHEN m.artifact_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                     THEN m.artifact_id::uuid END)
+   AND pf.repository_id = $1 AND pf.deleted_at IS NULL
+LEFT JOIN package_versions pv ON pv.id = pf.version_id AND pv.deleted_at IS NULL
+LEFT JOIN packages p ON p.id = pv.package_id
+ORDER BY m.artifact_id
 `
 
 type SearchByPropertyParams struct {
@@ -74,19 +85,36 @@ type SearchByPropertyParams struct {
 	Value        string `db:"value" json:"value"`
 }
 
-func (q *Queries) SearchByProperty(ctx context.Context, arg SearchByPropertyParams) ([]string, error) {
+type SearchByPropertyRow struct {
+	ArtifactID     string  `db:"artifact_id" json:"artifact_id"`
+	PackageName    *string `db:"package_name" json:"package_name"`
+	PackageVersion *string `db:"package_version" json:"package_version"`
+	PackageFormat  *string `db:"package_format" json:"package_format"`
+}
+
+// The ids of the artifacts whose property key equals value, each with the stored file it
+// names, if any. The web UI and oa store properties under the listing item id of a version's
+// first file, which is package_files.id, so an id is resolved against the live files of the
+// same repository. Only text shaped like a UUID is cast, so external ids ("build-482") never
+// reach the cast and stay unresolved; the cast keeps the lookup on the primary key.
+func (q *Queries) SearchByProperty(ctx context.Context, arg SearchByPropertyParams) ([]SearchByPropertyRow, error) {
 	rows, err := q.db.Query(ctx, searchByProperty, arg.RepositoryID, arg.Key, arg.Value)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []string{}
+	items := []SearchByPropertyRow{}
 	for rows.Next() {
-		var artifact_id string
-		if err := rows.Scan(&artifact_id); err != nil {
+		var i SearchByPropertyRow
+		if err := rows.Scan(
+			&i.ArtifactID,
+			&i.PackageName,
+			&i.PackageVersion,
+			&i.PackageFormat,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, artifact_id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

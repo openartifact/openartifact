@@ -810,7 +810,9 @@ func newPropsCmd(a *app) *cobra.Command {
 	)
 }
 
-// propsSearch prints the ids of the artifacts whose property key equals value.
+// propsSearch prints the artifacts whose property key equals value: their ids with the
+// package name each one names (empty when it names no stored file). The JSON output stays
+// the plain list of ids.
 func propsSearch(client *Client, repo, key, value, outFmt string) {
 	q := url.Values{}
 	q.Set("key", key)
@@ -818,6 +820,10 @@ func propsSearch(client *Client, repo, key, value, outFmt string) {
 
 	var result struct {
 		ArtifactIDs []string `json:"artifact_ids"`
+		Artifacts   []struct {
+			ArtifactID string `json:"artifact_id"`
+			Name       string `json:"name"`
+		} `json:"artifacts"`
 	}
 
 	getJSON(client, repoPath(repo, "artifacts/search?"+q.Encode()), &result)
@@ -827,11 +833,16 @@ func propsSearch(client *Client, repo, key, value, outFmt string) {
 		return
 	}
 
+	names := make(map[string]string, len(result.Artifacts))
+	for _, a := range result.Artifacts {
+		names[a.ArtifactID] = a.Name
+	}
+
 	w := newTabWriter()
 
-	_, _ = fmt.Fprintln(w, "ARTIFACT_ID")
+	_, _ = fmt.Fprintln(w, "ARTIFACT_ID\tNAME")
 	for _, id := range result.ArtifactIDs {
-		_, _ = fmt.Fprintln(w, id)
+		_, _ = fmt.Fprintf(w, "%s\t%s\n", id, names[id])
 	}
 
 	_ = w.Flush()

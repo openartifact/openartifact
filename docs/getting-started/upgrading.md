@@ -127,6 +127,17 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
+### Unreleased
+
+**What you must do**
+
+- Check scripts that read the text output of `oa props search` line by line: the table now has a `NAME` column after `ARTIFACT_ID`. `--format json` still prints the list of ids.
+- Nothing else is required.
+
+**Changes.**
+
+- **Property search.** `GET /api/v1/repositories/{name}/artifacts/search` also returns `artifacts`: the same ids, each with the name, version and format of the file it names when it is a file of that repository. `artifact_ids` is unchanged. See [search results](../repositories/properties.md#search-results).
+
 ### 0.22.0
 
 **What you must do**
