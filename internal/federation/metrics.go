@@ -45,7 +45,8 @@ func NewMetrics(reg prometheus.Registerer, store *Store) (*Metrics, error) {
 		}, []string{"repo", "peer", "result"}),
 		Conflicts: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "openartifact_federation_conflicts_total",
-			Help: "Local changes superseded by a different state of the same unit from a peer (last writer wins).",
+			Help: "Concurrent writes of the same unit with a peer, one of which was superseded (last writer wins). " +
+				"A sequential overwrite is not counted.",
 		}, []string{"repo", "peer"}),
 		PullErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "openartifact_federation_pull_errors_total",

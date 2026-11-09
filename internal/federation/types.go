@@ -38,6 +38,11 @@ type Entry struct {
 	Stamp      Stamp     `json:"stamp"`
 	ContentRef string    `json:"content_ref"`
 	ChangedAt  time.Time `json:"changed_at"`
+	// Base is the stamp of the unit state this change replaced where it was
+	// made; nil when the unit had no previous state there or the serving member
+	// predates base stamps. It tells a sequential overwrite from a concurrent
+	// write.
+	Base *Stamp `json:"base,omitempty"`
 }
 
 // BlobRef names a blob a unit references by content hash.

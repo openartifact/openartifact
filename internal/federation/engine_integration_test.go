@@ -875,6 +875,120 @@ func TestEngineOlderStampNeverOverwritesNewerLocalState(t *testing.T) {
 	engEqual(t, "logs", a.logView(t, false), b.logView(t, false))
 }
 
+func TestEngineConflictAccounting(t *testing.T) {
+	// pull names who pulls, in order: "a" is a pulling b's log, "b" is b
+	// pulling a's.
+	tests := []struct {
+		name         string
+		run          func(t *testing.T, a, b *engSite, pab, pba *Peer)
+		wantA, wantB int64
+	}{
+		{"sequential overwrite there and back", func(t *testing.T, a, b *engSite, pab, pba *Peer) {
+			t.Helper()
+
+			a.put(t, "f", "v1")
+			b.mustPull(t, pab)
+			b.put(t, "f", "v2")
+			a.mustPull(t, pba)
+			a.put(t, "f", "v3")
+			b.mustPull(t, pab)
+
+			a.mustRead(t, "f", "v3")
+			b.mustRead(t, "f", "v3")
+		}, 0, 0},
+		{"concurrent writes, the loser pulls", func(t *testing.T, a, b *engSite, _, pba *Peer) {
+			t.Helper()
+
+			a.put(t, "f", "A older")
+			time.Sleep(5 * time.Millisecond)
+			b.put(t, "f", "B newer")
+			a.mustPull(t, pba)
+
+			a.mustRead(t, "f", "B newer")
+		}, 1, 0},
+		{"concurrent writes, only the winner pulls", func(t *testing.T, a, b *engSite, pab, _ *Peer) {
+			t.Helper()
+
+			a.put(t, "f", "A older")
+			time.Sleep(5 * time.Millisecond)
+			b.put(t, "f", "B newer")
+			b.mustPull(t, pab)
+
+			b.mustRead(t, "f", "B newer")
+			a.mustRead(t, "f", "A older")
+		}, 0, 1},
+		{"concurrent writes, both pull, then resync both ways", func(t *testing.T, a, b *engSite, pab, pba *Peer) {
+			t.Helper()
+
+			a.put(t, "f", "A older")
+			time.Sleep(5 * time.Millisecond)
+			b.put(t, "f", "B newer")
+			b.mustPull(t, pab)
+			a.mustPull(t, pba)
+
+			for _, s := range []struct {
+				site *engSite
+				peer *Peer
+			}{{a, pba}, {b, pab}} {
+				if err := s.site.store.RequestResync(context.Background(), s.site.repoID, s.peer.ID); err != nil {
+					t.Fatalf("request resync: %v", err)
+				}
+
+				s.site.mustPull(t, s.peer)
+			}
+
+			engEqual(t, "logs", a.logView(t, false), b.logView(t, false))
+		}, 1, 1},
+		{"a peer without base stamps replacing a local change", func(t *testing.T, a, b *engSite, pab, pba *Peer) {
+			t.Helper()
+
+			a.put(t, "f", "v1")
+			b.mustPull(t, pab)
+			b.put(t, "f", "v2")
+			b.exec(t, `UPDATE federation_units SET base_wall = NULL, base_counter = NULL, base_origin = NULL WHERE repo_id = $1`, b.repoID)
+			a.mustPull(t, pba)
+
+			a.mustRead(t, "f", "v2")
+		}, 1, 0},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			a, b := newEngSite(t, "site-a", "raw"), newEngSite(t, "site-b", "raw")
+			pab, pba := b.addPeer(t, a), a.addPeer(t, b)
+
+			tc.run(t, a, b, pab, pba)
+
+			engEqual(t, "a conflicts_total", a.peer(t, pba).ConflictsTotal, tc.wantA)
+			engEqual(t, "b conflicts_total", b.peer(t, pab).ConflictsTotal, tc.wantB)
+		})
+	}
+}
+
+func TestEngineBaseStampTravelsWithTheEntry(t *testing.T) {
+	a, b := newEngSite(t, "site-a", "raw"), newEngSite(t, "site-b", "raw")
+	pab, pba := b.addPeer(t, a), a.addPeer(t, b)
+
+	a.put(t, "f", "v1")
+
+	if base := a.entry(t, "f").Base; base != nil {
+		t.Errorf("first state has base %v, want none", base)
+	}
+
+	v1 := a.entry(t, "f").Stamp
+
+	b.mustPull(t, pab)
+	b.put(t, "f", "v2")
+	a.mustPull(t, pba)
+
+	for _, s := range []*engSite{a, b} {
+		got := s.entry(t, "f").Base
+		if got == nil || *got != v1 {
+			t.Errorf("%s: base of f = %v, want %v", s.name, got, v1)
+		}
+	}
+}
+
 func TestEngineRecordUnitOrdersStamps(t *testing.T) {
 	var (
 		low  = uuid.MustParse("7fffffff-ffff-ffff-ffff-ffffffffffff")
