@@ -133,10 +133,12 @@ Newest first. Each version starts with **What you must do**; the text below it l
 
 - Check scripts that read the text output of `oa props search` line by line: the table now has a `NAME` column after `ARTIFACT_ID`. `--format json` still prints the list of ids.
 - In a search query, a word starting with `project:` or `project_role:` is now a filter rather than search text.
+- Retry on `503` in clients that treat any non-2xx answer on a credentialed request as a bad credential: while the database cannot answer, the server now returns `503 service_unavailable` with `Retry-After` instead of `401` (token lookup) or `500` (authorization lookup).
 - Nothing else is required.
 
 **Changes.**
 
+- **Database outage during authentication.** A failed database lookup while resolving a token (Bearer, Basic password, the MCP endpoint) or evaluating permissions is answered with `503` and `{"error": ..., "code": "service_unavailable"}` plus `Retry-After: 5`. Before, a token lookup failure looked like an invalid token (`401`) and an authorization lookup failure was a `500`. An unknown, revoked or expired token is still `401`.
 - **Property search.** `GET /api/v1/repositories/{name}/artifacts/search` also returns `artifacts`: the same ids, each with the name, version and format of the file it names when it is a file of that repository. `artifact_ids` is unchanged. See [search results](../repositories/properties.md#search-results).
 - **Search by project.** `GET /api/v1/search` and the MCP `search_artifacts` tool narrow by project: the `project` and `project_role` parameters, or `project:` and `project_role:` in the query. `project_role=viewer` lists what others shared with you. Both only narrow what the caller can already read; a global admin counts as owner of every project. `400 query_too_broad` suggests `project:<project>` to callers that hold a project role. See [the REST API](../integrations/api.md).
 

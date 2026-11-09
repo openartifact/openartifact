@@ -303,7 +303,7 @@ func TestRBACProjectsRoot(t *testing.T) {
 }
 
 // TestRBACProjectSettingsLookupFailure: when the self_create setting cannot be
-// read, a non-admin create is answered with a 500, never allowed.
+// read, a non-admin create is answered with a 503, never allowed.
 func TestRBACProjectSettingsLookupFailure(t *testing.T) {
 	log, err := logger.New("error", "json", "/dev/null")
 	if err != nil {
@@ -341,8 +341,8 @@ func TestRBACProjectSettingsLookupFailure(t *testing.T) {
 	rw := httptest.NewRecorder()
 	handler.ServeHTTP(rw, req)
 
-	if rw.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500 (body %s)", rw.Code, strconv.Quote(rw.Body.String()))
+	if rw.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 (body %s)", rw.Code, strconv.Quote(rw.Body.String()))
 	}
 }
 

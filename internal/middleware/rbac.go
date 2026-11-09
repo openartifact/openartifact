@@ -7,6 +7,8 @@ package middleware
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -134,7 +136,13 @@ func RBACMiddleware(cfg RBACConfig, db RBACMiddlewareStore, evaluator *auth.Eval
 				return
 			}
 
-			principal, credential := resolvePrincipal(ctx, r, cfg, db, log)
+			principal, credential, err := resolvePrincipal(ctx, r, cfg, db, log)
+			if err != nil {
+				writeAuthUnavailable(w, r, log, "token validation error", err)
+
+				return
+			}
+
 			r = r.WithContext(WithPrincipal(ctx, principal))
 			noteAuditPrincipal(ctx, principal)
 
@@ -187,31 +195,71 @@ func RBACMiddleware(cfg RBACConfig, db RBACMiddlewareStore, evaluator *auth.Eval
 				return
 			}
 
-			allowed, err := evaluateRepoScope(ctx, evaluator, principal, scope)
-			if err == nil && !allowed && scope.delegateRepo != "" && writeDelegatedHidden(w, r, evaluator, principal, scope.delegateRepo) {
-				return
+			if authorizeRepoScope(w, r, cfg, db, evaluator, log, principal, credential, scope) {
+				next.ServeHTTP(w, r)
 			}
-
-			if err != nil {
-				log.Errorw("auth evaluation error",
-					"error", err,
-					"path", r.URL.Path,
-					"method", r.Method,
-				)
-				httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "auth_evaluation_failed"})
-
-				return
-			}
-
-			if !allowed {
-				writeAccessDenied(w, r, cfg, db, log, principal, credential, scope)
-
-				return
-			}
-
-			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// authorizeRepoScope runs the permission check of a repository or API route and
+// answers a refusal (401/403/404) or an evaluation failure (503) itself. It
+// reports whether the request may proceed.
+func authorizeRepoScope(
+	w http.ResponseWriter,
+	r *http.Request,
+	cfg RBACConfig,
+	db writeAccessDeniedStore,
+	evaluator *auth.Evaluator,
+	log *logger.Logger,
+	principal *auth.Principal,
+	credential string,
+	scope routeScope,
+) bool {
+	allowed, err := evaluateRepoScope(r.Context(), evaluator, principal, scope)
+	if err == nil && !allowed && scope.delegateRepo != "" && writeDelegatedHidden(w, r, evaluator, principal, scope.delegateRepo) {
+		return false
+	}
+
+	if err != nil {
+		writeAuthUnavailable(w, r, log, "auth evaluation error", err)
+
+		return false
+	}
+
+	if !allowed {
+		writeAccessDenied(w, r, cfg, db, log, principal, credential, scope)
+
+		return false
+	}
+
+	return true
+}
+
+// authRetryAfter is the Retry-After (seconds) of a request refused because the
+// database could not answer an authentication or authorization lookup.
+const authRetryAfter = "5"
+
+// statusClientClosedRequest is the nginx convention for a request the client
+// abandoned before the server answered.
+const statusClientClosedRequest = 499
+
+// writeAuthUnavailable answers a request whose authentication or authorization
+// lookup failed for a reason other than "no such credential" (the database is
+// unreachable, the lookup timed out): 503 with Retry-After, never 401 (the
+// credential may be fine) or 500 (the server is not broken). err is only
+// logged. A client that hung up gets 499 and a debug line instead.
+func writeAuthUnavailable(w http.ResponseWriter, r *http.Request, log *logger.Logger, msg string, err error) {
+	if errors.Is(err, context.Canceled) && r.Context().Err() != nil {
+		log.Debugw(msg, "error", err, "path", r.URL.Path, "method", r.Method)
+		httpx.WriteError(w, statusClientClosedRequest, "client_closed_request", "request canceled")
+
+		return
+	}
+
+	log.Errorw(msg, "error", err, "path", r.URL.Path, "method", r.Method)
+	w.Header().Set("Retry-After", authRetryAfter)
+	httpx.WriteError(w, http.StatusServiceUnavailable, "service_unavailable", "authentication is temporarily unavailable")
 }
 
 // namesNoRepository reports a /repos/ or /v2/ request whose scope has an empty
@@ -504,16 +552,18 @@ type resolvePrincipalStore interface {
 // cookie, then token (Authorization: Bearer or Basic password), then the
 // deprecated legacy API key. It returns the principal and the credential kind
 // (also stored in principal.Credential so CSRF can tell ambient cookie auth
-// from explicit header auth).
+// from explicit header auth). The error is an infrastructure failure of the
+// token lookup (never "token not found", which falls through to the next
+// credential and finally to anonymous); the caller answers it with 503.
 func resolvePrincipal(
 	ctx context.Context,
 	r *http.Request,
 	cfg RBACConfig,
 	db resolvePrincipalStore,
 	log *logger.Logger,
-) (*auth.Principal, string) {
+) (*auth.Principal, string, error) {
 	if p := sessionPrincipal(ctx, r, db, log); p != nil {
-		return p, auth.CredentialSession
+		return p, auth.CredentialSession, nil
 	}
 
 	bearer, basicSecret := authorizationSecrets(r)
@@ -525,8 +575,13 @@ func resolvePrincipal(
 		{bearer, auth.CredentialBearerToken},
 		{basicSecret, auth.CredentialBasicToken},
 	} {
-		if p := tokenPrincipal(ctx, c.value, c.kind, db, log); p != nil {
-			return p, c.kind
+		p, err := tokenPrincipal(ctx, c.value, c.kind, db, log)
+		if err != nil {
+			return nil, "", err
+		}
+
+		if p != nil {
+			return p, c.kind, nil
 		}
 	}
 
@@ -544,11 +599,11 @@ func resolvePrincipal(
 				Username:   "system/legacy-api-key",
 				IsLegacy:   true,
 				Credential: auth.CredentialLegacy,
-			}, auth.CredentialLegacy
+			}, auth.CredentialLegacy, nil
 		}
 	}
 
-	return &auth.Principal{IsAnonymous: true, Credential: auth.CredentialNone}, auth.CredentialNone
+	return &auth.Principal{IsAnonymous: true, Credential: auth.CredentialNone}, auth.CredentialNone, nil
 }
 
 // sessionPrincipalStore is the part of the database sessionPrincipal needs.
@@ -597,21 +652,23 @@ type tokenPrincipalStore interface {
 	UpdateTokenLastUsed(ctx context.Context, tokenID string) error
 }
 
-func tokenPrincipal(ctx context.Context, tokenValue, kind string, db tokenPrincipalStore, log *logger.Logger) *auth.Principal {
+// tokenPrincipal resolves a token credential. It returns (nil, nil) for a value
+// that is no token, an unknown, revoked or expired one, and a non-nil error only
+// when the lookup itself failed (see auth.ValidateToken: not found is nil, nil).
+func tokenPrincipal(ctx context.Context, tokenValue, kind string, db tokenPrincipalStore, log *logger.Logger) (*auth.Principal, error) {
 	if !strings.HasPrefix(tokenValue, auth.TokenPrefixAccess) && !strings.HasPrefix(tokenValue, auth.TokenPrefixDeploy) {
-		return nil
+		return nil, nil //nolint:nilnil // not a token credential
 	}
 
 	token, user, err := auth.ValidateToken(ctx, db, tokenValue)
 	if err != nil {
-		log.Warnw("token validation error", "error", err)
-		return nil
+		return nil, fmt.Errorf("validate token: %w", err)
 	}
 
 	// Failed validations are intentionally not audited: an unauthenticated
 	// caller must not be able to write one audit row per request.
 	if token == nil || user == nil {
-		return nil
+		return nil, nil //nolint:nilnil // unknown, revoked or expired token
 	}
 
 	// The password-change gate applies to session logins only; a token never
@@ -622,7 +679,7 @@ func tokenPrincipal(ctx context.Context, tokenValue, kind string, db tokenPrinci
 		// A project token carries its project; anything else is inconsistent
 		// and gets no access.
 		if user.ProjectID == nil || token.ProjectID == nil || *user.ProjectID != *token.ProjectID || token.Kind != auth.TokenKindDeploy {
-			return nil
+			return nil, nil //nolint:nilnil // inconsistent service token
 		}
 
 		pu.serviceProject = *user.ProjectID
@@ -636,7 +693,7 @@ func tokenPrincipal(ctx context.Context, tokenValue, kind string, db tokenPrinci
 
 	auth.TouchToken(ctx, db, token)
 
-	return p
+	return p, nil
 }
 
 // authorizationSecrets extracts the credential strings carried by the
