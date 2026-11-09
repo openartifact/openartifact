@@ -39,6 +39,20 @@ describe('grouped and checksum search', () => {
     expect(res).toEqual({ packages: [], total: 0 })
   })
 
+  it('sends the project filters, one project_role per role', async () => {
+    // A fresh Response per call: a body can be read only once.
+    const f = spyOn(globalThis, 'fetch').mockImplementation(
+      (async () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })) as never,
+    )
+    await searchPackageGroups({ q: 'a', project: 'acme', projectRoles: ['developer', 'owner'] })
+    await search({ q: 'a', projectRoles: ['viewer'] })
+    const [grouped, plain] = f.mock.calls.map((c) => new URL(String(c[0]), 'http://x').searchParams)
+    expect(grouped!.get('project')).toBe('acme')
+    expect(grouped!.getAll('project_role')).toEqual(['developer', 'owner'])
+    expect(plain!.getAll('project_role')).toEqual(['viewer'])
+    expect(plain!.has('project')).toBe(false)
+  })
+
   it('sends the checksum parameter and maps the files', async () => {
     const f = mockFetch({ packages: [{ repository: 'r', format: 'raw', name: 'n', version: '1', filename: 'f', checksum: 'ab', algorithm: 'md5' }], total: 1 })
     const res = await searchChecksum({ checksum: 'ab', repo: 'r' })

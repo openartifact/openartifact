@@ -26,6 +26,7 @@ Details:
 
 - **Home** lists critical findings, failing services and repositories near their quota. It shows only what the API reports.
 - **Repositories:** **New repository** (or `/repos?new=1`) opens the create drawer.
+- **Packages:** filters by format, repository and project, and **Shared with me** keeps the projects where you are a viewer (`?project=NAME&shared=1`). The project filters apply to name searches, not to checksum lookups.
 - **Projects:** the list takes `?scope=mine` or `?scope=all`. A project has the tabs Overview, Repositories, Members, Activity, Usage and Settings.
 - **Security:** see [Security findings](../security/findings.md).
 
@@ -39,7 +40,7 @@ Press **Ctrl+K** (**Cmd+K** on macOS) anywhere, or use the search field in the h
 
 - Repositories, packages (one hit per package), projects, bundles, settings sections and users, in one list.
 - A hex string of 32, 40 or 64 characters offers **Look up checksum in Packages**.
-- A query that matches too many packages asks you to refine it with `name:`, `format:` or `repo:`.
+- A query that matches too many packages asks you to refine it with `name:`, `format:`, `repo:` or `project:`.
 - Settings you may not open are listed with "Requires admin".
 
 ### Actions

@@ -37,7 +37,7 @@
   "shell.palette.noActions": "No hay acciones coincidentes",
   "shell.palette.count_one": "{n} resultado",
   "shell.palette.count_other": "{n} resultados",
-  "shell.palette.tooBroad": "Demasiadas coincidencias de paquetes. Afina la consulta, por ejemplo con name:, format: o repo:.",
+  "shell.palette.tooBroad": "Demasiadas coincidencias de paquetes. Afina la consulta, por ejemplo con name:, format:, repo: o project:.",
   "shell.palette.partialError": "No se pudieron cargar algunos resultados.",
   "shell.palette.retry": "Reintentar",
   "shell.palette.footNavigate": "navegar",

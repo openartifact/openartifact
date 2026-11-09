@@ -20,6 +20,8 @@ const FILTERS = {
   q: strParam(),
   format: strParam(),
   repo: strParam(),
+  project: strParam(),
+  shared: boolParam(),
   flagged: boolParam(),
   mode: enumParam(['', 'name', 'checksum'] as const, ''),
 }
@@ -31,7 +33,8 @@ async function fetchRows(req: ListRequest<typeof FILTERS>): Promise<ListResponse
   const plan = planSearch(f)
   const scope = { format: f.format || undefined, repo: f.repo || undefined, flagged: f.flagged }
   if (plan.kind === 'name') {
-    const res = await searchPackageGroups({ q: plan.q, ...scope, limit: req.limit, page: req.page })
+    const projects = { project: f.project || undefined, projectRoles: f.shared ? ['viewer' as const] : undefined }
+    const res = await searchPackageGroups({ q: plan.q, ...scope, ...projects, limit: req.limit, page: req.page })
     return { rows: res.packages.map(groupRow), total: res.total }
   }
   if (plan.kind === 'checksum') {
@@ -42,10 +45,11 @@ async function fetchRows(req: ListRequest<typeof FILTERS>): Promise<ListResponse
 }
 
 /**
- * Package search bound to the URL (`?q=&format=&repo=&flagged=1&mode=checksum&page=`):
+ * Package search bound to the URL (`?q=&format=&repo=&project=&shared=1&flagged=1&mode=checksum&page=`):
  * the query is debounced, a digest-shaped query switches to the checksum lookup
  * unless the toggle says otherwise, and nothing is requested for an empty query
- * or a checksum search whose text is not a full-length hex digest.
+ * or a checksum search whose text is not a full-length hex digest. The project filters
+ * (`project`, `shared` for `project_role=viewer`) apply to the name search only.
  */
 export function useSearch() {
   const list = useListQuery({

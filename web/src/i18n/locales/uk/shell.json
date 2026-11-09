@@ -39,7 +39,7 @@
   "shell.palette.count_other": "{n} результату",
   "shell.palette.count_few": "{n} результати",
   "shell.palette.count_many": "{n} результатів",
-  "shell.palette.tooBroad": "Забагато збігів серед пакетів. Уточніть запит, наприклад за допомогою name:, format: або repo:.",
+  "shell.palette.tooBroad": "Забагато збігів серед пакетів. Уточніть запит, наприклад за допомогою name:, format:, repo: або project:.",
   "shell.palette.partialError": "Частину результатів не вдалося завантажити.",
   "shell.palette.retry": "Повторити",
   "shell.palette.footNavigate": "навігація",

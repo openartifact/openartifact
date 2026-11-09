@@ -4,6 +4,7 @@
 
 import { request, ApiError } from './client'
 import type { ChecksumHit, SearchPackageHit, SearchRepositoryHit, SearchResult as GeneratedSearchResult } from './generated/types.gen'
+import type { ProjectMemberRole } from './projects'
 
 export type { ChecksumHit, SearchPackageHit }
 export type SearchRepoHit = SearchRepositoryHit
@@ -15,6 +16,10 @@ export interface SearchParams {
   q: string
   format?: string
   repo?: string
+  /** Only repositories of this project (name or slug) the caller holds a role in. */
+  project?: string
+  /** Only repositories of projects where the caller's role is one of these; `['viewer']` is "shared with me". */
+  projectRoles?: ProjectMemberRole[]
   limit?: number
   /** `package` returns one hit per package (its latest version) instead of one per version. */
   group?: 'package'
@@ -37,6 +42,12 @@ function setOffset(qs: URLSearchParams, page: number | undefined, limit: number 
   qs.set('offset', String((page - 1) * (limit ?? DEFAULT_LIMIT)))
 }
 
+/** The project filters; checksum lookups ignore them on the server, so they never send them. */
+function setProjectFilters(qs: URLSearchParams, params: Pick<SearchParams, 'project' | 'projectRoles'>): void {
+  if (params.project) qs.set('project', params.project)
+  for (const role of params.projectRoles ?? []) qs.append('project_role', role)
+}
+
 function emptyResult(): SearchResult {
   return { packages: [], repositories: [] }
 }
@@ -46,6 +57,7 @@ export async function search(params: SearchParams): Promise<SearchResult> {
   qs.set('q', params.q)
   if (params.format) qs.set('format', params.format)
   if (params.repo) qs.set('repo', params.repo)
+  setProjectFilters(qs, params)
   if (params.limit != null) qs.set('limit', String(params.limit))
   if (params.group) qs.set('group', params.group)
   if (params.flagged) qs.set('flagged', 'true')
@@ -80,11 +92,12 @@ export interface GroupedSearchResult {
 
 /** Package search grouped by repository and name: one row per package, not per version. */
 export async function searchPackageGroups(
-  params: Pick<SearchParams, 'q' | 'format' | 'repo' | 'flagged' | 'limit' | 'page' | 'signal'>,
+  params: Pick<SearchParams, 'q' | 'format' | 'repo' | 'project' | 'projectRoles' | 'flagged' | 'limit' | 'page' | 'signal'>,
 ): Promise<GroupedSearchResult> {
   const qs = new URLSearchParams({ q: params.q, group: 'package' })
   if (params.format) qs.set('format', params.format)
   if (params.repo) qs.set('repo', params.repo)
+  setProjectFilters(qs, params)
   if (params.flagged) qs.set('flagged', 'true')
   if (params.limit != null) qs.set('limit', String(params.limit))
   setOffset(qs, params.page, params.limit)

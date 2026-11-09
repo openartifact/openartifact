@@ -36,7 +36,7 @@
   "shell.palette.noResultsHint": "패키지 이름, 저장소 또는 “보존” 같은 설정을 입력해 보세요.",
   "shell.palette.noActions": "일치하는 작업 없음",
   "shell.palette.count_other": "결과 {n}개",
-  "shell.palette.tooBroad": "일치하는 패키지가 너무 많습니다. name:, format:, repo: 등으로 검색어를 좁히세요.",
+  "shell.palette.tooBroad": "일치하는 패키지가 너무 많습니다. name:, format:, repo:, project: 등으로 검색어를 좁히세요.",
   "shell.palette.partialError": "일부 결과를 불러오지 못했습니다.",
   "shell.palette.retry": "다시 시도",
   "shell.palette.footNavigate": "이동",
