@@ -150,6 +150,54 @@ func checkCut(t *testing.T, rec *cutRecorder, res cutResult, data []byte, first 
 	}
 }
 
+// stageBody hands the data over whole below the limit, with a buffer that is not
+// part-sized, and reports "more may follow" from the limit on, the exact limit
+// included (the remainder is then decided by the cutter).
+func TestStageBodyBoundary(t *testing.T) {
+	t.Parallel()
+
+	const limit = 10
+
+	for head := 1; head <= 3; head++ {
+		for body := 0; body <= limit+4; body++ {
+			t.Run(fmt.Sprintf("head%d/body%d", head, body), func(t *testing.T) {
+				t.Parallel()
+
+				data := testBytes(head + body)
+				r := bytes.NewReader(data[head:])
+
+				staged, more, err := stageBody(bytes.Clone(data[:head]), r, limit)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				wantLen := min(len(data), limit)
+				if len(staged) != wantLen || !bytes.Equal(staged, data[:wantLen]) {
+					t.Fatalf("staged %d bytes, want the first %d", len(staged), wantLen)
+				}
+
+				if more != (len(data) >= limit) {
+					t.Fatalf("more = %v for %d bytes with limit %d", more, len(data), limit)
+				}
+
+				// Nothing beyond the limit was consumed from the body.
+				if rest := r.Len(); rest != len(data)-wantLen {
+					t.Fatalf("%d bytes left in the body, want %d", rest, len(data)-wantLen)
+				}
+			})
+		}
+	}
+}
+
+func TestStageBodyReaderError(t *testing.T) {
+	t.Parallel()
+
+	_, _, err := stageBody([]byte{1}, iotest.ErrReader(errCutterTest), 10)
+	if !errors.Is(err, errCutterTest) {
+		t.Fatalf("err = %v, want the reader's error", err)
+	}
+}
+
 // A reader that fails (also with io.ErrUnexpectedEOF, which io.ReadFull would
 // take for a clean end) fails the cut, and every buffer is back in the pool.
 func TestPartCutterReaderErrors(t *testing.T) {
