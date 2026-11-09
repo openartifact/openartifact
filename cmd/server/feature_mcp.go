@@ -110,6 +110,7 @@ func (a *app) configureMCPAuth(rbacCfg *middleware.RBACConfig) {
 		return evaluator.RepoReadFilter(ctx, *principal)
 	})
 	mcpServer.SetSearcher(search.NewExecutor(db.GetDB()))
+	mcpServer.SetProjectScope(search.NewProjectScope(db.GetDB(), evaluator))
 }
 
 // registerMCPMetadata serves the RFC 9728 protected-resource metadata of the

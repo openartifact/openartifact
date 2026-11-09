@@ -29,6 +29,13 @@ import (
 func newMigratedSearchDB(t *testing.T) *sql.DB {
 	t.Helper()
 
+	return newMigratedSearchPG(t).GetDB()
+}
+
+// newMigratedSearchPG is a fresh, migrated database of its own for the test.
+func newMigratedSearchPG(t *testing.T) *database.PostgresDB {
+	t.Helper()
+
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
 		if os.Getenv("CI") != "" {
@@ -86,7 +93,7 @@ func newMigratedSearchDB(t *testing.T) *sql.DB {
 		t.Fatalf("apply migrations: %v", err)
 	}
 
-	return pg.GetDB()
+	return pg
 }
 
 const scopeTestRepos = 1300

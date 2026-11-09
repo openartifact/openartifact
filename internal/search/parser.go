@@ -15,6 +15,16 @@ type SearchFilter struct {
 	// Flagged keeps the packages with a critical or high vulnerability, a secret
 	// finding or a quarantined scan result (database.FlaggedArtifactPredicate).
 	Flagged bool
+	// Projects keeps the repositories of these projects (name or slug), and
+	// ProjectRoles those of the projects where the caller's effective role is one
+	// of these. Both only narrow the readable set; see ProjectScope.NarrowToProjects.
+	Projects     []string
+	ProjectRoles []string
+}
+
+// ProjectScoped reports whether a project filter applies.
+func (f SearchFilter) ProjectScoped() bool {
+	return len(f.Projects) > 0 || len(f.ProjectRoles) > 0
 }
 
 func ParseQuery(q string) SearchFilter {
@@ -42,6 +52,10 @@ func ParseQuery(q string) SearchFilter {
 			f.Repos = append(f.Repos, val)
 		case "sha256":
 			f.SHA256Prefix = val
+		case "project":
+			f.Projects = append(f.Projects, val)
+		case "project_role":
+			f.ProjectRoles = append(f.ProjectRoles, val)
 		default:
 			freeTextParts = append(freeTextParts, token)
 		}

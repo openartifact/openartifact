@@ -136,20 +136,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filter := ParseQuery(q)
-	filter.Formats = append(filter.Formats, r.URL.Query()["format"]...)
-	filter.Repos = append(filter.Repos, r.URL.Query()["repo"]...)
-
-	flagged, ok := parseFlagged(r.URL.Query().Get("flagged"))
+	filter, ok := parseFilter(w, r, q)
 	if !ok {
-		httpx.WriteError(w, http.StatusBadRequest, "invalid_flagged", "flagged must be true or false")
-		return
-	}
-
-	filter.Flagged = flagged
-
-	if len(filter.Formats) > maxFilterValues || len(filter.Repos) > maxFilterValues {
-		httpx.WriteError(w, http.StatusBadRequest, "invalid_filter", "too many format or repo filters")
 		return
 	}
 
@@ -169,6 +157,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The project filters narrow the readable set itself, so the package and the
+	// repository hits below both honour them.
+	if filter.ProjectScoped() {
+		readableRepos, err = h.projectScope().NarrowToProjects(ctx, readableRepos, filter)
+		if err != nil {
+			h.log.Errorw("resolve project roles failed", "error", err)
+			httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "permission resolution failed")
+
+			return
+		}
+	}
+
 	results, count, err := h.searcher.SearchPage(ctx, filter, opts, limit, offset, readableRepos)
 	if err != nil {
 		h.log.Errorw("search failed", "error", err)
@@ -178,7 +178,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if count > MaxSearchResults {
-		writeTooBroad(w, filter)
+		usesProjects, err := h.projectScope().UsesProjects(ctx)
+		if err != nil {
+			h.log.Errorw("resolve project roles failed", "error", err)
+		}
+
+		writeTooBroad(w, filter, usesProjects)
+
 		return
 	}
 
@@ -208,6 +214,47 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}); encErr != nil {
 		_ = encErr // response header already written
 	}
+}
+
+// projectScope applies the project filters for this handler's database and evaluator.
+func (h *Handler) projectScope() *ProjectScope { return NewProjectScope(h.db, h.evaluator) }
+
+// parseFilter builds the search filter from q and the filter parameters (format,
+// repo, project, project_role, flagged); on a bad value it writes the 400 and
+// returns false.
+func parseFilter(w http.ResponseWriter, r *http.Request, q string) (SearchFilter, bool) {
+	query := r.URL.Query()
+
+	filter := ParseQuery(q)
+	filter.Formats = append(filter.Formats, query["format"]...)
+	filter.Repos = append(filter.Repos, query["repo"]...)
+	filter.Projects = append(filter.Projects, query["project"]...)
+	filter.ProjectRoles = append(filter.ProjectRoles, query["project_role"]...)
+
+	for _, role := range filter.ProjectRoles {
+		if !validProjectRole(role) {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_filter",
+				"project_role must be viewer, developer, maintainer or owner")
+
+			return SearchFilter{}, false
+		}
+	}
+
+	flagged, ok := parseFlagged(query.Get("flagged"))
+	if !ok {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_flagged", "flagged must be true or false")
+		return SearchFilter{}, false
+	}
+
+	filter.Flagged = flagged
+
+	if len(filter.Formats) > maxFilterValues || len(filter.Repos) > maxFilterValues ||
+		len(filter.Projects) > maxFilterValues || len(filter.ProjectRoles) > maxFilterValues {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_filter", "too many format, repo, project or project_role filters")
+		return SearchFilter{}, false
+	}
+
+	return filter, true
 }
 
 // parsePaging reads limit (default 25, at most 100) and offset; on a bad value

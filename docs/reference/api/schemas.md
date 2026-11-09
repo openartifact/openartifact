@@ -1941,7 +1941,7 @@ Catalog figures of a repository. Only present in the repository list (GET /api/v
 | `code` | string | no | missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum or query_too_broad |
 | `error` | string | yes | Message |
 | `max_results` | integer | no | query_too_broad only: the largest number of matches a search answers |
-| `narrow_by` | array of string | no | query_too_broad only: the filters the query does not use yet (name:`<package>`, format:`<format>`, repo:`<repository>` in q, flagged=true); empty when it already uses all of them |
+| `narrow_by` | array of string | no | query_too_broad only: the filters the query does not use yet (name:`<package>`, format:`<format>`, repo:`<repository>` and project:`<project>` in q, flagged=true; project:`<project>` only for a caller that holds a project role); empty when it already uses all of them |
 
 ### SearchPackageHit
 

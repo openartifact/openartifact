@@ -132,11 +132,13 @@ Newest first. Each version starts with **What you must do**; the text below it l
 **What you must do**
 
 - Check scripts that read the text output of `oa props search` line by line: the table now has a `NAME` column after `ARTIFACT_ID`. `--format json` still prints the list of ids.
+- In a search query, a word starting with `project:` or `project_role:` is now a filter rather than search text.
 - Nothing else is required.
 
 **Changes.**
 
 - **Property search.** `GET /api/v1/repositories/{name}/artifacts/search` also returns `artifacts`: the same ids, each with the name, version and format of the file it names when it is a file of that repository. `artifact_ids` is unchanged. See [search results](../repositories/properties.md#search-results).
+- **Search by project.** `GET /api/v1/search` and the MCP `search_artifacts` tool narrow by project: the `project` and `project_role` parameters, or `project:` and `project_role:` in the query. `project_role=viewer` lists what others shared with you. Both only narrow what the caller can already read; a global admin counts as owner of every project. `400 query_too_broad` suggests `project:<project>` to callers that hold a project role. See [the REST API](../integrations/api.md).
 
 ### 0.22.0
 
