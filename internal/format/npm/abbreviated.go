@@ -24,6 +24,12 @@ var abbreviatedFields = map[string]bool{
 	"engines":              true,
 	"_hasShrinkwrap":       true,
 	"deprecated":           true,
+	"os":                   true,
+	"cpu":                  true,
+	"libc":                 true,
+	"hasInstallScript":     true,
+	"funding":              true,
+	"acceptDependencies":   true,
 }
 
 // isAbbreviatedField reports whether a raw manifest key survives in the

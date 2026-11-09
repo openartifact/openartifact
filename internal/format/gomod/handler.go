@@ -22,9 +22,16 @@ const maxGoModFileBytes = 4 << 20 // 4 MiB
 // goModFileName is the name of the module file at the root of a module.
 const goModFileName = "go.mod"
 
+// maxModuleUncompressedBytes caps the summed uncompressed size an uploaded
+// module zip may declare; it is the limit the go command itself enforces
+// (golang.org/x/mod/zip MaxZipFile).
+const maxModuleUncompressedBytes = 500 << 20
+
 var (
-	errNoGoMod      = errors.New("zip does not contain a root go.mod file")
-	errNoModuleLine = errors.New("go.mod has no module line")
+	errEntryOutsideModule = errors.New("zip entry is outside <module>@<version>/")
+	errZipTooLarge        = errors.New("zip uncompressed size exceeds limit")
+	errNoGoMod            = errors.New("zip does not contain a root go.mod file")
+	errNoModuleLine       = errors.New("go.mod has no module line")
 )
 
 // moduleFile is the root go.mod of a module zip.
@@ -32,6 +39,31 @@ type moduleFile struct {
 	entry      string // zip entry name, "<module>@<version>/go.mod"
 	content    string
 	modulePath string // from the module line
+}
+
+// checkModuleZipEntries requires every entry of a module zip to live under
+// prefix ("<module>@<version>/") and the summed declared uncompressed size to
+// stay within maxModuleUncompressedBytes.
+func checkModuleZipEntries(r io.ReaderAt, size int64, prefix string) error {
+	zr, err := zip.NewReader(r, size)
+	if err != nil {
+		return fmt.Errorf("invalid zip file: %w", err)
+	}
+
+	var total uint64
+
+	for _, f := range zr.File {
+		if !strings.HasPrefix(f.Name, prefix) {
+			return errEntryOutsideModule
+		}
+
+		total += f.UncompressedSize64
+		if total > maxModuleUncompressedBytes || total < f.UncompressedSize64 {
+			return errZipTooLarge
+		}
+	}
+
+	return nil
 }
 
 // parseModuleZipAt reads the root go.mod of a module zip in place, so an upload

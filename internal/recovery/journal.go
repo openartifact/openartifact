@@ -18,6 +18,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -940,7 +941,12 @@ func (j *Journal) dropMarks(ctx context.Context, table string, marks []dirtyMark
 func (j *Journal) recordFailure(ctx context.Context, table string, w *work) {
 	msg := w.err.Error()
 	if len(msg) > maxErrorText {
-		msg = msg[:maxErrorText]
+		cut := maxErrorText
+		for cut > 0 && !utf8.RuneStart(msg[cut]) {
+			cut--
+		}
+
+		msg = msg[:cut]
 	}
 
 	j.log.Warnw("recovery journal: row failed, will retry", "table", table, "key", w.mark.key, "error", w.err)

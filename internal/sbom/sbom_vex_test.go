@@ -380,6 +380,22 @@ func TestVersionAtLeast(t *testing.T) {
 		{"npm", "unknown", "1.0.0", false, false},
 		{"maven", "1.2.3", "1.2.3", true, true},
 		{"npm", "abc", "1.0.0", false, false},
+		{"deb", "2.36-9", "2.36-9+deb12u3", false, true},
+		{"deb", "2.36-9+deb12u3", "2.36-9+deb12u3", true, true},
+		{"deb", "2.36-9+deb12u10", "2.36-9+deb12u3", true, true},
+		{"deb", "1:1.0-1", "2.0-1", true, true},
+		{"deb", "1.0~rc1-1", "1.0-1", false, true},
+		{"deb", "1.0-1", "1.0~rc1-1", true, true},
+		{"rpm", "1.0-1.el9", "1.0-1.el9_2.1", false, true},
+		{"rpm", "1:1.0-1", "2.0-1", true, true},
+		{"rpm", "1.0~rc1-1", "1.0-1", false, true},
+		{"rpm", "1.10-1", "1.9-1", true, true},
+		{"pacman", "1:1.0-1", "2.0-1", true, true},
+		{"pypi", "1.0.post1", "1.0", true, true},
+		{"pypi", "1.0rc1", "1.0", false, true},
+		{"gem", "1.0.0.pre", "1.0.0", false, true},
+		{"nuget", "1.0.0-beta", "1.0.0", false, true},
+		{"apk", "1.0-r1", "1.0-r2", false, false},
 	}
 
 	for _, c := range cases {

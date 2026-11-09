@@ -34,6 +34,9 @@ var (
 	errMCPLimits          = errors.New(
 		"mcp.maxBodyBytes must be positive; mcp.rateLimitPerMinute and mcp.aiTriggerPerMinute must not be negative",
 	)
+	errMCPHTTPPath = errors.New(
+		"mcp.httpPath must start with '/', not be '/' or end with '/', and not overlap /api, /repos, /v2, /federation or /.well-known",
+	)
 	errMCPOrigin          = errors.New("mcp.allowedOrigins entries must be origins like https://host[:port]")
 	errMissingDBDriver    = errors.New("database driver is required")
 	errMissingStorageType = errors.New("storage type is required")
@@ -1511,6 +1514,10 @@ func (c *Config) validateMCP() error {
 		return errMCPLimits
 	}
 
+	if !validMCPPath(c.MCP.HTTPPath) {
+		return fmt.Errorf("%w: %q", errMCPHTTPPath, c.MCP.HTTPPath)
+	}
+
 	for _, o := range c.MCP.AllowedOrigins {
 		u, err := url.Parse(o)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || (u.Path != "" && u.Path != "/") ||
@@ -1521,6 +1528,22 @@ func (c *Config) validateMCP() error {
 	}
 
 	return nil
+}
+
+// validMCPPath reports whether p is a usable MCP mount path: absolute, not the
+// root, no trailing slash, and outside the route trees the server already owns.
+func validMCPPath(p string) bool {
+	if !strings.HasPrefix(p, "/") || p == "/" || strings.HasSuffix(p, "/") {
+		return false
+	}
+
+	for _, reserved := range []string{"/api", "/repos", "/v2", "/federation", "/.well-known"} {
+		if p == reserved || strings.HasPrefix(p, reserved+"/") {
+			return false
+		}
+	}
+
+	return true
 }
 
 // inPodServiceAccountFile is the path of a file of the service account volume

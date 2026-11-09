@@ -173,8 +173,7 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 	artPath := chi.URLParam(r, "*")
 	filename := filepath.Base(artPath)
 
-	groupPath, artifactIDCoord, version, _, parseErr := pkgmaven.ParseRepositoryPath(artPath)
-	if parseErr != nil || groupPath == "" || version == "" || !pathseg.Path(artPath) {
+	if !pathseg.Path(artPath) {
 		uploadResult = "error"
 
 		http.Error(w, "invalid maven repository path", http.StatusBadRequest)
@@ -197,6 +196,15 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 	if filename == "maven-metadata.xml" {
 		_, _ = iocopy.Copy(io.Discard, http.MaxBytesReader(w, r.Body, MaxMavenUploadBytes))
 		w.WriteHeader(http.StatusOK)
+
+		return
+	}
+
+	groupPath, artifactIDCoord, version, _, parseErr := pkgmaven.ParseRepositoryPath(artPath)
+	if parseErr != nil || groupPath == "" || version == "" {
+		uploadResult = "error"
+
+		http.Error(w, "invalid maven repository path", http.StatusBadRequest)
 
 		return
 	}

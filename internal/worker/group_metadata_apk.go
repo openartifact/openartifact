@@ -201,7 +201,7 @@ func (w *GroupMetadataWorker) checkApkDir(ctx context.Context, dir string, membe
 }
 
 // loadHostedApk reads the hosted members' packages by member and directory and
-// seeds the hosted-wins set with their names.
+// seeds the per-directory hosted-wins sets with their names.
 func (j *groupJob) loadHostedApk(ctx context.Context) (map[string]map[string][]pkgapk.Package, error) {
 	out := make(map[string]map[string][]pkgapk.Package)
 
@@ -221,8 +221,12 @@ func (j *groupJob) loadHostedApk(ctx context.Context) (map[string]map[string][]p
 			dir := apkRowDir(row)
 			byDir[dir] = append(byDir[dir], ApkRowPackage(row))
 
-			if j.hostedNames != nil {
-				j.hostedNames[row.Name] = struct{}{}
+			if j.hostedApkNames != nil {
+				if j.hostedApkNames[dir] == nil {
+					j.hostedApkNames[dir] = make(map[string]struct{})
+				}
+
+				j.hostedApkNames[dir][row.Name] = struct{}{}
 			}
 		}
 
@@ -289,7 +293,7 @@ func (j *groupJob) fetchProxyIndexes(ctx context.Context, dirs []string) ([]*apk
 // and nothing else offers, is not rendered and keeps its previous index until
 // the retry.
 func (j *groupJob) buildApk(ctx context.Context, extra []string) error {
-	j.hostedNames = make(map[string]struct{})
+	j.hostedApkNames = make(map[string]map[string]struct{})
 
 	hosted, err := j.loadHostedApk(ctx)
 	if err != nil {
@@ -297,7 +301,7 @@ func (j *groupJob) buildApk(ctx context.Context, extra []string) error {
 	}
 
 	if j.group.MergeProxyVersions {
-		j.hostedNames = nil
+		j.hostedApkNames = nil
 	}
 
 	dirSet := make(map[string]struct{})
@@ -342,7 +346,7 @@ func (j *groupJob) buildApk(ctx context.Context, extra []string) error {
 		}
 
 		j.dists = append(j.dists, dir)
-		byDir[dir+"/"+formatapk.IndexName] = j.claimApk(dir, mergeApkDir(sources, j.hostedNames))
+		byDir[dir+"/"+formatapk.IndexName] = j.claimApk(dir, mergeApkDir(sources, j.hostedApkNames[dir]))
 	}
 
 	blobs, err := renderApkIndexes(j.group.Name, byDir, j.apkSigner)
@@ -411,6 +415,10 @@ func (j *groupJob) keptPrefixes() []string {
 	prefixes := make([]string, 0, len(j.keep))
 	for rel := range j.keep {
 		prefixes = append(prefixes, j.scope+strings.TrimSuffix(rel, formatapk.IndexName))
+	}
+
+	for _, dir := range j.keepDirs {
+		prefixes = append(prefixes, j.scope+dir)
 	}
 
 	return prefixes

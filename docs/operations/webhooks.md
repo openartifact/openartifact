@@ -153,7 +153,7 @@ Notes on when events fire:
 - `bundle.check_updated` goes to the webhooks of the bundle's first source repository and to the global ones; a bundle without items reaches the global ones only. It fires for every report, including a repeat of the same status.
 - Events are published after the operation succeeds. A failure to record an event never fails the upload or delete that caused it.
 
-There is no `artifact.downloaded` event, because downloads are the highest-volume operation and each delivery costs a database insert and an HTTP request. Subscribing to it is rejected with 400. Use the `artifact.downloaded` action of the [audit log](monitoring.md) or the download metrics instead.
+There is no `artifact.downloaded` event, because downloads are the highest-volume operation and each delivery costs a database insert and an HTTP request. Subscribing to it is rejected with 400. Downloads are not written to the [audit log](monitoring.md) either; use the download metrics instead.
 
 ### Payloads
 

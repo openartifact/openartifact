@@ -19,8 +19,8 @@ import (
 // that differs from the computed digest). Blobs whose ID is their digest never
 // appear here: FilesystemStore.ExistsBySHA256 resolves those with one stat.
 //
-// The index is built lazily by a single walk over the ".meta" sidecar files
-// the first time a digest is not found by ID, so a miss costs a map lookup
+// The index is built lazily, in the background, by a single walk over the ".meta" sidecar files
+// the first time a digest is not found by ID, so a miss costs a map lookup (lookups made before the walk finishes report a miss)
 // instead of a walk over every blob on disk. Put and Delete keep it current;
 // writes made by another process are only picked up after a restart, which
 // can only make lookup report a miss for a blob that does exist (the caller
@@ -28,7 +28,9 @@ import (
 type aliasIndex struct {
 	mu    sync.RWMutex
 	built bool
-	byDig map[string]string
+	// building is set while the background scan runs.
+	building bool
+	byDig    map[string]string
 }
 
 func (a *aliasIndex) remove(id string) {
@@ -49,21 +51,31 @@ func (a *aliasIndex) remove(id string) {
 // lookup returns the ID of a blob stored under a non-digest ID whose content
 // digest is sha256hex.
 func (a *aliasIndex) lookup(store *FilesystemStore, sha256hex string) (string, bool, error) {
-	a.mu.RLock()
-	built := a.built
-	id, ok := a.byDig[sha256hex]
-	a.mu.RUnlock()
+	a.mu.Lock()
+	if !a.built {
+		// Build in the background so no caller waits on (or blocks others
+		// behind) the full walk; until it lands every lookup is a miss.
+		if !a.building {
+			a.building = true
 
-	if !built {
-		a.mu.Lock()
-		if !a.built {
-			a.byDig = store.scanAliases()
-			a.built = true
+			go func() {
+				idx := store.scanAliases()
+
+				a.mu.Lock()
+				a.byDig = idx
+				a.built = true
+				a.building = false
+				a.mu.Unlock()
+			}()
 		}
 
-		id, ok = a.byDig[sha256hex]
 		a.mu.Unlock()
+
+		return "", false, nil
 	}
+
+	id, ok := a.byDig[sha256hex]
+	a.mu.Unlock()
 
 	if !ok {
 		return "", false, nil

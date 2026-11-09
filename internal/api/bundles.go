@@ -65,6 +65,7 @@ type BundlesStore interface {
 	) ([]*models.ReleaseBundle, int, error)
 	ListRepositories(ctx context.Context, page int, limit int, formatFilter string) ([]*models.Repository, error)
 	RemoveBundleItem(ctx context.Context, bundleID string, sha256 string) error
+	ConsumePendingUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
 	SealReleaseBundle(ctx context.Context, bundleID string, sealedBy string, sealedAt time.Time, sig *models.BundleSignature) (bool, error)
 	ArchiveReleaseBundle(ctx context.Context, bundleID string, archivedBy string, archivedAt time.Time) (bool, error)
@@ -1057,6 +1058,10 @@ func (h *BundlesHandler) validatePromotionStage(
 		if bundle.CurrentStage != nil && stage.Name == *bundle.CurrentStage {
 			curIdx = i
 		}
+	}
+
+	if bundle.CurrentStage != nil && curIdx < 0 {
+		return &apiFailure{http.StatusConflict, "conflict", "the bundle's current stage is no longer a stage of its pipeline"}
 	}
 
 	if toIdx < 0 {

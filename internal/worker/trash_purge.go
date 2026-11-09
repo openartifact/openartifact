@@ -35,6 +35,9 @@ const (
 	trashPurgeMaxItems = 1000
 	// trashPurgeRunTimeout bounds one scheduled pass.
 	trashPurgeRunTimeout = 30 * time.Minute
+
+	// trashPurgeQuotaTimeout bounds the quota release after a purge.
+	trashPurgeQuotaTimeout = 10 * time.Second
 	// trashPurgeMaxOrphanPasses bounds the orphan sweep that closes a pass
 	// (trashPurgeMaxOrphanPasses * storage.OrphanBatch blobs at most).
 	trashPurgeMaxOrphanPasses = 100
@@ -345,6 +348,11 @@ func (w *TrashPurgeWorker) releaseQuota(ctx context.Context, res *models.TrashPu
 	if res.QuotaArtifacts <= 0 {
 		return
 	}
+
+	// The rows are already purged: a shutdown must not leave the counters
+	// off, so the release outlives the run context for a bounded time.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), trashPurgeQuotaTimeout)
+	defer cancel()
 
 	if err := w.db.DecrementStorageUsage(ctx, res.RepositoryID, res.QuotaBytes, res.QuotaArtifacts); err != nil {
 		w.log.Warnw("trash purge: quota release failed (the quota reconcile corrects the counters)",

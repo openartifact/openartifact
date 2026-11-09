@@ -465,6 +465,17 @@ func (q *Queries) ListNPMVersionsByNames(ctx context.Context, arg ListNPMVersion
 	return items, nil
 }
 
+const lockNPMPackage = `-- name: LockNPMPackage :exec
+SELECT p.id FROM packages p WHERE p.id = $1 FOR UPDATE OF p
+`
+
+// Row lock taken as its own statement before DeleteNPMPackage, so the delete's
+// snapshot sees the version row of a concurrent publish that just committed.
+func (q *Queries) LockNPMPackage(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, lockNPMPackage, id)
+	return err
+}
+
 const markPackumentStale = `-- name: MarkPackumentStale :exec
 UPDATE packages SET attrs = attrs || '{"packument_stale": true}'::jsonb, updated_at = now() WHERE id = $1
 `

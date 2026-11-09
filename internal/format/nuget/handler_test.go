@@ -143,3 +143,33 @@ func TestNuspecDependencies_DependencyGroupsEmpty(t *testing.T) {
 		t.Errorf("groups = %#v, want none for a nuspec with no <dependencies>", groups)
 	}
 }
+
+func TestNuGetHandler_Parse_RequireLicenseAcceptance(t *testing.T) {
+	cases := []struct {
+		name, element string
+		want          bool
+	}{
+		{"true", "<requireLicenseAcceptance>true</requireLicenseAcceptance>", true},
+		{"mixed case padded", "<requireLicenseAcceptance> True </requireLicenseAcceptance>", true},
+		{"false", "<requireLicenseAcceptance>false</requireLicenseAcceptance>", false},
+		{"absent", "", false},
+		{"junk", "<requireLicenseAcceptance>maybe</requireLicenseAcceptance>", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			nuspec := `<package><metadata><id>A</id><version>1.0.0</version>` + tc.element + `</metadata></package>`
+			data := createNupkg(t, "A.nuspec", nuspec)
+
+			result, err := NewNuGetHandler().Parse(context.Background(), bytes.NewReader(data))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+
+			got, ok := result["requireLicenseAcceptance"].(bool)
+			if !ok || got != tc.want {
+				t.Errorf("requireLicenseAcceptance = %v, want bool %v", result["requireLicenseAcceptance"], tc.want)
+			}
+		})
+	}
+}

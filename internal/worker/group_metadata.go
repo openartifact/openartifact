@@ -30,6 +30,7 @@ import (
 	pkgapk "github.com/openartifact/openartifact/pkg/apk"
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
+	"github.com/openartifact/openartifact/pkg/pacman"
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
@@ -290,6 +291,10 @@ type groupJob struct {
 	// keep are the generated paths of an apk group that this generation could
 	// not produce and leaves as they are.
 	keep map[string]struct{}
+	// keepDirs are the group-relative directory prefixes (with a trailing
+	// slash) whose generated files and owners this generation could not
+	// produce and leaves as they are.
+	keepDirs []string
 	// blobs are the generated files keyed by group-relative path.
 	blobs map[string][]byte
 	// unchanged are the files of the previous generation this one keeps as
@@ -308,6 +313,9 @@ type groupJob struct {
 	// proxy members unless the group merges proxy versions (deb and rpm; a
 	// pacman generation applies the same rule in mergePacman).
 	hostedNames map[string]struct{}
+	// hostedApkNames are the same for an apk group, per directory (a package
+	// hosted for one architecture does not hide the proxy's for another).
+	hostedApkNames map[string]map[string]struct{}
 	// dists are the Debian distributions, or (for apk: the branch/repo/arch
 	// directories) the pacman architectures, the
 	// generation produced.
@@ -327,7 +335,15 @@ func (j *groupJob) claim(path, member, sum string) bool {
 	}
 
 	if cur, ok := j.owners[path]; ok {
-		return cur.sha256 == sum || cur.sha256 == "" || sum == ""
+		if cur.sha256 == "" && sum != "" {
+			// The earlier claim had no checksum: the first one with content
+			// decides, so later members are compared against it.
+			j.owners[path] = groupOwner{member: member, sha256: sum}
+
+			return true
+		}
+
+		return cur.sha256 == sum || sum == ""
 	}
 
 	j.owners[path] = groupOwner{member: member, sha256: sum}
@@ -517,18 +533,32 @@ func (w *GroupMetadataWorker) run(
 		return err
 	}
 
-	dists := st.Dists
+	known := st.Dists
+	if scope != "" {
+		stored, err := w.storedVariantDists(ctx, grp, scope)
+		if err != nil {
+			return err
+		}
+
+		for _, d := range stored {
+			if !slices.Contains(known, d) {
+				known = append(slices.Clone(known), d)
+			}
+		}
+	}
+
+	dists := known
 	if hint != "" && !slices.Contains(dists, hint) {
 		dists = append(slices.Clone(dists), hint)
 	}
 
 	switch grp.Format {
 	case "deb":
-		err = j.buildDeb(ctx, dists)
+		err = j.buildDeb(ctx, dists, known)
 	case "rpm":
 		err = j.buildRPM(ctx)
 	case "pacman":
-		err = j.buildPacman(ctx, st.Dists, hint)
+		err = j.buildPacman(ctx, known, hint)
 	case "apk":
 		err = j.buildApk(ctx, dists)
 	}
@@ -655,6 +685,33 @@ func (j *groupJob) refreshAfter(now time.Time) *time.Time {
 	return &t
 }
 
+// carryOver adds to newSHA the files this generation keeps from oldSHA: the
+// ones it could not produce (keep, keepDirs) and the ones whose content is the
+// previous one's (unchanged), which must still hold the checksum they had.
+func (j *groupJob) carryOver(oldSHA, newSHA map[string]string) error {
+	for rel := range j.keep {
+		if sum, ok := oldSHA[j.scope+rel]; ok {
+			newSHA[j.scope+rel] = sum
+		}
+	}
+
+	for path, sum := range oldSHA {
+		if hasAnyPrefix(strings.TrimPrefix(path, j.scope), j.keepDirs) {
+			newSHA[path] = sum
+		}
+	}
+
+	for rel, sum := range j.unchanged {
+		if oldSHA[j.scope+rel] != sum {
+			return fmt.Errorf("group worker: %s changed while the group was generated", j.scope+rel) //nolint:err113 // dynamic context
+		}
+
+		newSHA[j.scope+rel] = sum
+	}
+
+	return nil
+}
+
 // publish stores the generated files and the owner table and clears the stale
 // flag in one transaction, then reconciles the blob store.
 func (w *GroupMetadataWorker) publish(ctx context.Context, j *groupJob, st *models.GroupMetadataState, refresh *time.Time) error {
@@ -709,21 +766,8 @@ func (w *GroupMetadataWorker) publish(ctx context.Context, j *groupJob, st *mode
 		}
 	}
 
-	// Files this generation could not produce keep their previous content.
-	for rel := range j.keep {
-		if sum, ok := oldSHA[j.scope+rel]; ok {
-			newSHA[j.scope+rel] = sum
-		}
-	}
-
-	// Files this generation did not produce because their content is the
-	// previous one's stay under the checksum they had.
-	for rel, sum := range j.unchanged {
-		if oldSHA[j.scope+rel] != sum {
-			return fmt.Errorf("group worker: %s changed while the group was generated", j.scope+rel) //nolint:err113 // dynamic context
-		}
-
-		newSHA[j.scope+rel] = sum
+	if err := j.carryOver(oldSHA, newSHA); err != nil {
+		return err
 	}
 
 	stalePaths, reclaim := supersededMetadata(oldSHA, newSHA)
@@ -759,6 +803,55 @@ func (w *GroupMetadataWorker) publish(ctx context.Context, j *groupJob, st *mode
 	blobs.reclaim(ctx, reclaim)
 
 	return nil
+}
+
+// storedVariantDists are the distributions (deb), directories (apk) or
+// architectures (pacman) the variant under scope has stored metadata for, so a
+// variant generation keeps serving what it served before.
+func (w *GroupMetadataWorker) storedVariantDists(ctx context.Context, grp *models.Repository, scope string) ([]string, error) {
+	rows, err := w.db.GetDB().QueryContext(ctx,
+		`SELECT path FROM repository_metadata WHERE repository_id = $1 AND starts_with(path, $2)`, grp.ID, scope)
+	if err != nil {
+		return nil, fmt.Errorf("group worker: listing variant metadata: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	var out []string
+
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, fmt.Errorf("group worker: scanning variant metadata: %w", err)
+		}
+
+		rel := strings.TrimPrefix(path, scope)
+
+		switch grp.Format {
+		case "deb":
+			if name, ok := strings.CutPrefix(rel, "dists/"); ok {
+				if name, ok = strings.CutSuffix(name, "/Release"); ok && ValidDistName(name) {
+					out = append(out, name)
+				}
+			}
+		case "apk":
+			if dir, ok := strings.CutSuffix(rel, "/"+formatapk.IndexName); ok && validApkDir(dir) {
+				out = append(out, dir)
+			}
+		case "pacman":
+			if arch, ok := strings.CutPrefix(rel, "os/"); ok {
+				if arch, ok = strings.CutSuffix(arch, "/db.tar.gz"); ok && pacman.ValidArch(arch) {
+					out = append(out, arch)
+				}
+			}
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("group worker: listing variant metadata: %w", err)
+	}
+
+	return out, nil
 }
 
 // listOldGroupMetadata returns path -> blob sha256 of the group's generated

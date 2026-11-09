@@ -45,6 +45,10 @@ func (s *Server) listRepositories(ctx context.Context, in listRepositoriesIn) (r
 }
 
 func (s *Server) searchArtifacts(ctx context.Context, in searchArtifactsIn) (searchResult, error) {
+	if strings.TrimSpace(in.Query) == "" {
+		return searchResult{}, errEmptyQuery
+	}
+
 	queryLower := strings.ToLower(in.Query)
 
 	var hits []searchHit
@@ -66,6 +70,10 @@ func (s *Server) searchArtifacts(ctx context.Context, in searchArtifactsIn) (sea
 
 		hits, searchErr = s.searchAllRepos(ctx, in.Query, in.Format)
 		if searchErr != nil {
+			if broad, ok := errors.AsType[*tooBroadError](searchErr); ok {
+				return searchResult{}, broad
+			}
+
 			return searchResult{}, s.internalError("search artifacts", searchErr)
 		}
 	}
@@ -214,9 +222,13 @@ func (s *Server) searchAllRepos(ctx context.Context, query, format string) ([]se
 		filter.Formats = append(filter.Formats, format)
 	}
 
-	results, err := s.searcher.Search(ctx, filter, maxSearchHits, 0, readable)
+	results, total, err := s.searcher.SearchPage(ctx, filter, search.PageOptions{}, maxSearchHits, 0, readable)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // logged by the caller with context
+	}
+
+	if total > search.MaxSearchResults {
+		return nil, &tooBroadError{msg: search.TooBroadMessage(filter)}
 	}
 
 	hits := make([]searchHit, 0, len(results))
@@ -295,6 +307,7 @@ func matchesQuery(c *models.Component, queryLower string) bool {
 }
 
 var (
+	errEmptyQuery          = errors.New("query is required")
 	errNoAnalysis          = errors.New("no analysis found for this artifact")
 	errInvalidStatus       = errors.New("status must be one of: pending, processing, completed, failed")
 	errManifestTooLarge    = errors.New("manifest_text is too large")
@@ -303,3 +316,9 @@ var (
 	errManifestUnsupported = errors.New("manifest extraction is not supported for this artifact; supply manifest_text")
 	errPackageNotFound     = errors.New("package not found")
 )
+
+// tooBroadError reports a search that matches more than search.MaxSearchResults
+// packages; its message is safe to show the client.
+type tooBroadError struct{ msg string }
+
+func (e *tooBroadError) Error() string { return e.msg }

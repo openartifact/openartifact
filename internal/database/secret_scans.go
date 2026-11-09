@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 )
@@ -50,9 +49,10 @@ func (p *SecretScanStore) CreateSecretScanResult(ctx context.Context, result *mo
 		return fmt.Errorf("failed to marshal findings: %w", err)
 	}
 
-	var scannedAt time.Time
+	// A nil ScannedAt (a job still scanning) is stored as NULL, not the zero time.
+	scannedAt := sql.NullTime{}
 	if result.ScannedAt != nil {
-		scannedAt = *result.ScannedAt
+		scannedAt = sql.NullTime{Time: *result.ScannedAt, Valid: true}
 	}
 
 	err = p.db.QueryRowContext(ctx, `

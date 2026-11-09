@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { afterEach, describe, expect, it, spyOn } from 'bun:test'
-import { searchChecksum, searchPackageGroups } from '../search'
+import { search, searchChecksum, searchPackageGroups } from '../search'
 
 function mockFetch(body: unknown) {
   return spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -20,9 +20,16 @@ describe('grouped and checksum search', () => {
     const res = await searchPackageGroups({ q: 'a', format: 'npm', repo: 'r', flagged: true, limit: 20, page: 3 })
     const q = urlOf(f).searchParams
     expect(urlOf(f).pathname).toBe('/api/v1/search')
-    expect([q.get('q'), q.get('group'), q.get('format'), q.get('repo'), q.get('flagged'), q.get('limit'), q.get('page')]).toEqual(['a', 'package', 'npm', 'r', 'true', '20', '3'])
+    expect([q.get('q'), q.get('group'), q.get('format'), q.get('repo'), q.get('flagged'), q.get('limit'), q.get('offset'), q.get('page')]).toEqual(['a', 'package', 'npm', 'r', 'true', '20', '40', null])
     expect(res.total).toBe(41)
     expect(res.packages[0]).toEqual({ repository: 'r', format: 'npm', name: 'a', latest_version: '1.2.0', version_count: 2 })
+  })
+
+  it('sends page N of the plain search as an offset', async () => {
+    const f = mockFetch({})
+    await search({ q: 'a', limit: 10, page: 4 })
+    expect(urlOf(f).searchParams.get('offset')).toBe('30')
+    expect(urlOf(f).searchParams.has('page')).toBe(false)
   })
 
   it('omits unset filters and page one', async () => {

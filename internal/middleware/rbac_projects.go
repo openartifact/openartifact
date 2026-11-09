@@ -58,6 +58,10 @@ func projectActionFor(method string, rest []string) (auth.ProjectAction, bool) {
 		if method == http.MethodPost && rest[0] == "repositories" && isSingleSegment(rest[1]) && rest[2] == "transfer" {
 			return auth.ProjectActionRepoTransfer, true
 		}
+
+		if method == http.MethodPost && rest[0] == "cleanup-policies" && isSingleSegment(rest[1]) && rest[2] == "dry-run" {
+			return auth.ProjectActionUpdate, true
+		}
 	}
 
 	return "", false
@@ -112,6 +116,8 @@ func projectMemberAction(method, collection, id string) (auth.ProjectAction, boo
 	case collection == "tokens" && method == http.MethodDelete:
 		return auth.ProjectActionTokens, true
 	case collection == "cleanup-policies" && (method == http.MethodPut || method == http.MethodDelete):
+		return auth.ProjectActionUpdate, true
+	case collection == "cleanup-policies" && id == "dry-run" && method == http.MethodPost:
 		return auth.ProjectActionUpdate, true
 	}
 

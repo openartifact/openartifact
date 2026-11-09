@@ -35,13 +35,22 @@ type Config struct {
 	TokenID string `json:"token_id,omitempty"`
 }
 
-func configPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "oa", "config.json")
+func configPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("locating the config file: %w (set HOME)", err)
+	}
+
+	return filepath.Join(home, ".config", "oa", "config.json"), nil
 }
 
 func loadConfig() (*Config, error) {
-	data, err := os.ReadFile(configPath())
+	path, err := configPath()
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &Config{Server: "http://localhost:8080"}, nil
@@ -68,7 +77,12 @@ func saveConfig(cfg *Config) error {
 		return err
 	}
 
-	return writeFileAtomic(configPath(), data, configDirMode, configFileMode)
+	path, err := configPath()
+	if err != nil {
+		return err
+	}
+
+	return writeFileAtomic(path, data, configDirMode, configFileMode)
 }
 
 func getEnv(key, def string) string {
@@ -417,7 +431,7 @@ func printObject(result map[string]any, outFmt string) {
 	_ = w.Flush()
 }
 
-func downloadFile(client *Client, path, dest string) {
+func downloadFile(client *Client, path, dest string, mode os.FileMode) {
 	resp, err := client.do("GET", path, nil, "")
 	if err != nil {
 		dief("%v", err)
@@ -426,7 +440,7 @@ func downloadFile(client *Client, path, dest string) {
 
 	checkOK(resp)
 
-	n, err := downloadTo(resp, dest)
+	n, err := downloadTo(resp, dest, mode)
 	if err != nil {
 		dief("%v", err)
 	}

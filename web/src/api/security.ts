@@ -174,8 +174,16 @@ export type LicenseScan = LicenseScanResult
 export type { LicensePolicyViolation, LicenseScanRunResult }
 
 export async function listLicenseScans(repo: string): Promise<LicenseScan[]> {
-  const res = await request<{ scans?: LicenseScan[] }>(`${repoBase(repo)}/license/scans`)
-  return res.scans ?? []
+  // The server clamps per_page to 100, so walk the pages instead of truncating.
+  const scans: LicenseScan[] = []
+  for (let page = 1; ; page++) {
+    const res = await request<{ scans?: LicenseScan[]; has_more?: boolean }>(
+      `${repoBase(repo)}/license/scans?per_page=100&page=${page}`,
+    )
+    scans.push(...(res.scans ?? []))
+    if (!res.has_more || !res.scans?.length) break
+  }
+  return scans
 }
 
 /** Licenses are derived server-side from the stored package file and the artifact's license properties. */

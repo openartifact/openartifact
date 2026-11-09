@@ -29,6 +29,11 @@ WHERE p.repository_id = $1 AND p.name_key = $2
 -- name: GetNPMPackageIdentity :one
 SELECT repository_id, name FROM packages WHERE id = $1;
 
+-- name: LockNPMPackage :exec
+-- Row lock taken as its own statement before DeleteNPMPackage, so the delete's
+-- snapshot sees the version row of a concurrent publish that just committed.
+SELECT p.id FROM packages p WHERE p.id = $1 FOR UPDATE OF p;
+
 -- name: DeleteNPMPackage :exec
 -- Only removes a package with no version row left at all (trashed ones
 -- included), so the cascade never takes trashed versions with it.

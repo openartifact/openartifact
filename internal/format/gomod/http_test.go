@@ -423,6 +423,14 @@ func TestUploadRejectsWrongZipOrVersion(t *testing.T) {
 			zip:    map[string]string{"mymodule@v1.0.0/go.mod": sampleGoMod},
 		},
 		{
+			name:   "a stray entry outside the module prefix",
+			target: testModule + "/@v/v1.0.0",
+			zip: map[string]string{
+				testModule + "@v1.0.0/go.mod": sampleGoMod,
+				"evil/payload":                "x",
+			},
+		},
+		{
 			name:   "zip prefix names another version",
 			target: testModule + "/@v/v1.0.0",
 			zip:    map[string]string{testModule + "@v1.0.1/go.mod": sampleGoMod},

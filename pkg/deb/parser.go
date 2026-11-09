@@ -6,6 +6,7 @@ package deb
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"errors"
@@ -14,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/ulikunitz/xz"
 
 	"github.com/openartifact/openartifact/internal/limitio"
 	"github.com/openartifact/openartifact/pkg/xzlimit"
@@ -156,11 +156,7 @@ func extractControlFile(raw []byte, ext string) (*ControlFile, error) {
 		}
 
 	case strings.HasSuffix(ext, ".xz"):
-		if err := xzlimit.CheckDictCap(raw); err != nil {
-			return nil, fmt.Errorf("failed to decompress %s: %w", ext, err)
-		}
-
-		xr, err := xz.NewReader(bytes.NewReader(raw))
+		xr, err := xzlimit.NewReader(bufio.NewReaderSize(bytes.NewReader(raw), 64<<10))
 		if err != nil {
 			return nil, fmt.Errorf("failed to decompress %s: %w", ext, err)
 		}

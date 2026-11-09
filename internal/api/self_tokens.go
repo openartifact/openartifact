@@ -86,6 +86,10 @@ func (h *SelfTokensHandler) handleRevoke(w http.ResponseWriter, r *http.Request)
 	}
 
 	tokenID := urlparams.Vars(r)["id"]
+	if !requireUUID(w, tokenID, "token") {
+		return
+	}
+
 	ctx := r.Context()
 
 	token, err := h.db.GetTokenByID(ctx, tokenID)

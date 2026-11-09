@@ -260,6 +260,17 @@ func (p *QuotaStore) ChargeStorageUsage(ctx context.Context, repoID string, size
 	return nil
 }
 
+// ConsumePendingUsage drops the pending ledger entry of a reservation whose
+// rows were committed without consuming it (the exact-size entry first, then
+// the oldest that fit). The counters are left untouched.
+func (p *QuotaStore) ConsumePendingUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
+	if _, err := p.execQuota(ctx, sizeBytes, artifactCount, repoID, takePendingSQL); err != nil {
+		return fmt.Errorf("failed to consume pending storage usage: %w", err)
+	}
+
+	return nil
+}
+
 // DecrementStorageUsage gives a reservation back (or accounts for a delete), on
 // the repository and on its project's ceiling when that has one. A repository
 // without a quota row has nothing to decrement.

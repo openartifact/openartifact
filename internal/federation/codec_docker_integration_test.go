@@ -417,8 +417,17 @@ func assertDockerUsage(t *testing.T, r *dockerRepo, key string, c *Content, want
 		t.Fatalf("usage: %v", err)
 	}
 
-	if len(usage) != 1 || usage[0] != (Reservation{Size: wantSize, Count: 1}) {
-		t.Fatalf("usage = %+v; want one reservation of %d bytes, 1 artifact", usage, wantSize)
+	var size int64
+
+	var count int
+
+	for _, u := range usage {
+		size += u.Size
+		count += u.Count
+	}
+
+	if size != wantSize || count != 1 || usage[len(usage)-1].Count != 1 {
+		t.Fatalf("usage = %+v; want %d bytes in total, only the manifest row counting as 1 artifact", usage, wantSize)
 	}
 }
 

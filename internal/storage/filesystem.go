@@ -606,7 +606,7 @@ func (fs *FilesystemStore) GetMetadata(ctx context.Context, id string) (map[stri
 	data, err := os.ReadFile(metaPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("metadata not found for blob: %s", id) //nolint:err113 // dynamic error with runtime context
+			return nil, fmt.Errorf("metadata not found for blob %s: %w", id, ErrBlobNotFound)
 		}
 
 		return nil, fmt.Errorf("failed to read metadata: %w", err)

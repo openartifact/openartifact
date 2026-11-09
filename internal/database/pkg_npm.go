@@ -102,8 +102,25 @@ func (p *NPMStore) GetNPMPackageByName(ctx context.Context, repoID, fullName str
 }
 
 func (p *NPMStore) DeleteNPMPackage(ctx context.Context, packageID string) error {
-	if err := p.q.DeleteNPMPackage(ctx, packageID); err != nil {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin npm package delete: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	q := p.q.WithTx(tx)
+
+	if err := q.LockNPMPackage(ctx, packageID); err != nil {
+		return fmt.Errorf("failed to lock npm package: %w", err)
+	}
+
+	if err := q.DeleteNPMPackage(ctx, packageID); err != nil {
 		return fmt.Errorf("failed to delete npm package: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit npm package delete: %w", err)
 	}
 
 	return nil

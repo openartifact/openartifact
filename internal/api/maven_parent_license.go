@@ -289,7 +289,7 @@ func reevaluateUnresolvedPOMs(
 	log *logger.Logger,
 	repoID string,
 ) (int, error) {
-	scans, err := db.ListLicenseScanResults(ctx, repoID)
+	scans, err := db.ListUnresolvedLicenseScanResults(ctx, repoID, maxParentRescan)
 	if err != nil {
 		return 0, fmt.Errorf("list license scans: %w", err)
 	}

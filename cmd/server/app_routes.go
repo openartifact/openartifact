@@ -87,6 +87,9 @@ func (a *app) registerPublicRoutes() error {
 func (a *app) newAuthedRouter() {
 	w := &a.web
 	authedAPI := chi.NewRouter()
+	// Outermost: records mutating requests RBAC or CSRF refused, which the
+	// audit layer further in never sees.
+	authedAPI.Use(middleware.DenialAuditMiddleware(a.auditLogger, w.trustedProxies))
 	authedAPI.Use(w.rbacMiddleware)
 	// Marks client downloads so the tiered store records blob access.
 	authedAPI.Use(middleware.TrackBlobAccess)

@@ -478,12 +478,17 @@ func normalizeMinAge(v *int) (int, error) {
 }
 
 // normalizeCurationMode validates curation_mode; absent means off.
-func normalizeCurationMode(v *string) (string, error) {
+// A format whose proxy the curation gate does not cover accepts only off.
+func normalizeCurationMode(format string, v *string) (string, error) {
 	switch {
 	case v == nil:
 		return curation.ModeOff, nil
 	case !curation.ValidMode(*v):
 		return "", validationError("curation_mode must be one of off, denylist, allowlist")
+	}
+
+	if spec, ok := repotype.Lookup(format); ok && spec.NoCuration && *v != curation.ModeOff {
+		return "", validationError("curation_mode must be off: package curation is not enforced for " + format + " proxies")
 	}
 
 	return *v, nil
@@ -820,7 +825,7 @@ func (h *RepositoriesHandler) createRepository(
 			return
 		}
 
-		curationMode, err := normalizeCurationMode(body.CurationMode)
+		curationMode, err := normalizeCurationMode(body.Format, body.CurationMode)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 			return
@@ -1214,7 +1219,7 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	oldCurationMode := curationModeOf(repo)
 
 	if body.CurationMode != nil {
-		mode, err := normalizeCurationMode(body.CurationMode)
+		mode, err := normalizeCurationMode(repo.Format, body.CurationMode)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 			return

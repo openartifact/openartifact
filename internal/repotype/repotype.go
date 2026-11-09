@@ -182,6 +182,10 @@ type Spec struct {
 	// GrypeScan reports whether grype can scan the format's packages through
 	// their Package URL.
 	GrypeScan bool
+	// NoCuration marks a proxy format whose requests the curation gate does not
+	// cover (nix, terraform): a curation_mode other than off would promise a
+	// block nothing enforces, so the API refuses it.
+	NoCuration bool
 	// DistroScoped formats (deb, rpm) are only meaningful inside a distribution
 	// release: scanners need it to match advisories.
 	DistroScoped bool
@@ -252,7 +256,7 @@ var specs = [...]Spec{
 		Versioning: VersionMaven, PURLType: "maven", OSVEcosystem: "Maven", GrypeScan: true,
 	},
 	{
-		Name: "nix", Mount: MountGuarded, Signing: SigningEd25519,
+		Name: "nix", NoCuration: true, Mount: MountGuarded, Signing: SigningEd25519,
 		Proxy: true, Group: true, DefaultUpstream: "https://cache.nixos.org",
 	},
 	{
@@ -294,7 +298,7 @@ var specs = [...]Spec{
 		Proxy: true, Group: true, Mount: MountIsolated, Versioning: VersionMaven, PURLType: "maven",
 	},
 	{
-		Name: "terraform", Uploads: terraformUploads,
+		Name: "terraform", NoCuration: true, Uploads: terraformUploads,
 		Proxy: true, Group: true, DefaultUpstream: "https://registry.terraform.io",
 		Signing: SigningGPG, Versioning: VersionSemver,
 	},

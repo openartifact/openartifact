@@ -40,7 +40,8 @@ type LicenseStore interface {
 	GetRepoComponentBlob(ctx context.Context, repoID string, id string) (*models.ComponentBlob, error)
 	ListGlobalLicensePolicies(ctx context.Context) ([]*models.LicensePolicy, error)
 	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
-	ListLicenseScanResults(ctx context.Context, repoID string) ([]*models.LicenseScanResult, error)
+	ListLicenseScanResultsPage(ctx context.Context, repoID string, limit, offset int) ([]*models.LicenseScanResult, int, error)
+	ListUnresolvedLicenseScanResults(ctx context.Context, repoID string, limit int) ([]*models.LicenseScanResult, error)
 	SearchByProperty(ctx context.Context, repoID string, key string, value string) ([]string, error)
 	SetArtifactProperties(ctx context.Context, repoID string, artifactID string, props map[string]string, replace bool) error
 	SetLicenseScanQuarantine(ctx context.Context, repoID string, id string, quarantined bool) error
@@ -239,14 +240,29 @@ func (h *LicenseHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, LicenseScanResultResponse(updated))
 }
 
-// handleListScans lists all license scan results for a repository.
+// handleListScans lists a page of the license scan results of a repository.
 func (h *LicenseHandler) handleListScans(w http.ResponseWriter, r *http.Request) {
 	repo, ok := h.adminRepo(w, r, "list license scans")
 	if !ok {
 		return
 	}
 
-	writeRepoList(w, r, h.repoAccess, repo, "list license scans", "scans", h.db.ListLicenseScanResults, LicenseScanResultResponse)
+	page := queryIntParam(r, "page", 1, 1, 10000)
+	perPage := queryIntParam(r, "per_page", 50, 1, 100)
+
+	items, total, err := h.db.ListLicenseScanResultsPage(r.Context(), repo.ID, perPage, (page-1)*perPage)
+	if err != nil {
+		h.dbError(w, "list license scans: db error", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"scans":    mapList(items, LicenseScanResultResponse),
+		"page":     page,
+		"per_page": perPage,
+		"total":    total,
+		"has_more": page*perPage < total,
+	})
 }
 
 // handleGetScan gets a specific license scan result.

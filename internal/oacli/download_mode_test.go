@@ -19,6 +19,10 @@ import (
 
 // download runs downloadTo on a complete response carrying body.
 func download(body, dest string) (int64, error) {
+	return downloadMode(body, dest, 0o600)
+}
+
+func downloadMode(body, dest string, mode os.FileMode) (int64, error) {
 	resp := &http.Response{
 		StatusCode:    http.StatusOK,
 		ContentLength: int64(len(body)),
@@ -26,7 +30,24 @@ func download(body, dest string) (int64, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	return downloadTo(resp, dest)
+	return downloadTo(resp, dest, mode)
+}
+
+func TestDownloadToNewFileMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix modes")
+	}
+
+	for _, mode := range []os.FileMode{0o600, 0o644} {
+		dest := filepath.Join(t.TempDir(), "out")
+		if _, err := downloadMode("x", dest, mode); err != nil {
+			t.Fatal(err)
+		}
+
+		if fi, _ := os.Stat(dest); fi.Mode().Perm() != mode {
+			t.Fatalf("mode = %v, want %v", fi.Mode().Perm(), mode)
+		}
+	}
 }
 
 func TestDownloadToModes(t *testing.T) {

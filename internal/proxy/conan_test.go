@@ -226,9 +226,13 @@ func TestConanProxy_FilesAreImmutableOnceTheRevisionIsPublished(t *testing.T) {
 			t.Fatalf("GET %s = %d", path, w.Code)
 		}
 
+		// Only the gzip archive is checked; a recipe file is vouched for by
+		// nothing and so lives for the repository TTL.
+		pinned := strings.HasSuffix(path, ".tgz") || strings.HasSuffix(path, "/files")
+
 		e := f.db.entry("repo-1", path)
-		if e == nil || time.Until(e.ExpiresAt) < 50*365*24*time.Hour {
-			t.Errorf("%s entry = %+v, want one that never expires", path, e)
+		if e == nil || (time.Until(e.ExpiresAt) >= 50*365*24*time.Hour) != pinned {
+			t.Errorf("%s entry = %+v, want never-expires=%v", path, e, pinned)
 		}
 
 		if f.do(http.MethodGet, path).Code != http.StatusOK || c.seen(path) != 1 {

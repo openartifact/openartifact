@@ -583,6 +583,23 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	// The module zip must be the one the URL names: its files live under
 	// "<module>@<version>/" and its go.mod declares that same module path.
+	if err := checkModuleZipEntries(spool, spool.Size(), modulePath+"@"+version+"/"); err != nil {
+		h.Log.Warnw("rejected go module zip", "module", modulePath, "version", version, "error", err)
+
+		msg := "invalid go module"
+
+		switch {
+		case errors.Is(err, errEntryOutsideModule):
+			msg = "every zip entry must live under <module>@<version>/"
+		case errors.Is(err, errZipTooLarge):
+			msg = "module zip uncompressed size exceeds the limit"
+		}
+
+		http.Error(w, msg, http.StatusBadRequest)
+
+		return
+	}
+
 	mf, err := parseModuleZipAt(spool, spool.Size())
 	if err != nil {
 		h.Log.Errorw("failed to parse go module", "error", err)

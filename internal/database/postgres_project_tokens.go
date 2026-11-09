@@ -231,6 +231,25 @@ func revokeExcessProjectTokens(ctx context.Context, tx *sql.Tx, projectID string
 			SELECT pg.project_id, ug.user_id,
 			       CASE pg.role WHEN 'viewer' THEN 1 WHEN 'developer' THEN 2 WHEN 'maintainer' THEN 3 WHEN 'owner' THEN 4 ELSE 0 END
 			FROM project_groups pg JOIN auth_user_groups ug ON ug.group_id = pg.group_id
+			UNION ALL
+			-- A global admin (a permission target granting "manage" on every
+			-- repository and path, held directly or through a group) is an
+			-- implicit owner of every project.
+			SELECT p.id, a.user_id, 4
+			FROM projects p
+			CROSS JOIN (
+				SELECT pa.principal_id AS user_id
+				FROM permission_assignments pa JOIN permission_targets pt ON pt.id = pa.permission_target_id
+				WHERE pa.principal_type = 'user' AND 'manage' = ANY(pt.actions)
+				  AND pt.repository_filter IN ('.*', '*') AND pt.path_pattern IN ('.*', '*')
+				UNION
+				SELECT ug.user_id
+				FROM permission_assignments pa
+				JOIN permission_targets pt ON pt.id = pa.permission_target_id
+				JOIN auth_user_groups ug ON ug.group_id = pa.principal_id
+				WHERE pa.principal_type = 'group' AND 'manage' = ANY(pt.actions)
+				  AND pt.repository_filter IN ('.*', '*') AND pt.path_pattern IN ('.*', '*')
+			) a
 		), revoked AS (
 			UPDATE auth_tokens t SET revoked_at = now()
 			WHERE t.project_id IS NOT NULL AND t.revoked_at IS NULL AND t.created_by IS NOT NULL

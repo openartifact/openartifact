@@ -240,18 +240,33 @@ func (j *groupJob) buildPacman(ctx context.Context, known []string, hint string)
 
 	hintFound := hint == ""
 
+	var unfound []string
+
 	for _, arch := range ordered {
 		found, err := j.buildPacmanArch(ctx, arch, hosted)
 		if err != nil {
 			return err
 		}
 
-		if found || (j.partial && slices.Contains(known, arch)) {
+		if found {
 			j.dists = append(j.dists, arch)
+		} else {
+			unfound = append(unfound, arch)
 		}
 
 		if found && arch == hint {
 			hintFound = true
+		}
+	}
+
+	// An architecture whose proxy members could not be read keeps its previous
+	// databases for the retry.
+	if j.partial {
+		for _, arch := range unfound {
+			if slices.Contains(known, arch) {
+				j.dists = append(j.dists, arch)
+				j.keepDirs = append(j.keepDirs, "os/"+arch+"/")
+			}
 		}
 	}
 

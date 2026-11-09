@@ -186,3 +186,47 @@ func TestPeekLoginUsernameSanitises(t *testing.T) {
 		})
 	}
 }
+
+func TestDenialAuditMiddleware(t *testing.T) {
+	tests := []struct {
+		name      string
+		method    string
+		status    int
+		inner     bool // AuditMiddleware ran inside
+		wantEvent bool
+	}{
+		{"denied mutation is recorded", http.MethodPost, http.StatusForbidden, false, true},
+		{"unauthorized mutation is recorded", http.MethodDelete, http.StatusUnauthorized, false, true},
+		{"denied read is not recorded", http.MethodGet, http.StatusForbidden, false, false},
+		{"handler 403 audited inside is recorded once", http.MethodPost, http.StatusForbidden, true, true},
+		{"success is not recorded", http.MethodPost, http.StatusOK, false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := &auditCaptureDB{events: make(chan *models.AuditLog, 4)}
+			logger := audit.NewLogger(db, nil, nil, 1)
+
+			var h http.Handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(tt.status) })
+			if tt.inner {
+				h = AuditMiddleware(logger)(h)
+			}
+
+			h = DenialAuditMiddleware(logger)(h)
+
+			req := httptest.NewRequestWithContext(context.Background(), tt.method, "/api/v1/x", nil)
+			h.ServeHTTP(httptest.NewRecorder(), req)
+			_ = logger.Shutdown(context.Background())
+			close(db.events)
+
+			var got int
+			for range db.events {
+				got++
+			}
+
+			if want := map[bool]int{true: 1, false: 0}[tt.wantEvent]; got != want {
+				t.Fatalf("events = %d, want %d", got, want)
+			}
+		})
+	}
+}

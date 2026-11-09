@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/format/base"
@@ -48,7 +49,7 @@ func (h *NuGetHandler) Parse(ctx context.Context, r io.Reader) (map[string]any, 
 		"licenseUrl":               metadata.LicenseURL,
 		"licenseExpression":        metadata.License.Expression(),
 		"iconUrl":                  metadata.IconURL,
-		"requireLicenseAcceptance": metadata.RequireLicenseAcceptance,
+		"requireLicenseAcceptance": metadata.RequiresLicenseAcceptance(),
 		"minClientVersion":         metadata.MinClientVersion,
 	}
 
@@ -78,6 +79,14 @@ type NuspecMetadata struct {
 	RequireLicenseAcceptance string             `xml:"requireLicenseAcceptance"`
 	MinClientVersion         string             `xml:"minClientVersion"`
 	Dependencies             NuspecDependencies `xml:"dependencies"`
+}
+
+// RequiresLicenseAcceptance parses the requireLicenseAcceptance element; an
+// absent or unparsable value means false.
+func (m NuspecMetadata) RequiresLicenseAcceptance() bool {
+	v, err := strconv.ParseBool(strings.TrimSpace(m.RequireLicenseAcceptance))
+
+	return err == nil && v
 }
 
 // NuspecLicense is the <license type="expression|file"> element. Only the

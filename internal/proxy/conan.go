@@ -130,6 +130,9 @@ func conanFetchOpts(p pkgconan.Path) fetchOpts {
 		if isGzipName(p.File) {
 			return fetchOpts{verify: verifyGzipMagic}
 		}
+
+		// Nothing vouches for a recipe or metadata file's bytes: repo TTL.
+		return fetchOpts{unverified: true}
 	case pkgconan.KindSearch, pkgconan.KindPackageSearch, pkgconan.KindOther:
 	}
 

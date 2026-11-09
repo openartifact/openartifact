@@ -14,9 +14,7 @@ const (
 	// Artifact lifecycle.
 
 	ActionArtifactUploaded    = "artifact.uploaded"
-	ActionArtifactDownloaded  = "artifact.downloaded"
 	ActionArtifactDeleted     = "artifact.deleted"
-	ActionArtifactMoved       = "artifact.moved"
 	ActionArtifactPromoted    = "artifact.promoted"
 	ActionArtifactQuarantined = "artifact.quarantined"
 	ActionArtifactReleased    = "artifact.released"
@@ -42,30 +40,12 @@ const (
 	ActionAuthTokenRevoked    = "auth.token_revoked" //nolint:gosec // action name, not a credential
 	ActionAuthPasswordChanged = "auth.password_changed"
 	ActionAuthSSOLogin        = "auth.sso_login"
-	ActionAuthTokenValidate   = "auth.token_validate" //nolint:gosec // action name, not a credential
 
 	// CI OIDC token exchange: a CI job traded its ID token for a service
 	// account token, or presented a verified token no policy accepted.
 
 	ActionAuthOIDCExchange       = "auth.oidc_exchange"
 	ActionAuthOIDCExchangeFailed = "auth.oidc_exchange_failed"
-
-	// Permission management (legacy permission.* names are never emitted).
-
-	ActionPermissionTargetCreated = "permission.target_created"
-	ActionPermissionTargetUpdated = "permission.target_updated"
-	ActionPermissionTargetDeleted = "permission.target_deleted"
-	ActionPermissionAssigned      = "permission.assigned"
-	ActionPermissionRevoked       = "permission.revoked"
-
-	// Organization management (legacy, never emitted).
-
-	ActionOrgCreated           = "org.created"
-	ActionOrgUpdated           = "org.updated"
-	ActionOrgDeleted           = "org.deleted"
-	ActionOrgMemberAdded       = "org.member_added"
-	ActionOrgMemberRemoved     = "org.member_removed"
-	ActionOrgMemberRoleChanged = "org.member_role_changed"
 
 	// Project management.
 
@@ -94,10 +74,8 @@ const (
 
 	// Security scanning.
 
-	ActionScanVulnDetected    = "scan.vuln_detected"
-	ActionScanVulnResolved    = "scan.vuln_resolved"
-	ActionScanSecretDetected  = "scan.secret_detected" //nolint:gosec // action name, not a credential
-	ActionScanQuarantineApply = "scan.quarantine_applied"
+	ActionScanVulnDetected = "scan.vuln_detected"
+	ActionScanVulnResolved = "scan.vuln_resolved"
 
 	// Bundle/promotion.
 
@@ -187,11 +165,12 @@ const (
 	ActionCurationRuleDeleted = "curation.rule_deleted"
 )
 
-// KnownActions lists every action the audit_logs constraint accepts.
+// KnownActions lists every action the server emits. The constraint also still admits
+// retired names (artifact.downloaded, org.*, permission.*, ...) so old rows stay valid.
 //
 //nolint:gochecknoglobals // immutable registry read by tests
 var KnownActions = []string{
-	ActionArtifactUploaded, ActionArtifactDownloaded, ActionArtifactDeleted, ActionArtifactMoved,
+	ActionArtifactUploaded, ActionArtifactDeleted,
 	ActionArtifactPromoted, ActionArtifactQuarantined, ActionArtifactReleased,
 	ActionArtifactRestored, ActionArtifactPurged,
 
@@ -200,14 +179,8 @@ var KnownActions = []string{
 	ActionRepositoryRestored, ActionRepositoryPurged,
 
 	ActionAuthLogin, ActionAuthLogout, ActionAuthLoginFailed, ActionAuthTokenCreated,
-	ActionAuthTokenRevoked, ActionAuthPasswordChanged, ActionAuthSSOLogin, ActionAuthTokenValidate,
+	ActionAuthTokenRevoked, ActionAuthPasswordChanged, ActionAuthSSOLogin,
 	ActionAuthOIDCExchange, ActionAuthOIDCExchangeFailed,
-
-	ActionPermissionTargetCreated, ActionPermissionTargetUpdated, ActionPermissionTargetDeleted,
-	ActionPermissionAssigned, ActionPermissionRevoked,
-
-	ActionOrgCreated, ActionOrgUpdated, ActionOrgDeleted,
-	ActionOrgMemberAdded, ActionOrgMemberRemoved, ActionOrgMemberRoleChanged,
 
 	ActionProjectCreated, ActionProjectUpdated, ActionProjectDeleted,
 	ActionProjectPolicyChanged, ActionProjectQuotaChanged,
@@ -219,7 +192,7 @@ var KnownActions = []string{
 
 	ActionSystemSettingChanged, ActionSystemStorageBackendChanged,
 
-	ActionScanVulnDetected, ActionScanVulnResolved, ActionScanSecretDetected, ActionScanQuarantineApply,
+	ActionScanVulnDetected, ActionScanVulnResolved,
 
 	ActionBundleCreated, ActionBundleSealed, ActionBundleArchived, ActionBundlePromoted, ActionBundleCheckReported,
 

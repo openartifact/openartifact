@@ -226,6 +226,7 @@ How a rule is applied:
 
 - A `block` rule beats an `allow` rule: a version matching both is unavailable.
 - A matching `allow` rule (in `denylist` or `allowlist` mode) also exempts the version from the [minimum age](#minimum-age), so a version an administrator vetted is served at once.
+- A terraform or nix proxy cannot enable curation: `curation_mode` other than `off` on such a repository is `400 validation_failed`, because nothing would enforce the rules.
 - With `curation_mode` `off` no rule has any effect, so a rule list can be prepared and switched on later.
 - A version that is unavailable is dropped from the metadata the proxy renders (the other versions stay, and "latest" style pointers move to the newest one left; a package left without versions behaves like one with no versions, `404`) and its files are refused with `403` and the reason in the body. The refusal also holds for files already in the cache, so a rule added after a file was cached applies at once. Rendered documents change their `ETag` when the mode or the rules change.
 - Curation never needs publish dates: nothing is fetched from the upstream just to apply a rule.

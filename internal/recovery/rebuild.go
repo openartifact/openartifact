@@ -264,6 +264,12 @@ func (r *Rebuilder) isSidecarCandidate(ctx context.Context, id string) (bool, er
 		return true, nil
 	}
 
+	// A listed object that vanished is simply not a candidate; any other
+	// failure would silently drop a possible sidecar from the rebuild.
+	if err != nil && !errors.Is(err, storage.ErrBlobNotFound) {
+		return false, fmt.Errorf("read metadata of %s: %w", id, err)
+	}
+
 	if !r.opts.Deep {
 		return false, nil
 	}

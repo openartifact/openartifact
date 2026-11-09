@@ -28,6 +28,15 @@ export interface SearchParams {
 /** `ApiError.code` of a search matching more rows than the server will rank. */
 export const QUERY_TOO_BROAD = 'query_too_broad'
 
+/** The server's page size when a request sets no limit. */
+const DEFAULT_LIMIT = 25
+
+/** The search API pages by offset: page N of `limit` rows starts at (N-1)*limit. */
+function setOffset(qs: URLSearchParams, page: number | undefined, limit: number | undefined): void {
+  if (page == null || page <= 1) return
+  qs.set('offset', String((page - 1) * (limit ?? DEFAULT_LIMIT)))
+}
+
 function emptyResult(): SearchResult {
   return { packages: [], repositories: [] }
 }
@@ -40,7 +49,7 @@ export async function search(params: SearchParams): Promise<SearchResult> {
   if (params.limit != null) qs.set('limit', String(params.limit))
   if (params.group) qs.set('group', params.group)
   if (params.flagged) qs.set('flagged', 'true')
-  if (params.page != null && params.page > 1) qs.set('page', String(params.page))
+  setOffset(qs, params.page, params.limit)
   try {
     const res = await request<Partial<SearchResult>>(`/api/v1/search?${qs}`, { signal: params.signal })
     return {
@@ -78,7 +87,7 @@ export async function searchPackageGroups(
   if (params.repo) qs.set('repo', params.repo)
   if (params.flagged) qs.set('flagged', 'true')
   if (params.limit != null) qs.set('limit', String(params.limit))
-  if (params.page != null && params.page > 1) qs.set('page', String(params.page))
+  setOffset(qs, params.page, params.limit)
   const res = await request<{ packages?: SearchPackageHit[]; total?: number }>(`/api/v1/search?${qs}`, {
     signal: params.signal,
   })

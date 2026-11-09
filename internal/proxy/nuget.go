@@ -643,8 +643,9 @@ func (s *Service) locateNuGetPackageFile(ctx context.Context, repo *models.Repos
 	}
 
 	d := download{
-		url:  idx.PackageBase + p.id + "/" + p.version + "/" + p.file,
-		opts: fetchOpts{verify: verifyNuspec},
+		url: idx.PackageBase + p.id + "/" + p.version + "/" + p.file,
+		// A .nuspec has no published digest: kept for the repo TTL only.
+		opts: fetchOpts{verify: verifyNuspec, unverified: true},
 	}
 
 	nupkg := strings.HasSuffix(p.file, ".nupkg")

@@ -734,9 +734,12 @@ func (s *Service) newUpstreamRequest(ctx context.Context, repo *models.Repositor
 	// Mirror bytes exactly: never let the transport transparently decompress.
 	req.Header.Set("Accept-Encoding", "identity")
 
-	if o.authorization != "" {
+	// noAuth: credentials never travel to a target outside the upstream origin.
+	switch {
+	case o.noAuth:
+	case o.authorization != "":
 		req.Header.Set("Authorization", o.authorization)
-	} else if repo.UpstreamUsername != "" && !o.noAuth {
+	case repo.UpstreamUsername != "":
 		password := ""
 
 		if repo.UpstreamPasswordEnc != "" {

@@ -39,6 +39,9 @@ type PresignedUploadWorker struct {
 	log     *logger.Logger
 	// orphanAge is how old a staging object without a row must be to be deleted.
 	orphanAge time.Duration
+	// runCtx is the parent of every sweep; Stop cancels it.
+	runCtx context.Context //nolint:containedctx // worker run context
+	cancel context.CancelFunc
 
 	startOnce sync.Once
 	stopOnce  sync.Once
@@ -61,7 +64,11 @@ func NewPresignedUploadWorker(
 		staging = s
 	}
 
+	runCtx, cancel := context.WithCancel(context.Background())
+
 	return &PresignedUploadWorker{
+		runCtx:    runCtx,
+		cancel:    cancel,
 		db:        db,
 		staging:   staging,
 		log:       log,
@@ -102,7 +109,7 @@ func (w *PresignedUploadWorker) safeSweep() {
 		}
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), presignedUploadSweepTimeout)
+	ctx, cancel := context.WithTimeout(w.runCtx, presignedUploadSweepTimeout)
 	defer cancel()
 
 	w.Sweep(ctx)
@@ -110,7 +117,10 @@ func (w *PresignedUploadWorker) safeSweep() {
 
 // Stop ends the loop and waits for the in-flight sweep.
 func (w *PresignedUploadWorker) Stop() {
-	w.stopOnce.Do(func() { close(w.stopCh) })
+	w.stopOnce.Do(func() {
+		close(w.stopCh)
+		w.cancel()
+	})
 
 	// Never started: nothing will close doneCh, and a later Start must not.
 	w.startOnce.Do(func() { close(w.doneCh) })

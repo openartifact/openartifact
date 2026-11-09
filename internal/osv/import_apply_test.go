@@ -212,6 +212,22 @@ func TestImportDoesNotRemoveAnythingFromAnEmptyArchive(t *testing.T) {
 	}
 }
 
+// An archive whose records are all malformed lists nothing, so it prunes nothing.
+func TestImportDoesNotRemoveAnythingFromAnArchiveOfMalformedRecords(t *testing.T) {
+	t.Parallel()
+
+	srv := archiveServer(t, map[string]string{"A.json": "{not json", "B.json": "{also not json"})
+	store := &fakeStore{stored: map[string][]string{"npm": {"A", "B", "C"}}}
+
+	if _, err := importerWith(t, srv, store, 1<<20).Import(context.Background(), "npm", &models.OSVMirrorState{}); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	if len(store.removed) != 0 {
+		t.Fatalf("removed = %v, want nothing", store.removed)
+	}
+}
+
 // The removals go to the database in batches, not as one statement.
 func TestImportRemovesInBatches(t *testing.T) {
 	t.Parallel()

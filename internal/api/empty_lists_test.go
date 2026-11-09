@@ -59,7 +59,11 @@ func (*emptyListsDB) ListSBOMReports(context.Context, string) ([]*models.SBOMRep
 	return []*models.SBOMReport{}, nil
 }
 
-func (*emptyListsDB) ListLicenseScanResults(context.Context, string) ([]*models.LicenseScanResult, error) {
+func (*emptyListsDB) ListLicenseScanResultsPage(context.Context, string, int, int) ([]*models.LicenseScanResult, int, error) {
+	return []*models.LicenseScanResult{}, 0, nil
+}
+
+func (*emptyListsDB) ListUnresolvedLicenseScanResults(context.Context, string, int) ([]*models.LicenseScanResult, error) {
 	return []*models.LicenseScanResult{}, nil
 }
 

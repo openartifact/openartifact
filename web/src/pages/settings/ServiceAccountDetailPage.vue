@@ -120,16 +120,22 @@ const crumbs = computed<Crumb[]>(() => [
   { label: account.value?.name ?? t('sa.detail.loading') },
 ])
 
+let loadGeneration = 0
+
 async function load(id: string | undefined): Promise<void> {
+  const generation = ++loadGeneration
   // Leaving the page (to the list) clears the param before the page is unmounted: nothing to load then.
   if (!id) return
   error.value = ''
   notFound.value = false
   account.value = null
   try {
-    account.value = await getServiceAccount(id)
-    description.value = account.value.description ?? ''
+    const loaded = await getServiceAccount(id)
+    if (generation !== loadGeneration) return
+    account.value = loaded
+    description.value = loaded.description ?? ''
   } catch (err) {
+    if (generation !== loadGeneration) return
     notFound.value = err instanceof ApiError && err.status === 404
     error.value = err instanceof Error ? err.message : t('sa.error.failed')
   }

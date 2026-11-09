@@ -293,6 +293,8 @@ func (s *Service) locateComposerDist(ctx context.Context, repo *models.Repositor
 	}
 
 	return download{url: dist.URL, opts: fetchOpts{
+		// Without a shasum nothing vouches for the dist: repo TTL only.
+		unverified: dist.SHA1 == "",
 		verify: func(spool io.ReadSeeker) error {
 			return pkgcomposer.VerifySHA1(spool, dist.SHA1) //nolint:wrapcheck // logged by store
 		},

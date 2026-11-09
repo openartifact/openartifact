@@ -49,21 +49,25 @@ func narrowingFilters(filter SearchFilter) []string {
 	return out
 }
 
-// writeTooBroad answers a search that matches more than MaxSearchResults.
-func writeTooBroad(w http.ResponseWriter, filter SearchFilter) {
+// TooBroadMessage is the error text for a query that matches more than
+// MaxSearchResults packages, naming the filters that would narrow it.
+func TooBroadMessage(filter SearchFilter) string {
 	narrow := narrowingFilters(filter)
 
 	msg := "query matches more than " + strconv.Itoa(MaxSearchResults) + " packages"
 	if len(narrow) > 0 {
-		msg += "; narrow it with " + strings.Join(narrow, ", ")
-	} else {
-		msg += "; use a longer or more specific search term"
+		return msg + "; narrow it with " + strings.Join(narrow, ", ")
 	}
 
+	return msg + "; use a longer or more specific search term"
+}
+
+// writeTooBroad answers a search that matches more than MaxSearchResults.
+func writeTooBroad(w http.ResponseWriter, filter SearchFilter) {
 	httpx.WriteJSON(w, http.StatusBadRequest, TooBroadBody{
-		Error:      msg,
+		Error:      TooBroadMessage(filter),
 		Code:       "query_too_broad",
 		MaxResults: MaxSearchResults,
-		NarrowBy:   narrow,
+		NarrowBy:   narrowingFilters(filter),
 	})
 }

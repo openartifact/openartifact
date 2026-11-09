@@ -136,6 +136,7 @@ func RBACMiddleware(cfg RBACConfig, db RBACMiddlewareStore, evaluator *auth.Eval
 
 			principal, credential := resolvePrincipal(ctx, r, cfg, db, log)
 			r = r.WithContext(WithPrincipal(ctx, principal))
+			noteAuditPrincipal(ctx, principal)
 
 			if serveStaticOrSPA(w, r, next, cfg) {
 				return
@@ -613,7 +614,9 @@ func tokenPrincipal(ctx context.Context, tokenValue, kind string, db tokenPrinci
 		return nil
 	}
 
-	pu := principalUser{id: user.ID, username: user.Username, mustChangePassword: user.MustChangePassword}
+	// The password-change gate applies to session logins only; a token never
+	// carries the user's password, so it must not be blocked by it.
+	pu := principalUser{id: user.ID, username: user.Username}
 
 	if user.IsService() {
 		// A project token carries its project; anything else is inconsistent
