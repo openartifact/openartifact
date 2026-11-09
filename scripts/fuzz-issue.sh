@@ -43,7 +43,7 @@ failure_details() {
 	printf '%s\n' "$log" |
 		sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g; s/^[^\t]*\t[^\t]*\t[0-9T:.Z-]+ ?//' |
 		grep -aE \
-			'^(panic:|fatal error:|--- FAIL: |FAIL\s+github\.com|SUMMARY: |Base64: |Seed: |Reproduce with|api-fuzz: (mode=|=== pass)|[0-9]+\. Test Case ID|\s+(Expected|curl -X)|_{3,} )|Test unit written to|Uploading crashes in|ERROR: (AddressSanitizer|libFuzzer)' |
+			'^(panic:|fatal error:|--- FAIL: |FAIL\s+github\.com|SUMMARY: |Base64: |Seed: |Reproduce with|api-fuzz: (mode=|=== pass)|[0-9]+\. Test Case ID|- [A-Z]|\[[0-9]{3}\] |\s+(Expected|Received|Documented|curl -X)|_{3,} )|Test unit written to|Uploading crashes in|ERROR: (AddressSanitizer|libFuzzer)' |
 		awk '!seen[$0]++ && n++ < 40 { print substr($0, 1, 300) }' ||
 		true
 }

@@ -335,6 +335,17 @@ func (h *HTTPHandler) handleRESTUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	repo := h.hostedAPKRepo(w, r, true)
+	if repo == nil {
+		status = 0
+		return
+	}
+
+	if err := quota.Precheck(r.Context(), h.DB, repo.ID, r.ContentLength); err != nil {
+		status = h.writeIngestError(w, err, true)
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+multipartOverhead)
 
 	form, err := base.ReadForm(r, base.FormSpec{FileField: "file", MaxFile: maxUploadBytes, MaxFields: multipartOverhead})
@@ -353,17 +364,6 @@ func (h *HTTPHandler) handleRESTUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer form.Close()
-
-	repo := h.hostedAPKRepo(w, r, true)
-	if repo == nil {
-		status = 0
-		return
-	}
-
-	if err := quota.Precheck(r.Context(), h.DB, repo.ID, r.ContentLength); err != nil {
-		status = h.writeIngestError(w, err, true)
-		return
-	}
 
 	row, err := h.ingest(w, r, ingestRequest{
 		repo:    repo,
