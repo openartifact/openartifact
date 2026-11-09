@@ -11,7 +11,7 @@
 # Usage: OA_TOKEN=... scripts/smoke/oci-supplychain.sh [URL]
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
-smoke_init docker ghcr.io/openartifact/oa-tekton:0.22.0 "$@"
+smoke_init docker ghcr.io/openartifact/oa-tekton:0.23.0 "$@"
 SMOKE_IMAGE="${OCI_SUPPLYCHAIN_IMAGE:-$SMOKE_IMAGE}"
 
 smoke_run "$(
