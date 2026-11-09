@@ -163,8 +163,40 @@ func settleReplaced(
 	reserved bool,
 	replaced *models.ReplacedBlob,
 ) {
-	if reserved && replaced != nil {
+	if replaced == nil {
+		return
+	}
+
+	if reserved {
 		h.ReleaseQuota(ctx, a.RepositoryID, repoName, replaced.SizeBytes)
+
+		return
+	}
+
+	// Nothing was reserved because the row read before the write held this
+	// content, but the write met other content (a concurrent overwrite got in
+	// between): the row is still counted once, only its size changed.
+	if replaced.SHA256 == a.SHA256 {
+		return
+	}
+
+	delta := a.SizeBytes - replaced.SizeBytes
+
+	var err error
+
+	switch {
+	case delta < 0:
+		err = quota.ReleaseN(ctx, h.DB, a.RepositoryID, -delta, 0)
+	case delta > 0:
+		if c, ok := h.DB.(quota.ChargeNStore); ok {
+			err = quota.ChargeN(ctx, c, a.RepositoryID, delta, 0)
+		} else {
+			err = quota.EnforceN(ctx, h.DB, a.RepositoryID, delta, 0)
+		}
+	}
+
+	if err != nil {
+		h.Log.Warnw("failed to reconcile quota of replaced content", "repo", repoName, "error", err)
 	}
 }
 

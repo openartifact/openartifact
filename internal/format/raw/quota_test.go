@@ -6,6 +6,8 @@ package raw
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"strings"
@@ -248,5 +250,35 @@ func TestOverwriteReleasesTheRowActuallyReplaced(t *testing.T) {
 
 	if db.used != 5 || db.artifacts != 1 {
 		t.Errorf("quota used=%d artifacts=%d, want 5/1", db.used, db.artifacts)
+	}
+}
+
+// The row read before the write held the same content, so nothing was
+// reserved; the write then met other content. The row stays counted once and
+// only the size difference changes.
+func TestOverwriteOfDriftedContentReconcilesSize(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		replaced int64
+		want     int64
+	}{
+		{"replaced was larger", 9, 5},
+		{"replaced was smaller", 2, 5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sum := sha256.Sum256([]byte("hello"))
+			db := &replacingDB{DB: formattest.NewDB("raw"), replaced: &models.ReplacedBlob{SHA256: "bb", SizeBytes: tc.replaced}}
+			db.art = &models.RawArtifact{Path: "dir/file.txt", SHA256: hex.EncodeToString(sum[:]), SizeBytes: 5}
+			db.used, db.artifacts = tc.replaced, 1
+			h := NewHTTPHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), "http://localhost")
+
+			if code := put(h, "hello"); code != http.StatusCreated {
+				t.Fatalf("status = %d", code)
+			}
+
+			if db.used != tc.want || db.artifacts != 1 {
+				t.Errorf("quota used=%d artifacts=%d, want %d/1", db.used, db.artifacts, tc.want)
+			}
+		})
 	}
 }
