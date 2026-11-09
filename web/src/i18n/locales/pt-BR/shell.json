@@ -37,7 +37,7 @@
   "shell.palette.noActions": "Nenhuma ação correspondente",
   "shell.palette.count_one": "{n} resultado",
   "shell.palette.count_other": "{n} resultados",
-  "shell.palette.tooBroad": "Muitos pacotes correspondentes. Refine a consulta, por exemplo com name:, format: ou repo:.",
+  "shell.palette.tooBroad": "Muitos pacotes correspondentes. Refine a consulta, por exemplo com name:, format:, repo: ou project:.",
   "shell.palette.partialError": "Alguns resultados não puderam ser carregados.",
   "shell.palette.retry": "Tentar novamente",
   "shell.palette.footNavigate": "navegar",

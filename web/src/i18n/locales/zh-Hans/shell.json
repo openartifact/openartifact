@@ -36,7 +36,7 @@
   "shell.palette.noResultsHint": "请尝试软件包名称、仓库，或“retention”之类的设置。",
   "shell.palette.noActions": "没有匹配的操作",
   "shell.palette.count_other": "{n} 个结果",
-  "shell.palette.tooBroad": "匹配的软件包过多。请细化查询，例如使用 name:、format: 或 repo:。",
+  "shell.palette.tooBroad": "匹配的软件包过多。请细化查询，例如使用 name:、format:、repo: 或 project:。",
   "shell.palette.partialError": "部分结果无法加载。",
   "shell.palette.retry": "重试",
   "shell.palette.footNavigate": "导航",

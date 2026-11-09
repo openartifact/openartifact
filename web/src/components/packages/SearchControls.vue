@@ -36,6 +36,30 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <option value="">{{ t('search.filter.allRepos') }}</option>
         <option v-for="r in repoOptions" :key="r" :value="r">{{ r }}</option>
       </select>
+      <!-- Project filters narrow the name search only; checksum lookups ignore them on the server. -->
+      <template v-if="mode === 'name'">
+        <select
+          :value="list.filters.value.project"
+          :aria-label="t('search.filter.project')"
+          :class="SELECT"
+          data-testid="search-project"
+          @change="list.setFilter('project', pick($event))"
+        >
+          <option value="">{{ t('search.filter.allProjects') }}</option>
+          <option v-for="p in projectOptions" :key="p.name" :value="p.name">{{ p.label }}</option>
+        </select>
+        <button
+          type="button"
+          class="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary max-md:h-11"
+          :class="list.filters.value.shared ? 'border-primary bg-primary-soft text-primary' : 'border-border-strong bg-surface text-muted hover:text-foreground'"
+          :aria-pressed="list.filters.value.shared"
+          data-testid="search-shared"
+          @click="list.setFilter('shared', !list.filters.value.shared)"
+        >
+          <UserGroupIcon class="h-4 w-4" aria-hidden="true" />
+          {{ t('search.filter.shared') }}
+        </button>
+      </template>
       <button
         type="button"
         class="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary max-md:h-11"
@@ -57,7 +81,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { FlagIcon, InformationCircleIcon } from '@heroicons/vue/20/solid'
+import { FlagIcon, InformationCircleIcon, UserGroupIcon } from '@heroicons/vue/20/solid'
 import AppButton from '../AppButton.vue'
 import FilterBar from '../ui/FilterBar.vue'
 import type { useSearch } from '../../composables/useSearch'
@@ -69,6 +93,8 @@ const props = defineProps<{
   mode: 'name' | 'checksum'
   autoChecksum: boolean
   repos: string[]
+  /** The caller's projects: `name` is what the filter sends, `label` what the option shows. */
+  projects: { name: string; label: string }[]
 }>()
 const emit = defineEmits<{ 'update:mode': ['' | 'name' | 'checksum'] }>()
 
@@ -80,6 +106,14 @@ const SELECT =
 const repoOptions = computed(() => {
   const current = props.list.filters.value.repo
   return current && !props.repos.includes(current) ? [...props.repos, current] : props.repos
+})
+
+/** The caller's projects, plus one named in the URL that is not in that list. */
+const projectOptions = computed(() => {
+  const current = props.list.filters.value.project
+  return current && !props.projects.some((p) => p.name === current)
+    ? [...props.projects, { name: current, label: current }]
+    : props.projects
 })
 
 const pick = (e: Event): string => (e.target as HTMLSelectElement).value

@@ -37,7 +37,7 @@
   "shell.palette.noActions": "Aucune action correspondante",
   "shell.palette.count_one": "{n} résultat",
   "shell.palette.count_other": "{n} résultats",
-  "shell.palette.tooBroad": "Trop de paquets correspondent. Affinez la requête, par exemple avec name:, format: ou repo:.",
+  "shell.palette.tooBroad": "Trop de paquets correspondent. Affinez la requête, par exemple avec name:, format:, repo: ou project:.",
   "shell.palette.partialError": "Certains résultats n'ont pas pu être chargés.",
   "shell.palette.retry": "Réessayer",
   "shell.palette.footNavigate": "naviguer",

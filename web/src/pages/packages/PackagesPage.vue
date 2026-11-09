@@ -8,7 +8,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <div>
     <PageHeader :title="t('search.title')" :description="t('search.description')" />
 
-    <SearchControls :list="list" :mode="mode" :auto-checksum="autoChecksum" :repos="repoNames" @update:mode="setMode" />
+    <SearchControls
+      :list="list"
+      :mode="mode"
+      :auto-checksum="autoChecksum"
+      :repos="repoNames"
+      :projects="projectOptions"
+      @update:mode="setMode"
+    />
 
     <div v-if="plan.kind === 'idle' && loadError" class="rounded-lg border border-border bg-surface" data-testid="search-load-error">
       <StateBlock variant="error" :title="t('search.loadFailed')" :hint="loadError">
@@ -61,6 +68,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { listRecentPackages, listRepositoryPage, type RecentPackage } from '../../api/dashboard'
+import { listProjects } from '../../api/projects'
 import AppButton from '../../components/AppButton.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import RecentPackages from '../../components/packages/RecentPackages.vue'
@@ -70,11 +78,13 @@ import CopyButton from '../../components/ui/CopyButton.vue'
 import StateBlock from '../../components/ui/StateBlock.vue'
 import { useSearch } from '../../composables/useSearch'
 import { t } from '../../i18n'
+import { compareText } from '../../lib/intl'
 
 const { list, plan, mode, autoChecksum, setMode } = useSearch()
 
-// Both lists feed the start screen (repository filter, examples and recent packages); search itself works without them.
+// These lists feed the filters and the start screen (examples and recent packages); search itself works without them.
 const repoNames = ref<string[]>([])
+const projectOptions = ref<{ name: string; label: string }[]>([])
 const recent = ref<RecentPackage[]>([])
 const loadError = ref('')
 // Names to try, taken from what was published last: the search starts from something that exists.
@@ -82,10 +92,20 @@ const examples = computed(() => [...new Map(recent.value.map((p) => [p.name, p])
 
 async function loadSupport(): Promise<void> {
   loadError.value = ''
-  const [repos, latest] = await Promise.allSettled([listRepositoryPage({ sort: 'name', limit: 100 }), listRecentPackages({ mine: false, limit: 5 })])
+  const [repos, latest, projects] = await Promise.allSettled([
+    listRepositoryPage({ sort: 'name', limit: 100 }),
+    listRecentPackages({ mine: false, limit: 5 }),
+    listProjects(),
+  ])
   if (repos.status === 'fulfilled') repoNames.value = repos.value.repositories.map((r) => r.name)
   if (latest.status === 'fulfilled') recent.value = latest.value
-  const failed = [repos, latest].find((r) => r.status === 'rejected')
+  // The caller's own projects: the project filter only matches projects the caller holds a role in.
+  if (projects.status === 'fulfilled') {
+    projectOptions.value = projects.value.projects
+      .flatMap((p) => (p.name ? [{ name: p.name, label: p.display_name || p.name }] : []))
+      .sort((a, b) => compareText(a.label, b.label))
+  }
+  const failed = [repos, latest, projects].find((r) => r.status === 'rejected')
   if (failed) loadError.value = failed.reason instanceof Error ? failed.reason.message : t('search.loadFailed')
 }
 onMounted(() => void loadSupport())

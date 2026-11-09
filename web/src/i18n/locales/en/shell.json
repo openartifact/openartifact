@@ -37,7 +37,7 @@
   "shell.palette.noActions": "No matching actions",
   "shell.palette.count_one": "{n} result",
   "shell.palette.count_other": "{n} results",
-  "shell.palette.tooBroad": "Too many package matches. Refine the query, for example with name:, format: or repo:.",
+  "shell.palette.tooBroad": "Too many package matches. Refine the query, for example with name:, format:, repo: or project:.",
   "shell.palette.partialError": "Some results could not be loaded.",
   "shell.palette.retry": "Retry",
   "shell.palette.footNavigate": "navigate",

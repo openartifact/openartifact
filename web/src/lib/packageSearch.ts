@@ -11,6 +11,10 @@ export interface SearchFilters {
   q: string
   format: string
   repo: string
+  /** Project name or slug (`?project=`); the name search only, checksum lookups ignore it. */
+  project: string
+  /** "Shared with me" (`?shared=1`): projects where the caller is a viewer; the name search only. */
+  shared: boolean
   flagged: boolean
   /** Explicit `?mode=`; empty means "detect from the query". */
   mode: '' | SearchMode

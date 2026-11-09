@@ -37,7 +37,7 @@
   "shell.palette.noActions": "Keine passenden Aktionen",
   "shell.palette.count_one": "{n} Ergebnis",
   "shell.palette.count_other": "{n} Ergebnisse",
-  "shell.palette.tooBroad": "Zu viele Paket-Treffer. Verfeinern Sie die Abfrage, zum Beispiel mit name:, format: oder repo:.",
+  "shell.palette.tooBroad": "Zu viele Paket-Treffer. Verfeinern Sie die Abfrage, zum Beispiel mit name:, format:, repo: oder project:.",
   "shell.palette.partialError": "Einige Ergebnisse konnten nicht geladen werden.",
   "shell.palette.retry": "Erneut versuchen",
   "shell.palette.footNavigate": "navigieren",

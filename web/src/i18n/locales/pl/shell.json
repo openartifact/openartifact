@@ -39,7 +39,7 @@
   "shell.palette.count_other": "{n} wyniku",
   "shell.palette.count_few": "{n} wyniki",
   "shell.palette.count_many": "{n} wyników",
-  "shell.palette.tooBroad": "Zbyt wiele pasujących pakietów. Zawęź zapytanie, na przykład przez name:, format: lub repo:.",
+  "shell.palette.tooBroad": "Zbyt wiele pasujących pakietów. Zawęź zapytanie, na przykład przez name:, format:, repo: lub project:.",
   "shell.palette.partialError": "Nie udało się wczytać niektórych wyników.",
   "shell.palette.retry": "Ponów",
   "shell.palette.footNavigate": "nawigacja",
