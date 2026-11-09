@@ -224,6 +224,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         :artifact-labels="vexLabels"
         @changed="vexKey++"
       />
+      <VexSuggestionsPanel
+        v-if="isAdmin && filters.repo && (filters.type === 'all' || filters.type === 'vuln')"
+        class="mt-6"
+        :repo="filters.repo"
+        :artifact-labels="vexLabels"
+        @accepted="vexKey++"
+      />
     </template>
 
     <SecurityFindingDrawer :finding="selected" :can-act="isAdmin" @close="selected = null" @changed="onChanged" />
@@ -249,6 +256,7 @@ import ScanExportButtons from '../../components/ScanExportButtons.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import VexStatementsPanel from '../../components/VexStatementsPanel.vue'
 import VexStatusBadge from '../../components/VexStatusBadge.vue'
+import VexSuggestionsPanel from '../../components/VexSuggestionsPanel.vue'
 import OsvMirrorCard from '../../components/security/OsvMirrorCard.vue'
 import SecurityFindingDrawer from '../../components/security/SecurityFindingDrawer.vue'
 import SecurityHealthNotice from '../../components/security/SecurityHealthNotice.vue'

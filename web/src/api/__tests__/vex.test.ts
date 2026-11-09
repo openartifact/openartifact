@@ -4,7 +4,10 @@
 
 import { describe, it, expect, spyOn, afterEach, type Mock } from 'bun:test'
 import {
+  acceptVexSuggestion,
   deleteVexStatement,
+  dismissVexSuggestion,
+  listVexSuggestions,
   downloadVexDocument,
   listVexStatements,
   putVexStatement,
@@ -50,6 +53,29 @@ describe('vex api', () => {
     expect(lastInit().method).toBe('PUT')
     expect(JSON.parse(lastInit().body as string)).toEqual(decision)
     expect(new Headers(lastInit().headers).get('content-type')).toBe('application/json')
+  })
+
+  it('lists the suggestions of a state, pending by default', async () => {
+    spy = spyOn(globalThis, 'fetch').mockImplementation(async () => json({ suggestions: [{ id: 'g1' }] }))
+    expect(await listVexSuggestions('my repo')).toEqual([{ id: 'g1' } as never])
+    expect(lastUrl()).toBe('/api/v1/repositories/my%20repo/vex/suggestions?state=pending')
+
+    await listVexSuggestions('r', 'all')
+    expect(lastUrl()).toBe('/api/v1/repositories/r/vex/suggestions?state=all')
+
+    spy.mockImplementation(async () => json({}))
+    expect(await listVexSuggestions('r')).toEqual([])
+  })
+
+  it('accepts and dismisses a suggestion with POST', async () => {
+    spy = spyOn(globalThis, 'fetch').mockImplementation(async () => json({ id: 'x' }))
+    await acceptVexSuggestion('r', 'id/1')
+    expect(lastUrl()).toBe('/api/v1/repositories/r/vex/suggestions/id%2F1/accept')
+    expect(lastInit().method).toBe('POST')
+
+    await dismissVexSuggestion('r', 'g1')
+    expect(lastUrl()).toBe('/api/v1/repositories/r/vex/suggestions/g1/dismiss')
+    expect(lastInit().method).toBe('POST')
   })
 
   it('deletes a decision by id', async () => {

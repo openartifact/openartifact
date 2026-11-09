@@ -47,6 +47,13 @@ type Peer struct {
 	ResyncRequested bool
 	CreatedAt       time.Time
 
+	// VEXTrust is what happens to the peer's VEX decisions (VEXTrustIgnore,
+	// VEXTrustSuggest or VEXTrustApply); VEXSyncedAt and VEXError are the
+	// outcome of their last fetch.
+	VEXTrust    string
+	VEXSyncedAt *time.Time
+	VEXError    string
+
 	DeferredUnits int
 }
 
@@ -130,11 +137,14 @@ type NewPeer struct {
 	CAPEM      string
 	ClientCert string
 	ClientKey  string
+	// VEXTrust is the peer's VEX trust ("" means VEXTrustIgnore).
+	VEXTrust string
 }
 
 const peerColumns = `p.id::text, p.repo_id::text, p.name, p.base_url, p.enabled, p.token_enc, p.ca_pem, p.client_cert_enc, p.client_key_enc,
 	p.cursor_seq, p.remote_head_seq, p.remote_log_id, p.last_attempt_at, p.last_success_at, p.last_error, p.error_count,
 	p.next_attempt_at, p.oldest_pending_at, p.applied_total, p.conflicts_total, p.resync_requested, p.created_at,
+	p.vex_trust, p.vex_synced_at, p.vex_error,
 	(SELECT count(*) FROM federation_deferred d WHERE d.peer_id = p.id)`
 
 func scanPeer(r rowScanner) (*Peer, error) {
@@ -142,7 +152,8 @@ func scanPeer(r rowScanner) (*Peer, error) {
 
 	err := r.Scan(&p.ID, &p.RepoID, &p.Name, &p.BaseURL, &p.Enabled, &p.TokenEnc, &p.CAPEM, &p.ClientCertEnc, &p.ClientKeyEnc,
 		&p.CursorSeq, &p.RemoteHeadSeq, &p.RemoteLogID, &p.LastAttemptAt, &p.LastSuccessAt, &p.LastError, &p.ErrorCount,
-		&p.NextAttemptAt, &p.OldestPendingAt, &p.AppliedTotal, &p.ConflictsTotal, &p.ResyncRequested, &p.CreatedAt, &p.DeferredUnits)
+		&p.NextAttemptAt, &p.OldestPendingAt, &p.AppliedTotal, &p.ConflictsTotal, &p.ResyncRequested, &p.CreatedAt,
+		&p.VEXTrust, &p.VEXSyncedAt, &p.VEXError, &p.DeferredUnits)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // wrapped by callers
 	}
@@ -158,6 +169,14 @@ func isUniqueViolation(err error) bool {
 
 // CreatePeer adds a pull source to a federated repository.
 func (s *Store) CreatePeer(ctx context.Context, n NewPeer) (*Peer, error) {
+	if n.VEXTrust == "" {
+		n.VEXTrust = VEXTrustIgnore
+	}
+
+	if !ValidVEXTrust(n.VEXTrust) {
+		return nil, errVEXTrust
+	}
+
 	tokenEnc, err := crypto.Encrypt(n.Token)
 	if err != nil {
 		return nil, fmt.Errorf("encrypt peer token: %w", err)
@@ -176,9 +195,9 @@ func (s *Store) CreatePeer(ctx context.Context, n NewPeer) (*Peer, error) {
 	var id string
 
 	err = s.db.QueryRowContext(ctx,
-		`INSERT INTO federation_peers (repo_id, name, base_url, token_enc, ca_pem, client_cert_enc, client_key_enc)
-		 VALUES ($1::uuid, $2, $3, $4, $5, $6, $7) RETURNING id::text`,
-		n.RepoID, n.Name, n.BaseURL, tokenEnc, n.CAPEM, certEnc, keyEnc).Scan(&id)
+		`INSERT INTO federation_peers (repo_id, name, base_url, token_enc, ca_pem, client_cert_enc, client_key_enc, vex_trust)
+		 VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8) RETURNING id::text`,
+		n.RepoID, n.Name, n.BaseURL, tokenEnc, n.CAPEM, certEnc, keyEnc, n.VEXTrust).Scan(&id)
 
 	switch {
 	case isUniqueViolation(err):
@@ -199,6 +218,7 @@ type PeerPatch struct {
 	ClientCert *string
 	ClientKey  *string
 	Enabled    *bool
+	VEXTrust   *string
 }
 
 // UpdatePeer applies a partial update. Changing the URL or a credential clears
@@ -208,10 +228,16 @@ type PeerPatch struct {
 // another URL must carry the token for it (ErrInvalid otherwise); the stored
 // token is never sent to a URL it was not entered for.
 func (s *Store) UpdatePeer(ctx context.Context, repoID, id string, patch PeerPatch) (*Peer, error) {
+	if patch.VEXTrust != nil && !ValidVEXTrust(*patch.VEXTrust) {
+		return nil, errVEXTrust
+	}
+
 	cur, err := s.GetPeer(ctx, repoID, id)
 	if err != nil {
 		return nil, err
 	}
+
+	apply(&cur.VEXTrust, patch.VEXTrust)
 
 	if patch.Name != nil {
 		cur.Name = *patch.Name
@@ -250,10 +276,13 @@ func (s *Store) UpdatePeer(ctx context.Context, repoID, id string, patch PeerPat
 		        client_key_enc = $8, enabled = $9,
 		        error_count = CASE WHEN $10 THEN 0 ELSE error_count END,
 		        last_error = CASE WHEN $10 THEN '' ELSE last_error END,
-		        next_attempt_at = CASE WHEN $10 THEN NULL ELSE next_attempt_at END
+		        next_attempt_at = CASE WHEN $10 THEN NULL ELSE next_attempt_at END,
+		        vex_synced_at = CASE WHEN vex_trust = $11 THEN vex_synced_at END,
+		        vex_trust = $11
 		  WHERE id = $2::uuid AND repo_id = $1::uuid`,
 		repoID, id, cur.Name, cur.BaseURL, tokenEnc, cur.CAPEM, certEnc, keyEnc, cur.Enabled,
-		patch.BaseURL != nil || patch.Token != nil || patch.CAPEM != nil || patch.ClientCert != nil || patch.ClientKey != nil)
+		patch.BaseURL != nil || patch.Token != nil || patch.CAPEM != nil || patch.ClientCert != nil || patch.ClientKey != nil,
+		cur.VEXTrust)
 
 	switch {
 	case isUniqueViolation(err):

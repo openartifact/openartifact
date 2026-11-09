@@ -1,0 +1,115 @@
+{
+  "document": {
+    "category": "csaf_vex",
+    "csaf_version": "2.0",
+    "title": "Acme VEX for CVE-2024-1111",
+    "publisher": {"category": "vendor", "name": "Acme", "namespace": "https://acme.example"},
+    "tracking": {
+      "id": "ACME-VEX-2024-0001",
+      "status": "final",
+      "version": "2",
+      "initial_release_date": "2024-04-01T10:00:00Z",
+      "current_release_date": "2024-05-01T10:00:00Z",
+      "revision_history": [{"date": "2024-05-01T10:00:00Z", "number": "2", "summary": "Update"}]
+    }
+  },
+  "product_tree": {
+    "branches": [
+      {
+        "category": "vendor",
+        "name": "Acme",
+        "branches": [
+          {
+            "category": "product_name",
+            "name": "lib",
+            "branches": [
+              {
+                "category": "product_version",
+                "name": "1.2.3",
+                "product": {
+                  "name": "@acme/lib 1.2.3",
+                  "product_id": "LIB-123",
+                  "product_identification_helper": {"purl": "pkg:NPM/%40acme/lib@1.2.3?repository_url=https://registry.example#dist"}
+                }
+              },
+              {
+                "category": "product_version",
+                "name": "2.0.0",
+                "product": {
+                  "name": "@acme/lib 2.0.0",
+                  "product_id": "LIB-200",
+                  "product_identification_helper": {"purl": "pkg:npm/%40acme/lib@2.0.0"}
+                }
+              }
+            ]
+          },
+          {
+            "category": "product_version",
+            "name": "My_Tool 3.1",
+            "product": {
+              "name": "My_Tool 3.1",
+              "product_id": "TOOL-31",
+              "product_identification_helper": {"purl": "pkg:pypi/My_Tool@3.1"}
+            }
+          }
+        ]
+      }
+    ],
+    "full_product_names": [
+      {
+        "name": "Acme Server (any version)",
+        "product_id": "SERVER",
+        "product_identification_helper": {"purl": "pkg:generic/acme/server", "cpe": "cpe:2.3:a:acme:server:5.0:*:*:*:*:*:*:*"}
+      },
+      {"name": "Acme Appliance", "product_id": "APPLIANCE"},
+      {
+        "name": "Acme agent",
+        "product_id": "AGENT-1",
+        "product_identification_helper": {"purl": "pkg:golang/example.com/acme/agent@v1.0.0"}
+      }
+    ],
+    "relationships": [
+      {
+        "category": "default_component_of",
+        "product_reference": "LIB-123",
+        "relates_to_product_reference": "APPLIANCE",
+        "full_product_name": {"name": "@acme/lib 1.2.3 in Acme Appliance", "product_id": "APPLIANCE:LIB-123"}
+      }
+    ],
+    "product_groups": [
+      {"group_id": "GRP-LIBS", "product_ids": ["LIB-123", "APPLIANCE:LIB-123"]}
+    ]
+  },
+  "vulnerabilities": [
+    {
+      "cve": "CVE-2024-1111",
+      "product_status": {
+        "known_not_affected": ["LIB-123", "APPLIANCE:LIB-123", "TOOL-31", "SERVER", "APPLIANCE"],
+        "fixed": ["LIB-200"],
+        "first_fixed": ["LIB-200", "AGENT-1"]
+      },
+      "flags": [
+        {"label": "vulnerable_code_not_in_execute_path", "group_ids": ["GRP-LIBS"]},
+        {"label": "not_a_real_label", "product_ids": ["SERVER"]}
+      ],
+      "threats": [
+        {"category": "impact", "details": "The vulnerable parser is never called.", "product_ids": ["TOOL-31", "SERVER"]},
+        {"category": "exploit_status", "details": "None known.", "product_ids": ["LIB-123"]}
+      ],
+      "remediations": [
+        {"category": "vendor_fix", "details": "Upgrade to 2.0.0.", "product_ids": ["LIB-200"]},
+        {"category": "workaround", "details": "Disable the parser.", "product_ids": ["AGENT-1"]}
+      ]
+    },
+    {
+      "ids": [{"system_name": "Acme", "text": "ACME-2024-7"}],
+      "product_status": {"known_not_affected": ["AGENT-1"]},
+      "flags": [{"label": "component_not_present", "product_ids": ["AGENT-1"]}]
+    },
+    {
+      "notes": [{"category": "description", "text": "No id: skipped."}],
+      "product_status": {"known_not_affected": ["AGENT-1"]},
+      "flags": [{"label": "component_not_present", "product_ids": ["AGENT-1"]}]
+    }
+  ]
+}

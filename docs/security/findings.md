@@ -49,6 +49,8 @@ The row's `severity` is its worst non-zero count (`critical`, `high`, `medium`, 
 - `suppressed`: a vulnerability result whose every vulnerability has a [VEX](sbom.md) decision `not_affected` or `fixed`, or a license result an admin approved.
 - `open`: everything else.
 
+A statement imported from a [vendor VEX feed](vex-feeds.md) or taken over from a [federated peer](../operations/federation.md#sharing-vex-decisions) counts like an admin decision. A vendor's `not_affected` therefore suppresses the finding too. The statement's [source](sbom.md#where-a-decision-comes-from) tells which it is.
+
 `vex_status` appears on vulnerability findings that have VEX decisions. It is the least resolved one: `affected`, `under_investigation`, `fixed` or `not_affected`.
 
 ## The findings list

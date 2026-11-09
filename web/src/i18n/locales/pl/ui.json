@@ -109,6 +109,8 @@
   "ui.settings.attestation.desc": "Klucz podpisujący atestacje SBOM i VEX.",
   "ui.settings.scan-gate.title": "Bramka skanów",
   "ui.settings.scan-gate.desc": "Kryteria wykorzystania podatności w skanach i zablokowane pobrania.",
+  "ui.settings.vex-feeds.title": "Feedy VEX",
+  "ui.settings.vex-feeds.desc": "Biuletyny CSAF dostawców oznaczające wyniki jako niedotknięte lub naprawione.",
   "ui.settings.declarative.title": "Konfiguracja deklaratywna",
   "ui.settings.declarative.desc": "Przeglądaj, stosuj i eksportuj konfigurację jako YAML."
 }

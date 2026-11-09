@@ -65,6 +65,7 @@ type workerSet struct {
 	auditRetention      *worker.AuditRetentionWorker
 	repoStats           *worker.RepoStatsWorker
 	exploitFeeds        *worker.ExploitFeedsWorker
+	vexFeeds            *worker.VEXFeedsWorker
 	// exploit marks findings with the KEV and EPSS signals; it is never nil.
 	exploit *exploit.Enricher
 
@@ -95,6 +96,7 @@ func (a *app) setupWorkers() {
 	a.startHousekeepingWorkers()
 	a.startStorageWorkers()
 	a.startExploitFeeds()
+	a.startVEXFeeds()
 	a.startJournal()
 
 	// stopWorkers runs in the shutdown sequence; this covers early returns.

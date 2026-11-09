@@ -109,6 +109,8 @@
   "ui.settings.attestation.desc": "Ключ підпису для атестацій SBOM і VEX.",
   "ui.settings.scan-gate.title": "Шлюз сканування",
   "ui.settings.scan-gate.desc": "Критерії експлуатації для сканувань і заблоковані завантаження.",
+  "ui.settings.vex-feeds.title": "Стрічки VEX",
+  "ui.settings.vex-feeds.desc": "Бюлетені CSAF постачальників, що позначають виявлення як не вражені або виправлені.",
   "ui.settings.declarative.title": "Декларативна конфігурація",
   "ui.settings.declarative.desc": "Перегляд, застосування й експорт конфігурації у форматі YAML."
 }

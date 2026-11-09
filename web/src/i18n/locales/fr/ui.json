@@ -109,6 +109,8 @@
   "ui.settings.attestation.desc": "Clé de signature des attestations SBOM et VEX.",
   "ui.settings.scan-gate.title": "Gate d'analyse",
   "ui.settings.scan-gate.desc": "Critères d'exploitation des analyses, et téléchargements bloqués.",
+  "ui.settings.vex-feeds.title": "Flux VEX",
+  "ui.settings.vex-feeds.desc": "Avis CSAF des fournisseurs qui marquent des constats comme non affectés ou corrigés.",
   "ui.settings.declarative.title": "Configuration déclarative",
   "ui.settings.declarative.desc": "Vérifier, appliquer et exporter la configuration en YAML."
 }

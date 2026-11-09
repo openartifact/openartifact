@@ -109,6 +109,8 @@
   "ui.settings.attestation.desc": "SBOM と VEX のアテステーション用の署名鍵。",
   "ui.settings.scan-gate.title": "スキャンゲート",
   "ui.settings.scan-gate.desc": "スキャンの悪用判定基準と、ブロックされたダウンロード。",
+  "ui.settings.vex-feeds.title": "VEX フィード",
+  "ui.settings.vex-feeds.desc": "検出結果を影響なしまたは修正済みとしてマークするベンダーの CSAF アドバイザリ。",
   "ui.settings.declarative.title": "宣言的設定",
   "ui.settings.declarative.desc": "設定を YAML で確認、適用、エクスポートします。"
 }

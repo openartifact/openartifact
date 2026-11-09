@@ -16,6 +16,7 @@ import (
 	"github.com/openartifact/openartifact/internal/federation"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/vexsync"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -57,7 +58,8 @@ func (n regenNotifier) Notify(r federation.Regen) {
 // only the store exists (repositories created federated earlier keep their log,
 // but nothing pulls or serves until it is turned on). A process that does not
 // run the workers (w.requests is nil) serves the peer endpoints and leaves the
-// pull to a worker process.
+// pull to a worker process. vex serves the repositories' VEX decisions to the
+// peers and imports theirs.
 func setupFederation(
 	ctx context.Context,
 	cfg *config.Config,
@@ -66,6 +68,7 @@ func setupFederation(
 	log *logger.Logger,
 	publisher webhook.Publisher,
 	w *workerSet,
+	vex *vexsync.Service,
 ) (*federationRuntime, error) {
 	store := federation.NewStore(db.GetDB())
 	rt := &federationRuntime{store: store}
@@ -74,7 +77,7 @@ func setupFederation(
 		return rt, nil
 	}
 
-	rt.server = federation.NewServer(store, db, blobs, log)
+	rt.server = federation.NewServer(store, db, blobs, log).WithVEX(vex)
 
 	if w.requests == nil {
 		rt.kick = func() { kickPull(w.queue, log) }
@@ -98,6 +101,7 @@ func setupFederation(
 		Webhooks:           publisher,
 		Notify:             regenNotifier{w: w},
 		Metrics:            metrics,
+		VEX:                vex,
 		PollInterval:       cfg.Federation.PollInterval,
 		BatchSize:          cfg.Federation.BatchSize,
 		MaxBackoff:         cfg.Federation.MaxBackoff,

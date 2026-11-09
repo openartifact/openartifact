@@ -12,6 +12,7 @@ import {
   resyncFederationPeer,
   revokeFederationToken,
   setFederationEnabled,
+  setFederationVexPublish,
   updateFederationPeer,
 } from '../federation'
 
@@ -41,6 +42,16 @@ describe('federation api', () => {
     expect(call(0).init.method).toBe('PUT')
     expect(JSON.parse(call(0).init.body as string)).toEqual({ enabled: true })
     expect(JSON.parse(call(1).init.body as string)).toEqual({ enabled: false })
+  })
+
+  it('switches VEX publishing with a PUT that keeps federation on', async () => {
+    spy = spyOn(globalThis, 'fetch').mockImplementation(async () => json({ enabled: true, vex_publish: true }))
+    await setFederationVexPublish('my repo', true)
+    await setFederationVexPublish('my repo', false)
+    expect(call(0).url).toBe('/api/v1/repositories/my%20repo/federation')
+    expect(call(0).init.method).toBe('PUT')
+    expect(JSON.parse(call(0).init.body as string)).toEqual({ enabled: true, vex_publish: true })
+    expect(JSON.parse(call(1).init.body as string)).toEqual({ enabled: true, vex_publish: false })
   })
 
   it('creates and patches peers on the peer routes', async () => {

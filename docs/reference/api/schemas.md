@@ -430,6 +430,7 @@ A stored GPG key the caller may seal bundles with. Never carries private key mat
 | `client_key` | string | no | PEM private key of the client certificate. |
 | `name` | string | yes | - |
 | `token` | string | yes | Token the peer issued for this repository. |
+| `vex_trust` | string | no | VEX trust of the peer; default ignore. One of: `ignore`, `suggest`, `apply`. |
 
 ### CreateFederationTokenRequest
 
@@ -736,6 +737,9 @@ A remote instance this repository pulls changes from. Secrets (token, client key
 | `remote_head_seq` | integer (int64) | yes | Peer's log head sequence as of the last successful contact. |
 | `resync_requested` | boolean | yes | A resync is queued and not yet started. |
 | `state` | string | yes | ok: caught up. lagging: behind the peer's head. error: the last attempt failed. pending: never synced yet. disabled: not polled. One of: `ok`, `lagging`, `error`, `pending`, `disabled`. |
+| `vex_error` | string | yes | Error of the last VEX fetch; empty when it succeeded. |
+| `vex_synced_at` | string (date-time) | no | Last fetch of the peer's VEX decisions. |
+| `vex_trust` | string | yes | What happens to the peer's VEX decisions: ignore (nothing fetched), suggest (pending suggestions) or apply (applied where no other decision exists). One of: `ignore`, `suggest`, `apply`. |
 
 ### FederationStatus
 
@@ -751,6 +755,7 @@ A remote instance this repository pulls changes from. Secrets (token, client key
 | `tokens` | array of [FederationToken](#federationtoken) | yes | - |
 | `tombstones` | integer (int64) | yes | Logged deletions. |
 | `units` | integer (int64) | yes | Logged units. |
+| `vex_publish` | boolean | yes | The repository serves its local VEX decisions to its peers. |
 
 ### FederationToken
 
@@ -2315,12 +2320,14 @@ Absent fields stay unchanged.
 | `enabled` | boolean | no | - |
 | `name` | string | no | - |
 | `token` | string | no | - |
+| `vex_trust` | string | no | VEX trust of the peer; switching to ignore deletes its suggestions. One of: `ignore`, `suggest`, `apply`. |
 
 ### UpdateFederationRequest
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `enabled` | boolean | yes | true backfills the log from the existing content; false removes the log and all peers. |
+| `vex_publish` | boolean | no | Serve the repository's local VEX decisions to its peers (GET /federation/v1/vex). Only a federated repository publishes; absent keeps the current setting. |
 
 ### User
 
@@ -2355,6 +2362,41 @@ Includes all fields of [User](#user).
 | `updated_at` | string (date-time) | no | - |
 | `username` | string | no | - |
 
+### VEXFeed
+
+A vendor CSAF 2.0 VEX provider and its import state.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `applied` | integer | yes | VEX decisions the feed's statements currently produce on scanned artifacts. |
+| `created_at` | string (date-time) | yes | - |
+| `cursor_at` | string (date-time) | yes | Nullable. |
+| `documents_total` | integer | yes | - |
+| `enabled` | boolean | yes | - |
+| `id` | string (uuid) | yes | - |
+| `interval_hours` | integer | yes | Minimum: 1. Maximum: 720. |
+| `last_attempt_at` | string (date-time) | yes | Nullable. |
+| `last_error` | string | yes | - |
+| `last_success_at` | string (date-time) | yes | Nullable. |
+| `name` | string | yes | - |
+| `pgp_keys` | string | yes | ASCII-armored OpenPGP public keys pinned for the feed. |
+| `rejected_total` | integer | yes | - |
+| `require_signature` | boolean | yes | Reject documents without a valid OpenPGP signature. |
+| `statements` | integer | yes | Statements imported from the feed's documents. |
+| `updated_at` | string (date-time) | yes | - |
+| `url` | string | yes | provider-metadata.json, ROLIE feed or single CSAF document URL. |
+
+### VEXFeedRequest
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `enabled` | boolean | no | Default: `true`. |
+| `interval_hours` | integer | no | Default: `24`. Minimum: 1. Maximum: 720. |
+| `name` | string | yes | 1-63 characters: letters, digits, '.', '_' or '-'. |
+| `pgp_keys` | string | no | ASCII-armored OpenPGP public keys, at most 64 KiB. |
+| `require_signature` | boolean | no | Default: `true`. |
+| `url` | string | yes | https URL (http only for a loopback host) that passes the outbound SSRF policy. |
+
 ### VEXStatement
 
 | Field | Type | Required | Description |
@@ -2366,9 +2408,37 @@ Includes all fields of [User](#user).
 | `id` | string (uuid) | no | - |
 | `impact_statement` | string | no | - |
 | `justification` | string | no | - |
+| `source_kind` | string | no | Where the decision comes from: an operator (local), a vendor CSAF VEX feed (csaf) or a federated peer (peer). One of: `local`, `csaf`, `peer`. |
+| `source_name` | string | no | Name of the feed or peer; empty for local. |
+| `source_ref` | string | no | CSAF document URL (csaf) or peer base URL (peer); empty for local. |
 | `status` | string | no | One of: `affected`, `not_affected`, `fixed`, `under_investigation`. |
 | `updated_at` | string (date-time) | no | - |
 | `vuln_id` | string | no | - |
+
+### VEXSuggestion
+
+A federated peer's VEX decision offered to the repository.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `action_statement` | string | yes | - |
+| `artifact_id` | string | yes | - |
+| `created_at` | string (date-time) | yes | - |
+| `decided_at` | string (date-time) | yes | Nullable. |
+| `decided_by` | string | yes | Who accepted or dismissed it; empty when applied automatically. |
+| `id` | string (uuid) | yes | - |
+| `impact_statement` | string | yes | - |
+| `justification` | string | yes | - |
+| `local_source_kind` | string | yes | Source of that decision (local, csaf or peer); empty when none. |
+| `local_status` | string | yes | Status of the repository's current decision for the same artifact and vulnerability; empty when none. |
+| `peer_base_url` | string | yes | - |
+| `peer_id` | string (uuid) | yes | - |
+| `peer_name` | string | yes | - |
+| `peer_updated_at` | string (date-time) | yes | Nullable. |
+| `state` | string | yes | One of: `pending`, `accepted`, `dismissed`. |
+| `status` | string | yes | One of: `affected`, `not_affected`, `fixed`, `under_investigation`. |
+| `updated_at` | string (date-time) | yes | - |
+| `vuln_id` | string | yes | - |
 
 ### VulnGateResponse
 

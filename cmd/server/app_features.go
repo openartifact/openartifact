@@ -27,7 +27,7 @@ func (a *app) setupFeatures() error {
 // setupFederation starts pull replication with peer instances
 // (docs/operations/federation.md).
 func (a *app) setupFederation() error {
-	fed, err := setupFederation(context.Background(), a.cfg, a.db, a.store.blobs, a.log, a.workers.webhook, &a.workers)
+	fed, err := setupFederation(context.Background(), a.cfg, a.db, a.store.blobs, a.log, a.workers.webhook, &a.workers, a.feat.vexSync)
 	if err != nil {
 		return a.fail("failed to start federation", err)
 	}

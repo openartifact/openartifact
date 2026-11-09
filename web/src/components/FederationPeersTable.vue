@@ -17,6 +17,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <th data-drop-order="3" class="text-left px-4 py-2.5">{{ t('federation.peers.column.lastError') }}</th>
           <th data-drop-order="2" class="text-right px-4 py-2.5">{{ t('federation.peers.column.counts') }}</th>
           <th class="text-right px-4 py-2.5">{{ t('federation.peers.column.deferred') }}</th>
+          <th data-drop-order="4" class="text-left px-4 py-2.5">{{ t('federation.peers.column.vex') }}</th>
           <th class="text-right px-4 py-2.5" :class="ACTIONS_HEAD"><span class="sr-only">{{ t('common.actions') }}</span></th>
         </tr>
       </thead>
@@ -74,6 +75,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </button>
             <span v-else class="text-muted tabular-nums">{{ t('federation.peers.deferredNone') }}</span>
           </td>
+          <td class="px-4 py-3 text-xs max-w-xs" :data-testid="`federation-peer-vex-${peer.name}`">
+            <p class="text-foreground">{{ vexTrustLabel(peer.vex_trust) }}</p>
+            <template v-if="peer.vex_trust !== 'ignore'">
+              <p v-if="peer.vex_error" class="text-danger break-words line-clamp-2" :title="peer.vex_error">{{ peer.vex_error }}</p>
+              <p class="text-muted">
+                {{ peer.vex_synced_at ? tp('federation.peers.vexSynced', { when: formatDateTime(peer.vex_synced_at) }) : t('federation.peers.vexNever') }}
+              </p>
+            </template>
+          </td>
           <td class="px-4 py-3" :class="ACTIONS_CELL">
             <RowActions :actions="actionsOf(peer)" @action="(key) => onAction(key, peer)">
               <AppToggle
@@ -100,8 +110,8 @@ import TableScroller from './ui/TableScroller.vue'
 import { ACTIONS_CELL, ACTIONS_HEAD, GROW_CELL } from './ui/tableStyles'
 import type { FederationPeer } from '../api/federation'
 import { formatDateTime } from '../lib/datetime'
-import { fill, formatLag, peerStateLabel, peerStateVariant, previewError, resyncPending } from '../lib/federation'
-import { t } from '../i18n'
+import { fill, formatLag, peerStateLabel, peerStateVariant, previewError, resyncPending, vexTrustLabel } from '../lib/federation'
+import { t, tp } from '../i18n'
 
 const props = defineProps<{
   peers: readonly FederationPeer[]

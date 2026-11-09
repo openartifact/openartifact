@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Repositories API
 
-73 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+76 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -1672,6 +1672,78 @@ Delete a recorded VEX decision; the vulnerability falls back to its derived stat
 | `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or decision not found | - |
+
+### `GET /api/v1/repositories/{name}/vex/suggestions`
+
+List VEX suggestions
+
+List the VEX decisions the federated peers trusted with `suggest` or `apply` offered to this repository. Repository admin only.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+| `state` | query | string | no | One of: `pending`, `accepted`, `dismissed`, `all`. Default: `pending`. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | VEX suggestions | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
+
+Fields of the `200` response (`application/json`):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `suggestions` | array of [VEXSuggestion](schemas.md#vexsuggestion) | yes | - |
+
+### `POST /api/v1/repositories/{name}/vex/suggestions/{id}/accept`
+
+Accept a VEX suggestion
+
+Record the peer's decision as the repository's VEX decision (source peer), replacing any existing decision for the same artifact and vulnerability. Audited as `vex.suggestion_accepted`. Repository admin only.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+| `id` | path | string (uuid) | yes | VEX suggestion id. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The recorded VEX decision | `application/json`: [VEXStatement](schemas.md#vexstatement) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or VEX suggestion not found (a suggestion of another repository is not found) | `application/json`: [Error](schemas.md#error) |
+
+### `POST /api/v1/repositories/{name}/vex/suggestions/{id}/dismiss`
+
+Dismiss a VEX suggestion
+
+Mark the peer's decision as dismissed; it returns to pending only when the peer changes it. Audited as `vex.suggestion_dismissed`. Repository admin only.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+| `id` | path | string (uuid) | yes | VEX suggestion id. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The dismissed suggestion | `application/json`: [VEXSuggestion](schemas.md#vexsuggestion) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or VEX suggestion not found (a suggestion of another repository is not found) | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/vuln/scan`
 

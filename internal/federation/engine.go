@@ -47,6 +47,9 @@ type Options struct {
 	Webhooks webhook.Publisher
 	Notify   Notifier
 	Metrics  *Metrics
+	// VEX receives the VEX decisions of the peers that are trusted with them,
+	// fetched after a successful pull (nil: no VEX exchange).
+	VEX VEXReceiver
 
 	PollInterval       time.Duration
 	BatchSize          int

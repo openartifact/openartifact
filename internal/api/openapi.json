@@ -4296,8 +4296,249 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "source_kind": {
+            "type": "string",
+            "enum": [
+              "local",
+              "csaf",
+              "peer"
+            ],
+            "description": "Where the decision comes from: an operator (local), a vendor CSAF VEX feed (csaf) or a federated peer (peer)."
+          },
+          "source_name": {
+            "type": "string",
+            "description": "Name of the feed or peer; empty for local."
+          },
+          "source_ref": {
+            "type": "string",
+            "description": "CSAF document URL (csaf) or peer base URL (peer); empty for local."
           }
         }
+      },
+      "VEXFeed": {
+        "type": "object",
+        "description": "A vendor CSAF 2.0 VEX provider and its import state.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "description": "provider-metadata.json, ROLIE feed or single CSAF document URL."
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "require_signature": {
+            "type": "boolean",
+            "description": "Reject documents without a valid OpenPGP signature."
+          },
+          "pgp_keys": {
+            "type": "string",
+            "description": "ASCII-armored OpenPGP public keys pinned for the feed."
+          },
+          "interval_hours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 720
+          },
+          "cursor_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "last_attempt_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "last_success_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "documents_total": {
+            "type": "integer"
+          },
+          "rejected_total": {
+            "type": "integer"
+          },
+          "statements": {
+            "type": "integer",
+            "description": "Statements imported from the feed's documents."
+          },
+          "applied": {
+            "type": "integer",
+            "description": "VEX decisions the feed's statements currently produce on scanned artifacts."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "url",
+          "enabled",
+          "require_signature",
+          "pgp_keys",
+          "interval_hours",
+          "cursor_at",
+          "last_attempt_at",
+          "last_success_at",
+          "last_error",
+          "documents_total",
+          "rejected_total",
+          "statements",
+          "applied",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "VEXFeedRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "1-63 characters: letters, digits, '.', '_' or '-'."
+          },
+          "url": {
+            "type": "string",
+            "description": "https URL (http only for a loopback host) that passes the outbound SSRF policy."
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "require_signature": {
+            "type": "boolean",
+            "default": true
+          },
+          "pgp_keys": {
+            "type": "string",
+            "description": "ASCII-armored OpenPGP public keys, at most 64 KiB."
+          },
+          "interval_hours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 720,
+            "default": 24
+          }
+        },
+        "required": [
+          "name",
+          "url"
+        ]
+      },
+      "VEXSuggestion": {
+        "type": "object",
+        "description": "A federated peer's VEX decision offered to the repository.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "artifact_id": {
+            "type": "string"
+          },
+          "vuln_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "affected",
+              "not_affected",
+              "fixed",
+              "under_investigation"
+            ]
+          },
+          "justification": {
+            "type": "string"
+          },
+          "impact_statement": {
+            "type": "string"
+          },
+          "action_statement": {
+            "type": "string"
+          },
+          "peer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "peer_name": {
+            "type": "string"
+          },
+          "peer_base_url": {
+            "type": "string"
+          },
+          "peer_updated_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "dismissed"
+            ]
+          },
+          "decided_by": {
+            "type": "string",
+            "description": "Who accepted or dismissed it; empty when applied automatically."
+          },
+          "decided_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "local_status": {
+            "type": "string",
+            "description": "Status of the repository's current decision for the same artifact and vulnerability; empty when none."
+          },
+          "local_source_kind": {
+            "type": "string",
+            "description": "Source of that decision (local, csaf or peer); empty when none."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "artifact_id",
+          "vuln_id",
+          "status",
+          "justification",
+          "impact_statement",
+          "action_statement",
+          "peer_id",
+          "peer_name",
+          "peer_base_url",
+          "peer_updated_at",
+          "state",
+          "decided_by",
+          "decided_at",
+          "local_status",
+          "local_source_kind",
+          "created_at",
+          "updated_at"
+        ]
       },
       "ProjectQuota": {
         "type": "object",
@@ -6889,6 +7130,24 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "vex_trust": {
+            "type": "string",
+            "enum": [
+              "ignore",
+              "suggest",
+              "apply"
+            ],
+            "description": "What happens to the peer's VEX decisions: ignore (nothing fetched), suggest (pending suggestions) or apply (applied where no other decision exists)."
+          },
+          "vex_synced_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last fetch of the peer's VEX decisions."
+          },
+          "vex_error": {
+            "type": "string",
+            "description": "Error of the last VEX fetch; empty when it succeeded."
           }
         },
         "required": [
@@ -6909,7 +7168,9 @@
           "resync_requested",
           "has_ca_pem",
           "has_client_cert",
-          "created_at"
+          "created_at",
+          "vex_trust",
+          "vex_error"
         ]
       },
       "FederationToken": {
@@ -7073,6 +7334,10 @@
             "items": {
               "$ref": "#/components/schemas/FederationToken"
             }
+          },
+          "vex_publish": {
+            "type": "boolean",
+            "description": "The repository serves its local VEX decisions to its peers."
           }
         },
         "required": [
@@ -7085,7 +7350,8 @@
           "units",
           "tombstones",
           "peers",
-          "tokens"
+          "tokens",
+          "vex_publish"
         ]
       },
       "UpdateFederationRequest": {
@@ -7094,6 +7360,10 @@
           "enabled": {
             "type": "boolean",
             "description": "true backfills the log from the existing content; false removes the log and all peers."
+          },
+          "vex_publish": {
+            "type": "boolean",
+            "description": "Serve the repository's local VEX decisions to its peers (GET /federation/v1/vex). Only a federated repository publishes; absent keeps the current setting."
           }
         },
         "required": [
@@ -7125,6 +7395,15 @@
           "client_key": {
             "type": "string",
             "description": "PEM private key of the client certificate."
+          },
+          "vex_trust": {
+            "type": "string",
+            "enum": [
+              "ignore",
+              "suggest",
+              "apply"
+            ],
+            "description": "VEX trust of the peer; default ignore."
           }
         },
         "required": [
@@ -7157,6 +7436,15 @@
           },
           "enabled": {
             "type": "boolean"
+          },
+          "vex_trust": {
+            "type": "string",
+            "enum": [
+              "ignore",
+              "suggest",
+              "apply"
+            ],
+            "description": "VEX trust of the peer; switching to ignore deletes its suggestions."
           }
         }
       },
@@ -10718,6 +11006,640 @@
           },
           "404": {
             "description": "Repository or decision not found"
+          }
+        }
+      }
+    },
+    "/api/v1/vex/feeds": {
+      "get": {
+        "summary": "List VEX feeds",
+        "description": "List the vendor CSAF VEX feeds and their import state. Admin only.",
+        "tags": [
+          "SBOM"
+        ],
+        "responses": {
+          "200": {
+            "description": "VEX feeds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "feeds": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/VEXFeed"
+                      }
+                    }
+                  },
+                  "required": [
+                    "feeds"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add a VEX feed",
+        "description": "Add a vendor CSAF 2.0 VEX provider by the URL of its provider-metadata.json, a ROLIE feed or a single CSAF document. The URL must be https and pass the outbound (SSRF) policy. Audited as `vex.feed_created`. Admin only.",
+        "tags": [
+          "SBOM"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VEXFeedRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Feed added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VEXFeed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (error code validation_failed)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A VEX feed with this name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vex/feeds/{id}": {
+      "get": {
+        "summary": "Get a VEX feed",
+        "description": "Admin only.",
+        "tags": [
+          "SBOM"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "VEX feed id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "VEX feed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VEXFeed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "VEX feed not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update a VEX feed",
+        "description": "Replace the editable fields of a feed; absent optional fields take their defaults. Changing the URL resets the sync cursor. Audited as `vex.feed_updated`. Admin only.",
+        "tags": [
+          "SBOM"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "VEX feed id."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VEXFeedRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated feed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VEXFeed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (error code validation_failed)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "VEX feed not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A VEX feed with this name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a VEX feed",
+        "description": "Remove a feed, its imported statements and the VEX decisions it produced. Audited as `vex.feed_deleted`. Admin only.",
+        "tags": [
+          "SBOM"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "VEX feed id."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Feed deleted"
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "VEX feed not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vex/feeds/{id}/sync": {
+      "post": {
+        "summary": "Sync a VEX feed now",
+        "description": "Start a sync of the feed in the background. Audited as `vex.feed_synced`. Admin only.",
+        "tags": [
+          "SBOM"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "VEX feed id."
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Sync started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "started"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "VEX feed not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A sync of this feed is already running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "VEX feed sync is not available on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/vex/suggestions": {
+      "get": {
+        "summary": "List VEX suggestions",
+        "description": "List the VEX decisions the federated peers trusted with `suggest` or `apply` offered to this repository. Repository admin only.",
+        "tags": [
+          "Repositories",
+          "SBOM"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "accepted",
+                "dismissed",
+                "all"
+              ],
+              "default": "pending"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "VEX suggestions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "suggestions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/VEXSuggestion"
+                      }
+                    }
+                  },
+                  "required": [
+                    "suggestions"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/vex/suggestions/{id}/accept": {
+      "post": {
+        "summary": "Accept a VEX suggestion",
+        "description": "Record the peer's decision as the repository's VEX decision (source peer), replacing any existing decision for the same artifact and vulnerability. Audited as `vex.suggestion_accepted`. Repository admin only.",
+        "tags": [
+          "Repositories",
+          "SBOM"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "VEX suggestion id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The recorded VEX decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VEXStatement"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or VEX suggestion not found (a suggestion of another repository is not found)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/vex/suggestions/{id}/dismiss": {
+      "post": {
+        "summary": "Dismiss a VEX suggestion",
+        "description": "Mark the peer's decision as dismissed; it returns to pending only when the peer changes it. Audited as `vex.suggestion_dismissed`. Repository admin only.",
+        "tags": [
+          "Repositories",
+          "SBOM"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "VEX suggestion id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The dismissed suggestion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VEXSuggestion"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or VEX suggestion not found (a suggestion of another repository is not found)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -26025,7 +26947,7 @@
       },
       "put": {
         "summary": "Enable or disable federation",
-        "description": "Enabling backfills the change log from the repository's existing content. Disabling removes the log and all peers. Idempotent. Same permission as the status read.",
+        "description": "Enabling backfills the change log from the repository's existing content. Disabling removes the log and all peers. Idempotent. `vex_publish` turns on or off serving the repository's local VEX decisions to its peers; it is applied after enabling, and asking for it while disabling is a 409. Same permission as the status read.",
         "tags": [
           "Federation"
         ],

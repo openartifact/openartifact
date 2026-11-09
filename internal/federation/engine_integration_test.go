@@ -115,6 +115,7 @@ type engSite struct {
 	token  string
 	opts   Options
 	eng    *Engine
+	fed    *Server
 	srv    *httptest.Server
 	api    http.Handler
 	notes  *engNotifier
@@ -176,8 +177,10 @@ func newEngSite(t *testing.T, name, format string) *engSite {
 		t.Fatalf("create token: %v", err)
 	}
 
+	s.fed = NewServer(s.store, pg, blobs, engLogger(t))
+
 	mux := http.NewServeMux()
-	mux.Handle("/federation/v1/", http.StripPrefix("/federation/v1", NewServer(s.store, pg, blobs, engLogger(t)).Handler()))
+	mux.Handle("/federation/v1/", http.StripPrefix("/federation/v1", s.fed.Handler()))
 	s.api = mux
 	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
 

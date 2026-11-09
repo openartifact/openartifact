@@ -49,6 +49,8 @@ type Server struct {
 	db    quarantine.Checker
 	blobs storage.BlobStore
 	log   *logger.Logger
+	// vex builds the VEX document served to peers (nil: none is served).
+	vex VEXPublisher
 }
 
 // NewServer creates the peer endpoint handler.
@@ -66,6 +68,7 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/log", s.logPage)
 	r.Get("/unit", s.unit)
 	r.Get("/blob", s.blob)
+	r.Get("/vex", s.vexDocument)
 
 	return r
 }

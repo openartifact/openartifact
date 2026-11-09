@@ -20,7 +20,16 @@ const STATEMENTS = [
     impact_statement: 'not shipped',
     updated_at: '2026-10-20T10:00:00Z',
   },
-  { id: 's2', artifact_id: 'art-2', vuln_id: 'CVE-2', status: 'affected', updated_at: '2026-10-21T10:00:00Z' },
+  {
+    id: 's2',
+    artifact_id: 'art-2',
+    vuln_id: 'CVE-2',
+    status: 'affected',
+    updated_at: '2026-10-21T10:00:00Z',
+    source_kind: 'csaf',
+    source_name: 'acme-psirt',
+    source_ref: 'https://acme.example/csaf/2026/acme-2.json',
+  },
 ]
 
 let wrapper: VueWrapper | undefined
@@ -66,6 +75,16 @@ describe('VexStatementsPanel', () => {
     expect(rows[1]!.text()).toContain('art-2')
     expect(rows[1]!.text()).toContain('Affected')
     expect(wrapper!.get('[data-testid="vex-count"]').text()).toContain('2')
+  })
+
+  it('shows where each decision comes from, linking a feed decision to its document', async () => {
+    await mountPanel('main')
+    const rows = wrapper!.findAll('[data-testid="vex-statement-row"]')
+    expect(rows[0]!.get('[data-testid="vex-source"]').text()).toBe('Admin')
+    const link = rows[1]!.get('[data-testid="vex-source-link"]')
+    expect(link.text()).toContain('acme-psirt')
+    expect(link.attributes('href')).toBe('https://acme.example/csaf/2026/acme-2.json')
+    expect(link.attributes('rel')).toContain('noopener')
   })
 
   it('shows the empty state', async () => {

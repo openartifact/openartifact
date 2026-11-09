@@ -5,6 +5,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -209,6 +210,9 @@ func vexResponse(s *models.VEXStatement) responses.VEXStatementResponse {
 		Justification:   s.Justification,
 		ImpactStatement: s.ImpactStatement,
 		ActionStatement: s.ActionStatement,
+		SourceKind:      cmp.Or(s.SourceKind, models.VEXSourceLocal),
+		SourceName:      s.SourceName,
+		SourceRef:       s.SourceRef,
 		CreatedBy:       s.CreatedBy,
 		CreatedAt:       formatTime(s.CreatedAt),
 		UpdatedAt:       formatTime(s.UpdatedAt),
@@ -304,6 +308,8 @@ func (h *VEXHandler) handleUpsertStatement(w http.ResponseWriter, r *http.Reques
 		Justification:   body.Justification,
 		ImpactStatement: strings.TrimSpace(body.ImpactStatement),
 		ActionStatement: strings.TrimSpace(body.ActionStatement),
+		// An operator decision replaces whatever a feed or a peer recorded.
+		SourceKind: models.VEXSourceLocal,
 	}
 
 	if p := currentPrincipal(r); p != nil {

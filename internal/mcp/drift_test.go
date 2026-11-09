@@ -120,6 +120,7 @@ var driftTable = []driftDecision{
 	{pattern: "bundles/**", reason: reasonControlPlane},
 	{pattern: "pipelines/**", reason: reasonControlPlane},
 	{pattern: "webhooks/**", reason: reasonControlPlane},
+	{pattern: "vex/feeds", reason: reasonControlPlane},
 	{pattern: "branding/**", reason: "UI branding assets"},
 	{pattern: "telemetry/**", reason: "frontend telemetry sink"},
 	{pattern: "system/info", reason: "instance version and build information; not repository content"},

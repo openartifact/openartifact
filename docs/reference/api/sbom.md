@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # SBOM API
 
-15 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+24 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -388,4 +388,212 @@ Delete a recorded VEX decision; the vulnerability falls back to its derived stat
 | `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or decision not found | - |
+
+### `GET /api/v1/repositories/{name}/vex/suggestions`
+
+List VEX suggestions
+
+List the VEX decisions the federated peers trusted with `suggest` or `apply` offered to this repository. Repository admin only.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+| `state` | query | string | no | One of: `pending`, `accepted`, `dismissed`, `all`. Default: `pending`. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | VEX suggestions | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
+
+Fields of the `200` response (`application/json`):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `suggestions` | array of [VEXSuggestion](schemas.md#vexsuggestion) | yes | - |
+
+### `POST /api/v1/repositories/{name}/vex/suggestions/{id}/accept`
+
+Accept a VEX suggestion
+
+Record the peer's decision as the repository's VEX decision (source peer), replacing any existing decision for the same artifact and vulnerability. Audited as `vex.suggestion_accepted`. Repository admin only.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+| `id` | path | string (uuid) | yes | VEX suggestion id. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The recorded VEX decision | `application/json`: [VEXStatement](schemas.md#vexstatement) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or VEX suggestion not found (a suggestion of another repository is not found) | `application/json`: [Error](schemas.md#error) |
+
+### `POST /api/v1/repositories/{name}/vex/suggestions/{id}/dismiss`
+
+Dismiss a VEX suggestion
+
+Mark the peer's decision as dismissed; it returns to pending only when the peer changes it. Audited as `vex.suggestion_dismissed`. Repository admin only.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+| `id` | path | string (uuid) | yes | VEX suggestion id. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The dismissed suggestion | `application/json`: [VEXSuggestion](schemas.md#vexsuggestion) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or VEX suggestion not found (a suggestion of another repository is not found) | `application/json`: [Error](schemas.md#error) |
+
+### `GET /api/v1/vex/feeds`
+
+List VEX feeds
+
+List the vendor CSAF VEX feeds and their import state. Admin only.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | VEX feeds | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Admin access required | `application/json`: [Error](schemas.md#error) |
+
+Fields of the `200` response (`application/json`):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `feeds` | array of [VEXFeed](schemas.md#vexfeed) | yes | - |
+
+### `POST /api/v1/vex/feeds`
+
+Add a VEX feed
+
+Add a vendor CSAF 2.0 VEX provider by the URL of its provider-metadata.json, a ROLIE feed or a single CSAF document. The URL must be https and pass the outbound (SSRF) policy. Audited as `vex.feed_created`. Admin only.
+
+**Request body** (required)
+
+`application/json`: [VEXFeedRequest](schemas.md#vexfeedrequest)
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `201` | Feed added | `application/json`: [VEXFeed](schemas.md#vexfeed) |
+| `400` | Invalid request (error code validation_failed) | `application/json`: [Error](schemas.md#error) |
+| `403` | Admin access required | `application/json`: [Error](schemas.md#error) |
+| `409` | A VEX feed with this name already exists | `application/json`: [Error](schemas.md#error) |
+
+### `GET /api/v1/vex/feeds/{id}`
+
+Get a VEX feed
+
+Admin only.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string (uuid) | yes | VEX feed id. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | VEX feed | `application/json`: [VEXFeed](schemas.md#vexfeed) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Admin access required | `application/json`: [Error](schemas.md#error) |
+| `404` | VEX feed not found | `application/json`: [Error](schemas.md#error) |
+
+### `PUT /api/v1/vex/feeds/{id}`
+
+Update a VEX feed
+
+Replace the editable fields of a feed; absent optional fields take their defaults. Changing the URL resets the sync cursor. Audited as `vex.feed_updated`. Admin only.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string (uuid) | yes | VEX feed id. |
+
+**Request body** (required)
+
+`application/json`: [VEXFeedRequest](schemas.md#vexfeedrequest)
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The updated feed | `application/json`: [VEXFeed](schemas.md#vexfeed) |
+| `400` | Invalid request (error code validation_failed) | `application/json`: [Error](schemas.md#error) |
+| `403` | Admin access required | `application/json`: [Error](schemas.md#error) |
+| `404` | VEX feed not found | `application/json`: [Error](schemas.md#error) |
+| `409` | A VEX feed with this name already exists | `application/json`: [Error](schemas.md#error) |
+
+### `DELETE /api/v1/vex/feeds/{id}`
+
+Delete a VEX feed
+
+Remove a feed, its imported statements and the VEX decisions it produced. Audited as `vex.feed_deleted`. Admin only.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string (uuid) | yes | VEX feed id. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `204` | Feed deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Admin access required | `application/json`: [Error](schemas.md#error) |
+| `404` | VEX feed not found | `application/json`: [Error](schemas.md#error) |
+
+### `POST /api/v1/vex/feeds/{id}/sync`
+
+Sync a VEX feed now
+
+Start a sync of the feed in the background. Audited as `vex.feed_synced`. Admin only.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string (uuid) | yes | VEX feed id. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `202` | Sync started | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Admin access required | `application/json`: [Error](schemas.md#error) |
+| `404` | VEX feed not found | `application/json`: [Error](schemas.md#error) |
+| `409` | A sync of this feed is already running | `application/json`: [Error](schemas.md#error) |
+| `503` | VEX feed sync is not available on this server | `application/json`: [Error](schemas.md#error) |
+
+Fields of the `202` response (`application/json`):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `status` | string | yes | One of: `started`. |
 

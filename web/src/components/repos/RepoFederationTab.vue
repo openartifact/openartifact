@@ -63,6 +63,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <dd class="font-mono tabular-nums text-foreground">{{ status.tombstones }}</dd>
           </div>
         </dl>
+        <div v-if="status.enabled" class="flex items-start justify-between gap-4 border-t border-border pt-4">
+          <div class="min-w-0">
+            <p id="federation-vex-publish-label" class="text-sm font-medium text-foreground">{{ t('federation.vexPublish.label') }}</p>
+            <p class="text-xs text-muted mt-0.5 max-w-2xl">{{ t('federation.vexPublish.hint') }}</p>
+          </div>
+          <AppToggle
+            :model-value="status.vex_publish"
+            labelledby="federation-vex-publish-label"
+            :disabled="publishing"
+            data-testid="federation-vex-publish"
+            @update:model-value="setVexPublish"
+          />
+        </div>
         <p v-if="error" role="alert" class="text-xs text-danger">{{ error }}</p>
       </template>
     </section>
@@ -146,6 +159,7 @@ import {
   deleteFederationPeer,
   resyncFederationPeer,
   setFederationEnabled,
+  setFederationVexPublish,
   updateFederationPeer,
   type FederationPeer,
 } from '../../api/federation'
@@ -191,6 +205,22 @@ function onToggle(enabled: boolean): void {
 
 function disable(): Promise<void> {
   return setEnabled(false)
+}
+
+// ─── VEX publishing ────────────────────────────────────────────────────────────
+
+const publishing = ref(false)
+
+async function setVexPublish(on: boolean): Promise<void> {
+  publishing.value = true
+  try {
+    apply(await setFederationVexPublish(props.repo.name, on))
+    toasts.success(on ? t('federation.vexPublish.on') : t('federation.vexPublish.off'))
+  } catch (err) {
+    failure(t('federation.vexPublish.failed'), err)
+  } finally {
+    publishing.value = false
+  }
 }
 
 // ─── Peers ─────────────────────────────────────────────────────────────────────

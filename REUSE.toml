@@ -29,6 +29,8 @@ path = [
   "web/src/i18n/glossary/*.csv",
   "internal/repotype/testdata/web_parity.json",
   "pkg/nix/testdata/cache_nixos_org_hello.narinfo",
+  "internal/csaf/testdata/vex.json",
+  "internal/vexsync/testdata/vendor-vex.json",
   "VERSION",
   ".github/dup-baseline.json",
   "web/.jscpd.json",

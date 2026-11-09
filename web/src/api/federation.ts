@@ -23,6 +23,10 @@ export type {
   UpdateFederationPeerRequest,
 }
 export type FederationPeerState = FederationPeer['state']
+export type FederationVexTrust = NonNullable<FederationPeer['vex_trust']>
+
+/** What is done with a peer's VEX decisions, in the order they are offered. */
+export const FEDERATION_VEX_TRUSTS: readonly FederationVexTrust[] = ['ignore', 'suggest', 'apply']
 
 const enc = encodeURIComponent
 function base(repo: string): string {
@@ -39,6 +43,15 @@ export function setFederationEnabled(repo: string, enabled: boolean): Promise<Fe
     method: 'PUT',
     headers: JSON_HEADERS,
     body: JSON.stringify({ enabled }),
+  })
+}
+
+/** Opts the federated repository in (or out) of serving its local VEX decisions to its peers. */
+export function setFederationVexPublish(repo: string, vexPublish: boolean): Promise<FederationStatus> {
+  return request<FederationStatus>(base(repo), {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ enabled: true, vex_publish: vexPublish }),
   })
 }
 

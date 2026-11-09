@@ -109,6 +109,8 @@
   "ui.settings.attestation.desc": "Chiave di firma per le attestazioni SBOM e VEX.",
   "ui.settings.scan-gate.title": "Gate delle scansioni",
   "ui.settings.scan-gate.desc": "Criteri di sfruttamento per le scansioni e download bloccati.",
+  "ui.settings.vex-feeds.title": "Feed VEX",
+  "ui.settings.vex-feeds.desc": "Advisory CSAF dei fornitori che segnano i rilevamenti come non interessati o corretti.",
   "ui.settings.declarative.title": "Configurazione dichiarativa",
   "ui.settings.declarative.desc": "Controlla, applica ed esporta la configurazione come YAML."
 }

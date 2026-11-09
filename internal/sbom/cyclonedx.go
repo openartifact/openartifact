@@ -429,6 +429,12 @@ func (f Finding) cdxAnalysis(_ string) *cdxAnalysis {
 		a.Detail = f.Impact
 	}
 
+	// An imported statement says where it came from; an operator's own
+	// decision keeps its detail as worded.
+	if f.Decided && (f.SourceKind == models.VEXSourceCSAF || f.SourceKind == models.VEXSourcePeer) {
+		a.Detail = strings.TrimSpace(a.Detail + " " + f.sourceNote())
+	}
+
 	return a
 }
 

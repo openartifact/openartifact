@@ -356,6 +356,8 @@ func (a *app) registerSupplyChainRoutes() {
 	api.NewAttestationAttachHandler(db, log, evaluator, a.feat.attacher, a.store.blobs).RegisterAuthed(authedAPI)
 	api.NewVEXHandler(db, log, evaluator, sbomGen).WithAttestation(attestSvc).RegisterAuthed(authedAPI)
 	api.NewOCIAttestationsHandler(db, log, evaluator, attestation.NewService(log, db, a.store.blobs)).RegisterAuthed(authedAPI)
+	api.NewVEXFeedHandler(db, log, evaluator, a.feat.vexSync).RegisterAuthed(authedAPI)
+	api.NewVEXSuggestionHandler(db, log, evaluator).RegisterAuthed(authedAPI)
 }
 
 // registerDependencyTrack builds the Dependency-Track pusher

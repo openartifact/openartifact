@@ -39,6 +39,8 @@ const peer = (over: Partial<FederationPeer> = {}): FederationPeer => ({
   resync_requested: false,
   has_ca_pem: false,
   has_client_cert: false,
+  vex_trust: 'ignore',
+  vex_error: '',
   created_at: '2026-10-01T00:00:00Z',
   ...over,
 })
@@ -144,7 +146,7 @@ describe('peer request bodies', () => {
     })
   })
   it('seeds the edit form without secrets', () => {
-    expect(peerFormFrom(peer({ enabled: false }))).toEqual({
+    expect(peerFormFrom(peer({ enabled: false, vex_trust: 'suggest' }))).toEqual({
       name: 'site-b',
       baseUrl: 'https://b.example.org',
       token: '',
@@ -152,7 +154,9 @@ describe('peer request bodies', () => {
       clientCert: '',
       clientKey: '',
       enabled: false,
+      vexTrust: 'suggest',
     })
+    expect(peerFormFrom(peer()).vexTrust).toBe('ignore')
   })
   it('sends nothing for an untouched edit form', () => {
     expect(peerUpdateBody(peerFormFrom(peer()), peer())).toEqual({})
@@ -160,6 +164,12 @@ describe('peer request bodies', () => {
   it('sends only the changed fields and newly typed secrets', () => {
     const form = { ...peerFormFrom(peer()), baseUrl: 'https://c.example.org', enabled: false, token: 'new' }
     expect(peerUpdateBody(form, peer())).toEqual({ base_url: 'https://c.example.org', enabled: false, token: 'new' })
+  })
+  it('sends the VEX trust when it is not the default or changed', () => {
+    const form = { ...emptyPeerForm(), name: 'b', baseUrl: 'https://b', token: 't', vexTrust: 'apply' as const }
+    expect(peerCreateBody(form).vex_trust).toBe('apply')
+    expect(peerUpdateBody({ ...peerFormFrom(peer()), vexTrust: 'suggest' }, peer())).toEqual({ vex_trust: 'suggest' })
+    expect(peerUpdateBody({ ...peerFormFrom(peer({ vex_trust: 'apply' })), vexTrust: 'ignore' }, peer({ vex_trust: 'apply' }))).toEqual({ vex_trust: 'ignore' })
   })
 })
 

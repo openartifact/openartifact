@@ -26,6 +26,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/federation"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -837,5 +838,65 @@ func TestFederationInternalErrorsDoNotLeak(t *testing.T) {
 				t.Errorf("%s error body leaks %q: %s", rt.method, leak, raw)
 			}
 		}
+	}
+}
+
+func TestFederationPeerVEXTrust(t *testing.T) {
+	e := newFedAPIEnv(t, true)
+	repoID := fedAPISeedRepo(t, e.db, "files", "raw", "hosted")
+	e.enable(t, "files")
+	id := e.addPeer(t, "files", "p1")
+
+	code, m, raw := e.do(t, fedAPIAdmin, http.MethodGet, fedAPIPath("files"), "")
+	peers, _ := m["peers"].([]any)
+
+	if code != http.StatusOK || len(peers) != 1 || peers[0].(map[string]any)["vex_trust"] != federation.VEXTrustIgnore {
+		t.Fatalf("status = %d %s, want one peer with vex_trust ignore", code, raw)
+	}
+
+	if code, _, raw := e.do(t, fedAPIAdmin, http.MethodPatch, fedAPIPath("files", "/peers/", id), `{"vex_trust":"always"}`); code !=
+		http.StatusBadRequest {
+		t.Fatalf("invalid vex_trust = %d %s, want 400", code, raw)
+	}
+
+	if code, m, raw := e.do(t, fedAPIAdmin, http.MethodPatch, fedAPIPath("files", "/peers/", id), `{"vex_trust":"suggest"}`); code !=
+		http.StatusOK || m["vex_trust"] != federation.VEXTrustSuggest {
+		t.Fatalf("set suggest = %d %s", code, raw)
+	}
+
+	if _, err := e.pg.UpsertVEXSuggestion(context.Background(), &models.VEXSuggestion{
+		RepositoryID: repoID, PeerID: id, ArtifactID: "app@1.0", VulnID: "CVE-2024-1", Status: models.VEXAffected,
+	}); err != nil {
+		t.Fatalf("seed suggestion: %v", err)
+	}
+
+	if code, _, raw := e.do(t, fedAPIAdmin, http.MethodPatch, fedAPIPath("files", "/peers/", id), `{"vex_trust":"ignore"}`); code !=
+		http.StatusOK {
+		t.Fatalf("set ignore = %d %s", code, raw)
+	}
+
+	left, err := e.pg.ListVEXSuggestions(context.Background(), repoID, "")
+	if err != nil || len(left) != 0 {
+		t.Fatalf("suggestions after ignore = %d (%v), want none", len(left), err)
+	}
+}
+
+func TestFederationVEXPublish(t *testing.T) {
+	e := newFedAPIEnv(t, true)
+	fedAPISeedRepo(t, e.db, "files", "raw", "hosted")
+
+	if code, _, raw := e.do(t, fedAPIAdmin, http.MethodPut, fedAPIPath("files"), `{"enabled":false,"vex_publish":true}`); code !=
+		http.StatusConflict {
+		t.Fatalf("vex_publish on a repository that is not federated = %d %s, want 409", code, raw)
+	}
+
+	code, m, raw := e.do(t, fedAPIAdmin, http.MethodPut, fedAPIPath("files"), `{"enabled":true,"vex_publish":true}`)
+	if code != http.StatusOK || m["vex_publish"] != true {
+		t.Fatalf("enable with vex_publish = %d %s", code, raw)
+	}
+
+	code, m, raw = e.do(t, fedAPIAdmin, http.MethodPut, fedAPIPath("files"), `{"enabled":true,"vex_publish":false}`)
+	if code != http.StatusOK || m["vex_publish"] != false {
+		t.Fatalf("turn vex_publish off = %d %s", code, raw)
 	}
 }

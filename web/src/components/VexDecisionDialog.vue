@@ -18,7 +18,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <VexStatusBadge :status="existing.status" />
         <span v-if="existing.updated_at">{{ formatDateTime(existing.updated_at) }}</span>
         <span v-if="existing.created_by">· {{ existing.created_by }}</span>
+        <VexSourceBadge :record="existing" />
       </div>
+      <p
+        v-if="existing && (existing.source_kind ?? 'local') !== 'local'"
+        class="rounded-lg border border-border bg-surface-hover/40 p-3 text-xs text-muted"
+        data-testid="vex-foreign-source"
+      >
+        {{ existing.source_kind === 'csaf' ? t('security.vex.overrideCsaf') : t('security.vex.overridePeer') }}
+      </p>
 
       <FormField id="vex-status" :label="t('security.vex.field.status')">
         <select id="vex-status" v-model="form.status" :class="inputClass" data-testid="vex-status">
@@ -112,6 +120,7 @@ import AdminDialog from './AdminDialog.vue'
 import AppButton from './AppButton.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import FormField from './FormField.vue'
+import VexSourceBadge from './VexSourceBadge.vue'
 import VexStatusBadge from './VexStatusBadge.vue'
 import {
   deleteVexStatement,

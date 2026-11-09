@@ -37,7 +37,7 @@ Federation health of one repository: whether it is enabled, the log position, an
 
 Enable or disable federation
 
-Enabling backfills the change log from the repository's existing content. Disabling removes the log and all peers. Idempotent. Same permission as the status read.
+Enabling backfills the change log from the repository's existing content. Disabling removes the log and all peers. Idempotent. `vex_publish` turns on or off serving the repository's local VEX decisions to its peers; it is applied after enabling, and asking for it while disabling is a 409. Same permission as the status read.
 
 **Parameters**
 

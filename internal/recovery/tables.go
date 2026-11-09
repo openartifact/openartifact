@@ -258,6 +258,12 @@ var NotJournaled = map[string]string{
 		"blobs are collected as orphans",
 	"storage_quotas": "usage counters are recomputed by the rebuild; limits are operator configuration",
 	"vex_statements": "operator decisions about vulnerabilities; database backups",
+	"vex_feeds": "operator configuration of the CSAF VEX feeds (no blob or repository reference); " +
+		"database backups",
+	"vex_feed_statements": "imported CSAF statements; refetched by the next sync of the feed once its cursor is " +
+		"reset, database backups",
+	"vex_suggestions": "VEX decisions of federated peers awaiting review; fetched again from the peers, " +
+		"database backups",
 	"webhooks":       "contain signing secrets; `oa apply` or database backups",
 	"docker_uploads": "transient in-flight blob uploads",
 }

@@ -64,6 +64,7 @@ export const ROUTE_DOCS: Readonly<Record<string, DocsPath>> = {
   'settings-dependency-track': 'security/dependency-track',
   'settings-attestation': 'security/sbom',
   'settings-scan-gate': 'security/exploit-signals',
+  'settings-vex-feeds': 'security/vex-feeds',
   'settings-webhooks': 'operations/webhooks',
   'settings-federation': 'operations/federation',
   'settings-ai': 'integrations/ai-analysis',

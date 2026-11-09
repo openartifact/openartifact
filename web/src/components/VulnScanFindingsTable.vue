@@ -38,7 +38,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <td class="py-2 pr-3 text-xs font-mono">{{ f.fixed_in || '—' }}</td>
           <td class="truncate py-2 pr-3 text-xs text-muted" :class="GROW_CELL" :title="f.summary">{{ f.summary }}</td>
           <td class="py-2 pr-3">
-            <VexStatusBadge v-if="vexByVuln.get(f.id)" :status="vexByVuln.get(f.id)!.status" data-testid="finding-vex-status" />
+            <div v-if="vexByVuln.get(f.id)" class="flex flex-col items-start gap-1">
+              <VexStatusBadge :status="vexByVuln.get(f.id)!.status" data-testid="finding-vex-status" />
+              <VexSourceBadge :record="vexByVuln.get(f.id)!" />
+            </div>
           </td>
           <td v-if="canDecide" class="py-2 pl-3" :class="ACTIONS_CELL">
             <RowActions :actions="decisionActions(f.id)" @action="emit('decide', f.id)" />
@@ -55,6 +58,7 @@ import { CheckBadgeIcon } from '@heroicons/vue/20/solid'
 import RowActions, { type RowAction } from './ui/RowActions.vue'
 import TableScroller from './ui/TableScroller.vue'
 import { ACTIONS_CELL, ACTIONS_HEAD, GROW_CELL } from './ui/tableStyles'
+import VexSourceBadge from './VexSourceBadge.vue'
 import VexStatusBadge from './VexStatusBadge.vue'
 import EpssBadge from './security/EpssBadge.vue'
 import KevBadge from './security/KevBadge.vue'

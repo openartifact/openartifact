@@ -28,6 +28,17 @@ export function vexJustificationLabel(justification: string): string {
   return tDynamic(`security.vex.justification.${justification}`)
 }
 
+/** The source reference as a link target: only an absolute http(s) URL, never a script or relative URL. */
+export function vexSourceHref(ref: string | null | undefined): string | null {
+  if (!ref) return null
+  try {
+    const u = new URL(ref)
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : null
+  } catch {
+    return null
+  }
+}
+
 /** Decisions of a list, keyed by vulnerability id (one artifact's decisions have unique vuln ids). */
 export function vexByVulnId(records: readonly VexRecord[]): Map<string, VexRecord> {
   return new Map(records.map((r) => [r.vuln_id, r]))
