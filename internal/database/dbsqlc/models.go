@@ -583,17 +583,20 @@ type FederationRepo struct {
 }
 
 type FederationUnit struct {
-	RepoID     string    `db:"repo_id" json:"repo_id"`
-	UnitKey    string    `db:"unit_key" json:"unit_key"`
-	Kind       string    `db:"kind" json:"kind"`
-	Event      string    `db:"event" json:"event"`
-	Seq        int64     `db:"seq" json:"seq"`
-	HlcWall    int64     `db:"hlc_wall" json:"hlc_wall"`
-	HlcCounter int32     `db:"hlc_counter" json:"hlc_counter"`
-	Origin     string    `db:"origin" json:"origin"`
-	Tombstone  bool      `db:"tombstone" json:"tombstone"`
-	ContentRef string    `db:"content_ref" json:"content_ref"`
-	ChangedAt  time.Time `db:"changed_at" json:"changed_at"`
+	RepoID      string    `db:"repo_id" json:"repo_id"`
+	UnitKey     string    `db:"unit_key" json:"unit_key"`
+	Kind        string    `db:"kind" json:"kind"`
+	Event       string    `db:"event" json:"event"`
+	Seq         int64     `db:"seq" json:"seq"`
+	HlcWall     int64     `db:"hlc_wall" json:"hlc_wall"`
+	HlcCounter  int32     `db:"hlc_counter" json:"hlc_counter"`
+	Origin      string    `db:"origin" json:"origin"`
+	Tombstone   bool      `db:"tombstone" json:"tombstone"`
+	ContentRef  string    `db:"content_ref" json:"content_ref"`
+	ChangedAt   time.Time `db:"changed_at" json:"changed_at"`
+	BaseWall    *int64    `db:"base_wall" json:"base_wall"`
+	BaseCounter *int32    `db:"base_counter" json:"base_counter"`
+	BaseOrigin  *string   `db:"base_origin" json:"base_origin"`
 }
 
 // GPG signing keys managed through the admin API. private_key_enc is sealed by internal/crypto and never returned.
