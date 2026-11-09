@@ -7452,7 +7452,7 @@ export type GetApiV1SearchData = {
     path?: never;
     query?: {
         /**
-         * Search query: free text plus optional name:, format:, repo: and sha256: qualifiers. Required unless checksum is given or flagged=true.
+         * Search query: free text plus optional name:, format:, repo:, project:, project_role: and sha256: qualifiers. Required unless checksum is given or flagged=true.
          */
         q?: string;
         /**
@@ -7463,6 +7463,14 @@ export type GetApiV1SearchData = {
          * Filter by repository name
          */
         repo?: string;
+        /**
+         * Keep the repositories of this project (name or slug); repeatable. Only projects the caller has a role in match: a project that does not exist and one without a role both give an empty result. Same as the project: qualifier.
+         */
+        project?: string;
+        /**
+         * Keep the repositories of the projects where the caller's effective role (the my_role of the projects API) is this one; repeatable. A global admin counts as owner of every project, so viewer finds nothing for an admin. Repositories readable only through a permission target or anonymous access, and the system project, never match. Same as the project_role: qualifier.
+         */
+        project_role?: 'viewer' | 'developer' | 'maintainer' | 'owner';
         /**
          * Set to package to return one package entry per repository, format and name (its latest version) instead of one per version or file
          */
@@ -7480,7 +7488,7 @@ export type GetApiV1SearchData = {
          */
         flagged?: boolean;
         /**
-         * Find the files whose stored checksum equals this value: a full lowercase-hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32), exact match only. SHA-256 matches every format; SHA-1 matches conan, maven and npm, MD5 conan, conda and maven (the other formats store no such digest). Replaces the search: q, format, repo, group and flagged are ignored, limit and offset page the hits, and the response is the ChecksumResult shape.
+         * Find the files whose stored checksum equals this value: a full lowercase-hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32), exact match only. SHA-256 matches every format; SHA-1 matches conan, maven and npm, MD5 conan, conda and maven (the other formats store no such digest). Replaces the search: q, format, repo, project, project_role, group and flagged are ignored, limit and offset page the hits, and the response is the ChecksumResult shape.
          */
         checksum?: string;
     };

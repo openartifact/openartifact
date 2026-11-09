@@ -157,9 +157,12 @@ func TestHandlerTooBroadSaysHowToNarrow(t *testing.T) {
 		name, target string
 		narrow       []string
 	}{
-		{"free text", "/api/v1/search?q=test", []string{"name:<package>", "format:<format>", "repo:<repository>", "flagged=true"}},
-		{"format given", "/api/v1/search?q=test&format=npm&flagged=true", []string{"name:<package>", "repo:<repository>"}},
-		{"everything given", "/api/v1/search?q=name:a+format:npm+repo:r&flagged=true", []string{}},
+		{"free text", "/api/v1/search?q=test", []string{
+			"name:<package>", "format:<format>", "repo:<repository>", "project:<project>", "flagged=true",
+		}},
+		{"format given", "/api/v1/search?q=test&format=npm&flagged=true", []string{"name:<package>", "repo:<repository>", "project:<project>"}},
+		{"project given", "/api/v1/search?q=test+project:p", []string{"name:<package>", "format:<format>", "repo:<repository>", "flagged=true"}},
+		{"everything given", "/api/v1/search?q=name:a+format:npm+repo:r+project:p&flagged=true", []string{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h, cleanup := newTestHandler(t, &mockSearcher{count: MaxSearchResults + 1})
@@ -355,5 +358,25 @@ func TestHandlerRejectsUnboundedWork(t *testing.T) {
 				t.Fatalf("status = %d, want 400", rec.Code)
 			}
 		})
+	}
+}
+
+// TestHandlerRejectsUnknownProjectRole: project_role takes the four project roles
+// only, as a parameter and as a qualifier, so a typo is an error rather than an
+// empty result.
+func TestHandlerRejectsUnknownProjectRole(t *testing.T) {
+	for _, target := range []string{
+		"/api/v1/search?q=test&project_role=admin",
+		"/api/v1/search?q=test+project_role:Viewer",
+	} {
+		h, cleanup := newTestHandler(t, &mockSearcher{count: 1})
+
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, requestWithPrincipal("GET", target, adminPrincipal()))
+		cleanup()
+
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_filter") {
+			t.Errorf("%s: status %d body %s, want 400 invalid_filter", target, w.Code, w.Body.String())
+		}
 	}
 }

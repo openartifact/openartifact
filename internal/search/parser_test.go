@@ -36,6 +36,18 @@ func TestParseQuery(t *testing.T) {
 			want:  SearchFilter{Repos: []string{"my-repo"}},
 		},
 		{
+			name:  "project and project_role tokens",
+			input: "lodash project:acme project:globex project_role:viewer",
+			want: SearchFilter{
+				FreeText: "lodash", Projects: []string{"acme", "globex"}, ProjectRoles: []string{"viewer"},
+			},
+		},
+		{
+			name:  "bare role is not a qualifier",
+			input: "role:viewer",
+			want:  SearchFilter{FreeText: "role:viewer"},
+		},
+		{
 			name:  "sha256 token",
 			input: "sha256:abc123",
 			want:  SearchFilter{SHA256Prefix: "abc123"},

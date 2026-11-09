@@ -42,6 +42,10 @@ func narrowingFilters(filter SearchFilter) []string {
 		out = append(out, "repo:<repository>")
 	}
 
+	if len(filter.Projects) == 0 {
+		out = append(out, "project:<project>")
+	}
+
 	if !filter.Flagged {
 		out = append(out, "flagged=true")
 	}
