@@ -19,6 +19,9 @@ import { retireServiceWorkers, startServiceWorkerForServer } from './pwa/registe
 import { loadAppVersion } from './composables/useAppVersion'
 import { recordError, startTelemetryIfAdvertised, stopTelemetry } from './telemetry'
 
+// The static demo build answers every API call from memory; the check is static, so other builds carry none of it.
+if (import.meta.env.MODE === 'demo') (await import('./demo')).installDemo()
+
 const app = createApp(App)
 
 const pinia = createPinia()
@@ -91,6 +94,6 @@ if (!branding.branding) void branding.refresh()
 
 // Not in dev: Vite serves modules the worker would otherwise have to ignore, and a development
 // server (an unstamped build) would offer an update after every rebuild. Both also drop a worker an
-// earlier visit left behind.
-if (import.meta.env.PROD) void startServiceWorkerForServer(loadAppVersion)
+// earlier visit left behind. The demo build ships no worker.
+if (import.meta.env.PROD && import.meta.env.MODE !== 'demo') void startServiceWorkerForServer(loadAppVersion)
 else void retireServiceWorkers()

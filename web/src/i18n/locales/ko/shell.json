@@ -67,5 +67,8 @@
   "shell.action.repoSettings": "{name}의 설정 열기",
   "shell.action.repoCopyInstall": "{name}의 설치 명령 복사",
   "shell.action.repoCopied": "{name}의 설치 명령을 복사했습니다",
-  "shell.action.signOut": "로그아웃"
+  "shell.action.signOut": "로그아웃",
+  "shell.demo.banner": "샘플 데이터로 브라우저에서 실행되는 데모입니다. 새로고침하면 변경 사항이 사라집니다.",
+  "shell.demo.install": "OpenArtifact 설치",
+  "shell.demo.unavailable": "데모에서는 사용할 수 없습니다. 사용해 보려면 OpenArtifact를 설치하세요."
 }

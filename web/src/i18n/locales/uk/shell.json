@@ -36,9 +36,9 @@
   "shell.palette.noResultsHint": "Спробуйте назву пакета, репозиторій або налаштування, наприклад «retention».",
   "shell.palette.noActions": "Немає відповідних дій",
   "shell.palette.count_one": "{n} результат",
+  "shell.palette.count_other": "{n} результату",
   "shell.palette.count_few": "{n} результати",
   "shell.palette.count_many": "{n} результатів",
-  "shell.palette.count_other": "{n} результату",
   "shell.palette.tooBroad": "Забагато збігів серед пакетів. Уточніть запит, наприклад за допомогою name:, format: або repo:.",
   "shell.palette.partialError": "Частину результатів не вдалося завантажити.",
   "shell.palette.retry": "Повторити",
@@ -70,5 +70,8 @@
   "shell.action.repoSettings": "Відкрити налаштування {name}",
   "shell.action.repoCopyInstall": "Скопіювати команду встановлення для {name}",
   "shell.action.repoCopied": "Команду встановлення для {name} скопійовано",
-  "shell.action.signOut": "Вийти"
+  "shell.action.signOut": "Вийти",
+  "shell.demo.banner": "Демо з прикладовими даними, що працює у вашому браузері. Зміни зникають після перезавантаження.",
+  "shell.demo.install": "Встановити OpenArtifact",
+  "shell.demo.unavailable": "Недоступно в демо. Встановіть OpenArtifact, щоб спробувати."
 }

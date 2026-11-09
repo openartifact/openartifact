@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { createRouter, createWebHistory, type RouteLocationNormalizedLoaded, type RouteRecordRaw } from 'vue-router'
+import { createRouter, createWebHashHistory, createWebHistory, type RouteLocationNormalizedLoaded, type RouteRecordRaw } from 'vue-router'
 import { useSessionStore } from '../stores/session'
 import { useBrandingStore } from '../stores/branding'
 import { useToastStore } from '../stores/toast'
@@ -41,7 +41,8 @@ const routes: RouteRecordRaw[] = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  // The demo build is static files on a host without SPA fallback: the route lives in the hash so a reload of a deep link works.
+  history: import.meta.env.MODE === 'demo' ? createWebHashHistory(import.meta.env.BASE_URL) : createWebHistory(),
   routes,
 })
 

@@ -27,6 +27,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- While the off-canvas menu is open nothing behind it can take focus. -->
     <div class="flex min-w-0 flex-1 flex-col" :inert="showShell && isMobile && ui.mobileNavOpen">
       <AppHeader v-if="showShell" />
+      <component :is="DemoBanner" v-if="DemoBanner" />
       <ToastBanner />
       <main
         id="main-content"
@@ -75,6 +76,8 @@ import { loadRecent, pushRecent, recentFromPath, recentStorageKey, saveRecent } 
 import { currentLocale as locale, t } from './i18n'
 
 const CommandPalette = defineAsyncComponent(() => import('./components/CommandPalette.vue'))
+// Only the static demo build (vite build --mode demo) has it; the check is static, so other builds drop the chunk.
+const DemoBanner = import.meta.env.MODE === 'demo' ? defineAsyncComponent(() => import('./demo/DemoBanner.vue')) : null
 
 const route = useRoute()
 const ui = useUIStore()
