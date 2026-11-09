@@ -13,7 +13,7 @@ spec:
     Upload files to a hosted OpenArtifact repository with oa upload (deb, ivy, maven, raw, rpm, sbt and the
     other formats that take a package file) and record build properties. Needs the token file written by
     oa-exchange-token in dockerConfigDir. Nothing is uploaded when files is empty.
-  image: ghcr.io/openartifact/oa-tekton:0.21.0
+  image: ghcr.io/openartifact/oa-tekton:0.22.0
   params:
     - name: server
       type: string
