@@ -50,7 +50,7 @@ oa props delete REPO ARTIFACT_ID KEY
 oa props search REPO KEY VALUE               # ids of the artifacts whose KEY equals VALUE
 ```
 
-`oa props search` prints the matching artifact ids under an `ARTIFACT_ID` heading, or a JSON array of ids with `--format json`.
+`oa props search` prints the matching artifact ids under an `ARTIFACT_ID` heading, or a JSON array of ids with `--format json`. All flags: [CLI reference](../reference/cli.md#oa-props-search).
 
 ## Properties that other features read
 
