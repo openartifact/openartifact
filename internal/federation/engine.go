@@ -207,7 +207,7 @@ func (e *Engine) applyEntry(ctx context.Context, pc *pullCtx, entry Entry) (outc
 		return outcomeDeferred, err
 	}
 
-	if e.superseded(ctx, pc.repo.ID, entry.UnitKey, entry.Stamp) {
+	if e.superseded(ctx, pc, entry) {
 		if pc.repair && !entry.Tombstone {
 			return e.repairBlobs(ctx, pc, entry)
 		}
@@ -332,14 +332,24 @@ func (e *Engine) checkStamp(s Stamp) error {
 }
 
 // superseded reports whether the local log already holds the unit at or past
-// the stamp.
-func (e *Engine) superseded(ctx context.Context, repoID, key string, stamp Stamp) bool {
-	local, err := e.Store.GetEntry(ctx, e.SQL, repoID, key)
+// the entry's stamp. A strictly newer local state that the entry's writer had
+// not seen is a conflict, counted here: the entry is skipped, so no apply
+// follows to count it.
+func (e *Engine) superseded(ctx context.Context, pc *pullCtx, incoming Entry) bool {
+	local, err := e.Store.GetEntry(ctx, e.SQL, pc.repo.ID, incoming.UnitKey)
 	if err != nil {
 		return false
 	}
 
-	return local.Stamp.Compare(stamp) >= 0
+	if local.Stamp.Compare(incoming.Stamp) < 0 {
+		return false
+	}
+
+	if isConflict(*local, incoming, e.instance) {
+		e.addConflict(pc, incoming.UnitKey, "federation: peer change superseded by a newer local change (last writer wins)")
+	}
+
+	return true
 }
 
 // applyFetched fetches a unit's current state from the peer and applies it.
@@ -369,7 +379,7 @@ func (e *Engine) applyFetched(ctx context.Context, pc *pullCtx, key string, dept
 		return outcomeDeferred, err
 	}
 
-	if e.superseded(ctx, pc.repo.ID, key, ur.Entry.Stamp) {
+	if e.superseded(ctx, pc, ur.Entry) {
 		return outcomeSkipped, nil
 	}
 
@@ -717,10 +727,14 @@ func (e *Engine) enterApplyMode(ctx context.Context, tx *sql.Tx) error {
 func (e *Engine) recordUnit(ctx context.Context, tx *sql.Tx, repoID string, entry Entry, tombstone bool) error {
 	var applied bool
 
-	err := tx.QueryRowContext(ctx,
-		`SELECT federation_apply_unit($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9::uuid)`,
+	args := append([]any{
 		repoID, entry.UnitKey, entry.Kind, entry.Event, entry.ContentRef, tombstone,
 		entry.Stamp.Wall, entry.Stamp.Counter, entry.Stamp.Origin.String(),
+	}, baseArgs(entry.Base)...)
+
+	err := tx.QueryRowContext(ctx,
+		`SELECT federation_apply_unit($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9::uuid, $10, $11, $12::uuid)`,
+		args...,
 	).Scan(&applied)
 	if err != nil {
 		return fmt.Errorf("log applied unit: %w", err)
@@ -731,6 +745,16 @@ func (e *Engine) recordUnit(ctx context.Context, tx *sql.Tx, repoID string, entr
 	}
 
 	return nil
+}
+
+// baseArgs returns the base stamp of an entry as the three nullable arguments
+// of federation_apply_unit.
+func baseArgs(base *Stamp) []any {
+	if base == nil {
+		return []any{nil, nil, nil}
+	}
+
+	return []any{base.Wall, base.Counter, base.Origin.String()}
 }
 
 // verifiedRefs returns the blob references of a unit with the size of every
@@ -783,7 +807,7 @@ func (e *Engine) afterLive(ctx context.Context, pc *pullCtx, entry Entry, change
 		return
 	}
 
-	e.countConflict(ctx, pc, entry)
+	e.countConflict(pc, entry)
 
 	if change.Replaced && (change.ReplacedSize > 0 || change.ReplacedCount > 0) {
 		if err := quota.ReleaseN(ctx, e.DB, pc.repo.ID, change.ReplacedSize, change.ReplacedCount); err != nil {
@@ -799,17 +823,22 @@ func (e *Engine) afterLive(ctx context.Context, pc *pullCtx, entry Entry, change
 // countConflict records that a pull superseded a change made on this instance.
 // Called after the commit, so the pre-image is gone; the decision was taken
 // from the local log before applying (see markConflict).
-func (e *Engine) countConflict(_ context.Context, pc *pullCtx, entry Entry) {
+func (e *Engine) countConflict(pc *pullCtx, entry Entry) {
 	if pc.takeConflict(entry.UnitKey) {
-		pc.conflicts++
-
-		if e.Metrics != nil {
-			e.Metrics.Conflicts.WithLabelValues(pc.repo.Name, pc.peer.Name).Inc()
-		}
-
-		e.Log.Warnw("federation: local change superseded by peer (last writer wins)",
-			"repo", pc.repo.Name, "peer", pc.peer.Name, "unit", entry.UnitKey)
+		e.addConflict(pc, entry.UnitKey, "federation: local change superseded by peer (last writer wins)")
 	}
+}
+
+// addConflict counts one conflict of a pull: the metric, the pull's total and
+// a warning.
+func (e *Engine) addConflict(pc *pullCtx, key, msg string) {
+	pc.conflicts++
+
+	if e.Metrics != nil {
+		e.Metrics.Conflicts.WithLabelValues(pc.repo.Name, pc.peer.Name).Inc()
+	}
+
+	e.Log.Warnw(msg, "repo", pc.repo.Name, "peer", pc.peer.Name, "unit", key)
 }
 
 func (e *Engine) releaseBlobs(ctx context.Context, shas []string) {
@@ -891,7 +920,7 @@ func (e *Engine) applyDelete(ctx context.Context, pc *pullCtx, entry Entry) (out
 		return 0, err
 	}
 
-	e.countConflict(ctx, pc, entry)
+	e.countConflict(pc, entry)
 	e.afterDelete(ctx, pc, entry, change, soft)
 
 	return outcomeApplied, nil
@@ -915,14 +944,40 @@ func (e *Engine) afterDelete(ctx context.Context, pc *pullCtx, entry Entry, chan
 }
 
 // markConflict remembers, before an apply replaces it, that the unit's local
-// state is a change made on this instance that differs from the incoming one.
+// state is a change made on this instance that the incoming state's writer had
+// not seen.
 func (e *Engine) markConflict(ctx context.Context, pc *pullCtx, incoming Entry) {
 	local, err := e.Store.GetEntry(ctx, e.SQL, pc.repo.ID, incoming.UnitKey)
-	if err != nil || local.Tombstone || local.Stamp.Origin != e.instance {
+	if err != nil || local.Stamp.Compare(incoming.Stamp) >= 0 {
 		return
 	}
 
-	if incoming.Tombstone || local.ContentRef != incoming.ContentRef {
+	if isConflict(*local, incoming, e.instance) {
 		pc.markConflict(incoming.UnitKey)
 	}
+}
+
+// isConflict decides whether two different states of a unit, the local one
+// and an incoming one, are concurrent writes: a change made on this instance
+// that the other writer had not seen when it wrote, or the reverse. A change
+// that replaced the other state knowingly (its base is at or past that state)
+// is a sequential overwrite. A missing base (a peer without base stamps, or no
+// previous state) counts as unseen. A local delete replaced by a peer's
+// change is not counted. Equal stamps, a local state written
+// elsewhere and states that do not differ are never conflicts.
+func isConflict(local, incoming Entry, instance uuid.UUID) bool {
+	if local.Stamp.Origin != instance {
+		return false
+	}
+
+	if local.Tombstone != incoming.Tombstone || (!local.Tombstone && local.ContentRef != incoming.ContentRef) {
+		switch cmp := local.Stamp.Compare(incoming.Stamp); {
+		case cmp < 0:
+			return !local.Tombstone && (incoming.Base == nil || local.Stamp.Compare(*incoming.Base) > 0)
+		case cmp > 0:
+			return local.Base == nil || incoming.Stamp.Compare(*local.Base) > 0
+		}
+	}
+
+	return false
 }

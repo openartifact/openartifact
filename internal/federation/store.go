@@ -174,12 +174,18 @@ func (s *Store) Counts(ctx context.Context, repoID string) (int64, int64, error)
 	return units, tombstones, nil
 }
 
-const entryColumns = `seq, unit_key, kind, event, tombstone, hlc_wall, hlc_counter, origin, content_ref, changed_at`
+const entryColumns = `seq, unit_key, kind, event, tombstone, hlc_wall, hlc_counter, origin, content_ref, changed_at,
+	base_wall, base_counter, base_origin`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
 func scanEntry(r rowScanner) (Entry, error) {
-	var e Entry
+	var (
+		e           Entry
+		baseWall    sql.NullInt64
+		baseCounter sql.NullInt32
+		baseOrigin  uuid.NullUUID
+	)
 
 	err := r.Scan(
 		&e.Seq,
@@ -192,9 +198,19 @@ func scanEntry(r rowScanner) (Entry, error) {
 		&e.Stamp.Origin,
 		&e.ContentRef,
 		&e.ChangedAt,
+		&baseWall,
+		&baseCounter,
+		&baseOrigin,
 	)
+	if err != nil {
+		return e, err
+	}
 
-	return e, err
+	if baseWall.Valid && baseCounter.Valid && baseOrigin.Valid {
+		e.Base = &Stamp{Wall: baseWall.Int64, Counter: baseCounter.Int32, Origin: baseOrigin.UUID}
+	}
+
+	return e, nil
 }
 
 // ListEntries returns up to limit log entries with seq > after, in seq order.

@@ -115,6 +115,7 @@ federation_units (
   event text,                  -- see above
   seq bigint,                  -- position in the feed; reassigned on every change
   hlc_wall bigint, hlc_counter int, origin uuid,   -- the stamp of the winning write
+  base_wall bigint, base_counter int, base_origin uuid,  -- the stamp of the state this change replaced where it was made; NULL = none
   tombstone boolean,
   content_ref text,            -- sha256 of the primary blob, or the ref target
   changed_at timestamptz,
@@ -182,8 +183,8 @@ All endpoints live under `/federation/v1/` and authenticate with a **peer token*
 | Endpoint | Purpose |
 |---|---|
 | `GET /federation/v1/info` | Handshake: `{protocol, instance_id, log_id, head_seq, repo: {name, format}}`. `protocol` is **2**; a peer that reports another value is refused (a protocol-1 peer: "upgrade the peer to 0.15 or later") |
-| `GET /federation/v1/log?after=<seq>&limit=<n>` | Feed: units with `seq > after` in seq order: `{log_id, head_seq, entries: [{seq, unit_key, kind, event, tombstone, stamp, content_ref, changed_at}], has_more}` |
-| `GET /federation/v1/unit?key=<unit_key>` | The unit's *current* state: `{unit_key, stamp, tombstone, data, blobs: [{sha256, size}], deps: [unit_key]}` |
+| `GET /federation/v1/log?after=<seq>&limit=<n>` | Feed: units with `seq > after` in seq order: `{log_id, head_seq, entries: [{seq, unit_key, kind, event, tombstone, stamp, base?, content_ref, changed_at}], has_more}` |
+| `GET /federation/v1/unit?key=<unit_key>` | The unit's *current* state: `{unit_key, stamp, base?, tombstone, data, blobs: [{sha256, size}], deps: [unit_key]}` |
 | `GET /federation/v1/blob?unit=<unit_key>&sha256=<hex>` | Stream one blob of that unit. Only blobs listed in the unit's `blobs` are served |
 
 **Optional `GET /federation/v1/vex`.** A repository whose `federation_repos.vex_publish` is on answers an OpenVEX 0.2.0 document of its `local` VEX decisions only. Statements of source `csaf` or `peer` are never published, so a decision cannot echo between members. Without `vex_publish` it answers `404 FEDERATION_NOT_FOUND`. The endpoint is additive and the protocol version stays 2: an older peer answers `404`, which the puller records in `federation_peers.vex_error` without failing the pull. The puller asks only when the peer's `vex_trust` is not `ignore`, after a successful pull and at most hourly (`vex_synced_at`). Received decisions are matched by purl to the puller's scanned artifacts and stored as `vex_suggestions`; with `apply` they are also written to `vex_statements` (source `peer`) where no statement of another source exists. Only an operator accept replaces an existing statement. Operator view: [Sharing VEX decisions](../operations/federation.md#sharing-vex-decisions).
@@ -270,7 +271,11 @@ Properties and limits, stated plainly:
 - Clock skew between instances can make a physically earlier write win. The HLC bounds the damage, because a member that learns of a far-future stamp does not keep issuing lower ones, but does not eliminate it. Keep instance clocks in sync (NTP).
   - The clock of a repository only moves forward, so a stamp is validated before it is applied. A wall time more than `federation.maxClockSkew` (default 5 minutes) ahead of the local clock, a negative wall time, or a counter outside `0..2^24` defers the unit (`clock_skew`) instead of moving the clock. The retry applies it once the local clock has caught up.
   - The check is in the engine (`validateStamp`), not in `federation_apply_unit`, so it needs no migration.
-- One of two concurrent writes is discarded. The losing write is **not** lost silently: when applying a remote stamp replaces a *local* live unit with a different `content_ref`, or when a local unit is skipped because a newer remote one exists with a different `content_ref`, the peer's `conflicts_total` is incremented, a warning is logged and `openartifact_federation_conflicts_total` is bumped. The superseded blob is released by normal refcounting (it remains in the member's trash if the supersede was a soft replace).
+- One of two concurrent writes is discarded. The losing write is **not** lost silently. Every log state records its **base**: the stamp of the state it replaced, as known on the member that made the change (`federation_record` reads it from the existing row; a replicated state keeps the base of the member it came from, so relays do not alter it; `NULL` when there was no previous state, the row predates the base columns or the peer is older). A change with base `b` replaced a state it had seen, so a change is *concurrent* with another state `s` exactly when its base is older than `s`. A conflict is counted (the peer's `conflicts_total`, a warning and `openartifact_federation_conflicts_total`) when the local state was written on this member, differs from the other (a tombstone against live content, or a different `content_ref`) and:
+  - the incoming state is newer and replaces it, and the incoming base is missing or older than the local stamp (the writer had not seen our change); or
+  - the incoming state is older and is skipped, and the local base is missing or older than the incoming stamp (we had not seen the peer's change when we wrote).
+
+  A sequential overwrite (the newer state's base is at or past the other state) is not a conflict, and neither are equal stamps or states that do not differ. A peer that sends no base counts like a missing base. The skip rule also counts in a one-way mirror, where the newer side never receives the older write. The superseded blob is released by normal refcounting (it remains in the member's trash if the supersede was a soft replace). The base columns need no protocol version bump: older members ignore the extra `base` field and never send it.
 - "Immutable release" repositories: a concurrent publish of the same version on two members with different content is exactly a conflict. Federation converges it by the same rule rather than leaving the members permanently divergent; `immutable_releases` continues to protect against local overwrite attempts, but a replicated overwrite decided by the rule is applied and recorded as a conflict.
 
 ### Deletes and tombstones

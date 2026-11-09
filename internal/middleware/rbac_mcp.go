@@ -62,14 +62,19 @@ func resolveMCPPrincipal(
 	cfg RBACConfig,
 	db resolveMCPPrincipalStore,
 	log *logger.Logger,
-) (*auth.Principal, string) {
+) (*auth.Principal, string, error) {
 	bearer, _ := authorizationSecrets(r)
 	if bearer == "" {
-		return &auth.Principal{IsAnonymous: true, Credential: auth.CredentialNone}, auth.CredentialNone
+		return &auth.Principal{IsAnonymous: true, Credential: auth.CredentialNone}, auth.CredentialNone, nil
 	}
 
-	if p := tokenPrincipal(ctx, bearer, auth.CredentialBearerToken, db, log); p != nil {
-		return p, auth.CredentialBearerToken
+	p, err := tokenPrincipal(ctx, bearer, auth.CredentialBearerToken, db, log)
+	if err != nil {
+		return nil, "", err
+	}
+
+	if p != nil {
+		return p, auth.CredentialBearerToken, nil
 	}
 
 	if cfg.MCPBearerVerifier != nil && !strings.HasPrefix(bearer, auth.TokenPrefixAccess) &&
@@ -86,7 +91,7 @@ func resolveMCPPrincipal(
 			)
 			p.Credential = auth.CredentialBearerToken
 
-			return p, auth.CredentialBearerToken
+			return p, auth.CredentialBearerToken, nil
 		case err != nil && !errors.Is(err, auth.ErrAccessTokenNotAccepted):
 			log.Warnw("mcp bearer verification error", "error", err)
 		}
@@ -100,10 +105,14 @@ func resolveMCPPrincipal(
 			"remote_addr", r.RemoteAddr,
 		)
 
-		return &auth.Principal{Username: "system/legacy-api-key", IsLegacy: true, Credential: auth.CredentialLegacy}, auth.CredentialLegacy
+		return &auth.Principal{
+			Username:   "system/legacy-api-key",
+			IsLegacy:   true,
+			Credential: auth.CredentialLegacy,
+		}, auth.CredentialLegacy, nil
 	}
 
-	return &auth.Principal{IsAnonymous: true, Credential: auth.CredentialNone}, auth.CredentialNone
+	return &auth.Principal{IsAnonymous: true, Credential: auth.CredentialNone}, auth.CredentialNone, nil
 }
 
 // gateMCP admits an authenticated, non-service principal to the MCP endpoint.
@@ -181,7 +190,13 @@ type serveMCPStore interface {
 // authorize every repository access themselves, so the evaluator is not
 // consulted here.
 func serveMCP(w http.ResponseWriter, r *http.Request, next http.Handler, cfg RBACConfig, db serveMCPStore, log *logger.Logger) {
-	principal, credential := resolveMCPPrincipal(r.Context(), r, cfg, db, log)
+	principal, credential, err := resolveMCPPrincipal(r.Context(), r, cfg, db, log)
+	if err != nil {
+		writeAuthUnavailable(w, r, log, "token validation error", err)
+
+		return
+	}
+
 	r = r.WithContext(WithPrincipal(r.Context(), principal))
 
 	if passwordChangeBlocked(r, principal) {

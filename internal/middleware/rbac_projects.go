@@ -160,8 +160,7 @@ func authorizeProjectRoute(
 
 	decision, err := evaluator.DecideProject(r.Context(), *principal, scope.project, scope.projectAction)
 	if err != nil {
-		log.Errorw("project auth evaluation error", "error", err, "path", r.URL.Path, "method", r.Method)
-		httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "auth_evaluation_failed"})
+		writeAuthUnavailable(w, r, log, "project auth evaluation error", err)
 
 		return false
 	}
@@ -203,8 +202,7 @@ func authorizeProjectsRoot(
 
 	admin, err := evaluator.Evaluate(ctx, *principal, "", "", "manage")
 	if err != nil {
-		log.Errorw("project create auth evaluation error", "error", err)
-		httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "auth_evaluation_failed"})
+		writeAuthUnavailable(w, r, log, "project create auth evaluation error", err)
 
 		return false
 	}
@@ -218,8 +216,7 @@ func authorizeProjectsRoot(
 	if principal.UserID != nil && !principal.IsLegacy && len(principal.TokenScopes) == 0 {
 		on, err := cfg.ProjectSettings.SelfCreate(ctx)
 		if err != nil {
-			log.Errorw("project self-create setting lookup failed", "error", err)
-			httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "auth_evaluation_failed"})
+			writeAuthUnavailable(w, r, log, "project self-create setting lookup failed", err)
 
 			return false
 		}

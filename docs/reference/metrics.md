@@ -62,7 +62,7 @@ Buckets of `openartifact_blob_operation_duration_seconds`: 0.0005, 0.001, 0.0025
 |---|---|---|---|
 | `openartifact_federation_applied_total` | counter | `repo`, `peer`, `result` | Log entries pulled from a peer, by result: applied, skipped (already up to date), deferred (set aside for retry) or failed. |
 | `openartifact_federation_backlog_units` | gauge | `repo`, `peer` | Log positions of a peer that have not been pulled yet. |
-| `openartifact_federation_conflicts_total` | counter | `repo`, `peer` | Local changes superseded by a different state of the same unit from a peer (last writer wins). |
+| `openartifact_federation_conflicts_total` | counter | `repo`, `peer` | Concurrent writes of the same unit with a peer, one of which was superseded (last writer wins). A sequential overwrite is not counted. |
 | `openartifact_federation_lag_seconds` | gauge | `repo`, `peer` | Age of the oldest change of a peer that has not been applied yet (0 when caught up). |
 | `openartifact_federation_last_success_timestamp_seconds` | gauge | `repo`, `peer` | Unix time of the last successful pull of a peer (0 when it never succeeded). |
 | `openartifact_federation_partial_bytes` | gauge | none | Bytes of interrupted blob downloads kept in the federation spool for resuming. |

@@ -71,10 +71,12 @@ type DatabaseConfig struct {
 	// Options are extra libpq connection parameters. The environment form is
 	// comma-separated key=value pairs, merged over the YAML keys.
 	Options map[string]string `yaml:"options"`
-	// MaxOpenConns is the size of the connection pool. 0 means the driver
-	// default; otherwise at least 2 (a blob-lock transaction pins one
-	// connection and its callback needs another), and at least 4 while
-	// tiering.enabled is true.
+	// MaxOpenConns is the size limit of each of the two connection pools (pgx
+	// and database/sql), so one replica can hold up to twice this many
+	// PostgreSQL connections: size max_connections for
+	// replicas x 2 x maxOpenConns. 0 means the driver default; otherwise at
+	// least 2 (a blob-lock transaction pins one connection and its callback
+	// needs another), and at least 4 while tiering.enabled is true.
 	MaxOpenConns int `yaml:"maxOpenConns"`
 	// MaxIdleConns is how many idle connections the pool keeps warm.
 	MaxIdleConns int `yaml:"maxIdleConns"`

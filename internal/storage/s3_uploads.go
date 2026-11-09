@@ -34,6 +34,10 @@ const (
 	// the part being filled that is (n+1) * s3PartSize bytes of memory (64 MiB).
 	uploadPartsInFlight = 3
 
+	// appendStageHint is the capacity an append buffer starts with beyond the
+	// tail: one OCI chunk. It grows with what the body brings.
+	appendStageHint = 64 << 10
+
 	// uploadCleanupTimeout bounds the removal of what a committed append
 	// superseded.
 	uploadCleanupTimeout = 30 * time.Second
@@ -94,8 +98,8 @@ func tailKey(key string, offset int64) string {
 // partBuf is a reusable buffer of one part.
 type partBuf struct{ b []byte }
 
-// uploadBufs hands out s3PartSize buffers, so that appends do not allocate a
-// part of memory each (and nothing is spooled to disk).
+// uploadBufs hands out s3PartSize buffers, so that appends that reach a part do
+// not allocate a part of memory each (and nothing is spooled to disk).
 var uploadBufs = newPartPool(s3PartSize) //nolint:gochecknoglobals // a pool of reusable buffers
 
 func newPartPool(size int) *sync.Pool {
@@ -248,9 +252,11 @@ func readInto(r io.Reader, buf []byte) (int, error) {
 }
 
 // AppendUpload implements UploadStore. The tail is read back first and goes
-// in front of the body, which is cut into parts of s3PartSize sent while it
-// streams; what is left under minUploadPart is stored as the new tail. Nothing
-// of the old position is touched until commit returned.
+// in front of the body. What the body adds up to below minUploadPart (the usual
+// 64 KiB OCI chunk) is stored as the new tail straight from a buffer that grew
+// with it; beyond that the data is cut into parts of s3PartSize sent while it
+// streams, and what is left under minUploadPart is stored as the new tail.
+// Nothing of the old position is touched until commit returned.
 func (s *S3BlobStore) AppendUpload(
 	ctx context.Context,
 	id string,
@@ -283,15 +289,70 @@ func (s *S3BlobStore) AppendUpload(
 	}
 
 	tailLen := int(at.Offset - st.B)
-	buf := uploadBufs.Get().(*partBuf) //nolint:forcetypeassert // the pool only holds *partBuf
 
-	if err := s.loadTail(ctx, key, at.Offset, buf.b[:tailLen]); err != nil {
-		uploadBufs.Put(buf)
+	head := make([]byte, tailLen+1, min(tailLen+1+appendStageHint, minUploadPart))
 
+	if err := s.loadTail(ctx, key, at.Offset, head[:tailLen]); err != nil {
 		return err
 	}
 
-	buf.b[tailLen] = first[0]
+	head[tailLen] = first[0]
+
+	staged, more, err := stageBody(head, r, minUploadPart)
+	if err != nil {
+		return fmt.Errorf("s3: append to %s: %w", key, err)
+	}
+
+	res, uploadID := cutResult{total: int64(len(staged))}, st.U
+
+	if more {
+		res, uploadID, err = s.cutAppend(ctx, key, st, staged, r)
+	} else {
+		err = s.putObjectBytes(ctx, tailKey(key, st.B+res.total), staged)
+	}
+
+	if err != nil {
+		return fmt.Errorf("s3: append to %s: %w", key, err)
+	}
+
+	next := s3UploadState{U: uploadID, P: st.P + res.parts, B: st.B + res.partBytes}
+
+	if err := commit(ctx, next.String(), res.total-int64(tailLen)); err != nil {
+		return err
+	}
+
+	// The position moved on, so the tail it superseded is garbage; whatever
+	// this misses is swept with the upload.
+	if tailLen > 0 {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), uploadCleanupTimeout)
+		defer cancel()
+
+		_ = s.deleteObject(cleanup, tailKey(key, at.Offset))
+	}
+
+	return nil
+}
+
+// stageBody reads r after head until the result is limit bytes long or r ends.
+// more reports the first case: r may hold more, and the caller continues with
+// it. Below limit the result is everything there is, and the buffer is no
+// larger than what was read (a part-sized buffer is for data that is a part).
+func stageBody(head []byte, r io.Reader, limit int) ([]byte, bool, error) {
+	buf := bytes.NewBuffer(head)
+
+	if _, err := buf.ReadFrom(io.LimitReader(r, int64(max(limit-len(head), 0)))); err != nil {
+		return nil, false, fmt.Errorf("read upload body: %w", err)
+	}
+
+	return buf.Bytes(), buf.Len() >= limit, nil
+}
+
+// cutAppend cuts staged (head of the data, at least minUploadPart long) and the
+// rest of r into parts of s3PartSize and a tail, and returns what it stored
+// with the id of the multipart upload they belong to.
+func (s *S3BlobStore) cutAppend(ctx context.Context, key string, st s3UploadState, staged []byte, r io.Reader) (cutResult, string, error) {
+	buf := uploadBufs.Get().(*partBuf) //nolint:forcetypeassert // the pool only holds *partBuf
+	head := copy(buf.b, staged)
 
 	var (
 		mu        sync.Mutex
@@ -323,27 +384,9 @@ func (s *S3BlobStore) AppendUpload(
 		},
 	}
 
-	res, err := cutter.cut(ctx, buf, tailLen+1, r)
-	if err != nil {
-		return fmt.Errorf("s3: append to %s: %w", key, err)
-	}
+	res, err := cutter.cut(ctx, buf, head, r)
 
-	next := s3UploadState{U: uploadID, P: st.P + res.parts, B: st.B + res.partBytes}
-
-	if err := commit(ctx, next.String(), res.total-int64(tailLen)); err != nil {
-		return err
-	}
-
-	// The position moved on, so the tail it superseded is garbage; whatever
-	// this misses is swept with the upload.
-	if tailLen > 0 {
-		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), uploadCleanupTimeout)
-		defer cancel()
-
-		_ = s.deleteObject(cleanup, tailKey(key, at.Offset))
-	}
-
-	return nil
+	return res, uploadID, err
 }
 
 // loadTail reads the tail of the upload (the bytes after its parts, ending at
@@ -449,6 +492,15 @@ func (s *S3BlobStore) deleteObject(ctx context.Context, key string) error {
 // part and the multipart upload is completed, which is repeatable: once it is
 // gone, the finished object answers.
 func (s *S3BlobStore) CompleteUpload(ctx context.Context, id string, at UploadPosition) (StagedObject, error) {
+	ctx, end := telemetry.StartSpan(ctx, "storage.s3.upload_complete")
+	obj, err := s.completeUpload(ctx, id, at)
+
+	end(err)
+
+	return obj, err
+}
+
+func (s *S3BlobStore) completeUpload(ctx context.Context, id string, at UploadPosition) (StagedObject, error) {
 	key, err := uploadKey(id)
 	if err != nil {
 		return StagedObject{}, err
@@ -627,11 +679,14 @@ func uploadParts(parts []types.Part, count int, offset int64) ([]types.Completed
 }
 
 // PromoteUpload implements UploadStore.
-func (s *S3BlobStore) PromoteUpload(ctx context.Context, id, sha256, version string, metadata map[string]string) error {
+func (s *S3BlobStore) PromoteUpload(ctx context.Context, id, sha256, version string, metadata map[string]string) (err error) {
 	key, err := uploadKey(id)
 	if err != nil {
 		return err
 	}
+
+	ctx, end := telemetry.StartSpan(ctx, "storage.s3.upload_promote")
+	defer func() { end(err) }()
 
 	return s.promoteObject(ctx, key, sha256, version, metadata)
 }
@@ -639,25 +694,34 @@ func (s *S3BlobStore) PromoteUpload(ctx context.Context, id, sha256, version str
 // OpenUpload implements UploadStore. The SDK checks the CRC32 of a download
 // against the checksum header of the object, which S3-compatible stores (Garage)
 // report for a multipart object as that of one part; the digest of the blob is
-// verified by the caller anyway.
+// verified by the caller anyway. The span covers the request that opens the
+// object, not the reading of its body.
 func (s *S3BlobStore) OpenUpload(ctx context.Context, id, version string) (io.ReadCloser, error) {
 	key, err := uploadKey(id)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.openVersioned(ctx, key, version, func(o *s3.Options) {
+	ctx, end := telemetry.StartSpan(ctx, "storage.s3.upload_open")
+	rc, err := s.openVersioned(ctx, key, version, func(o *s3.Options) {
 		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 	})
+
+	end(err)
+
+	return rc, err
 }
 
 // DeleteUpload implements UploadStore: the object, the tails and every
 // unfinished multipart upload of the key.
-func (s *S3BlobStore) DeleteUpload(ctx context.Context, id string) error {
+func (s *S3BlobStore) DeleteUpload(ctx context.Context, id string) (err error) {
 	key, err := uploadKey(id)
 	if err != nil {
 		return err
 	}
+
+	ctx, end := telemetry.StartSpan(ctx, "storage.s3.upload_delete")
+	defer func() { end(err) }()
 
 	pages := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{
 		Bucket: aws.String(s.bucket),

@@ -77,6 +77,10 @@ func NewS3BlobStore(cfg StorageConfig) (*S3BlobStore, error) {
 
 	s3Opts := func(o *s3.Options) {
 		o.UsePathStyle = cfg.ForcePathStyle
+		// Every GET of a blob without a stored checksum would otherwise log a
+		// debug line "Response has no supported checksum" to stderr.
+		o.DisableLogOutputChecksumValidationSkipped = true
+
 		if cfg.Endpoint != "" {
 			o.BaseEndpoint = aws.String(cfg.Endpoint)
 		}
