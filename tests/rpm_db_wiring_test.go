@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -86,6 +87,18 @@ type mockDatabaseStore interface {
 	worker.DebMetadataStore
 	worker.MavenMetadataStore
 	worker.NPMMetadataStore
+}
+
+// mockIDSeq makes mockID unique: time.Now() alone repeats within a clock tick, which is
+// a microsecond on macOS, so records created back to back used to get the same ID and
+// overwrite each other in the mock's maps.
+//
+//nolint:gochecknoglobals // one counter shared by every mock store in this package
+var mockIDSeq atomic.Uint64
+
+// mockID returns a unique ID for a record the mock creates.
+func mockID(prefix string) string {
+	return fmt.Sprintf("%s-%d-%d", prefix, time.Now().UnixNano(), mockIDSeq.Add(1))
 }
 
 type MockDatabase struct {
@@ -251,7 +264,7 @@ func (m *MockDatabase) GetRepositoryByName(ctx context.Context, name string) (*m
 
 func (m *MockDatabase) CreateRepository(ctx context.Context, repo *models.Repository) error {
 	if repo.ID == "" {
-		repo.ID = fmt.Sprintf("mock-%d", time.Now().UnixNano())
+		repo.ID = mockID("mock")
 	}
 
 	m.repositories[repo.ID] = repo
@@ -364,7 +377,7 @@ func (m *MockDatabase) CreateRPMRepo(ctx context.Context, repo *models.RPMRepo) 
 	defer m.mu.Unlock()
 
 	if repo.ID == "" {
-		repo.ID = fmt.Sprintf("mock-%d", time.Now().UnixNano())
+		repo.ID = mockID("mock")
 	}
 
 	m.rpmRepos[repo.RepositoryID] = repo
@@ -476,7 +489,7 @@ func (m *MockDatabase) UpsertRepoMetadata(ctx context.Context, meta *models.Repo
 	defer m.mu.Unlock()
 
 	if meta.ID == "" {
-		meta.ID = fmt.Sprintf("mock-%d", time.Now().UnixNano())
+		meta.ID = mockID("mock")
 	}
 
 	if _, ok := m.repoMetadata[meta.RepositoryID]; !ok {
@@ -490,7 +503,7 @@ func (m *MockDatabase) UpsertRepoMetadata(ctx context.Context, meta *models.Repo
 
 func (m *MockDatabase) CreateDebianDistribution(ctx context.Context, dist *models.DebianDistribution) error {
 	if dist.ID == "" {
-		dist.ID = fmt.Sprintf("mock-%d", time.Now().UnixNano())
+		dist.ID = mockID("mock")
 	}
 
 	m.debianDistributions[dist.ID] = dist
@@ -512,7 +525,7 @@ func (m *MockDatabase) GetDebianDistributionsByRepo(ctx context.Context, repoID 
 
 func (m *MockDatabase) CreateDebianComponent(ctx context.Context, comp *models.DebianComponent) error {
 	if comp.ID == "" {
-		comp.ID = fmt.Sprintf("mock-%d", time.Now().UnixNano())
+		comp.ID = mockID("mock")
 	}
 
 	m.debianComponents[comp.ID] = comp
@@ -534,7 +547,7 @@ func (m *MockDatabase) GetDebianComponentsByDist(ctx context.Context, distID str
 
 func (m *MockDatabase) CreateDebianArchitecture(ctx context.Context, arch *models.DebianArchitecture) error {
 	if arch.ID == "" {
-		arch.ID = fmt.Sprintf("mock-%d", time.Now().UnixNano())
+		arch.ID = mockID("mock")
 	}
 
 	m.debianArchitectures[arch.ID] = arch
@@ -570,7 +583,7 @@ func (m *MockDatabase) GetDebianPackagesByDistComp(
 
 func (m *MockDatabase) CreateMavenArtifact(ctx context.Context, a *models.MavenArtifact) error {
 	if a.ID == "" {
-		a.ID = fmt.Sprintf("mock-%d", time.Now().UnixNano())
+		a.ID = mockID("mock")
 	}
 
 	m.mavenArtifacts[a.ID] = a
@@ -2209,7 +2222,7 @@ func (m *MockBlobStore) Put(ctx context.Context, data io.Reader, metadata map[st
 		return id, nil
 	}
 
-	id := fmt.Sprintf("blob-%d", time.Now().UnixNano())
+	id := mockID("blob")
 	m.blobs[id] = b
 
 	if hasSHA {
