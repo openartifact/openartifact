@@ -26,6 +26,27 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver
 )
 
+// assertOnlyStoredBlobKept checks every blob the writers stored: with Postgres
+// a replaced blob loses its blobs row at once and its bytes are queued for the
+// deletion sweeper (so the store still holds them), and only the stored file's
+// blob stays referenced and unqueued.
+func assertOnlyStoredBlobKept(ctx context.Context, t *testing.T, db *sql.DB, bs *formattest.BlobStore, storedSHA string) {
+	t.Helper()
+
+	for sha := range bs.Blobs {
+		var rows, queued int
+		if err := db.QueryRowContext(ctx,
+			`SELECT (SELECT count(*) FROM blobs WHERE sha256 = $1), (SELECT count(*) FROM blob_deletions WHERE sha256 = $1)`,
+			sha).Scan(&rows, &queued); err != nil {
+			t.Fatalf("blob %s state: %v", sha, err)
+		}
+
+		if kept := sha == storedSHA; (rows == 1) != kept || (queued > 0) == kept {
+			t.Errorf("blob %s: blobs rows %d, queued %d; stored file %v", sha, rows, queued, kept)
+		}
+	}
+}
+
 // newOverwriteDB opens a fresh, migrated database.
 func newOverwriteDB(t *testing.T) *database.PostgresDB {
 	t.Helper()
@@ -167,21 +188,7 @@ func TestConcurrentOverwritesKeepOneFileAndConsistentUsage(t *testing.T) {
 		t.Errorf("%d quota_pending entries left, want 0", pending)
 	}
 
-	// With Postgres a replaced blob loses its blobs row at once and its bytes
-	// are queued for the deletion sweeper, so the store still holds them: every
-	// other writer's blob must be queued, and only the stored file's referenced.
-	for sha := range bs.Blobs {
-		var rows, queued int
-		if err := pg.GetDB().QueryRowContext(ctx,
-			`SELECT (SELECT count(*) FROM blobs WHERE sha256 = $1), (SELECT count(*) FROM blob_deletions WHERE sha256 = $1)`,
-			sha).Scan(&rows, &queued); err != nil {
-			t.Fatalf("blob %s state: %v", sha, err)
-		}
-
-		if want := sha == stored.SHA256; (rows == 1) != want || (queued > 0) == want {
-			t.Errorf("blob %s: blobs rows %d, queued %d; stored file %v", sha, rows, queued, want)
-		}
-	}
+	assertOnlyStoredBlobKept(ctx, t, pg.GetDB(), bs, stored.SHA256)
 
 	if _, ok := bs.Blobs[stored.SHA256]; !ok {
 		t.Errorf("stored file's blob %s missing from the store", stored.SHA256)
