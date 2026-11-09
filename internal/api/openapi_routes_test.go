@@ -91,6 +91,8 @@ func TestOpenAPISpecMatchesRoutes(t *testing.T) {
 	NewBundlesHandler(nil, nil, nil).RegisterAuthed(r)
 	NewSBOMHandler(nil, nil, nil, nil, nil).RegisterAuthed(r)
 	NewVEXHandler(nil, nil, nil, nil).RegisterAuthed(r)
+	NewVEXFeedHandler(nil, nil, nil, nil).RegisterAuthed(r)
+	NewVEXSuggestionHandler(nil, nil, nil).RegisterAuthed(r)
 	attestation := NewAttestationHandler(nil, nil, nil)
 	attestation.RegisterPublic(r)
 	attestation.RegisterAuthed(r)

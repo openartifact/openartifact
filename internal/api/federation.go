@@ -55,7 +55,12 @@ type FederationPeerResponse struct {
 	ResyncRequested bool       `json:"resync_requested"`
 	HasCAPEM        bool       `json:"has_ca_pem"`
 	HasClientCert   bool       `json:"has_client_cert"`
-	CreatedAt       time.Time  `json:"created_at"`
+	// VEXTrust is what happens to the peer's VEX decisions (ignore, suggest or
+	// apply); VEXSyncedAt and VEXError are the state of their last fetch.
+	VEXTrust    string     `json:"vex_trust"`
+	VEXSyncedAt *time.Time `json:"vex_synced_at,omitempty"`
+	VEXError    string     `json:"vex_error"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
 
 // FederationTokenResponse is a peer token; the secret is shown once, at creation.
@@ -91,20 +96,23 @@ type FederationStatusResponse struct {
 	Enabled   bool `json:"enabled"`
 	Supported bool `json:"supported"`
 	// ServerEnabled is federation.enabled; Supported is false while it is off.
-	ServerEnabled bool                      `json:"server_enabled"`
-	InstanceID    string                    `json:"instance_id"`
-	LogID         string                    `json:"log_id"`
-	HeadSeq       int64                     `json:"head_seq"`
-	Units         int64                     `json:"units"`
-	Tombstones    int64                     `json:"tombstones"`
-	Peers         []FederationPeerResponse  `json:"peers"`
-	Tokens        []FederationTokenResponse `json:"tokens"`
+	ServerEnabled bool   `json:"server_enabled"`
+	InstanceID    string `json:"instance_id"`
+	LogID         string `json:"log_id"`
+	HeadSeq       int64  `json:"head_seq"`
+	// VEXPublish serves the repository's local VEX decisions to its peers.
+	VEXPublish bool                      `json:"vex_publish"`
+	Units      int64                     `json:"units"`
+	Tombstones int64                     `json:"tombstones"`
+	Peers      []FederationPeerResponse  `json:"peers"`
+	Tokens     []FederationTokenResponse `json:"tokens"`
 }
 
 // FederationHandler serves the federation admin API of a repository.
 type FederationHandler struct {
 	repoAccess
 
+	db    FederationHandlerStore
 	store *federation.Store
 	// serverEnabled is federation.enabled: without it no pull worker or peer
 	// endpoint runs, so a repository cannot be federated.
@@ -116,6 +124,7 @@ type FederationHandler struct {
 // FederationHandlerStore is the part of the database NewFederationHandler needs.
 type FederationHandlerStore interface {
 	repoAccessStore
+	DeleteVEXSuggestionsOfPeer(ctx context.Context, peerID string) (int64, error)
 }
 
 // NewFederationHandler creates the handler.
@@ -128,7 +137,7 @@ func NewFederationHandler(
 	kick func(),
 ) *FederationHandler {
 	return &FederationHandler{
-		repoAccess: newRepoAccess(db, log, evaluator), store: store, serverEnabled: serverEnabled, kick: kick,
+		repoAccess: newRepoAccess(db, log, evaluator), db: db, store: store, serverEnabled: serverEnabled, kick: kick,
 	}
 }
 
@@ -201,6 +210,9 @@ func peerResponse(p *federation.Peer, now time.Time) FederationPeerResponse {
 		ResyncRequested: p.ResyncRequested,
 		HasCAPEM:        p.CAPEM != "",
 		HasClientCert:   p.ClientCertEnc != "",
+		VEXTrust:        p.VEXTrust,
+		VEXSyncedAt:     p.VEXSyncedAt,
+		VEXError:        p.VEXError,
 		CreatedAt:       p.CreatedAt,
 	}
 }
@@ -234,7 +246,7 @@ func (h *FederationHandler) status(ctx context.Context, repo *models.Repository)
 		return nil, err //nolint:wrapcheck // logged by the caller
 	}
 
-	out.Enabled, out.LogID, out.HeadSeq = true, st.LogID.String(), st.HeadSeq
+	out.Enabled, out.LogID, out.HeadSeq, out.VEXPublish = true, st.LogID.String(), st.HeadSeq, st.VEXPublish
 
 	if out.Units, out.Tombstones, err = h.store.Counts(ctx, repo.ID); err != nil {
 		return nil, err //nolint:wrapcheck // logged by the caller
@@ -287,6 +299,9 @@ func (h *FederationHandler) handleSetEnabled(w http.ResponseWriter, r *http.Requ
 
 	var body struct {
 		Enabled *bool `json:"enabled"`
+		// VEXPublish (optional) serves the local VEX decisions to the peers;
+		// only a federated repository publishes.
+		VEXPublish *bool `json:"vex_publish"`
 	}
 
 	if err := decodeJSON(r, &body); err != nil {
@@ -296,6 +311,11 @@ func (h *FederationHandler) handleSetEnabled(w http.ResponseWriter, r *http.Requ
 
 	if body.Enabled == nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body: enabled is required")
+		return
+	}
+
+	if !*body.Enabled && body.VEXPublish != nil && *body.VEXPublish {
+		writeError(w, http.StatusConflict, "federation_not_enabled", "only a federated repository can publish its VEX decisions")
 		return
 	}
 
@@ -334,6 +354,16 @@ func (h *FederationHandler) handleSetEnabled(w http.ResponseWriter, r *http.Requ
 		state = "enabled"
 	}
 
+	if *body.Enabled && body.VEXPublish != nil {
+		if err := h.store.SetVEXPublish(r.Context(), repo.ID, *body.VEXPublish); err != nil {
+			h.internalError(w, "set vex_publish", err)
+
+			return
+		}
+
+		state += ", VEX publishing " + map[bool]string{true: "on", false: "off"}[*body.VEXPublish]
+	}
+
 	auditRepository(r, repo, audit.ActionFederationEnabledChanged, "repository", repo.ID, "federation of "+repo.Name+" "+state)
 
 	h.writeStatus(r.Context(), w, repo, http.StatusOK)
@@ -347,6 +377,7 @@ type peerBody struct {
 	ClientCert *string `json:"client_cert"`
 	ClientKey  *string `json:"client_key"`
 	Enabled    *bool   `json:"enabled"`
+	VEXTrust   *string `json:"vex_trust"`
 }
 
 func strOrEmpty(s *string) string {
@@ -368,6 +399,10 @@ func (b *peerBody) validate(ctx context.Context) string {
 		if err := federation.ValidatePeerURL(ctx, *b.BaseURL); err != nil {
 			return err.Error()
 		}
+	}
+
+	if b.VEXTrust != nil && !federation.ValidVEXTrust(*b.VEXTrust) {
+		return "vex_trust must be one of: ignore, suggest, apply"
 	}
 
 	if b.Token != nil && (*b.Token == "" || len(*b.Token) > maxFederationTokenSize) {
@@ -416,6 +451,7 @@ func (h *FederationHandler) handleCreatePeer(w http.ResponseWriter, r *http.Requ
 	peer, err := h.store.CreatePeer(r.Context(), federation.NewPeer{
 		RepoID: repo.ID, Name: *body.Name, BaseURL: *body.BaseURL, Token: *body.Token,
 		CAPEM: strOrEmpty(body.CAPEM), ClientCert: strOrEmpty(body.ClientCert), ClientKey: strOrEmpty(body.ClientKey),
+		VEXTrust: strOrEmpty(body.VEXTrust),
 	})
 	if errors.Is(err, federation.ErrConflict) {
 		writeError(w, http.StatusConflict, "conflict", "a peer with this name already exists")
@@ -462,8 +498,12 @@ func (h *FederationHandler) handleUpdatePeer(w http.ResponseWriter, r *http.Requ
 
 	peer, err := h.store.UpdatePeer(r.Context(), repo.ID, urlparams.Vars(r)["id"], federation.PeerPatch{
 		Name: body.Name, BaseURL: body.BaseURL, Token: body.Token, CAPEM: body.CAPEM,
-		ClientCert: body.ClientCert, ClientKey: body.ClientKey, Enabled: body.Enabled,
+		ClientCert: body.ClientCert, ClientKey: body.ClientKey, Enabled: body.Enabled, VEXTrust: body.VEXTrust,
 	})
+	if err == nil && body.VEXTrust != nil && peer.VEXTrust == federation.VEXTrustIgnore {
+		// A peer no longer trusted with VEX leaves no suggestions behind.
+		_, err = h.db.DeleteVEXSuggestionsOfPeer(r.Context(), peer.ID)
+	}
 
 	switch {
 	case errors.Is(err, federation.ErrNotFound):
@@ -493,7 +533,7 @@ func (b *peerBody) changedFields() string {
 	}{
 		{"name", b.Name != nil}, {"base_url", b.BaseURL != nil}, {"token", b.Token != nil},
 		{"ca_pem", b.CAPEM != nil}, {"client_cert", b.ClientCert != nil}, {"client_key", b.ClientKey != nil},
-		{"enabled", b.Enabled != nil},
+		{"enabled", b.Enabled != nil}, {"vex_trust", b.VEXTrust != nil},
 	} {
 		if f.set {
 			fields = append(fields, f.name)

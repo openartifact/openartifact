@@ -32,6 +32,7 @@ import (
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/sbom"
+	"github.com/openartifact/openartifact/internal/vexsync"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -291,6 +292,7 @@ func (a *app) stopWorkers() {
 		for _, stop := range []func(){
 			w.webhook.Stop, w.cleanup.Stop, w.presignedUpload.Stop, w.dockerGC.Stop, w.dockerUploadSweeper.Stop,
 			w.trashPurge.Stop, w.osvMirror.Stop, w.auditRetention.Stop, w.repoStats.Stop, w.exploitFeeds.Stop, w.authPurge.Stop, w.proxyCache.Stop,
+			w.vexFeeds.Stop, a.feat.vexSync.Stop,
 			w.tierWorker.Stop, w.blobSweeper.Stop, a.store.replStop, a.store.tiers.Stop, a.store.tierAccess.Stop, w.journalWorker.Stop,
 		} {
 			stop()
@@ -333,6 +335,9 @@ type features struct {
 	attacher    *api.AttestationAttacher
 	sbomGen     *sbom.Generator
 	imageSBOM   *imagesbom.Ingestor
+	// vexSync imports the vendor CSAF VEX feeds and exchanges VEX decisions
+	// with the federated peers.
+	vexSync *vexsync.Service
 }
 
 // webStack is the HTTP side: the router, the authenticated sub-router every

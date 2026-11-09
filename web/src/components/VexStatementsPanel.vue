@@ -42,6 +42,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <th scope="col" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('security.vex.col.artifact') }}</th>
             <th scope="col" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('security.vex.col.vuln') }}</th>
             <th scope="col" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('security.vex.col.status') }}</th>
+            <th scope="col" data-drop-order="4" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('security.vex.col.source') }}</th>
             <th scope="col" data-drop-order="3" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('security.vex.col.justification') }}</th>
             <th scope="col" data-drop-order="1" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('security.vex.col.impact') }}</th>
             <th scope="col" data-drop-order="2" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('security.vex.col.updated') }}</th>
@@ -58,6 +59,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <td class="truncate px-4 py-3 font-mono text-ui text-foreground" :class="GROW_CELL" :title="s.artifact_id">{{ artifactLabels?.[s.artifact_id] ?? s.artifact_id }}</td>
             <td class="px-4 py-3 font-mono text-ui">{{ s.vuln_id }}</td>
             <td class="px-4 py-3"><VexStatusBadge :status="s.status" /></td>
+            <td class="px-4 py-3"><VexSourceBadge :record="s" /></td>
             <td class="px-4 py-3 text-xs text-muted">{{ s.justification ? vexJustificationLabel(s.justification) : '—' }}</td>
             <td class="px-4 py-3 text-xs text-muted max-w-xs"><span class="line-clamp-2" :title="s.impact_statement">{{ s.impact_statement || '—' }}</span></td>
             <td class="px-4 py-3 text-xs text-muted font-mono">{{ s.updated_at ? formatDateTime(s.updated_at) : '—' }}</td>
@@ -92,6 +94,7 @@ import RowActions, { type RowAction } from './ui/RowActions.vue'
 import TableScroller from './ui/TableScroller.vue'
 import { ACTIONS_CELL, ACTIONS_HEAD, GROW_CELL } from './ui/tableStyles'
 import VexDownloadButtons from './VexDownloadButtons.vue'
+import VexSourceBadge from './VexSourceBadge.vue'
 import VexStatusBadge from './VexStatusBadge.vue'
 import { deleteVexStatement, listVexStatements, type VexRecord } from '../api/vex'
 import { formatDateTime } from '../lib/datetime'

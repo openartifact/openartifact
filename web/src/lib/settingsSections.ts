@@ -38,6 +38,7 @@ export type SettingsSectionId =
   | 'dependency-track'
   | 'attestation'
   | 'scan-gate'
+  | 'vex-feeds'
   | 'webhooks'
   | 'federation'
   | 'ai'
@@ -126,6 +127,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   section('dependency-track', 'security', true, () => import('../pages/settings/sections/DependencyTrackPage.vue'), ['dt', 'sbom push', 'api key', 'url', 'project']),
   section('attestation', 'security', true, () => import('../pages/settings/sections/AttestationPage.vue'), ['sbom', 'vex', 'signed', 'cosign', 'in-toto', 'public key', 'oci referrer', 'verify']),
   section('scan-gate', 'security', true, () => import('../pages/settings/sections/ScanGatePage.vue'), ['kev', 'epss', 'exploit', 'block', 'quarantine', 'ci gate', 'priority', 'download']),
+  section('vex-feeds', 'security', true, () => import('../pages/settings/sections/VexFeedsPage.vue'), ['csaf', 'vex', 'vendor', 'advisory', 'not affected', 'provider metadata', 'rolie', 'openpgp', 'feed']),
   section('webhooks', 'integrations', true, () => import('../pages/settings/sections/WebhooksPage.vue'), ['events', 'secret', 'delivery', 'url', 'payload']),
   section('federation', 'integrations', true, () => import('../pages/settings/sections/FederationSection.vue'), ['peers', 'replicate', 'sync', 'inbound token']),
   {

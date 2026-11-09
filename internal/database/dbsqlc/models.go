@@ -554,6 +554,10 @@ type FederationPeer struct {
 	ResyncRequested bool       `db:"resync_requested" json:"resync_requested"`
 	CreatedAt       time.Time  `db:"created_at" json:"created_at"`
 	UpdatedAt       time.Time  `db:"updated_at" json:"updated_at"`
+	// ignore: not fetched; suggest: kept as pending suggestions; apply: applied where no other statement exists, else pending
+	VexTrust    string     `db:"vex_trust" json:"vex_trust"`
+	VexSyncedAt *time.Time `db:"vex_synced_at" json:"vex_synced_at"`
+	VexError    string     `db:"vex_error" json:"vex_error"`
 }
 
 type FederationPeerToken struct {
@@ -574,6 +578,8 @@ type FederationRepo struct {
 	HlcWall    int64     `db:"hlc_wall" json:"hlc_wall"`
 	HlcCounter int32     `db:"hlc_counter" json:"hlc_counter"`
 	EnabledAt  time.Time `db:"enabled_at" json:"enabled_at"`
+	// Serve this repository's local VEX decisions (OpenVEX) to the peers that pull it
+	VexPublish bool `db:"vex_publish" json:"vex_publish"`
 }
 
 type FederationUnit struct {
@@ -1424,6 +1430,44 @@ type SystemSetting struct {
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// CSAF 2.0 VEX providers (provider-metadata.json, ROLIE feed or single document URL) and their import state
+type VexFeed struct {
+	ID               string `db:"id" json:"id"`
+	Name             string `db:"name" json:"name"`
+	Url              string `db:"url" json:"url"`
+	Enabled          bool   `db:"enabled" json:"enabled"`
+	RequireSignature bool   `db:"require_signature" json:"require_signature"`
+	// Armored OpenPGP public keys pinned for the feed; empty uses the keys listed in the provider metadata
+	PgpKeys       string `db:"pgp_keys" json:"pgp_keys"`
+	IntervalHours int32  `db:"interval_hours" json:"interval_hours"`
+	// Newest document release date already imported; the next sync fetches only documents changed after it
+	CursorAt       *time.Time `db:"cursor_at" json:"cursor_at"`
+	LastAttemptAt  *time.Time `db:"last_attempt_at" json:"last_attempt_at"`
+	LastSuccessAt  *time.Time `db:"last_success_at" json:"last_success_at"`
+	LastError      string     `db:"last_error" json:"last_error"`
+	DocumentsTotal int32      `db:"documents_total" json:"documents_total"`
+	RejectedTotal  int32      `db:"rejected_total" json:"rejected_total"`
+	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time  `db:"updated_at" json:"updated_at"`
+}
+
+// not_affected / fixed statements of imported CSAF VEX documents, one per (vulnerability, product identifier)
+type VexFeedStatement struct {
+	ID          int64  `db:"id" json:"id"`
+	FeedID      string `db:"feed_id" json:"feed_id"`
+	DocumentUrl string `db:"document_url" json:"document_url"`
+	TrackingID  string `db:"tracking_id" json:"tracking_id"`
+	VulnID      string `db:"vuln_id" json:"vuln_id"`
+	// Normalized versioned package URL of the product (no qualifiers or subpath); empty when only a CPE identifies it
+	Purl            string     `db:"purl" json:"purl"`
+	Cpe             string     `db:"cpe" json:"cpe"`
+	Status          string     `db:"status" json:"status"`
+	Justification   string     `db:"justification" json:"justification"`
+	ImpactStatement string     `db:"impact_statement" json:"impact_statement"`
+	ActionStatement string     `db:"action_statement" json:"action_statement"`
+	ReleasedAt      *time.Time `db:"released_at" json:"released_at"`
+}
+
 // Admin VEX decisions per (repository, artifact, vulnerability). justification is the OpenVEX enum.
 type VexStatement struct {
 	ID              string    `db:"id" json:"id"`
@@ -1437,6 +1481,35 @@ type VexStatement struct {
 	CreatedBy       string    `db:"created_by" json:"created_by"`
 	CreatedAt       time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
+	// local (operator decision), csaf (vendor feed) or peer (decision of a federated peer)
+	SourceKind string `db:"source_kind" json:"source_kind"`
+	// Feed or peer name the statement came from; empty for local
+	SourceName string `db:"source_name" json:"source_name"`
+	// CSAF document URL (csaf) or peer base URL (peer); empty for local
+	SourceRef string `db:"source_ref" json:"source_ref"`
+	// Feed a csaf statement was materialized from; removing the feed removes its statements
+	FeedID *string `db:"feed_id" json:"feed_id"`
+	PeerID *string `db:"peer_id" json:"peer_id"`
+}
+
+// VEX decisions of a federated peer, advisory until an operator accepts or dismisses them
+type VexSuggestion struct {
+	ID              string     `db:"id" json:"id"`
+	RepositoryID    string     `db:"repository_id" json:"repository_id"`
+	PeerID          string     `db:"peer_id" json:"peer_id"`
+	ArtifactID      string     `db:"artifact_id" json:"artifact_id"`
+	VulnID          string     `db:"vuln_id" json:"vuln_id"`
+	Status          string     `db:"status" json:"status"`
+	Justification   string     `db:"justification" json:"justification"`
+	ImpactStatement string     `db:"impact_statement" json:"impact_statement"`
+	ActionStatement string     `db:"action_statement" json:"action_statement"`
+	PeerUpdatedAt   *time.Time `db:"peer_updated_at" json:"peer_updated_at"`
+	// pending, accepted or dismissed; a peer changing its decision moves the suggestion back to pending
+	State     string     `db:"state" json:"state"`
+	DecidedBy string     `db:"decided_by" json:"decided_by"`
+	DecidedAt *time.Time `db:"decided_at" json:"decided_at"`
+	CreatedAt time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 // Vulnerability scan payloads. FK to scan_jobs.

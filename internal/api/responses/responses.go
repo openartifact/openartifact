@@ -589,9 +589,59 @@ type VEXStatementResponse struct {
 	Justification   string `json:"justification"`
 	ImpactStatement string `json:"impact_statement"`
 	ActionStatement string `json:"action_statement"`
-	CreatedBy       string `json:"created_by"`
-	CreatedAt       string `json:"created_at"`
-	UpdatedAt       string `json:"updated_at"`
+	// SourceKind is local (an operator decision), csaf (a vendor VEX feed) or
+	// peer (a federated peer); SourceName names the feed or peer and SourceRef
+	// is the CSAF document URL or the peer base URL.
+	SourceKind string `json:"source_kind"`
+	SourceName string `json:"source_name"`
+	SourceRef  string `json:"source_ref"`
+	CreatedBy  string `json:"created_by"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+// VEXFeedResponse is a vendor CSAF VEX feed and its import state.
+type VEXFeedResponse struct {
+	ID               string  `json:"id"`
+	Name             string  `json:"name"`
+	URL              string  `json:"url"`
+	Enabled          bool    `json:"enabled"`
+	RequireSignature bool    `json:"require_signature"`
+	PGPKeys          string  `json:"pgp_keys"`
+	IntervalHours    int     `json:"interval_hours"`
+	CursorAt         *string `json:"cursor_at"`
+	LastAttemptAt    *string `json:"last_attempt_at"`
+	LastSuccessAt    *string `json:"last_success_at"`
+	LastError        string  `json:"last_error"`
+	DocumentsTotal   int     `json:"documents_total"`
+	RejectedTotal    int     `json:"rejected_total"`
+	Statements       int     `json:"statements"`
+	Applied          int     `json:"applied"`
+	CreatedAt        string  `json:"created_at"`
+	UpdatedAt        string  `json:"updated_at"`
+}
+
+// VEXSuggestionResponse is a federated peer's VEX decision offered to a
+// repository.
+type VEXSuggestionResponse struct {
+	ID              string  `json:"id"`
+	ArtifactID      string  `json:"artifact_id"`
+	VulnID          string  `json:"vuln_id"`
+	Status          string  `json:"status"`
+	Justification   string  `json:"justification"`
+	ImpactStatement string  `json:"impact_statement"`
+	ActionStatement string  `json:"action_statement"`
+	PeerID          string  `json:"peer_id"`
+	PeerName        string  `json:"peer_name"`
+	PeerBaseURL     string  `json:"peer_base_url"`
+	PeerUpdatedAt   *string `json:"peer_updated_at"`
+	State           string  `json:"state"`
+	DecidedBy       string  `json:"decided_by"`
+	DecidedAt       *string `json:"decided_at"`
+	LocalStatus     string  `json:"local_status"`
+	LocalSourceKind string  `json:"local_source_kind"`
+	CreatedAt       string  `json:"created_at"`
+	UpdatedAt       string  `json:"updated_at"`
 }
 
 // LicenseScanResultResponse represents a license scan result.

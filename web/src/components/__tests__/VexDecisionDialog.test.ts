@@ -165,4 +165,20 @@ describe('VexDecisionDialog', () => {
     expect(wrapper!.emitted('saved')).toBeUndefined()
     expect(q('vex-form')).not.toBeNull()
   })
+
+  it('says that editing a feed or peer decision records a local one', async () => {
+    await mountDialog({ ...EXISTING, source_kind: 'csaf', source_name: 'acme', source_ref: 'https://acme.example/csaf/1.json' })
+    expect(q('vex-foreign-source')?.textContent).toContain('vendor CSAF feed')
+    expect(q('vex-source-link')?.getAttribute('href')).toBe('https://acme.example/csaf/1.json')
+    wrapper!.unmount()
+    fetchSpy.mockRestore()
+
+    await mountDialog({ ...EXISTING, source_kind: 'peer', source_name: 'site-b', source_ref: 'https://b.example' })
+    expect(q('vex-foreign-source')?.textContent).toContain('federated peer')
+    wrapper!.unmount()
+    fetchSpy.mockRestore()
+
+    await mountDialog({ ...EXISTING, source_kind: 'local' })
+    expect(q('vex-foreign-source')).toBeNull()
+  })
 })

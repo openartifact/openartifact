@@ -109,6 +109,8 @@
   "ui.settings.attestation.desc": "Chave de assinatura das atestações SBOM e VEX.",
   "ui.settings.scan-gate.title": "Gate de varredura",
   "ui.settings.scan-gate.desc": "Critérios de exploração para varreduras e downloads bloqueados.",
+  "ui.settings.vex-feeds.title": "Feeds VEX",
+  "ui.settings.vex-feeds.desc": "Avisos CSAF de fornecedores que marcam achados como não afetados ou corrigidos.",
   "ui.settings.declarative.title": "Configuração declarativa",
   "ui.settings.declarative.desc": "Revise, aplique e exporte a configuração como YAML."
 }

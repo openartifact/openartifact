@@ -109,6 +109,8 @@
   "ui.settings.attestation.desc": "SBOM 和 VEX 证明的签名密钥。",
   "ui.settings.scan-gate.title": "扫描门禁",
   "ui.settings.scan-gate.desc": "扫描的利用判定条件，以及被阻止的下载。",
+  "ui.settings.vex-feeds.title": "VEX 订阅源",
+  "ui.settings.vex-feeds.desc": "将发现项标记为不受影响或已修复的供应商 CSAF 公告。",
   "ui.settings.declarative.title": "声明式配置",
   "ui.settings.declarative.desc": "以 YAML 审查、应用和导出配置。"
 }

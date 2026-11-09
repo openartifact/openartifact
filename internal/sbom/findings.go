@@ -24,15 +24,21 @@ type Finding struct {
 	Justification string // OpenVEX justification; only for not_affected
 	Impact        string
 	Action        string
-	// Decided is true when an admin recorded the status; false when it is derived.
-	Decided   bool
-	UpdatedAt time.Time
+	// Decided is true when a VEX statement sets the status; false when it is derived.
+	Decided bool
+	// SourceKind, SourceName and SourceRef tell where a decided status comes
+	// from (models.VEXStatement); SourceKind "" is an operator decision.
+	SourceKind string
+	SourceName string
+	SourceRef  string
+	UpdatedAt  time.Time
 }
 
 // Findings lists the vulnerabilities of the artifact with their VEX status:
 //
-//   - an admin decision (vex_statements) always wins; "not_affected" exists
-//     only through such a decision, never from a scan;
+//   - a VEX statement (vex_statements: an operator decision, a vendor CSAF
+//     feed or a federated peer) always wins; "not_affected" exists only
+//     through such a statement, never from a scan;
 //   - otherwise "fixed" when the scanner's fixed_in is at or below the
 //     artifact's version;
 //   - otherwise "affected" when the artifact is quarantined by its
@@ -98,6 +104,7 @@ func (in *Input) finding(v models.Vulnerability, scanTime time.Time) Finding {
 		f.Impact = d.ImpactStatement
 		f.Action = d.ActionStatement
 		f.Decided = true
+		f.SourceKind, f.SourceName, f.SourceRef = d.SourceKind, d.SourceName, d.SourceRef
 		f.UpdatedAt = d.UpdatedAt
 
 		if f.Status == models.VEXAffected && f.Action == "" {

@@ -162,17 +162,7 @@ type openVEXProduct struct {
 // (artifact, vulnerability) of the inputs. Statuses follow Input.Findings.
 func (g *Generator) GenerateOpenVEX(inputs []*Input) (*SBOMResult, error) {
 	now := g.now().UTC()
-	doc := &openVEXDoc{
-		Context:    OpenVEXContext,
-		ID:         g.docID("vex", uuid.NewString()),
-		Author:     "OpenArtifact",
-		Role:       "Document Creator",
-		Timestamp:  now.Format(time.RFC3339),
-		Version:    1,
-		Tooling:    "OpenArtifact " + g.toolVersion,
-		Statements: []openVEXStmt{},
-	}
-
+	doc := g.newOpenVEXDoc(now)
 	count := 0
 
 	for _, in := range inputs {
@@ -188,6 +178,20 @@ func (g *Generator) GenerateOpenVEX(inputs []*Input) (*SBOMResult, error) {
 	}
 
 	return finishJSON(VEXOpenVEX, "0.2.0", "application/json", doc, count)
+}
+
+// newOpenVEXDoc is an OpenVEX document without statements, issued at now.
+func (g *Generator) newOpenVEXDoc(now time.Time) *openVEXDoc {
+	return &openVEXDoc{
+		Context:    OpenVEXContext,
+		ID:         g.docID("vex", uuid.NewString()),
+		Author:     "OpenArtifact",
+		Role:       "Document Creator",
+		Timestamp:  now.Format(time.RFC3339),
+		Version:    1,
+		Tooling:    "OpenArtifact " + g.toolVersion,
+		Statements: []openVEXStmt{},
+	}
 }
 
 func (f Finding) openVEX(in *Input, prod openVEXProduct, now time.Time) openVEXStmt {
@@ -223,7 +227,7 @@ func (f Finding) statusNotes(in *Input) string {
 
 	switch {
 	case f.Decided:
-		notes = append(notes, "Recorded by an OpenArtifact administrator.")
+		notes = append(notes, f.sourceNote())
 		if f.Status != models.VEXNotAffected && f.Impact != "" {
 			notes = append(notes, f.Impact)
 		}
@@ -240,6 +244,22 @@ func (f Finding) statusNotes(in *Input) string {
 	}
 
 	return strings.Join(notes, " ")
+}
+
+// sourceNote names where a decided status comes from.
+func (f Finding) sourceNote() string {
+	switch f.SourceKind {
+	case models.VEXSourceCSAF:
+		if f.SourceRef == "" {
+			return "From the CSAF VEX feed " + f.SourceName + "."
+		}
+
+		return "From the CSAF VEX feed " + f.SourceName + " (" + f.SourceRef + ")."
+	case models.VEXSourcePeer:
+		return "Decision of the federated peer " + f.SourceName + "."
+	default:
+		return "Recorded by an OpenArtifact administrator."
+	}
 }
 
 func (in *Input) scanner() string {

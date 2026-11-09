@@ -28,6 +28,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <input id="fed-peer-token" v-model="form.token" type="password" autocomplete="new-password" :class="[INPUT_CLASS, 'font-mono']" />
       </FormField>
 
+      <FormField :label="t('federation.peerDialog.vexTrust')" id="fed-peer-vex-trust" :hint="vexTrustHint(form.vexTrust)">
+        <select id="fed-peer-vex-trust" v-model="form.vexTrust" :class="INPUT_CLASS" data-testid="fed-peer-vex-trust">
+          <option v-for="trust in FEDERATION_VEX_TRUSTS" :key="trust" :value="trust">{{ vexTrustLabel(trust) }}</option>
+        </select>
+      </FormField>
+
       <fieldset class="space-y-4 rounded-lg border border-border p-4">
         <legend class="px-1 text-xs font-semibold text-muted">{{ t('federation.peerDialog.tls') }}</legend>
         <p v-if="isEdit" class="text-xs text-muted">{{ t('federation.peerDialog.tlsKeep') }}</p>
@@ -66,8 +72,8 @@ import { computed, ref, watch } from 'vue'
 import AdminDialog from './AdminDialog.vue'
 import AppButton from './AppButton.vue'
 import FormField from './FormField.vue'
-import type { FederationPeer } from '../api/federation'
-import { emptyPeerForm, peerFormFrom, validatePeerForm, type PeerForm, type PeerFormErrors } from '../lib/federation'
+import { FEDERATION_VEX_TRUSTS, type FederationPeer } from '../api/federation'
+import { emptyPeerForm, peerFormFrom, validatePeerForm, vexTrustHint, vexTrustLabel, type PeerForm, type PeerFormErrors } from '../lib/federation'
 import { INPUT_CLASS } from '../lib/formClasses'
 import { t } from '../i18n'
 

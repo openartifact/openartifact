@@ -32,6 +32,8 @@ const peer = (over: Partial<FederationPeer> = {}): FederationPeer => ({
   resync_requested: false,
   has_ca_pem: false,
   has_client_cert: false,
+  vex_trust: 'ignore',
+  vex_error: '',
   created_at: '2026-10-01T00:00:00Z',
   ...over,
 })
@@ -45,6 +47,7 @@ const baseStatus = (over: Partial<FederationStatus> = {}): FederationStatus => (
   head_seq: 42,
   units: 40,
   tombstones: 2,
+  vex_publish: false,
   peers: [],
   tokens: [],
   ...over,
@@ -77,6 +80,7 @@ function serve(initial: FederationStatus, deferred: FederationDeferredUnit[] = [
     if (path === '/' && method === 'GET') return json(s)
     if (path === '/' && method === 'PUT') {
       s.enabled = body!.enabled as boolean
+      if (typeof body!.vex_publish === 'boolean') s.vex_publish = body!.vex_publish
       if (!s.enabled) s.peers = []
       return json(s)
     }
@@ -181,6 +185,35 @@ describe('RepoFederationTab', () => {
     expect(w.get('[data-testid="federation-stats"]').text()).toContain('inst-1')
   })
 
+  it('turns VEX publishing on with a PUT that keeps federation on', async () => {
+    const server = serve(baseStatus())
+    const w = await mountTab()
+    const toggle = w.get('[data-testid="federation-vex-publish"]')
+    expect(toggle.attributes('aria-checked')).toBe('false')
+    await toggle.trigger('click')
+    await flushPromises()
+    expect(calls(server, 'PUT', '/').map((c) => c.body)).toEqual([{ enabled: true, vex_publish: true }])
+    expect(w.get('[data-testid="federation-vex-publish"]').attributes('aria-checked')).toBe('true')
+    expect(w.emitted('toggled')).toBeUndefined()
+  })
+
+  it('shows what each peer does with VEX decisions and its last VEX fetch', async () => {
+    serve(
+      baseStatus({
+        peers: [
+          peer({ name: 'quiet' }),
+          peer({ id: 'p2', name: 'trusted', vex_trust: 'suggest', vex_synced_at: '2026-11-08T10:00:00Z', vex_error: 'peer returned 404' }),
+        ],
+      }),
+    )
+    const w = await mountTab()
+    expect(w.get('[data-testid="federation-peer-vex-quiet"]').text()).toBe('Ignore')
+    const trusted = w.get('[data-testid="federation-peer-vex-trusted"]').text()
+    expect(trusted).toContain('Suggest')
+    expect(trusted).toContain('peer returned 404')
+    expect(trusted).toContain('Fetched')
+  })
+
   it('asks before disabling and only then sends the request', async () => {
     const server = serve(baseStatus({ peers: [peer()] }))
     const w = await mountTab()
@@ -282,6 +315,23 @@ describe('RepoFederationTab', () => {
     document.body.querySelector<HTMLFormElement>('#federation-peer-form')!.dispatchEvent(new Event('submit'))
     await flushPromises()
     expect(calls(server, 'PATCH', '/peers/p1')[0]!.body).toEqual({ base_url: 'https://b2.example.org' })
+  })
+
+  it('sets what is done with the VEX decisions of a peer, explaining each choice', async () => {
+    const server = serve(baseStatus({ peers: [peer()] }))
+    const w = await mountTab()
+    await w.get('[aria-label="Edit peer site-b"]').trigger('click')
+    await flushPromises()
+    const select = document.body.querySelector<HTMLSelectElement>('#fed-peer-vex-trust')!
+    expect([...select.options].map((o) => o.value)).toEqual(['ignore', 'suggest', 'apply'])
+    expect(document.body.textContent).toContain('Its VEX decisions are not fetched')
+    select.value = 'apply'
+    select.dispatchEvent(new Event('change'))
+    await flushPromises()
+    expect(document.body.textContent).toContain('no decision of its own')
+    document.body.querySelector<HTMLFormElement>('#federation-peer-form')!.dispatchEvent(new Event('submit'))
+    await flushPromises()
+    expect(calls(server, 'PATCH', '/peers/p1')[0]!.body).toEqual({ vex_trust: 'apply' })
   })
 
   it('disables a peer from its row switch', async () => {

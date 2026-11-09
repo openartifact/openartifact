@@ -109,6 +109,8 @@
   "ui.settings.attestation.desc": "Signing key for SBOM and VEX attestations.",
   "ui.settings.scan-gate.title": "Scan gate",
   "ui.settings.scan-gate.desc": "Exploitation criteria for scans, and blocked downloads.",
+  "ui.settings.vex-feeds.title": "VEX feeds",
+  "ui.settings.vex-feeds.desc": "Vendor CSAF advisories that mark findings not affected or fixed.",
   "ui.settings.declarative.title": "Declarative config",
   "ui.settings.declarative.desc": "Review, apply and export configuration as YAML."
 }

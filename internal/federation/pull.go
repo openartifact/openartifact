@@ -96,7 +96,13 @@ func (e *Engine) PullPeer(ctx context.Context, peerID, repoID string) (err error
 		}
 	}()
 
-	return e.pull(ctx, peer, repo)
+	if err = e.pull(ctx, peer, repo); err != nil {
+		return err
+	}
+
+	e.syncVEX(ctx, peer, repo)
+
+	return nil
 }
 
 // logPanic reports a recovered panic with its stack. It must be called from
@@ -146,17 +152,22 @@ func (e *Engine) newPullCtx(ctx context.Context, peer *Peer, repo *RepoInfo) (*p
 		return nil, err
 	}
 
-	secrets, err := peer.Secrets()
-	if err != nil {
-		return nil, err
-	}
-
-	client, err := NewClient(ctx, peer, secrets, e.RequestTimeout)
+	client, err := e.peerClient(ctx, peer)
 	if err != nil {
 		return nil, err
 	}
 
 	return &pullCtx{repo: repo, peer: peer, client: client, codec: codec}, nil
+}
+
+// peerClient opens the peer's credentials and builds its client.
+func (e *Engine) peerClient(ctx context.Context, peer *Peer) (*Client, error) {
+	secrets, err := peer.Secrets()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewClient(ctx, peer, secrets, e.RequestTimeout)
 }
 
 var errPeerMismatch = errors.New("federation: peer repository does not match")

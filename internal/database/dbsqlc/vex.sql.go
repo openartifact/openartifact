@@ -7,7 +7,70 @@ package dbsqlc
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 )
+
+const applyPeerVEXStatement = `-- name: ApplyPeerVEXStatement :execrows
+INSERT INTO vex_statements (repository_id, artifact_id, vuln_id, status, justification,
+                            impact_statement, action_statement, created_by,
+                            source_kind, source_name, source_ref, peer_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'peer', $9, $10, $11::uuid)
+ON CONFLICT (repository_id, artifact_id, vuln_id) DO UPDATE SET
+    status = EXCLUDED.status,
+    justification = EXCLUDED.justification,
+    impact_statement = EXCLUDED.impact_statement,
+    action_statement = EXCLUDED.action_statement,
+    source_name = EXCLUDED.source_name,
+    source_ref = EXCLUDED.source_ref,
+    updated_at = now()
+WHERE vex_statements.source_kind = 'peer' AND vex_statements.peer_id = EXCLUDED.peer_id
+`
+
+type ApplyPeerVEXStatementParams struct {
+	RepositoryID    string `db:"repository_id" json:"repository_id"`
+	ArtifactID      string `db:"artifact_id" json:"artifact_id"`
+	VulnID          string `db:"vuln_id" json:"vuln_id"`
+	Status          string `db:"status" json:"status"`
+	Justification   string `db:"justification" json:"justification"`
+	ImpactStatement string `db:"impact_statement" json:"impact_statement"`
+	ActionStatement string `db:"action_statement" json:"action_statement"`
+	CreatedBy       string `db:"created_by" json:"created_by"`
+	SourceName      string `db:"source_name" json:"source_name"`
+	SourceRef       string `db:"source_ref" json:"source_ref"`
+	PeerID          string `db:"peer_id" json:"peer_id"`
+}
+
+// A federated peer's decision applied automatically: inserted, or updated only
+// when the row is already that peer's; a statement of any other source stays.
+func (q *Queries) ApplyPeerVEXStatement(ctx context.Context, arg ApplyPeerVEXStatementParams) (int64, error) {
+	result, err := q.db.Exec(ctx, applyPeerVEXStatement,
+		arg.RepositoryID,
+		arg.ArtifactID,
+		arg.VulnID,
+		arg.Status,
+		arg.Justification,
+		arg.ImpactStatement,
+		arg.ActionStatement,
+		arg.CreatedBy,
+		arg.SourceName,
+		arg.SourceRef,
+		arg.PeerID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteFeedVEXStatements = `-- name: DeleteFeedVEXStatements :exec
+DELETE FROM vex_statements WHERE feed_id = $1::uuid
+`
+
+func (q *Queries) DeleteFeedVEXStatements(ctx context.Context, feedID string) error {
+	_, err := q.db.Exec(ctx, deleteFeedVEXStatements, feedID)
+	return err
+}
 
 const deleteVEXStatement = `-- name: DeleteVEXStatement :execrows
 DELETE FROM vex_statements WHERE repository_id = $1 AND id = $2
@@ -26,10 +89,143 @@ func (q *Queries) DeleteVEXStatement(ctx context.Context, arg DeleteVEXStatement
 	return result.RowsAffected(), nil
 }
 
+const deleteVEXSuggestionsOfPeer = `-- name: DeleteVEXSuggestionsOfPeer :execrows
+DELETE FROM vex_suggestions WHERE peer_id = $1
+`
+
+func (q *Queries) DeleteVEXSuggestionsOfPeer(ctx context.Context, peerID string) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteVEXSuggestionsOfPeer, peerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getVEXSuggestion = `-- name: GetVEXSuggestion :one
+SELECT s.id, s.repository_id, s.peer_id, s.artifact_id, s.vuln_id, s.status, s.justification, s.impact_statement, s.action_statement, s.peer_updated_at, s.state, s.decided_by, s.decided_at, s.created_at, s.updated_at, p.name AS peer_name, p.base_url AS peer_base_url,
+       COALESCE(v.status, '')::text AS local_status, COALESCE(v.source_kind, '')::text AS local_source_kind
+FROM vex_suggestions s
+JOIN federation_peers p ON p.id = s.peer_id
+LEFT JOIN vex_statements v ON v.repository_id = s.repository_id AND v.artifact_id = s.artifact_id AND v.vuln_id = s.vuln_id
+WHERE s.repository_id = $1 AND s.id = $2
+`
+
+type GetVEXSuggestionParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	ID           string `db:"id" json:"id"`
+}
+
+type GetVEXSuggestionRow struct {
+	VexSuggestion   VexSuggestion `db:"vex_suggestion" json:"vex_suggestion"`
+	PeerName        string        `db:"peer_name" json:"peer_name"`
+	PeerBaseUrl     string        `db:"peer_base_url" json:"peer_base_url"`
+	LocalStatus     string        `db:"local_status" json:"local_status"`
+	LocalSourceKind string        `db:"local_source_kind" json:"local_source_kind"`
+}
+
+func (q *Queries) GetVEXSuggestion(ctx context.Context, arg GetVEXSuggestionParams) (GetVEXSuggestionRow, error) {
+	row := q.db.QueryRow(ctx, getVEXSuggestion, arg.RepositoryID, arg.ID)
+	var i GetVEXSuggestionRow
+	err := row.Scan(
+		&i.VexSuggestion.ID,
+		&i.VexSuggestion.RepositoryID,
+		&i.VexSuggestion.PeerID,
+		&i.VexSuggestion.ArtifactID,
+		&i.VexSuggestion.VulnID,
+		&i.VexSuggestion.Status,
+		&i.VexSuggestion.Justification,
+		&i.VexSuggestion.ImpactStatement,
+		&i.VexSuggestion.ActionStatement,
+		&i.VexSuggestion.PeerUpdatedAt,
+		&i.VexSuggestion.State,
+		&i.VexSuggestion.DecidedBy,
+		&i.VexSuggestion.DecidedAt,
+		&i.VexSuggestion.CreatedAt,
+		&i.VexSuggestion.UpdatedAt,
+		&i.PeerName,
+		&i.PeerBaseUrl,
+		&i.LocalStatus,
+		&i.LocalSourceKind,
+	)
+	return i, err
+}
+
+const getVEXSuggestionKey = `-- name: GetVEXSuggestionKey :one
+SELECT id, state FROM vex_suggestions WHERE peer_id = $1 AND artifact_id = $2 AND vuln_id = $3
+`
+
+type GetVEXSuggestionKeyParams struct {
+	PeerID     string `db:"peer_id" json:"peer_id"`
+	ArtifactID string `db:"artifact_id" json:"artifact_id"`
+	VulnID     string `db:"vuln_id" json:"vuln_id"`
+}
+
+type GetVEXSuggestionKeyRow struct {
+	ID    string `db:"id" json:"id"`
+	State string `db:"state" json:"state"`
+}
+
+func (q *Queries) GetVEXSuggestionKey(ctx context.Context, arg GetVEXSuggestionKeyParams) (GetVEXSuggestionKeyRow, error) {
+	row := q.db.QueryRow(ctx, getVEXSuggestionKey, arg.PeerID, arg.ArtifactID, arg.VulnID)
+	var i GetVEXSuggestionKeyRow
+	err := row.Scan(&i.ID, &i.State)
+	return i, err
+}
+
+const insertFeedVEXStatements = `-- name: InsertFeedVEXStatements :execrows
+INSERT INTO vex_statements (repository_id, artifact_id, vuln_id, status, justification,
+                            impact_statement, action_statement, source_kind, source_name, source_ref, feed_id)
+SELECT u.repository_id, u.artifact_id, u.vuln_id, u.status, u.justification,
+       u.impact_statement, u.action_statement, 'csaf', u.source_name, u.source_ref, $1::uuid
+FROM (SELECT unnest($2::uuid[]) AS repository_id,
+             unnest($3::text[]) AS artifact_id,
+             unnest($4::text[]) AS vuln_id,
+             unnest($5::text[]) AS status,
+             unnest($6::text[]) AS justification,
+             unnest($7::text[]) AS impact_statement,
+             unnest($8::text[]) AS action_statement,
+             unnest($9::text[]) AS source_name,
+             unnest($10::text[]) AS source_ref) u
+WHERE EXISTS (SELECT 1 FROM repositories r WHERE r.id = u.repository_id)
+ON CONFLICT (repository_id, artifact_id, vuln_id) DO NOTHING
+`
+
+type InsertFeedVEXStatementsParams struct {
+	FeedID           string   `db:"feed_id" json:"feed_id"`
+	RepositoryIds    []string `db:"repository_ids" json:"repository_ids"`
+	ArtifactIds      []string `db:"artifact_ids" json:"artifact_ids"`
+	VulnIds          []string `db:"vuln_ids" json:"vuln_ids"`
+	Statuses         []string `db:"statuses" json:"statuses"`
+	Justifications   []string `db:"justifications" json:"justifications"`
+	ImpactStatements []string `db:"impact_statements" json:"impact_statements"`
+	ActionStatements []string `db:"action_statements" json:"action_statements"`
+	SourceNames      []string `db:"source_names" json:"source_names"`
+	SourceRefs       []string `db:"source_refs" json:"source_refs"`
+}
+
+// The statements a feed materialized; a target that already has a statement (of
+// any source) keeps it. Targets of a repository deleted meanwhile are skipped.
+func (q *Queries) InsertFeedVEXStatements(ctx context.Context, arg InsertFeedVEXStatementsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertFeedVEXStatements,
+		arg.FeedID,
+		arg.RepositoryIds,
+		arg.ArtifactIds,
+		arg.VulnIds,
+		arg.Statuses,
+		arg.Justifications,
+		arg.ImpactStatements,
+		arg.ActionStatements,
+		arg.SourceNames,
+		arg.SourceRefs,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listVEXStatements = `-- name: ListVEXStatements :many
-SELECT id, repository_id, artifact_id, vuln_id, status, justification,
-       impact_statement, action_statement, created_by, created_at, updated_at
-FROM vex_statements
+SELECT id, repository_id, artifact_id, vuln_id, status, justification, impact_statement, action_statement, created_by, created_at, updated_at, source_kind, source_name, source_ref, feed_id, peer_id FROM vex_statements
 WHERE repository_id = $1 AND ($2::text = '' OR artifact_id = $2::text)
 ORDER BY artifact_id, vuln_id
 `
@@ -60,6 +256,11 @@ func (q *Queries) ListVEXStatements(ctx context.Context, arg ListVEXStatementsPa
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SourceKind,
+			&i.SourceName,
+			&i.SourceRef,
+			&i.FeedID,
+			&i.PeerID,
 		); err != nil {
 			return nil, err
 		}
@@ -71,32 +272,202 @@ func (q *Queries) ListVEXStatements(ctx context.Context, arg ListVEXStatementsPa
 	return items, nil
 }
 
+const listVEXSuggestions = `-- name: ListVEXSuggestions :many
+SELECT s.id, s.repository_id, s.peer_id, s.artifact_id, s.vuln_id, s.status, s.justification, s.impact_statement, s.action_statement, s.peer_updated_at, s.state, s.decided_by, s.decided_at, s.created_at, s.updated_at, p.name AS peer_name, p.base_url AS peer_base_url,
+       COALESCE(v.status, '')::text AS local_status, COALESCE(v.source_kind, '')::text AS local_source_kind
+FROM vex_suggestions s
+JOIN federation_peers p ON p.id = s.peer_id
+LEFT JOIN vex_statements v ON v.repository_id = s.repository_id AND v.artifact_id = s.artifact_id AND v.vuln_id = s.vuln_id
+WHERE s.repository_id = $1 AND ($2::text = '' OR s.state = $2::text)
+ORDER BY s.artifact_id, s.vuln_id, p.name
+`
+
+type ListVEXSuggestionsParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	State        string `db:"state" json:"state"`
+}
+
+type ListVEXSuggestionsRow struct {
+	VexSuggestion   VexSuggestion `db:"vex_suggestion" json:"vex_suggestion"`
+	PeerName        string        `db:"peer_name" json:"peer_name"`
+	PeerBaseUrl     string        `db:"peer_base_url" json:"peer_base_url"`
+	LocalStatus     string        `db:"local_status" json:"local_status"`
+	LocalSourceKind string        `db:"local_source_kind" json:"local_source_kind"`
+}
+
+func (q *Queries) ListVEXSuggestions(ctx context.Context, arg ListVEXSuggestionsParams) ([]ListVEXSuggestionsRow, error) {
+	rows, err := q.db.Query(ctx, listVEXSuggestions, arg.RepositoryID, arg.State)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListVEXSuggestionsRow{}
+	for rows.Next() {
+		var i ListVEXSuggestionsRow
+		if err := rows.Scan(
+			&i.VexSuggestion.ID,
+			&i.VexSuggestion.RepositoryID,
+			&i.VexSuggestion.PeerID,
+			&i.VexSuggestion.ArtifactID,
+			&i.VexSuggestion.VulnID,
+			&i.VexSuggestion.Status,
+			&i.VexSuggestion.Justification,
+			&i.VexSuggestion.ImpactStatement,
+			&i.VexSuggestion.ActionStatement,
+			&i.VexSuggestion.PeerUpdatedAt,
+			&i.VexSuggestion.State,
+			&i.VexSuggestion.DecidedBy,
+			&i.VexSuggestion.DecidedAt,
+			&i.VexSuggestion.CreatedAt,
+			&i.VexSuggestion.UpdatedAt,
+			&i.PeerName,
+			&i.PeerBaseUrl,
+			&i.LocalStatus,
+			&i.LocalSourceKind,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVEXTargets = `-- name: ListVEXTargets :many
+SELECT ref.repository_id, r.format::text AS repository_format, ref.artifact_path AS artifact_id, vr.vulnerabilities
+FROM scan_jobs sj
+JOIN vuln_results vr ON vr.scan_job_id = sj.id
+JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
+JOIN repositories r ON r.id = ref.repository_id AND r.deleted_at IS NULL
+WHERE sj.scan_type = 'vuln' AND sj.is_latest AND sj.status IN ('completed', 'partial')
+  AND vr.vuln_count > 0 AND jsonb_typeof(vr.vulnerabilities) = 'array'
+  AND ($1::text = '' OR ref.repository_id = NULLIF($1::text, '')::uuid)
+ORDER BY ref.repository_id, ref.artifact_path
+`
+
+type ListVEXTargetsRow struct {
+	RepositoryID     string          `db:"repository_id" json:"repository_id"`
+	RepositoryFormat string          `db:"repository_format" json:"repository_format"`
+	ArtifactID       string          `db:"artifact_id" json:"artifact_id"`
+	Vulnerabilities  json.RawMessage `db:"vulnerabilities" json:"vulnerabilities"`
+}
+
+// The latest vulnerability scan of every artifact (of one repository, or of all
+// when repository_id is ”), when it finished and found something.
+func (q *Queries) ListVEXTargets(ctx context.Context, repositoryID string) ([]ListVEXTargetsRow, error) {
+	rows, err := q.db.Query(ctx, listVEXTargets, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListVEXTargetsRow{}
+	for rows.Next() {
+		var i ListVEXTargetsRow
+		if err := rows.Scan(
+			&i.RepositoryID,
+			&i.RepositoryFormat,
+			&i.ArtifactID,
+			&i.Vulnerabilities,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pruneVEXSuggestions = `-- name: PruneVEXSuggestions :execrows
+DELETE FROM vex_suggestions WHERE peer_id = $1 AND NOT (id = ANY($2::uuid[]))
+`
+
+type PruneVEXSuggestionsParams struct {
+	PeerID  string   `db:"peer_id" json:"peer_id"`
+	KeepIds []string `db:"keep_ids" json:"keep_ids"`
+}
+
+func (q *Queries) PruneVEXSuggestions(ctx context.Context, arg PruneVEXSuggestionsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, pruneVEXSuggestions, arg.PeerID, arg.KeepIds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setVEXSuggestionState = `-- name: SetVEXSuggestionState :execrows
+UPDATE vex_suggestions SET
+    state = $3::text,
+    decided_by = CASE WHEN $3::text = 'pending' THEN '' ELSE $4::text END,
+    decided_at = CASE WHEN $3::text = 'pending' THEN NULL ELSE now() END,
+    updated_at = now()
+WHERE repository_id = $1 AND id = $2
+`
+
+type SetVEXSuggestionStateParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	ID           string `db:"id" json:"id"`
+	State        string `db:"state" json:"state"`
+	DecidedBy    string `db:"decided_by" json:"decided_by"`
+}
+
+func (q *Queries) SetVEXSuggestionState(ctx context.Context, arg SetVEXSuggestionStateParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setVEXSuggestionState,
+		arg.RepositoryID,
+		arg.ID,
+		arg.State,
+		arg.DecidedBy,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const upsertVEXStatement = `-- name: UpsertVEXStatement :one
 INSERT INTO vex_statements (repository_id, artifact_id, vuln_id, status, justification,
-                            impact_statement, action_statement, created_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                            impact_statement, action_statement, created_by,
+                            source_kind, source_name, source_ref, feed_id, peer_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+        (SELECT f.id FROM vex_feeds f WHERE f.id = $12::uuid),
+        (SELECT p.id FROM federation_peers p WHERE p.id = $13::uuid))
 ON CONFLICT (repository_id, artifact_id, vuln_id) DO UPDATE SET
     status = EXCLUDED.status,
     justification = EXCLUDED.justification,
     impact_statement = EXCLUDED.impact_statement,
     action_statement = EXCLUDED.action_statement,
     created_by = EXCLUDED.created_by,
+    source_kind = EXCLUDED.source_kind,
+    source_name = EXCLUDED.source_name,
+    source_ref = EXCLUDED.source_ref,
+    feed_id = EXCLUDED.feed_id,
+    peer_id = EXCLUDED.peer_id,
     updated_at = now()
-RETURNING id, repository_id, artifact_id, vuln_id, status, justification,
-          impact_statement, action_statement, created_by, created_at, updated_at
+RETURNING id, repository_id, artifact_id, vuln_id, status, justification, impact_statement, action_statement, created_by, created_at, updated_at, source_kind, source_name, source_ref, feed_id, peer_id
 `
 
 type UpsertVEXStatementParams struct {
-	RepositoryID    string `db:"repository_id" json:"repository_id"`
-	ArtifactID      string `db:"artifact_id" json:"artifact_id"`
-	VulnID          string `db:"vuln_id" json:"vuln_id"`
-	Status          string `db:"status" json:"status"`
-	Justification   string `db:"justification" json:"justification"`
-	ImpactStatement string `db:"impact_statement" json:"impact_statement"`
-	ActionStatement string `db:"action_statement" json:"action_statement"`
-	CreatedBy       string `db:"created_by" json:"created_by"`
+	RepositoryID    string  `db:"repository_id" json:"repository_id"`
+	ArtifactID      string  `db:"artifact_id" json:"artifact_id"`
+	VulnID          string  `db:"vuln_id" json:"vuln_id"`
+	Status          string  `db:"status" json:"status"`
+	Justification   string  `db:"justification" json:"justification"`
+	ImpactStatement string  `db:"impact_statement" json:"impact_statement"`
+	ActionStatement string  `db:"action_statement" json:"action_statement"`
+	CreatedBy       string  `db:"created_by" json:"created_by"`
+	SourceKind      string  `db:"source_kind" json:"source_kind"`
+	SourceName      string  `db:"source_name" json:"source_name"`
+	SourceRef       string  `db:"source_ref" json:"source_ref"`
+	FeedID          *string `db:"feed_id" json:"feed_id"`
+	PeerID          *string `db:"peer_id" json:"peer_id"`
 }
 
+// Records the decision for a target, replacing whatever was there (an operator
+// decision, or an accepted peer suggestion, overrides every source). A feed or
+// peer that no longer exists (a restored backup) leaves the reference NULL.
 func (q *Queries) UpsertVEXStatement(ctx context.Context, arg UpsertVEXStatementParams) (VexStatement, error) {
 	row := q.db.QueryRow(ctx, upsertVEXStatement,
 		arg.RepositoryID,
@@ -107,6 +478,11 @@ func (q *Queries) UpsertVEXStatement(ctx context.Context, arg UpsertVEXStatement
 		arg.ImpactStatement,
 		arg.ActionStatement,
 		arg.CreatedBy,
+		arg.SourceKind,
+		arg.SourceName,
+		arg.SourceRef,
+		arg.FeedID,
+		arg.PeerID,
 	)
 	var i VexStatement
 	err := row.Scan(
@@ -121,6 +497,70 @@ func (q *Queries) UpsertVEXStatement(ctx context.Context, arg UpsertVEXStatement
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SourceKind,
+		&i.SourceName,
+		&i.SourceRef,
+		&i.FeedID,
+		&i.PeerID,
 	)
+	return i, err
+}
+
+const upsertVEXSuggestion = `-- name: UpsertVEXSuggestion :one
+INSERT INTO vex_suggestions (repository_id, peer_id, artifact_id, vuln_id, status, justification,
+                             impact_statement, action_statement, peer_updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT (peer_id, artifact_id, vuln_id) DO UPDATE SET
+    repository_id = EXCLUDED.repository_id,
+    status = EXCLUDED.status,
+    justification = EXCLUDED.justification,
+    impact_statement = EXCLUDED.impact_statement,
+    action_statement = EXCLUDED.action_statement,
+    peer_updated_at = EXCLUDED.peer_updated_at,
+    state = 'pending',
+    decided_by = '',
+    decided_at = NULL,
+    updated_at = now()
+WHERE (vex_suggestions.repository_id, vex_suggestions.status, vex_suggestions.justification,
+       vex_suggestions.impact_statement, vex_suggestions.action_statement)
+      IS DISTINCT FROM
+      (EXCLUDED.repository_id, EXCLUDED.status, EXCLUDED.justification,
+       EXCLUDED.impact_statement, EXCLUDED.action_statement)
+RETURNING id, state
+`
+
+type UpsertVEXSuggestionParams struct {
+	RepositoryID    string     `db:"repository_id" json:"repository_id"`
+	PeerID          string     `db:"peer_id" json:"peer_id"`
+	ArtifactID      string     `db:"artifact_id" json:"artifact_id"`
+	VulnID          string     `db:"vuln_id" json:"vuln_id"`
+	Status          string     `db:"status" json:"status"`
+	Justification   string     `db:"justification" json:"justification"`
+	ImpactStatement string     `db:"impact_statement" json:"impact_statement"`
+	ActionStatement string     `db:"action_statement" json:"action_statement"`
+	PeerUpdatedAt   *time.Time `db:"peer_updated_at" json:"peer_updated_at"`
+}
+
+type UpsertVEXSuggestionRow struct {
+	ID    string `db:"id" json:"id"`
+	State string `db:"state" json:"state"`
+}
+
+// Stores a peer's decision. An unchanged decision returns no row; a changed one
+// goes back to pending.
+func (q *Queries) UpsertVEXSuggestion(ctx context.Context, arg UpsertVEXSuggestionParams) (UpsertVEXSuggestionRow, error) {
+	row := q.db.QueryRow(ctx, upsertVEXSuggestion,
+		arg.RepositoryID,
+		arg.PeerID,
+		arg.ArtifactID,
+		arg.VulnID,
+		arg.Status,
+		arg.Justification,
+		arg.ImpactStatement,
+		arg.ActionStatement,
+		arg.PeerUpdatedAt,
+	)
+	var i UpsertVEXSuggestionRow
+	err := row.Scan(&i.ID, &i.State)
 	return i, err
 }

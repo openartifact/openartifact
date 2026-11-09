@@ -149,6 +149,18 @@ oa vex set REPO --artifact-id my-lib@1.2.3 --vuln CVE-2024-1234 --status not_aff
 
 Decisions are stored per repository, are part of the [backup](../operations/backup.md) and are removed with the repository. The same decisions feed the `analysis` block of the CycloneDX SBOM, so the SBOM and the VEX never disagree. In CycloneDX the justification is mapped to the CycloneDX vocabulary (`code_not_present`, `code_not_reachable`, `requires_environment`, `protected_by_mitigating_control`, ...).
 
+### Where a decision comes from
+
+A recorded decision has a source. A decision you record is `local`. A statement imported from a vendor's CSAF feed is `csaf` (see [Vendor VEX feeds](vex-feeds.md)). A decision taken over from a federated peer is `peer` (see [Sharing VEX decisions](../operations/federation.md#sharing-vex-decisions)).
+
+| Field | `local` | `csaf` | `peer` |
+|---|---|---|---|
+| `source_kind` | `local` | `csaf` | `peer` |
+| `source_name` | empty | the feed name | the peer name |
+| `source_ref` | empty | the CSAF document URL | the peer's base URL |
+
+`GET …/vex/statements`, the **VEX decisions** list and the finding drawer show the source. In generated VEX documents the status notes of a statement name the feed or peer it came from. Recording a decision with `PUT …/vex/statements` makes it `local` and replaces a statement of any other source.
+
 ## Signed SBOM and VEX attestations
 
 **Settings > Security > Attestations** (admin only) shows the signing key: its id, algorithm, whether it comes from a key file or was generated, the public key to copy or download and the URL it is served from, and a `cosign` command to verify a bundle. It also switches the attachment of signed attestations to the images of each hosted docker repository on or off. When attestations are not enabled, or the server has no `OPENARTIFACT_SECRET_KEY` to protect a generated key, the page says so.

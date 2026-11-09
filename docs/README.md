@@ -63,6 +63,7 @@ These pages are also published, one version per release, at <https://openartifac
 | [Security findings](security/findings.md) | The findings of all repositories in one list (vulnerabilities, licenses, secrets, AI), summary, export, scanner health and the per-repository counts |
 | [SBOM and VEX](security/sbom.md) | CycloneDX / SPDX 2.3 and 3.0 SBOMs, OpenVEX / CycloneDX VEX, signed attestations (cosign), Trivy, Grype |
 | [Image attestations](security/attestations.md) | Signatures, SLSA provenance and SBOMs pushed by cosign and Tekton Chains: per-repository trust (keys, Fulcio identities), verification, the attestation API and the `require_verified_provenance` promotion gate |
+| [Vendor VEX feeds](security/vex-feeds.md) | Import vendor CSAF VEX statements: adding a feed, signature checks, product matching, sources, API |
 | [Dependency-Track](security/dependency-track.md) | Pushing the BOM on upload and scan and the VEX after analysis; project naming, permissions, per-repository overrides |
 | [License metadata](security/licenses.md) | How licenses are read from package files: precedence per format, unresolved licenses, limits and limitations |
 | [Threat model](security/threat-model.md) | What OpenArtifact protects, who it assumes to be hostile and the controls in place |

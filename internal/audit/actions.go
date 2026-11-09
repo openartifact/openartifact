@@ -163,6 +163,15 @@ const (
 	ActionCurationRuleCreated = "curation.rule_created"
 	ActionCurationRuleUpdated = "curation.rule_updated"
 	ActionCurationRuleDeleted = "curation.rule_deleted"
+
+	// VEX feeds and federated VEX suggestions (migrations/027_vex_import.sql).
+
+	ActionVEXFeedCreated         = "vex.feed_created"
+	ActionVEXFeedUpdated         = "vex.feed_updated"
+	ActionVEXFeedDeleted         = "vex.feed_deleted"
+	ActionVEXFeedSynced          = "vex.feed_synced"
+	ActionVEXSuggestionAccepted  = "vex.suggestion_accepted"
+	ActionVEXSuggestionDismissed = "vex.suggestion_dismissed"
 )
 
 // KnownActions lists every action the server emits. The constraint also still admits
@@ -224,4 +233,7 @@ var KnownActions = []string{
 	ActionDependencyTrackConfigChanged, ActionLicensePolicyChanged,
 
 	ActionCurationRuleCreated, ActionCurationRuleUpdated, ActionCurationRuleDeleted,
+
+	ActionVEXFeedCreated, ActionVEXFeedUpdated, ActionVEXFeedDeleted, ActionVEXFeedSynced,
+	ActionVEXSuggestionAccepted, ActionVEXSuggestionDismissed,
 }

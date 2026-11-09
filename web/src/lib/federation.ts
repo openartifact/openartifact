@@ -10,6 +10,7 @@ import type {
   CreateFederationPeerRequest,
   FederationPeer,
   FederationPeerState,
+  FederationVexTrust,
   UpdateFederationPeerRequest,
 } from '../api/federation'
 
@@ -32,6 +33,15 @@ export function peerStateVariant(state: FederationPeerState): StateVariant {
 
 export function peerStateLabel(state: FederationPeerState): string {
   return tDynamic(`federation.state.${state}`)
+}
+
+export function vexTrustLabel(trust: FederationVexTrust): string {
+  return tDynamic(`federation.vexTrust.${trust}`)
+}
+
+/** One line on what the trust level does with the peer's decisions. */
+export function vexTrustHint(trust: FederationVexTrust): string {
+  return tDynamic(`federation.vexTrustHint.${trust}`)
 }
 
 /** Lag as a short duration with at most two units ("1 hr 5 min"); "Caught up" when below one second. */
@@ -63,15 +73,17 @@ export interface PeerForm {
   clientCert: string
   clientKey: string
   enabled: boolean
+  /** What is done with the peer's VEX decisions. */
+  vexTrust: FederationVexTrust
 }
 
 export function emptyPeerForm(): PeerForm {
-  return { name: '', baseUrl: '', token: '', caPem: '', clientCert: '', clientKey: '', enabled: true }
+  return { name: '', baseUrl: '', token: '', caPem: '', clientCert: '', clientKey: '', enabled: true, vexTrust: 'ignore' }
 }
 
 /** Edit form seeded from a peer; secrets are never returned, so they start empty. */
 export function peerFormFrom(peer: FederationPeer): PeerForm {
-  return { ...emptyPeerForm(), name: peer.name, baseUrl: peer.base_url, enabled: peer.enabled }
+  return { ...emptyPeerForm(), name: peer.name, baseUrl: peer.base_url, enabled: peer.enabled, vexTrust: peer.vex_trust }
 }
 
 export interface PeerFormErrors {
@@ -124,6 +136,8 @@ export function peerCreateBody(form: PeerForm): CreateFederationPeerRequest {
     name: form.name.trim(),
     base_url: form.baseUrl.trim(),
     token: form.token.trim(),
+    // `ignore` is the server default.
+    ...(form.vexTrust !== 'ignore' ? { vex_trust: form.vexTrust } : {}),
     ...filledTlsFields(form),
   }
 }
@@ -134,6 +148,7 @@ export function peerUpdateBody(form: PeerForm, peer: FederationPeer): UpdateFede
   if (form.name.trim() !== peer.name) body.name = form.name.trim()
   if (form.baseUrl.trim() !== peer.base_url) body.base_url = form.baseUrl.trim()
   if (form.enabled !== peer.enabled) body.enabled = form.enabled
+  if (form.vexTrust !== peer.vex_trust) body.vex_trust = form.vexTrust
   if (form.token.trim()) body.token = form.token.trim()
   return { ...body, ...filledTlsFields(form) }
 }

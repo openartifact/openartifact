@@ -165,6 +165,67 @@ Watch `openartifact_federation_resumed_total` (resumed transfers per repository 
 - **Rebuilding a lost member**: create the repository on the replacement instance, enable federation, add a surviving member as a peer with a token issued there, and the new member pulls everything. Survivors that should pull from the new member need a token issued by it: edit the peer entry (`PATCH .../peers/{id}`, `token`) or add a new peer. A rebuilt member has a new log id, so survivors detect it and resync automatically.
 - **Restore from a backup**: a restored member may be behind the position its peers already passed. Press **Resync** on every peer of the restored member (until then the status shows an error because the peer head is below the cursor). See also [backup](backup.md).
 
+## Sharing VEX decisions
+
+Members can share their [VEX decisions](../security/sbom.md#vex), so an assessment made on one site reaches the others. Sharing is off by default on both sides. The publishing member opts in per repository, and each receiving member chooses per peer how much it trusts the decisions.
+
+1. On the publishing member, switch on `vex_publish` for the federated repository:
+
+   ```bash
+   curl -sS -X PUT "https://a.example.com/api/v1/repositories/libs/federation" \
+     -H "Authorization: Bearer $TOKEN_A" -H 'Content-Type: application/json' \
+     -d '{"enabled": true, "vex_publish": true}'
+   ```
+
+2. On the receiving member, set `vex_trust` on the peer:
+
+   ```bash
+   curl -sS -X PATCH "https://b.example.com/api/v1/repositories/libs-b/federation/peers/<PEER_ID>" \
+     -H "Authorization: Bearer $TOKEN_B" -H 'Content-Type: application/json' \
+     -d '{"vex_trust": "suggest"}'
+   ```
+
+`vex_trust` can also be given when you add the peer. In the UI, both settings are in the **Federation** section of the repository's Settings tab.
+
+| `vex_trust` | Effect |
+|---|---|
+| `ignore` | default; nothing is fetched |
+| `suggest` | the peer's decisions become suggestions for an admin to accept or dismiss |
+| `apply` | the peer's decisions are recorded at once where the artifact has no decision of another source; the others stay suggestions |
+
+### What is shared
+
+- Only decisions recorded on the publishing member itself are published. Statements it imported from a [vendor feed](../security/vex-feeds.md) or took over from another peer are not, so decisions never echo back.
+- A decision applies to the receiving member's artifact with the same package URL, and only when that artifact has a vulnerability scan.
+- A repository without `vex_publish` answers the VEX request with `404`. The receiver records that in `vex_error` and carries on.
+
+### When decisions are fetched
+
+The receiver fetches the peer's decisions after a successful pull, at most once an hour. The time of the last fetch is the peer's `vex_synced_at`. A failed fetch sets `vex_error` and never fails the pull. Like `last_error`, it is a short reason and the detail is in the server log.
+
+### Review suggestions
+
+A peer never silently overrides a decision of this member. A decision that would replace a local one, a vendor statement or another peer's decision stays a suggestion until an admin acts on it.
+
+```bash
+curl -sS "https://b.example.com/api/v1/repositories/libs-b/vex/suggestions?state=pending" \
+  -H "Authorization: Bearer $TOKEN_B"
+curl -sS -X POST "https://b.example.com/api/v1/repositories/libs-b/vex/suggestions/<ID>/accept" \
+  -H "Authorization: Bearer $TOKEN_B"
+curl -sS -X POST "https://b.example.com/api/v1/repositories/libs-b/vex/suggestions/<ID>/dismiss" \
+  -H "Authorization: Bearer $TOKEN_B"
+```
+
+- `state` is `pending` (default), `accepted`, `dismissed` or `all`.
+- A suggestion shows the peer's status, justification and statements, the peer it came from, and the local decision it would replace (`local_status`, `local_source_kind`).
+- **Accept** records the decision with source `peer` and replaces whatever decision the artifact had. It answers with the recorded statement.
+- **Dismiss** keeps the current decision. The suggestion stays dismissed until the peer changes its decision.
+- A suggestion whose decision changes on the peer goes back to `pending`. A suggestion the peer no longer publishes is removed.
+- Switching a peer to `ignore` removes its suggestions.
+- Accepting and dismissing need an administrator of the repository. They are recorded in the audit log as `vex.suggestion_accepted` and `vex.suggestion_dismissed`.
+
+The suggestions are also listed in the UI, with accept and dismiss actions.
+
 ## Monitoring
 
 Metrics, all with the labels `repo` and `peer` (except `_applied_total`, which also has `result`, and `openartifact_federation_partial_bytes`, the size in bytes of the spool directory's partial files, which has no labels):
@@ -210,7 +271,7 @@ Set the lag alert below `federation.tombstoneRetention`; a peer that stays behin
 
 ## Security
 
-- **Peer tokens** (`oafed_...`) are a separate credential bound to **one repository**. Only their hash is stored; the plaintext is shown once at creation. They grant read access to the four `/federation/v1` endpoints of that repository and nothing else: no REST API, no format endpoint, no other repository. User tokens, sessions and the legacy key are rejected there. Tokens can be listed (name, created, last used, last cursor) and revoked; issue and revoke show up in the request audit log.
+- **Peer tokens** (`oafed_...`) are a separate credential bound to **one repository**. Only their hash is stored; the plaintext is shown once at creation. They grant read access to the `/federation/v1` endpoints of that repository and nothing else: no REST API, no format endpoint, no other repository. User tokens, sessions and the legacy key are rejected there. Tokens can be listed (name, created, last used, last cursor) and revoked; issue and revoke show up in the request audit log.
 - **Outbound tokens** (the token you give when adding a peer) are stored encrypted with `OPENARTIFACT_SECRET_KEY` and never returned by the API. The token is sent to the peer's URL, so changing `base_url` with `PATCH` requires the token in the same request (`400 validation_failed` otherwise); the stored token is replaced, never carried over to the new URL.
 - **Errors are classified, not copied.** `last_error` of a peer and of a deferred unit is one of a fixed set of reasons, with the HTTP status when the peer answered one, for example `unreachable`, `timeout`, `tls`, `unauthorized (HTTP 401)`, `not_found (HTTP 404)`, `rate_limited (HTTP 429)`, `upstream_error (HTTP 502)`, `protocol_mismatch`, `blocked_address`, `invalid_config`, `invalid_response`, `invalid_unit`, `blob_rejected`, `clock_skew`, `quota_exceeded`, `internal_error`. Text of the peer, the network stack or the database is not stored or returned; the full cause is in the server log (`federation: pull failed`, `federation: unit set aside`).
 - **Transport.** Peer URLs must be `https`. Plain `http` and private or loopback addresses are accepted only with `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true` (closed networks, development). Outbound calls use the SSRF-safe client: addresses are checked at connection time and redirects to private addresses are refused.
@@ -244,7 +305,7 @@ All under `/api/v1/repositories/{name}/federation`, permission `manage`.
 | Method and path | Purpose |
 |---|---|
 | `GET /` | Status: enabled flag, tokens, peers with health |
-| `PUT /` | Enable or disable: `{"enabled": true}` |
+| `PUT /` | Enable or disable: `{"enabled": true}`; optional `vex_publish` |
 | `POST /peers` | Add a peer (name, base URL, outbound token, optional CA pin and client certificate) |
 | `PATCH /peers/{id}` | Edit or pause a peer |
 | `DELETE /peers/{id}` | Remove a peer |
@@ -263,6 +324,7 @@ Used between instances, authenticated with `Authorization: Bearer oafed_...`. Th
 | `GET /federation/v1/log?after=&limit=` | Change feed: units changed after a sequence number |
 | `GET /federation/v1/unit?key=` | Current state of one unit |
 | `GET /federation/v1/blob?unit=&sha256=` | One blob of that unit; honours `Range: bytes=N-` (`206`, or `416` for an unsatisfiable or unsupported range) |
+| `GET /federation/v1/vex` | The repository's own VEX decisions as an OpenVEX document, when [`vex_publish`](#sharing-vex-decisions) is on; `404` otherwise |
 
 ## Troubleshooting
 

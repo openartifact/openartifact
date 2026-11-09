@@ -109,6 +109,8 @@
   "ui.settings.attestation.desc": "SBOM 및 VEX 증명용 서명 키입니다.",
   "ui.settings.scan-gate.title": "스캔 게이트",
   "ui.settings.scan-gate.desc": "스캔의 악용 기준과 차단된 다운로드입니다.",
+  "ui.settings.vex-feeds.title": "VEX 피드",
+  "ui.settings.vex-feeds.desc": "발견 항목을 영향 없음 또는 수정됨으로 표시하는 공급업체 CSAF 권고.",
   "ui.settings.declarative.title": "선언형 구성",
   "ui.settings.declarative.desc": "구성을 YAML로 검토, 적용, 내보냅니다."
 }

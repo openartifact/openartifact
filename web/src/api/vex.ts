@@ -3,7 +3,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { request, downloadAttachment, JSON_HEADERS } from './client'
-import type { PutApiV1RepositoriesByNameVexStatementsData, VexStatement as GeneratedVexStatement } from './generated/types.gen'
+import type {
+  PutApiV1RepositoriesByNameVexStatementsData,
+  VexStatement as GeneratedVexStatement,
+  VexSuggestion,
+} from './generated/types.gen'
 
 // VEX decisions are admin-only and keyed by repository name. A decision is the
 // (artifact_id, vuln_id) pair's exploitability status; the VEX documents are
@@ -55,6 +59,29 @@ export function putVexStatement(repo: string, decision: VexDecision): Promise<Ve
 /** The vulnerability falls back to its derived status. */
 export function deleteVexStatement(repo: string, id: string): Promise<void> {
   return request<void>(`${repoBase(repo)}/vex/statements/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+/** A peer's decision offered to this repository, as the suggestions endpoints return it. */
+export type { VexSuggestion }
+
+export type VexSuggestionState = VexSuggestion['state']
+
+/** The state filters of the suggestions list; `all` lists every state. */
+export const VEX_SUGGESTION_FILTERS: readonly (VexSuggestionState | 'all')[] = ['pending', 'accepted', 'dismissed', 'all']
+
+/** `state` defaults to pending on the server. */
+export async function listVexSuggestions(repo: string, state: VexSuggestionState | 'all' = 'pending'): Promise<VexSuggestion[]> {
+  const res = await request<{ suggestions?: VexSuggestion[] }>(`${repoBase(repo)}/vex/suggestions?${new URLSearchParams({ state })}`)
+  return res.suggestions ?? []
+}
+
+/** Records the peer's decision as this repository's, replacing whatever was there. */
+export function acceptVexSuggestion(repo: string, id: string): Promise<VexRecord> {
+  return request<VexRecord>(`${repoBase(repo)}/vex/suggestions/${encodeURIComponent(id)}/accept`, { method: 'POST' })
+}
+
+export function dismissVexSuggestion(repo: string, id: string): Promise<VexSuggestion> {
+  return request<VexSuggestion>(`${repoBase(repo)}/vex/suggestions/${encodeURIComponent(id)}/dismiss`, { method: 'POST' })
 }
 
 export type VexDocumentFormat = 'openvex' | 'cyclonedx'

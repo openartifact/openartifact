@@ -1934,6 +1934,107 @@ export type VexStatement = {
     created_by?: string;
     created_at?: string;
     updated_at?: string;
+    /**
+     * Where the decision comes from: an operator (local), a vendor CSAF VEX feed (csaf) or a federated peer (peer).
+     */
+    source_kind?: 'local' | 'csaf' | 'peer';
+    /**
+     * Name of the feed or peer; empty for local.
+     */
+    source_name?: string;
+    /**
+     * CSAF document URL (csaf) or peer base URL (peer); empty for local.
+     */
+    source_ref?: string;
+};
+
+/**
+ * A vendor CSAF 2.0 VEX provider and its import state.
+ */
+export type VexFeed = {
+    id: string;
+    name: string;
+    /**
+     * provider-metadata.json, ROLIE feed or single CSAF document URL.
+     */
+    url: string;
+    enabled: boolean;
+    /**
+     * Reject documents without a valid OpenPGP signature.
+     */
+    require_signature: boolean;
+    /**
+     * ASCII-armored OpenPGP public keys pinned for the feed.
+     */
+    pgp_keys: string;
+    interval_hours: number;
+    cursor_at: string | null;
+    last_attempt_at: string | null;
+    last_success_at: string | null;
+    last_error: string;
+    documents_total: number;
+    rejected_total: number;
+    /**
+     * Statements imported from the feed's documents.
+     */
+    statements: number;
+    /**
+     * VEX decisions the feed's statements currently produce on scanned artifacts.
+     */
+    applied: number;
+    created_at: string;
+    updated_at: string;
+};
+
+export type VexFeedRequest = {
+    /**
+     * 1-63 characters: letters, digits, '.', '_' or '-'.
+     */
+    name: string;
+    /**
+     * https URL (http only for a loopback host) that passes the outbound SSRF policy.
+     */
+    url: string;
+    enabled?: boolean;
+    require_signature?: boolean;
+    /**
+     * ASCII-armored OpenPGP public keys, at most 64 KiB.
+     */
+    pgp_keys?: string;
+    interval_hours?: number;
+};
+
+/**
+ * A federated peer's VEX decision offered to the repository.
+ */
+export type VexSuggestion = {
+    id: string;
+    artifact_id: string;
+    vuln_id: string;
+    status: 'affected' | 'not_affected' | 'fixed' | 'under_investigation';
+    justification: string;
+    impact_statement: string;
+    action_statement: string;
+    peer_id: string;
+    peer_name: string;
+    peer_base_url: string;
+    peer_updated_at: string | null;
+    state: 'pending' | 'accepted' | 'dismissed';
+    /**
+     * Who accepted or dismissed it; empty when applied automatically.
+     */
+    decided_by: string;
+    decided_at: string | null;
+    /**
+     * Status of the repository's current decision for the same artifact and vulnerability; empty when none.
+     */
+    local_status: string;
+    /**
+     * Source of that decision (local, csaf or peer); empty when none.
+     */
+    local_source_kind: string;
+    created_at: string;
+    updated_at: string;
 };
 
 export type ProjectQuota = {
@@ -3112,6 +3213,18 @@ export type FederationPeer = {
     has_ca_pem: boolean;
     has_client_cert: boolean;
     created_at: string;
+    /**
+     * What happens to the peer's VEX decisions: ignore (nothing fetched), suggest (pending suggestions) or apply (applied where no other decision exists).
+     */
+    vex_trust: 'ignore' | 'suggest' | 'apply';
+    /**
+     * Last fetch of the peer's VEX decisions.
+     */
+    vex_synced_at?: string;
+    /**
+     * Error of the last VEX fetch; empty when it succeeded.
+     */
+    vex_error: string;
 };
 
 /**
@@ -3196,6 +3309,10 @@ export type FederationStatus = {
     tombstones: number;
     peers: Array<FederationPeer>;
     tokens: Array<FederationToken>;
+    /**
+     * The repository serves its local VEX decisions to its peers.
+     */
+    vex_publish: boolean;
 };
 
 export type UpdateFederationRequest = {
@@ -3203,6 +3320,10 @@ export type UpdateFederationRequest = {
      * true backfills the log from the existing content; false removes the log and all peers.
      */
     enabled: boolean;
+    /**
+     * Serve the repository's local VEX decisions to its peers (GET /federation/v1/vex). Only a federated repository publishes; absent keeps the current setting.
+     */
+    vex_publish?: boolean;
 };
 
 export type CreateFederationPeerRequest = {
@@ -3227,6 +3348,10 @@ export type CreateFederationPeerRequest = {
      * PEM private key of the client certificate.
      */
     client_key?: string;
+    /**
+     * VEX trust of the peer; default ignore.
+     */
+    vex_trust?: 'ignore' | 'suggest' | 'apply';
 };
 
 /**
@@ -3240,6 +3365,10 @@ export type UpdateFederationPeerRequest = {
     client_cert?: string;
     client_key?: string;
     enabled?: boolean;
+    /**
+     * VEX trust of the peer; switching to ignore deletes its suggestions.
+     */
+    vex_trust?: 'ignore' | 'suggest' | 'apply';
 };
 
 export type CreateFederationTokenRequest = {
@@ -5231,6 +5360,353 @@ export type DeleteApiV1RepositoriesByNameVexStatementsByIdResponses = {
 };
 
 export type DeleteApiV1RepositoriesByNameVexStatementsByIdResponse = DeleteApiV1RepositoriesByNameVexStatementsByIdResponses[keyof DeleteApiV1RepositoriesByNameVexStatementsByIdResponses];
+
+export type GetApiV1VexFeedsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/vex/feeds';
+};
+
+export type GetApiV1VexFeedsErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
+     * Admin access required
+     */
+    403: Error;
+};
+
+export type GetApiV1VexFeedsError = GetApiV1VexFeedsErrors[keyof GetApiV1VexFeedsErrors];
+
+export type GetApiV1VexFeedsResponses = {
+    /**
+     * VEX feeds
+     */
+    200: {
+        feeds: Array<VexFeed>;
+    };
+};
+
+export type GetApiV1VexFeedsResponse = GetApiV1VexFeedsResponses[keyof GetApiV1VexFeedsResponses];
+
+export type PostApiV1VexFeedsData = {
+    body: VexFeedRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/vex/feeds';
+};
+
+export type PostApiV1VexFeedsErrors = {
+    /**
+     * Invalid request (error code validation_failed)
+     */
+    400: Error;
+    /**
+     * Admin access required
+     */
+    403: Error;
+    /**
+     * A VEX feed with this name already exists
+     */
+    409: Error;
+};
+
+export type PostApiV1VexFeedsError = PostApiV1VexFeedsErrors[keyof PostApiV1VexFeedsErrors];
+
+export type PostApiV1VexFeedsResponses = {
+    /**
+     * Feed added
+     */
+    201: VexFeed;
+};
+
+export type PostApiV1VexFeedsResponse = PostApiV1VexFeedsResponses[keyof PostApiV1VexFeedsResponses];
+
+export type DeleteApiV1VexFeedsByIdData = {
+    body?: never;
+    path: {
+        /**
+         * VEX feed id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/vex/feeds/{id}';
+};
+
+export type DeleteApiV1VexFeedsByIdErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
+     * Admin access required
+     */
+    403: Error;
+    /**
+     * VEX feed not found
+     */
+    404: Error;
+};
+
+export type DeleteApiV1VexFeedsByIdError = DeleteApiV1VexFeedsByIdErrors[keyof DeleteApiV1VexFeedsByIdErrors];
+
+export type DeleteApiV1VexFeedsByIdResponses = {
+    /**
+     * Feed deleted
+     */
+    204: void;
+};
+
+export type DeleteApiV1VexFeedsByIdResponse = DeleteApiV1VexFeedsByIdResponses[keyof DeleteApiV1VexFeedsByIdResponses];
+
+export type GetApiV1VexFeedsByIdData = {
+    body?: never;
+    path: {
+        /**
+         * VEX feed id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/vex/feeds/{id}';
+};
+
+export type GetApiV1VexFeedsByIdErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
+     * Admin access required
+     */
+    403: Error;
+    /**
+     * VEX feed not found
+     */
+    404: Error;
+};
+
+export type GetApiV1VexFeedsByIdError = GetApiV1VexFeedsByIdErrors[keyof GetApiV1VexFeedsByIdErrors];
+
+export type GetApiV1VexFeedsByIdResponses = {
+    /**
+     * VEX feed
+     */
+    200: VexFeed;
+};
+
+export type GetApiV1VexFeedsByIdResponse = GetApiV1VexFeedsByIdResponses[keyof GetApiV1VexFeedsByIdResponses];
+
+export type PutApiV1VexFeedsByIdData = {
+    body: VexFeedRequest;
+    path: {
+        /**
+         * VEX feed id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/vex/feeds/{id}';
+};
+
+export type PutApiV1VexFeedsByIdErrors = {
+    /**
+     * Invalid request (error code validation_failed)
+     */
+    400: Error;
+    /**
+     * Admin access required
+     */
+    403: Error;
+    /**
+     * VEX feed not found
+     */
+    404: Error;
+    /**
+     * A VEX feed with this name already exists
+     */
+    409: Error;
+};
+
+export type PutApiV1VexFeedsByIdError = PutApiV1VexFeedsByIdErrors[keyof PutApiV1VexFeedsByIdErrors];
+
+export type PutApiV1VexFeedsByIdResponses = {
+    /**
+     * The updated feed
+     */
+    200: VexFeed;
+};
+
+export type PutApiV1VexFeedsByIdResponse = PutApiV1VexFeedsByIdResponses[keyof PutApiV1VexFeedsByIdResponses];
+
+export type PostApiV1VexFeedsByIdSyncData = {
+    body?: never;
+    path: {
+        /**
+         * VEX feed id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/vex/feeds/{id}/sync';
+};
+
+export type PostApiV1VexFeedsByIdSyncErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
+     * Admin access required
+     */
+    403: Error;
+    /**
+     * VEX feed not found
+     */
+    404: Error;
+    /**
+     * A sync of this feed is already running
+     */
+    409: Error;
+    /**
+     * VEX feed sync is not available on this server
+     */
+    503: Error;
+};
+
+export type PostApiV1VexFeedsByIdSyncError = PostApiV1VexFeedsByIdSyncErrors[keyof PostApiV1VexFeedsByIdSyncErrors];
+
+export type PostApiV1VexFeedsByIdSyncResponses = {
+    /**
+     * Sync started
+     */
+    202: {
+        status: 'started';
+    };
+};
+
+export type PostApiV1VexFeedsByIdSyncResponse = PostApiV1VexFeedsByIdSyncResponses[keyof PostApiV1VexFeedsByIdSyncResponses];
+
+export type GetApiV1RepositoriesByNameVexSuggestionsData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: {
+        state?: 'pending' | 'accepted' | 'dismissed' | 'all';
+    };
+    url: '/api/v1/repositories/{name}/vex/suggestions';
+};
+
+export type GetApiV1RepositoriesByNameVexSuggestionsErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
+    /**
+     * Repository not found
+     */
+    404: Error;
+};
+
+export type GetApiV1RepositoriesByNameVexSuggestionsError = GetApiV1RepositoriesByNameVexSuggestionsErrors[keyof GetApiV1RepositoriesByNameVexSuggestionsErrors];
+
+export type GetApiV1RepositoriesByNameVexSuggestionsResponses = {
+    /**
+     * VEX suggestions
+     */
+    200: {
+        suggestions: Array<VexSuggestion>;
+    };
+};
+
+export type GetApiV1RepositoriesByNameVexSuggestionsResponse = GetApiV1RepositoriesByNameVexSuggestionsResponses[keyof GetApiV1RepositoriesByNameVexSuggestionsResponses];
+
+export type PostApiV1RepositoriesByNameVexSuggestionsByIdAcceptData = {
+    body?: never;
+    path: {
+        name: string;
+        /**
+         * VEX suggestion id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/vex/suggestions/{id}/accept';
+};
+
+export type PostApiV1RepositoriesByNameVexSuggestionsByIdAcceptErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
+    /**
+     * Repository or VEX suggestion not found (a suggestion of another repository is not found)
+     */
+    404: Error;
+};
+
+export type PostApiV1RepositoriesByNameVexSuggestionsByIdAcceptError = PostApiV1RepositoriesByNameVexSuggestionsByIdAcceptErrors[keyof PostApiV1RepositoriesByNameVexSuggestionsByIdAcceptErrors];
+
+export type PostApiV1RepositoriesByNameVexSuggestionsByIdAcceptResponses = {
+    /**
+     * The recorded VEX decision
+     */
+    200: VexStatement;
+};
+
+export type PostApiV1RepositoriesByNameVexSuggestionsByIdAcceptResponse = PostApiV1RepositoriesByNameVexSuggestionsByIdAcceptResponses[keyof PostApiV1RepositoriesByNameVexSuggestionsByIdAcceptResponses];
+
+export type PostApiV1RepositoriesByNameVexSuggestionsByIdDismissData = {
+    body?: never;
+    path: {
+        name: string;
+        /**
+         * VEX suggestion id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/vex/suggestions/{id}/dismiss';
+};
+
+export type PostApiV1RepositoriesByNameVexSuggestionsByIdDismissErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
+    /**
+     * Repository or VEX suggestion not found (a suggestion of another repository is not found)
+     */
+    404: Error;
+};
+
+export type PostApiV1RepositoriesByNameVexSuggestionsByIdDismissError = PostApiV1RepositoriesByNameVexSuggestionsByIdDismissErrors[keyof PostApiV1RepositoriesByNameVexSuggestionsByIdDismissErrors];
+
+export type PostApiV1RepositoriesByNameVexSuggestionsByIdDismissResponses = {
+    /**
+     * The dismissed suggestion
+     */
+    200: VexSuggestion;
+};
+
+export type PostApiV1RepositoriesByNameVexSuggestionsByIdDismissResponse = PostApiV1RepositoriesByNameVexSuggestionsByIdDismissResponses[keyof PostApiV1RepositoriesByNameVexSuggestionsByIdDismissResponses];
 
 export type PostApiV1RepositoriesByNameLicenseScanData = {
     body: {

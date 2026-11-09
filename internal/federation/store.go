@@ -50,6 +50,8 @@ type RepoState struct {
 	LogID     uuid.UUID
 	HeadSeq   int64
 	EnabledAt time.Time
+	// VEXPublish serves the repository's local VEX decisions to its peers.
+	VEXPublish bool
 }
 
 // InstanceID returns the identity of this instance.
@@ -68,8 +70,8 @@ func (s *Store) RepoState(ctx context.Context, repoID string) (*RepoState, error
 	st := &RepoState{RepoID: repoID}
 
 	err := s.db.QueryRowContext(ctx,
-		`SELECT log_id, head_seq, enabled_at FROM federation_repos WHERE repo_id = $1::uuid`, repoID,
-	).Scan(&st.LogID, &st.HeadSeq, &st.EnabledAt)
+		`SELECT log_id, head_seq, enabled_at, vex_publish FROM federation_repos WHERE repo_id = $1::uuid`, repoID,
+	).Scan(&st.LogID, &st.HeadSeq, &st.EnabledAt, &st.VEXPublish)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFederated
 	}
