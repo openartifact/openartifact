@@ -15,8 +15,3 @@ type PropertyMatch struct {
 	Version    *string
 	Format     *string
 }
-
-// Resolved reports whether ArtifactID names a stored file of the repository.
-func (m PropertyMatch) Resolved() bool {
-	return m.Name != nil
-}

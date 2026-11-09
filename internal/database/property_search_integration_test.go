@@ -30,7 +30,7 @@ func TestSearchByPropertyResolvesFileIDs(t *testing.T) {
 	byID := requireSortedDistinct(t, got, 5)
 
 	m := byID[f.design]
-	if !m.Resolved() || *m.Name != "landing/v2/index.html" || m.Version == nil || *m.Version != "" ||
+	if m.Name == nil || *m.Name != "landing/v2/index.html" || m.Version == nil || *m.Version != "" ||
 		m.Format == nil || *m.Format != "raw" {
 		t.Fatalf("file id of repository a = %+v, want name landing/v2/index.html, version \"\", format raw", describe(m))
 	}
@@ -117,7 +117,7 @@ func requireUnresolved(t *testing.T, byID map[string]models.PropertyMatch, name,
 		return
 	}
 
-	if m.Resolved() || m.Version != nil || m.Format != nil {
+	if m.Name != nil || m.Version != nil || m.Format != nil {
 		t.Errorf("%s (%s) resolved to %+v, want unresolved", name, id, describe(m))
 	}
 }
