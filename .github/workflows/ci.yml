@@ -55,6 +55,11 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      # The slim builds (-tags noai, nomcp) leave out the AI and MCP code. Code that
+      # only compiles in the full build slips past the step above (#448).
+      - name: go vet (slim builds)
+        run: make vet-tags
+
       - name: go mod tidy (verify no drift)
         run: |
           go mod tidy -diff
@@ -76,6 +81,11 @@ jobs:
       # test lives in; the coverage job merges this with the integration profile.
       - name: go test (race, unit packages)
         run: go test -race -covermode=atomic -coverpkg=./... -coverprofile=coverage-unit.out -timeout 10m ./...
+
+      # The unit tests again in the slimmest build, so tests that need the AI or MCP
+      # code are tagged accordingly. No race detector or coverage: the run above has both.
+      - name: go test (slim build, noai+nomcp)
+        run: go test -short -tags noai,nomcp -timeout 10m ./...
 
       - name: upload unit coverage profile
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
