@@ -42,17 +42,19 @@ func (r *recordingSearcher) SearchPage(
 	return out, total, nil
 }
 
-// fakeProjectScope keeps the repositories in keep and records the filter.
+// fakeProjectScope keeps the repositories in keep, records the filter and counts how
+// often the caller's roles are resolved.
 type fakeProjectScope struct {
-	keep   map[uuid.UUID]struct{}
-	uses   bool
-	calls  int
-	filter search.SearchFilter
+	keep      map[uuid.UUID]struct{}
+	uses      bool
+	calls     int
+	usesCalls int
+	filter    search.SearchFilter
 }
 
 func (f *fakeProjectScope) NarrowToProjects(
 	_ context.Context, readable map[uuid.UUID]struct{}, filter search.SearchFilter,
-) (map[uuid.UUID]struct{}, error) {
+) (map[uuid.UUID]struct{}, bool, error) {
 	f.calls++
 	f.filter = filter
 
@@ -63,10 +65,14 @@ func (f *fakeProjectScope) NarrowToProjects(
 		}
 	}
 
-	return kept, nil
+	return kept, f.uses, nil
 }
 
-func (f *fakeProjectScope) UsesProjects(context.Context) (bool, error) { return f.uses, nil }
+func (f *fakeProjectScope) UsesProjects(context.Context) (bool, error) {
+	f.usesCalls++
+
+	return f.uses, nil
+}
 
 // projectSearchHarness is the fixture with UUID repository ids, so they reach the
 // readable set, and a recording searcher.
@@ -150,6 +156,54 @@ func TestSearchArtifactsTooBroadHint(t *testing.T) {
 
 		if strings.Contains(text, "project:<project>") != uses {
 			t.Errorf("uses=%v: message %q, project:<project> suggested = %v", uses, text, !uses)
+		}
+	}
+}
+
+// TestSearchArtifactsTooBroadReusesNarrowedRoles: when the search was narrowed by
+// project, the too-broad answer reuses the roles the narrowing resolved.
+func TestSearchArtifactsTooBroadReusesNarrowedRoles(t *testing.T) {
+	for _, uses := range []bool{true, false} {
+		h, rs, ids := projectSearchHarness(t)
+		rs.total = search.MaxSearchResults + 1
+		scope := &fakeProjectScope{keep: map[uuid.UUID]struct{}{ids[0]: {}}, uses: uses}
+		h.s.SetProjectScope(scope)
+
+		text, isErr := h.call(t, "search_artifacts", map[string]any{"query": "pad project_role:viewer"})
+		if !isErr || !strings.Contains(text, "query matches more than") {
+			t.Fatalf("uses=%v: got (%q, %v), want the too broad error", uses, text, isErr)
+		}
+
+		if scope.calls != 1 || scope.usesCalls != 0 {
+			t.Errorf("uses=%v: narrowed %d times, resolved roles again %d times; want 1 and 0", uses, scope.calls, scope.usesCalls)
+		}
+
+		if strings.Contains(text, "project:<project>") != uses {
+			t.Errorf("uses=%v: message %q", uses, text)
+		}
+	}
+}
+
+// TestSearchArtifactsRejectsBadProjectFilters: the MCP tool refuses what
+// GET /api/v1/search refuses with 400 invalid_filter, as a tool error the model can
+// read, before any project lookup.
+func TestSearchArtifactsRejectsBadProjectFilters(t *testing.T) {
+	for name, query := range map[string]string{
+		"unknown role":          "pad project_role:Viewer",
+		"too many projects":     "pad" + strings.Repeat(" project:acme", 51),
+		"too many project_role": "pad" + strings.Repeat(" project_role:viewer", 51),
+	} {
+		h, rs, _ := projectSearchHarness(t)
+		scope := &fakeProjectScope{uses: true}
+		h.s.SetProjectScope(scope)
+
+		text, isErr := h.call(t, "search_artifacts", map[string]any{"query": query})
+		if !isErr || !strings.Contains(text, "project") || strings.Contains(text, "internal error") {
+			t.Errorf("%s: got (%q, %v), want a tool error naming the project filter", name, text, isErr)
+		}
+
+		if scope.calls != 0 || rs.readable != nil {
+			t.Errorf("%s: scope called %d times, searched %v; want neither", name, scope.calls, rs.readable)
 		}
 	}
 }

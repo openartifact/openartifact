@@ -7,6 +7,7 @@ package search
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"slices"
 	"strconv"
 	"strings"
@@ -20,6 +21,30 @@ import (
 // validProjectRole reports whether role is a project role project_role accepts.
 func validProjectRole(role string) bool {
 	return models.ProjectRoleRank(role) > 0
+}
+
+// Errors of CheckProjectFilters.
+var (
+	ErrUnknownProjectRole    = errors.New("project_role must be viewer, developer, maintainer or owner")
+	ErrTooManyProjectFilters = errors.New("too many project or project_role filters")
+)
+
+// CheckProjectFilters applies the rules GET /api/v1/search answers with
+// 400 invalid_filter to the project filters, so the MCP search tool enforces the same
+// ones: every project_role is a project role, and there are at most maxFilterValues
+// project and project_role values.
+func CheckProjectFilters(f SearchFilter) error {
+	for _, role := range f.ProjectRoles {
+		if !validProjectRole(role) {
+			return ErrUnknownProjectRole
+		}
+	}
+
+	if len(f.Projects) > maxFilterValues || len(f.ProjectRoles) > maxFilterValues {
+		return ErrTooManyProjectFilters
+	}
+
+	return nil
 }
 
 // ProjectScope applies the project: and project_role: filters of a search for the
@@ -76,7 +101,8 @@ func (s *ProjectScope) UsesProjects(ctx context.Context) (bool, error) {
 }
 
 // NarrowToProjects returns the repositories of readable that the project filters
-// keep. It never adds a repository: a repository stays only when the caller can
+// keep, and whether the caller holds a project role (UsesProjects), which it has
+// resolved anyway, so a too-broad answer need not resolve it again. It never adds a repository: a repository stays only when the caller can
 // already read it, its project matches filter.Projects (name or slug) when that is
 // set, and the caller's effective role there (see callerRoles) is one of
 // filter.ProjectRoles when that is set.
@@ -93,29 +119,30 @@ func (s *ProjectScope) NarrowToProjects(
 	ctx context.Context,
 	readable map[uuid.UUID]struct{},
 	filter SearchFilter,
-) (map[uuid.UUID]struct{}, error) {
+) (map[uuid.UUID]struct{}, bool, error) {
 	kept := map[uuid.UUID]struct{}{}
-	if len(readable) == 0 {
-		return kept, nil
-	}
 
 	c, err := s.callerRoles(ctx)
-	if err != nil || !c.any() {
-		return kept, err
+	if err != nil {
+		return nil, false, err
+	}
+
+	if len(readable) == 0 || !c.any() {
+		return kept, c.any(), nil
 	}
 
 	query, args := projectReposQuery(c, filter)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err //nolint:wrapcheck // logged by the caller
+		return nil, false, err //nolint:wrapcheck // logged by the caller
 	}
 	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var rawID, projectID, name, slug string
 		if err := rows.Scan(&rawID, &projectID, &name, &slug); err != nil {
-			return nil, err //nolint:wrapcheck // logged by the caller
+			return nil, false, err //nolint:wrapcheck // logged by the caller
 		}
 
 		id, err := uuid.Parse(rawID)
@@ -137,7 +164,7 @@ func (s *ProjectScope) NarrowToProjects(
 		}
 	}
 
-	return kept, rows.Err() //nolint:wrapcheck // logged by the caller
+	return kept, true, rows.Err() //nolint:wrapcheck // logged by the caller
 }
 
 // projectReposQuery selects the live repositories outside the system project that
