@@ -47,8 +47,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <th scope="col" class="text-right px-4 py-2.5 font-medium" :class="ACTIONS_HEAD">{{ t('common.actions') }}</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-border">
-            <tr v-for="feed in feeds" :key="feed.id" class="group/row hover:bg-surface-hover/40 transition-colors align-top" data-testid="vex-feed-row">
+          <tbody>
+            <tr
+              v-for="feed in feeds"
+              :key="feed.id"
+              class="group/row hover:bg-surface-hover/40 transition-colors align-top border-t border-border"
+              data-testid="vex-feed-row"
+            >
               <td class="px-4 py-3" :class="GROW_CELL">
                 <span class="block truncate font-medium text-foreground" :title="feed.name">{{ feed.name }}</span>
                 <span class="block truncate text-xs font-mono text-muted" :title="feed.url">{{ feed.url }}</span>

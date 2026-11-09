@@ -25,14 +25,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <span class="text-sm">{{ t('security.vexSuggest.loading') }}</span>
     </div>
 
-    <div v-else-if="loadError" class="py-10 text-center" role="alert">
-      <p class="text-sm text-danger">{{ loadError }}</p>
-      <AppButton variant="secondary" size="sm" @click="reload">{{ t('security.common.retry') }}</AppButton>
-    </div>
+    <StateBlock v-else-if="loadError" variant="error" :hint="loadError" :level="3">
+      <template #action>
+        <AppButton variant="secondary" size="sm" @click="reload">{{ t('security.common.retry') }}</AppButton>
+      </template>
+    </StateBlock>
 
-    <p v-else-if="suggestions.length === 0" class="px-4 py-8 text-center text-sm text-muted" data-testid="vex-suggestions-empty">
-      {{ t('security.vexSuggest.empty') }}
-    </p>
+    <StateBlock
+      v-else-if="suggestions.length === 0"
+      :title="t('security.vexSuggest.empty')"
+      :level="3"
+      data-testid="vex-suggestions-empty"
+    />
 
     <TableScroller v-else>
       <table class="w-full text-sm">
@@ -90,6 +94,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { ArrowPathIcon, CheckIcon, XMarkIcon } from '@heroicons/vue/20/solid'
 import AppButton from './AppButton.vue'
+import StateBlock from './ui/StateBlock.vue'
 import RowActions, { type RowAction } from './ui/RowActions.vue'
 import TableScroller from './ui/TableScroller.vue'
 import { ACTIONS_CELL, ACTIONS_HEAD, GROW_CELL } from './ui/tableStyles'
