@@ -47,9 +47,10 @@ curl -X DELETE HOST/api/v1/repositories/REPO/artifacts/$AID/properties/vcs.revis
 oa props list REPO ARTIFACT_ID
 oa props set REPO ARTIFACT_ID KEY VALUE      # PATCH: one key
 oa props delete REPO ARTIFACT_ID KEY
+oa props search REPO KEY VALUE               # ids of the artifacts whose KEY equals VALUE
 ```
 
-Search through the API (above); `oa props search` expects a list of objects, while the endpoint returns `{"artifact_ids": [...]}`.
+`oa props search` prints the matching artifact ids under an `ARTIFACT_ID` heading, or a JSON array of ids with `--format json`. All flags: [CLI reference](../reference/cli.md#oa-props-search).
 
 ## Properties that other features read
 
