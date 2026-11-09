@@ -37,6 +37,7 @@ const (
 	codeInvalid      = "FEDERATION_INVALID_REQUEST"
 	codeQuarantined  = "ARTIFACT_QUARANTINED"
 	codeInternal     = "INTERNAL_ERROR"
+	codeUnavailable  = "SERVICE_UNAVAILABLE"
 )
 
 // Server answers the pull requests of peers under /federation/v1. It is
@@ -106,21 +107,42 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		}
 
 		if err != nil {
-			s.log.Errorw("federation: authenticate peer token", "error", err)
-			httpx.WriteError(w, http.StatusInternalServerError, codeInternal, "internal error")
+			s.authUnavailable(w, r, "federation: authenticate peer token", err)
 
 			return
 		}
 
 		repo, err := s.store.RepoByID(r.Context(), repoID)
-		if err != nil {
+		if errors.Is(err, ErrNotFound) {
 			httpx.WriteError(w, http.StatusUnauthorized, codeUnauthorized, "peer token refused")
+
+			return
+		}
+
+		if err != nil {
+			s.authUnavailable(w, r, "federation: load peer token repository", err)
 
 			return
 		}
 
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, repo)))
 	})
+}
+
+// authUnavailable answers a peer whose token could not be checked because the
+// database failed: 503 with Retry-After, never 401, so the peer backs off and
+// does not report its token as refused. A request whose client went away is
+// only logged at debug.
+func (s *Server) authUnavailable(w http.ResponseWriter, r *http.Request, msg string, err error) {
+	if errors.Is(err, context.Canceled) && r.Context().Err() != nil {
+		s.log.Debugw(msg, "error", err)
+
+		return
+	}
+
+	s.log.Errorw(msg, "error", err)
+	w.Header().Set("Retry-After", "5")
+	httpx.WriteError(w, http.StatusServiceUnavailable, codeUnavailable, "service temporarily unavailable")
 }
 
 func repoFrom(r *http.Request) *RepoInfo {
