@@ -50,7 +50,7 @@ func (f *repoStatsFake) callCount() int {
 
 func TestRepoStatsPassDrainsTheBacklogInBatches(t *testing.T) {
 	db := &repoStatsFake{backlog: 2*repoStatsBatch + 3}
-	w := NewRepoStatsWorker(db, testLog(t), time.Minute)
+	w := NewRepoStatsWorker(db, testLogger(t), time.Minute)
 
 	pass, err := w.RunOnce(context.Background())
 	if err != nil {
@@ -78,7 +78,7 @@ func TestRepoStatsPassDrainsTheBacklogInBatches(t *testing.T) {
 
 func TestRepoStatsPassSkippedWhenAnotherReplicaHoldsTheLock(t *testing.T) {
 	db := &repoStatsFake{backlog: 5}
-	w := NewRepoStatsWorker(db, testLog(t), time.Minute)
+	w := NewRepoStatsWorker(db, testLogger(t), time.Minute)
 	w.lock = func(context.Context) (func(), bool, error) { return func() {}, false, nil }
 
 	pass, err := w.RunOnce(context.Background())
@@ -90,7 +90,7 @@ func TestRepoStatsPassSkippedWhenAnotherReplicaHoldsTheLock(t *testing.T) {
 func TestRepoStatsPassReleasesTheLockAndReportsFailures(t *testing.T) {
 	boom := errors.New("boom")
 	db := &repoStatsFake{err: boom}
-	w := NewRepoStatsWorker(db, testLog(t), time.Minute)
+	w := NewRepoStatsWorker(db, testLogger(t), time.Minute)
 
 	released := false
 	w.lock = func(context.Context) (func(), bool, error) { return func() { released = true }, true, nil }
@@ -106,7 +106,7 @@ func TestRepoStatsPassReleasesTheLockAndReportsFailures(t *testing.T) {
 
 func TestRepoStatsPassStopsWhenTheContextEnds(t *testing.T) {
 	db := &repoStatsFake{backlog: 10 * repoStatsBatch}
-	w := NewRepoStatsWorker(db, testLog(t), time.Minute)
+	w := NewRepoStatsWorker(db, testLogger(t), time.Minute)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -118,7 +118,7 @@ func TestRepoStatsPassStopsWhenTheContextEnds(t *testing.T) {
 
 func TestRepoStatsWorkerRunsAtStartAndStops(t *testing.T) {
 	db := &repoStatsFake{backlog: 7}
-	w := NewRepoStatsWorker(db, testLog(t), 10*time.Millisecond)
+	w := NewRepoStatsWorker(db, testLogger(t), 10*time.Millisecond)
 
 	w.Start()
 
@@ -154,7 +154,7 @@ func TestRepoStatsWorkerRunsAtStartAndStops(t *testing.T) {
 
 func TestRepoStatsWorkerDisabledWithoutInterval(t *testing.T) {
 	db := &repoStatsFake{backlog: 7}
-	w := NewRepoStatsWorker(db, testLog(t), 0)
+	w := NewRepoStatsWorker(db, testLogger(t), 0)
 
 	w.Start()
 	w.Stop()
