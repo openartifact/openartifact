@@ -14,7 +14,7 @@ spec:
     access token (OIDC trust policy) and write a docker config.json so skopeo, oras and cosign can log in.
     The token itself is written to the file "token" next to it (mode 0600) for later oa steps (OA_TOKEN).
     The enclosing Task must project the token volume and mount it at tokenPath.
-  image: ghcr.io/openartifact/oa-tekton:0.21.0
+  image: ghcr.io/openartifact/oa-tekton:0.22.0
   params:
     - name: server
       type: string

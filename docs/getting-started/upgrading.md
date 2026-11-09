@@ -127,6 +127,17 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
+### 0.22.0
+
+**What you must do**
+
+- Page through `GET /api/v1/repositories/{name}/license/scans` in scripts that read it: it now returns 50 scans per page by default (`page`, `per_page` up to 100, `total`, `has_more`) instead of all of them. The web UI and `oa license list` already page.
+- Check `mcp.httpPath` if you set it: the server refuses to start unless it starts with `/`, is not `/`, does not end with `/` and does not overlap `/api`, `/repos`, `/v2`, `/federation` or `/.well-known`.
+- Repositories of formats that cannot enforce curation (terraform, nix) now reject a `curation_mode` other than `off` on create and update.
+- Nothing else is required. Migrations `026` and `027` are additive: `026` serialises the election of the latest scan per artifact, `027` adds the vendor VEX feed and VEX suggestion tables and the `vex.*` audit actions (`027_vex_import_validate.no_tx.sql` validates the widened audit constraint without locking writes).
+
+New: [vendor CSAF VEX feeds](../security/vex-feeds.md) and VEX decisions shared between federated peers.
+
 ### 0.21.0
 
 **What you must do**
