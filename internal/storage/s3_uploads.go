@@ -492,6 +492,15 @@ func (s *S3BlobStore) deleteObject(ctx context.Context, key string) error {
 // part and the multipart upload is completed, which is repeatable: once it is
 // gone, the finished object answers.
 func (s *S3BlobStore) CompleteUpload(ctx context.Context, id string, at UploadPosition) (StagedObject, error) {
+	ctx, end := telemetry.StartSpan(ctx, "storage.s3.upload_complete")
+	obj, err := s.completeUpload(ctx, id, at)
+
+	end(err)
+
+	return obj, err
+}
+
+func (s *S3BlobStore) completeUpload(ctx context.Context, id string, at UploadPosition) (StagedObject, error) {
 	key, err := uploadKey(id)
 	if err != nil {
 		return StagedObject{}, err
@@ -670,11 +679,14 @@ func uploadParts(parts []types.Part, count int, offset int64) ([]types.Completed
 }
 
 // PromoteUpload implements UploadStore.
-func (s *S3BlobStore) PromoteUpload(ctx context.Context, id, sha256, version string, metadata map[string]string) error {
+func (s *S3BlobStore) PromoteUpload(ctx context.Context, id, sha256, version string, metadata map[string]string) (err error) {
 	key, err := uploadKey(id)
 	if err != nil {
 		return err
 	}
+
+	ctx, end := telemetry.StartSpan(ctx, "storage.s3.upload_promote")
+	defer func() { end(err) }()
 
 	return s.promoteObject(ctx, key, sha256, version, metadata)
 }
@@ -682,25 +694,34 @@ func (s *S3BlobStore) PromoteUpload(ctx context.Context, id, sha256, version str
 // OpenUpload implements UploadStore. The SDK checks the CRC32 of a download
 // against the checksum header of the object, which S3-compatible stores (Garage)
 // report for a multipart object as that of one part; the digest of the blob is
-// verified by the caller anyway.
+// verified by the caller anyway. The span covers the request that opens the
+// object, not the reading of its body.
 func (s *S3BlobStore) OpenUpload(ctx context.Context, id, version string) (io.ReadCloser, error) {
 	key, err := uploadKey(id)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.openVersioned(ctx, key, version, func(o *s3.Options) {
+	ctx, end := telemetry.StartSpan(ctx, "storage.s3.upload_open")
+	rc, err := s.openVersioned(ctx, key, version, func(o *s3.Options) {
 		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 	})
+
+	end(err)
+
+	return rc, err
 }
 
 // DeleteUpload implements UploadStore: the object, the tails and every
 // unfinished multipart upload of the key.
-func (s *S3BlobStore) DeleteUpload(ctx context.Context, id string) error {
+func (s *S3BlobStore) DeleteUpload(ctx context.Context, id string) (err error) {
 	key, err := uploadKey(id)
 	if err != nil {
 		return err
 	}
+
+	ctx, end := telemetry.StartSpan(ctx, "storage.s3.upload_delete")
+	defer func() { end(err) }()
 
 	pages := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{
 		Bucket: aws.String(s.bucket),
