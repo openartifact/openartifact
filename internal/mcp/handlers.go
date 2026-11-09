@@ -74,6 +74,10 @@ func (s *Server) searchArtifacts(ctx context.Context, in searchArtifactsIn) (sea
 				return searchResult{}, broad
 			}
 
+			if bad, ok := errors.AsType[*invalidFilterError](searchErr); ok {
+				return searchResult{}, bad
+			}
+
 			return searchResult{}, s.internalError("search artifacts", searchErr)
 		}
 	}
@@ -222,11 +226,20 @@ func (s *Server) searchAllRepos(ctx context.Context, query, format string) ([]se
 		filter.Formats = append(filter.Formats, format)
 	}
 
-	// project: and project_role: narrow the readable set exactly as on GET /api/v1/search.
+	// project: and project_role: follow the rules of GET /api/v1/search and narrow the
+	// readable set the same way.
+	if err := search.CheckProjectFilters(filter); err != nil {
+		return nil, &invalidFilterError{msg: err.Error()}
+	}
+
+	var usesProjects, usesProjectsKnown bool
+
 	if filter.ProjectScoped() {
-		if readable, err = s.narrowToProjects(ctx, readable, filter); err != nil {
+		if readable, usesProjects, err = s.narrowToProjects(ctx, readable, filter); err != nil {
 			return nil, err
 		}
+
+		usesProjectsKnown = true
 	}
 
 	results, total, err := s.searcher.SearchPage(ctx, filter, search.PageOptions{}, maxSearchHits, 0, readable)
@@ -235,7 +248,11 @@ func (s *Server) searchAllRepos(ctx context.Context, query, format string) ([]se
 	}
 
 	if total > search.MaxSearchResults {
-		return nil, &tooBroadError{msg: search.TooBroadMessage(filter, s.usesProjects(ctx))}
+		if !usesProjectsKnown {
+			usesProjects = s.usesProjects(ctx)
+		}
+
+		return nil, &tooBroadError{msg: search.TooBroadMessage(filter, usesProjects)}
 	}
 
 	hits := make([]searchHit, 0, len(results))
@@ -254,14 +271,15 @@ func (s *Server) searchAllRepos(ctx context.Context, query, format string) ([]se
 	return hits, nil
 }
 
-// narrowToProjects applies the project filters; without a ProjectScope they keep nothing.
+// narrowToProjects applies the project filters and reports whether the caller holds a
+// project role; without a ProjectScope they keep nothing.
 func (s *Server) narrowToProjects(
 	ctx context.Context,
 	readable map[uuid.UUID]struct{},
 	filter search.SearchFilter,
-) (map[uuid.UUID]struct{}, error) {
+) (map[uuid.UUID]struct{}, bool, error) {
 	if s.projects == nil {
-		return map[uuid.UUID]struct{}{}, nil
+		return map[uuid.UUID]struct{}{}, false, nil
 	}
 
 	return s.projects.NarrowToProjects(ctx, readable, filter) //nolint:wrapcheck // logged by the caller with context
@@ -353,3 +371,10 @@ var (
 type tooBroadError struct{ msg string }
 
 func (e *tooBroadError) Error() string { return e.msg }
+
+// invalidFilterError reports a project: or project_role: qualifier search refuses (an
+// unknown role, or too many values); like tooBroadError it is a tool error the model
+// can read and correct.
+type invalidFilterError struct{ msg string }
+
+func (e *invalidFilterError) Error() string { return e.msg }

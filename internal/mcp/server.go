@@ -66,8 +66,11 @@ type ReadFilterFunc func(ctx context.Context) (func(repo *models.Repository) (bo
 // caller identified by ctx (search.ProjectScope satisfies it).
 type ProjectScope interface {
 	// NarrowToProjects returns the repositories of readable the project filters
-	// keep; it never adds one and never modifies readable.
-	NarrowToProjects(ctx context.Context, readable map[uuid.UUID]struct{}, filter search.SearchFilter) (map[uuid.UUID]struct{}, error)
+	// keep (it never adds one and never modifies readable), and whether the caller
+	// holds a project role, as UsesProjects would.
+	NarrowToProjects(
+		ctx context.Context, readable map[uuid.UUID]struct{}, filter search.SearchFilter,
+	) (map[uuid.UUID]struct{}, bool, error)
 	// UsesProjects reports whether the caller holds a project role, so that
 	// project:<project> is worth suggesting.
 	UsesProjects(ctx context.Context) (bool, error)

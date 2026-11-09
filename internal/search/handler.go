@@ -159,8 +159,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// The project filters narrow the readable set itself, so the package and the
 	// repository hits below both honour them.
+	// usesProjects is known once the narrowing has resolved the caller's roles; the
+	// too-broad answer below reuses it instead of resolving them again.
+	scope := h.projectScope()
+
+	var usesProjects, usesProjectsKnown bool
+
 	if filter.ProjectScoped() {
-		readableRepos, err = h.projectScope().NarrowToProjects(ctx, readableRepos, filter)
+		readableRepos, usesProjects, err = scope.NarrowToProjects(ctx, readableRepos, filter)
+		usesProjectsKnown = err == nil
 		if err != nil {
 			h.log.Errorw("resolve project roles failed", "error", err)
 			httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "permission resolution failed")
@@ -178,9 +185,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if count > MaxSearchResults {
-		usesProjects, err := h.projectScope().UsesProjects(ctx)
-		if err != nil {
-			h.log.Errorw("resolve project roles failed", "error", err)
+		if !usesProjectsKnown {
+			if usesProjects, err = scope.UsesProjects(ctx); err != nil {
+				h.log.Errorw("resolve project roles failed", "error", err)
+			}
 		}
 
 		writeTooBroad(w, filter, usesProjects)
@@ -231,13 +239,9 @@ func parseFilter(w http.ResponseWriter, r *http.Request, q string) (SearchFilter
 	filter.Projects = append(filter.Projects, query["project"]...)
 	filter.ProjectRoles = append(filter.ProjectRoles, query["project_role"]...)
 
-	for _, role := range filter.ProjectRoles {
-		if !validProjectRole(role) {
-			httpx.WriteError(w, http.StatusBadRequest, "invalid_filter",
-				"project_role must be viewer, developer, maintainer or owner")
-
-			return SearchFilter{}, false
-		}
+	if err := CheckProjectFilters(filter); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_filter", err.Error())
+		return SearchFilter{}, false
 	}
 
 	flagged, ok := parseFlagged(query.Get("flagged"))
@@ -248,9 +252,8 @@ func parseFilter(w http.ResponseWriter, r *http.Request, q string) (SearchFilter
 
 	filter.Flagged = flagged
 
-	if len(filter.Formats) > maxFilterValues || len(filter.Repos) > maxFilterValues ||
-		len(filter.Projects) > maxFilterValues || len(filter.ProjectRoles) > maxFilterValues {
-		httpx.WriteError(w, http.StatusBadRequest, "invalid_filter", "too many format, repo, project or project_role filters")
+	if len(filter.Formats) > maxFilterValues || len(filter.Repos) > maxFilterValues {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_filter", "too many format or repo filters")
 		return SearchFilter{}, false
 	}
 
