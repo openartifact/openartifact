@@ -15,10 +15,10 @@ import (
 	"fmt"
 	"io"
 
-	rpmutils "github.com/M0Rf30/go-rpmutils"
+	rpmutils "github.com/M0Rf30/pkgformat/rpm"
 	"github.com/ProtonMail/go-crypto/openpgp/packet"
 
-	"github.com/openartifact/openartifact/pkg/gpg"
+	"github.com/M0Rf30/pkgformat/gpg"
 )
 
 // ErrKeyNotSupported means the signer cannot expose a private key to sign packages with.

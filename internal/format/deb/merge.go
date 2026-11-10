@@ -15,8 +15,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/M0Rf30/pkgformat/xzlimit"
 	"github.com/openartifact/openartifact/internal/limitio"
-	"github.com/openartifact/openartifact/pkg/xzlimit"
 )
 
 const (

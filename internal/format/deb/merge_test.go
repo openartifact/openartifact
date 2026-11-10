@@ -16,7 +16,7 @@ import (
 
 	"github.com/ulikunitz/xz"
 
-	"github.com/openartifact/openartifact/pkg/xzlimit"
+	"github.com/M0Rf30/pkgformat/xzlimit"
 )
 
 const packagesFixture = "Package: foo\nVersion: 1.0-1\nArchitecture: amd64\nFilename: pool/main/f/foo/foo_1.0-1_amd64.deb\nSize: 10\nSHA256: aa\nDescription: first\n" +

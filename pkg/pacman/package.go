@@ -15,9 +15,9 @@ import (
 	"path"
 	"strings"
 
+	"github.com/M0Rf30/pkgformat/xzlimit"
 	"github.com/klauspost/compress/zstd"
 	"github.com/openartifact/openartifact/internal/limitio"
-	"github.com/openartifact/openartifact/pkg/xzlimit"
 )
 
 // Package compressions, the extension of the package file after ".pkg.tar.".

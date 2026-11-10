@@ -11,7 +11,7 @@ import (
 
 	"github.com/ulikunitz/xz"
 
-	"github.com/openartifact/openartifact/pkg/xzlimit"
+	"github.com/M0Rf30/pkgformat/xzlimit"
 )
 
 // TestOpenCompressedRejectsHugeXZDictionary: an uploaded package whose xz

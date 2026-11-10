@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/openartifact/openartifact/pkg/gpg"
+	"github.com/M0Rf30/pkgformat/gpg"
 )
 
 type ReleaseSigner struct {

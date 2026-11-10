@@ -16,11 +16,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/webhook"
-	"github.com/openartifact/openartifact/pkg/gpg"
 )
 
 // pacmanDB is an in-memory pacman package store with the unique live file name.

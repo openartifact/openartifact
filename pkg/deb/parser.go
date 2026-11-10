@@ -16,8 +16,8 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
+	"github.com/M0Rf30/pkgformat/xzlimit"
 	"github.com/openartifact/openartifact/internal/limitio"
-	"github.com/openartifact/openartifact/pkg/xzlimit"
 )
 
 // Sentinel errors for deb file parsing.

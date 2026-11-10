@@ -14,6 +14,7 @@ import (
 
 	"context"
 
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -21,7 +22,6 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/gpgkeys"
 	"github.com/openartifact/openartifact/internal/repotype"
-	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 

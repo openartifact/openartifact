@@ -16,8 +16,8 @@ import (
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/pkg/gpg"
 )
 
 func pacmanRow(id, name, version, arch, repoArch string) *models.PacmanPackage {

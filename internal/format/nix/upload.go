@@ -17,6 +17,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
+	"github.com/M0Rf30/pkgformat/xzlimit"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
@@ -27,7 +28,6 @@ import (
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/nix"
-	"github.com/openartifact/openartifact/pkg/xzlimit"
 )
 
 // maxNarBytes bounds one uploaded NAR file. It is spooled to a temporary file

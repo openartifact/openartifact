@@ -15,8 +15,8 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
 
+	"github.com/M0Rf30/pkgformat/xzlimit"
 	"github.com/openartifact/openartifact/pkg/rpm"
-	"github.com/openartifact/openartifact/pkg/xzlimit"
 )
 
 func testPackages() []rpm.Package {

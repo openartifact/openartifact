@@ -13,8 +13,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/gpgresolver"
+
 	"database/sql"
 
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/go-chi/chi/v5"
 	database "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -30,7 +33,6 @@ import (
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/worker"
-	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 	"github.com/openartifact/openartifact/pkg/rpmsign"
@@ -68,7 +70,7 @@ type RPMUploadHandler struct {
 	publisher  webhook.Publisher
 
 	packageDeleter PackageDeleter
-	keys           gpg.Resolver
+	keys           gpgresolver.Resolver
 }
 
 func NewRPMUploadHandler(log *logger.Logger, db RPMUploadStore, blobStore storage.BlobStore, reg *metrics.Registry) *RPMUploadHandler {
@@ -91,7 +93,7 @@ func (h *RPMUploadHandler) SetRPMWorker(w *worker.RPMetadataWorker) {
 }
 
 // SetKeyResolver wires the signing keys used by repositories with sign_packages.
-func (h *RPMUploadHandler) SetKeyResolver(r gpg.Resolver) {
+func (h *RPMUploadHandler) SetKeyResolver(r gpgresolver.Resolver) {
 	h.keys = r
 }
 

@@ -16,8 +16,8 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
 
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/pkg/gpg"
 )
 
 // aptRepo writes the blobs a DebMetadataWorker generated for dist into a
@@ -126,7 +126,7 @@ func TestDebMetadataVerifiesWithApt(t *testing.T) {
 
 	_ = pw.Close()
 
-	signer, err := gpg.NewLocalSigner(bytes.NewReader(priv.Bytes()), nil)
+	signer, err := gpg.ParsePrivateKey(bytes.NewReader(priv.Bytes()), nil)
 	if err != nil {
 		t.Fatalf("NewLocalSigner: %v", err)
 	}

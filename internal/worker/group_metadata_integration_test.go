@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
@@ -27,7 +28,6 @@ import (
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/proxy"
-	"github.com/openartifact/openartifact/pkg/gpg"
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 

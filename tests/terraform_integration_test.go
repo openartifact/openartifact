@@ -18,11 +18,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/format/terraform"
 	"github.com/openartifact/openartifact/internal/storage"
-	"github.com/openartifact/openartifact/pkg/gpg"
 )
 
 // tfSigner resolves one fixed signing key for every repository.

@@ -12,13 +12,15 @@ import (
 	"sort"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/gpgresolver"
+
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/workq"
-	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -43,13 +45,18 @@ type DebMetadataStore interface {
 type DebMetadataWorker struct {
 	db        DebMetadataStore
 	blobStore storage.BlobStore
-	signers   gpg.Resolver
+	signers   gpgresolver.Resolver
 	log       *logger.Logger
 	q         *regenQueue[string]
 	onStale   func(repoID string)
 }
 
-func NewDebMetadataWorker(db DebMetadataStore, blobStore storage.BlobStore, signers gpg.Resolver, log *logger.Logger) *DebMetadataWorker {
+func NewDebMetadataWorker(
+	db DebMetadataStore,
+	blobStore storage.BlobStore,
+	signers gpgresolver.Resolver,
+	log *logger.Logger,
+) *DebMetadataWorker {
 	w := &DebMetadataWorker{db: db, blobStore: blobStore, signers: signers, log: log}
 	w.q = newRegenQueue("deb", log, w.regenerate)
 	w.q.setCodec(stringRegenCodec())

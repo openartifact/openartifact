@@ -7,9 +7,9 @@ package worker
 import (
 	"fmt"
 
+	"github.com/M0Rf30/pkgformat/gpg"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
-	"github.com/openartifact/openartifact/pkg/gpg"
 )
 
 // addSignedRelease adds InRelease and Release.gpg for release under prefix. A

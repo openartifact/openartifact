@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openartifact/openartifact/pkg/gpg"
+	"github.com/M0Rf30/pkgformat/gpg"
 )
 
 // Sentinel errors for RPM signer.

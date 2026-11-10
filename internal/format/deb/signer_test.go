@@ -8,9 +8,9 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
-	"github.com/openartifact/openartifact/pkg/gpg"
 )
 
 func TestReleaseSigner_SignRelease(t *testing.T) {
@@ -25,7 +25,7 @@ func TestReleaseSigner_SignRelease(t *testing.T) {
 	_ = entity.SerializePrivate(w, nil)
 	_ = w.Close()
 
-	gpgSigner, err := gpg.NewLocalSigner(bytes.NewReader(keyBuf.Bytes()), nil)
+	gpgSigner, err := gpg.ParsePrivateKey(bytes.NewReader(keyBuf.Bytes()), nil)
 	if err != nil {
 		t.Fatalf("NewLocalSigner failed: %v", err)
 	}

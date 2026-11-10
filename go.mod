@@ -8,7 +8,6 @@ go 1.27.0
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
-	github.com/M0Rf30/go-rpmutils v0.4.1-0.20261110113359-ad938e132154
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/aws/aws-sdk-go-v2 v1.47.5
 	github.com/aws/aws-sdk-go-v2/config v1.33.13
@@ -23,7 +22,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.8
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.12.0
-	github.com/klauspost/compress v1.20.3
+	github.com/klauspost/compress v1.20.4
 	github.com/moby/moby/api v1.56.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/pelletier/go-toml/v2 v2.4.3
@@ -60,8 +59,8 @@ require (
 	golang.org/x/mod v0.42.0
 	golang.org/x/net v0.62.0
 	golang.org/x/oauth2 v0.37.0
-	golang.org/x/sync v0.24.0
-	golang.org/x/sys v0.49.0
+	golang.org/x/sync v0.25.0
+	golang.org/x/sys v0.50.0
 	golang.org/x/term v0.47.0
 	golang.org/x/time v0.16.0
 	google.golang.org/protobuf v1.36.12
@@ -71,6 +70,7 @@ require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20261013165250-51075c6ea6bc // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect
+	github.com/M0Rf30/pkgformat v0.0.0
 	github.com/Microsoft/go-winio v0.6.4 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.25 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.5 // indirect
@@ -154,3 +154,5 @@ require (
 // ParseResponse failures (errors.Is on InvalidResponseError). Drop when
 // upstream ships both.
 replace github.com/crewjam/saml => github.com/openartifact/saml v0.5.2-oa.2
+
+replace github.com/M0Rf30/pkgformat => ../rpm

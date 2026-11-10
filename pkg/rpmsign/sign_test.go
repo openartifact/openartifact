@@ -16,10 +16,10 @@ import (
 	"strings"
 	"testing"
 
-	rpmutils "github.com/M0Rf30/go-rpmutils"
+	rpmutils "github.com/M0Rf30/pkgformat/rpm"
 	"github.com/ProtonMail/go-crypto/openpgp"
 
-	"github.com/openartifact/openartifact/pkg/gpg"
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/pkg/rpm"
 	"github.com/openartifact/openartifact/pkg/rpmsign"
 )

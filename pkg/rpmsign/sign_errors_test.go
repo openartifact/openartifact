@@ -12,7 +12,7 @@ import (
 
 	"github.com/ProtonMail/go-crypto/openpgp/packet"
 
-	"github.com/openartifact/openartifact/pkg/gpg"
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/pkg/rpmsign"
 )
 

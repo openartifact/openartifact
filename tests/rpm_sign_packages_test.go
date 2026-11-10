@@ -16,16 +16,16 @@ import (
 	"path/filepath"
 	"testing"
 
-	rpmutils "github.com/M0Rf30/go-rpmutils"
+	rpmutils "github.com/M0Rf30/pkgformat/rpm"
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-chi/chi/v5"
 
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/internal/api"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/gpgkeys"
 	"github.com/openartifact/openartifact/internal/gpgkeys/gpgkeystest"
-	"github.com/openartifact/openartifact/pkg/gpg"
 )
 
 type signUploadEnv struct {

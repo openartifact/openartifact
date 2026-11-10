@@ -13,13 +13,14 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/gpgresolver"
+
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/workq"
-	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"github.com/openartifact/openartifact/pkg/rpm"
 )
@@ -36,7 +37,7 @@ type RPMetadataStore interface {
 type RPMetadataWorker struct {
 	db        RPMetadataStore
 	blobStore storage.BlobStore
-	signers   gpg.Resolver
+	signers   gpgresolver.Resolver
 	log       *logger.Logger
 	q         *regenQueue[string]
 	onStale   func(repoID string)
@@ -45,7 +46,7 @@ type RPMetadataWorker struct {
 func NewRPMetadataWorker(
 	db RPMetadataStore,
 	blobStore storage.BlobStore,
-	signers gpg.Resolver,
+	signers gpgresolver.Resolver,
 	log *logger.Logger,
 	reg *metrics.Registry,
 ) *RPMetadataWorker {

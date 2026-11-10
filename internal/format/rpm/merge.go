@@ -21,9 +21,9 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/M0Rf30/pkgformat/xzlimit"
 	"github.com/openartifact/openartifact/internal/limitio"
 	"github.com/openartifact/openartifact/internal/pathseg"
-	"github.com/openartifact/openartifact/pkg/xzlimit"
 )
 
 // maxUpstreamDocument caps the decompressed size of one upstream repodata
