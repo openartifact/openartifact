@@ -2,9 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package apktestutil builds .apk packages and checks signed indexes for tests,
+// Package apktest builds .apk packages and checks signed indexes for tests,
 // on top of the apk package: real files in the layout abuild writes.
-package apktestutil
+package apktest
 
 import (
 	"bytes"
@@ -59,7 +59,7 @@ func Build(tb testing.TB, o Options) []byte {
 	tb.Helper()
 
 	if o.Name == "" {
-		tb.Fatal("apktestutil: Options.Name is required")
+		tb.Fatal("apktest: Options.Name is required")
 	}
 
 	files := o.Files
@@ -81,7 +81,7 @@ func Build(tb testing.TB, o Options) []byte {
 			License:     or(o.License, defaultLicense),
 			Origin:      or(o.Origin, o.Name),
 			URL:         o.URL,
-			Packager:    "apktestutil",
+			Packager:    "apktest",
 			BuildDate:   time.Unix(1700000000, 0),
 			Depends:     o.Depends,
 			Provides:    o.Provides,
@@ -91,12 +91,12 @@ func Build(tb testing.TB, o Options) []byte {
 
 	var buf bytes.Buffer
 	if _, err := apk.WritePackage(&buf, spec, apk.WriteOptions{Signer: o.Sign, TempDir: tb.TempDir()}); err != nil {
-		tb.Fatalf("apktestutil: writing the package: %v", err)
+		tb.Fatalf("apktest: writing the package: %v", err)
 	}
 
 	out := buf.Bytes()
 	if _, err := apk.ParsePackage(bytes.NewReader(out), int64(len(out))); err != nil {
-		tb.Fatalf("apktestutil: the package is not valid: %v", err)
+		tb.Fatalf("apktest: the package is not valid: %v", err)
 	}
 
 	return out

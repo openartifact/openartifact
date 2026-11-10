@@ -22,7 +22,7 @@ import (
 	pkgapk "github.com/M0Rf30/pkgformat/apk"
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/apkkeys"
-	"github.com/openartifact/openartifact/internal/apktestutil"
+	"github.com/openartifact/openartifact/internal/apktest"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
@@ -103,10 +103,10 @@ func newApkGroupStack(t *testing.T, hosted, proxies int) (*apkGroupStack, []*mod
 }
 
 // upload PUTs a package to a hosted member and regenerates its indexes.
-func (s *apkGroupStack) upload(member *models.Repository, dir string, o apktestutil.Options) []byte {
+func (s *apkGroupStack) upload(member *models.Repository, dir string, o apktest.Options) []byte {
 	s.t.Helper()
 
-	data := apktestutil.Build(s.t, o)
+	data := apktest.Build(s.t, o)
 
 	if o.Version == "" {
 		o.Version = "1.0-r0"
@@ -214,7 +214,7 @@ func (s *apkGroupStack) index(dir string) []pkgapk.Package {
 		s.t.Fatalf("GET %s index: status %d: %s", dir, rec.Code, rec.Body.String())
 	}
 
-	if err := apktestutil.VerifyIndex(rec.Body.Bytes(), name, pub); err != nil {
+	if err := apktest.VerifyIndex(rec.Body.Bytes(), name, pub); err != nil {
 		s.t.Fatalf("index of %s does not verify against the group's key: %v", dir, err)
 	}
 
@@ -238,10 +238,10 @@ func TestApkGroupMergesHostedAndProxyMembers(t *testing.T) {
 	s, m := newApkGroupStack(t, 2, 1)
 	a, b, remote := m[0], m[1], m[2]
 
-	foo := s.upload(a, apkMainDir, apktestutil.Options{Name: "foo"})
-	s.upload(a, apkMainDir, apktestutil.Options{Name: "shared"})
-	s.upload(b, apkMainDir, apktestutil.Options{Name: "shared"})
-	s.upload(b, apkMainDir, apktestutil.Options{Name: "bar", Version: "2.0-r0"})
+	foo := s.upload(a, apkMainDir, apktest.Options{Name: "foo"})
+	s.upload(a, apkMainDir, apktest.Options{Name: "shared"})
+	s.upload(b, apkMainDir, apktest.Options{Name: "shared"})
+	s.upload(b, apkMainDir, apktest.Options{Name: "bar", Version: "2.0-r0"})
 
 	s.proxyIndex(remote, apkMainDir,
 		apkEntry("foo", "9.0-r0", "x86_64", apkSum("foo9")), // hosted names win: hidden
@@ -325,7 +325,7 @@ func TestApkGroupMergeProxyVersionsKeepsProxyReleasesOfHostedNames(t *testing.T)
 		t.Fatal(err)
 	}
 
-	s.upload(m[0], apkMainDir, apktestutil.Options{Name: "foo"})
+	s.upload(m[0], apkMainDir, apktest.Options{Name: "foo"})
 	s.proxyIndex(m[1], apkMainDir, apkEntry("foo", "9.0-r0", "x86_64", apkSum("foo9")))
 
 	s.generate(apkMainDir, nil)
@@ -339,8 +339,8 @@ func TestApkGroupCallerWhoCannotReadAMemberGetsAVariantWithoutIt(t *testing.T) {
 	s, m := newApkGroupStack(t, 2, 0)
 	open, secret := m[0], m[1]
 
-	s.upload(open, apkMainDir, apktestutil.Options{Name: "public-tool"})
-	secretPkg := s.upload(secret, apkMainDir, apktestutil.Options{Name: "classified"})
+	s.upload(open, apkMainDir, apktest.Options{Name: "public-tool"})
+	secretPkg := s.upload(secret, apkMainDir, apktest.Options{Name: "classified"})
 	s.generate("", nil)
 
 	if got := strings.Join(names(s.index(apkMainDir)), ","); got != "classified-1.0-r0,public-tool-1.0-r0" {
@@ -380,7 +380,7 @@ func TestApkGroupCallerWhoCannotReadAMemberGetsAVariantWithoutIt(t *testing.T) {
 
 func TestApkGroupIndexIsResignedWithTheRotatedGroupKey(t *testing.T) {
 	s, m := newApkGroupStack(t, 1, 0)
-	s.upload(m[0], apkMainDir, apktestutil.Options{Name: "tool"})
+	s.upload(m[0], apkMainDir, apktest.Options{Name: "tool"})
 	s.generate("", nil)
 
 	oldName, oldKey := s.publicKey()
@@ -406,7 +406,7 @@ func TestApkGroupIndexIsResignedWithTheRotatedGroupKey(t *testing.T) {
 	}
 
 	rec := s.get(apkMainDir + "/APKINDEX.tar.gz")
-	if err := apktestutil.VerifyIndex(rec.Body.Bytes(), oldName, oldKey); err == nil {
+	if err := apktest.VerifyIndex(rec.Body.Bytes(), oldName, oldKey); err == nil {
 		t.Error("the regenerated index still verifies with the old key")
 	}
 
@@ -429,7 +429,7 @@ func (f refresherFunc) NotifyStale(id string) { f(id) }
 
 func TestApkGroupKeepsServingAnEmptiedDirectoryAsEmpty(t *testing.T) {
 	s, m := newApkGroupStack(t, 1, 0)
-	s.upload(m[0], apkMainDir, apktestutil.Options{Name: "tool"})
+	s.upload(m[0], apkMainDir, apktest.Options{Name: "tool"})
 	s.generate("", nil)
 
 	if got := len(s.index(apkMainDir)); got != 1 {
@@ -459,7 +459,7 @@ func TestApkGroupKeepsServingAnEmptiedDirectoryAsEmpty(t *testing.T) {
 
 func TestApkGroupWithAnUnreachableProxyServesTheHostedMembersAndRetries(t *testing.T) {
 	s, m := newApkGroupStack(t, 1, 1)
-	s.upload(m[0], apkMainDir, apktestutil.Options{Name: "tool"})
+	s.upload(m[0], apkMainDir, apktest.Options{Name: "tool"})
 
 	down := NewGroupMetadataWorker(s.pg, s.blobs, downUpstream{}, nil, fixedResolver{}, testLogger(t)).WithApkSigners(s.keys)
 	t.Cleanup(down.Stop)
@@ -491,7 +491,7 @@ func TestApkGroupsAreListedForRegeneration(t *testing.T) {
 		t.Errorf("a never generated apk group is not listed stale: %v, %v", stale, err)
 	}
 
-	s.upload(m[0], apkMainDir, apktestutil.Options{Name: "tool"})
+	s.upload(m[0], apkMainDir, apktest.Options{Name: "tool"})
 	s.generate("", nil)
 
 	stale, err = s.pg.ListStaleMetadataGroups(context.Background())

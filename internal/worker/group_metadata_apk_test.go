@@ -18,7 +18,7 @@ import (
 	"testing"
 
 	"github.com/M0Rf30/pkgformat/apk"
-	"github.com/openartifact/openartifact/internal/apktestutil"
+	"github.com/openartifact/openartifact/internal/apktest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/proxy"
@@ -356,7 +356,7 @@ func TestBuildApkMergesHostedAndProxyAndSigns(t *testing.T) {
 	}, j.owners)
 
 	// The merged index is signed with the group's key.
-	require.NoError(t, apktestutil.VerifyIndex(j.blobs[dir+"/APKINDEX.tar.gz"], "openartifact-grp.rsa.pub", pub))
+	require.NoError(t, apktest.VerifyIndex(j.blobs[dir+"/APKINDEX.tar.gz"], "openartifact-grp.rsa.pub", pub))
 }
 
 func TestBuildApkMergeProxyVersionsKeepsProxyReleases(t *testing.T) {
@@ -441,7 +441,7 @@ func TestAddEmptyApkIndexes(t *testing.T) {
 	empty, ok := j.blobs["v3.20/gone/x86_64/APKINDEX.tar.gz"]
 	require.True(t, ok)
 
-	require.NoError(t, apktestutil.VerifyIndex(empty, "openartifact-grp.rsa.pub", pub))
+	require.NoError(t, apktest.VerifyIndex(empty, "openartifact-grp.rsa.pub", pub))
 
 	pkgs, err := apk.ParseIndex(bytes.NewReader(empty))
 	require.NoError(t, err)

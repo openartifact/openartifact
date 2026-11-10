@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/M0Rf30/pkgformat/apk"
-	"github.com/openartifact/openartifact/internal/apktestutil"
+	"github.com/openartifact/openartifact/internal/apktest"
 )
 
 const (
@@ -33,7 +33,7 @@ type apkMirror struct {
 func newApkMirror(t *testing.T) *apkMirror {
 	t.Helper()
 
-	pkgBytes := apktestutil.Build(t, apktestutil.Options{Name: "hello"})
+	pkgBytes := apktest.Build(t, apktest.Options{Name: "hello"})
 
 	pkg, err := apk.ParsePackage(bytes.NewReader(pkgBytes), int64(len(pkgBytes)))
 	if err != nil {
@@ -143,7 +143,7 @@ func TestApkProxy_HeadAndConditionalRequests(t *testing.T) {
 }
 
 func TestApkProxy_Refusals(t *testing.T) {
-	other := apktestutil.Build(t, apktestutil.Options{Name: "hello", Files: map[string]string{"usr/bin/hello": "different"}})
+	other := apktest.Build(t, apktest.Options{Name: "hello", Files: map[string]string{"usr/bin/hello": "different"}})
 
 	tests := []struct {
 		name   string
