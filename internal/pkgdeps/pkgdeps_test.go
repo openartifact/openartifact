@@ -480,7 +480,7 @@ func TestDebDepends(t *testing.T) {
 func TestRPMRequires(t *testing.T) {
 	t.Parallel()
 
-	data, err := os.ReadFile(filepath.Join("..", "..", "pkg", "rpm", "testdata", "weakdeps.rpm"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "rpm", "weakdeps.rpm"))
 	if err != nil {
 		t.Fatal(err)
 	}

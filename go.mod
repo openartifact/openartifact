@@ -8,7 +8,7 @@ go 1.27.0
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
-	github.com/M0Rf30/pkgformat v0.0.0
+	github.com/M0Rf30/pkgformat v0.1.0
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/aws/aws-sdk-go-v2 v1.47.5
 	github.com/aws/aws-sdk-go-v2/config v1.33.13
@@ -157,5 +157,3 @@ require (
 // ParseResponse failures (errors.Is on InvalidResponseError). Drop when
 // upstream ships both.
 replace github.com/crewjam/saml => github.com/openartifact/saml v0.5.2-oa.2
-
-replace github.com/M0Rf30/pkgformat => ../rpm

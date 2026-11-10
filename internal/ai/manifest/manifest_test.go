@@ -185,7 +185,7 @@ func memSource(format, filename string, data []byte) Source {
 func TestExtractFormats(t *testing.T) {
 	t.Parallel()
 
-	rpmData, err := os.ReadFile(filepath.Join("..", "..", "..", "pkg", "rpm", "testdata", "weakdeps.rpm"))
+	rpmData, err := os.ReadFile(filepath.Join("..", "..", "..", "testdata", "rpm", "weakdeps.rpm"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -391,14 +391,15 @@ func extractDeb(ctx context.Context, src Source) ([]section, error) {
 		return nil, fmt.Errorf("parse deb: %w", err)
 	}
 
+	// Values are logical (continuation markers stripped); the ordered copy is
+	// rendered back to deb822 so multi-line fields keep their continuations.
 	fields := df.ControlFile.Fields
 	seen := make(map[string]bool, len(fields))
-
-	var b strings.Builder
+	ordered := deb.NewControlFile()
 
 	for _, k := range debFieldOrder() {
 		if v, ok := fields[k]; ok {
-			fmt.Fprintf(&b, "%s: %s\n", k, v)
+			ordered.Set(k, v)
 
 			seen[k] = true
 		}
@@ -415,10 +416,10 @@ func extractDeb(ctx context.Context, src Source) ([]section, error) {
 	sort.Strings(rest)
 
 	for _, k := range rest {
-		fmt.Fprintf(&b, "%s: %s\n", k, fields[k])
+		ordered.Set(k, fields[k])
 	}
 
-	return []section{{label: "control", body: b.String()}}, nil
+	return []section{{label: "control", body: ordered.String()}}, nil
 }
 
 // PacmanRule is the manifest rule of pacman.
