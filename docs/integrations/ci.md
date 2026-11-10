@@ -44,6 +44,7 @@ Promotion adds metadata rows that point at the same blobs. It costs the same for
 ### Supported formats
 
 - `oa upload` publishes to hosted `deb`, `ivy`, `maven`, `raw`, `rpm` and `sbt` repositories.
+- To a `raw` repository it sends each file's content type, which the repository stores and serves: by extension for common types (`.pdf`, `.html`, `.css`, `.js`, `.json`, `.xml`, `.svg`, `.wasm` and PNG, JPEG, GIF, WebP and AVIF images), otherwise detected from the first 512 bytes as the server does for an upload without one. The same file gets the same type on every machine.
 - `bundle add` resolves artifacts of the same six formats. Add items of other formats through the [bundles API](../repositories/release-bundles.md#bundles-api).
 - For every other format, publish with the native client in the job: `cargo publish`, `docker push`, `helm push`, `npm publish`, `twine upload`.
 - Terraform and OpenTofu have no publish command. Use `curl` against the [publish API](../formats/terraform.md#publish).

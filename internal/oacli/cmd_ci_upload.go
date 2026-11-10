@@ -270,7 +270,18 @@ func uploadCIFile(
 		return ciUploadedFile{}, err
 	}
 
-	stored, err := api.t.upload(ctx, f, repo.Name, sourceAsset{Path: remote, Size: size, SHA256: sum}, src, meta)
+	asset := sourceAsset{Path: remote, Size: size, SHA256: sum}
+
+	// A raw repository stores the Content-Type it is sent, and without one the
+	// upload would be application/octet-stream, so a PDF or a text file would not
+	// display in the browser.
+	if f == formatRaw {
+		if asset.ContentType, err = rawContentType(src, remote); err != nil {
+			return ciUploadedFile{}, err
+		}
+	}
+
+	stored, err := api.t.upload(ctx, f, repo.Name, asset, src, meta)
 	if err != nil {
 		return ciUploadedFile{}, err
 	}
