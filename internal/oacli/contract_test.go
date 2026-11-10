@@ -111,6 +111,7 @@ type recorded struct {
 	pattern string
 	query   url.Values
 	body    []byte
+	header  http.Header
 }
 
 type contractServer struct {
@@ -150,7 +151,7 @@ func (cs *contractServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	noteAPICall(r.Method, pattern)
 
 	cs.mu.Lock()
-	cs.reqs = append(cs.reqs, recorded{r.Method, pattern, r.URL.Query(), body})
+	cs.reqs = append(cs.reqs, recorded{r.Method, pattern, r.URL.Query(), body, r.Header.Clone()})
 	cs.mu.Unlock()
 
 	rep, found := cs.replies[r.Method+" "+pattern]
@@ -224,6 +225,7 @@ type call struct {
 	body            map[string]any
 	query           map[string]string
 	bodyHas         string
+	header          map[string]string // request headers the call must carry
 }
 
 type contractCase struct {
@@ -272,6 +274,12 @@ func (c contractCase) run(t *testing.T) {
 		for k, v := range want.query {
 			if got.query.Get(k) != v {
 				t.Errorf("request %d query %s = %q, want %q", i, k, got.query.Get(k), v)
+			}
+		}
+
+		for k, v := range want.header {
+			if got.header.Get(k) != v {
+				t.Errorf("request %d header %s = %q, want %q", i, k, got.header.Get(k), v)
 			}
 		}
 

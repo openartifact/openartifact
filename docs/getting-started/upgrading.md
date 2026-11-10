@@ -138,6 +138,7 @@ Newest first. Each version starts with **What you must do**; the text below it l
 **Changes.**
 
 - **Property search.** `GET /api/v1/repositories/{name}/artifacts/search` also returns `artifacts`: the same ids, each with the name, version and format of the file it names when it is a file of that repository. `artifact_ids` is unchanged. See [search results](../repositories/properties.md#search-results).
+- **`oa upload` to raw.** It sends each file's content type instead of `application/octet-stream`, so a PDF, an image or a text file uploaded that way displays in the browser. Files uploaded before keep their type; upload them again to change it. See [CI](../integrations/ci.md#supported-formats).
 - **Search by project.** `GET /api/v1/search` and the MCP `search_artifacts` tool narrow by project: the `project` and `project_role` parameters, or `project:` and `project_role:` in the query. `project_role=viewer` lists what others shared with you. Both only narrow what the caller can already read; a global admin counts as owner of every project. `400 query_too_broad` suggests `project:<project>` to callers that hold a project role. See [the REST API](../integrations/api.md).
 
 ### 0.22.0

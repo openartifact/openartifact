@@ -651,3 +651,41 @@ func TestContractCIBundle(t *testing.T) {
 		{name: "unknown bundle subcommand", args: []string{"bundle", "frob"}, fail: "unknown command"},
 	})
 }
+
+// TestContractCIUploadRawContentType: oa upload tells a raw repository what each file
+// is, which the repository stores and serves (a PDF or a text file only displays in
+// the browser with its type), instead of application/octet-stream for everything.
+func TestContractCIUploadRawContentType(t *testing.T) {
+	dir := t.TempDir()
+	rawRepo := ok(`{"id":"r1","name":"rawr","format":"raw","repo_type":"hosted"}`)
+
+	for _, tc := range []struct {
+		name, file, content, want string
+	}{
+		{"by extension", "brief.PDF", "%PDF-1.4 not really", "application/pdf"},
+		{"by extension where sniffing would say text/plain", "site.css", "body{color:red}", "text/css; charset=utf-8"},
+		{"unknown extension: detected like the server does", "notes.md", "# Notes\n\nplain text", "text/plain; charset=utf-8"},
+		{"unknown binary", "blob.bin", "\x00\x01\x02\xff", "application/octet-stream"},
+	} {
+		file := filepath.Join(dir, tc.file)
+		if err := os.WriteFile(file, []byte(tc.content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		c := contractCase{
+			name: tc.name,
+			args: []string{"upload", "rawr", file, "--flat"},
+			replies: map[string]reply{
+				"GET /api/v1/repository/{name}": rawRepo,
+				"PUT /repos/raw/{name}/*":       {status: 201, body: `{"id":"a1","sha256":"` + sha(tc.content) + `"}`},
+			},
+			calls: []call{
+				{method: "GET", pattern: "/api/v1/repository/{name}"},
+				// The file is sent whole after the type was read from its start.
+				{method: "PUT", pattern: "/repos/raw/{name}/*", header: map[string]string{"Content-Type": tc.want}, bodyHas: tc.content},
+			},
+			out: "Uploaded rawr/" + tc.file,
+		}
+		t.Run(tc.name, c.run)
+	}
+}
