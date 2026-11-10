@@ -8,6 +8,7 @@ go 1.27.0
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
+	github.com/M0Rf30/go-rpmutils v0.4.1-0.20261110113359-ad938e132154
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/aws/aws-sdk-go-v2 v1.47.5
 	github.com/aws/aws-sdk-go-v2/config v1.33.13
@@ -30,7 +31,6 @@ require (
 	github.com/prometheus/client_model v0.6.3
 	github.com/russellhaering/goxmldsig v1.6.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
-	github.com/sassoftware/go-rpmutils v0.4.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
@@ -137,7 +137,6 @@ require (
 	github.com/sirupsen/logrus v1.10.2 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
-	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

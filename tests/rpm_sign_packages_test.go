@@ -16,9 +16,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	rpmutils "github.com/M0Rf30/go-rpmutils"
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-chi/chi/v5"
-	rpmutils "github.com/sassoftware/go-rpmutils"
 
 	"github.com/openartifact/openartifact/internal/api"
 	"github.com/openartifact/openartifact/internal/crypto"

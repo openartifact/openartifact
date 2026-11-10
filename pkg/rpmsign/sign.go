@@ -15,8 +15,8 @@ import (
 	"fmt"
 	"io"
 
+	rpmutils "github.com/M0Rf30/go-rpmutils"
 	"github.com/ProtonMail/go-crypto/openpgp/packet"
-	rpmutils "github.com/sassoftware/go-rpmutils"
 
 	"github.com/openartifact/openartifact/pkg/gpg"
 )
@@ -29,9 +29,12 @@ type KeyHolder interface {
 	SigningKey() (*packet.PrivateKey, error)
 }
 
-// Sign writes a copy of the RPM in src to dst with the header-only (RSAHEADER)
-// and header-plus-payload (PGP) signatures of signer, replacing any signature
-// the package already had. src is read from the start and must be seekable.
+// Sign writes a copy of the RPM in src to dst signed by signer, replacing any
+// signature the package already had. Format-4 packages get the header-only
+// (RSAHEADER) and header-plus-payload (PGP) signatures; format-6 packages
+// (rpm 6.0+) get an OPENPGP header signature, as rpmsign 6 writes, with the
+// payload covered by the digests of the signed header. src is read from the
+// start and must be seekable.
 func Sign(src io.ReadSeeker, dst io.Writer, signer gpg.Signer) error {
 	holder, ok := signer.(KeyHolder)
 	if !ok {
