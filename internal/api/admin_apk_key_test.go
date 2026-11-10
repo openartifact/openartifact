@@ -12,13 +12,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/M0Rf30/pkgformat/apk"
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/apkkeys"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
-	"github.com/openartifact/openartifact/pkg/apk"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 

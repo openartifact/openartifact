@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/gpgkeys"
 	"github.com/openartifact/openartifact/internal/gpgkeys/gpgkeystest"
-	"github.com/openartifact/openartifact/pkg/gpg"
 )
 
 // signerEnv is a draft bundle "b/1" owned by the non-admin user "ci", who may

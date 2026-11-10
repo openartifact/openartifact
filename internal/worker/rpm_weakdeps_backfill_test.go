@@ -12,9 +12,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/openartifact/openartifact/internal/rpmextra"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
-	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
 type weakDepsDB struct {
@@ -30,7 +30,7 @@ func (d *weakDepsDB) UpdateRpmPackageExtra(_ context.Context, repoID, sha string
 }
 
 func TestBackfillWeakDepsReadsBlob(t *testing.T) {
-	data, err := os.ReadFile("../../pkg/rpm/testdata/weakdeps.rpm")
+	data, err := os.ReadFile("../../testdata/rpm/weakdeps.rpm")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,10 @@ func TestBackfillWeakDepsReadsBlob(t *testing.T) {
 
 	db := &weakDepsDB{}
 	w := NewRPMetadataWorker(db, store, nil, log, nil)
-	pkgs := []pkgrpm.Package{{Name: "oa-weakdep-test", SHA256: sha}, {Name: "done", SHA256: "x", WeakDepsParsed: true, SizesParsed: true}}
+	pkgs := []rpmextra.Stored{
+		{Name: "oa-weakdep-test", SHA256: sha},
+		{Name: "done", SHA256: "x", WeakDepsParsed: true, SizesParsed: true},
+	}
 
 	w.backfillFromBlob(context.Background(), "repo1", pkgs)
 

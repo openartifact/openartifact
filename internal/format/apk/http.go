@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 
+	pkgapk "github.com/M0Rf30/pkgformat/apk"
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/apkkeys"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -26,7 +27,6 @@ import (
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
-	pkgapk "github.com/openartifact/openartifact/pkg/apk"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 

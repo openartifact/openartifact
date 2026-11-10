@@ -8,9 +8,9 @@ import (
 	"context"
 	"fmt"
 
+	pkgdeb "github.com/M0Rf30/pkgformat/deb"
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
-	pkgdeb "github.com/openartifact/openartifact/pkg/deb"
 )
 
 // DebStore owns the Debian format tables: distributions, components, architectures and package control data.

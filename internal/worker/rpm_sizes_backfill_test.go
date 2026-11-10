@@ -12,8 +12,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/openartifact/openartifact/internal/rpmextra"
 	"github.com/openartifact/openartifact/internal/storage"
-	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
 // TestBackfillRepairsInstalledAndArchiveSize: rows stored before the header
@@ -21,7 +21,7 @@ import (
 // footprint. The regeneration re-reads the blob and persists the real sizes,
 // even for rows whose weak dependencies were already backfilled.
 func TestBackfillRepairsInstalledAndArchiveSize(t *testing.T) {
-	data, err := os.ReadFile("../../pkg/rpm/testdata/sizes-v4.rpm")
+	data, err := os.ReadFile("../../testdata/rpm/sizes-v4.rpm")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,9 +40,9 @@ func TestBackfillRepairsInstalledAndArchiveSize(t *testing.T) {
 
 	db := &weakDepsDB{}
 	w := NewRPMetadataWorker(db, store, nil, testLogger(t), nil)
-	pkgs := []pkgrpm.Package{
+	pkgs := []rpmextra.Stored{
 		{Name: "oa-sizes-test", SHA256: sha, WeakDepsParsed: true},
-		{Name: "done", SHA256: "x", WeakDepsParsed: true, SizesParsed: true, InstalledSize: 5},
+		{Name: "done", SHA256: "x", InstalledSize: 5, WeakDepsParsed: true, SizesParsed: true},
 	}
 
 	w.backfillFromBlob(context.Background(), "repo1", pkgs)

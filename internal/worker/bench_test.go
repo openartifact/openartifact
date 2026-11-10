@@ -12,9 +12,10 @@ import (
 
 	"database/sql"
 
+	pkgrpm "github.com/M0Rf30/pkgformat/rpm"
+	"github.com/M0Rf30/pkgformat/rpm/tag"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
-	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
 // benchWorkerDBStore is what benchWorkerDB is used as.
@@ -150,15 +151,15 @@ func benchRPMWorkerPackages(n int) []pkgrpm.Package {
 		}
 
 		p.Provides = []pkgrpm.Dependency{
-			{Name: name, Flags: pkgrpm.SENSE_EQUAL, Version: ver + "-3.el9"},
-			{Name: name + "(x86-64)", Flags: pkgrpm.SENSE_EQUAL, Version: ver + "-3.el9"},
+			{Name: name, Flags: tag.RPMSENSE_EQUAL, Version: ver + "-3.el9"},
+			{Name: name + "(x86-64)", Flags: tag.RPMSENSE_EQUAL, Version: ver + "-3.el9"},
 		}
 		p.Requires = []pkgrpm.Dependency{
-			{Name: "rpmlib(CompressedFileNames)", Flags: pkgrpm.SENSE_LESSEQUAL | pkgrpm.SENSE_RPMLIB, Version: "3.0.4-1"},
+			{Name: "rpmlib(CompressedFileNames)", Flags: tag.RPMSENSE_LESS | tag.RPMSENSE_EQUAL | tag.RPMSENSE_RPMLIB, Version: "3.0.4-1"},
 			{Name: "libc.so.6()(64bit)"},
 			{Name: "libc.so.6(GLIBC_2.2.5)(64bit)"},
 			{Name: "libc.so.6(GLIBC_2.34)(64bit)"},
-			{Name: "openssl-libs", Flags: pkgrpm.SENSE_GREATEREQUAL, Version: "3.0.0-1"},
+			{Name: "openssl-libs", Flags: tag.RPMSENSE_GREATER | tag.RPMSENSE_EQUAL, Version: "3.0.0-1"},
 		}
 
 		for j := range 30 {

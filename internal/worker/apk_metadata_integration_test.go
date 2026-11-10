@@ -20,15 +20,15 @@ import (
 	"testing"
 	"time"
 
+	pkgapk "github.com/M0Rf30/pkgformat/apk"
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/apkkeys"
+	"github.com/openartifact/openartifact/internal/apktest"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	"github.com/openartifact/openartifact/internal/format/formattest"
-	pkgapk "github.com/openartifact/openartifact/pkg/apk"
-	"github.com/openartifact/openartifact/pkg/apk/apktest"
 )
 
 // apkStack is a hosted apk repository on a real database: the HTTP handler,
@@ -195,9 +195,8 @@ func (s *apkStack) index(dir string) []pkgapk.Package {
 		s.t.Fatalf("GET %s index: status %d: %s", dir, w.Code, w.Body.String())
 	}
 
-	signedBy, err := apktest.VerifyIndex(w.Body.Bytes(), map[string]*rsa.PublicKey{keyName: pub})
-	if err != nil || signedBy != keyName {
-		s.t.Fatalf("index of %s does not verify against the served key: %q, %v", dir, signedBy, err)
+	if err := apktest.VerifyIndex(w.Body.Bytes(), keyName, pub); err != nil {
+		s.t.Fatalf("index of %s does not verify against the served key: %v", dir, err)
 	}
 
 	pkgs, err := pkgapk.ParseIndex(bytes.NewReader(w.Body.Bytes()))

@@ -21,11 +21,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
-	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -64,7 +64,7 @@ type Store interface {
 	MarkRepoStale(ctx context.Context, repositoryID string) error
 }
 
-// Service implements gpg.Resolver on top of the database-managed keys.
+// Service implements gpgresolver.Resolver on top of the database-managed keys.
 type Service struct {
 	db     Store
 	log    *logger.Logger
@@ -89,7 +89,7 @@ func (s *Service) SetWorkers(ws *lifecycle.Workers) { s.workers = ws }
 // ConfigSigner returns the file/env-configured signer, or nil.
 func (s *Service) ConfigSigner() gpg.Signer { return s.config }
 
-// SignerForRepo implements gpg.Resolver: the repository's own key, else the
+// SignerForRepo implements gpgresolver.Resolver: the repository's own key, else the
 // global active key, else the file/env key; nil when nothing signs it.
 func (s *Service) SignerForRepo(ctx context.Context, repoID string) (gpg.Signer, error) {
 	key, err := s.db.ResolveGPGKeyForRepository(ctx, repoID)

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	pkgapk "github.com/openartifact/openartifact/pkg/apk"
-	"github.com/openartifact/openartifact/pkg/apk/apktest"
+	"github.com/M0Rf30/pkgformat/apk"
+	"github.com/openartifact/openartifact/internal/apktest"
 )
 
 const (
@@ -35,24 +35,24 @@ func newApkMirror(t *testing.T) *apkMirror {
 
 	pkgBytes := apktest.Build(t, apktest.Options{Name: "hello"})
 
-	pkg, err := pkgapk.ParsePackage(bytes.NewReader(pkgBytes), int64(len(pkgBytes)))
+	pkg, err := apk.ParsePackage(bytes.NewReader(pkgBytes), int64(len(pkgBytes)))
 	if err != nil {
 		t.Fatalf("parse package: %v", err)
 	}
 
 	pkg.Size = int64(len(pkgBytes))
 
-	key, err := pkgapk.GenerateKey(2048)
+	key, err := apk.GenerateKey(2048)
 	if err != nil {
 		t.Fatalf("key: %v", err)
 	}
 
-	signer, err := pkgapk.NewSigner("alpine-test.rsa.pub", key)
+	signer, err := apk.NewSigner("alpine-test.rsa.pub", key, apk.SigRSASHA256)
 	if err != nil {
 		t.Fatalf("signer: %v", err)
 	}
 
-	index, err := pkgapk.BuildIndex([]pkgapk.Package{*pkg}, "test", signer)
+	index, err := apk.BuildIndex([]apk.Package{*pkg}, "test", signer)
 	if err != nil {
 		t.Fatalf("index: %v", err)
 	}

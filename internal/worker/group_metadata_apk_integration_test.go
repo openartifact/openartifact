@@ -19,14 +19,14 @@ import (
 	"testing"
 	"time"
 
+	pkgapk "github.com/M0Rf30/pkgformat/apk"
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/apkkeys"
+	"github.com/openartifact/openartifact/internal/apktest"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	"github.com/openartifact/openartifact/internal/group"
-	pkgapk "github.com/openartifact/openartifact/pkg/apk"
-	"github.com/openartifact/openartifact/pkg/apk/apktest"
 )
 
 const (
@@ -214,8 +214,8 @@ func (s *apkGroupStack) index(dir string) []pkgapk.Package {
 		s.t.Fatalf("GET %s index: status %d: %s", dir, rec.Code, rec.Body.String())
 	}
 
-	if signedBy, err := apktest.VerifyIndex(rec.Body.Bytes(), map[string]*rsa.PublicKey{name: pub}); err != nil || signedBy != name {
-		s.t.Fatalf("index of %s does not verify against the group's key: %q, %v", dir, signedBy, err)
+	if err := apktest.VerifyIndex(rec.Body.Bytes(), name, pub); err != nil {
+		s.t.Fatalf("index of %s does not verify against the group's key: %v", dir, err)
 	}
 
 	pkgs, err := pkgapk.ParseIndex(bytes.NewReader(rec.Body.Bytes()))
@@ -406,7 +406,7 @@ func TestApkGroupIndexIsResignedWithTheRotatedGroupKey(t *testing.T) {
 	}
 
 	rec := s.get(apkMainDir + "/APKINDEX.tar.gz")
-	if _, err := apktest.VerifyIndex(rec.Body.Bytes(), map[string]*rsa.PublicKey{oldName: oldKey}); err == nil {
+	if err := apktest.VerifyIndex(rec.Body.Bytes(), oldName, oldKey); err == nil {
 		t.Error("the regenerated index still verifies with the old key")
 	}
 

@@ -10,10 +10,10 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/urlparams"
-	"github.com/openartifact/openartifact/pkg/gpg"
 )
 
 // errNoSigner means the repository has no GPG signing key, so a provider

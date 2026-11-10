@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io"
 
-	rpm "github.com/openartifact/openartifact/pkg/rpm"
+	"github.com/M0Rf30/pkgformat/rpm"
 )
 
 type UploadResult struct {
@@ -32,7 +32,7 @@ func NewRepositoryHandler() *RepositoryHandler {
 }
 
 func (rh *RepositoryHandler) ValidatePackage(ctx context.Context, data io.Reader) (*rpm.Package, error) {
-	pkg, err := rpm.ParseRPM(data)
+	pkg, err := rpm.ReadPackage(data)
 	if err != nil {
 		return nil, fmt.Errorf("invalid package: %w", err)
 	}
@@ -57,5 +57,48 @@ func (rh *RepositoryHandler) GetPackageInfo(pkg *rpm.Package) map[string]any {
 		return make(map[string]any)
 	}
 
-	return pkg.GetMetadata()
+	metadata := map[string]any{
+		"format":        "rpm",
+		"name":          pkg.Name,
+		"version":       pkg.Version,
+		"release":       pkg.Release,
+		"epoch":         pkg.Epoch,
+		"architecture":  pkg.Arch,
+		"summary":       pkg.Summary,
+		"description":   pkg.Description,
+		"license":       pkg.License,
+		"url":           pkg.URL,
+		"vendor":        pkg.Vendor,
+		"group":         pkg.Group,
+		"packager":      pkg.Packager,
+		"sourcerpm":     pkg.SourceRPM,
+		"buildhost":     pkg.BuildHost,
+		"buildtime":     pkg.BuildTime,
+		"packagesize":   pkg.PackageSize,
+		"installedsize": pkg.InstalledSize,
+		"archivesize":   pkg.ArchiveSize,
+	}
+
+	for key, deps := range map[string][]rpm.Dependency{
+		"provides": pkg.Provides, "requires": pkg.Requires, "conflicts": pkg.Conflicts, "obsoletes": pkg.Obsoletes,
+		"recommends": pkg.Recommends, "suggests": pkg.Suggests, "supplements": pkg.Supplements, "enhances": pkg.Enhances,
+	} {
+		if len(deps) > 0 {
+			metadata[key] = deps
+		}
+	}
+
+	if len(pkg.Files) > 0 {
+		metadata["filecount"] = len(pkg.Files)
+	}
+
+	if pkg.FilesTruncated {
+		metadata["files_truncated"] = true
+	}
+
+	if len(pkg.Changelogs) > 0 {
+		metadata["changelogcount"] = len(pkg.Changelogs)
+	}
+
+	return metadata
 }

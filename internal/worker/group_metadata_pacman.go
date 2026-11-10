@@ -15,11 +15,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/M0Rf30/pkgformat/pacman"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repotype"
-	"github.com/openartifact/openartifact/pkg/pacman"
 )
 
 // maxUpstreamPacmanDB caps the compressed upstream database (or files

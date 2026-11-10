@@ -12,13 +12,16 @@ import (
 	"sort"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/gpgresolver"
+
+	pkgdeb "github.com/M0Rf30/pkgformat/deb"
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/workq"
-	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -43,13 +46,18 @@ type DebMetadataStore interface {
 type DebMetadataWorker struct {
 	db        DebMetadataStore
 	blobStore storage.BlobStore
-	signers   gpg.Resolver
+	signers   gpgresolver.Resolver
 	log       *logger.Logger
 	q         *regenQueue[string]
 	onStale   func(repoID string)
 }
 
-func NewDebMetadataWorker(db DebMetadataStore, blobStore storage.BlobStore, signers gpg.Resolver, log *logger.Logger) *DebMetadataWorker {
+func NewDebMetadataWorker(
+	db DebMetadataStore,
+	blobStore storage.BlobStore,
+	signers gpgresolver.Resolver,
+	log *logger.Logger,
+) *DebMetadataWorker {
 	w := &DebMetadataWorker{db: db, blobStore: blobStore, signers: signers, log: log}
 	w.q = newRegenQueue("deb", log, w.regenerate)
 	w.q.setCodec(stringRegenCodec())
@@ -291,47 +299,33 @@ func (w *DebMetadataWorker) generateDistribution(
 
 	sort.Strings(archNames)
 
-	releaseGen := formatdeb.NewReleaseFileGenerator("openartifact", "openartifact", dist.Name, dist.Name)
-	for _, c := range compNames {
-		releaseGen.AddComponent(c)
-	}
-
-	for _, a := range archNames {
-		releaseGen.AddArchitecture(a)
-	}
-
-	fileInfos := make([]formatdeb.FileInfo, 0, len(compNames)*len(archNames)*2)
+	release := formatdeb.NewRelease(dist.Name)
+	release.Components = compNames
+	release.Architectures = archNames
 
 	addFile := func(rel string, data []byte) {
 		blobs["dists/"+dist.Name+"/"+rel] = data
 
-		md5sum, sha1sum, sha256sum := formatdeb.CalculateChecksums(data)
-		fileInfos = append(fileInfos, formatdeb.FileInfo{
-			Filename: rel,
-			Size:     int64(len(data)),
-			MD5sum:   md5sum,
-			SHA1:     sha1sum,
-			SHA256:   sha256sum,
-		})
+		release.AddFile(releaseFileInfo(rel, data))
 	}
 
 	for _, comp := range compNames {
 		for _, arch := range archNames {
-			gen := formatdeb.NewPackagesFileGenerator()
+			var index pkgdeb.Index
 
 			for _, e := range entries {
 				if e.ComponentName != comp || (e.Arch != arch && e.Arch != "all") {
 					continue
 				}
 
-				gen.AddEntry(formatdeb.FormatPackagesEntry(e))
+				index.Add(formatdeb.IndexEntry(e))
 			}
 
 			base := fmt.Sprintf("%s/binary-%s/Packages", comp, arch)
 
-			addFile(base, []byte(gen.Generate()))
+			addFile(base, index.Bytes())
 
-			gzipped, err := gen.GenerateGzipped()
+			gzipped, err := index.Compressed(pkgdeb.CompressionGzip)
 			if err != nil {
 				return fmt.Errorf("deb worker: compressing packages for %s/%s/%s: %w", dist.Name, comp, arch, err)
 			}
@@ -340,14 +334,25 @@ func (w *DebMetadataWorker) generateDistribution(
 		}
 	}
 
-	releaseContent := releaseGen.GenerateRelease(fileInfos)
-	blobs["dists/"+dist.Name+"/Release"] = []byte(releaseContent)
+	releaseContent := release.Marshal()
+	blobs["dists/"+dist.Name+"/Release"] = releaseContent
 
 	if signer != nil {
-		if err := addSignedRelease(blobs, "dists/"+dist.Name+"/", []byte(releaseContent), signer); err != nil {
+		if err := addSignedRelease(blobs, "dists/"+dist.Name+"/", releaseContent, signer); err != nil {
 			return fmt.Errorf("deb worker: dist %s: %w", dist.Name, err)
 		}
 	}
 
 	return nil
+}
+
+// releaseFileInfo describes an index file for the Release listing: MD5Sum, SHA1
+// and SHA256, the three checksums every Release of this repository has always
+// carried. A SHA512 section would list only the files hashed since it was
+// introduced, and apt rejects a Release whose best checksum is missing for one.
+func releaseFileInfo(path string, data []byte) pkgdeb.FileInfo {
+	fi := pkgdeb.HashBytes(path, data)
+	fi.SHA512 = ""
+
+	return fi
 }

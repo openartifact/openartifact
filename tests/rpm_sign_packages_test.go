@@ -16,16 +16,16 @@ import (
 	"path/filepath"
 	"testing"
 
+	rpmutils "github.com/M0Rf30/pkgformat/rpm"
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-chi/chi/v5"
-	rpmutils "github.com/sassoftware/go-rpmutils"
 
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/internal/api"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/gpgkeys"
 	"github.com/openartifact/openartifact/internal/gpgkeys/gpgkeystest"
-	"github.com/openartifact/openartifact/pkg/gpg"
 )
 
 type signUploadEnv struct {
@@ -115,7 +115,7 @@ func (e *signUploadEnv) onlyBlob(t *testing.T) []byte {
 func helloRPM(t *testing.T) []byte {
 	t.Helper()
 
-	data, err := os.ReadFile(filepath.Join("..", "pkg", "rpmsign", "testdata", "hello.rpm"))
+	data, err := os.ReadFile(filepath.Join("..", "testdata", "rpm", "hello.rpm"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,8 +206,7 @@ func TestRPMUploadReportsUnsignablePackages(t *testing.T) {
 	e := newSignUploadEnv(t, true)
 	e.activateKey(t)
 
-	// Parses as an rpm but has no payload digest to sign over.
-	rw := e.upload(t, buildMinimalRPM())
+	rw := e.upload(t, buildUnsignableRPM())
 	if rw.Code != http.StatusUnprocessableEntity || !bytes.Contains(rw.Body.Bytes(), []byte("SIGNING_FAILED")) {
 		t.Fatalf("unsignable upload: %d %s", rw.Code, rw.Body.String())
 	}

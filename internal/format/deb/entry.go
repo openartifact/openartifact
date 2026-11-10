@@ -5,163 +5,104 @@
 package deb
 
 import (
-	"slices"
-	"sort"
-	"strconv"
 	"strings"
 
+	pkgdeb "github.com/M0Rf30/pkgformat/deb"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
-// controlFieldOrder is the conventional field order of a Packages stanza.
-func controlFieldOrder() []string {
-	return []string{
-		"Package", "Source", "Version", "Architecture", "Maintainer", "Installed-Size",
-		"Pre-Depends", "Depends", "Recommends", "Suggests", "Enhances", "Breaks",
-		"Conflicts", "Provides", "Replaces", "Built-Using", "Essential", "Multi-Arch",
-		"Section", "Priority", "Homepage",
-	}
-}
+// Control fields are stored in their deb822 wire form: continuation lines keep
+// their leading space and an empty line is " .". pkgformat's ControlFile holds
+// the logical value instead, so the values are converted at the storage
+// boundary; rows written before pkgformat are already in the wire form.
 
-// repoOwnedFields are always generated from the stored blob and must not be
-// taken from the uploaded control stanza.
-var repoOwnedFields = []string{ //nolint:gochecknoglobals // read-only
-	"Package", "Version", "Architecture", "Installed-Size",
-	"Filename", "Size", "MD5sum", "SHA1", "SHA256", "SHA512", "Description",
-}
-
-// canonicalField maps a control field name onto its canonical spelling when it
-// is a field the repository knows or owns. apt matches field names
-// case-insensitively, so "filename" or "sha256" in an uploaded stanza is the
-// same field as "Filename"/"SHA256" and must not slip past the owned-field
-// filter. Unknown fields keep their spelling.
-func canonicalField(k string) string {
-	for _, f := range controlFieldOrder() {
-		if strings.EqualFold(k, f) {
-			return f
-		}
-	}
-
-	for _, f := range repoOwnedFields {
-		if strings.EqualFold(k, f) {
-			return f
-		}
-	}
-
-	return k
-}
-
-func isRepoOwnedField(k string) bool {
-	return slices.Contains(repoOwnedFields, canonicalField(k))
-}
-
-// canonicalFields rewrites every key to its canonical spelling. Spelling
-// variants of one field collapse deterministically: the exact canonical key
-// wins, otherwise the lexically smallest variant.
-func canonicalFields(fields map[string]string) map[string]string {
-	keys := make([]string, 0, len(fields))
-	for k := range fields {
-		keys = append(keys, k)
-	}
-
-	sort.Strings(keys)
-
-	out := make(map[string]string, len(fields))
-
-	for _, k := range keys {
-		c := canonicalField(k)
-		if _, dup := out[c]; dup && k != c {
-			continue
-		}
-
-		out[c] = fields[k]
-	}
-
-	return out
-}
-
-// ControlFieldsToStore returns the subset of control fields persisted at upload.
+// ControlFieldsToStore returns the subset of the logical control fields of a
+// package that is persisted at upload, in wire form.
 func ControlFieldsToStore(fields map[string]string) map[string]string {
-	canon := canonicalFields(fields)
-	out := make(map[string]string, len(canon))
+	kept := pkgdeb.ControlFieldsToStore(fields)
+	out := make(map[string]string, len(kept))
 
-	for k, v := range canon {
-		if !isRepoOwnedField(k) || k == "Description" {
-			out[k] = v
-		}
+	for k, v := range kept {
+		out[k] = encodeValue(v)
 	}
 
 	return out
+}
+
+// IndexEntry converts a stored package entry into the entry pkgformat renders.
+func IndexEntry(e models.DebPackageEntry) pkgdeb.IndexEntry {
+	control := make(map[string]string, len(e.ControlFields))
+	for k, v := range e.ControlFields {
+		control[k] = decodeValue(v)
+	}
+
+	return pkgdeb.IndexEntry{
+		Name:          e.Name,
+		Version:       e.Version,
+		Arch:          e.Arch,
+		InstalledSize: e.InstalledSize,
+		Filename:      GetPoolPath(e.ComponentName, e.Name, e.Version, e.Filename),
+		Size:          e.Size,
+		SHA256:        e.SHA256,
+		Control:       control,
+	}
 }
 
 // FormatPackagesEntry renders a complete Packages stanza (terminated by a
 // blank line) for the entry, including a pool-relative Filename.
 func FormatPackagesEntry(e models.DebPackageEntry) string {
+	return pkgdeb.FormatPackagesEntry(IndexEntry(e))
+}
+
+// encodeValue turns a logical field value into its wire form.
+func encodeValue(v string) string {
+	first, rest, multi := strings.Cut(v, "\n")
+	if !multi {
+		return v
+	}
+
 	var sb strings.Builder
 
-	// Rows stored before field names were canonicalized may carry other spellings.
-	fields := canonicalFields(e.ControlFields)
+	sb.WriteString(first)
 
-	write := func(k, v string) {
-		if v == "" {
-			return
+	for line := range strings.SplitSeq(rest, "\n") {
+		sb.WriteByte('\n')
+
+		if line == "" {
+			line = "."
 		}
 
-		sb.WriteString(k)
-		sb.WriteString(": ")
-		sb.WriteString(v)
-		sb.WriteString("\n")
+		sb.WriteByte(' ')
+		sb.WriteString(line)
 	}
 
-	write("Package", e.Name)
+	return sb.String()
+}
 
-	for _, k := range controlFieldOrder()[1:] {
-		if k == "Version" {
-			write("Version", e.Version)
-			continue
+// decodeValue turns a stored wire-form value into the logical value.
+func decodeValue(v string) string {
+	first, rest, multi := strings.Cut(v, "\n")
+	if !multi {
+		return v
+	}
+
+	var sb strings.Builder
+
+	sb.WriteString(first)
+
+	for line := range strings.SplitSeq(rest, "\n") {
+		sb.WriteByte('\n')
+
+		if line != "" && (line[0] == ' ' || line[0] == '\t') {
+			line = line[1:]
 		}
 
-		if k == "Architecture" {
-			write("Architecture", e.Arch)
-			continue
+		if line == "." {
+			line = ""
 		}
 
-		if k == "Installed-Size" {
-			if e.InstalledSize > 0 {
-				write(k, strconv.FormatInt(e.InstalledSize, 10))
-			}
-
-			continue
-		}
-
-		write(k, fields[k])
+		sb.WriteString(line)
 	}
-
-	order := controlFieldOrder()
-	known := make(map[string]bool, len(order))
-	for _, k := range order {
-		known[k] = true
-	}
-
-	extra := make([]string, 0)
-
-	for k := range fields {
-		if !known[k] && !isRepoOwnedField(k) {
-			extra = append(extra, k)
-		}
-	}
-
-	sort.Strings(extra)
-
-	for _, k := range extra {
-		write(k, fields[k])
-	}
-
-	write("Filename", GetPoolPath(e.ComponentName, e.Name, e.Version, e.Filename))
-	write("Size", strconv.FormatInt(e.Size, 10))
-	write("SHA256", e.SHA256)
-	write("Description", fields["Description"])
-	sb.WriteString("\n")
 
 	return sb.String()
 }

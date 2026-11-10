@@ -35,7 +35,12 @@ Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format 
 | `internal/worker` | Background workers: per-format metadata regeneration, cleanup, proxy cache, AI analysis |
 | `internal/{backup,webhook,proxy,search,vuln,sbom,license,secrets,quarantine,quota,cron,ai,mcp,audit,metrics,config}` | Feature subsystems |
 | `internal/crypto` | AES-256-GCM secret encryption at rest (`OPENARTIFACT_SECRET_KEY`) |
-| `pkg/*` | Format parsers/libraries (conan, deb, helm, maven, npm, nuget, rpm, rubymarshal, compactindex, gpg, delta) plus shared `errors`/`logger` |
+| `pkg/*` | Format parsers/libraries (conan, helm, maven, npm, nuget, rubymarshal, compactindex, delta, ...) plus shared `errors`/`logger`. The apk, pacman, deb and rpm formats (readers, writers, indexes, repodata, signing) and the GPG, xz-limit and safepath helpers come from `github.com/M0Rf30/pkgformat` (local `replace` to `../rpm` until it is tagged); there is no app copy of them |
+| `internal/format/{deb,rpm}` | HTTP handlers and the app glue over pkgformat: `internal/format/deb/entry.go` converts stored control fields (wire form) to and from the library's logical values; `streaming.go` renders Packages/Release |
+| `internal/rpmextra` | JSON persisted in `rpm_packages.extra` (deps, weak deps, files, changelogs, size backfill markers) wrapped around `pkgformat/rpm.Package`; legacy capitalised keys still decode |
+| `internal/gpgresolver` | The `Resolver` interface (leaf package) that picks the signer for a repository |
+| `internal/apktest` | Test helper that builds signed apk packages and indexes with `pkgformat/apk` |
+| `testdata/rpm/` | rpm fixtures (weak deps, sizes, hello) shared by the api, worker and tests packages |
 | `migrations/` | Embedded SQL migrations, applied at startup |
 | `web/` | Vue 3 + TS + Tailwind SPA (bun), embedded via `web/embed.go` |
 | `tests/` | Go integration/handler tests; `tests/integration/` uses testcontainers |

@@ -12,8 +12,8 @@ import (
 	"slices"
 	"strings"
 
+	pkgapk "github.com/M0Rf30/pkgformat/apk"
 	"github.com/openartifact/openartifact/internal/database/models"
-	pkgapk "github.com/openartifact/openartifact/pkg/apk"
 )
 
 // An apk proxy mirrors an Alpine mirror root by path: the key of a file is

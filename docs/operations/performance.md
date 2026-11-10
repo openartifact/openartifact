@@ -18,7 +18,7 @@ Two layers, both driven from the repository root.
 make bench    # go test -bench=. -benchmem -run=^$ ./...
 ```
 
-Runs every `Benchmark*` function with allocation reporting: package parsers (`pkg/deb`, `pkg/maven`, `pkg/npm`, `pkg/rpm`), metadata builders (`internal/format/{deb,helm,maven,npm,pypi,rpm}`), auth, RBAC middleware, JSON encoding, search and workers. Narrow it with a package path, for example `go test -bench=. -benchmem -run='^$' ./internal/auth/`.
+Runs every `Benchmark*` function with allocation reporting: package parsers (`pkg/maven`, `pkg/npm`), metadata builders (`internal/format/{deb,helm,maven,npm,pypi,rpm}`), auth, RBAC middleware, JSON encoding, search and workers. Narrow it with a package path, for example `go test -bench=. -benchmem -run='^$' ./internal/auth/`.
 
 The benchmark binaries are linked under `GOTMPDIR` (Go's default is `/tmp`). `make bench` sets it to `$XDG_CACHE_HOME/openartifact-bench` (else `~/.cache/openartifact-bench`) unless you already exported it; when you run `go test -bench` yourself on a machine with a small or quota-limited `/tmp`, export `GOTMPDIR` first, or the link fails with `link: cannot write /tmp/go-link-...: disk quota exceeded`.
 
@@ -53,7 +53,7 @@ Run it against a throwaway instance. Seeding writes thousands of artifacts and a
 
 `oabench seed` creates the repositories `bench-deb`, `bench-docker`, `bench-maven`, `bench-npm` and `bench-rpm` and fills them with 400 deb packages, 3000 Maven artifacts (jar and pom) and 1500 npm packages. It adds "hot" items for the metadata scenarios (a Maven artifact with 200 versions, an npm package with 100 versions), a Docker image with one 8 MB layer and a 10 MB Maven jar. Flags: `-url`, `-user`, `-pass`, `-new-pass`, `-token` (reuse a token instead of logging in), `-state`, `-deb`, `-maven`, `-npm`, `-rpm FILE`, `-workers` (default 16).
 
-`run.sh` does not pass `-rpm`, so `bench-rpm` stays empty and the rpm scenario measures an empty repository. To seed an RPM, run `oabench seed ... -rpm pkg/rpm/testdata/weakdeps.rpm` yourself first.
+`run.sh` does not pass `-rpm`, so `bench-rpm` stays empty and the rpm scenario measures an empty repository. To seed an RPM, run `oabench seed ... -rpm testdata/rpm/weakdeps.rpm` yourself first.
 
 #### Scenarios
 

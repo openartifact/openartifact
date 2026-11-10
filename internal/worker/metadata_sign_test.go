@@ -9,7 +9,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/openartifact/openartifact/pkg/gpg"
+	"github.com/M0Rf30/pkgformat/gpg"
 )
 
 var errSignFailed = errors.New("sign failed")

@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
+	pkgapk "github.com/M0Rf30/pkgformat/apk"
 	"github.com/openartifact/openartifact/internal/artifactpath"
 	"github.com/openartifact/openartifact/internal/curation"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/lazyre"
 	"github.com/openartifact/openartifact/internal/ocipath"
-	pkgapk "github.com/openartifact/openartifact/pkg/apk"
 	pkgconan "github.com/openartifact/openartifact/pkg/conan"
 )
 

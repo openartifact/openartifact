@@ -7,8 +7,8 @@ package worker
 import (
 	"testing"
 
+	"github.com/M0Rf30/pkgformat/pacman"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/pkg/pacman"
 )
 
 func entry(name, version string) pacman.DBEntry {

@@ -21,12 +21,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/middleware"
-	"github.com/openartifact/openartifact/pkg/gpg"
 )
 
 // quotaFake counts storage usage like the real reservation: limit 0 means

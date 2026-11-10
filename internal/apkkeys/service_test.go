@@ -12,10 +12,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/M0Rf30/pkgformat/apk"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
-	"github.com/openartifact/openartifact/pkg/apk"
 )
 
 type memStore struct {
@@ -96,7 +96,7 @@ func TestDefaultKeyName(t *testing.T) {
 		t.Error("distinct long repository names must get distinct key names")
 	}
 
-	if _, err := apk.NewSigner(got, mustKey(t)); err != nil {
+	if _, err := apk.NewSigner(got, mustKey(t), apk.SigRSASHA256); err != nil {
 		t.Errorf("pkg/apk rejects the shortened name: %v", err)
 	}
 }

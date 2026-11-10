@@ -21,8 +21,8 @@ import (
 
 	"github.com/ulikunitz/xz"
 
+	pkgdeb "github.com/M0Rf30/pkgformat/deb"
 	"github.com/openartifact/openartifact/internal/database/models"
-	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 )
 
 // debAdd adds a package to a hosted deb repository in the given distribution,
@@ -188,7 +188,12 @@ func assertReleaseMatchesFiles(t *testing.T, md map[string][]byte, step string) 
 
 		dir := strings.TrimSuffix(path, "Release")
 
-		for name, fi := range formatdeb.ParseReleaseChecksums(doc) {
+		release, err := pkgdeb.ParseRelease(doc)
+		if err != nil {
+			t.Fatalf("%s: %s: %v", step, path, err)
+		}
+
+		for name, fi := range release.Files {
 			data, ok := md[dir+name]
 			if !ok {
 				data, ok = md[dir+name+".gz"]

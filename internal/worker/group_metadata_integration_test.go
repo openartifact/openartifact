@@ -20,15 +20,15 @@ import (
 	"testing"
 	"time"
 
+	pkgdeb "github.com/M0Rf30/pkgformat/deb"
+	"github.com/M0Rf30/pkgformat/gpg"
+	pkgrpm "github.com/M0Rf30/pkgformat/rpm"
+	"github.com/M0Rf30/pkgformat/rpm/repodata"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
-	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/format/formattest"
-	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/proxy"
-	"github.com/openartifact/openartifact/pkg/gpg"
-	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
 // fakeUpstream serves proxy members' files: key "<repo id>|<path>".
@@ -256,7 +256,7 @@ func debListing(t *testing.T, md map[string][]byte) []packageRow {
 
 	var rows []packageRow
 
-	err = formatdeb.ScanPackages(zr, func(s formatdeb.Stanza) error {
+	err = pkgdeb.ScanPackages(zr, func(s pkgdeb.Stanza) error {
 		rows = append(rows, packageRow{s.Package, s.Version, s.Filename})
 		return nil
 	})
@@ -321,8 +321,8 @@ func TestGroupDebMergesHostedAndProxyInMemberOrder(t *testing.T) {
 		t.Errorf("owners = %v, want foo→A, bar→B, baz→proxy (member order decides duplicates)", owners)
 	}
 
-	release := formatdeb.ParseRelease(md["dists/bookworm/Release"])
-	if len(release.Files) == 0 || !release.HasIndex("main", "amd64") {
+	release, err := pkgdeb.ParseRelease(md["dists/bookworm/Release"])
+	if err != nil || len(release.Files) == 0 || !release.HasIndex("main", "amd64") {
 		t.Errorf("merged Release = %q", md["dists/bookworm/Release"])
 	}
 
@@ -557,7 +557,7 @@ func upstreamRPM(t *testing.T, repoID string, pkgs ...pkgrpm.Package) fakeUpstre
 	for _, w := range []struct {
 		buf   *bytes.Buffer
 		write func(io.Writer, []pkgrpm.Package) error
-	}{{&primary, formatrpm.WritePrimaryXML}, {&filelists, formatrpm.WriteFilelistsXML}, {&other, formatrpm.WriteOtherXML}} {
+	}{{&primary, repodata.WritePrimaryXML}, {&filelists, repodata.WriteFilelistsXML}, {&other, repodata.WriteOtherXML}} {
 		if err := w.write(w.buf, pkgs); err != nil {
 			t.Fatal(err)
 		}
@@ -576,7 +576,7 @@ func upstreamRPM(t *testing.T, repoID string, pkgs ...pkgrpm.Package) fakeUpstre
 	}
 }
 
-func rpmListing(t *testing.T, md map[string][]byte) []formatrpm.PackageInfo {
+func rpmListing(t *testing.T, md map[string][]byte) []repodata.PackageInfo {
 	t.Helper()
 
 	repomd, ok := md["repodata/repomd.xml"]
@@ -584,26 +584,28 @@ func rpmListing(t *testing.T, md map[string][]byte) []formatrpm.PackageInfo {
 		t.Fatalf("no repomd.xml in %v", keys(md))
 	}
 
-	locs, err := formatrpm.ParseRepomd(bytes.NewReader(repomd))
+	parsed, err := repodata.ParseRepomd(bytes.NewReader(repomd))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	data, ok := md[locs["primary"]]
+	primary, _ := parsed.Find("primary")
+
+	data, ok := md[primary.Location]
 	if !ok {
-		t.Fatalf("primary %q not published; have %v", locs["primary"], keys(md))
+		t.Fatalf("primary %q not published; have %v", primary.Location, keys(md))
 	}
 
-	rc, err := formatrpm.OpenMetadata(io.NopCloser(bytes.NewReader(data)), locs["primary"])
+	rc, err := repodata.OpenMetadata(io.NopCloser(bytes.NewReader(data)), primary.Location, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	defer func() { _ = rc.Close() }()
 
-	var out []formatrpm.PackageInfo
+	var out []repodata.PackageInfo
 
-	err = formatrpm.ScanPackages(rc, false, func(i formatrpm.PackageInfo, _ []byte) error {
+	err = repodata.ScanPackages(rc, false, func(i repodata.PackageInfo, _ []byte) error {
 		out = append(out, i)
 		return nil
 	})
@@ -653,7 +655,7 @@ func TestGroupRPMMergesHostedAndProxyInMemberOrder(t *testing.T) {
 	}
 
 	for _, r := range rows {
-		href, ok := formatrpm.SafeLocation(r.Href)
+		href, ok := repodata.SafeLocation(r.Href)
 		if !ok {
 			t.Fatalf("unsafe href %q", r.Href)
 		}
@@ -667,9 +669,13 @@ func TestGroupRPMMergesHostedAndProxyInMemberOrder(t *testing.T) {
 	}
 
 	for _, kind := range []string{"filelists", "other"} {
-		locs, err := formatrpm.ParseRepomd(bytes.NewReader(md["repodata/repomd.xml"]))
-		if err != nil || locs[kind] == "" {
-			t.Errorf("repomd lacks %s: %v, %v", kind, locs, err)
+		repomd, err := repodata.ParseRepomd(bytes.NewReader(md["repodata/repomd.xml"]))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, ok := repomd.Find(kind); !ok {
+			t.Errorf("repomd lacks %s: %+v", kind, repomd.Data)
 		}
 	}
 }

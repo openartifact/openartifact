@@ -15,13 +15,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/gpgresolver"
+
 	"github.com/ProtonMail/go-crypto/openpgp"
 
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/webhook"
-	"github.com/openartifact/openartifact/pkg/gpg"
 )
 
 func jsonOf[T any](t *testing.T, w *httptest.ResponseRecorder) T {
@@ -902,7 +904,7 @@ func TestProviderWithoutSigningKey(t *testing.T) {
 
 	for _, tc := range []struct {
 		name     string
-		resolver gpg.Resolver
+		resolver gpgresolver.Resolver
 	}{
 		{"no resolver", nil},
 		{"unsigned repository", signerResolver{}},

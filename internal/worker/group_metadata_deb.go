@@ -5,11 +5,8 @@
 package worker
 
 import (
-	"bytes"
 	"cmp"
 	"context"
-	"crypto/md5"  //nolint:gosec // required by the protocol
-	"crypto/sha1" //nolint:gosec // required by the protocol
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -20,7 +17,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/klauspost/compress/gzip"
+	pkgdeb "github.com/M0Rf30/pkgformat/deb"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/group"
@@ -39,8 +36,6 @@ const (
 	// debCompressWorkers bounds the indexes compressed at once; each holds
 	// the accepted stanzas of its index and its output.
 	debCompressWorkers = 3
-	// maxBufferHint caps the output buffer pre-sized from the index size.
-	maxBufferHint = 64 << 20
 )
 
 // validDistName restricts the distribution names a group serves: they become
@@ -61,8 +56,8 @@ type debHostedDist struct {
 // debContribution is what one member offers for a distribution.
 type debContribution struct {
 	member *models.Repository
-	hosted *debHostedDist             // set for hosted members
-	rel    *formatdeb.UpstreamRelease // set for proxy members
+	hosted *debHostedDist  // set for hosted members
+	rel    *pkgdeb.Release // set for proxy members
 }
 
 // checkDist returns group.ErrDistNotFound unless some member has dist (a
@@ -128,7 +123,7 @@ func cmpFirst(first, err error) error {
 // fetchRelease reads the Release (else InRelease) of dist from a proxy member.
 // A nil Release with a nil error means the upstream does not have the
 // distribution.
-func (w *GroupMetadataWorker) fetchRelease(ctx context.Context, m *models.Repository, dist string) (*formatdeb.UpstreamRelease, error) {
+func (w *GroupMetadataWorker) fetchRelease(ctx context.Context, m *models.Repository, dist string) (*pkgdeb.Release, error) {
 	for _, name := range []string{"Release", "InRelease"} {
 		data, err := w.readAll(ctx, m, "dists/"+dist+"/"+name, maxUpstreamRelease)
 		if errors.Is(err, proxy.ErrNotFound) {
@@ -139,9 +134,12 @@ func (w *GroupMetadataWorker) fetchRelease(ctx context.Context, m *models.Reposi
 			return nil, err
 		}
 
-		rel := formatdeb.ParseRelease(data)
+		rel, err := pkgdeb.ParseRelease(data)
+		if err != nil {
+			return nil, fmt.Errorf("parsing %s: %w", name, err)
+		}
 
-		return &rel, nil
+		return rel, nil
 	}
 
 	return nil, nil //nolint:nilnil // absent is not an error
@@ -321,55 +319,36 @@ func (j *groupJob) buildDebDist(ctx context.Context, dist string, hosted map[str
 
 	comps, archs := debComponentsAndArchs(contribs)
 
-	releaseGen := formatdeb.NewReleaseFileGenerator("openartifact", "openartifact", dist, dist)
-	for _, c := range comps {
-		releaseGen.AddComponent(c)
-	}
-
-	for _, a := range archs {
-		releaseGen.AddArchitecture(a)
-	}
+	release := formatdeb.NewRelease(dist)
+	release.Components = comps
+	release.Architectures = archs
 
 	indexes, err := j.buildDebIndexes(ctx, dist, comps, archs, contribs)
 	if err != nil {
 		return false, err
 	}
 
-	var files []formatdeb.FileInfo
-
 	for _, idx := range indexes {
-		files = append(files, idx.plainInfo(idx.base))
+		release.AddFile(idx.plainInfo(idx.base))
 
 		rel := "dists/" + dist + "/" + idx.base + ".gz"
 
 		if idx.reusedGz != nil {
 			j.unchanged[rel] = idx.reusedGz.SHA256
-			files = append(files, *idx.reusedGz)
+			release.AddFile(*idx.reusedGz)
 
 			continue
 		}
 
 		j.blobs[rel] = idx.gz
-		md5sum, sha1sum, sha256sum := formatdeb.CalculateChecksums(idx.gz)
-		files = append(
-			files,
-			formatdeb.FileInfo{
-				Filename: idx.base + ".gz",
-				Size:     int64(len(idx.gz)),
-				MD5sum:   md5sum,
-				SHA1:     sha1sum,
-				SHA256:   sha256sum,
-			},
-		)
+		release.AddFile(releaseFileInfo(idx.base+".gz", idx.gz))
 	}
 
-	sort.Slice(files, func(a, b int) bool { return files[a].Filename < files[b].Filename })
-
-	release := []byte(releaseGen.GenerateRelease(files))
-	j.blobs["dists/"+dist+"/Release"] = release
+	content := release.Marshal()
+	j.blobs["dists/"+dist+"/Release"] = content
 
 	if j.signer != nil {
-		if err := addSignedRelease(j.blobs, "dists/"+dist+"/", release, j.signer); err != nil {
+		if err := addSignedRelease(j.blobs, "dists/"+dist+"/", content, j.signer); err != nil {
 			return false, fmt.Errorf("group worker: %s/%s: %w", j.group.Name, dist, err)
 		}
 	}
@@ -474,80 +453,65 @@ func (j *groupJob) collectContributions(ctx context.Context, dist string, hosted
 }
 
 // debIndex is a merged Packages index: the accepted stanzas, then their
-// compressed forms and checksums.
+// compressed form and checksums.
 type debIndex struct {
 	// base is the path of the uncompressed index relative to the distribution.
 	base string
-	// texts are the accepted stanzas in output order; dropped by compress.
-	texts []string
-	// size is the uncompressed size, the sum of the texts' lengths.
+	// stanzas are the accepted stanzas in output order; dropped by compress.
+	stanzas pkgdeb.Index
+	// size is the uncompressed size: the sum of the stanzas' lengths until
+	// compress sets it to the rendered length.
 	size int64
 	gz   []byte
 	// reusedGz is set instead of gz when the index is byte for byte the one the
 	// group published last: the stored compressed file is kept and only its
 	// Release entry is carried over.
-	reusedGz *formatdeb.FileInfo
+	reusedGz *pkgdeb.FileInfo
 
 	// plain describes the uncompressed index for the Release file. Release lists
 	// it although it is not stored: apt skips an index whose uncompressed entry
 	// is missing.
-	plainMD5, plainSHA1, plainSHA256 string
+	plain pkgdeb.FileInfo
 }
 
 // plainInfo describes the uncompressed index for the Release file.
-func (i *debIndex) plainInfo(name string) formatdeb.FileInfo {
-	return formatdeb.FileInfo{
-		Filename: name,
-		Size:     i.size,
-		MD5sum:   i.plainMD5,
-		SHA1:     i.plainSHA1,
-		SHA256:   i.plainSHA256,
-	}
+func (i *debIndex) plainInfo(name string) pkgdeb.FileInfo {
+	fi := i.plain
+	fi.Path = name
+
+	return fi
 }
 
 // compress produces the gzip form and the checksums of the plain index, unless
 // prev shows that the group already published this very index: then nothing is
 // compressed, the stored file stays and its Release entry is the one of the
 // previous Release. The compression and the checksums are independent passes
-// over the texts, so they run concurrently. Only gzip is published: the pure-Go
+// over the index, so they run concurrently. Only gzip is published: the pure-Go
 // xz encoder costs about ten times the CPU of gzip for an index 5 % smaller,
 // and apt uses gzip when Release lists no xz.
 func (i *debIndex) compress(prev *debPrevious) error {
-	if i.reuse(prev) {
+	plain := i.stanzas.Bytes()
+	i.size = int64(len(plain))
+
+	if i.reuse(prev, plain) {
 		return nil
 	}
 
-	var (
-		gzBuf bytes.Buffer
-		wg    errgroup.Group
-	)
-
-	gzBuf.Grow(int(min(i.size/4, maxBufferHint)))
+	var wg errgroup.Group
 
 	wg.Go(func() error {
-		gw := gzip.NewWriter(&gzBuf)
-
-		if err := writeAll(gw, i.texts); err != nil {
-			return err
-		}
-
-		if err := gw.Close(); err != nil {
+		gz, err := i.stanzas.Compressed(pkgdeb.CompressionGzip)
+		if err != nil {
 			return fmt.Errorf("group worker: gzip compression: %w", err)
 		}
+
+		i.gz = gz
 
 		return nil
 	})
 
 	wg.Go(func() error {
-		md5h, sha1h, sha256h := md5.New(), sha1.New(), sha256.New() //nolint:gosec // required by the protocol
-
-		if err := writeAll(io.MultiWriter(md5h, sha1h, sha256h), i.texts); err != nil {
-			return err
-		}
-
-		i.plainMD5 = hex.EncodeToString(md5h.Sum(nil))
-		i.plainSHA1 = hex.EncodeToString(sha1h.Sum(nil))
-		i.plainSHA256 = hex.EncodeToString(sha256h.Sum(nil))
+		i.plain = releaseFileInfo(i.base, plain)
 
 		return nil
 	})
@@ -556,8 +520,7 @@ func (i *debIndex) compress(prev *debPrevious) error {
 		return err //nolint:wrapcheck // the tasks wrap
 	}
 
-	i.gz = gzBuf.Bytes()
-	i.texts = nil
+	i.stanzas = pkgdeb.Index{}
 
 	return nil
 }
@@ -565,26 +528,21 @@ func (i *debIndex) compress(prev *debPrevious) error {
 // reuse sets the index up from prev when the group already published exactly
 // this index; it reports whether it did. An index of another size cannot be it,
 // so only then is the plain index hashed.
-func (i *debIndex) reuse(prev *debPrevious) bool {
+func (i *debIndex) reuse(prev *debPrevious, plain []byte) bool {
 	if prev == nil || prev.files[i.base].Size != i.size {
 		return false
 	}
 
-	h := sha256.New()
-	if err := writeAll(h, i.texts); err != nil {
-		return false
-	}
+	sum := sha256.Sum256(plain)
 
-	sum := hex.EncodeToString(h.Sum(nil))
-
-	plain, gz, ok := prev.reusable(i.base, i.size, sum)
+	prevPlain, gz, ok := prev.reusable(i.base, i.size, hex.EncodeToString(sum[:]))
 	if !ok {
 		return false
 	}
 
-	i.plainMD5, i.plainSHA1, i.plainSHA256 = plain.MD5sum, plain.SHA1, plain.SHA256
+	i.plain = prevPlain
 	i.reusedGz = &gz
-	i.texts = nil
+	i.stanzas = pkgdeb.Index{}
 
 	return true
 }
@@ -592,7 +550,7 @@ func (i *debIndex) reuse(prev *debPrevious) bool {
 // debPrevious is what the group published for a distribution the last time:
 // the files its Release listed, and the checksum each stored file is under.
 type debPrevious struct {
-	files map[string]formatdeb.FileInfo
+	files map[string]pkgdeb.FileInfo
 	// stored is the blob checksum of the stored files by group-relative path.
 	stored map[string]string
 	// prefix is the group-relative path of the distribution's directory,
@@ -607,7 +565,7 @@ func (p *debPrevious) reusable(
 	base string,
 	size int64,
 	sha256sum string,
-) (formatdeb.FileInfo, formatdeb.FileInfo, bool) {
+) (pkgdeb.FileInfo, pkgdeb.FileInfo, bool) {
 	plain, gz := p.files[base], p.files[base+".gz"]
 	if plain.SHA256 != sha256sum || plain.Size != size {
 		return plain, gz, false
@@ -618,20 +576,10 @@ func (p *debPrevious) reusable(
 	return plain, gz, ok
 }
 
-func writeAll(w io.Writer, texts []string) error {
-	for _, t := range texts {
-		if _, err := io.WriteString(w, t); err != nil {
-			return fmt.Errorf("group worker: writing Packages: %w", err)
-		}
-	}
-
-	return nil
-}
-
 // debProxyScan is what one proxy member's Packages index yielded: every stanza
 // read, and the failures that make the generation partial.
 type debProxyScan struct {
-	stanzas []formatdeb.Stanza
+	stanzas []pkgdeb.Stanza
 	errs    []debFetchError
 }
 
@@ -696,7 +644,7 @@ func (j *groupJob) scanDebProxies(ctx context.Context, dist string, comps, archs
 		comp, arch := comps[n/len(archs)], archs[n%len(archs)]
 
 		for ci, c := range contribs {
-			if c.rel == nil || !c.rel.HasIndex(comp, arch) {
+			if c.rel == nil || !debReleaseHasIndex(c.rel, comp, arch) {
 				continue
 			}
 
@@ -720,9 +668,9 @@ func (j *groupJob) scanDebProxies(ctx context.Context, dist string, comps, archs
 func (j *groupJob) mergeDebIndex(idx *debIndex, comp, arch string, contribs []debContribution, scans []*debProxyScan) {
 	seen := make(map[debStanzaKey]struct{})
 
-	add := func(m *models.Repository, st formatdeb.Stanza, hosted bool) {
+	add := func(m *models.Repository, st pkgdeb.Stanza, hosted bool) {
 		if text, ok := j.acceptDebStanza(seen, m, st, hosted); ok {
-			idx.texts = append(idx.texts, text)
+			idx.stanzas.AddText(text)
 			idx.size += int64(len(text))
 		}
 	}
@@ -735,7 +683,7 @@ func (j *groupJob) mergeDebIndex(idx *debIndex, comp, arch string, contribs []de
 					continue
 				}
 
-				st := formatdeb.Stanza{
+				st := pkgdeb.Stanza{
 					Package: e.Name, Version: e.Version, Architecture: e.Arch,
 					Filename: formatdeb.GetPoolPath(e.ComponentName, e.Name, e.Version, e.Filename),
 					SHA256:   e.SHA256, Text: c.hosted.files[i].text,
@@ -792,7 +740,7 @@ type debStanzaKey struct{ pkg, version, arch string }
 // acceptDebStanza returns the text of st unless an earlier member provides the
 // same package version, hosted-wins hides it, or its file cannot be served
 // unambiguously.
-func (j *groupJob) acceptDebStanza(seen map[debStanzaKey]struct{}, m *models.Repository, st formatdeb.Stanza, hosted bool) (string, bool) {
+func (j *groupJob) acceptDebStanza(seen map[debStanzaKey]struct{}, m *models.Repository, st pkgdeb.Stanza, hosted bool) (string, bool) {
 	key := debStanzaKey{st.Package, st.Version, st.Architecture}
 	if _, dup := seen[key]; dup {
 		return "", false
@@ -823,7 +771,7 @@ func (j *groupJob) acceptDebStanza(seen map[debStanzaKey]struct{}, m *models.Rep
 // lacks contributes nothing; any other failure is recorded and makes the
 // generation partial. It is safe to run concurrently for different scans.
 func (j *groupJob) scanProxyIndex(ctx context.Context, c debContribution, dist, comp, arch string, scan *debProxyScan) {
-	for _, variant := range c.rel.PackagesVariants(comp, arch) {
+	for _, variant := range c.rel.PackagesCandidates(comp, arch) {
 		rel := "dists/" + dist + "/" + variant
 
 		rc, err := j.w.opener.Open(ctx, c.member, rel)
@@ -836,7 +784,7 @@ func (j *groupJob) scanProxyIndex(ctx context.Context, c debContribution, dist, 
 			return
 		}
 
-		dec, err := formatdeb.DecompressIndex(rc, variant)
+		dec, err := pkgdeb.OpenIndex(rc, variant)
 		if err != nil {
 			scan.errs = append(scan.errs, debFetchError{rel, err})
 			return
@@ -844,7 +792,7 @@ func (j *groupJob) scanProxyIndex(ctx context.Context, c debContribution, dist, 
 
 		// A malformed or truncated upstream index keeps the entries read so
 		// far and makes the generation partial, redone soon.
-		err = formatdeb.ScanPackages(dec, func(st formatdeb.Stanza) error {
+		err = pkgdeb.ScanPackages(dec, func(st pkgdeb.Stanza) error {
 			scan.stanzas = append(scan.stanzas, st)
 			return nil
 		})
@@ -883,7 +831,21 @@ func (j *groupJob) previousDebFiles(ctx context.Context, dist string) *debPrevio
 		return nil
 	}
 
-	return &debPrevious{files: formatdeb.ParseReleaseChecksums(data), stored: stored, prefix: prefix}
+	rel, err := pkgdeb.ParseRelease(data)
+	if err != nil {
+		return nil
+	}
+
+	// Only a file all three checksums of which are listed can be carried over.
+	files := make(map[string]pkgdeb.FileInfo, len(rel.Files))
+
+	for path, fi := range rel.Files {
+		if fi.Complete() {
+			files[path] = fi
+		}
+	}
+
+	return &debPrevious{files: files, stored: stored, prefix: prefix}
 }
 
 // storedDebMetadata returns the checksums of the group's stored dists/ files
@@ -930,4 +892,10 @@ func (j *groupJob) storedDebMetadata(ctx context.Context) map[string]string {
 	}
 
 	return j.stored
+}
+
+// debReleaseHasIndex reports whether an upstream Release declares the component
+// and the architecture of a Packages index.
+func debReleaseHasIndex(rel *pkgdeb.Release, comp, arch string) bool {
+	return slices.Contains(rel.Components, comp) && slices.Contains(rel.Architectures, arch)
 }

@@ -7,6 +7,8 @@ package plugin
 import (
 	"net/http"
 
+	"github.com/openartifact/openartifact/internal/gpgresolver"
+
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -18,7 +20,6 @@ import (
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/webhook"
-	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -56,7 +57,7 @@ type Deps struct {
 	APKKeys formatapk.KeyProvider
 	NixKeys formatnix.KeyProvider
 	// GPG resolves the signer of Terraform repositories; nil when none.
-	GPG gpg.Resolver
+	GPG gpgresolver.Resolver
 	// Proxy serves the Terraform tickets of proxy repositories; nil when the
 	// process has no proxy service.
 	Proxy *proxy.Service

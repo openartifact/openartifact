@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/gpgkeys"
-	"github.com/openartifact/openartifact/pkg/gpg"
 )
 
 const signingKeysPath = "/api/v1/bundles/signing-keys"

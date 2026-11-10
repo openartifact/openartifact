@@ -8,16 +8,16 @@ import (
 	"io"
 	"testing"
 
-	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
+	"github.com/M0Rf30/pkgformat/rpm/repodata"
 )
 
 func TestSignerNilSigner(t *testing.T) {
-	_, err := formatrpm.SignRepomdXML(nil, []byte("<repomd/>"))
+	_, err := repodata.SignRepomdXML(nil, []byte("<repomd/>"))
 	if err == nil {
 		t.Error("SignRepomdXML(nil signer) expected error, got nil")
 	}
 
-	_, err = formatrpm.PublicKey(nil)
+	_, err = repodata.PublicKey(nil)
 	if err == nil {
 		t.Error("PublicKey(nil signer) expected error, got nil")
 	}
@@ -26,12 +26,12 @@ func TestSignerNilSigner(t *testing.T) {
 func TestSignerEmptyData(t *testing.T) {
 	mockSigner := &nilSigner{}
 
-	_, err := formatrpm.SignRepomdXML(mockSigner, nil)
+	_, err := repodata.SignRepomdXML(mockSigner, nil)
 	if err == nil {
 		t.Error("SignRepomdXML(empty data) expected error, got nil")
 	}
 
-	_, err = formatrpm.SignRepomdXML(mockSigner, []byte{})
+	_, err = repodata.SignRepomdXML(mockSigner, []byte{})
 	if err == nil {
 		t.Error("SignRepomdXML(empty data) expected error, got nil")
 	}

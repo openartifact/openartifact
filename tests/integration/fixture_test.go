@@ -10,7 +10,7 @@ import (
 	"bytes"
 	"testing"
 
-	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
+	pkgrpm "github.com/M0Rf30/pkgformat/rpm"
 )
 
 func TestCreateTestRPM_RoundTrip(t *testing.T) {
@@ -19,9 +19,9 @@ func TestCreateTestRPM_RoundTrip(t *testing.T) {
 		t.Fatal("CreateTestRPM returned empty bytes")
 	}
 
-	pkg, err := pkgrpm.ParseRPM(bytes.NewReader(rpmBytes))
+	pkg, err := pkgrpm.ReadPackage(bytes.NewReader(rpmBytes))
 	if err != nil {
-		t.Fatalf("ParseRPM failed: %v", err)
+		t.Fatalf("ReadPackage failed: %v", err)
 	}
 
 	if pkg.Name != "testpkg" {

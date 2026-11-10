@@ -8,7 +8,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openartifact/openartifact/pkg/gpg"
+	"github.com/openartifact/openartifact/internal/gpgresolver"
+
+	"github.com/M0Rf30/pkgformat/gpg"
 )
 
 // metadataSigner returns the signer of the repository's metadata, nil when it
@@ -16,7 +18,7 @@ import (
 // metadata with unsigned metadata because of a transient error would break
 // every client that verifies it. who is the log prefix of the calling worker,
 // e.g. "deb worker".
-func metadataSigner(ctx context.Context, signers gpg.Resolver, repoID, who string) (gpg.Signer, error) {
+func metadataSigner(ctx context.Context, signers gpgresolver.Resolver, repoID, who string) (gpg.Signer, error) {
 	if signers == nil {
 		return nil, nil //nolint:nilnil // nil signer means unsigned
 	}

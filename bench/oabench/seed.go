@@ -212,7 +212,7 @@ func runSeed(args []string) error {
 	nMaven := fs.Int("maven", 3000, "maven artifacts (jar+pom)")
 	nNPM := fs.Int("npm", 1500, "npm packages")
 	nDeb := fs.Int("deb", 400, "deb packages")
-	rpmFile := fs.String("rpm", "", "path to an .rpm to upload (e.g. pkg/rpm/testdata/weakdeps.rpm); enables the rpm scenarios")
+	rpmFile := fs.String("rpm", "", "path to an .rpm to upload (e.g. testdata/rpm/weakdeps.rpm); enables the rpm scenarios")
 	workers := fs.Int("workers", 16, "parallel uploads")
 	_ = fs.Parse(args)
 

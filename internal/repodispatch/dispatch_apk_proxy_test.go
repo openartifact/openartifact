@@ -12,12 +12,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	pkgapk "github.com/M0Rf30/pkgformat/apk"
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/apktest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/storage"
-	pkgapk "github.com/openartifact/openartifact/pkg/apk"
-	"github.com/openartifact/openartifact/pkg/apk/apktest"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 

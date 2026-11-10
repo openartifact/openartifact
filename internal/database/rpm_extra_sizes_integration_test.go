@@ -10,8 +10,9 @@ import (
 	"context"
 	"testing"
 
+	pkgrpm "github.com/M0Rf30/pkgformat/rpm"
 	"github.com/openartifact/openartifact/internal/database/models"
-	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
+	"github.com/openartifact/openartifact/internal/rpmextra"
 )
 
 // TestUpdateRpmPackageExtraCorrectsSizes: rows stored before the header size
@@ -58,7 +59,7 @@ func TestUpdateRpmPackageExtraCorrectsSizes(t *testing.T) {
 		t.Fatalf("sizes after sizeless extra = %d/%d, want the columns untouched (0/0)", installed, archive)
 	}
 
-	extra, err := (&pkgrpm.Package{InstalledSize: 100012, ArchiveSize: 100696}).MarshalExtra()
+	extra, err := rpmextra.Marshal(&pkgrpm.Package{InstalledSize: 100012, ArchiveSize: 100696})
 	if err != nil {
 		t.Fatal(err)
 	}

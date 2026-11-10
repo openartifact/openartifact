@@ -33,9 +33,31 @@ func TestFormatPackagesEntry(t *testing.T) {
 	}
 }
 
-func TestReleaseOmitsValidUntilByDefault(t *testing.T) {
-	out := NewReleaseFileGenerator("o", "l", "stable", "stable").GenerateRelease(nil)
-	if strings.Contains(out, "Valid-Until") {
+func TestNewReleaseOmitsValidUntil(t *testing.T) {
+	out := NewRelease("stable").Marshal()
+	if strings.Contains(string(out), "Valid-Until") {
 		t.Errorf("unexpected Valid-Until in %q", out)
+	}
+}
+
+// Stored control fields keep the deb822 wire form that rows have always had:
+// pkgformat's logical values are encoded on the way in and decoded on the way
+// out, so a stored multi-line description renders as it was uploaded.
+func TestStoredControlFieldsKeepWireForm(t *testing.T) {
+	logical := map[string]string{"Description": "short\nfirst\n\nsecond\n indented", "Section": "utils"}
+
+	stored := ControlFieldsToStore(logical)
+
+	const wire = "short\n first\n .\n second\n  indented"
+	if stored["Description"] != wire {
+		t.Fatalf("stored Description = %q, want %q", stored["Description"], wire)
+	}
+
+	got := FormatPackagesEntry(models.DebPackageEntry{
+		Name: "p", Version: "1", Arch: "all", ComponentName: "main", Filename: "p_1_all.deb", Size: 1, SHA256: "abc",
+		ControlFields: stored,
+	})
+	if !strings.HasSuffix(got, "Description: "+wire+"\n\n") {
+		t.Errorf("stanza does not end with the stored description:\n%s", got)
 	}
 }

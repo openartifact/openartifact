@@ -13,13 +13,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/M0Rf30/pkgformat/apk"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/workq"
-	"github.com/openartifact/openartifact/pkg/apk"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 

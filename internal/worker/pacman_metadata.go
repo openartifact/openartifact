@@ -14,14 +14,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/gpgresolver"
+
+	"github.com/M0Rf30/pkgformat/gpg"
+	"github.com/M0Rf30/pkgformat/pacman"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/workq"
-	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
-	"github.com/openartifact/openartifact/pkg/pacman"
 )
 
 // PacmanMetadataStore is the part of the database PacmanMetadataWorker needs.
@@ -43,7 +45,7 @@ type PacmanMetadataStore interface {
 type PacmanMetadataWorker struct {
 	db        PacmanMetadataStore
 	blobStore storage.BlobStore
-	signers   gpg.Resolver
+	signers   gpgresolver.Resolver
 	log       *logger.Logger
 	q         *regenQueue[string]
 	onStale   func(repoID string)
@@ -53,7 +55,7 @@ type PacmanMetadataWorker struct {
 func NewPacmanMetadataWorker(
 	db PacmanMetadataStore,
 	blobStore storage.BlobStore,
-	signers gpg.Resolver,
+	signers gpgresolver.Resolver,
 	log *logger.Logger,
 ) *PacmanMetadataWorker {
 	w := &PacmanMetadataWorker{db: db, blobStore: blobStore, signers: signers, log: log}

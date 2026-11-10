@@ -18,6 +18,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/gpgresolver"
+
+	pkgapk "github.com/M0Rf30/pkgformat/apk"
+	"github.com/M0Rf30/pkgformat/gpg"
+	"github.com/M0Rf30/pkgformat/pacman"
+	pkgrpm "github.com/M0Rf30/pkgformat/rpm"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
@@ -27,11 +33,7 @@ import (
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/workq"
-	pkgapk "github.com/openartifact/openartifact/pkg/apk"
-	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
-	"github.com/openartifact/openartifact/pkg/pacman"
-	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
 const (
@@ -95,7 +97,7 @@ type GroupMetadataWorker struct {
 	blobStore storage.BlobStore
 	opener    MemberOpener
 	rpm       RPMPackageLoader
-	signers   gpg.Resolver
+	signers   gpgresolver.Resolver
 	// apkSigners resolves the key that signs apk groups' indexes (nil: unsigned).
 	apkSigners ApkSignerResolver
 	// stanzas keeps the rendered Packages stanzas of hosted deb members.
@@ -112,7 +114,7 @@ func NewGroupMetadataWorker(
 	blobStore storage.BlobStore,
 	opener MemberOpener,
 	rpm RPMPackageLoader,
-	signers gpg.Resolver,
+	signers gpgresolver.Resolver,
 	log *logger.Logger,
 ) *GroupMetadataWorker {
 	w := &GroupMetadataWorker{db: db, blobStore: blobStore, opener: opener, rpm: rpm, signers: signers, log: log,

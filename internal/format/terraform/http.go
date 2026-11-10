@@ -25,6 +25,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/gpgresolver"
+
 	"github.com/go-chi/chi/v5"
 
 	"context"
@@ -35,7 +37,6 @@ import (
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
-	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -92,7 +93,7 @@ type HTTPStore interface {
 type HTTPHandler struct {
 	*base.Handler
 
-	signers   gpg.Resolver
+	signers   gpgresolver.Resolver
 	proxy     ProxyServer
 	ticketKey []byte
 	now       func() time.Time
@@ -109,8 +110,8 @@ func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStor
 }
 
 // WithSigner sets where provider checksum signatures come from: the GPG key
-// of the repository (see gpg.Resolver).
-func (h *HTTPHandler) WithSigner(r gpg.Resolver) *HTTPHandler {
+// of the repository (see gpgresolver.Resolver).
+func (h *HTTPHandler) WithSigner(r gpgresolver.Resolver) *HTTPHandler {
 	h.signers = r
 
 	return h

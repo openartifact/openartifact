@@ -39,16 +39,16 @@ precedence = "aggregate"
 SPDX-FileCopyrightText = "The OpenArtifact Authors"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
-# Binary rpm test fixture (built from testdata/weakdeps.spec).
+# Binary rpm test fixture (built from testdata/rpm/weakdeps.spec).
 [[annotations]]
-path = "pkg/rpm/testdata/weakdeps.rpm"
+path = "testdata/rpm/weakdeps.rpm"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "The OpenArtifact Authors"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
-# Binary rpm size fixtures (rpm format 4 and 6, built from testdata/sizes.spec).
+# Binary rpm size and signing fixtures (built from testdata/rpm/sizes.spec and hello.spec).
 [[annotations]]
-path = ["pkg/rpm/testdata/sizes-v4.rpm", "pkg/rpm/testdata/sizes-v6.rpm", "pkg/rpmsign/testdata/hello.rpm"]
+path = ["testdata/rpm/sizes-v4.rpm", "testdata/rpm/hello.rpm"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "The OpenArtifact Authors"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
