@@ -20,10 +20,10 @@ import (
 	"testing"
 	"time"
 
+	pkgdeb "github.com/M0Rf30/pkgformat/deb"
 	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
-	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	"github.com/openartifact/openartifact/internal/group"
@@ -256,7 +256,7 @@ func debListing(t *testing.T, md map[string][]byte) []packageRow {
 
 	var rows []packageRow
 
-	err = formatdeb.ScanPackages(zr, func(s formatdeb.Stanza) error {
+	err = pkgdeb.ScanPackages(zr, func(s pkgdeb.Stanza) error {
 		rows = append(rows, packageRow{s.Package, s.Version, s.Filename})
 		return nil
 	})
@@ -321,8 +321,8 @@ func TestGroupDebMergesHostedAndProxyInMemberOrder(t *testing.T) {
 		t.Errorf("owners = %v, want foo→A, bar→B, baz→proxy (member order decides duplicates)", owners)
 	}
 
-	release := formatdeb.ParseRelease(md["dists/bookworm/Release"])
-	if len(release.Files) == 0 || !release.HasIndex("main", "amd64") {
+	release, err := pkgdeb.ParseRelease(md["dists/bookworm/Release"])
+	if err != nil || len(release.Files) == 0 || !release.HasIndex("main", "amd64") {
 		t.Errorf("merged Release = %q", md["dists/bookworm/Release"])
 	}
 

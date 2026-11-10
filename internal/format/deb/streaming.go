@@ -4,10 +4,10 @@
 
 package deb
 
-// StreamingGenerator generates Debian repository metadata on-the-fly from
-// database queries, writing directly to an io.Writer without intermediate
-// blob storage. This eliminates the metadata staleness window: clients always
-// receive up-to-date metadata even before the background worker has run.
+// Debian repository metadata generated on-the-fly from database queries,
+// written directly to an io.Writer without intermediate blob storage. This
+// eliminates the metadata staleness window: clients always receive up-to-date
+// metadata even before the background worker has run.
 //
 // Usage: call StreamPackages or StreamRelease from HTTP handlers when no
 // pre-generated blob exists in RepoMetadata.
@@ -16,18 +16,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
+	"time"
 
-	"github.com/klauspost/compress/gzip"
+	pkgdeb "github.com/M0Rf30/pkgformat/deb"
 	"github.com/openartifact/openartifact/internal/database/models"
-)
-
-// Compression selects the output encoding for StreamPackages.
-type Compression int
-
-const (
-	CompressionNone Compression = iota
-	CompressionGzip
 )
 
 // StreamPackagesStore is the part of the database StreamPackages needs.
@@ -42,7 +34,7 @@ func StreamPackages(
 	ctx context.Context,
 	database StreamPackagesStore,
 	repoID, dist, comp, arch string,
-	compression Compression,
+	compression pkgdeb.Compression,
 	w io.Writer,
 ) (int64, error) {
 	packages, err := database.ListDebPackageEntries(ctx, repoID, dist, comp, arch)
@@ -50,34 +42,18 @@ func StreamPackages(
 		return 0, fmt.Errorf("stream packages: query: %w", err)
 	}
 
-	// Build the Packages content in memory (it must be complete before compression).
-	var sb strings.Builder
+	var index pkgdeb.Index
 
 	for _, pkg := range packages {
-		sb.WriteString(FormatPackagesEntry(pkg))
+		index.Add(IndexEntry(pkg))
 	}
 
-	content := sb.String()
-
-	switch compression {
-	case CompressionGzip:
-		cw := newCountingWriter(w)
-
-		gz := gzip.NewWriter(cw)
-		if _, err := io.WriteString(gz, content); err != nil {
-			return cw.n, fmt.Errorf("stream packages: gzip write: %w", err)
-		}
-
-		if err := gz.Close(); err != nil {
-			return cw.n, fmt.Errorf("stream packages: gzip close: %w", err)
-		}
-
-		return cw.n, nil
-
-	default: // CompressionNone
-		n, err := io.WriteString(w, content)
-		return int64(n), err
+	n, err := index.WriteTo(w, compression)
+	if err != nil {
+		return n, fmt.Errorf("stream packages: %w", err)
 	}
+
+	return n, nil
 }
 
 // StreamReleaseStore is the part of the database StreamRelease needs.
@@ -120,35 +96,29 @@ func StreamRelease(ctx context.Context, database StreamReleaseStore, repoID, dis
 		return fmt.Errorf("stream release: query architectures: %w", err)
 	}
 
-	gen := NewReleaseFileGenerator("openartifact", "openartifact", dist, dist)
+	release := NewRelease(dist)
 	for _, c := range components {
-		gen.AddComponent(c.Name)
+		release.Components = append(release.Components, c.Name)
 	}
 
 	for _, a := range architectures {
-		gen.AddArchitecture(a.Name)
+		release.Architectures = append(release.Architectures, a.Name)
 	}
 
-	// Generate without file checksums (streaming path; checksums require pre-computed blobs).
-	content := gen.GenerateRelease(nil)
-	_, err = io.WriteString(w, content)
+	_, err = w.Write(release.Marshal())
 
 	return err
 }
 
-// countingWriter wraps an io.Writer and counts bytes written.
-type countingWriter struct {
-	w io.Writer
-	n int64
-}
-
-func newCountingWriter(w io.Writer) *countingWriter {
-	return &countingWriter{w: w}
-}
-
-func (cw *countingWriter) Write(p []byte) (int, error) {
-	n, err := cw.w.Write(p)
-	cw.n += int64(n)
-
-	return n, err
+// NewRelease starts the Release of a distribution the repository publishes. No
+// Valid-Until is set: metadata is only regenerated on upload, so an expiry
+// would make apt reject an idle repository.
+func NewRelease(dist string) *pkgdeb.Release {
+	return &pkgdeb.Release{
+		Origin:   "openartifact",
+		Label:    "openartifact",
+		Suite:    dist,
+		Codename: dist,
+		Date:     time.Now().UTC(),
+	}
 }

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 
+	pkgdeb "github.com/M0Rf30/pkgformat/deb"
 	"github.com/go-chi/chi/v5"
 	database "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -27,7 +28,6 @@ import (
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/worker"
-	pkgdeb "github.com/openartifact/openartifact/pkg/deb"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 

@@ -15,9 +15,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/M0Rf30/pkgformat/deb"
 	"github.com/M0Rf30/pkgformat/pacman"
 	"github.com/openartifact/openartifact/pkg/composer"
-	"github.com/openartifact/openartifact/pkg/deb"
 	"github.com/openartifact/openartifact/pkg/rpm"
 )
 

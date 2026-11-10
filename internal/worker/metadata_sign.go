@@ -7,8 +7,8 @@ package worker
 import (
 	"fmt"
 
+	pkgdeb "github.com/M0Rf30/pkgformat/deb"
 	"github.com/M0Rf30/pkgformat/gpg"
-	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 )
 
@@ -17,7 +17,7 @@ import (
 // the previous signed set, which every verifying client then rejects, whereas
 // failing keeps the old set and lets the regeneration retry.
 func addSignedRelease(blobs map[string][]byte, prefix string, release []byte, signer gpg.Signer) error {
-	signed, err := formatdeb.NewReleaseSigner(signer).SignRelease(release)
+	signed, err := pkgdeb.SignRelease(signer, release)
 	if err != nil {
 		return fmt.Errorf("signing Release: %w", err)
 	}

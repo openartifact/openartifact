@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/url"
 
+	pkgdeb "github.com/M0Rf30/pkgformat/deb"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
@@ -19,7 +21,6 @@ import (
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
-	pkgdeb "github.com/openartifact/openartifact/pkg/deb"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -155,11 +156,11 @@ func (h *HTTPHandler) serveDistBlob(w http.ResponseWriter, r *http.Request, blob
 }
 
 func (h *HTTPHandler) handlePackages(w http.ResponseWriter, r *http.Request) {
-	h.servePackages(w, r, "text/plain", "Packages", CompressionNone, GetPackagesPath)
+	h.servePackages(w, r, "text/plain", "Packages", pkgdeb.CompressionNone, "")
 }
 
 func (h *HTTPHandler) handlePackagesGz(w http.ResponseWriter, r *http.Request) {
-	h.servePackages(w, r, "application/gzip", "Packages.gz", CompressionGzip, GetPackagesGzPath)
+	h.servePackages(w, r, "application/gzip", "Packages.gz", pkgdeb.CompressionGzip, ".gz")
 }
 
 // servePackages serves a binary-<arch> Packages index in one compression: the
@@ -168,8 +169,8 @@ func (h *HTTPHandler) servePackages(
 	w http.ResponseWriter,
 	r *http.Request,
 	contentType, label string,
-	compression Compression,
-	blobPath func(dist, comp, arch string) string,
+	compression pkgdeb.Compression,
+	ext string,
 ) {
 	vars := urlparams.Vars(r)
 	dist := vars["dist"]
@@ -185,7 +186,7 @@ func (h *HTTPHandler) servePackages(
 		return
 	}
 
-	if h.tryServeRepoBlob(w, r, repo, blobPath(dist, comp, arch), contentType) {
+	if h.tryServeRepoBlob(w, r, repo, pkgdeb.PackagesPath(dist, comp, arch, ext), contentType) {
 		return
 	}
 
@@ -288,14 +289,6 @@ func (h *HTTPHandler) handlePublicKey(w http.ResponseWriter, r *http.Request) {
 // The version is not part of the path; it is kept for the callers' symmetry.
 func GetPoolPath(component, packageName, _, filename string) string {
 	return pkgdeb.PoolPath(component, packageName, filename)
-}
-
-func GetPackagesPath(distribution, component, architecture string) string {
-	return "dists/" + distribution + "/" + component + "/binary-" + architecture + "/Packages"
-}
-
-func GetPackagesGzPath(distribution, component, architecture string) string {
-	return "dists/" + distribution + "/" + component + "/binary-" + architecture + "/Packages.gz"
 }
 
 func GetReleasePath(distribution string) string {
