@@ -15,9 +15,9 @@ import (
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 
+	"github.com/M0Rf30/pkgformat/pacman"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/group"
-	"github.com/openartifact/openartifact/pkg/pacman"
 )
 
 // upstreamPacman is a proxy member's section database for x86_64.

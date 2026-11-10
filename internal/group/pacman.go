@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openartifact/openartifact/pkg/pacman"
+	"github.com/M0Rf30/pkgformat/pacman"
 )
 
 // Cache lifetimes of a pacman group's files, as the hosted handler: databases

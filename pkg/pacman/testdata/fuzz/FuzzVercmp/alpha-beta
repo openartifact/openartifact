@@ -1,3 +1,0 @@
-go test fuzz v1
-string("1.0alpha")
-string("1.0beta")

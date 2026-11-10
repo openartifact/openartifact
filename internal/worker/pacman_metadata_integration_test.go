@@ -19,10 +19,10 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp"
 
 	"github.com/M0Rf30/pkgformat/gpg"
+	"github.com/M0Rf30/pkgformat/pacman"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
-	"github.com/openartifact/openartifact/pkg/pacman"
 )
 
 func pacmanSigner(t *testing.T) (*gpg.LocalSigner, *openpgp.Entity) {

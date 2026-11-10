@@ -22,6 +22,7 @@ import (
 
 	"context"
 
+	"github.com/M0Rf30/pkgformat/pacman"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/presign"
@@ -29,7 +30,6 @@ import (
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
-	"github.com/openartifact/openartifact/pkg/pacman"
 )
 
 // FormatName is the repository format name.

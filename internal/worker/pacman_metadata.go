@@ -17,13 +17,13 @@ import (
 	"github.com/openartifact/openartifact/internal/gpgresolver"
 
 	"github.com/M0Rf30/pkgformat/gpg"
+	"github.com/M0Rf30/pkgformat/pacman"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/logger"
-	"github.com/openartifact/openartifact/pkg/pacman"
 )
 
 // PacmanMetadataStore is the part of the database PacmanMetadataWorker needs.

@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/M0Rf30/pkgformat/pacman"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
@@ -23,7 +24,6 @@ import (
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/webhook"
-	"github.com/openartifact/openartifact/pkg/pacman"
 )
 
 // maxPackageBytes bounds one uploaded package file.
