@@ -14,7 +14,8 @@ SMOKE_SHELL=bash
 
 smoke_run "$(cat <<'SCRIPT'
 set -eu
-pacman -Sy --noconfirm --needed curl >/dev/null 2>&1
+# -Syu, never -Sy: a partial upgrade breaks once the repos move past the image (openssl 4 soname bump)
+pacman -Syu --noconfirm --needed curl >/dev/null
 pacman --version | sed -n 2p
 [ "$SMOKE_MODE" = install ] || {
   pacman -S --noconfirm --needed base-devel >/dev/null 2>&1
