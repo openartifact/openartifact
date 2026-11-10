@@ -24,9 +24,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/M0Rf30/pkgformat/apk"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/pkg/apk"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -159,7 +159,7 @@ func (s *Service) Import(ctx context.Context, repo *models.Repository, privatePE
 		keyName = DefaultKeyName(repo.Name)
 	}
 
-	signer, err := apk.NewSigner(keyName, rsaKey)
+	signer, err := apk.NewSigner(keyName, rsaKey, apk.SigRSASHA256)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidKey, err)
 	}
@@ -234,7 +234,7 @@ func (s *Service) generate(repo *models.Repository, by string) (*models.ApkSigni
 		return nil, fmt.Errorf("generating apk signing key: %w", err)
 	}
 
-	signer, err := apk.NewSigner(DefaultKeyName(repo.Name), rsaKey)
+	signer, err := apk.NewSigner(DefaultKeyName(repo.Name), rsaKey, apk.SigRSASHA256)
 	if err != nil {
 		return nil, fmt.Errorf("building apk signer: %w", err)
 	}
@@ -284,7 +284,7 @@ func openSigner(key *models.ApkSigningKey) (*apk.Signer, error) {
 		return nil, fmt.Errorf("loading apk signing key of repository %s: %w", key.RepositoryID, err)
 	}
 
-	signer, err := apk.NewSigner(key.KeyName, rsaKey)
+	signer, err := apk.NewSigner(key.KeyName, rsaKey, apk.SigRSASHA256)
 	if err != nil {
 		return nil, fmt.Errorf("building apk signer of repository %s: %w", key.RepositoryID, err)
 	}

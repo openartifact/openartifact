@@ -20,15 +20,15 @@ import (
 	"testing"
 	"time"
 
+	pkgapk "github.com/M0Rf30/pkgformat/apk"
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/apkkeys"
+	"github.com/openartifact/openartifact/internal/apktestutil"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	"github.com/openartifact/openartifact/internal/format/formattest"
-	pkgapk "github.com/openartifact/openartifact/pkg/apk"
-	"github.com/openartifact/openartifact/pkg/apk/apktest"
 )
 
 // apkStack is a hosted apk repository on a real database: the HTTP handler,
@@ -195,9 +195,8 @@ func (s *apkStack) index(dir string) []pkgapk.Package {
 		s.t.Fatalf("GET %s index: status %d: %s", dir, w.Code, w.Body.String())
 	}
 
-	signedBy, err := apktest.VerifyIndex(w.Body.Bytes(), map[string]*rsa.PublicKey{keyName: pub})
-	if err != nil || signedBy != keyName {
-		s.t.Fatalf("index of %s does not verify against the served key: %q, %v", dir, signedBy, err)
+	if err := apktestutil.VerifyIndex(w.Body.Bytes(), keyName, pub); err != nil {
+		s.t.Fatalf("index of %s does not verify against the served key: %v", dir, err)
 	}
 
 	pkgs, err := pkgapk.ParseIndex(bytes.NewReader(w.Body.Bytes()))
@@ -234,7 +233,7 @@ func (s *apkStack) requireRevalidation(path string) {
 func TestApkUploadValidation(t *testing.T) {
 	s := newApkStack(t, "apk-valid")
 
-	hello := apktest.Build(t, apktest.Options{Name: "hello", Version: "1.0-r0", Arch: "x86_64"})
+	hello := apktestutil.Build(t, apktestutil.Options{Name: "hello", Version: "1.0-r0", Arch: "x86_64"})
 
 	for _, tc := range []struct {
 		name, dir, file string
@@ -258,11 +257,11 @@ func TestApkHostedLifecycle(t *testing.T) {
 	s := newApkStack(t, "apk-life")
 	ctx := context.Background()
 
-	hello := apktest.Build(
+	hello := apktestutil.Build(
 		t,
-		apktest.Options{Name: "hello", Version: "1.0-r0", Arch: "x86_64", Depends: []string{"so:libc.musl-x86_64.so.1"}},
+		apktestutil.Options{Name: "hello", Version: "1.0-r0", Arch: "x86_64", Depends: []string{"so:libc.musl-x86_64.so.1"}},
 	)
-	data := apktest.Build(t, apktest.Options{Name: "hello-doc", Version: "1.0-r0", Arch: "noarch"})
+	data := apktestutil.Build(t, apktestutil.Options{Name: "hello-doc", Version: "1.0-r0", Arch: "noarch"})
 
 	for file, body := range map[string][]byte{"hello-1.0-r0.apk": hello, "hello-doc-1.0-r0.apk": data} {
 		if w := s.put("v3.20/main/x86_64", file, body); w.Code != http.StatusCreated {
@@ -338,7 +337,7 @@ func TestApkHostedLifecycle(t *testing.T) {
 
 func TestApkIndexIsSignedByTheRotatedKey(t *testing.T) {
 	s := newApkStack(t, "apk-rot")
-	pkg := apktest.Build(t, apktest.Options{Name: "tool", Arch: "aarch64"})
+	pkg := apktestutil.Build(t, apktestutil.Options{Name: "tool", Arch: "aarch64"})
 
 	if w := s.put("edge/community/aarch64", "tool-1.0-r0.apk", pkg); w.Code != http.StatusCreated {
 		t.Fatalf("PUT: status %d: %s", w.Code, w.Body.String())
@@ -369,7 +368,7 @@ func TestApkIndexIsSignedByTheRotatedKey(t *testing.T) {
 
 func TestApkRestUploadDefaultsAndNoarch(t *testing.T) {
 	s := newApkStack(t, "apk-rest")
-	noarch := apktest.Build(t, apktest.Options{Name: "docs", Arch: "noarch"})
+	noarch := apktestutil.Build(t, apktestutil.Options{Name: "docs", Arch: "noarch"})
 
 	upload := func(fields map[string]string, pkg []byte) *httptest.ResponseRecorder {
 		return s.multipart("/api/v1/repositories/apk-rest/apks", fields, pkg)

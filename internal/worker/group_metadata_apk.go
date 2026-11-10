@@ -13,12 +13,12 @@ import (
 	"sort"
 	"strings"
 
+	pkgapk "github.com/M0Rf30/pkgformat/apk"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repotype"
-	pkgapk "github.com/openartifact/openartifact/pkg/apk"
 	"golang.org/x/sync/errgroup"
 )
 

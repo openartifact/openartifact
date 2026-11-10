@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 
+	pkgapk "github.com/M0Rf30/pkgformat/apk"
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -23,7 +24,6 @@ import (
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/webhook"
-	pkgapk "github.com/openartifact/openartifact/pkg/apk"
 )
 
 const (

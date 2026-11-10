@@ -12,12 +12,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	pkgapk "github.com/M0Rf30/pkgformat/apk"
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/apktestutil"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/storage"
-	pkgapk "github.com/openartifact/openartifact/pkg/apk"
-	"github.com/openartifact/openartifact/pkg/apk/apktest"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -26,7 +26,7 @@ import (
 func TestApkProxyIsServedByTheProxyNotTheHostedRouter(t *testing.T) {
 	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "true")
 
-	pkgBytes := apktest.Build(t, apktest.Options{Name: "hello"})
+	pkgBytes := apktestutil.Build(t, apktestutil.Options{Name: "hello"})
 
 	pkg, err := pkgapk.ParsePackage(bytes.NewReader(pkgBytes), int64(len(pkgBytes)))
 	if err != nil {

@@ -20,6 +20,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/gpgresolver"
 
+	pkgapk "github.com/M0Rf30/pkgformat/apk"
 	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -30,7 +31,6 @@ import (
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/workq"
-	pkgapk "github.com/openartifact/openartifact/pkg/apk"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"github.com/openartifact/openartifact/pkg/pacman"
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"

@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"strings"
 
+	pkgapk "github.com/M0Rf30/pkgformat/apk"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
-	pkgapk "github.com/openartifact/openartifact/pkg/apk"
 )
 
 // apkIndexMaxAge is the cache lifetime of a merged index, as the hosted handler's.

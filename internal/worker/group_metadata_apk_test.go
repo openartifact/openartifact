@@ -17,12 +17,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/M0Rf30/pkgformat/apk"
+	"github.com/openartifact/openartifact/internal/apktestutil"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repotype"
-	pkgapk "github.com/openartifact/openartifact/pkg/apk"
-	"github.com/openartifact/openartifact/pkg/apk/apktest"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,8 +35,8 @@ func apkSum(tag string) string {
 	return "Q1" + base64.StdEncoding.EncodeToString(sum[:])
 }
 
-func apkEntry(name, version, arch, sum string) pkgapk.Package {
-	return pkgapk.Package{Name: name, Version: version, Arch: arch, Checksum: sum, Size: 100}
+func apkEntry(name, version, arch, sum string) apk.Package {
+	return apk.Package{Name: name, Version: version, Arch: arch, Checksum: sum, Size: 100}
 }
 
 func apkMember(id string) *models.Repository { return &models.Repository{ID: id, Name: id} }
@@ -71,8 +71,8 @@ func TestMergeApkDir(t *testing.T) {
 		{
 			name: "union in member order",
 			sources: []apkDirSource{
-				{member: hosted, entries: []pkgapk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("a"))}},
-				{member: remote, proxy: true, entries: []pkgapk.Package{
+				{member: hosted, entries: []apk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("a"))}},
+				{member: remote, proxy: true, entries: []apk.Package{
 					apkEntry("beta", "2.0-r0", "x86_64", apkSum("b")), apkEntry("gamma", "3.0-r1", "x86_64", apkSum("c")),
 				}},
 			},
@@ -81,9 +81,9 @@ func TestMergeApkDir(t *testing.T) {
 		{
 			name: "first member wins on the same release",
 			sources: []apkDirSource{
-				{member: hosted, entries: []pkgapk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("hosted"))}},
-				{member: other, entries: []pkgapk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("other"))}},
-				{member: remote, proxy: true, entries: []pkgapk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("remote"))}},
+				{member: hosted, entries: []apk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("hosted"))}},
+				{member: other, entries: []apk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("other"))}},
+				{member: remote, proxy: true, entries: []apk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("remote"))}},
 			},
 			hidden: nil,
 			want:   []string{"alpha-1.0-r0.apk hosted"},
@@ -91,27 +91,27 @@ func TestMergeApkDir(t *testing.T) {
 		{
 			name: "a proxy listed before a hosted member wins the same release when versions merge",
 			sources: []apkDirSource{
-				{member: remote, proxy: true, entries: []pkgapk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("remote"))}},
-				{member: hosted, entries: []pkgapk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("hosted"))}},
+				{member: remote, proxy: true, entries: []apk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("remote"))}},
+				{member: hosted, entries: []apk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("hosted"))}},
 			},
 			want: []string{"alpha-1.0-r0.apk remote"},
 		},
 		{
 			name: "different releases of a name all stay when versions merge",
 			sources: []apkDirSource{
-				{member: hosted, entries: []pkgapk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("a"))}},
-				{member: remote, proxy: true, entries: []pkgapk.Package{apkEntry("alpha", "9.0-r0", "x86_64", apkSum("b"))}},
+				{member: hosted, entries: []apk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("a"))}},
+				{member: remote, proxy: true, entries: []apk.Package{apkEntry("alpha", "9.0-r0", "x86_64", apkSum("b"))}},
 			},
 			want: []string{"alpha-1.0-r0.apk hosted", "alpha-9.0-r0.apk remote"},
 		},
 		{
 			name: "hosted names hide every proxy release of the name",
 			sources: []apkDirSource{
-				{member: hosted, entries: []pkgapk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("a"))}},
-				{member: remote, proxy: true, entries: []pkgapk.Package{
+				{member: hosted, entries: []apk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("a"))}},
+				{member: remote, proxy: true, entries: []apk.Package{
 					apkEntry("alpha", "9.0-r0", "x86_64", apkSum("b")), apkEntry("beta", "2.0-r0", "x86_64", apkSum("c")),
 				}},
-				{member: mirror, proxy: true, entries: []pkgapk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("d"))}},
+				{member: mirror, proxy: true, entries: []apk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("d"))}},
 			},
 			hidden: map[string]struct{}{"alpha": {}},
 			want:   []string{"alpha-1.0-r0.apk hosted", "beta-2.0-r0.apk remote"},
@@ -119,8 +119,8 @@ func TestMergeApkDir(t *testing.T) {
 		{
 			name: "hosted names never hide another hosted member",
 			sources: []apkDirSource{
-				{member: hosted, entries: []pkgapk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("a"))}},
-				{member: other, entries: []pkgapk.Package{apkEntry("alpha", "2.0-r0", "x86_64", apkSum("b"))}},
+				{member: hosted, entries: []apk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("a"))}},
+				{member: other, entries: []apk.Package{apkEntry("alpha", "2.0-r0", "x86_64", apkSum("b"))}},
 			},
 			hidden: map[string]struct{}{"alpha": {}},
 			want:   []string{"alpha-1.0-r0.apk hosted", "alpha-2.0-r0.apk other"},
@@ -128,8 +128,8 @@ func TestMergeApkDir(t *testing.T) {
 		{
 			name: "noarch entries are kept as listed and deduplicated by file name",
 			sources: []apkDirSource{
-				{member: hosted, entries: []pkgapk.Package{apkEntry("docs", "1.0-r0", "noarch", apkSum("a"))}},
-				{member: remote, proxy: true, entries: []pkgapk.Package{
+				{member: hosted, entries: []apk.Package{apkEntry("docs", "1.0-r0", "noarch", apkSum("a"))}},
+				{member: remote, proxy: true, entries: []apk.Package{
 					apkEntry("docs", "1.0-r0", "noarch", apkSum("b")), apkEntry("fonts", "1.0-r0", "noarch", apkSum("c")),
 				}},
 			},
@@ -138,7 +138,7 @@ func TestMergeApkDir(t *testing.T) {
 		{
 			name: "a repeated entry of one member counts once",
 			sources: []apkDirSource{
-				{member: remote, proxy: true, entries: []pkgapk.Package{
+				{member: remote, proxy: true, entries: []apk.Package{
 					apkEntry("alpha", "1.0-r0", "x86_64", apkSum("a")), apkEntry("alpha", "1.0-r0", "x86_64", apkSum("b")),
 				}},
 			},
@@ -162,8 +162,8 @@ func TestMergeApkDirKeepsTheChosenEntry(t *testing.T) {
 	hosted, remote := apkMember("hosted"), apkMember("remote")
 
 	sel := mergeApkDir([]apkDirSource{
-		{member: hosted, entries: []pkgapk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("hosted"))}},
-		{member: remote, proxy: true, entries: []pkgapk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("remote"))}},
+		{member: hosted, entries: []apk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("hosted"))}},
+		{member: remote, proxy: true, entries: []apk.Package{apkEntry("alpha", "1.0-r0", "x86_64", apkSum("remote"))}},
 	}, nil)
 
 	require.Len(t, sel, 1)
@@ -255,10 +255,10 @@ func (u *apkUpstream) Open(_ context.Context, repo *models.Repository, relPath s
 	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
-func upstreamIndex(t *testing.T, pkgs ...pkgapk.Package) []byte {
+func upstreamIndex(t *testing.T, pkgs ...apk.Package) []byte {
 	t.Helper()
 
-	data, err := pkgapk.BuildIndex(pkgs, "upstream", nil)
+	data, err := apk.BuildIndex(pkgs, "upstream", nil)
 	require.NoError(t, err)
 
 	return data
@@ -278,10 +278,10 @@ func newApkJob(
 	log, err := logger.New("error", "console", "stderr")
 	require.NoError(t, err)
 
-	key, err := pkgapk.GenerateKey(2048)
+	key, err := apk.GenerateKey(2048)
 	require.NoError(t, err)
 
-	signer, err := pkgapk.NewSigner("openartifact-grp.rsa.pub", key)
+	signer, err := apk.NewSigner("openartifact-grp.rsa.pub", key, apk.SigRSASHA256)
 	require.NoError(t, err)
 
 	w := &GroupMetadataWorker{db: db, opener: up, log: log}
@@ -304,7 +304,7 @@ func indexNames(t *testing.T, j *groupJob, path string) []string {
 	data, ok := j.blobs[path]
 	require.True(t, ok, "no index at %s (have %v)", path, slices.Collect(maps.Keys(j.blobs)))
 
-	pkgs, err := pkgapk.ParseIndex(bytes.NewReader(data))
+	pkgs, err := apk.ParseIndex(bytes.NewReader(data))
 	require.NoError(t, err)
 
 	out := make([]string, len(pkgs))
@@ -356,9 +356,7 @@ func TestBuildApkMergesHostedAndProxyAndSigns(t *testing.T) {
 	}, j.owners)
 
 	// The merged index is signed with the group's key.
-	name, err := apktest.VerifyIndex(j.blobs[dir+"/APKINDEX.tar.gz"], map[string]*rsa.PublicKey{"openartifact-grp.rsa.pub": pub})
-	require.NoError(t, err)
-	assert.Equal(t, "openartifact-grp.rsa.pub", name)
+	require.NoError(t, apktestutil.VerifyIndex(j.blobs[dir+"/APKINDEX.tar.gz"], "openartifact-grp.rsa.pub", pub))
 }
 
 func TestBuildApkMergeProxyVersionsKeepsProxyReleases(t *testing.T) {
@@ -443,11 +441,9 @@ func TestAddEmptyApkIndexes(t *testing.T) {
 	empty, ok := j.blobs["v3.20/gone/x86_64/APKINDEX.tar.gz"]
 	require.True(t, ok)
 
-	name, err := apktest.VerifyIndex(empty, map[string]*rsa.PublicKey{"openartifact-grp.rsa.pub": pub})
-	require.NoError(t, err)
-	assert.Equal(t, "openartifact-grp.rsa.pub", name)
+	require.NoError(t, apktestutil.VerifyIndex(empty, "openartifact-grp.rsa.pub", pub))
 
-	pkgs, err := pkgapk.ParseIndex(bytes.NewReader(empty))
+	pkgs, err := apk.ParseIndex(bytes.NewReader(empty))
 	require.NoError(t, err)
 	assert.Empty(t, pkgs)
 }

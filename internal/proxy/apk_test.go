@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	pkgapk "github.com/openartifact/openartifact/pkg/apk"
-	"github.com/openartifact/openartifact/pkg/apk/apktest"
+	"github.com/M0Rf30/pkgformat/apk"
+	"github.com/openartifact/openartifact/internal/apktestutil"
 )
 
 const (
@@ -33,26 +33,26 @@ type apkMirror struct {
 func newApkMirror(t *testing.T) *apkMirror {
 	t.Helper()
 
-	pkgBytes := apktest.Build(t, apktest.Options{Name: "hello"})
+	pkgBytes := apktestutil.Build(t, apktestutil.Options{Name: "hello"})
 
-	pkg, err := pkgapk.ParsePackage(bytes.NewReader(pkgBytes), int64(len(pkgBytes)))
+	pkg, err := apk.ParsePackage(bytes.NewReader(pkgBytes), int64(len(pkgBytes)))
 	if err != nil {
 		t.Fatalf("parse package: %v", err)
 	}
 
 	pkg.Size = int64(len(pkgBytes))
 
-	key, err := pkgapk.GenerateKey(2048)
+	key, err := apk.GenerateKey(2048)
 	if err != nil {
 		t.Fatalf("key: %v", err)
 	}
 
-	signer, err := pkgapk.NewSigner("alpine-test.rsa.pub", key)
+	signer, err := apk.NewSigner("alpine-test.rsa.pub", key, apk.SigRSASHA256)
 	if err != nil {
 		t.Fatalf("signer: %v", err)
 	}
 
-	index, err := pkgapk.BuildIndex([]pkgapk.Package{*pkg}, "test", signer)
+	index, err := apk.BuildIndex([]apk.Package{*pkg}, "test", signer)
 	if err != nil {
 		t.Fatalf("index: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestApkProxy_HeadAndConditionalRequests(t *testing.T) {
 }
 
 func TestApkProxy_Refusals(t *testing.T) {
-	other := apktest.Build(t, apktest.Options{Name: "hello", Files: map[string]string{"usr/bin/hello": "different"}})
+	other := apktestutil.Build(t, apktestutil.Options{Name: "hello", Files: map[string]string{"usr/bin/hello": "different"}})
 
 	tests := []struct {
 		name   string
