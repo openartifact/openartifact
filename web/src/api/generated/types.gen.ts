@@ -7452,7 +7452,7 @@ export type GetApiV1SearchData = {
     path?: never;
     query?: {
         /**
-         * Search query: free text plus optional name:, format:, repo:, project:, project_role: and sha256: qualifiers. Required unless checksum is given or flagged=true.
+         * Search query: free text plus optional name:, format:, repo:, project:, project_role:, prop:KEY=VALUE and sha256: qualifiers. Required unless checksum or a prop filter is given, or flagged=true.
          */
         q?: string;
         /**
@@ -7472,6 +7472,10 @@ export type GetApiV1SearchData = {
          */
         project_role?: 'viewer' | 'developer' | 'maintainer' | 'owner';
         /**
+         * Keep the artifacts carrying this property, given as KEY=VALUE (exact match on both, split at the first =); repeatable, all must hold, at most 10. The parameter form carries values with spaces; the same filter is prop:KEY=VALUE in q. It matches the id the web UI and oa store properties under (a file of the same repository); docker images are not matched. With prop, no repositories are returned. A malformed filter (no =, empty key, key above 255 or value above 4096 bytes, control characters) is 400 invalid_filter.
+         */
+        prop?: string;
+        /**
          * Set to package to return one package entry per repository, format and name (its latest version) instead of one per version or file
          */
         group?: 'package';
@@ -7488,7 +7492,7 @@ export type GetApiV1SearchData = {
          */
         flagged?: boolean;
         /**
-         * Find the files whose stored checksum equals this value: a full lowercase-hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32), exact match only. SHA-256 matches every format; SHA-1 matches conan, maven and npm, MD5 conan, conda and maven (the other formats store no such digest). Replaces the search: q, format, repo, project, project_role, group and flagged are ignored, limit and offset page the hits, and the response is the ChecksumResult shape.
+         * Find the files whose stored checksum equals this value: a full lowercase-hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32), exact match only. SHA-256 matches every format; SHA-1 matches conan, maven and npm, MD5 conan, conda and maven (the other formats store no such digest). Replaces the search: q, format, repo, project, project_role, prop, group and flagged are ignored, limit and offset page the hits, and the response is the ChecksumResult shape.
          */
         checksum?: string;
     };

@@ -150,6 +150,11 @@ func (e *Executor) countResults(
 		return 0, nil
 	}
 
+	filter, err := e.planProps(ctx, filter)
+	if err != nil {
+		return 0, err
+	}
+
 	where, readableJoin, args := buildWhereClause(filter, readableRepos)
 
 	source, joinRepo := searchSource(filter)
@@ -413,6 +418,11 @@ func (e *Executor) runSearch(
 		return nil, 0, nil
 	}
 
+	filter, err := e.planProps(ctx, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	q, args := buildSearchQuery(filter, limit, offset, readableRepos, capped, opts)
 
 	rows, err := e.db.QueryContext(ctx, q, args...)
@@ -474,7 +484,7 @@ func (e *Executor) runSearch(
 // relevanceExpr), then by name. The package-oriented terms of the filter
 // apply to repositories as follows: name:/free text match the repository name,
 // format: matches the repository format, repo: the repository name exactly.
-// sha256: and flagged identify artifacts, never a repository, so they yield no repositories.
+// sha256:, flagged and prop identify artifacts, never a repository, so they yield no repositories.
 // Like Search, the result is scoped to readableRepos in SQL and again in Go.
 func (e *Executor) SearchRepositories(
 	ctx context.Context,
@@ -482,7 +492,7 @@ func (e *Executor) SearchRepositories(
 	limit, offset int,
 	readableRepos map[uuid.UUID]struct{},
 ) ([]RepositoryResult, error) {
-	if len(readableRepos) == 0 || filter.SHA256Prefix != "" || filter.Flagged {
+	if len(readableRepos) == 0 || filter.SHA256Prefix != "" || filter.Flagged || len(filter.Props) > 0 {
 		return nil, nil
 	}
 
@@ -660,6 +670,46 @@ func (b *whereBuilder) add(clause string, arg any) {
 	b.args = append(b.args, arg)
 }
 
+// matchedFiles is the SQL of the live package_files that carry the property bound to
+// $k=$v: the file of the same repository whose id the property is stored under (the
+// id the web UI and oa use). Only artifact paths shaped like a UUID are cast, so ids
+// written by external tools never reach the cast.
+func matchedFiles(k, v int) string {
+	return fmt.Sprintf(`SELECT pf.repository_id, pf.id FROM artifact_properties ap
+		JOIN artifact_refs ar ON ar.id = ap.artifact_ref_id
+		JOIN package_files pf ON pf.id = CASE WHEN ar.artifact_path ~* '%s' THEN ar.artifact_path::uuid END
+			AND pf.repository_id = ar.repository_id
+		WHERE ap.key = $%d AND ap.value = $%d`, uuidPattern, k, v)
+}
+
+// addPropByID applies a property filter with few matches: the matching file ids are
+// collected once, as an array, and the array is pushed into every branch of the
+// search source, so package_files is probed by primary key. (Postgres cannot push a
+// join into the UNION ALL, so a semi-join would read every file.)
+func (b *whereBuilder) addPropByID(key, value string) {
+	b.args = append(b.args, key, value)
+	b.clauses = append(b.clauses, `s.id = ANY (ARRAY(SELECT m.id FROM (`+matchedFiles(len(b.args)-1, len(b.args))+`) m))`)
+}
+
+// addPropExists applies a property filter with many matches as a correlated EXISTS,
+// which the planner can stop early (the search is capped) or run only for the rows the
+// other filters leave; a semi-join would first collect and de-duplicate every match.
+// Measured on 300k tagged files: all of them tagged, 49 ms against 853 ms for the
+// semi-join; with a selective name as well, 0.5 ms against 3.8 ms; 5,000 tagged,
+// 59 ms against 103 ms. The probe uses artifact_refs (repository_id, artifact_path)
+// and idx_artifact_properties_ref_id.
+func (b *whereBuilder) addPropExists(key, value string) {
+	b.args = append(b.args, key, value)
+	b.clauses = append(b.clauses, fmt.Sprintf(`EXISTS (SELECT 1 FROM artifact_refs ar
+		JOIN artifact_properties ap ON ap.artifact_ref_id = ar.id
+		WHERE ar.repository_id = s.repository_id AND ar.artifact_path = s.id::text
+		AND ap.key = $%d AND ap.value = $%d)`, len(b.args)-1, len(b.args)))
+}
+
+// uuidPattern matches the text form of a UUID (artifact_refs.artifact_path holds
+// the package_files id the web UI stores properties under, among other ids).
+const uuidPattern = `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
+
 // addIn appends "expr IN ($n, ...)" over vals.
 func (b *whereBuilder) addIn(expr string, vals []string) {
 	placeholders := make([]string, len(vals))
@@ -756,6 +806,22 @@ func buildWhereClause(filter SearchFilter, readableRepos map[uuid.UUID]struct{})
 	}
 
 	b.addReadable("s.repository_id", readableRepos)
+
+	// Property filters match the id the web UI and oa store properties under, the
+	// package_files id of the generic branch. Docker rows carry other ids and are left
+	// out until their mapping is confirmed; the constant qual drops the whole branch.
+	if len(filter.Props) > 0 {
+		b.clauses = append(b.clauses, "s.format <> 'docker'")
+
+		for i, raw := range filter.Props {
+			key, value, _ := splitProp(raw) // validated by CheckPropFilters
+			if i < len(filter.propByID) && filter.propByID[i] {
+				b.addPropByID(key, value)
+			} else {
+				b.addPropExists(key, value)
+			}
+		}
+	}
 
 	// Last: it probes the scan tables per remaining row.
 	if filter.Flagged {

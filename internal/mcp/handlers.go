@@ -232,6 +232,10 @@ func (s *Server) searchAllRepos(ctx context.Context, query, format string) ([]se
 		return nil, &invalidFilterError{msg: err.Error()}
 	}
 
+	if err := search.CheckPropFilters(filter); err != nil {
+		return nil, &invalidFilterError{msg: err.Error()}
+	}
+
 	var usesProjects, usesProjectsKnown bool
 
 	if filter.ProjectScoped() {

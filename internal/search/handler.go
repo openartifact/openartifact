@@ -120,8 +120,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	checksum := r.URL.Query().Get("checksum")
 
 	// q may be left out when the search is narrowed by another criterion: a
-	// checksum, or flagged=true (every flagged package).
-	if q == "" && checksum == "" && r.URL.Query().Get("flagged") != "true" {
+	// checksum, flagged=true (every flagged package) or a prop filter.
+	if q == "" && checksum == "" && r.URL.Query().Get("flagged") != "true" && len(r.URL.Query()["prop"]) == 0 {
 		httpx.WriteError(w, http.StatusBadRequest, "missing_q", "query parameter 'q' is required")
 		return
 	}
@@ -238,8 +238,14 @@ func parseFilter(w http.ResponseWriter, r *http.Request, q string) (SearchFilter
 	filter.Repos = append(filter.Repos, query["repo"]...)
 	filter.Projects = append(filter.Projects, query["project"]...)
 	filter.ProjectRoles = append(filter.ProjectRoles, query["project_role"]...)
+	filter.Props = append(filter.Props, query["prop"]...)
 
 	if err := CheckProjectFilters(filter); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_filter", err.Error())
+		return SearchFilter{}, false
+	}
+
+	if err := CheckPropFilters(filter); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_filter", err.Error())
 		return SearchFilter{}, false
 	}

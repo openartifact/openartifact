@@ -421,3 +421,39 @@ func TestHandlerTooBroadNoProjectHintWithoutRoles(t *testing.T) {
 		t.Errorf("body %s suggests project: to a caller without project roles", w.Body.String())
 	}
 }
+
+// TestHandlerPropFilters: prop works as a parameter (values with spaces) and as a
+// qualifier, lets q be left out like flagged=true, and refuses bad values with
+// 400 invalid_filter.
+func TestHandlerPropFilters(t *testing.T) {
+	for _, tc := range []struct {
+		target string
+		code   int
+		props  []string
+	}{
+		{"/api/v1/search?prop=client%3DACME%20Corp", http.StatusOK, []string{"client=ACME Corp"}},
+		{"/api/v1/search?q=lodash+prop:status=approved&prop=team%3Dcore", http.StatusOK, []string{"status=approved", "team=core"}},
+		{"/api/v1/search?prop=status", http.StatusBadRequest, nil},
+		{"/api/v1/search?q=x+prop:=v", http.StatusBadRequest, nil},
+		{"/api/v1/search?q=x" + strings.Repeat("&prop=k%3Dv", maxPropFilters+1), http.StatusBadRequest, nil},
+	} {
+		ms := &mockSearcher{count: 1}
+		h, cleanup := newTestHandler(t, ms)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, requestWithPrincipal("GET", tc.target, adminPrincipal()))
+		cleanup()
+
+		if w.Code != tc.code {
+			t.Errorf("%s: status %d body %s, want %d", tc.target, w.Code, w.Body.String(), tc.code)
+			continue
+		}
+
+		if tc.code == http.StatusBadRequest && !strings.Contains(w.Body.String(), "invalid_filter") {
+			t.Errorf("%s: body %s, want invalid_filter", tc.target, w.Body.String())
+		}
+
+		if tc.code == http.StatusOK && !slices.Equal(ms.gotFilter.Props, tc.props) {
+			t.Errorf("%s: searched props %v, want %v", tc.target, ms.gotFilter.Props, tc.props)
+		}
+	}
+}
