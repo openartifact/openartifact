@@ -6,10 +6,7 @@ package worker
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -18,12 +15,12 @@ import (
 	"strings"
 	"time"
 
+	pkgrpm "github.com/M0Rf30/pkgformat/rpm"
+	"github.com/M0Rf30/pkgformat/rpm/repodata"
 	"github.com/openartifact/openartifact/internal/database/models"
-	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repotype"
-	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
 // maxUpstreamRepomd caps an upstream repomd.xml read for a merge.
@@ -32,15 +29,15 @@ const maxUpstreamRepomd = 16 << 20
 // rpmDocKinds are the repodata documents a group merges, in repomd order.
 func rpmDocKinds() []rpmDocKind {
 	return []rpmDocKind{
-		{"primary", formatrpm.DocPrimary},
-		{"filelists", formatrpm.DocFilelists},
-		{"other", formatrpm.DocOther},
+		{"primary", repodata.DocPrimary},
+		{"filelists", repodata.DocFilelists},
+		{"other", repodata.DocOther},
 	}
 }
 
 type rpmDocKind struct {
 	name string
-	kind formatrpm.DocKind
+	kind repodata.DocKind
 }
 
 // rpmSource is one member's contribution to the merged repodata.
@@ -58,7 +55,7 @@ type rpmSource struct {
 
 // nevra is the identity two members' packages collide on.
 func nevra(p *pkgrpm.Package) string {
-	return formatrpm.PackageInfo{
+	return repodata.PackageInfo{
 		Name: p.Name, Arch: p.Arch, Epoch: strconv.FormatUint(uint64(p.Epoch), 10), Ver: p.Version, Rel: p.Release,
 	}.NEVRA()
 }
@@ -84,24 +81,24 @@ func (j *groupJob) buildRPM(ctx context.Context) error {
 
 	ts := time.Now().Unix()
 
-	var entries []formatrpm.RepomdData
+	var entries []repodata.RepomdData
 
 	for _, doc := range rpmDocKinds() {
-		comp, err := formatrpm.CompressMetadataStream(func(out io.Writer) error {
+		comp, err := repodata.CompressMetadataStream(repodata.Gzip, func(out io.Writer) error {
 			return j.writeRPMDocument(ctx, out, doc.name, doc.kind, sources, count)
 		})
 		if err != nil {
 			return fmt.Errorf("group worker: generating %s.xml: %w", doc.name, err)
 		}
 
-		loc := fmt.Sprintf("repodata/%s-%s.xml.gz", comp.GzSHA256, doc.name)
+		loc := fmt.Sprintf("repodata/%s-%s.xml.gz", comp.SHA256, doc.name)
 
-		entries = append(entries, formatrpm.RepomdData{
-			Type: doc.name, Location: loc, Checksum: comp.GzSHA256, ChecksumType: "sha256",
-			Timestamp: ts, Size: comp.GzSize, OpenSize: comp.OpenSize,
+		entries = append(entries, repodata.RepomdData{
+			Type: doc.name, Location: loc, Checksum: comp.SHA256, ChecksumType: "sha256",
+			Timestamp: ts, Size: comp.Size, OpenSize: comp.OpenSize,
 		})
 
-		j.blobs[loc] = comp.GzipData
+		j.blobs[loc] = comp.Data
 	}
 
 	if entry, data, ok, err := j.mergeModules(ctx, sources, ts); err != nil {
@@ -111,7 +108,7 @@ func (j *groupJob) buildRPM(ctx context.Context) error {
 		j.blobs[entry.Location] = data
 	}
 
-	repomd, err := formatrpm.GenerateRepomdXML(strconv.FormatInt(ts, 10), entries)
+	repomd, err := repodata.GenerateRepomdXML(strconv.FormatInt(ts, 10), entries)
 	if err != nil {
 		return fmt.Errorf("group worker: generating repomd.xml: %w", err)
 	}
@@ -193,9 +190,18 @@ func (j *groupJob) fetchRepomd(ctx context.Context, m *models.Repository) (map[s
 		return nil, err
 	}
 
-	hrefs, err := formatrpm.ParseRepomd(bytes.NewReader(data))
+	repomd, err := repodata.ParseRepomd(bytes.NewReader(data))
 	if err != nil {
-		return nil, err //nolint:wrapcheck // describes itself
+		return nil, fmt.Errorf("group worker: parsing repomd.xml of %s: %w", m.Name, err)
+	}
+
+	// The location of each data type, the first of each.
+	hrefs := make(map[string]string, len(repomd.Data))
+
+	for _, d := range repomd.Data {
+		if _, dup := hrefs[d.Type]; !dup && d.Location != "" {
+			hrefs[d.Type] = d.Location
+		}
 	}
 
 	for _, doc := range rpmDocKinds() {
@@ -210,7 +216,7 @@ func (j *groupJob) fetchRepomd(ctx context.Context, m *models.Repository) (map[s
 // openRPMDocument opens one upstream repodata file of a proxy source,
 // decompressed.
 func (j *groupJob) openRPMDocument(ctx context.Context, src *rpmSource, typ string) (io.ReadCloser, error) {
-	href, ok := formatrpm.SafeLocation(src.hrefs[typ])
+	href, ok := repodata.SafeLocation(src.hrefs[typ])
 	if !ok {
 		return nil, fmt.Errorf( //nolint:err113 // dynamic context
 			"group worker: unsafe %s location %q of %s",
@@ -225,7 +231,7 @@ func (j *groupJob) openRPMDocument(ctx context.Context, src *rpmSource, typ stri
 		return nil, err //nolint:wrapcheck // callers classify the sentinel
 	}
 
-	return formatrpm.OpenMetadata(rc, href)
+	return repodata.OpenMetadata(rc, href, 0)
 }
 
 // selectRPMPackages picks, in member order, the package of each name-epoch-
@@ -243,7 +249,7 @@ func (j *groupJob) selectRPMPackages(ctx context.Context, sources []*rpmSource) 
 					continue
 				}
 
-				loc, ok := formatrpm.SafeLocation(formatrpm.PackageLocation(p))
+				loc, ok := repodata.SafeLocation(repodata.PackageLocation(p))
 				if !ok || !j.claim(loc, src.member.ID, p.SHA256) {
 					continue
 				}
@@ -281,7 +287,7 @@ func (j *groupJob) selectProxyPackages(ctx context.Context, src *rpmSource, seen
 
 	n := 0
 
-	err = formatrpm.ScanPackages(rc, false, func(info formatrpm.PackageInfo, _ []byte) error {
+	err = repodata.ScanPackages(rc, false, func(info repodata.PackageInfo, _ []byte) error {
 		if info.PkgID == "" || info.Name == "" {
 			return nil
 		}
@@ -297,7 +303,7 @@ func (j *groupJob) selectProxyPackages(ctx context.Context, src *rpmSource, seen
 			return nil
 		}
 
-		loc, ok := formatrpm.SafeLocation(info.Href)
+		loc, ok := repodata.SafeLocation(info.Href)
 		if !ok || !j.claim(loc, src.member.ID, info.PkgID) {
 			return nil
 		}
@@ -321,11 +327,11 @@ func (j *groupJob) writeRPMDocument(
 	ctx context.Context,
 	out io.Writer,
 	typ string,
-	kind formatrpm.DocKind,
+	kind repodata.DocKind,
 	sources []*rpmSource,
 	count int,
 ) error {
-	d := formatrpm.NewDocWriter(out, kind, count)
+	d := repodata.NewDocWriter(out, kind, count)
 
 	for _, src := range sources {
 		if src.hrefs == nil {
@@ -346,7 +352,7 @@ func (j *groupJob) writeRPMDocument(
 
 // copyRPMElements copies the selected packages' elements of a proxy member's
 // upstream document into d.
-func (j *groupJob) copyRPMElements(ctx context.Context, d *formatrpm.DocWriter, src *rpmSource, typ string) error {
+func (j *groupJob) copyRPMElements(ctx context.Context, d *repodata.DocWriter, src *rpmSource, typ string) error {
 	rc, err := j.openRPMDocument(ctx, src, typ)
 	if err != nil {
 		return fmt.Errorf("group worker: reading %s of %s: %w", typ, src.member.Name, err)
@@ -356,7 +362,7 @@ func (j *groupJob) copyRPMElements(ctx context.Context, d *formatrpm.DocWriter, 
 
 	remaining := maps.Clone(src.keep)
 
-	err = formatrpm.ScanPackages(rc, true, func(info formatrpm.PackageInfo, element []byte) error {
+	err = repodata.ScanPackages(rc, true, func(info repodata.PackageInfo, element []byte) error {
 		if _, ok := remaining[info.PkgID]; !ok {
 			return nil
 		}
@@ -375,7 +381,7 @@ func (j *groupJob) copyRPMElements(ctx context.Context, d *formatrpm.DocWriter, 
 
 // mergeModules merges the proxy members' modules.yaml documents. ok is false
 // when no member provides any.
-func (j *groupJob) mergeModules(ctx context.Context, sources []*rpmSource, ts int64) (formatrpm.RepomdData, []byte, bool, error) {
+func (j *groupJob) mergeModules(ctx context.Context, sources []*rpmSource, ts int64) (repodata.RepomdData, []byte, bool, error) {
 	var (
 		readers []io.Reader
 		closers []io.Closer
@@ -402,40 +408,30 @@ func (j *groupJob) mergeModules(ctx context.Context, sources []*rpmSource, ts in
 	}
 
 	if len(readers) == 0 {
-		return formatrpm.RepomdData{}, nil, false, nil
+		return repodata.RepomdData{}, nil, false, nil
 	}
 
 	var merged bytes.Buffer
 
-	n, err := formatrpm.MergeModules(&merged, readers)
+	n, err := repodata.MergeModules(&merged, readers)
 	if err != nil {
-		return formatrpm.RepomdData{}, nil, false, fmt.Errorf("group worker: merging modules: %w", err)
+		return repodata.RepomdData{}, nil, false, fmt.Errorf("group worker: merging modules: %w", err)
 	}
 
 	if n == 0 {
-		return formatrpm.RepomdData{}, nil, false, nil
+		return repodata.RepomdData{}, nil, false, nil
 	}
 
-	var gz bytes.Buffer
-
-	gw, err := gzip.NewWriterLevel(&gz, gzip.BestCompression)
+	comp, err := repodata.CompressMetadataStream(repodata.Gzip, func(w io.Writer) error {
+		_, err := w.Write(merged.Bytes())
+		return err
+	})
 	if err != nil {
-		return formatrpm.RepomdData{}, nil, false, fmt.Errorf("group worker: compressing modules: %w", err)
+		return repodata.RepomdData{}, nil, false, fmt.Errorf("group worker: compressing modules: %w", err)
 	}
 
-	if _, err := gw.Write(merged.Bytes()); err != nil {
-		return formatrpm.RepomdData{}, nil, false, fmt.Errorf("group worker: compressing modules: %w", err)
-	}
-
-	if err := gw.Close(); err != nil {
-		return formatrpm.RepomdData{}, nil, false, fmt.Errorf("group worker: compressing modules: %w", err)
-	}
-
-	sum := sha256.Sum256(gz.Bytes())
-	hexSum := hex.EncodeToString(sum[:])
-
-	return formatrpm.RepomdData{
-		Type: "modules", Location: "repodata/" + hexSum + "-modules.yaml.gz",
-		Checksum: hexSum, ChecksumType: "sha256", Timestamp: ts, Size: int64(gz.Len()), OpenSize: int64(merged.Len()),
-	}, gz.Bytes(), true, nil
+	return repodata.RepomdData{
+		Type: "modules", Location: "repodata/" + comp.SHA256 + "-modules.yaml.gz",
+		Checksum: comp.SHA256, ChecksumType: "sha256", Timestamp: ts, Size: comp.Size, OpenSize: comp.OpenSize,
+	}, comp.Data, true, nil
 }

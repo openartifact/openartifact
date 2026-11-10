@@ -343,17 +343,10 @@ func qrRunNPM(t *testing.T, e *qrEnv) {
 
 // --- rpm ---------------------------------------------------------------------
 
-// qrRPM derives a distinct valid rpm from buildMinimalRPM: the 7-byte name is
-// replaced in place (header offsets stay valid) and trailing payload bytes
+// qrRPM derives a distinct valid rpm from the name, and trailing payload bytes
 // vary the size.
 func qrRPM(name string, extra int) []byte {
-	if len(name) != len("rpmtest") {
-		panic("rpm test name must be 7 bytes")
-	}
-
-	data := bytes.Replace(buildMinimalRPM(), []byte("rpmtest\x00"), []byte(name+"\x00"), 1)
-
-	return append(data, bytes.Repeat([]byte{0xAB}, extra)...)
+	return append(buildRPM(name, ""), bytes.Repeat([]byte{0xAB}, extra)...)
 }
 
 func (e *qrEnv) rpmUpload(data []byte) (*httptest.ResponseRecorder, string) {

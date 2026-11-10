@@ -43,7 +43,7 @@ Top-level directories:
 | `cmd/docgen` | Generates `docs/reference/` and checks `.env.example` and the example YAML |
 | `cmd/genformats` | Generates `web/src/lib/formats.generated.ts` and `clientsetup.generated.ts` |
 | `internal/` | Server packages, listed below |
-| `pkg/*` | Format parsers and helpers: `ansible`, `apk`, `cargo`, `compactindex`, `composer`, `conan`, `conda`, `deb`, `delta`, `gemversion`, `gpg`, `helm`, `logger`, `maven`, `nix`, `npm`, `nuget`, `pacman`, `pyversion`, `rpm`, `rpmsign`, `rubymarshal` |
+| `pkg/*` | Format parsers and helpers: `ansible`, `cargo`, `compactindex`, `composer`, `conan`, `conda`, `delta`, `gemversion`, `helm`, `logger`, `maven`, `nix`, `npm`, `nuget`, `pyversion`, `rubymarshal`; the apk, pacman, deb and rpm formats and GPG signing come from `github.com/M0Rf30/pkgformat` |
 | `migrations/` | Embedded SQL migrations, applied at startup |
 | `web/` | Vue 3 + TypeScript + Tailwind SPA (bun), embedded via `web/embed.go` |
 | `tests/` | Go handler tests (many need `-tags=integration`); `tests/integration/` uses testcontainers; `tests/apifuzz/` configures API fuzzing |

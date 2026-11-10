@@ -9,7 +9,7 @@ import (
 
 	pkgdeb "github.com/M0Rf30/pkgformat/deb"
 	"github.com/M0Rf30/pkgformat/gpg"
-	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
+	"github.com/M0Rf30/pkgformat/rpm/repodata"
 )
 
 // addSignedRelease adds InRelease and Release.gpg for release under prefix. A
@@ -31,7 +31,7 @@ func addSignedRelease(blobs map[string][]byte, prefix string, release []byte, si
 // addSignedRepomd adds repodata/repomd.xml.asc for repomd; a signing failure is
 // returned for the reason given at addSignedRelease.
 func addSignedRepomd(blobs map[string][]byte, repomd []byte, signer gpg.Signer) error {
-	signature, err := formatrpm.SignRepomdXML(signer, repomd)
+	signature, err := repodata.SignRepomdXML(signer, repomd)
 	if err != nil {
 		return fmt.Errorf("signing repomd.xml: %w", err)
 	}

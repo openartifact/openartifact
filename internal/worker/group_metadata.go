@@ -23,6 +23,7 @@ import (
 	pkgapk "github.com/M0Rf30/pkgformat/apk"
 	"github.com/M0Rf30/pkgformat/gpg"
 	"github.com/M0Rf30/pkgformat/pacman"
+	pkgrpm "github.com/M0Rf30/pkgformat/rpm"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
@@ -33,7 +34,6 @@ import (
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/logger"
-	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
 const (

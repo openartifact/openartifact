@@ -89,7 +89,7 @@ func TestRPMUploadMarksRepoStale(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile("../../pkg/rpm/testdata/weakdeps.rpm")
+	data, err := os.ReadFile("../../testdata/rpm/weakdeps.rpm")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestRPMUploadLeavesNoTempFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile("../../pkg/rpm/testdata/weakdeps.rpm")
+	data, err := os.ReadFile("../../testdata/rpm/weakdeps.rpm")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,14 +15,15 @@ import (
 
 	"github.com/openartifact/openartifact/internal/gpgresolver"
 
+	"github.com/M0Rf30/pkgformat/rpm"
+	"github.com/M0Rf30/pkgformat/rpm/repodata"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
-	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	"github.com/openartifact/openartifact/internal/metrics"
+	"github.com/openartifact/openartifact/internal/rpmextra"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/logger"
-	"github.com/openartifact/openartifact/pkg/rpm"
 )
 
 // RPMetadataStore is the part of the database RPMetadataWorker needs.
@@ -30,7 +31,7 @@ type RPMetadataStore interface {
 	metadataBlobsStore
 	BeginTx(ctx context.Context) (database.Transaction, error)
 	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
-	ListRpmPackagesForMetadata(ctx context.Context, repoID string) ([]rpm.Package, error)
+	ListRpmPackagesForMetadata(ctx context.Context, repoID string) ([]rpmextra.Stored, error)
 	UpdateRpmPackageExtra(ctx context.Context, repoID string, sha256 string, extra []byte) error
 }
 
@@ -263,12 +264,17 @@ func (w *RPMetadataWorker) Regenerate(ctx context.Context, repoID string) error 
 // PackagesForMetadata returns every package of the repository with the data its
 // metadata needs, completing rows stored by older versions from their blobs.
 func (w *RPMetadataWorker) PackagesForMetadata(ctx context.Context, repoID string) ([]rpm.Package, error) {
-	packages, err := w.db.ListRpmPackagesForMetadata(ctx, repoID)
+	stored, err := w.db.ListRpmPackagesForMetadata(ctx, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("rpm worker: loading packages: %w", err)
 	}
 
-	w.backfillFromBlob(ctx, repoID, packages)
+	w.backfillFromBlob(ctx, repoID, stored)
+
+	packages := make([]rpm.Package, len(stored))
+	for i := range stored {
+		packages[i] = stored[i].Package
+	}
 
 	return packages, nil
 }
@@ -278,7 +284,7 @@ func (w *RPMetadataWorker) PackagesForMetadata(ctx context.Context, repoID strin
 // archive sizes were stored correctly, updates the in-memory packages and
 // persists the result. Failures are logged and leave the package as it was
 // rather than failing the regeneration.
-func (w *RPMetadataWorker) backfillFromBlob(ctx context.Context, repoID string, packages []rpm.Package) {
+func (w *RPMetadataWorker) backfillFromBlob(ctx context.Context, repoID string, packages []rpmextra.Stored) {
 	for i := range packages {
 		pkg := &packages[i]
 		if pkg.WeakDepsParsed && pkg.SizesParsed {
@@ -297,7 +303,7 @@ func (w *RPMetadataWorker) backfillFromBlob(ctx context.Context, repoID string, 
 		pkg.InstalledSize, pkg.ArchiveSize = parsed.InstalledSize, parsed.ArchiveSize
 		pkg.SizesParsed = true
 
-		extra, err := pkg.MarshalExtra()
+		extra, err := rpmextra.Marshal(&pkg.Package)
 		if err == nil {
 			err = w.db.UpdateRpmPackageExtra(ctx, repoID, pkg.SHA256, extra)
 		}
@@ -315,7 +321,7 @@ func (w *RPMetadataWorker) readPackageBlob(ctx context.Context, sha256 string) (
 	}
 	defer func() { _ = rc.Close() }()
 
-	parsed, err := rpm.ParseRPM(rc)
+	parsed, err := rpm.ReadPackage(rc)
 	if err != nil {
 		return nil, fmt.Errorf("parsing rpm: %w", err)
 	}
@@ -359,13 +365,13 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 	}
 
 	kinds := []kind{
-		{"primary", formatrpm.WritePrimaryXML},
-		{"filelists", formatrpm.WriteFilelistsXML},
-		{"other", formatrpm.WriteOtherXML},
+		{"primary", repodata.WritePrimaryXML},
+		{"filelists", repodata.WriteFilelistsXML},
+		{"other", repodata.WriteOtherXML},
 	}
 
 	var (
-		entries []formatrpm.RepomdData
+		entries []repodata.RepomdData
 		blobs   = make(map[string][]byte)
 	)
 
@@ -373,33 +379,34 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 		// The XML streams straight into the gzip encoder; the uncompressed
 		// document is never held in memory. repomd.xml lists the gzip file only,
 		// so no other encoding is built.
-		comp, err := formatrpm.CompressMetadataStream(
+		comp, err := repodata.CompressMetadataStream(
+			repodata.Gzip,
 			func(out io.Writer) error { return k.write(out, packages) },
 		)
 		if err != nil {
 			return nil, fmt.Errorf("rpm worker: generating %s.xml: %w", k.name, err)
 		}
 
-		entries = append(entries, formatrpm.RepomdData{
-			Type: k.name, Location: fmt.Sprintf("repodata/%s-%s.xml.gz", comp.GzSHA256, k.name),
-			Checksum: comp.GzSHA256, ChecksumType: "sha256",
-			Timestamp: ts, Size: comp.GzSize, OpenSize: comp.OpenSize,
+		entries = append(entries, repodata.RepomdData{
+			Type: k.name, Location: fmt.Sprintf("repodata/%s-%s.xml.gz", comp.SHA256, k.name),
+			Checksum: comp.SHA256, ChecksumType: "sha256",
+			Timestamp: ts, Size: comp.Size, OpenSize: comp.OpenSize,
 		})
 
-		blobs[fmt.Sprintf("repodata/%s-%s.xml.gz", comp.GzSHA256, k.name)] = comp.GzipData
+		blobs[fmt.Sprintf("repodata/%s-%s.xml.gz", comp.SHA256, k.name)] = comp.Data
 	}
 
 	// Check for comps.xml and add group entry if it exists
 	compsMeta, err := w.db.GetRepoMetadataByPath(ctx, repoID, "comps.xml")
 	if err == nil && compsMeta != nil {
-		entries = append(entries, formatrpm.RepomdData{
+		entries = append(entries, repodata.RepomdData{
 			Type: "group", Location: "repodata/comps.xml",
 			Checksum: compsMeta.BlobSHA256, ChecksumType: "sha256",
 			Timestamp: ts, Size: compsMeta.BlobSize, OpenSize: 0,
 		})
 	}
 
-	repomdXML, err := formatrpm.GenerateRepomdXML(revision, entries)
+	repomdXML, err := repodata.GenerateRepomdXML(revision, entries)
 	if err != nil {
 		return nil, fmt.Errorf("rpm worker: generating repomd.xml: %w", err)
 	}
@@ -416,7 +423,7 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 			return nil, fmt.Errorf("rpm worker: %w", signErr)
 		}
 
-		publicKey, keyErr := formatrpm.PublicKey(signer)
+		publicKey, keyErr := repodata.PublicKey(signer)
 		if keyErr != nil {
 			w.log.Warnw("failed to export public key", "error", keyErr)
 		} else {

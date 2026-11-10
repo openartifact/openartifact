@@ -9,7 +9,7 @@ import (
 	"fmt"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
-	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
+	"github.com/openartifact/openartifact/internal/rpmextra"
 )
 
 // RpmPackageExists reports whether the repository already has a live package with the NEVRA.arch.
@@ -26,7 +26,7 @@ func (p *RPMStore) RpmPackageExists(ctx context.Context, repoID, name, version, 
 
 // ListRpmPackagesForMetadata loads every rpm package of a repo with dependency,
 // file and changelog data plus the header range, for metadata generation.
-func (p *RPMStore) ListRpmPackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error) {
+func (p *RPMStore) ListRpmPackagesForMetadata(ctx context.Context, repoID string) ([]rpmextra.Stored, error) {
 	// Sorted in SQL over the whole repository, as the legacy query did.
 	rows, err := p.db.QueryContext(ctx, `
 		SELECT p.name, v.version, COALESCE(f.attrs ->> 'release', ''), COALESCE((f.attrs ->> 'epoch')::bigint, 0), f.arch,
@@ -49,11 +49,11 @@ func (p *RPMStore) ListRpmPackagesForMetadata(ctx context.Context, repoID string
 	}
 	defer func() { _ = rows.Close() }()
 
-	var out []pkgrpm.Package
+	var out []rpmextra.Stored
 
 	for rows.Next() {
 		var (
-			pkg   pkgrpm.Package
+			pkg   rpmextra.Stored
 			extra []byte
 		)
 
@@ -67,7 +67,7 @@ func (p *RPMStore) ListRpmPackagesForMetadata(ctx context.Context, repoID string
 			return nil, fmt.Errorf("scan rpm package: %w", err)
 		}
 
-		if err := pkg.UnmarshalExtra(extra); err != nil {
+		if err := pkg.Unmarshal(extra); err != nil {
 			return nil, err
 		}
 
@@ -79,7 +79,7 @@ func (p *RPMStore) ListRpmPackagesForMetadata(ctx context.Context, repoID string
 
 // UpdateRpmPackageExtra replaces rpm_extra for the packages of a repo backed by
 // the blob with the given sha256. When the extra data carries sizes
-// (sizes_parsed, see pkgrpm.Package.MarshalExtra) the installed_size and
+// (sizes_parsed, see rpmextra.Marshal) the installed_size and
 // archive_size attrs are corrected from it too: rows stored before the
 // header size tags were read properly hold 0.
 func (p *RPMStore) UpdateRpmPackageExtra(ctx context.Context, repoID, sha256 string, extra []byte) error {

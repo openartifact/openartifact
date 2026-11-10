@@ -17,8 +17,8 @@ import (
 
 	"github.com/M0Rf30/pkgformat/deb"
 	"github.com/M0Rf30/pkgformat/pacman"
+	"github.com/M0Rf30/pkgformat/rpm"
 	"github.com/openartifact/openartifact/pkg/composer"
-	"github.com/openartifact/openartifact/pkg/rpm"
 )
 
 // maxCompressedMember bounds a compressed member that is itself decoded
@@ -484,7 +484,7 @@ func extractRPM(ctx context.Context, src Source) ([]section, error) {
 	}
 	defer func() { _ = rc.Close() }()
 
-	pkg, err := rpm.ParseRPM(ctxReader{ctx: ctx, r: rc})
+	pkg, err := rpm.ReadPackage(ctxReader{ctx: ctx, r: rc})
 	if err != nil {
 		return nil, fmt.Errorf("parse rpm: %w", err)
 	}

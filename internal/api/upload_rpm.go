@@ -18,6 +18,8 @@ import (
 	"database/sql"
 
 	"github.com/M0Rf30/pkgformat/gpg"
+	pkgrpm "github.com/M0Rf30/pkgformat/rpm"
+	"github.com/M0Rf30/pkgformat/rpm/repodata"
 	"github.com/go-chi/chi/v5"
 	database "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -28,14 +30,13 @@ import (
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/quota"
+	"github.com/openartifact/openartifact/internal/rpmextra"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
-	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
-	"github.com/openartifact/openartifact/pkg/rpmsign"
 )
 
 const (
@@ -244,14 +245,13 @@ func (h *RPMUploadHandler) ensureRPMRepo(ctx context.Context, repoID string) err
 
 // isInvalidRPMError reports whether err means the uploaded file is not a valid rpm.
 func isInvalidRPMError(err error) bool {
-	return errors.Is(err, pkgrpm.ErrInvalidHeader) || errors.Is(err, pkgrpm.ErrInvalidHeaderMagic) ||
-		errors.Is(err, pkgrpm.ErrHeaderTooLarge) || errors.Is(err, pkgrpm.ErrInvalidLeadMagic) ||
-		errors.Is(err, pkgrpm.ErrUnsupportedVersion)
+	return errors.Is(err, pkgrpm.ErrInvalidHeader) || errors.Is(err, pkgrpm.ErrHeaderTooLarge) ||
+		errors.Is(err, pkgrpm.ErrNotRPM) || errors.Is(err, pkgrpm.ErrUnsupportedVersion)
 }
 
 // parseSpooled parses the spooled file as an rpm package.
 func parseSpooled(sp *base.Spool) (*pkgrpm.Package, error) {
-	pkg, err := pkgrpm.ParseRPM(sp.Reader())
+	pkg, err := pkgrpm.ReadPackage(sp.Reader())
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse rpm: %w", err)
 	}
@@ -480,7 +480,7 @@ func (h *RPMUploadHandler) signUpload(ctx context.Context, repo *models.Reposito
 
 	// The signature header is added to the package: allow it some room.
 	signed, err := base.SpoolWrite(maxRPMUploadSize+multipartOverhead, func(w io.Writer) error {
-		return rpmsign.Sign(sp.Reader(), w, signer)
+		return pkgrpm.Sign(sp.Reader(), w, signer)
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %w", errSigningFailed, err)
@@ -555,7 +555,7 @@ func (h *RPMUploadHandler) uploadPipeline(
 		sp, pkg = signed, signedPkg
 	}
 
-	extra, err := pkg.MarshalExtra()
+	extra, err := rpmextra.Marshal(pkg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode package metadata: %w", err)
 	}
@@ -759,7 +759,7 @@ func (h *RPMUploadHandler) handleCompsUpload(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := formatrpm.ValidateCompsXML(body); err != nil {
+	if err := repodata.ValidateCompsXML(body); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", fmt.Sprintf("invalid comps XML: %v", err))
 		return
 	}
