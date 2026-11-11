@@ -351,7 +351,8 @@ func (h *PropertiesHandler) handleSearchByProperty(w http.ResponseWriter, r *htt
 }
 
 // propertySearchArtifact is one entry of the artifacts list of a property search: always
-// the id, plus the name, version and format of the stored file it names, when it names one.
+// the id, plus the name, version and format of the stored file or docker tag it names, when
+// it names one.
 type propertySearchArtifact struct {
 	ArtifactID string  `json:"artifact_id"`
 	Name       *string `json:"name,omitempty"`

@@ -8,6 +8,7 @@ package database
 
 import (
 	"context"
+	"maps"
 	"strings"
 	"testing"
 
@@ -132,4 +133,53 @@ func describe(m models.PropertyMatch) map[string]any {
 	}
 
 	return map[string]any{"id": m.ArtifactID, "name": deref(m.Name), "version": deref(m.Version), "format": deref(m.Format)}
+}
+
+// TestSearchByPropertyNamesDockerTags: in a docker repository the web UI stores properties
+// under a tag's listing id (docker_tags.id). A live tag of the same repository is named as
+// the package listing names it, the repository name plus the image path with the tag as
+// version; a deleted tag and an id of another repository stay unresolved.
+func TestSearchByPropertyNamesDockerTags(t *testing.T) {
+	ctx := context.Background()
+	f := newPropertySearchFixture(t)
+	d := newQuotaSeeder(t, f.pg, "props-d", "docker")
+
+	tag := func(image, name string, deleted bool) string {
+		t.Helper()
+
+		var id string
+		row := f.pg.GetDB().QueryRowContext(ctx, `INSERT INTO docker_tags (repository_id, image, name, manifest_digest, deleted_at)
+			VALUES ($1, $2, $3, 'sha256:' || md5($2 || $3), CASE WHEN $4 THEN now() END) RETURNING id`, d.repo, image, name, deleted)
+		if err := row.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+
+		return id
+	}
+
+	root, nested, deleted := tag("", "latest", false), tag("team/app", "1.0", false), tag("team/app", "0.9", true)
+	for _, id := range []string{root, nested, deleted, f.design} {
+		if err := f.pg.SetArtifactProperties(ctx, d.repo, id, map[string]string{"status": "approved"}, false); err != nil {
+			t.Fatalf("SetArtifactProperties(%s): %v", id, err)
+		}
+	}
+
+	got, err := f.pg.SearchByProperty(ctx, d.repo, "status", "approved")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	byID := requireSortedDistinct(t, got, 4)
+
+	for id, want := range map[string]map[string]any{
+		root:   {"id": root, "name": "props-d", "version": "latest", "format": "docker"},
+		nested: {"id": nested, "name": "props-d/team/app", "version": "1.0", "format": "docker"},
+	} {
+		if m := describe(byID[id]); !maps.Equal(m, want) {
+			t.Errorf("tag %s = %v, want %v", id, m, want)
+		}
+	}
+
+	requireUnresolved(t, byID, "deleted tag", deleted)
+	requireUnresolved(t, byID, "file id of another repository", f.design)
 }

@@ -49,8 +49,8 @@ func (p *PropertyStore) ListArtifactProperties(ctx context.Context, repoID, arti
 }
 
 // SearchByProperty returns the artifacts of a repository whose property key equals value,
-// sorted by id, each resolved to the stored file it names when there is one (see
-// models.PropertyMatch).
+// sorted by id, each resolved to the stored file or docker tag it names when there is one
+// (see models.PropertyMatch).
 func (p *PropertyStore) SearchByProperty(ctx context.Context, repoID, key, value string) ([]models.PropertyMatch, error) {
 	rows, err := p.q.SearchByProperty(ctx, dbsqlc.SearchByPropertyParams{
 		RepositoryID: repoID,
@@ -64,8 +64,18 @@ func (p *PropertyStore) SearchByProperty(ctx context.Context, repoID, key, value
 	out := make([]models.PropertyMatch, 0, len(rows))
 	for _, r := range rows {
 		m := models.PropertyMatch{ArtifactID: r.ArtifactID}
-		if r.PackageName != nil {
+
+		switch {
+		case r.PackageName != nil:
 			m.Name, m.Version, m.Format = r.PackageName, r.PackageVersion, r.PackageFormat
+		case r.TagName != nil && r.TagRepository != nil:
+			// Named as the package listing names a tag (catalog dockerBranch).
+			name, format := *r.TagRepository, dockerFmt
+			if r.TagImage != nil && *r.TagImage != "" {
+				name += "/" + *r.TagImage
+			}
+
+			m.Name, m.Version, m.Format = &name, r.TagName, &format
 		}
 
 		out = append(out, m)

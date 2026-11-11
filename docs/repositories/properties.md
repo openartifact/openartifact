@@ -58,7 +58,8 @@ To find artifacts by property across every repository you can read, use `prop:KE
 ```
 
 - An id that is the id of a file stored in the same repository, the id the web UI and `oa` use, carries the `name`, `version` and `format` of that file's package version. Raw files have an empty `version`.
-- Any other id carries only `artifact_id`: ids written by external tools, ids of deleted files, and file ids of another repository.
+- An id that is the id of a docker image tag of the same repository, the id the web UI uses for an image, carries the image name as the package list shows it (`REPO/IMAGE`), the tag as `version` and `docker` as `format`.
+- Any other id carries only `artifact_id`: ids written by external tools, ids of deleted files and tags, and ids of another repository.
 
 ## CLI
 
@@ -69,7 +70,7 @@ oa props delete REPO ARTIFACT_ID KEY
 oa props search REPO KEY VALUE               # ids of the artifacts whose KEY equals VALUE
 ```
 
-`oa props search` prints a table of the matching artifact ids with the package name each one names (`NAME`, empty when the id names no stored file), or a JSON array of the ids with `--format json`. All flags: [CLI reference](../reference/cli.md#oa-props-search).
+`oa props search` prints a table of the matching artifact ids with the package name each one names (`NAME`, empty when the id names no stored file or docker tag), or a JSON array of the ids with `--format json`. All flags: [CLI reference](../reference/cli.md#oa-props-search).
 
 ## Properties that other features read
 
