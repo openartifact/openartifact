@@ -127,6 +127,17 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
+### Unreleased
+
+**What you must do**
+
+- Nothing is required. Migration `029` adds the index `idx_artifact_properties_key_value` with `CREATE INDEX CONCURRENTLY`, so it does not block writes.
+
+**Changes.**
+
+- **`oa upload` to raw.** It sends each file's content type instead of `application/octet-stream`, so a PDF, an image or a text file uploaded that way displays in the browser. Files uploaded before keep their type; upload them again to change it. See [CI](../integrations/ci.md#supported-formats).
+- **Search by property.** `GET /api/v1/search` and the MCP `search_artifacts` tool find artifacts by property across every readable repository: `prop:KEY=VALUE` in the query, or the repeatable `prop` parameter for values with spaces; `q` may be left out. See [the REST API](../integrations/api.md).
+
 ### 0.23.0
 
 **What you must do**
@@ -141,7 +152,6 @@ Newest first. Each version starts with **What you must do**; the text below it l
 - **Federation conflicts.** `conflicts_total` and `openartifact_federation_conflicts_total` now count concurrent writes only. Log entries carry the stamp of the state they replaced (`base`), so a member that overwrites a unit after receiving the other member's change (a moved Docker tag, an npm dist-tag) is no longer a conflict, and a local change that is newer than a peer's concurrent change is counted when the peer's entry is skipped. Migration `028` adds the base columns; existing log rows have no base. A change without a base (written before the upgrade, or by a peer on an older version) is treated as concurrent with a local change it replaces, as before. Counting is exact once both members run this version. See [conflicts](../operations/federation.md#how-conflicts-are-decided).
 - **Database outage during authentication.** A failed database lookup while resolving a token (Bearer, Basic password, the MCP endpoint) or evaluating permissions is answered with `503` and `{"error": ..., "code": "service_unavailable"}` plus `Retry-After: 5`. Before, a token lookup failure looked like an invalid token (`401`) and an authorization lookup failure was a `500`. An unknown, revoked or expired token is still `401`. The federation peer endpoint (`/federation/v1`) does the same with peer tokens: a pulling peer now reports `upstream_error (HTTP 503)` and backs off, where it reported `upstream_error (HTTP 500)`, or `unauthorized (HTTP 401)` when the repository lookup failed.
 - **Property search.** `GET /api/v1/repositories/{name}/artifacts/search` also returns `artifacts`: the same ids, each with the name, version and format of the file it names when it is a file of that repository. `artifact_ids` is unchanged. See [search results](../repositories/properties.md#search-results).
-- **`oa upload` to raw.** It sends each file's content type instead of `application/octet-stream`, so a PDF, an image or a text file uploaded that way displays in the browser. Files uploaded before keep their type; upload them again to change it. See [CI](../integrations/ci.md#supported-formats).
 - **Search by project.** `GET /api/v1/search` and the MCP `search_artifacts` tool narrow by project: the `project` and `project_role` parameters, or `project:` and `project_role:` in the query. `project_role=viewer` lists what others shared with you. Both only narrow what the caller can already read; a global admin counts as owner of every project. `400 query_too_broad` suggests `project:<project>` to callers that hold a project role. See [the REST API](../integrations/api.md).
 
 New: project filters in search (`project:`, `project_role:`, and **Shared with me** on the Packages page), file names in property search results, and federation conflict counts that only report concurrent writes.

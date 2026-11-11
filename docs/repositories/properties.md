@@ -41,6 +41,8 @@ curl -X DELETE HOST/api/v1/repositories/REPO/artifacts/$AID/properties/vcs.revis
   -H "Authorization: Bearer <TOKEN>"
 ```
 
+To find artifacts by property across every repository you can read, use `prop:KEY=VALUE` in `GET /api/v1/search` (or the repeatable `prop` parameter, for values with spaces); see the [REST API](../integrations/api.md).
+
 ### Search results
 
 `artifact_ids` lists the matching ids. `artifacts` lists the same ids in the same order, and says what each one is when it can:

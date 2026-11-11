@@ -22,16 +22,17 @@ Search the packages of the repositories the caller can read, and the names of th
 
 | Name | In | Type | Required | Description |
 |---|---|---|---|---|
-| `q` | query | string | no | Search query: free text plus optional name:, format:, repo:, project:, project_role: and sha256: qualifiers. Required unless checksum is given or flagged=true. |
+| `q` | query | string | no | Search query: free text plus optional name:, format:, repo:, project:, project_role:, prop:KEY=VALUE and sha256: qualifiers. Required unless checksum or a prop filter is given, or flagged=true. |
 | `format` | query | string | no | Filter by format |
 | `repo` | query | string | no | Filter by repository name |
 | `project` | query | string | no | Keep the repositories of this project (name or slug); repeatable. Only projects the caller has a role in match: a project that does not exist and one without a role both give an empty result. Same as the project: qualifier. |
 | `project_role` | query | string | no | Keep the repositories of the projects where the caller's effective role (the my_role of the projects API) is this one; repeatable. A global admin counts as owner of every project, so viewer finds nothing for an admin. Repositories readable only through a permission target or anonymous access, and the system project, never match. Same as the project_role: qualifier. One of: `viewer`, `developer`, `maintainer`, `owner`. |
+| `prop` | query | string | no | Keep the artifacts carrying this property, given as KEY=VALUE (exact match on both, split at the first =); repeatable, all must hold, at most 10. The parameter form carries values with spaces; the same filter is prop:KEY=VALUE in q. It matches the id the web UI and oa store properties under (a file of the same repository); docker images are not matched. With prop, no repositories are returned. A malformed filter (no =, empty key, key above 255 or value above 4096 bytes, control characters) is 400 invalid_filter. |
 | `group` | query | string | no | Set to package to return one package entry per repository, format and name (its latest version) instead of one per version or file. One of: `package`. |
 | `limit` | query | integer | no | Maximum results to return. Minimum: 1. Maximum: 100. |
 | `offset` | query | integer | no | Offset for pagination. Minimum: 0. |
 | `flagged` | query | boolean | no | true keeps the packages whose scans found a critical or high vulnerability or a secret, or that are quarantined (the latest scan of each type counts). Repositories are not returned. |
-| `checksum` | query | string | no | Find the files whose stored checksum equals this value: a full lowercase-hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32), exact match only. SHA-256 matches every format; SHA-1 matches conan, maven and npm, MD5 conan, conda and maven (the other formats store no such digest). Replaces the search: q, format, repo, project, project_role, group and flagged are ignored, limit and offset page the hits, and the response is the ChecksumResult shape. |
+| `checksum` | query | string | no | Find the files whose stored checksum equals this value: a full lowercase-hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32), exact match only. SHA-256 matches every format; SHA-1 matches conan, maven and npm, MD5 conan, conda and maven (the other formats store no such digest). Replaces the search: q, format, repo, project, project_role, prop, group and flagged are ignored, limit and offset page the hits, and the response is the ChecksumResult shape. |
 
 **Responses**
 

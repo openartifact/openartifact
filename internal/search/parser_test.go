@@ -43,6 +43,11 @@ func TestParseQuery(t *testing.T) {
 			},
 		},
 		{
+			name:  "prop tokens keep KEY=VALUE as given",
+			input: "lodash prop:status=approved prop:team=core",
+			want:  SearchFilter{FreeText: "lodash", Props: []string{"status=approved", "team=core"}},
+		},
+		{
 			name:  "bare role is not a qualifier",
 			input: "role:viewer",
 			want:  SearchFilter{FreeText: "role:viewer"},

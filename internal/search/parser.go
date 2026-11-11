@@ -20,6 +20,12 @@ type SearchFilter struct {
 	// of these. Both only narrow the readable set; see ProjectScope.NarrowToProjects.
 	Projects     []string
 	ProjectRoles []string
+	// Props keeps the artifacts carrying every one of these properties, each given
+	// as KEY=VALUE (exact match); see CheckPropFilters and whereBuilder.addProp.
+	Props []string
+	// propByID marks the Props the executor applies by id lookups (few matches);
+	// the others are applied as a semi-join. Set by Executor.planProps.
+	propByID []bool
 }
 
 // ProjectScoped reports whether a project filter applies.
@@ -56,6 +62,8 @@ func ParseQuery(q string) SearchFilter {
 			f.Projects = append(f.Projects, val)
 		case "project_role":
 			f.ProjectRoles = append(f.ProjectRoles, val)
+		case "prop":
+			f.Props = append(f.Props, val)
 		default:
 			freeTextParts = append(freeTextParts, token)
 		}

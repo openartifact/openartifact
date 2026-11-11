@@ -207,3 +207,34 @@ func TestSearchArtifactsRejectsBadProjectFilters(t *testing.T) {
 		}
 	}
 }
+
+// TestSearchArtifactsPropFilters: search_artifacts passes prop: on to the search and
+// refuses what GET /api/v1/search refuses, as a tool error, before searching.
+func TestSearchArtifactsPropFilters(t *testing.T) {
+	h, rs, _ := projectSearchHarness(t)
+
+	if _, isErr := h.call(t, "search_artifacts", map[string]any{"query": "pad prop:status=approved"}); isErr {
+		t.Fatal("tool error for a valid prop filter")
+	}
+
+	if !slices.Equal(rs.filter.Props, []string{"status=approved"}) {
+		t.Errorf("searched props %v, want [status=approved]", rs.filter.Props)
+	}
+
+	for name, query := range map[string]string{
+		"no =":      "pad prop:status",
+		"empty key": "pad prop:=approved",
+		"too many":  "pad" + strings.Repeat(" prop:k=v", 11),
+	} {
+		h, rs, _ := projectSearchHarness(t)
+
+		text, isErr := h.call(t, "search_artifacts", map[string]any{"query": query})
+		if !isErr || !strings.Contains(text, "prop") || strings.Contains(text, "internal error") {
+			t.Errorf("%s: got (%q, %v), want a tool error about prop", name, text, isErr)
+		}
+
+		if rs.readable != nil {
+			t.Errorf("%s: searched despite the bad filter", name)
+		}
+	}
+}
