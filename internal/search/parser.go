@@ -21,10 +21,10 @@ type SearchFilter struct {
 	Projects     []string
 	ProjectRoles []string
 	// Props keeps the artifacts carrying every one of these properties, each given
-	// as KEY=VALUE (exact match); see CheckPropFilters and whereBuilder.addProp.
+	// as KEY=VALUE (exact match); see CheckPropFilters and whereBuilder.addPropByID and addPropExists.
 	Props []string
 	// propByID marks the Props the executor applies by id lookups (few matches);
-	// the others are applied as a semi-join. Set by Executor.planProps.
+	// the others are applied as a correlated EXISTS. Set by Executor.planProps.
 	propByID []bool
 }
 

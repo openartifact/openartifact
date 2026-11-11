@@ -246,6 +246,13 @@ func (e *Executor) SearchPage(
 	limit, offset int,
 	readableRepos map[uuid.UUID]struct{},
 ) ([]SearchResult, int64, error) {
+	if len(readableRepos) > 0 {
+		var err error
+		if filter, err = e.planProps(ctx, filter); err != nil { // once, for the page and the count
+			return nil, 0, err
+		}
+	}
+
 	results, total, err := e.runSearch(ctx, filter, limit, offset, readableRepos, true, opts)
 	if err != nil {
 		return nil, 0, err
@@ -677,7 +684,7 @@ func (b *whereBuilder) add(clause string, arg any) {
 func matchedFiles(k, v int) string {
 	return fmt.Sprintf(`SELECT pf.repository_id, pf.id FROM artifact_properties ap
 		JOIN artifact_refs ar ON ar.id = ap.artifact_ref_id
-		JOIN package_files pf ON pf.id = CASE WHEN ar.artifact_path ~* '%s' THEN ar.artifact_path::uuid END
+		JOIN package_files pf ON pf.id = CASE WHEN ar.artifact_path ~ '%s' THEN ar.artifact_path::uuid END
 			AND pf.repository_id = ar.repository_id
 		WHERE ap.key = $%d AND ap.value = $%d`, uuidPattern, k, v)
 }
@@ -706,7 +713,8 @@ func (b *whereBuilder) addPropExists(key, value string) {
 		AND ap.key = $%d AND ap.value = $%d)`, len(b.args)-1, len(b.args)))
 }
 
-// uuidPattern matches the text form of a UUID (artifact_refs.artifact_path holds
+// uuidPattern matches the lowercase text form of a UUID, as uuid::text renders it,
+// so both property shapes agree (artifact_refs.artifact_path holds
 // the package_files id the web UI stores properties under, among other ids).
 const uuidPattern = `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
 
