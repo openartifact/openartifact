@@ -59,7 +59,7 @@ func TestUnmarshalLegacyRow(t *testing.T) {
 	}
 
 	want := rpm.FileEntry{Path: "/etc/x", MTime: 9, Digest: "d", LinkTo: "l"}
-	if len(got.Files) != 1 || got.Files[0] != want {
+	if len(got.Files) != 1 || !reflect.DeepEqual(got.Files[0], want) {
 		t.Errorf("files = %+v, want %+v", got.Files, want)
 	}
 

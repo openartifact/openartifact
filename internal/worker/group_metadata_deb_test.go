@@ -13,6 +13,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -272,32 +274,16 @@ func TestBuildDebDistMergesProxyMembers(t *testing.T) {
 		}
 
 		sum := sha256.Sum256([]byte(plain))
-		if line := fmt.Sprintf(
-			" %s %10d %s",
-			hex.EncodeToString(sum[:]),
-			len(plain),
-			strings.TrimPrefix(base, "dists/noble/"),
-		); !strings.Contains(
-			release,
-			line,
-		) {
-			t.Errorf("Release lacks the plain index entry %q", line)
+		if !releaseHasEntry(release, hex.EncodeToString(sum[:]), len(plain), strings.TrimPrefix(base, "dists/noble/")) {
+			t.Errorf("Release lacks the plain index entry for %s", base)
 		}
 
 		for _, ext := range []string{".gz"} {
 			data := j.blobs[base+ext]
 			gsum := sha256.Sum256(data)
 
-			if line := fmt.Sprintf(
-				" %s %10d %s",
-				hex.EncodeToString(gsum[:]),
-				len(data),
-				strings.TrimPrefix(base, "dists/noble/")+ext,
-			); !strings.Contains(
-				release,
-				line,
-			) {
-				t.Errorf("Release lacks %q", line)
+			if !releaseHasEntry(release, hex.EncodeToString(gsum[:]), len(data), strings.TrimPrefix(base, "dists/noble/")+ext) {
+				t.Errorf("Release lacks the entry for %s", base+ext)
 			}
 		}
 	}
@@ -438,4 +424,12 @@ func BenchmarkBuildDebDistFullArchive(b *testing.B) {
 	}
 
 	b.ReportMetric(float64(total), "stanzas")
+}
+
+// releaseHasEntry reports whether release lists path with the given checksum
+// and size; the size column's padding width is not significant.
+func releaseHasEntry(release, sum string, size int, path string) bool {
+	re := regexp.MustCompile(`(?m)^ ` + sum + ` +` + strconv.Itoa(size) + ` ` + regexp.QuoteMeta(path) + `$`)
+
+	return re.MatchString(release)
 }
