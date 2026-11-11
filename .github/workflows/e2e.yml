@@ -38,7 +38,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: "1.27.3"
+  GO_VERSION: "1.27.4"
   # Bump together with LIGHTPANDA_SHA256 (the lightpanda-x86_64-linux asset of the
   # release); Dependabot does not track either.
   BUN_VERSION: "1.4.4"
