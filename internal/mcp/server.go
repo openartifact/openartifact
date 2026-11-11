@@ -170,6 +170,8 @@ type ServerStore interface {
 	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
 	GetLicenseScanResult(ctx context.Context, repoID string, artifactID string) (*models.LicenseScanResult, error)
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	GetRepositoriesByIDs(ctx context.Context, ids []string) (map[string]*models.Repository, error)
+	ListGroupMembers(ctx context.Context, groupRepoID string) ([]*models.RepositoryGroupMember, error)
 	ListAIAnalyses(
 		ctx context.Context,
 		repoID string,

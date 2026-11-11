@@ -18,6 +18,7 @@ import (
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/search"
 )
 
@@ -196,7 +197,51 @@ func (s *Server) getRepository(ctx context.Context, in repositoryNameIn) (reposi
 		return repositoryResult{}, err
 	}
 
-	return repositoryResult{provenance: newProvenance(), RepositoryResponse: toRepositoryDTO(repo)}, nil
+	out := repositoryResult{provenance: newProvenance(), RepositoryResponse: toRepositoryDTO(repo)}
+	if repo.RepoType == repotype.Group {
+		members, err := s.groupMembers(ctx, repo)
+		if err != nil {
+			return repositoryResult{}, err
+		}
+
+		out.Members = &members
+	}
+
+	return out, nil
+}
+
+// groupMembers lists the members of a group in serving order (priority), leaving
+// out the ones the caller cannot read: a repository the caller cannot read stays
+// invisible, also as a member. A client checks a version against the members
+// (check_availability has no answer for a group itself).
+func (s *Server) groupMembers(ctx context.Context, group *models.Repository) ([]groupMember, error) {
+	rows, err := s.db.ListGroupMembers(ctx, group.ID)
+	if err != nil {
+		return nil, s.internalError("list group members", err, "repository", group.Name)
+	}
+
+	ids := make([]string, len(rows))
+	for i, m := range rows {
+		ids[i] = m.MemberRepoID
+	}
+
+	repos, err := s.db.GetRepositoriesByIDs(ctx, ids)
+	if err != nil {
+		return nil, s.internalError("get group member repositories", err, "repository", group.Name)
+	}
+
+	out := make([]groupMember, 0, len(rows))
+
+	for _, m := range rows {
+		r := repos[m.MemberRepoID]
+		if r == nil || !s.allowed(ctx, r.Name, "read") {
+			continue
+		}
+
+		out = append(out, groupMember{Name: r.Name, Format: r.Format, RepoType: r.RepoType, Priority: m.Priority})
+	}
+
+	return out, nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

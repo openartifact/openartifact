@@ -58,6 +58,7 @@ type mockDB struct {
 	scans      []*models.VulnScanResult
 	analysis   *models.AIAnalysis
 	gate       gateFixtures
+	members    map[string][]*models.RepositoryGroupMember // by group repository id
 	err        error
 
 	lastPage, lastLimit int
@@ -75,6 +76,30 @@ func (m *mockDB) GetRepositoryByName(_ context.Context, name string) (*models.Re
 	}
 
 	return nil, nil
+}
+
+func (m *mockDB) ListGroupMembers(_ context.Context, groupRepoID string) ([]*models.RepositoryGroupMember, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	return m.members[groupRepoID], nil
+}
+
+func (m *mockDB) GetRepositoriesByIDs(_ context.Context, ids []string) (map[string]*models.Repository, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	out := map[string]*models.Repository{}
+
+	for _, r := range m.repos {
+		if slices.Contains(ids, r.ID) {
+			out[r.ID] = r
+		}
+	}
+
+	return out, nil
 }
 
 func (m *mockDB) GetRepositoryByID(_ context.Context, id string) (*models.Repository, error) {
