@@ -136,7 +136,7 @@ Newest first. Each version starts with **What you must do**; the text below it l
 **Changes.**
 
 - **`oa upload` to raw.** It sends each file's content type instead of `application/octet-stream`, so a PDF, an image or a text file uploaded that way displays in the browser. Files uploaded before keep their type; upload them again to change it. See [CI](../integrations/ci.md#supported-formats).
-- **Search by property.** `GET /api/v1/search` and the MCP `search_artifacts` tool find artifacts by property across every readable repository: `prop:KEY=VALUE` in the query, or the repeatable `prop` parameter for values with spaces; `q` may be left out. See [the REST API](../integrations/api.md).
+- **Search by property.** `GET /api/v1/search` and the MCP `search_artifacts` tool find artifacts by property across every readable repository: `prop:KEY=VALUE` in the query, or the repeatable `prop` parameter for values with spaces; `q` may be left out. Files and docker image tags match. See [the REST API](../integrations/api.md).
 
 ### 0.23.0
 

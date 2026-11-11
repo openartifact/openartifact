@@ -7472,7 +7472,7 @@ export type GetApiV1SearchData = {
          */
         project_role?: 'viewer' | 'developer' | 'maintainer' | 'owner';
         /**
-         * Keep the artifacts carrying this property, given as KEY=VALUE (exact match on both, split at the first =); repeatable, all must hold, at most 10. The parameter form carries values with spaces; the same filter is prop:KEY=VALUE in q. It matches the id the web UI and oa store properties under (a file of the same repository); docker images are not matched. With prop, no repositories are returned. A malformed filter (no =, empty key, key above 255 or value above 4096 bytes, control characters) is 400 invalid_filter.
+         * Keep the artifacts carrying this property, given as KEY=VALUE (exact match on both, split at the first =); repeatable, all must hold, at most 10. The parameter form carries values with spaces; the same filter is prop:KEY=VALUE in q. It matches the id the web UI and oa store properties under (a file or docker image tag of the same repository). With prop, no repositories are returned. A malformed filter (no =, empty key, key above 255 or value above 4096 bytes, control characters) is 400 invalid_filter.
          */
         prop?: string;
         /**

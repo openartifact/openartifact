@@ -677,25 +677,33 @@ func (b *whereBuilder) add(clause string, arg any) {
 	b.args = append(b.args, arg)
 }
 
-// matchedFiles is the SQL of the live package_files that carry the property bound to
-// $k=$v: the file of the same repository whose id the property is stored under (the
-// id the web UI and oa use). Only artifact paths shaped like a UUID are cast, so ids
+// matchedArtifacts is the SQL of the search row ids that carry the property bound to
+// $k=$v: the package_files row or docker tag of the same repository whose id the
+// property is stored under (the id the web UI and oa use; a docker tag keeps its id
+// when it is pushed again). Only artifact paths shaped like a UUID are cast, so ids
 // written by external tools never reach the cast.
-func matchedFiles(k, v int) string {
-	return fmt.Sprintf(`SELECT pf.repository_id, pf.id FROM artifact_properties ap
+func matchedArtifacts(k, v int) string {
+	return fmt.Sprintf(`SELECT pf.id FROM artifact_properties ap
 		JOIN artifact_refs ar ON ar.id = ap.artifact_ref_id
-		JOIN package_files pf ON pf.id = CASE WHEN ar.artifact_path ~ '%s' THEN ar.artifact_path::uuid END
+		JOIN package_files pf ON pf.id = CASE WHEN ar.artifact_path ~ '%[1]s' THEN ar.artifact_path::uuid END
 			AND pf.repository_id = ar.repository_id
-		WHERE ap.key = $%d AND ap.value = $%d`, uuidPattern, k, v)
+		WHERE ap.key = $%[2]d AND ap.value = $%[3]d
+		UNION ALL
+		SELECT dt.id FROM artifact_properties ap
+		JOIN artifact_refs ar ON ar.id = ap.artifact_ref_id
+		JOIN docker_tags dt ON dt.id = CASE WHEN ar.artifact_path ~ '%[1]s' THEN ar.artifact_path::uuid END
+			AND dt.repository_id = ar.repository_id
+		WHERE ap.key = $%[2]d AND ap.value = $%[3]d`, uuidPattern, k, v)
 }
 
-// addPropByID applies a property filter with few matches: the matching file ids are
+// addPropByID applies a property filter with few matches: the matching row ids are
 // collected once, as an array, and the array is pushed into every branch of the
-// search source, so package_files is probed by primary key. (Postgres cannot push a
-// join into the UNION ALL, so a semi-join would read every file.)
+// search source, so package_files and docker_tags are probed by primary key.
+// (Postgres cannot push a join into the UNION ALL, so a semi-join would read every
+// file.)
 func (b *whereBuilder) addPropByID(key, value string) {
 	b.args = append(b.args, key, value)
-	b.clauses = append(b.clauses, `s.id = ANY (ARRAY(SELECT m.id FROM (`+matchedFiles(len(b.args)-1, len(b.args))+`) m))`)
+	b.clauses = append(b.clauses, `s.id = ANY (ARRAY(SELECT m.id FROM (`+matchedArtifacts(len(b.args)-1, len(b.args))+`) m))`)
 }
 
 // addPropExists applies a property filter with many matches as a correlated EXISTS,
@@ -715,7 +723,8 @@ func (b *whereBuilder) addPropExists(key, value string) {
 
 // uuidPattern matches the lowercase text form of a UUID, as uuid::text renders it,
 // so both property shapes agree (artifact_refs.artifact_path holds
-// the package_files id the web UI stores properties under, among other ids).
+// the package_files or docker_tags id the web UI stores properties under, among
+// other ids).
 const uuidPattern = `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
 
 // addIn appends "expr IN ($n, ...)" over vals.
@@ -815,12 +824,10 @@ func buildWhereClause(filter SearchFilter, readableRepos map[uuid.UUID]struct{})
 
 	b.addReadable("s.repository_id", readableRepos)
 
-	// Property filters match the id the web UI and oa store properties under, the
-	// package_files id of the generic branch. Docker rows carry other ids and are left
-	// out until their mapping is confirmed; the constant qual drops the whole branch.
+	// Property filters match the id the web UI and oa store properties under: the
+	// package_files id of the generic branch, the docker_tags id of the docker branch
+	// (the id of a tag's row in the package listing).
 	if len(filter.Props) > 0 {
-		b.clauses = append(b.clauses, "s.format <> 'docker'")
-
 		for i, raw := range filter.Props {
 			key, value, _ := splitProp(raw) // validated by CheckPropFilters
 			if i < len(filter.propByID) && filter.propByID[i] {
