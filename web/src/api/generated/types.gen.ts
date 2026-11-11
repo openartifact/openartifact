@@ -200,7 +200,7 @@ export type PropertySearchResult = {
      */
     artifact_ids: Array<string>;
     /**
-     * The same ids in the same order, each resolved to the stored file it names when there is one
+     * The same ids in the same order, each resolved to the stored file or docker tag it names when there is one
      */
     artifacts: Array<PropertySearchArtifact>;
 };
@@ -211,15 +211,15 @@ export type PropertySearchArtifact = {
      */
     artifact_id: string;
     /**
-     * Package name of the file this id names; absent when the id names no live file of the repository
+     * Package name of the file this id names, or the image name (repository/image) of the docker tag; absent when the id names no live file or tag of the repository
      */
     name?: string;
     /**
-     * Package version of that file (empty for formats without versions, such as raw); absent when unresolved
+     * Package version of that file (empty for formats without versions, such as raw), or the tag; absent when unresolved
      */
     version?: string;
     /**
-     * Package format of that file; absent when unresolved
+     * Package format of that file, docker for a tag; absent when unresolved
      */
     format?: string;
 };

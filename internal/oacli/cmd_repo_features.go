@@ -811,8 +811,8 @@ func newPropsCmd(a *app) *cobra.Command {
 }
 
 // propsSearch prints the artifacts whose property key equals value: their ids with the
-// package name each one names (empty when it names no stored file). The JSON output stays
-// the plain list of ids.
+// package name each one names (empty when it names no stored file or docker tag). The JSON
+// output stays the plain list of ids.
 func propsSearch(client *Client, repo, key, value, outFmt string) {
 	q := url.Values{}
 	q.Set("key", key)

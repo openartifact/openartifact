@@ -8,7 +8,10 @@ package models
 //
 // ArtifactID is the id the properties are stored under. When it is the id of a live file
 // of the same repository (the listing item id the web UI and oa use, package_files.id),
-// Name, Version and Format describe that file's package version; otherwise they are nil.
+// Name, Version and Format describe that file's package version; when it is the id of a
+// live docker tag of the same repository (docker_tags.id), they are the image name
+// (repository/image), the tag and "docker", as the package listing shows them; otherwise
+// they are nil.
 type PropertyMatch struct {
 	ArtifactID string
 	Name       *string
