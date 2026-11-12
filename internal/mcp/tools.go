@@ -297,7 +297,8 @@ func (s *Server) registerTools() {
 		"get_repository",
 		"Get repository",
 		"Get details about a specific repository by name, including its format, description, and configuration. For a group "+
-			"repository, members lists its member repositories in group order, leaving out the ones you cannot read. A version is "+
+			"repository, members lists the member repositories serving consults, in group order: not nested groups, members of "+
+			"another format, blocked members or the ones you cannot read. A version is "+
 			"decided by the first member in that order that has it, even when that member holds it back (its 403 fails the "+
 			"install); unless merge_proxy_versions is set, a package name a hosted member holds is decided by the hosted "+
 			"members only. Requires read permission on the repository.",

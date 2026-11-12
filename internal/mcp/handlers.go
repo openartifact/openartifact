@@ -210,9 +210,11 @@ func (s *Server) getRepository(ctx context.Context, in repositoryNameIn) (reposi
 	return out, nil
 }
 
-// groupMembers lists the members of a group in serving order (priority), leaving
-// out the ones the caller cannot read: a repository the caller cannot read stays
-// invisible, also as a member. A client checks a version against the members
+// groupMembers lists the members of a group that serving consults, in priority
+// order: like the group handler (group.Handler.members) it leaves out nested
+// groups, members of another format and blocked members, and it leaves out the
+// members the caller cannot read (a repository the caller cannot read stays
+// invisible, also as a member). A client checks a version against these members
 // (check_availability has no answer for a group itself).
 func (s *Server) groupMembers(ctx context.Context, group *models.Repository) ([]groupMember, error) {
 	rows, err := s.db.ListGroupMembers(ctx, group.ID)
@@ -234,7 +236,7 @@ func (s *Server) groupMembers(ctx context.Context, group *models.Repository) ([]
 
 	for _, m := range rows {
 		r := repos[m.MemberRepoID]
-		if r == nil || !s.allowed(ctx, r.Name, "read") {
+		if r == nil || r.RepoType == repotype.Group || r.Format != group.Format || r.Blocked || !s.allowed(ctx, r.Name, "read") {
 			continue
 		}
 

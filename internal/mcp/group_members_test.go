@@ -62,6 +62,29 @@ func TestGetRepositoryListsGroupMembers(t *testing.T) {
 	}
 }
 
+// TestGetRepositoryGroupMembersAreTheServedOnes: like serving, members leaves out a
+// blocked member, a nested group and a member of another format, even for an admin
+// who can read them all.
+func TestGetRepositoryGroupMembersAreTheServedOnes(t *testing.T) {
+	st := groupStack(t)
+	st.db.repos = append(st.db.repos,
+		&models.Repository{ID: "r-blocked", Name: "npm-blocked", Format: "npm", RepoType: "proxy", Blocked: true},
+		&models.Repository{ID: "r-nested", Name: "npm-nested", Format: "npm", RepoType: "group"},
+		&models.Repository{ID: "r-pypi", Name: "py-hosted", Format: "pypi", RepoType: "hosted"},
+	)
+	st.db.members["r-group"] = []*models.RepositoryGroupMember{
+		{GroupRepoID: "r-group", MemberRepoID: "r-blocked", Priority: 0},
+		{GroupRepoID: "r-group", MemberRepoID: "r-nested", Priority: 1},
+		{GroupRepoID: "r-group", MemberRepoID: "r-pypi", Priority: 2},
+		{GroupRepoID: "r-group", MemberRepoID: "r-npm", Priority: 3},
+	}
+
+	want := []any{map[string]any{"name": "web-npm", "format": "npm", "repo_type": "proxy", "priority": float64(3)}}
+	if got := members(t, st.call("admin", "get_repository", map[string]any{"name": "npm-all"})); !reflect.DeepEqual(got, want) {
+		t.Errorf("members = %v, want only web-npm", got)
+	}
+}
+
 // TestGetRepositoryMembersOnlyForGroups: a proxy or hosted repository has no members
 // field, and a group whose members the caller cannot read has an empty list rather
 // than none, so "no members visible" is not mistaken for "not a group".
