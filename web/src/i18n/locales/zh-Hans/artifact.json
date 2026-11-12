@@ -208,6 +208,8 @@
   "artifact.availability.source.quarantine": "隔离",
   "artifact.availability.source.license_policy": "许可证策略",
   "artifact.availability.source.repository_blocked": "仓库已被阻止",
+  "artifact.availability.source.not_found": "未找到",
+  "artifact.availability.source.unknown": "未知",
   "artifact.availability.until": "可用时间:{when}",
   "artifact.availability.untilTitle": "扣留至 {date}",
   "artifact.availability.rule": "打开策展规则",

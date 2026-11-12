@@ -1137,7 +1137,7 @@ type CurationRulesResponse struct {
 // AvailabilityReason is one reason a package version is not available.
 type AvailabilityReason struct {
 	// Source is "min_age", "curation", "quarantine", "license_policy" or
-	// "repository_blocked".
+	// "repository_blocked"; the batch answer adds "not_found" and "unknown".
 	Source string `json:"source"`
 	Detail string `json:"detail"`
 	// Until is when a minimum-age hold ends (RFC 3339).

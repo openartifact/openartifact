@@ -1752,7 +1752,8 @@
         "properties": {
           "source": {
             "type": "string",
-            "enum": ["curation", "min_age", "quarantine", "license_policy", "repository_blocked"]
+            "enum": ["curation", "min_age", "quarantine", "license_policy", "repository_blocked", "not_found", "unknown"],
+            "description": "not_found and unknown appear only in the batch answer (POST): no repository consulted has the version, or a proxy cannot tell whether it has it."
           },
           "detail": {
             "type": "string"

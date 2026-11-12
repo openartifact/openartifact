@@ -22,7 +22,7 @@ describe('availability text', () => {
     expect(heldStatus(held([]))).toBe('')
   })
   it('labels every source', () => {
-    for (const s of ['min_age', 'curation', 'quarantine', 'license_policy', 'repository_blocked'] as const) {
+    for (const s of ['min_age', 'curation', 'quarantine', 'license_policy', 'repository_blocked', 'not_found', 'unknown'] as const) {
       expect(sourceLabel(s)).not.toContain('artifact.availability')
     }
   })

@@ -214,6 +214,8 @@
   "artifact.availability.source.quarantine": "Kwarantanna",
   "artifact.availability.source.license_policy": "Polityka licencji",
   "artifact.availability.source.repository_blocked": "Repozytorium zablokowane",
+  "artifact.availability.source.not_found": "Nie znaleziono",
+  "artifact.availability.source.unknown": "Nie wiadomo",
   "artifact.availability.until": "Dostępna {when}",
   "artifact.availability.untilTitle": "Wstrzymana do {date}",
   "artifact.availability.rule": "Otwórz reguły kuracji",

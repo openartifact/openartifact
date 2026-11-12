@@ -226,7 +226,7 @@ Includes all fields of [AvailabilityResponse](#availabilityresponse).
 |---|---|---|---|
 | `detail` | string | yes | - |
 | `rule_id` | string (uuid) | no | The curation rule that blocks the version; absent for a version an allowlist does not list. |
-| `source` | string | yes | One of: `curation`, `min_age`, `quarantine`, `license_policy`, `repository_blocked`. |
+| `source` | string | yes | not_found and unknown appear only in the batch answer (POST): no repository consulted has the version, or a proxy cannot tell whether it has it. One of: `curation`, `min_age`, `quarantine`, `license_policy`, `repository_blocked`, `not_found`, `unknown`. |
 | `until` | string (date-time) | no | When a min_age hold ends. |
 
 ### AvailabilityResponse

@@ -795,7 +795,10 @@ export type CurationRules = {
 };
 
 export type AvailabilityReason = {
-    source: 'curation' | 'min_age' | 'quarantine' | 'license_policy' | 'repository_blocked';
+    /**
+     * not_found and unknown appear only in the batch answer (POST): no repository consulted has the version, or a proxy cannot tell whether it has it.
+     */
+    source: 'curation' | 'min_age' | 'quarantine' | 'license_policy' | 'repository_blocked' | 'not_found' | 'unknown';
     detail: string;
     /**
      * When a min_age hold ends.

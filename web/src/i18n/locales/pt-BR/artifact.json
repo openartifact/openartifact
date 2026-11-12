@@ -210,6 +210,8 @@
   "artifact.availability.source.quarantine": "Quarentena",
   "artifact.availability.source.license_policy": "Política de licenças",
   "artifact.availability.source.repository_blocked": "Repositório bloqueado",
+  "artifact.availability.source.not_found": "Não encontrado",
+  "artifact.availability.source.unknown": "Desconhecido",
   "artifact.availability.until": "Disponível {when}",
   "artifact.availability.untilTitle": "Retida até {date}",
   "artifact.availability.rule": "Abrir as regras de curation",
