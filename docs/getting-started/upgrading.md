@@ -140,6 +140,7 @@ Newest first. Each version starts with **What you must do**; the text below it l
 - **Property search names docker tags.** `GET /api/v1/repositories/{repo}/artifacts/search` and `oa props search` give the image name, tag and format of a docker tag id, as they already did for file ids. See [properties](../repositories/properties.md#search-results).
 - **MCP `get_repository` lists a group's members.** For a group repository the answer adds `members` in group order, without the members you cannot read, so an assistant knows which repository to ask `check_availability`. See [MCP server](../integrations/mcp.md).
 - **Check many package versions at once.** `POST /api/v1/repositories/{name}/availability` and the MCP tool `check_dependencies` answer up to 1000 package versions in one call, also through a group, the way the group serves them, with `not_found` and `unknown` states. See [check many versions at once](../repositories/hosted-proxy-group.md#check-many-versions-at-once).
+- **Client setup snippets.** The npm and pnpm token line is scoped to the full registry URL, so it also works when the server is published under a path prefix (it was scoped to the host and `/repos/NAME/` only). The docker snippet passes the token with `--password-stdin` instead of `-p`.
 
 ### 0.23.0
 

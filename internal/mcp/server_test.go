@@ -707,7 +707,7 @@ func TestClientSetupShapes(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"docker login artifacts.example.com -u <USERNAME> -p <TOKEN>",
+		"docker login artifacts.example.com -u <USERNAME> --password-stdin",
 		"docker push artifacts.example.com/images:latest",
 	} {
 		if !strings.Contains(dockerText, want) {

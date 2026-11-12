@@ -304,6 +304,15 @@ describe('clientSetup', () => {
     expect(clientSetup('npm', origin, 'r1').map((c) => c.client)).toEqual(['npm', 'pnpm', 'yarn'])
   })
 
+  it('scopes the npm token to the registry URL, also under a path prefix', () => {
+    const [npm, pnpm] = clientSetup('npm', 'https://registry.example/artifacts', 'team')
+    for (const c of [npm!, pnpm!]) {
+      expect(c.configure).toContain(`${c.client} config set registry https://registry.example/artifacts/repos/team/`)
+      expect(c.configure).toContain(`${c.client} config set //registry.example/artifacts/repos/team/:_authToken <TOKEN>`)
+    }
+    expect(clientSetup('npm', origin, 'r1')[0]!.configure).toContain('npm config set //oa.example:8080/repos/r1/:_authToken <TOKEN>')
+  })
+
   it('uses the isolated prefix for ivy, maven, raw and sbt', () => {
     for (const f of ['ivy', 'maven', 'raw', 'sbt']) {
       const text = clientSetup(f, origin, 'r1')
@@ -315,7 +324,7 @@ describe('clientSetup', () => {
 
   it('uses the host root for docker', () => {
     const [d] = clientSetup('docker', origin, 'r1')
-    expect(d!.configure).toBe('docker login oa.example:8080 -u <USERNAME> -p <TOKEN>')
+    expect(d!.configure).toBe('echo "<TOKEN>" | docker login oa.example:8080 -u <USERNAME> --password-stdin')
     // The image name is the repository name: a nested path would address another repo.
     expect(d!.publish).toContain('docker push oa.example:8080/r1:latest')
     expect(d!.publish).not.toContain('/r1/')

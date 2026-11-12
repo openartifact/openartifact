@@ -208,6 +208,7 @@ export function clientSetup(format: string, origin: string, repo: string, repoTy
     esc: encodeURIComponent(repo),
     base,
     authBase: base.replace(/^([a-z][a-z0-9+.-]*:\/\/)/i, '$1<USERNAME>:<TOKEN>@'),
+    basePath: base.replace(/^[a-z][a-z0-9+.-]*:\/\//i, ''),
   }
   return templates.map((t) => {
     const out: ClientSetup = { client: t.client, configure: renderTemplate(t.configure, values) }

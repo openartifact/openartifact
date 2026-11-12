@@ -39,6 +39,7 @@ const (
 	phEsc      = "{{esc}}"      // URL-path-escaped repository name
 	phBase     = "{{base}}"     // native repository base URL
 	phAuthBase = "{{authBase}}" // phBase with <USERNAME>:<TOKEN>@ after the scheme
+	phBasePath = "{{basePath}}" // phBase without its scheme: host[:port], any path prefix of the origin and the repository path
 )
 
 // target carries the placeholders every snippet template needs, plus the
@@ -51,6 +52,7 @@ type target struct {
 	esc      string
 	base     string
 	authBase string
+	basePath string
 	repoType string // hosted, proxy or group
 }
 
@@ -98,6 +100,7 @@ func valuesFor(format, origin, repo string) values {
 	}
 	v["base"] = render(BaseTemplate(format), v)
 	v["authBase"] = authBaseOf(v["base"])
+	v["basePath"] = basePathOf(v["base"])
 
 	return v
 }
@@ -106,6 +109,17 @@ func valuesFor(format, origin, repo string) values {
 func authBaseOf(base string) string {
 	if i := strings.Index(base, "://"); i >= 0 {
 		return base[:i+3] + "<USERNAME>:<TOKEN>@" + base[i+3:]
+	}
+
+	return base
+}
+
+// basePathOf is a URL without its scheme: what npm scopes a credential to
+// ("//host/path/:_authToken"). It keeps a path prefix of the origin, which the
+// host alone would drop.
+func basePathOf(base string) string {
+	if _, rest, ok := strings.Cut(base, "://"); ok {
+		return rest
 	}
 
 	return base
@@ -153,6 +167,7 @@ func Templates(format, repoType string) []Snippet {
 		esc:      phEsc,
 		base:     phBase,
 		authBase: phAuthBase,
+		basePath: phBasePath,
 		repoType: repoType,
 	}
 
@@ -223,7 +238,9 @@ func Register(format string, b Builder) {
 
 // NPMBuilder is the snippet builder of the npm format.
 func NPMBuilder(c target) []Snippet {
-	auth := fmt.Sprintf("//%s/repos/%s/:_authToken <TOKEN>", c.host, c.esc)
+	// The scope is the registry URL without its scheme, so it also matches when
+	// the server is published under a path prefix.
+	auth := fmt.Sprintf("//%s/:_authToken <TOKEN>", c.basePath)
 
 	return []Snippet{
 		{
@@ -247,8 +264,9 @@ func NPMBuilder(c target) []Snippet {
 // DockerBuilder is the snippet builder of the docker format.
 func DockerBuilder(c target) []Snippet {
 	return []Snippet{{
-		Client:    "docker",
-		Configure: fmt.Sprintf("docker login %s -u <USERNAME> -p <TOKEN>", c.host),
+		Client: "docker",
+		// --password-stdin keeps the token out of the process arguments (docker warns about -p).
+		Configure: fmt.Sprintf("echo \"<TOKEN>\" | docker login %s -u <USERNAME> --password-stdin", c.host),
 		Publish: fmt.Sprintf("docker tag my-image:latest %[1]s/%[2]s:latest\ndocker push %[1]s/%[2]s:latest",
 			c.host, c.repo),
 	}}
