@@ -1752,7 +1752,8 @@
         "properties": {
           "source": {
             "type": "string",
-            "enum": ["curation", "min_age", "quarantine", "license_policy", "repository_blocked"]
+            "enum": ["curation", "min_age", "quarantine", "license_policy", "repository_blocked", "not_found", "unknown"],
+            "description": "not_found and unknown appear only in the batch answer (POST): no repository consulted has the version, or a proxy cannot tell whether it has it."
           },
           "detail": {
             "type": "string"
@@ -1907,6 +1908,95 @@
           "available",
           "reasons",
           "min_age"
+        ]
+      },
+      "AvailabilityQuery": {
+        "type": "object",
+        "properties": {
+          "package": {
+            "type": "string",
+            "description": "Package name, at most 1024 bytes."
+          },
+          "version": {
+            "type": "string",
+            "description": "Version string as clients see it, at most 1024 bytes."
+          }
+        },
+        "required": [
+          "package",
+          "version"
+        ]
+      },
+      "AvailabilityBatchRequest": {
+        "type": "object",
+        "properties": {
+          "packages": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "items": {
+              "$ref": "#/components/schemas/AvailabilityQuery"
+            }
+          }
+        },
+        "required": [
+          "packages"
+        ]
+      },
+      "AvailabilityBatchResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AvailabilityResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "package": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "available",
+                  "held",
+                  "not_found",
+                  "unknown"
+                ],
+                "description": "available: the version can be installed. held: it exists but a hold applies (see reasons). not_found: no repository consulted has it. unknown: a proxy has not cached the package's metadata, so whether it has the version cannot be told."
+              },
+              "repository": {
+                "type": "string",
+                "description": "The repository that decided: the repository asked, or for a group the member that decides (the group itself when no member has the version or the group is blocked)."
+              }
+            },
+            "required": [
+              "package",
+              "version",
+              "status",
+              "repository"
+            ]
+          }
+        ]
+      },
+      "AvailabilityBatchResponse": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AvailabilityBatchResult"
+            }
+          }
+        },
+        "required": [
+          "repository",
+          "results"
         ]
       },
       "CleanupPolicy": {
@@ -24863,6 +24953,94 @@
           },
           "404": {
             "description": "Repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          },
+          {}
+        ]
+      },
+      "post": {
+        "summary": "Explain whether many package versions are available",
+        "description": "The batch form of the GET, for checking a lockfile or a set of dependencies at once: up to 1000 package versions (duplicates are answered once), one result per entry in request order. Each result has the fields of the GET answer plus `status`: `available`, `held` (see `reasons`), `not_found` (a hosted repository stores no such version, or the cached upstream metadata of a proxy does not list it) or `unknown` (the proxy has not cached the package's metadata, or its format lists no versions, so whether it has the version cannot be told). `repository` is the repository that decided.\n\nA group is answered the way it serves: a blocked group refuses everything; nested groups, members of another format, blocked members and members the caller cannot read are skipped; unless `merge_proxy_versions` is set, a package a remaining hosted member holds is decided by the hosted members only; otherwise the first member in order that has the version decides it, also when it holds it back (that member's refusal reaches the client). A proxy member that cannot tell makes the answer `unknown`. Reads the cached upstream metadata only, never the upstream. Docker repositories are not supported (400). The body is at most 1 MiB. It only reads, so it needs read access to the repository like the GET.",
+        "tags": [
+          "Curation"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AvailabilityBatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One verdict per requested package version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailabilityBatchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON, no or more than 1000 package versions, a missing or oversized `package` or `version`, or a docker repository (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No read access to the repository",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body larger than 1 MiB",
             "content": {
               "application/json": {
                 "schema": {

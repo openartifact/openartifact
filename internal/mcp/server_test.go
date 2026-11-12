@@ -56,6 +56,7 @@ type mockDB struct {
 	repos      []*models.Repository
 	components []*models.Component
 	scans      []*models.VulnScanResult
+	deps       depsFixtures
 	analysis   *models.AIAnalysis
 	gate       gateFixtures
 	members    map[string][]*models.RepositoryGroupMember // by group repository id

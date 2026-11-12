@@ -95,3 +95,17 @@ func (u *fakeUpstream) HeldBackVersions(context.Context, *models.Repository, str
 func (u *fakeUpstream) ListProxyVersions(context.Context, *models.Repository, string) (proxy.ProxyVersions, error) {
 	return u.versions, nil
 }
+
+// CachedVersions lists the versions of pkg the published map dates; a package it
+// names no version of is not cached.
+func (u *fakeUpstream) CachedVersions(_ context.Context, _ *models.Repository, pkg string) ([]proxy.DatedVersion, bool) {
+	var out []proxy.DatedVersion
+
+	for key, t := range u.published {
+		if name, version, ok := strings.Cut(key, "@"); ok && name == pkg {
+			out = append(out, proxy.DatedVersion{Version: version, Published: t})
+		}
+	}
+
+	return out, len(out) > 0
+}

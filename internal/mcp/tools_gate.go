@@ -33,7 +33,8 @@ var (
 	errPackageParam       = fmt.Errorf("package is required (at most %d bytes)", api.MaxAvailabilityParam)
 	// errGroupAvailability is api.ErrGroupAvailability with where to find the members.
 	errGroupAvailability = errors.New(
-		"a group repository has no availability of its own: ask its members (get_repository lists them in group order)",
+		"a group repository has no availability of its own: use check_dependencies, which answers for a group, " +
+			"or ask its members (get_repository lists them in group order)",
 	)
 )
 
@@ -49,10 +50,25 @@ func (s *Server) registerGateTools() {
 			"repository stores no such package version, judged on the names get_package lists). Also returns published_at "+
 			"and min_age: off (no minimum age), checked, or unknown (the publish time is not cached yet, so the age cannot be "+
 			"judged). A proxy repository is judged on its cached upstream metadata; the upstream is never asked. A group "+
-			"repository has no verdict of its own: ask its members, which get_repository lists in group order with the rule "+
-			"that decides between them. Requires read permission on the repository.",
+			"repository has no verdict of its own: use check_dependencies, which answers for a group (also for one version), "+
+			"or ask its members, which get_repository lists in group order with the rule that decides between them. "+
+			"Requires read permission on the repository.",
 	),
 		true, s.checkAvailability)
+
+	addTool(s, readTool(
+		"check_dependencies",
+		"Check dependencies",
+		"Check many package versions at once (a lockfile, or the dependencies you are about to add) against a repository, "+
+			"including a group. Returns one result per package version, in order, each with status: available, held (reasons as "+
+			"in check_availability), not_found (no member has the version) or unknown (a proxy has not cached the package's "+
+			"metadata, so whether it has the version cannot be told; install or fetch the package once), and repository, the "+
+			"member that decided. A group decides like serving does: the first member that has the version decides even when it "+
+			"holds it back, and unless merge_proxy_versions is set a package a hosted member holds is decided by the hosted "+
+			"members only. Reads cached upstream metadata only; the upstream is never asked. At most 1000 package versions. "+
+			"Requires read permission on the repository.",
+	),
+		true, s.checkDependencies)
 
 	addTool(s, readTool(
 		"list_held_back_versions",
@@ -111,6 +127,46 @@ func (s *Server) checkAvailability(ctx context.Context, in availabilityIn) (avai
 		Version:              in.Version,
 		AvailabilityResponse: resp,
 	}, nil
+}
+
+// errDependenciesParams is the refusal of a check_dependencies input out of bounds.
+var errDependenciesParams = fmt.Errorf(
+	"packages must list 1 to %d package versions, each with a package and a version of at most %d bytes",
+	api.MaxAvailabilityBatch, api.MaxAvailabilityParam,
+)
+
+func (s *Server) checkDependencies(ctx context.Context, in dependenciesIn) (dependenciesResult, error) {
+	if len(in.Packages) == 0 || len(in.Packages) > api.MaxAvailabilityBatch {
+		return dependenciesResult{}, errDependenciesParams
+	}
+
+	for _, p := range in.Packages {
+		if p.Package == "" || p.Version == "" || len(p.Package) > api.MaxAvailabilityParam || len(p.Version) > api.MaxAvailabilityParam {
+			return dependenciesResult{}, errDependenciesParams
+		}
+	}
+
+	repo, err := s.resolveRepo(ctx, in.Repository)
+	if err != nil {
+		return dependenciesResult{}, err
+	}
+
+	canRead := func(m *models.Repository) bool { return s.allowed(ctx, m.Name, "read") }
+
+	resp, err := api.ExplainAvailabilityBatch(ctx, s.db, s.upstream, repo, in.Packages, canRead)
+	if errors.Is(err, api.ErrBatchFormat) {
+		return dependenciesResult{}, err //nolint:wrapcheck // fixed message meant for the model
+	}
+
+	if err != nil {
+		return dependenciesResult{}, s.internalError("explain availability batch", err, "repository", repo.Name)
+	}
+
+	for i := range resp.Results {
+		capReasonDetails(resp.Results[i].Reasons)
+	}
+
+	return dependenciesResult{provenance: newProvenance(), AvailabilityBatchResponse: resp}, nil
 }
 
 // addNotFound adds the not_found reason when the hosted repository stores no

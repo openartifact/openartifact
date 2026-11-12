@@ -208,6 +208,8 @@
   "artifact.availability.source.quarantine": "隔離",
   "artifact.availability.source.license_policy": "ライセンスポリシー",
   "artifact.availability.source.repository_blocked": "リポジトリはブロックされています",
+  "artifact.availability.source.not_found": "見つかりません",
+  "artifact.availability.source.unknown": "不明",
   "artifact.availability.until": "{when}に利用可能",
   "artifact.availability.untilTitle": "{date}まで保留",
   "artifact.availability.rule": "キュレーションルールを開く",

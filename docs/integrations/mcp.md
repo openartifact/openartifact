@@ -141,11 +141,12 @@ Sixteen tools. Arguments are validated against each tool's JSON schema and unkno
 
 ### Availability, licenses, SBOMs and activity
 
-These six tools answer what an assistant is asked after "install it": why a version cannot be installed, which versions are coming, what licenses and components a package has, and what changed in a repository. They are read-only and never start a scan, a fetch from the upstream or an SBOM generation.
+These seven tools answer what an assistant is asked after "install it": why a version cannot be installed, which versions are coming, what licenses and components a package has, and what changed in a repository. They are read-only and never start a scan, a fetch from the upstream or an SBOM generation.
 
 | Tool | Use it when | Example question |
 |---|---|---|
 | `check_availability(repository, package, version)` | an install fails with 404 or 403, or before you pin a version | "Why can't I install left-pad 1.1.0 from web-npm?" |
+| `check_dependencies(repository, packages)` | before an install, for a lockfile or several dependencies at once, also through a group | "Will everything in this composer.lock install from php?" |
 | `list_held_back_versions(repository, package)` | you need the versions a proxy hides and when each unlocks | "When does the newest left-pad become installable?" |
 | `list_proxy_versions(repository, package)` | you need every upstream version, whether it is held and whether it is cached | "Which left-pad versions can I install offline?" |
 | `get_licenses(repository, artifact_id)` | you need the licenses of one scanned artifact | "What licenses does this artifact declare, and is it quarantined?" |
@@ -162,7 +163,9 @@ These six tools answer what an assistant is asked after "install it": why a vers
 | `repository_blocked` | the repository is blocked |
 | `not_found` | a hosted repository stores no such package version, judged on the names `get_package` lists |
 
-The answer is the one of `GET /api/v1/repositories/{name}/availability` (see [minimum age](../repositories/hosted-proxy-group.md#minimum-age) and [package curation](../repositories/hosted-proxy-group.md#package-curation)), except that `not_found` exists only here. `min_age` is `off` without a minimum age, `checked` when the publish time is known and `unknown` when the proxy has not cached the version's metadata yet. The upstream is never asked. A group repository has no verdict: ask its members, which `get_repository` lists in group order. The rule's pattern is not returned, only its id and reason.
+The answer is the one of `GET /api/v1/repositories/{name}/availability` (see [minimum age](../repositories/hosted-proxy-group.md#minimum-age) and [package curation](../repositories/hosted-proxy-group.md#package-curation)), except that `not_found` exists only here. `min_age` is `off` without a minimum age, `checked` when the publish time is known and `unknown` when the proxy has not cached the version's metadata yet. The upstream is never asked. A group repository has no verdict: use `check_dependencies`, which answers for a group, or ask its members, which `get_repository` lists in group order. The rule's pattern is not returned, only its id and reason.
+
+`check_dependencies` takes up to 1000 `{package, version}` entries and returns one result per entry with `status` (`available`, `held`, `not_found` or `unknown`) and `repository`, the repository that decided. It is `POST /api/v1/repositories/{name}/availability`, including how a group decides between its members; see [check many versions at once](../repositories/hosted-proxy-group.md#check-many-versions-at-once).
 
 `list_held_back_versions` and `list_proxy_versions` work on proxy repositories only and return at most 200 versions, newest first, with `truncated: true` when more exist. `supported: false` means the format cannot list versions or nothing is cached for the package yet; fetch the package once.
 

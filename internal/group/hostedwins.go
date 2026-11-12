@@ -24,7 +24,9 @@ import (
 // already authorized one), so it neither owns a name nor hides the proxies.
 //
 // A hosted member "holds" a name when it answers a package-level document with
-// 200 (404 means it does not). The document, per format:
+// 200 (404 means it does not). The batch availability check answers the same
+// question from the database (database.HostedNamesHeld: a live version with a
+// live file); keep the two equal. The document, per format:
 //
 //	npm     <name>, scoped as @scope%2fname      (the packument)
 //	pypi    simple/<project>/                    (project page; files too)

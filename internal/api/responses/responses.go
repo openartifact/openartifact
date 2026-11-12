@@ -1137,7 +1137,7 @@ type CurationRulesResponse struct {
 // AvailabilityReason is one reason a package version is not available.
 type AvailabilityReason struct {
 	// Source is "min_age", "curation", "quarantine", "license_policy" or
-	// "repository_blocked".
+	// "repository_blocked"; the batch answer adds "not_found" and "unknown".
 	Source string `json:"source"`
 	Detail string `json:"detail"`
 	// Until is when a minimum-age hold ends (RFC 3339).
@@ -1158,6 +1158,41 @@ type AvailabilityResponse struct {
 	// has a minimum age but the publish time is not known, so the version cannot
 	// be held back).
 	MinAge string `json:"min_age"`
+}
+
+// AvailabilityQuery is one package version of a batch availability request.
+type AvailabilityQuery struct {
+	Package string `json:"package"`
+	Version string `json:"version"`
+}
+
+// AvailabilityBatchRequest is the body of POST /api/v1/repositories/{name}/availability.
+type AvailabilityBatchRequest struct {
+	Packages []AvailabilityQuery `json:"packages"`
+}
+
+// AvailabilityBatchResult is the answer for one package version of a batch: the
+// fields of the single-version answer plus the version it is about, a status and
+// the repository that decided it.
+type AvailabilityBatchResult struct {
+	AvailabilityResponse
+
+	Package string `json:"package"`
+	Version string `json:"version"`
+	// Status is "available", "held", "not_found" or "unknown" (a proxy whose
+	// cached metadata cannot say whether the version exists).
+	Status string `json:"status"`
+	// Repository is the repository that decided: the repository asked, or for a
+	// group the member that decides (the group itself when no member has the
+	// version or the group is blocked).
+	Repository string `json:"repository"`
+}
+
+// AvailabilityBatchResponse answers a batch availability request: one result
+// per requested package version, in request order.
+type AvailabilityBatchResponse struct {
+	Repository string                    `json:"repository"`
+	Results    []AvailabilityBatchResult `json:"results"`
 }
 
 // HeldBackVersion is a version of a proxy package its repository keeps from

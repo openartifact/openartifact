@@ -214,6 +214,8 @@
   "artifact.availability.source.quarantine": "Карантин",
   "artifact.availability.source.license_policy": "Політика ліцензій",
   "artifact.availability.source.repository_blocked": "Репозиторій заблоковано",
+  "artifact.availability.source.not_found": "Не знайдено",
+  "artifact.availability.source.unknown": "Невідомо",
   "artifact.availability.until": "Буде доступно {when}",
   "artifact.availability.untilTitle": "Утримується до {date}",
   "artifact.availability.rule": "Відкрити правила кураторства",

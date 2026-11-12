@@ -8,6 +8,7 @@ package integration_test
 
 import (
 	"errors"
+	"maps"
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/curation"
@@ -414,5 +415,89 @@ func TestPackageVersionHolds(t *testing.T) {
 				t.Errorf("holds = %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestHostedBatchMatchesPackageVersionHolds: the batch queries of the availability
+// check agree with PackageVersionHolds on every version, also say whether the
+// version is stored (a deleted or unknown version is not), and HostedNamesHeld
+// names the repositories that hold a live version of each package.
+func TestHostedBatchMatchesPackageVersionHolds(t *testing.T) {
+	ctx := t.Context()
+	orgID := systemOrgID
+	repo := &models.Repository{Name: "batch-hosted", Format: "npm", RepoType: "hosted", ProjectID: &orgID}
+	other := &models.Repository{Name: "batch-other", Format: "npm", RepoType: "hosted", ProjectID: &orgID}
+
+	for _, r := range []*models.Repository{repo, other} {
+		if err := harness.Database.CreateRepository(ctx, r); err != nil {
+			t.Fatalf("CreateRepository %s: %v", r.Name, err)
+		}
+	}
+
+	seedVersionWithScan(t, repo.ID, "vulnerable", "1.0.0", "vuln", true)
+	seedVersionWithScan(t, repo.ID, "gpl-thing", "2.0.0", "license", true)
+	seedVersionWithScan(t, repo.ID, "clean", "1.0.0", "vuln", false)
+	seedVersionWithScan(t, repo.ID, "Mixed-Case", "3.0.0", "vuln", true)
+	seedVersionWithScan(t, repo.ID, "gone", "1.0.0", "vuln", false)
+	seedVersionWithScan(t, other.ID, "clean", "1.0.0", "vuln", true)
+
+	if _, err := harness.DB.ExecContext(ctx, `UPDATE package_versions SET deleted_at = now()
+		WHERE repository_id = $1 AND version = '1.0.0'
+		  AND package_id = (SELECT id FROM packages WHERE repository_id = $1 AND name = 'gone')`, repo.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	queries := []models.NameVersion{
+		{Name: "vulnerable", Version: "1.0.0"}, {Name: "gpl-thing", Version: "2.0.0"}, {Name: "clean", Version: "1.0.0"},
+		{Name: "mixed-case", Version: "3.0.0"}, {Name: "vulnerable", Version: "9.9.9"}, {Name: "nothing", Version: "1.0.0"},
+		{Name: "gone", Version: "1.0.0"},
+	}
+	ids := []string{repo.ID, other.ID}
+
+	stored, err := harness.Database.HostedVersionsStored(ctx, ids, queries)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := map[[2]any]models.VersionHolds{}
+	for _, s := range stored {
+		got[[2]any{s.Index, s.RepoID}] = s.VersionHolds
+	}
+
+	wantStored := map[[2]any]bool{{0, repo.ID}: true, {1, repo.ID}: true, {2, repo.ID}: true, {3, repo.ID}: true, {2, other.ID}: true}
+	if len(got) != len(wantStored) {
+		t.Errorf("stored = %v, want exactly %v", got, wantStored)
+	}
+
+	for key := range wantStored {
+		i, id := key[0].(int), key[1].(string)
+
+		single, err := harness.Database.PackageVersionHolds(ctx, id, queries[i].Name, queries[i].Version)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if holds, ok := got[key]; !ok || holds != single {
+			t.Errorf("%v in %s: batch %+v (stored %v), PackageVersionHolds %+v", queries[i], id, holds, ok, single)
+		}
+	}
+
+	held, err := harness.Database.HostedNamesHeld(ctx, ids, []string{"clean", "Mixed-Case", "gone", "nothing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gotHeld := map[models.HeldName]bool{}
+	for _, h := range held {
+		gotHeld[h] = true
+	}
+
+	wantHeld := map[models.HeldName]bool{
+		{Index: 0, RepoID: repo.ID}:  true,
+		{Index: 0, RepoID: other.ID}: true,
+		{Index: 1, RepoID: repo.ID}:  true,
+	}
+	if !maps.Equal(gotHeld, wantHeld) {
+		t.Errorf("names held = %v, want %v", gotHeld, wantHeld)
 	}
 }

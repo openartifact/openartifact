@@ -944,7 +944,16 @@ func isReadOnlyRoute(method string, segs []string) bool {
 	return isSafeMethod(method) && (len(segs) == 2 && segs[0] == "repository" && isPlainName(segs[1]) ||
 		isSecurityFindingsRoute(method, segs) || isRepoSecuritySummaryRoute(method, segs) ||
 		isRepoAvailabilityRoute(segs) || isRepoActivityRoute(method, segs) || isRepoAttestationsReadRoute(segs) ||
-		isRepoGateRoute(segs))
+		isRepoGateRoute(segs)) || isRepoAvailabilityBatchRoute(method, segs)
+}
+
+// isRepoAvailabilityBatchRoute reports whether method and segs (of an /api/v1/
+// path) are POST repositories/{name}/availability, the batch form of the
+// availability explanation. It is a POST only because the package versions are
+// a body; it changes nothing, so it needs read like the GET.
+func isRepoAvailabilityBatchRoute(method string, segs []string) bool {
+	return method == http.MethodPost && len(segs) == 3 && segs[0] == "repositories" && isPlainName(segs[1]) &&
+		segs[2] == "availability"
 }
 
 // isRepoAttestationsReadRoute reports whether segs (of an /api/v1/ path) is

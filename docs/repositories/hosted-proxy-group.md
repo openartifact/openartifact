@@ -281,7 +281,47 @@ curl 'HOST/api/v1/repositories/npm-proxy/availability?package=left-pad&version=1
 }
 ```
 
-It needs read access to the repository. Each reason has a `source` (`curation`, `min_age`, `quarantine`, `license_policy` or `repository_blocked`) and a `detail`; a `min_age` reason carries `until`, a `curation` reason the `rule_id` that blocks the version (none when an allowlist simply does not list it). For a proxy the answer covers the blocked flag, the rules and the minimum age. The publish time is read from the metadata already cached, never fetched, and reported as `published_at`; `min_age` is `off` (no minimum age), `checked` or `unknown` (the repository has a minimum age but the cached metadata does not date the version, so it could not be checked). For a hosted repository it covers the blocked flag and the quarantine and license-policy holds of the stored version, for the formats stored in the generic package tables (scan results are matched through the version's files). A group has no verdict of its own and answers `400`: ask one of its members.
+It needs read access to the repository. Each reason has a `source` (`curation`, `min_age`, `quarantine`, `license_policy` or `repository_blocked`) and a `detail`; a `min_age` reason carries `until`, a `curation` reason the `rule_id` that blocks the version (none when an allowlist simply does not list it). For a proxy the answer covers the blocked flag, the rules and the minimum age. The publish time is read from the metadata already cached, never fetched, and reported as `published_at`; `min_age` is `off` (no minimum age), `checked` or `unknown` (the repository has a minimum age but the cached metadata does not date the version, so it could not be checked). For a hosted repository it covers the blocked flag and the quarantine and license-policy holds of the stored version, for the formats stored in the generic package tables (scan results are matched through the version's files). A group has no verdict of its own and answers `400`: ask one of its members, or use the batch form below.
+
+### Check many versions at once
+
+To check a whole lockfile, or the dependencies you are about to add, `POST` up to 1000 package versions. This also works on a group: point it at the URL your package manager uses.
+
+```sh
+curl -X POST HOST/api/v1/repositories/php/availability -H "Authorization: Bearer <TOKEN>" \
+  -H 'Content-Type: application/json' \
+  -d '{"packages":[{"package":"guzzlehttp/guzzle","version":"7.8.1"},{"package":"guzzlehttp/guzzle","version":"6.5.8"}]}'
+```
+
+```json
+{
+  "repository": "php",
+  "results": [
+    {"package": "guzzlehttp/guzzle", "version": "7.8.1", "status": "available", "repository": "php-proxy",
+     "available": true, "reasons": [], "min_age": "off", "published_at": "2023-12-03T20:35:24Z"},
+    {"package": "guzzlehttp/guzzle", "version": "6.5.8", "status": "held", "repository": "php-proxy",
+     "available": false, "reasons": [{"source": "curation", "detail": "blocked by repository curation: EOL, use 7.x", "rule_id": "..."}],
+     "min_age": "off", "published_at": "2022-06-20T22:16:07Z"}
+  ]
+}
+```
+
+There is one result per entry, in request order, with the fields of the single answer plus:
+
+- `status`: `available`; `held` (see `reasons`); `not_found` (a hosted repository stores no such version, or the cached metadata of a proxy does not list it); or `unknown` (the proxy has not cached the package's metadata, or its format lists no versions, so whether it has the version cannot be told; installing or fetching the package once fills the cache).
+- `repository`: the repository that decided. For a group this is the member that decides, or the group itself when no member has the version.
+
+A group is answered the way it serves:
+
+1. A blocked group refuses everything.
+2. Nested groups, members of another format, blocked members and members you cannot read are skipped.
+3. Unless `merge_proxy_versions` is set, a package that a remaining hosted member holds is decided by the hosted members only (see [group repositories](#group-repositories)).
+4. Otherwise the first member in order that has the version decides, also when it holds the version back: that member's refusal reaches the client, and later members are not tried.
+5. A proxy member that cannot tell makes the answer `unknown`.
+
+One case differs from serving today. A Composer proxy checks the minimum age of a dist only after comparing the dist reference, so when an earlier proxy member holds a version back by its minimum age and a later member has the same version under a different reference (two proxies of different upstreams), the earlier member answers 404 and the later one serves it. The batch reports that version as `held` by the earlier member. Curation holds, and minimum-age holds where the references match, are refused as reported.
+
+Like the single check, it reads the cached metadata only and never asks the upstream. It needs read access to the repository. The body is at most 1 MiB (`413` above); more than 1000 entries or a missing `package` or `version` is `400 validation_failed`, and so is a docker repository, which the batch does not support. Coding agents can use the same check through the MCP tool `check_dependencies` ([MCP server](../integrations/mcp.md)).
 
 
 To tell a version the repository holds back from one that does not exist, list the held-back versions of a package:

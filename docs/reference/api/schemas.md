@@ -185,13 +185,48 @@ What an audit event acted on, resolved server-side. `name` is null when the subj
 | `repository` | string | no | Name of the repository the event belongs to. |
 | `version` | string | no | Package version, for `package` subjects that record one. |
 
+### AvailabilityBatchRequest
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `packages` | array of [AvailabilityQuery](#availabilityquery) | yes | - |
+
+### AvailabilityBatchResponse
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `repository` | string | yes | - |
+| `results` | array of [AvailabilityBatchResult](#availabilitybatchresult) | yes | - |
+
+### AvailabilityBatchResult
+
+Includes all fields of [AvailabilityResponse](#availabilityresponse).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `available` | boolean | yes | True when no hold applies. |
+| `min_age` | string | yes | off: the repository has no minimum age. checked: it has one and the version was dated. unknown: it has one but the cached metadata does not date the version, so the check could not run (the proxy lets an undated version through). One of: `off`, `checked`, `unknown`. |
+| `package` | string | yes | - |
+| `published_at` | string (date-time) | no | The publish time the upstream states, when the cached metadata dates the version. |
+| `reasons` | array of [AvailabilityReason](#availabilityreason) | yes | - |
+| `repository` | string | yes | The repository that decided: the repository asked, or for a group the member that decides (the group itself when no member has the version or the group is blocked). |
+| `status` | string | yes | available: the version can be installed. held: it exists but a hold applies (see reasons). not_found: no repository consulted has it. unknown: a proxy has not cached the package's metadata, so whether it has the version cannot be told. One of: `available`, `held`, `not_found`, `unknown`. |
+| `version` | string | yes | - |
+
+### AvailabilityQuery
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `package` | string | yes | Package name, at most 1024 bytes. |
+| `version` | string | yes | Version string as clients see it, at most 1024 bytes. |
+
 ### AvailabilityReason
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `detail` | string | yes | - |
 | `rule_id` | string (uuid) | no | The curation rule that blocks the version; absent for a version an allowlist does not list. |
-| `source` | string | yes | One of: `curation`, `min_age`, `quarantine`, `license_policy`, `repository_blocked`. |
+| `source` | string | yes | not_found and unknown appear only in the batch answer (POST): no repository consulted has the version, or a proxy cannot tell whether it has it. One of: `curation`, `min_age`, `quarantine`, `license_policy`, `repository_blocked`, `not_found`, `unknown`. |
 | `until` | string (date-time) | no | When a min_age hold ends. |
 
 ### AvailabilityResponse
