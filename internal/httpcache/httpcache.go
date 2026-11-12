@@ -14,7 +14,9 @@ import (
 
 // ETagMatches reports whether an If-None-Match header value matches etag using
 // the weak comparison RFC 9110 prescribes for If-None-Match: the W/ prefix is
-// ignored and "*" matches any current representation.
+// ignored and "*" matches any current representation. The header is a
+// comma-separated list; a comma inside a quoted entity-tag belongs to the tag
+// (an entity-tag has no escapes, so quotes simply pair up).
 func ETagMatches(header, etag string) bool {
 	if header == "" {
 		return false
@@ -22,14 +24,32 @@ func ETagMatches(header, etag string) bool {
 
 	etag = strings.TrimPrefix(etag, "W/")
 
-	for c := range strings.SplitSeq(header, ",") {
-		c = strings.TrimPrefix(strings.TrimSpace(c), "W/")
-		if c == "*" || c == etag {
-			return true
+	matches := func(candidate string) bool {
+		candidate = strings.TrimPrefix(strings.TrimSpace(candidate), "W/")
+
+		return candidate == "*" || candidate == etag
+	}
+
+	start, quoted := 0, false
+
+	for i := range len(header) {
+		switch header[i] {
+		case '"':
+			quoted = !quoted
+		case ',':
+			if quoted {
+				continue
+			}
+
+			if matches(header[start:i]) {
+				return true
+			}
+
+			start = i + 1
 		}
 	}
 
-	return false
+	return matches(header[start:])
 }
 
 // CacheControl builds the Cache-Control value of a response that is

@@ -23,6 +23,13 @@ func TestETagMatches(t *testing.T) {
 		{"wildcard", `*`, `"a"`, true},
 		{"prefix is not a match", `"ab"`, `"a"`, false},
 		{"unquoted is not a match", `a`, `"a"`, false},
+		{"comma inside the tag", `"release,1"`, `"release,1"`, true},
+		{"comma inside a tag of a list", `"x", W/"a,b,c" , "y"`, `"a,b,c"`, true},
+		{"part of a tag with a comma is not a match", `"a,b"`, `"a"`, false},
+		{"tag with a comma against another", `"a,b"`, `"a,c"`, false},
+		{"wildcard after a tag with a comma", `"a,b", *`, `"z"`, true},
+		{"unbalanced quote matches nothing after it", `"a, "b"`, `"b"`, false},
+		{"empty members", `, ,"a",`, `"a"`, true},
 	}
 
 	for _, tc := range tests {
