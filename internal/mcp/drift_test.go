@@ -93,7 +93,7 @@ var driftTable = []driftDecision{
 	},
 	{pattern: "repositories/dependency-track/**", reason: reasonRepoConfig},
 	{pattern: "repositories/federation/**", reason: reasonRepoConfig},
-	{pattern: "repositories/members", reason: reasonIdentity},
+	{pattern: "repositories/members", tools: []string{"get_repository"}},
 	{pattern: "repositories/quota", reason: reasonRepoConfig},
 	{pattern: "repositories/usage", reason: reasonRepoConfig},
 	{pattern: "repositories/trash", reason: reasonRepoConfig},

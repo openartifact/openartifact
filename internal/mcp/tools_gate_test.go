@@ -205,7 +205,7 @@ func TestCheckAvailabilityValidationAndGroups(t *testing.T) {
 			map[string]any{"repository": "web-npm", "package": strings.Repeat("p", 2000), "version": "1"},
 			errAvailabilityParams.Error(),
 		},
-		{"group", map[string]any{"repository": "images", "package": "x", "version": "1"}, api.ErrGroupAvailability.Error()},
+		{"group", map[string]any{"repository": "images", "package": "x", "version": "1"}, errGroupAvailability.Error()},
 		{"hidden repository", map[string]any{"repository": "hidden", "package": "x", "version": "1"}, msgNotFound},
 		{"unknown repository", map[string]any{"repository": "nope", "package": "x", "version": "1"}, msgNotFound},
 	}

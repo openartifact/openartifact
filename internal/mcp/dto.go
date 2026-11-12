@@ -220,6 +220,18 @@ type analysisResult struct {
 type repositoryResult struct {
 	provenance
 	responses.RepositoryResponse
+
+	// Members are the member repositories of a group in serving order; nil (left
+	// out) for other repository types.
+	Members *[]groupMember `json:"members,omitempty"`
+}
+
+// groupMember is one member of a group repository: one the caller can read.
+type groupMember struct {
+	Name     string `json:"name"`
+	Format   string `json:"format"`
+	RepoType string `json:"repo_type"`
+	Priority int    `json:"priority"`
 }
 
 type queuedResult struct {
