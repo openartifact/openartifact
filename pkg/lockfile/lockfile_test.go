@@ -39,23 +39,23 @@ func TestParse(t *testing.T) {
 		want []Dep
 	}{
 		{"composer.lock", Composer, "testdata/composer.lock", []Dep{
-			{Name: "guzzlehttp/guzzle", Version: "7.8.1"},
-			{Name: "phpunit/phpunit", Version: "10.5.10", Dev: true},
-			{Name: "symfony/console", Version: "v6.4.3"},
-			{Name: "symfony/polyfill-php80", Version: "v1.29.0"},
+			{Name: "acme/console", Version: "v6.4.3"},
+			{Name: "acme/http-client", Version: "7.8.1"},
+			{Name: "acme/polyfill", Version: "v1.29.0"},
+			{Name: "acme/test-runner", Version: "10.5.10", Dev: true},
 		}},
 		{"package-lock.json v3", NPM, "testdata/package-lock.json", []Dep{
-			{Name: "@vue/shared", Version: "3.4.21"},
-			{Name: "esbuild", Version: "0.19.12", Dev: true},
-			{Name: "left-pad", Version: "1.3.0"},
-			{Name: "string-width", Version: "4.2.3"},
-			{Name: "vite", Version: "5.1.4", Dev: true},
+			{Name: "@acme/shared", Version: "3.4.21"},
+			{Name: "acme-bundler", Version: "5.1.4", Dev: true},
+			{Name: "acme-minifier", Version: "0.19.12", Dev: true},
+			{Name: "acme-pad", Version: "1.3.0"},
+			{Name: "acme-width", Version: "4.2.3"},
 		}},
 		{"package-lock.json v1", NPM, "testdata/package-lock-v1.json", []Dep{
-			{Name: "@scope/real", Version: "1.2.3"},
-			{Name: "debug", Version: "2.6.9"},
-			{Name: "debug", Version: "4.3.4", Dev: true},
-			{Name: "express", Version: "4.18.2"},
+			{Name: "@acme/real", Version: "1.2.3"},
+			{Name: "acme-log", Version: "2.6.9"},
+			{Name: "acme-log", Version: "4.3.4", Dev: true},
+			{Name: "acme-server", Version: "4.18.2"},
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
