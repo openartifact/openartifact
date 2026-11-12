@@ -275,9 +275,12 @@ func TestClassifyAPIRoute(t *testing.T) {
 		{
 			http.MethodPost,
 			"/api/v1/repositories/app/availability",
-			routeScope{action: "manage"},
-			"the availability explanation is read-only",
+			routeScope{action: "read", repoName: "app"},
+			"the batch availability explanation only reads: it needs read like the GET",
 		},
+		{http.MethodPut, "/api/v1/repositories/app/availability", routeScope{action: "manage"}, "only the batch POST reads"},
+		{http.MethodDelete, "/api/v1/repositories/app/availability", routeScope{action: "manage"}, "only the batch POST reads"},
+		{http.MethodPost, "/api/v1/repositories/app/availability/x", routeScope{action: "manage"}, "the batch has no deeper path"},
 		{
 			http.MethodGet,
 			"/api/v1/repositories/app/held-back-versions",

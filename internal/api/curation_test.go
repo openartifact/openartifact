@@ -149,6 +149,10 @@ func (fakePublished) ListProxyVersions(context.Context, *models.Repository, stri
 	return proxy.ProxyVersions{}, nil
 }
 
+func (fakePublished) CachedVersions(context.Context, *models.Repository, string) ([]proxy.DatedVersion, bool) {
+	return nil, false
+}
+
 // fakeHeld lists a fixed set of held-back versions and of proxy versions.
 type fakeHeld struct {
 	fakePublished

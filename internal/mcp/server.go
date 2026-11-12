@@ -163,7 +163,7 @@ type Options struct {
 
 // ServerStore is the part of the database Server needs.
 type ServerStore interface {
-	api.AvailabilityStore
+	api.BatchAvailabilityStore
 	api.RepositoryActivityStore
 	GetAIAnalysis(ctx context.Context, repoID string, artifactID string) (*models.AIAnalysis, error)
 	GetRepoComponentBlob(ctx context.Context, repoID string, id string) (*models.ComponentBlob, error)

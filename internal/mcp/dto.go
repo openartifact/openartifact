@@ -265,6 +265,13 @@ type availabilityResult struct {
 	Version    string `json:"version"`
 }
 
+// dependenciesResult is the check_dependencies answer.
+type dependenciesResult struct {
+	provenance
+
+	responses.AvailabilityBatchResponse
+}
+
 // heldBackResult is the held-back-versions answer for one proxy package.
 type heldBackResult struct {
 	provenance

@@ -84,6 +84,28 @@ type VersionHolds struct {
 	LicenseBlocked bool
 }
 
+// NameVersion is one package version of a batch lookup, as a client names it.
+type NameVersion struct {
+	Name    string
+	Version string
+}
+
+// HeldName says that hosted repository RepoID holds a live version of the
+// package Index of a batch lookup names.
+type HeldName struct {
+	Index  int
+	RepoID string
+}
+
+// StoredVersion is a live version of the package version Index of a batch
+// lookup names, stored in hosted repository RepoID, with its holds.
+type StoredVersion struct {
+	VersionHolds
+
+	Index  int
+	RepoID string
+}
+
 // PackageRollupOptions select and order the per-package rollup of one
 // repository.
 type PackageRollupOptions struct {

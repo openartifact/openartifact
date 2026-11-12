@@ -55,6 +55,20 @@ func (s *Server) registerGateTools() {
 		true, s.checkAvailability)
 
 	addTool(s, readTool(
+		"check_dependencies",
+		"Check dependencies",
+		"Check many package versions at once (a lockfile, or the dependencies you are about to add) against a repository, "+
+			"including a group. Returns one result per package version, in order, each with status: available, held (reasons as "+
+			"in check_availability), not_found (no member has the version) or unknown (a proxy has not cached the package's "+
+			"metadata, so whether it has the version cannot be told; install or fetch the package once), and repository, the "+
+			"member that decided. A group decides like serving does: the first member that has the version decides even when it "+
+			"holds it back, and unless merge_proxy_versions is set a package a hosted member holds is decided by the hosted "+
+			"members only. Reads cached upstream metadata only; the upstream is never asked. At most 1000 package versions. "+
+			"Requires read permission on the repository.",
+	),
+		true, s.checkDependencies)
+
+	addTool(s, readTool(
 		"list_held_back_versions",
 		"List held-back versions",
 		"List the versions of a package that a proxy repository hides from its clients, each with why (minimum age, with the "+
@@ -111,6 +125,46 @@ func (s *Server) checkAvailability(ctx context.Context, in availabilityIn) (avai
 		Version:              in.Version,
 		AvailabilityResponse: resp,
 	}, nil
+}
+
+// errDependenciesParams is the refusal of a check_dependencies input out of bounds.
+var errDependenciesParams = fmt.Errorf(
+	"packages must list 1 to %d package versions, each with a package and a version of at most %d bytes",
+	api.MaxAvailabilityBatch, api.MaxAvailabilityParam,
+)
+
+func (s *Server) checkDependencies(ctx context.Context, in dependenciesIn) (dependenciesResult, error) {
+	if len(in.Packages) == 0 || len(in.Packages) > api.MaxAvailabilityBatch {
+		return dependenciesResult{}, errDependenciesParams
+	}
+
+	for _, p := range in.Packages {
+		if p.Package == "" || p.Version == "" || len(p.Package) > api.MaxAvailabilityParam || len(p.Version) > api.MaxAvailabilityParam {
+			return dependenciesResult{}, errDependenciesParams
+		}
+	}
+
+	repo, err := s.resolveRepo(ctx, in.Repository)
+	if err != nil {
+		return dependenciesResult{}, err
+	}
+
+	canRead := func(m *models.Repository) bool { return s.allowed(ctx, m.Name, "read") }
+
+	resp, err := api.ExplainAvailabilityBatch(ctx, s.db, s.upstream, repo, in.Packages, canRead)
+	if errors.Is(err, api.ErrBatchFormat) {
+		return dependenciesResult{}, err //nolint:wrapcheck // fixed message meant for the model
+	}
+
+	if err != nil {
+		return dependenciesResult{}, s.internalError("explain availability batch", err, "repository", repo.Name)
+	}
+
+	for i := range resp.Results {
+		capReasonDetails(resp.Results[i].Reasons)
+	}
+
+	return dependenciesResult{provenance: newProvenance(), AvailabilityBatchResponse: resp}, nil
 }
 
 // addNotFound adds the not_found reason when the hosted repository stores no

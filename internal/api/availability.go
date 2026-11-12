@@ -233,17 +233,7 @@ func explainHosted(
 		return fmt.Errorf("package version holds: %w", err)
 	}
 
-	if holds.Quarantined {
-		resp.Reasons = append(resp.Reasons, responses.AvailabilityReason{
-			Source: sourceQuarantine, Detail: "a file of the version is quarantined by a vulnerability or secret scan",
-		})
-	}
-
-	if holds.LicenseBlocked {
-		resp.Reasons = append(resp.Reasons, responses.AvailabilityReason{
-			Source: sourceLicensePolicy, Detail: "a file of the version is held by the repository's license policy",
-		})
-	}
+	resp.Reasons = append(resp.Reasons, holdsReasons(holds)...)
 
 	return nil
 }

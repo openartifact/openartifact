@@ -878,6 +878,39 @@ export type AvailabilityResponse = {
     min_age: 'off' | 'checked' | 'unknown';
 };
 
+export type AvailabilityQuery = {
+    /**
+     * Package name, at most 1024 bytes.
+     */
+    package: string;
+    /**
+     * Version string as clients see it, at most 1024 bytes.
+     */
+    version: string;
+};
+
+export type AvailabilityBatchRequest = {
+    packages: Array<AvailabilityQuery>;
+};
+
+export type AvailabilityBatchResult = AvailabilityResponse & {
+    package: string;
+    version: string;
+    /**
+     * available: the version can be installed. held: it exists but a hold applies (see reasons). not_found: no repository consulted has it. unknown: a proxy has not cached the package's metadata, so whether it has the version cannot be told.
+     */
+    status: 'available' | 'held' | 'not_found' | 'unknown';
+    /**
+     * The repository that decided: the repository asked, or for a group the member that decides (the group itself when no member has the version or the group is blocked).
+     */
+    repository: string;
+};
+
+export type AvailabilityBatchResponse = {
+    repository: string;
+    results: Array<AvailabilityBatchResult>;
+};
+
 export type CleanupPolicy = {
     id?: string;
     name?: string;
@@ -13671,6 +13704,45 @@ export type GetApiV1RepositoriesByNameAvailabilityResponses = {
 };
 
 export type GetApiV1RepositoriesByNameAvailabilityResponse = GetApiV1RepositoriesByNameAvailabilityResponses[keyof GetApiV1RepositoriesByNameAvailabilityResponses];
+
+export type PostApiV1RepositoriesByNameAvailabilityData = {
+    body: AvailabilityBatchRequest;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/availability';
+};
+
+export type PostApiV1RepositoriesByNameAvailabilityErrors = {
+    /**
+     * Invalid JSON, no or more than 1000 package versions, a missing or oversized `package` or `version`, or a docker repository (`validation_failed`)
+     */
+    400: Error;
+    /**
+     * No read access to the repository
+     */
+    403: Error;
+    /**
+     * Repository not found
+     */
+    404: Error;
+    /**
+     * Body larger than 1 MiB
+     */
+    413: Error;
+};
+
+export type PostApiV1RepositoriesByNameAvailabilityError = PostApiV1RepositoriesByNameAvailabilityErrors[keyof PostApiV1RepositoriesByNameAvailabilityErrors];
+
+export type PostApiV1RepositoriesByNameAvailabilityResponses = {
+    /**
+     * One verdict per requested package version
+     */
+    200: AvailabilityBatchResponse;
+};
+
+export type PostApiV1RepositoriesByNameAvailabilityResponse = PostApiV1RepositoriesByNameAvailabilityResponses[keyof PostApiV1RepositoriesByNameAvailabilityResponses];
 
 export type GetApiV1RepositoriesByNameHeldBackVersionsData = {
     body?: never;

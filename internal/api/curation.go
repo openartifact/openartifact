@@ -28,7 +28,7 @@ import (
 // CurationStore is the part of the database CurationHandler needs.
 type CurationStore interface {
 	repoAccessStore
-	AvailabilityStore
+	BatchAvailabilityStore
 	GetCurationRule(ctx context.Context, repoID, id string) (*curation.Rule, error)
 	CreateCurationRule(ctx context.Context, rule *curation.Rule) (*curation.Rule, error)
 	UpdateCurationRule(ctx context.Context, rule *curation.Rule) (*curation.Rule, error)
@@ -42,6 +42,7 @@ type PublishTimeSource interface {
 	PublishTime(ctx context.Context, repo *models.Repository, pkg, version string) (time.Time, bool)
 	HeldBackVersions(ctx context.Context, repo *models.Repository, pkg string) ([]proxy.HeldBack, bool, error)
 	ListProxyVersions(ctx context.Context, repo *models.Repository, pkg string) (proxy.ProxyVersions, error)
+	CachedVersions(ctx context.Context, repo *models.Repository, pkg string) ([]proxy.DatedVersion, bool)
 }
 
 // CurationHandler serves the curation rules of proxy repositories and the
@@ -67,6 +68,7 @@ func (h *CurationHandler) RegisterAuthed(r chi.Router) {
 	r.With(requireUUIDParams("id")).Patch("/api/v1/repositories/{name}/curation-rules/{id}", h.handleUpdate)
 	r.With(requireUUIDParams("id")).Delete("/api/v1/repositories/{name}/curation-rules/{id}", h.handleDelete)
 	r.Get("/api/v1/repositories/{name}/availability", h.handleAvailability)
+	r.Post("/api/v1/repositories/{name}/availability", h.handleAvailabilityBatch)
 	r.Get("/api/v1/repositories/{name}/held-back-versions", h.handleHeldBack)
 	r.Get("/api/v1/repositories/{name}/proxy-versions", h.handleProxyVersions)
 }
@@ -327,6 +329,77 @@ func (h *CurationHandler) handleAvailability(w http.ResponseWriter, r *http.Requ
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleAvailabilityBatch answers POST /api/v1/repositories/{name}/availability:
+// ExplainAvailabilityBatch for up to MaxAvailabilityBatch package versions. It
+// only reads, so the route needs read access like the GET (see
+// middleware.isRepoAvailabilityRoute).
+func (h *CurationHandler) handleAvailabilityBatch(w http.ResponseWriter, r *http.Request) {
+	repo, ok := h.loadRepo(w, r, "explain availability batch")
+	if !ok {
+		return
+	}
+
+	p := currentPrincipal(r)
+	if p != nil && !p.IsAnonymous {
+		allowed, err := h.evaluator.Evaluate(r.Context(), *p, repo.Name, "", "read")
+		if err != nil || !allowed {
+			writeError(w, http.StatusForbidden, "forbidden", "access denied")
+			return
+		}
+	}
+
+	var body responses.AvailabilityBatchRequest
+	if err := decodeJSON(r, &body); err != nil {
+		writeBadJSON(w, err)
+		return
+	}
+
+	if msg := validateAvailabilityBatch(body.Packages); msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
+		return
+	}
+
+	canRead := func(m *models.Repository) bool {
+		if p == nil {
+			return false
+		}
+
+		allowed, err := h.evaluator.Evaluate(r.Context(), *p, m.Name, "", "read")
+
+		return err == nil && allowed
+	}
+
+	resp, err := ExplainAvailabilityBatch(r.Context(), h.db, h.published, repo, body.Packages, canRead)
+	if errors.Is(err, ErrBatchFormat) {
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+		return
+	}
+
+	if err != nil {
+		h.dbError(w, "explain availability batch: db error", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// validateAvailabilityBatch returns why a batch is refused, or "" when it is
+// valid: 1 to MaxAvailabilityBatch package versions, each with a package and a
+// version of at most MaxAvailabilityParam bytes.
+func validateAvailabilityBatch(queries []responses.AvailabilityQuery) string {
+	if len(queries) == 0 || len(queries) > MaxAvailabilityBatch {
+		return fmt.Sprintf("packages must list 1 to %d package versions", MaxAvailabilityBatch)
+	}
+
+	for i, q := range queries {
+		if q.Package == "" || q.Version == "" || len(q.Package) > MaxAvailabilityParam || len(q.Version) > MaxAvailabilityParam {
+			return fmt.Sprintf("packages[%d]: package and version are required (at most %d bytes each)", i, MaxAvailabilityParam)
+		}
+	}
+
+	return ""
 }
 
 // proxyPackageRequest resolves the repository and package of a request for the

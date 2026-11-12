@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/openartifact/openartifact/internal/api/responses"
 )
 
 // Tool results are typed structs: the SDK derives each tool's inputSchema and
@@ -209,6 +210,12 @@ type availabilityIn struct {
 	Repository string `json:"repository" jsonschema:"Repository name (hosted or proxy; not a group)"`
 	Package    string `json:"package"    jsonschema:"Exact package name"`
 	Version    string `json:"version"    jsonschema:"Exact version"`
+}
+
+// dependenciesIn is the input of check_dependencies.
+type dependenciesIn struct {
+	Repository string                        `json:"repository" jsonschema:"Repository name: hosted, proxy or group"`
+	Packages   []responses.AvailabilityQuery `json:"packages"   jsonschema:"Package versions to check, 1 to 1000 (package and version each)"`
 }
 
 // upstreamPackageIn is the input of the tools that list the upstream versions

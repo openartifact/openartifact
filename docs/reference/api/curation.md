@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Curation API
 
-7 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+8 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -36,6 +36,34 @@ Evaluates the holds that apply to one package version of a repository and lists 
 | `400` | Missing or oversized `package` or `version`, or the repository is a group (`validation_failed`) | `application/json`: [Error](schemas.md#error) |
 | `403` | No read access to the repository | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
+
+### `POST /api/v1/repositories/{name}/availability`
+
+Explain whether many package versions are available
+
+The batch form of the GET, for checking a lockfile or a set of dependencies at once: up to 1000 package versions (duplicates are answered once), one result per entry in request order. Each result has the fields of the GET answer plus `status`: `available`, `held` (see `reasons`), `not_found` (a hosted repository stores no such version, or the cached upstream metadata of a proxy does not list it) or `unknown` (the proxy has not cached the package's metadata, or its format lists no versions, so whether it has the version cannot be told). `repository` is the repository that decided. A group is answered the way it serves: a blocked group refuses everything; nested groups, members of another format, blocked members and members the caller cannot read are skipped; unless `merge_proxy_versions` is set, a package a remaining hosted member holds is decided by the hosted members only; otherwise the first member in order that has the version decides it, also when it holds it back (that member's refusal reaches the client). A proxy member that cannot tell makes the answer `unknown`. Reads the cached upstream metadata only, never the upstream. Docker repositories are not supported (400). The body is at most 1 MiB. It only reads, so it needs read access to the repository like the GET.
+
+**Security:** `bearerAuth` or `cookieAuth` or .
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+
+**Request body** (required)
+
+`application/json`: [AvailabilityBatchRequest](schemas.md#availabilitybatchrequest)
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | One verdict per requested package version | `application/json`: [AvailabilityBatchResponse](schemas.md#availabilitybatchresponse) |
+| `400` | Invalid JSON, no or more than 1000 package versions, a missing or oversized `package` or `version`, or a docker repository (`validation_failed`) | `application/json`: [Error](schemas.md#error) |
+| `403` | No read access to the repository | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
+| `413` | Body larger than 1 MiB | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/curation-rules`
 

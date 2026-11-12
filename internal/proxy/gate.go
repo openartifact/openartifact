@@ -180,6 +180,21 @@ func (s *Service) PublishTime(ctx context.Context, repo *models.Repository, pkg,
 	return h.Published(s, ctx, repo, pkg, version)
 }
 
+// CachedVersions lists every version of pkg the CACHED metadata of proxy
+// repository repo names, with the publish time it states, without the gate's
+// verdict: the batch availability check evaluates the gate itself, with the
+// rules it loaded once for the repository. It never fetches. ok is false when
+// the format cannot list versions or the metadata is not cached (or not
+// readable): whether the upstream has the version is then unknown.
+func (s *Service) CachedVersions(ctx context.Context, repo *models.Repository, pkg string) ([]DatedVersion, bool) {
+	h, found := hooks.Lookup(repo.Format)
+	if !found || h.Versions == nil {
+		return nil, false
+	}
+
+	return h.Versions(s, ctx, repo, pkg)
+}
+
 // HeldBack is a version of an upstream package the repository's gate keeps from
 // its clients.
 type HeldBack struct {

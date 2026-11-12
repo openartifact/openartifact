@@ -53,7 +53,7 @@ var driftTable = []driftDecision{
 	{pattern: "repositories/vuln/scans", tools: []string{"get_vulnerabilities"}},
 
 	// Availability and the minimum-age gate.
-	{pattern: "repositories/availability", tools: []string{"check_availability"}},
+	{pattern: "repositories/availability", tools: []string{"check_availability", "check_dependencies"}},
 	{pattern: "repositories/held-back-versions", tools: []string{"list_held_back_versions"}},
 	{pattern: "repositories/proxy-versions", tools: []string{"list_proxy_versions"}},
 
