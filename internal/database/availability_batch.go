@@ -20,8 +20,16 @@ import (
 
 // HostedNamesHeld returns, for the names of a batch lookup, which of the hosted
 // repositories repoIDs hold a stored version of the package: the "hosted wins"
-// ownership of a group (internal/group/hostedwins.go). Index is the position
-// in names. One query for every repository and name.
+// ownership of a group. Index is the position in names. One query for every
+// repository and name.
+//
+// This must agree with serving, which decides ownership differently: a hosted
+// member holds a name when it answers the format's package document with 200
+// (internal/group/hostedwins.go, PkgRef). A member with a live version that has
+// a live file answers that document, and one without does not, so the two
+// match today. A change to either side (what a hosted handler serves for a
+// package with no live file, or this predicate) must keep them equal, or the
+// batch availability answer stops following the group.
 func (p *QuarantineStore) HostedNamesHeld(ctx context.Context, repoIDs, names []string) ([]models.HeldName, error) {
 	if len(repoIDs) == 0 || len(names) == 0 {
 		return nil, nil

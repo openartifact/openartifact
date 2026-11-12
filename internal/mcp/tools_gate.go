@@ -33,7 +33,8 @@ var (
 	errPackageParam       = fmt.Errorf("package is required (at most %d bytes)", api.MaxAvailabilityParam)
 	// errGroupAvailability is api.ErrGroupAvailability with where to find the members.
 	errGroupAvailability = errors.New(
-		"a group repository has no availability of its own: ask its members (get_repository lists them in group order)",
+		"a group repository has no availability of its own: use check_dependencies, which answers for a group, " +
+			"or ask its members (get_repository lists them in group order)",
 	)
 )
 
@@ -49,8 +50,9 @@ func (s *Server) registerGateTools() {
 			"repository stores no such package version, judged on the names get_package lists). Also returns published_at "+
 			"and min_age: off (no minimum age), checked, or unknown (the publish time is not cached yet, so the age cannot be "+
 			"judged). A proxy repository is judged on its cached upstream metadata; the upstream is never asked. A group "+
-			"repository has no verdict of its own: ask its members, which get_repository lists in group order with the rule "+
-			"that decides between them. Requires read permission on the repository.",
+			"repository has no verdict of its own: use check_dependencies, which answers for a group (also for one version), "+
+			"or ask its members, which get_repository lists in group order with the rule that decides between them. "+
+			"Requires read permission on the repository.",
 	),
 		true, s.checkAvailability)
 

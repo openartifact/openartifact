@@ -11,8 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/curation"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -377,17 +375,22 @@ func (b *availabilityBatch) advance(i int, need map[cacheKey]*models.Repository)
 }
 
 // readCached reads the cached metadata of the (proxy member, package) pairs in
-// need, at most proxyReadConcurrency at a time.
+// need, at most proxyReadConcurrency at a time. A read has no error to report:
+// CachedVersions answers ok=false when it cannot say, which is the "unknown"
+// state, so the reads run under a plain WaitGroup and semaphore.
 func (b *availabilityBatch) readCached(ctx context.Context, need map[cacheKey]*models.Repository) error {
 	var (
-		mu sync.Mutex
-		g  errgroup.Group
+		mu  sync.Mutex
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, proxyReadConcurrency)
 	)
 
-	g.SetLimit(proxyReadConcurrency)
-
 	for key, m := range need {
-		g.Go(func() error {
+		sem <- struct{}{}
+
+		wg.Go(func() {
+			defer func() { <-sem }()
+
 			cv := cachedVersions{}
 
 			if b.published != nil {
@@ -399,12 +402,10 @@ func (b *availabilityBatch) readCached(ctx context.Context, need map[cacheKey]*m
 			mu.Lock()
 			b.cached[key] = cv
 			mu.Unlock()
-
-			return nil
 		})
 	}
 
-	_ = g.Wait() // the reads report no error: a read that fails is "cannot say"
+	wg.Wait()
 
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("read cached metadata: %w", err)

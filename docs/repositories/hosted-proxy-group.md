@@ -319,6 +319,8 @@ A group is answered the way it serves:
 4. Otherwise the first member in order that has the version decides, also when it holds the version back: that member's refusal reaches the client, and later members are not tried.
 5. A proxy member that cannot tell makes the answer `unknown`.
 
+One case differs from serving today. A Composer proxy checks the minimum age of a dist only after comparing the dist reference, so when an earlier proxy member holds a version back by its minimum age and a later member has the same version under a different reference (two proxies of different upstreams), the earlier member answers 404 and the later one serves it. The batch reports that version as `held` by the earlier member. Curation holds, and minimum-age holds where the references match, are refused as reported.
+
 Like the single check, it reads the cached metadata only and never asks the upstream. It needs read access to the repository. The body is at most 1 MiB (`413` above); more than 1000 entries or a missing `package` or `version` is `400 validation_failed`, and so is a docker repository, which the batch does not support. Coding agents can use the same check through the MCP tool `check_dependencies` ([MCP server](../integrations/mcp.md)).
 
 
