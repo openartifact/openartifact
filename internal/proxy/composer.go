@@ -274,22 +274,26 @@ func (s *Service) composerPublishedDist(
 
 // locateComposerDist finds the dist the upstream's documents publish for the
 // version of p; the gate's refusal (checkGate) when the version is held back.
-// The reference in the request must be the one that dist has (a
-// stale or forged URL is errNotFound, without a negative cache entry: the
-// document may simply be stale). It is cached only when its SHA-1 matches a
-// non-empty "shasum".
+// The gate is checked before the reference: it holds the version, whatever dist
+// of it is asked for. In a group the URL of a held version can come from a later
+// member's document, with that member's reference; answering it with 404 would
+// let the next member serve what this proxy holds back (group.firstHit passes
+// over a 404, never a 403). Then the reference in the request must be the one
+// the published dist has (a stale or forged URL is errNotFound, without a
+// negative cache entry: the document may simply be stale). It is cached only
+// when its SHA-1 matches a non-empty "shasum".
 func (s *Service) locateComposerDist(ctx context.Context, repo *models.Repository, p pkgcomposer.Path, g versionGate) (download, error) {
 	dist, published, err := s.composerPublishedDist(ctx, repo, p)
 	if err != nil {
 		return download{}, err
 	}
 
-	if dist.ProxyRef() != p.Ref {
-		return download{}, errNotFound
-	}
-
 	if gerr := checkGate(g, p.Name, p.Version, published); gerr != nil {
 		return download{}, gerr
+	}
+
+	if dist.ProxyRef() != p.Ref {
+		return download{}, errNotFound
 	}
 
 	return download{url: dist.URL, opts: fetchOpts{
