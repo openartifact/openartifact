@@ -35,6 +35,7 @@ const (
 var (
 	errCheckLockfile = errors.New("--lockfile is required")
 	errLockfileSize  = fmt.Errorf("lockfile larger than %d MiB", maxLockfileBytes>>20)
+	errCheckResponse = errors.New("unexpected availability response")
 )
 
 // checkReason is one reason of an availability result.
@@ -161,11 +162,18 @@ func runCheck(ctx context.Context, api *ciAPI, repo, path string, noDev bool) (c
 			return checkReport{}, err
 		}
 
+		if len(out.Results) != len(chunk) {
+			return checkReport{}, fmt.Errorf("%w: %d results for %d dependencies", errCheckResponse, len(out.Results), len(chunk))
+		}
+
 		for i, r := range out.Results {
-			if i < len(chunk) {
-				r.Dev = chunk[i].Dev
+			// The server answers one result per entry, in request order.
+			if r.Package != chunk[i].Name || r.Version != chunk[i].Version {
+				return checkReport{}, fmt.Errorf("%w: result %d is %s %s, want %s %s",
+					errCheckResponse, start+i, r.Package, r.Version, chunk[i].Name, chunk[i].Version)
 			}
 
+			r.Dev = chunk[i].Dev
 			report.Summary[r.Status]++
 			report.Results = append(report.Results, r)
 		}
@@ -199,6 +207,11 @@ func (r checkReport) text() string {
 	var b strings.Builder
 
 	total := len(r.Results)
+
+	if total == 0 {
+		fmt.Fprintf(&b, "No registry dependencies to check in %s.", r.Lockfile)
+		return b.String()
+	}
 
 	if r.Summary[statusAvailable] == total {
 		fmt.Fprintf(&b, "All %s of %s are available from %s.", dependencies(total), r.Lockfile, r.Repository)

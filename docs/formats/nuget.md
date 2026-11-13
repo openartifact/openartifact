@@ -26,6 +26,8 @@ dotnet nuget push my-package.1.0.0.nupkg --source REPO --api-key <TOKEN>
 
 Source credentials carry the token as the Basic password. The server does not read `X-NuGet-ApiKey` (the `--api-key` value). The source credentials authenticate the push. See [authentication](../security/authentication.md).
 
+`--store-password-in-clear-text` writes the token unencrypted into `NuGet.Config`. NuGet encrypts stored passwords only on Windows, so on Linux and macOS the flag is required. Keep that `NuGet.Config` out of version control, or keep the token out of the file: NuGet expands environment variables written as `%NAME%` in `NuGet.Config` values, so `--password '%OA_TOKEN%'` stores only the variable name.
+
 Over plain `http://`, NuGet needs `allowInsecureConnections="true"` on the source, or `--allow-insecure-connections`.
 
 ## Publish
