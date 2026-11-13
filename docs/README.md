@@ -98,7 +98,7 @@ These pages are also published, one version per release, at <https://openartifac
 | [Konflux](integrations/konflux.md) | Registry, hermetic-build package proxy, Conforma, rebuild webhooks and release for Konflux CI |
 | [Tekton catalog](integrations/tekton.md) | StepActions, tasks and pipelines that publish, gate and promote with `oa`; signed Tekton bundles |
 | [Declarative configuration](integrations/declarative.md) | `oa apply`, `oa diff` and `oa export`: manage users, repositories, permissions and more from YAML manifests, GitOps usage |
-| [MCP server](integrations/mcp.md) | Tools, permissions and client configuration (Claude, Cursor, VS Code, Codex, omp) |
+| [MCP server](integrations/mcp.md) | Tools, permissions, client configuration (Claude, Cursor, VS Code, Codex, omp) and the agent plugin for Claude Code and Cursor |
 | [REST API](integrations/api.md) | OpenAPI spec, interactive API reference, authentication, conventions |
 | [AI analysis](integrations/ai-analysis.md) | Optional LLM analysis of package manifests |
 | [yap](integrations/yap.md) | Build deb/rpm packages with yap, publish them and install from clients |
