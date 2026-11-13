@@ -49,6 +49,30 @@ Promotion adds metadata rows that point at the same blobs. It costs the same for
 - For every other format, publish with the native client in the job: `cargo publish`, `docker push`, `helm push`, `npm publish`, `twine upload`.
 - Terraform and OpenTofu have no publish command. Use `curl` against the [publish API](../formats/terraform.md#publish).
 
+## Check dependencies before installing
+
+`oa check` asks a repository whether it will serve every package version a lockfile pins, before `composer install` or `npm ci` fails halfway through on a held or missing version. Point it at the repository your package manager uses, usually a group:
+
+```sh
+oa check php --lockfile composer.lock
+oa check npm-all --lockfile package-lock.json --no-dev
+```
+
+```text
+STATUS     PACKAGE            VERSION  FROM       REASON
+held       guzzlehttp/guzzle  6.5.8    php-proxy  blocked by repository curation: EOL, use 7.x
+not_found  acme/internal      2.0.0    php        no member of the group has this version
+
+84 dependencies: 82 available, 1 held, 1 not found, 0 unknown.
+```
+
+- **Lockfiles:** it reads `composer.lock`, `package-lock.json` and `npm-shrinkwrap.json`, picked by file name. Local, linked, bundled and git or file dependencies are skipped, because no registry serves them. `--no-dev` leaves out development-only dependencies.
+- **Statuses:** each dependency is `available`, `held` (a curation rule, the minimum age, a quarantine or the license policy, with the reason), `not_found` or `unknown` (a proxy has not cached the package's metadata yet; one install fills the cache).
+- **Exit status:** `1` when a dependency is held or not found, also with `--fail-on-unknown` when one is unknown, and `0` otherwise. The result is printed either way; `--format json` prints every dependency with a summary.
+- **Token:** it needs only read access on the repository, so a read-only token is enough.
+
+A group answers the way it serves, and the server never asks the upstream: see [check many versions at once](../repositories/hosted-proxy-group.md#check-many-versions-at-once). Coding agents get the same check through the MCP tool `check_dependencies`.
+
 ## Install `oa` in the job
 
 You need `oa` 0.10.0 or newer. Download the archive for the runner from the [GitHub releases](https://github.com/openartifact/openartifact/releases) and verify it against `SHA256SUMS`:

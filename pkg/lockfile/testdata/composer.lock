@@ -1,0 +1,18 @@
+{
+    "_readme": ["This file locks the dependencies of your project to a known state"],
+    "content-hash": "0f4c1d6b6ab3",
+    "packages": [
+        {"name": "acme/http-client", "version": "7.8.1", "dist": {"type": "zip", "url": "https://dist.example.test/acme/http-client/41042bc.zip"}, "type": "library"},
+        {"name": "acme/console", "version": "v6.4.3", "dist": {"type": "zip"}, "type": "library"},
+        {"name": "acme/polyfill", "version": "v1.29.0", "type": "metapackage"},
+        {"name": "acme/local-module", "version": "dev-main", "dist": {"type": "path", "url": "../modules/local"}},
+        {"name": "", "version": "1.0.0"}
+    ],
+    "packages-dev": [
+        {"name": "acme/test-runner", "version": "10.5.10", "dist": {"type": "zip"}},
+        {"name": "acme/console", "version": "v6.4.3", "dist": {"type": "zip"}}
+    ],
+    "aliases": [],
+    "minimum-stability": "stable",
+    "platform": {"php": "^8.2"}
+}

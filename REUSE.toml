@@ -31,6 +31,7 @@ path = [
   "pkg/nix/testdata/cache_nixos_org_hello.narinfo",
   "internal/csaf/testdata/vex.json",
   "internal/vexsync/testdata/vendor-vex.json",
+  "pkg/lockfile/testdata/*",
   "VERSION",
   ".github/dup-baseline.json",
   "web/.jscpd.json",

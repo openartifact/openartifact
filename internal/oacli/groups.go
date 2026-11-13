@@ -19,7 +19,7 @@ func helpGroups() []helpGroup {
 		{"repos", "Repositories and packages", []string{"repo", "trash", "artifact", "search", "props", "quota", "cleanup", "delta"}},
 		{"admin", "Administration", []string{"user", "group", "project", "token", "gpg", "storage", "backup", "audit", "system"}},
 		{"security", "Security and integrations", []string{"webhook", "sbom", "vex", "dtrack", "vuln", "license", "secret"}},
-		{"ci", "CI and delivery", []string{"upload", "bundle", "promote", "gate", "attestations", "oidc"}},
+		{"ci", "CI and delivery", []string{"upload", "bundle", "promote", "gate", "check", "attestations", "oidc"}},
 		{"config", "Configuration and migration", []string{"apply", "diff", "export", "import"}},
 		{"utility", "Utility", []string{"version", "completion"}},
 	}
@@ -57,6 +57,7 @@ func addCommandGroups(root *cobra.Command, a *app) {
 		newBundleCmd(a),
 		newPromoteCmd(a),
 		newGateCmd(a),
+		newCheckCmd(a),
 		newAttestationsCmd(a),
 		newOIDCCmd(a),
 		newApplyCmd(a),
