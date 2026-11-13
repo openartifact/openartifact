@@ -321,6 +321,8 @@ A group is answered the way it serves:
 
 A curation rule can decide without the cache. A proxy of a format that refuses a curated version from the request path alone (apk, Composer, Conan, Debian, Ivy, Maven, pacman, PyPI, RPM, sbt) answers `403` whether or not its upstream has the version, so such a version is `held` at that proxy even when the package was never fetched, and in a group even when a later member has it. The other formats (npm, Helm and the rest) apply their rules once the version is found in the cached metadata; for a package they have not fetched the answer stays `unknown`.
 
+A `version_pattern` is matched against the version as you send it, while these proxies match it against the version spelled in the file name. Send the version in that form when a rule has a version pattern: Debian and RPM file names leave out the epoch (`2.0-1`, not `1:2.0-1`), RPM and pacman versions include the release (`2.0-1`), and PyPI takes the version from the distribution file name as published.
+
 Like the single check, it reads the cached metadata only and never asks the upstream. It needs read access to the repository. The body is at most 1 MiB (`413` above); more than 1000 entries or a missing `package` or `version` is `400 validation_failed`, and so is a docker repository, which the batch does not support. Coding agents can use the same check through the MCP tool `check_dependencies` ([MCP server](../integrations/mcp.md)).
 
 
