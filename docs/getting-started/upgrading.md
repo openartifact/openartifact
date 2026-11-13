@@ -127,7 +127,7 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
-### Unreleased
+### 0.24.0
 
 **What you must do**
 
@@ -143,6 +143,8 @@ Newest first. Each version starts with **What you must do**; the text below it l
 - **`oa check`.** Checks the dependencies of a `composer.lock`, `package-lock.json` or `npm-shrinkwrap.json` against a repository before installing, and exits 1 when one is held or not found. See [CI](../integrations/ci.md#check-dependencies-before-installing).
 - **Client setup snippets.** The npm and pnpm token line is scoped to the full registry URL, so it also works when the server is published under a path prefix (it was scoped to the host and `/repos/NAME/` only). The docker snippet passes the token with `--password-stdin` instead of `-p`.
 - **Composer proxy: the minimum age holds every dist of a version.** A dist URL of a version held back by the minimum age is refused with `403` whatever reference it carries (a reference the proxy does not publish used to answer `404`). In a group this stops a later member from serving a version an earlier Composer proxy holds back.
+
+New: search by property (`prop:KEY=VALUE`), batch availability checks through a group, and `oa check` for `composer.lock` and `package-lock.json`.
 
 ### 0.23.0
 
