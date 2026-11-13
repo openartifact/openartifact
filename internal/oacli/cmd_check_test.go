@@ -82,6 +82,10 @@ func (s *checkServer) serve(w http.ResponseWriter, r *http.Request) {
 		results[i] = res
 	}
 
+	if len(names) > 0 && strings.HasPrefix(names[0], "short/") {
+		results = results[:len(results)-1] // a malformed answer: one result missing
+	}
+
 	s.mu.Lock()
 	s.requests = append(s.requests, names)
 	s.mu.Unlock()
@@ -139,6 +143,7 @@ func TestCheck(t *testing.T) {
 				"not_found  missing/pkg", "3 dependencies: 1 available, 1 held, 1 not found, 0 unknown.",
 			},
 		},
+		{name: "no registry dependencies", wantOut: []string{"No registry dependencies to check in"}},
 		{name: "unknown is reported but passes", pkgs: []string{"unknown/pkg"}, wantOut: []string{"unknown  unknown/pkg", "1 dependency: 0 available, 0 held, 0 not found, 1 unknown."}},
 		{
 			name: "unknown fails with --fail-on-unknown", pkgs: []string{"unknown/pkg"}, flags: []string{"--fail-on-unknown"},
@@ -237,6 +242,7 @@ func TestCheckRefuses(t *testing.T) {
 		{"no lockfile", []string{"check", "php"}, 0, "--lockfile is required"},
 		{"unknown lockfile", []string{"check", "php", "--lockfile", yarn}, 0, "unknown lockfile"},
 		{"invalid lockfile", []string{"check", "php", "--lockfile", broken}, 0, "invalid lockfile"},
+		{"result missing", []string{"check", "php", "--lockfile", composerLock(t, []string{"short/a", "short/b"}, nil)}, 0, "unexpected availability response"},
 		{"server error", []string{"check", "php", "--lockfile", composerLock(t, []string{"ok/a"}, nil)}, http.StatusForbidden, "no read access"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
