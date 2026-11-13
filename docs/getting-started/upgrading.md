@@ -140,6 +140,7 @@ Newest first. Each version starts with **What you must do**; the text below it l
 - **Property search names docker tags.** `GET /api/v1/repositories/{repo}/artifacts/search` and `oa props search` give the image name, tag and format of a docker tag id, as they already did for file ids. See [properties](../repositories/properties.md#search-results).
 - **MCP `get_repository` lists a group's members.** For a group repository the answer adds `members` in group order, without the members you cannot read, so an assistant knows which repository to ask `check_availability`. See [MCP server](../integrations/mcp.md).
 - **Check many package versions at once.** `POST /api/v1/repositories/{name}/availability` and the MCP tool `check_dependencies` answer up to 1000 package versions in one call, also through a group, the way the group serves them, with `not_found` and `unknown` states. See [check many versions at once](../repositories/hosted-proxy-group.md#check-many-versions-at-once).
+- **Composer proxy: the minimum age holds every dist of a version.** A dist URL of a version held back by the minimum age is refused with `403` whatever reference it carries (a reference the proxy does not publish used to answer `404`). In a group this stops a later member from serving a version an earlier Composer proxy holds back.
 
 ### 0.23.0
 

@@ -320,3 +320,32 @@ func TestComposerProxy_MinAgeChangesTheValidator(t *testing.T) {
 		t.Errorf("a changed gate must not revalidate the old rendering: %d", w.Code)
 	}
 }
+
+// TestComposerProxy_MinAgeRefusesAnyReferenceOfATooNewVersion: the minimum age
+// holds a version, not one dist of it. A request for the held version under
+// another reference (the dist a later group member publishes for it, from
+// another upstream) is refused with 403 like the published one, not passed over
+// with 404: in a group a 404 lets the next member serve the version this proxy
+// holds back. A version that is old enough still answers 404 for a reference it
+// does not publish.
+func TestComposerProxy_MinAgeRefusesAnyReferenceOfATooNewVersion(t *testing.T) {
+	f, p := composerAgedFixture(t)
+	other := strings.Repeat("a", 64) + ".zip"
+	hits := p.distHits.Load()
+
+	if w := f.do(http.MethodGet, "dists/acme/lib/1.1.0/"+other); w.Code != http.StatusForbidden {
+		t.Errorf("another reference of a too-new version = %d, want 403", w.Code)
+	}
+
+	if w := f.do(http.MethodGet, "dists/acme/lib/1.0.0/"+other); w.Code != http.StatusNotFound {
+		t.Errorf("another reference of an old enough version = %d, want 404", w.Code)
+	}
+
+	if w := f.do(http.MethodGet, "dists/acme/lib/9.9.9/"+other); w.Code != http.StatusNotFound {
+		t.Errorf("a version the upstream does not publish = %d, want 404", w.Code)
+	}
+
+	if p.distHits.Load() != hits {
+		t.Error("a dist was fetched from its host")
+	}
+}
