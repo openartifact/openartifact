@@ -180,6 +180,19 @@ func (s *Service) PublishTime(ctx context.Context, repo *models.Repository, pkg,
 	return h.Published(s, ctx, repo, pkg, version)
 }
 
+// CuratesFromPath reports whether a proxy repository of format refuses the
+// download of a version its curation rules hide before it knows whether the
+// upstream has that version: the formats gated in Service.Serve
+// (Hooks.Coordinates) and the ones whose own Serve checks the path first
+// (Hooks.CurationFromPath). For these a curation hold needs no cached metadata,
+// and in a group the 403 ends the request even when a later member has the
+// version. The batch availability check relies on it.
+func CuratesFromPath(format string) bool {
+	h, found := hooks.Lookup(format)
+
+	return found && (h.Coordinates != nil || h.CurationFromPath)
+}
+
 // CachedVersions lists every version of pkg the CACHED metadata of proxy
 // repository repo names, with the publish time it states, without the gate's
 // verdict: the batch availability check evaluates the gate itself, with the

@@ -282,7 +282,9 @@ func (s *Service) locatePyPIFile(ctx context.Context, repo *models.Repository, p
 
 // PyPIHooks is the proxy hooks of the pypi format.
 var PyPIHooks = Hooks{ //nolint:gochecknoglobals // format hook table
-	Serve: (*Service).servePyPI,
+	// servePyPIFile checks the rules on the project and the version the file name spells.
+	CurationFromPath: true,
+	Serve:            (*Service).servePyPI,
 	// Distribution files (and their PEP 658 metadata), not the index pages.
 	Immutable:  func(key string) bool { return strings.HasPrefix(key, "files/") },
 	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, "files/") },

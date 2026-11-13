@@ -86,6 +86,15 @@ type Hooks struct {
 	// curation does not apply to it).
 	Coordinates func(rel string) (pkg, version string, ok bool)
 
+	// CurationFromPath says that the format's Serve refuses the download of a
+	// curated version from the request path alone, before it reads the upstream
+	// metadata: the answer is 403 whether or not the upstream has the version
+	// (composer and pypi; the formats with Coordinates do the same in
+	// Service.Serve). A format that first looks the version up (npm, helm)
+	// leaves it false: there a version the metadata does not list is a 404. See
+	// CuratesFromPath.
+	CurationFromPath bool
+
 	// Published answers the publish time the upstream states for version of pkg
 	// from the format's CACHED metadata (never an upstream fetch), for the
 	// availability explanation of the REST API; ok is false when the metadata is

@@ -70,8 +70,10 @@ type BatchAvailabilityStore interface {
 // set, a name a hosted member holds is decided by the hosted members only
 // (hosted wins); otherwise the first member in order that has the version
 // decides it, held or not, because the member's 403 goes to the client. A proxy
-// member whose cache cannot say makes the answer unknown: it might have the
-// version.
+// member whose format refuses a curated version from the request path
+// (proxy.CuratesFromPath) decides a version its rules hide whether or not it has
+// it: that 403 does not depend on the metadata. Otherwise a proxy member whose
+// cache cannot say makes the answer unknown: it might have the version.
 //
 // The cost does not grow with the queries by more than one cached-metadata read
 // per proxy member and distinct package, run at most proxyReadConcurrency at a
@@ -352,6 +354,14 @@ func (b *availabilityBatch) advance(i int, need map[cacheKey]*models.Repository)
 			continue
 		}
 
+		// A format that refuses a curated version from the request path answers
+		// 403 whether or not it has the version: the hold decides here, without
+		// the cached metadata.
+		if hold, held := b.pathCurationHold(m, q); held {
+			b.decideCurated(i, m, hold)
+			return
+		}
+
 		key := cacheKey{m.ID, q.Name}
 
 		cv, read := b.cached[key]
@@ -468,6 +478,31 @@ func (b *availabilityBatch) decideProxy(i int, m *models.Repository, published t
 	}
 
 	b.decide(i, m.Name, status, resp)
+}
+
+// pathCurationHold is the curation hold of proxy member m on q when the format
+// of m refuses such a download from the request path alone
+// (proxy.CuratesFromPath). The publish time is not passed, so only the rules
+// decide, as they do in the proxy's own check.
+func (b *availabilityBatch) pathCurationHold(m *models.Repository, q models.NameVersion) (curation.Hold, bool) {
+	if !proxy.CuratesFromPath(m.Format) {
+		return curation.Hold{}, false
+	}
+
+	hidden, hold := b.gates[m.ID].Hidden(q.Name, q.Version, time.Time{})
+
+	return hold, hidden && hold.Source == curation.SourceCuration
+}
+
+// decideCurated decides query i as held by a curation rule of proxy member m,
+// without knowing whether the upstream has the version.
+func (b *availabilityBatch) decideCurated(i int, m *models.Repository, hold curation.Hold) {
+	resp := responses.AvailabilityResponse{Reasons: []responses.AvailabilityReason{holdReason(hold)}, MinAge: minAgeOff}
+	if b.gates[m.ID].AgeActive() {
+		resp.MinAge = minAgeUnknown
+	}
+
+	b.decide(i, m.Name, StatusHeld, resp)
 }
 
 // notFoundResponse says why no member has query i.

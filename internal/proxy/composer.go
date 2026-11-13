@@ -321,6 +321,8 @@ func composerDistImmutable(key string) bool {
 // ComposerHooks is the proxy hooks of the composer format.
 var ComposerHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	Serve: (*Service).serveComposer,
+	// serveComposerDist checks the rules on the name and version of the path.
+	CurationFromPath: true,
 	// Dists of released versions; the reference in their key names the content.
 	Immutable:  composerDistImmutable,
 	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, composerDistDir) },

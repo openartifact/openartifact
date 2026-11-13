@@ -143,6 +143,7 @@ Newest first. Each version starts with **What you must do**; the text below it l
 - **`oa check`.** Checks the dependencies of a `composer.lock`, `package-lock.json` or `npm-shrinkwrap.json` against a repository before installing, and exits 1 when one is held or not found. See [CI](../integrations/ci.md#check-dependencies-before-installing).
 - **Client setup snippets.** The npm and pnpm token line is scoped to the full registry URL, so it also works when the server is published under a path prefix (it was scoped to the host and `/repos/NAME/` only). The docker snippet passes the token with `--password-stdin` instead of `-p`.
 - **Composer proxy: the minimum age holds every dist of a version.** A dist URL of a version held back by the minimum age is refused with `403` whatever reference it carries (a reference the proxy does not publish used to answer `404`). In a group this stops a later member from serving a version an earlier Composer proxy holds back.
+- **Batch availability: curation holds without cached metadata.** For proxies of formats that refuse a curated version from the request path (apk, Composer, Conan, Debian, Ivy, Maven, pacman, PyPI, RPM, sbt), `POST /availability`, `check_dependencies` and `oa check` report a version a curation rule hides as `held` even when the package was never fetched (it was `unknown`).
 
 ### 0.23.0
 

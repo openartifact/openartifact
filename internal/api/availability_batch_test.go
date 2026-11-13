@@ -17,6 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/curation"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/proxy"
+	"github.com/openartifact/openartifact/internal/repotype"
 )
 
 // batchStore is a BatchAvailabilityStore over maps that counts its calls.
@@ -430,5 +431,89 @@ func TestAvailabilityBatchRefusesDocker(t *testing.T) {
 	_, err := ExplainAvailabilityBatch(context.Background(), &batchStore{}, &batchCache{}, docker, q("app", "1"), readable)
 	if !errors.Is(err, ErrBatchFormat) {
 		t.Errorf("err = %v, want ErrBatchFormat", err)
+	}
+}
+
+// TestAvailabilityBatchCurationFromPath: a proxy whose format refuses a curated
+// version from the request path (composer) answers held for a version its
+// rules hide whatever its cache says, without reading it, and in a group that
+// refusal decides even when a later member has the version. A format that
+// first looks the version up (npm) cannot tell for an uncached package.
+func TestAvailabilityBatchCurationFromPath(t *testing.T) {
+	npmProxy := &models.Repository{ID: "p-n", Name: "npm-proxy", Format: "npm", RepoType: "proxy", CurationMode: "denylist"}
+	npmGroup := &models.Repository{ID: "g-npm", Name: "npm-all", Format: "npm", RepoType: "group"}
+	phpGroup, _ := group(false)
+
+	for _, tc := range []struct {
+		name    string
+		repo    *models.Repository
+		members []*models.Repository
+		query   []responses.AvailabilityQuery
+		want    []wantResult
+	}{
+		{
+			"composer proxy, package never fetched", proxyP, nil, q("evil/never-seen", "1.0.0"),
+			[]wantResult{{StatusHeld, "php-proxy", curation.SourceCuration}},
+		},
+		{
+			"composer proxy, version its cached metadata does not list", proxyP, nil, q("evil/x", "9.9.9"),
+			[]wantResult{{StatusHeld, "php-proxy", curation.SourceCuration}},
+		},
+		{
+			"composer group: the earlier proxy's rule decides although only the later member lists the version",
+			phpGroup, []*models.Repository{proxyP, proxyQ}, q("evil/x", "1.0.0", "evil/never-seen", "1.0.0"),
+			[]wantResult{{StatusHeld, "php-proxy", curation.SourceCuration}, {StatusHeld, "php-proxy", curation.SourceCuration}},
+		},
+		{
+			"composer group: a later proxy's rule does not reach a version an earlier member serves",
+			phpGroup, []*models.Repository{proxyQ, proxyP}, q("evil/x", "1.0.0"),
+			[]wantResult{{StatusAvailable, "php-proxy-2", ""}},
+		},
+		{
+			"npm proxy, package never fetched: the rule only applies once the version is found", npmProxy, nil, q("evil-pkg", "1.0.0"),
+			[]wantResult{{StatusUnknown, "npm-proxy", sourceUnknown}},
+		},
+		{
+			"npm group: the same", npmGroup, []*models.Repository{npmProxy}, q("evil-pkg", "1.0.0"),
+			[]wantResult{{StatusUnknown, "npm-proxy", sourceUnknown}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st, cache := newBatchWorld(&batchStore{members: map[string][]*models.Repository{tc.repo.ID: tc.members}})
+			st.rules[npmProxy.ID] = []curation.Rule{{ID: "r-npm", Action: curation.ActionBlock, Package: "evil-*", Reason: "malicious"}}
+
+			got, err := ExplainAvailabilityBatch(context.Background(), st, cache, tc.repo, tc.query, readable)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			check(t, got, tc.want)
+
+			if tc.repo.Format == "composer" && tc.want[0].status == StatusHeld && cache.readCount() != 0 {
+				t.Errorf("a curation hold from the path read the cache %d times", cache.readCount())
+			}
+		})
+	}
+}
+
+// TestCuratesFromPathFormats pins which proxy formats refuse a curated version
+// from the request path, before they know the upstream has it: the batch
+// answers held for those without cached metadata. A format that moves its
+// curation check behind the metadata lookup (or the other way) must change this
+// list, and with it what the batch may claim.
+func TestCuratesFromPathFormats(t *testing.T) {
+	var got []string
+
+	for _, f := range repotype.Names() {
+		if proxy.CuratesFromPath(f) {
+			got = append(got, f)
+		}
+	}
+
+	slices.Sort(got)
+
+	want := []string{"apk", "composer", "conan", "deb", "ivy", "maven", "pacman", "pypi", "rpm", "sbt"}
+	if !slices.Equal(got, want) {
+		t.Errorf("formats that curate from the path = %v, want %v", got, want)
 	}
 }
