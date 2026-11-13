@@ -4,11 +4,35 @@
   "lockfileVersion": 1,
   "requires": true,
   "dependencies": {
-    "acme-server": {"version": "4.18.2", "resolved": "https://registry.example.test/acme-server/-/acme-server-4.18.2.tgz",
-      "dependencies": {"acme-log": {"version": "2.6.9", "resolved": "https://registry.example.test/acme-log/-/acme-log-2.6.9.tgz"}}},
-    "acme-log": {"version": "4.3.4", "dev": true},
-    "my-alias": {"version": "npm:@acme/real@1.2.3"},
-    "bundled-dep": {"version": "1.0.0", "bundled": true},
-    "gh-dep": {"version": "github:acme/gh-dep#v1.0.0"}
+    "acme-server": {
+      "version": "4.18.2",
+      "resolved": "https://registry.example.test/acme-server/-/acme-server-4.18.2.tgz",
+      "dependencies": {
+        "acme-log": {
+          "version": "2.6.9",
+          "resolved": "https://registry.example.test/acme-log/-/acme-log-2.6.9.tgz"
+        }
+      },
+      "requires": {
+        "acme-log": "2.6.9"
+      }
+    },
+    "acme-log": {
+      "version": "4.3.4",
+      "dev": true
+    },
+    "my-alias": {
+      "version": "npm:@acme/real@1.2.3",
+      "requires": {
+        "acme-log": "^4.3.4"
+      }
+    },
+    "bundled-dep": {
+      "version": "1.0.0",
+      "bundled": true
+    },
+    "gh-dep": {
+      "version": "github:acme/gh-dep#v1.0.0"
+    }
   }
 }

@@ -7,13 +7,17 @@ package oacli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/openartifact/openartifact/pkg/lockfile"
 )
 
 // checkServer answers POST /api/v1/repositories/{repo}/availability from the
@@ -24,7 +28,11 @@ type checkServer struct {
 
 	mu       sync.Mutex
 	requests [][]string
-	status   int // non-zero: answer every request with this status and an error; set before serving
+	// gets records the metadata GETs (--fetch) in arrival order, and bodies the
+	// raw availability request bodies; a GET of missing/* answers 404.
+	gets   []string
+	bodies []string
+	status int // non-zero: answer every request with this status and an error; set before serving
 }
 
 func newCheckServer(t *testing.T, status int) *checkServer {
@@ -45,6 +53,21 @@ func (s *checkServer) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.Method == http.MethodGet && strings.HasPrefix(r.URL.EscapedPath(), "/repos/php/") {
+		s.mu.Lock()
+		s.gets = append(s.gets, r.URL.EscapedPath())
+		s.mu.Unlock()
+
+		if strings.Contains(r.URL.Path, "missing/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		_, _ = w.Write([]byte(`{"packages":{}}`))
+
+		return
+	}
+
 	if r.Method != http.MethodPost || r.URL.Path != "/api/v1/repositories/php/availability" {
 		http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusTeapot)
 		return
@@ -54,7 +77,12 @@ func (s *checkServer) serve(w http.ResponseWriter, r *http.Request) {
 		Packages []struct{ Package, Version string } `json:"packages"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	raw, _ := io.ReadAll(r.Body)
+	s.mu.Lock()
+	s.bodies = append(s.bodies, string(raw))
+	s.mu.Unlock()
+
+	if err := json.Unmarshal(raw, &body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -139,7 +167,7 @@ func TestCheck(t *testing.T) {
 		{
 			name: "held and missing fail", pkgs: []string{"held/guzzle", "missing/pkg", "ok/pkg"}, wantCode: 1,
 			wantOut: []string{
-				"held       held/guzzle  1.0.0    php-proxy  blocked by repository curation: EOL, use 7.x",
+				"held/guzzle", "(direct)", "blocked by repository curation: EOL, use 7.x",
 				"not_found  missing/pkg", "3 dependencies: 1 available, 1 held, 1 not found, 0 unknown.",
 			},
 		},
@@ -253,5 +281,119 @@ func TestCheckRefuses(t *testing.T) {
 				t.Errorf("exit %d, stderr %q, want 1 and %q", res.code, res.stderr, tc.wantErr)
 			}
 		})
+	}
+}
+
+// composerLockWith writes a composer.lock whose packages carry the given
+// requirements (name -> required names), all at version 1.0.0.
+func composerLockWith(t *testing.T, requires map[string][]string) string {
+	t.Helper()
+
+	var pkgs []map[string]any
+
+	for name, req := range requires {
+		r := map[string]string{"php": "^8.2"}
+		for _, n := range req {
+			r[n] = "^1.0"
+		}
+
+		pkgs = append(pkgs, map[string]any{"name": name, "version": "1.0.0", "require": r, "dist": map[string]any{"type": "zip"}})
+	}
+
+	data, err := json.Marshal(map[string]any{"packages": pkgs})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(t.TempDir(), "composer.lock")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	return path
+}
+
+// TestCheckRequiredBy: a dependency that is not available says which locked
+// packages pull it in, (direct) when only the project requires it, in the table
+// and in the JSON; the request body carries only package and version.
+func TestCheckRequiredBy(t *testing.T) {
+	lock := composerLockWith(t, map[string][]string{
+		"acme/app-dbal": {"held/cache"}, "acme/app-orm": {"held/cache"}, "held/cache": nil, "held/direct": nil,
+	})
+	srv := newCheckServer(t, 0)
+
+	res := runOA(t, srv.Server, "", "check", "php", "--lockfile", lock)
+	if res.code != 1 {
+		t.Fatalf("exit %d, stderr %q", res.code, res.stderr)
+	}
+
+	for _, want := range []string{"REQUIRED BY", "acme/app-dbal, acme/app-orm", "(direct)"} {
+		if !strings.Contains(res.stdout, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, res.stdout)
+		}
+	}
+
+	if len(srv.bodies) != 1 || strings.Contains(srv.bodies[0], "required_by") || strings.Contains(srv.bodies[0], "dev") {
+		t.Errorf("request body carries more than package and version: %v", srv.bodies)
+	}
+
+	js := runOA(t, newCheckServer(t, 0).Server, "", "--format", "json", "check", "php", "--lockfile", lock)
+
+	var report checkReport
+	if err := json.Unmarshal([]byte(js.stdout), &report); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, r := range report.Results {
+		if r.Package == "held/cache" && strings.Join(r.RequiredBy, ",") != "acme/app-dbal,acme/app-orm" {
+			t.Errorf("held/cache required_by = %v", r.RequiredBy)
+		}
+	}
+}
+
+// TestCheckFetch: --fetch requests each distinct package's metadata through the
+// repository before it checks (composer p2 documents, npm packuments with a
+// scoped name's slash escaped), counts what did not answer 200, and says so;
+// without --fetch nothing is requested.
+func TestCheckFetch(t *testing.T) {
+	srv := newCheckServer(t, 0)
+
+	res := runOA(t, srv.Server, "", "check", "php", "--lockfile",
+		composerLock(t, []string{"ok/a", "missing/b"}, []string{"ok/a"}), "--fetch")
+	if res.code != 1 {
+		t.Fatalf("exit %d, stderr %q", res.code, res.stderr)
+	}
+
+	got := append([]string{}, srv.gets...)
+	slices.Sort(got)
+
+	if want := []string{"/repos/php/p2/missing/b.json", "/repos/php/p2/ok/a.json"}; !slices.Equal(got, want) {
+		t.Errorf("metadata requests = %v, want %v", got, want)
+	}
+
+	if !strings.Contains(res.stdout, "Fetched the metadata of 2 packages through php (1 did not answer 200).") {
+		t.Errorf("stdout lacks the fetch summary:\n%s", res.stdout)
+	}
+
+	if srv2 := newCheckServer(
+		t,
+		0,
+	); runOA(
+		t,
+		srv2.Server,
+		"",
+		"check",
+		"php",
+		"--lockfile",
+		composerLock(t, []string{"ok/a"}, nil),
+	).code != 0 ||
+		len(srv2.gets) != 0 {
+		t.Errorf("without --fetch the metadata was requested: %v", srv2.gets)
+	}
+
+	for name, want := range map[string]string{"@scope/pkg": "/repos/r%2Fx/@scope%2fpkg", "plain": "/repos/r%2Fx/plain"} {
+		if got := metadataPath("r/x", lockfile.NPM, name); got != want {
+			t.Errorf("metadataPath(npm, %q) = %q, want %q", name, got, want)
+		}
 	}
 }
