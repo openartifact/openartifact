@@ -120,8 +120,6 @@ func npmInstalledName(path string, p npmPackage) (string, bool) {
 	return folder, folder != ""
 }
 
-// npmV1 walks the dependency tree of lockfileVersion 1. An alias is recorded as
-// "npm:<name>@<version>".
 // npmV1Requirers records, for every entry of a lockfileVersion 1 tree, the
 // packages its "requires" names (the aliased name of an npm: alias).
 func npmV1Requirers(tree map[string]npmV1Dep, depth int, by requirers) {
@@ -148,6 +146,9 @@ func npmV1Alias(name, version string) (string, string) {
 	return name, version
 }
 
+// npmV1 walks the dependency tree of lockfileVersion 1, recording each registry
+// entry with the packages that require it (by). An "npm:<name>@<version>" alias
+// is recorded as the package it installs.
 func npmV1(tree map[string]npmV1Dep, depth int, by requirers, deps *[]Dep) {
 	if depth > npmMaxDepth {
 		return

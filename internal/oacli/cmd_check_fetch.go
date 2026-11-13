@@ -11,14 +11,15 @@ import (
 	"strings"
 	"sync"
 
+	pkgcomposer "github.com/openartifact/openartifact/pkg/composer"
 	"github.com/openartifact/openartifact/pkg/lockfile"
 )
 
 // fetchConcurrency bounds the metadata requests --fetch runs at once.
 const fetchConcurrency = 8
 
-// warmMetadata requests the package-level metadata of every distinct package of
-// deps through repo, the way the package manager does before it downloads: a
+// warmMetadata requests the metadata document of every package of deps through
+// repo (once per document), the way the package manager does before it downloads: a
 // proxy behind repo (repo itself, or a member of a group) fetches the document
 // from its upstream and caches it, which is what the availability check reads.
 // Nothing is downloaded but metadata. A request that does not answer 200 (a
@@ -27,12 +28,12 @@ const fetchConcurrency = 8
 func warmMetadata(ctx context.Context, api *ciAPI, repo string, kind lockfile.Kind, deps []lockfile.Dep) *fetchSummary {
 	seen := map[string]bool{}
 
-	var names []string
+	var paths []string
 
 	for _, d := range deps {
-		if !seen[d.Name] {
-			seen[d.Name] = true
-			names = append(names, d.Name)
+		if p := metadataPath(repo, kind, d); !seen[p] {
+			seen[p] = true
+			paths = append(paths, p)
 		}
 	}
 
@@ -43,13 +44,13 @@ func warmMetadata(ctx context.Context, api *ciAPI, repo string, kind lockfile.Ki
 		sem    = make(chan struct{}, fetchConcurrency)
 	)
 
-	for _, name := range names {
+	for _, p := range paths {
 		sem <- struct{}{}
 
 		wg.Go(func() {
 			defer func() { <-sem }()
 
-			if !fetchOK(ctx, api, metadataPath(repo, kind, name)) {
+			if !fetchOK(ctx, api, p) {
 				mu.Lock()
 				failed++
 				mu.Unlock()
@@ -59,16 +60,22 @@ func warmMetadata(ctx context.Context, api *ciAPI, repo string, kind lockfile.Ki
 
 	wg.Wait()
 
-	return &fetchSummary{Packages: len(names), Failed: failed}
+	return &fetchSummary{Packages: len(paths), Failed: failed}
 }
 
-// metadataPath is the native path of a package's metadata document in repo:
-// composer's p2 document, npm's packument (a scoped name with its slash
-// escaped, as npm requests it).
-func metadataPath(repo string, kind lockfile.Kind, name string) string {
+// metadataPath is the native path of the metadata document in repo that lists
+// d's version: composer's p2 document (p2/<name>~dev.json for a branch such as
+// dev-main or 1.x-dev, as Composer requests it), npm's packument (a scoped name
+// with its slash escaped, as npm requests it).
+func metadataPath(repo string, kind lockfile.Kind, d lockfile.Dep) string {
 	base := "/repos/" + escape(repo) + "/"
+	name := d.Name
 
 	if kind == lockfile.Composer {
+		if composerDev(d.Version) {
+			return base + "p2/" + name + "~dev.json"
+		}
+
 		return base + "p2/" + name + ".json"
 	}
 
@@ -77,6 +84,16 @@ func metadataPath(repo string, kind lockfile.Kind, name string) string {
 	}
 
 	return base + name
+}
+
+// composerDev reports whether a locked Composer version is a branch, which
+// Composer repositories list in the "~dev" document.
+func composerDev(version string) bool {
+	if n, err := pkgcomposer.Normalize(version); err == nil {
+		return pkgcomposer.IsDev(n)
+	}
+
+	return pkgcomposer.IsDev(version)
 }
 
 // fetchOK GETs apiPath and reads the body through (a proxy caches the document

@@ -94,7 +94,9 @@ func newCheckCmd(a *app) *cobra.Command {
 			"the repository, usually the group your package manager uses, whether it will serve each of them: available, " +
 			"held (by a curation rule, the minimum age, a quarantine or the license policy, with the reason), not_found or " +
 			"unknown (a proxy that has not cached the package's metadata yet). Local, linked, bundled and git or file " +
-			"dependencies are skipped. Reading needs read access on the repository.\n\n" +
+			"dependencies are skipped. REQUIRED BY lists the locked packages that require a dependency (\"-\" when none does, " +
+			"so the project requires it itself); a package the project also requires directly is not marked as such. " +
+			"Reading needs read access on the repository.\n\n" +
 			"A proxy only knows the packages it has fetched, so on a fresh proxy most answers are unknown. --fetch first " +
 			"requests each package's metadata through the repository, as the package manager would, so the proxies " +
 			"behind it fetch and cache it from their upstreams; then it checks.\n\n" +
@@ -290,14 +292,16 @@ func (r checkReport) text() string {
 	return b.String()
 }
 
-// requiredByLine is who pulls a dependency in: "(direct)" when only the project
-// requires it, else up to three package names and how many more.
+// requiredByLine is the locked packages that pull a dependency in, up to three
+// and how many more; "-" when no locked package requires it. The lockfile does
+// not say whether the project also requires a package itself, so a list does
+// not mean the dependency is only indirect.
 func requiredByLine(by []string) string {
 	const shown = 3
 
 	switch {
 	case len(by) == 0:
-		return "(direct)"
+		return "-"
 	case len(by) <= shown:
 		return strings.Join(by, ", ")
 	default:

@@ -28,8 +28,9 @@ const (
 
 // Dep is one package version a lockfile pins. Dev reports that the lockfile
 // marks it as a development dependency (only). RequiredBy names the locked
-// packages that depend on it, sorted; empty for a dependency only the project
-// itself requires (a direct one).
+// packages that depend on it, sorted; empty when none does (the project
+// requires it itself). A lockfile does not record the project's own
+// requirements, so a dependency with requirers may be direct as well.
 type Dep struct {
 	Name       string   `json:"package"`
 	Version    string   `json:"version"`

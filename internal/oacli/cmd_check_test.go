@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -167,7 +168,7 @@ func TestCheck(t *testing.T) {
 		{
 			name: "held and missing fail", pkgs: []string{"held/guzzle", "missing/pkg", "ok/pkg"}, wantCode: 1,
 			wantOut: []string{
-				"held/guzzle", "(direct)", "blocked by repository curation: EOL, use 7.x",
+				"held/guzzle", "blocked by repository curation: EOL, use 7.x",
 				"not_found  missing/pkg", "3 dependencies: 1 available, 1 held, 1 not found, 0 unknown.",
 			},
 		},
@@ -314,8 +315,8 @@ func composerLockWith(t *testing.T, requires map[string][]string) string {
 }
 
 // TestCheckRequiredBy: a dependency that is not available says which locked
-// packages pull it in, (direct) when only the project requires it, in the table
-// and in the JSON; the request body carries only package and version.
+// packages pull it in, "-" when none does, in the table and in the JSON; the
+// request body carries only package and version.
 func TestCheckRequiredBy(t *testing.T) {
 	lock := composerLockWith(t, map[string][]string{
 		"acme/app-dbal": {"held/cache"}, "acme/app-orm": {"held/cache"}, "held/cache": nil, "held/direct": nil,
@@ -327,14 +328,31 @@ func TestCheckRequiredBy(t *testing.T) {
 		t.Fatalf("exit %d, stderr %q", res.code, res.stderr)
 	}
 
-	for _, want := range []string{"REQUIRED BY", "acme/app-dbal, acme/app-orm", "(direct)"} {
-		if !strings.Contains(res.stdout, want) {
-			t.Errorf("stdout lacks %q:\n%s", want, res.stdout)
-		}
+	if want := map[string]string{
+		"held/cache":  "acme/app-dbal, acme/app-orm",
+		"held/direct": "-",
+	}; !maps.Equal(
+		requiredByColumn(res.stdout),
+		want,
+	) {
+		t.Errorf("REQUIRED BY = %v, want %v:\n%s", requiredByColumn(res.stdout), want, res.stdout)
 	}
 
-	if len(srv.bodies) != 1 || strings.Contains(srv.bodies[0], "required_by") || strings.Contains(srv.bodies[0], "dev") {
-		t.Errorf("request body carries more than package and version: %v", srv.bodies)
+	if len(srv.bodies) != 1 {
+		t.Fatalf("%d requests, want 1", len(srv.bodies))
+	}
+
+	var body struct {
+		Packages []map[string]any `json:"packages"`
+	}
+	if err := json.Unmarshal([]byte(srv.bodies[0]), &body); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, q := range body.Packages {
+		if keys := slices.Sorted(maps.Keys(q)); !slices.Equal(keys, []string{"package", "version"}) {
+			t.Errorf("request entry has keys %v, want package and version only", keys)
+		}
 	}
 
 	js := runOA(t, newCheckServer(t, 0).Server, "", "--format", "json", "check", "php", "--lockfile", lock)
@@ -349,6 +367,32 @@ func TestCheckRequiredBy(t *testing.T) {
 			t.Errorf("held/cache required_by = %v", r.RequiredBy)
 		}
 	}
+}
+
+// requiredByColumn maps each package of the table in out to its REQUIRED BY
+// cell, located by the header's column offsets.
+func requiredByColumn(out string) map[string]string {
+	lines := strings.Split(out, "\n")
+	cells := map[string]string{}
+
+	for i, line := range lines {
+		if !strings.HasPrefix(line, "STATUS") {
+			continue
+		}
+
+		pkgAt, byAt, reasonAt := strings.Index(line, "PACKAGE"), strings.Index(line, "REQUIRED BY"), strings.Index(line, "REASON")
+
+		for _, row := range lines[i+1:] {
+			if len(row) < reasonAt {
+				break
+			}
+
+			pkg := strings.Fields(row[pkgAt:])[0]
+			cells[pkg] = strings.TrimSpace(row[byAt:reasonAt])
+		}
+	}
+
+	return cells
 }
 
 // TestCheckFetch: --fetch requests each distinct package's metadata through the
@@ -375,25 +419,32 @@ func TestCheckFetch(t *testing.T) {
 		t.Errorf("stdout lacks the fetch summary:\n%s", res.stdout)
 	}
 
-	if srv2 := newCheckServer(
-		t,
-		0,
-	); runOA(
-		t,
-		srv2.Server,
-		"",
-		"check",
-		"php",
-		"--lockfile",
-		composerLock(t, []string{"ok/a"}, nil),
-	).code != 0 ||
-		len(srv2.gets) != 0 {
-		t.Errorf("without --fetch the metadata was requested: %v", srv2.gets)
-	}
+	plain := newCheckServer(t, 0)
+	lock := composerLock(t, []string{"ok/a"}, nil)
 
-	for name, want := range map[string]string{"@scope/pkg": "/repos/r%2Fx/@scope%2fpkg", "plain": "/repos/r%2Fx/plain"} {
-		if got := metadataPath("r/x", lockfile.NPM, name); got != want {
-			t.Errorf("metadataPath(npm, %q) = %q, want %q", name, got, want)
+	if res := runOA(t, plain.Server, "", "check", "php", "--lockfile", lock); res.code != 0 || len(plain.gets) != 0 {
+		t.Errorf("without --fetch: exit %d, metadata requested %v", res.code, plain.gets)
+	}
+}
+
+// TestMetadataPath: the document --fetch requests is the one that lists the
+// locked version: Composer's "~dev" document for a branch, the npm packument
+// with a scoped name's slash escaped.
+func TestMetadataPath(t *testing.T) {
+	for _, tc := range []struct {
+		kind          lockfile.Kind
+		name, version string
+		want          string
+	}{
+		{lockfile.Composer, "acme/a", "1.2.0", "/repos/r%2Fx/p2/acme/a.json"},
+		{lockfile.Composer, "acme/a", "v2.0.0-beta1", "/repos/r%2Fx/p2/acme/a.json"},
+		{lockfile.Composer, "acme/a", "dev-main", "/repos/r%2Fx/p2/acme/a~dev.json"},
+		{lockfile.Composer, "acme/a", "1.x-dev", "/repos/r%2Fx/p2/acme/a~dev.json"},
+		{lockfile.NPM, "@scope/pkg", "1.0.0", "/repos/r%2Fx/@scope%2fpkg"},
+		{lockfile.NPM, "plain", "1.0.0", "/repos/r%2Fx/plain"},
+	} {
+		if got := metadataPath("r/x", tc.kind, lockfile.Dep{Name: tc.name, Version: tc.version}); got != tc.want {
+			t.Errorf("metadataPath(%s, %s %s) = %q, want %q", tc.kind, tc.name, tc.version, got, tc.want)
 		}
 	}
 }

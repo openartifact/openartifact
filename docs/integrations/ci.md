@@ -60,15 +60,15 @@ oa check npm-all --lockfile package-lock.json --no-dev
 
 ```text
 STATUS     PACKAGE            VERSION  FROM       REQUIRED BY    REASON
-held       guzzlehttp/guzzle  6.5.8    php-proxy  (direct)       blocked by repository curation: EOL, use 7.x
+held       guzzlehttp/guzzle  6.5.8    php-proxy  -              blocked by repository curation: EOL, use 7.x
 held       doctrine/cache     2.2.0    php-proxy  doctrine/dbal  blocked by repository curation: abandoned on Packagist
-not_found  acme/internal      2.0.0    php        (direct)       no member of the group has this version
+not_found  acme/internal      2.0.0    php        -              no member of the group has this version
 
 84 dependencies: 81 available, 2 held, 1 not found, 0 unknown.
 ```
 
 - **Lockfiles:** it reads `composer.lock`, `package-lock.json` and `npm-shrinkwrap.json`, picked by file name. Local, linked, bundled and git or file dependencies are skipped, because no registry serves them. `--no-dev` leaves out development-only dependencies.
-- **Required by:** a dependency the project does not require itself names the locked packages that pull it in, so you know which direct dependency to change. `(direct)` marks one the project requires.
+- **Required by:** the locked packages that pull a dependency in, so you know which of your dependencies to change; `-` when no locked package requires it, so the project requires it itself. A lockfile does not record what the project requires, so a dependency listed with requirers may be one the project also requires directly.
 - **A fresh proxy:** a proxy only knows the packages it has fetched, so on a new one most answers are `unknown`. `--fetch` first requests each package's metadata through the repository, as the package manager would, so the proxies behind it cache it, then checks. It downloads metadata only, never packages.
 - **Statuses:** each dependency is `available`, `held` (a curation rule, the minimum age, a quarantine or the license policy, with the reason), `not_found` or `unknown` (a proxy has not cached the package's metadata yet; one install fills the cache).
 - **Exit status:** `1` when a dependency is held or not found, also with `--fail-on-unknown` when one is unknown, and `0` otherwise. The result is printed either way; `--format json` prints every dependency with a summary.
