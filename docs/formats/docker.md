@@ -23,7 +23,7 @@ Push and pull container images and OCI artifacts with `docker`, `podman` and oth
 The web UI connect panel of a repository shows the same commands with your own URL.
 
 ```sh
-docker login HOSTPORT -u <USERNAME> -p <TOKEN>
+echo "<TOKEN>" | docker login HOSTPORT -u <USERNAME> --password-stdin
 docker tag my-image:latest HOSTPORT/REPO:latest
 docker push HOSTPORT/REPO:latest
 docker pull HOSTPORT/REPO:latest

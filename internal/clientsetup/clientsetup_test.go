@@ -336,3 +336,36 @@ func TestGoSnippetPerRepoType(t *testing.T) {
 		}
 	}
 }
+
+// TestNPMCredentialScopeFollowsTheRegistryURL: npm and pnpm send a token only to
+// URLs under the scope it is stored for, so the scope must be the registry URL
+// without its scheme, also when the server is published under a path prefix.
+func TestNPMCredentialScopeFollowsTheRegistryURL(t *testing.T) {
+	for _, tc := range []struct{ origin, registry, scope string }{
+		{"https://registry.example", "https://registry.example/repos/team/", "//registry.example/repos/team/:_authToken <TOKEN>"},
+		{
+			"https://registry.example/artifacts", "https://registry.example/artifacts/repos/team/",
+			"//registry.example/artifacts/repos/team/:_authToken <TOKEN>",
+		},
+		{"http://oa.local:8080/a/b", "http://oa.local:8080/a/b/repos/team/", "//oa.local:8080/a/b/repos/team/:_authToken <TOKEN>"},
+	} {
+		for _, s := range Snippets("npm", tc.origin, "team", "hosted") {
+			if s.Client == "yarn" {
+				continue
+			}
+
+			want := s.Client + " config set registry " + tc.registry + "\n" + s.Client + " config set " + tc.scope
+			if s.Configure != want {
+				t.Errorf("%s at %s:\n got %q\nwant %q", s.Client, tc.origin, s.Configure, want)
+			}
+		}
+	}
+}
+
+// TestDockerLoginReadsTheTokenFromStdin: the token is never a docker argument.
+func TestDockerLoginReadsTheTokenFromStdin(t *testing.T) {
+	got := Snippets("docker", "https://oa.example:8443", "images", "hosted")[0].Configure
+	if want := `echo "<TOKEN>" | docker login oa.example:8443 -u <USERNAME> --password-stdin`; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
