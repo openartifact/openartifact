@@ -189,6 +189,33 @@ Package names, versions, filenames, descriptions, vulnerability summaries, licen
 - Argument problems (missing, ill-typed or unknown argument, bad `status`, over-long manifest) and permission refusals are **tool errors**: `isError: true` with a message the model can read, as the MCP 2026-07-28 specification prescribes. This lets the model read the message and correct its call.
 - Transport refusals use HTTP statuses: 401, 403 (origin, project tokens), 405, 413, 429, and 400 for batches.
 
+## Install the agent plugin in Claude Code or Cursor
+
+The [openartifact-agent-plugin](https://github.com/openartifact/openartifact-agent-plugin) connects Claude Code or Cursor to this server and adds skills that tell the agent when to use which tool:
+
+| Skill | What the agent does |
+|---|---|
+| `configure-project` | points Composer, npm, pip and other package managers at a repository, keeping the token out of the project |
+| `check-dependency` | checks a version before adding or upgrading it, and picks one the repository serves |
+| `check-lockfile` | checks every dependency of a `composer.lock` or `package-lock.json` in one `check_dependencies` call |
+| `find-artifact` | finds packages across repositories by name, project, project role or property |
+| `explain-install-failure` | turns a `403` or `404` into the reason, and a fix that respects it |
+
+The skills only read, and tell the agent never to work around a hold (no public-registry fallback). In Claude Code:
+
+```sh
+claude plugin marketplace add openartifact/openartifact-agent-plugin
+claude plugin install openartifact@openartifact
+```
+
+Then set the server URL and an access token with `/plugin configure openartifact@openartifact` inside Claude Code. Claude Code keeps the token in secure storage. A [read-only token](#read-only-token) is enough.
+
+`check-lockfile` uses the `check_dependencies` tool. On a server without that tool, it checks the direct dependencies one by one instead.
+
+Cursor setup is in the plugin's README.
+
+Without the plugin, configure the client by hand as below.
+
 ## Client configuration
 
 Replace `<BASE_URL>` with your server address (for example `https://artifacts.example.com`) and `<TOKEN>` with an API token, ideally a [read-only one](#read-only-token). Every client must send it as `Authorization: Bearer <TOKEN>`; cookies and Basic auth do not work on the endpoint. Prefer the environment-variable forms below over writing the token into a file you commit.
