@@ -226,3 +226,27 @@ func TestPyPIPublished_DatesAReleaseFromTheCachedJSONPage(t *testing.T) {
 		}
 	}
 }
+
+// TestPyPICuration_RefusesFromTheFileNameBeforeTheUpstreamIsAsked: a curated
+// release is refused from the project and the version its file name spells,
+// whether or not the upstream has the project and before any upstream request
+// (Hooks.CurationFromPath, which the batch availability check relies on).
+func TestPyPICuration_RefusesFromTheFileNameBeforeTheUpstreamIsAsked(t *testing.T) {
+	f := curationPyPIFixture(t, 0)
+	f.useCuration(curation.ModeDenylist, curation.Rule{Action: curation.ActionBlock, Package: "ghost*", Reason: "blocked name"})
+
+	hits := f.hits.Load()
+
+	if w := f.do(http.MethodGet, "files/ghost-pkg/ghost_pkg-1.0.0.tar.gz"); w.Code != http.StatusForbidden ||
+		!strings.Contains(w.Body.String(), "blocked name") {
+		t.Errorf("file of a curated project the upstream never served = %d %q, want 403 naming the reason", w.Code, w.Body.String())
+	}
+
+	if f.hits.Load() != hits {
+		t.Errorf("the upstream was asked %d times", f.hits.Load()-hits)
+	}
+
+	if !CuratesFromPath("pypi") || CuratesFromPath("npm") || CuratesFromPath("helm") {
+		t.Error("CuratesFromPath: want pypi true, npm and helm false")
+	}
+}

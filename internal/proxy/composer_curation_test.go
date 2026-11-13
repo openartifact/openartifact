@@ -217,3 +217,29 @@ func TestComposerPublished_DatesAVersionFromTheCachedDocument(t *testing.T) {
 		t.Errorf("unknown version dated %v", got)
 	}
 }
+
+// TestComposerCuration_RefusesFromThePathBeforeTheUpstreamIsAsked: a curated
+// version is refused from the name and version of the dist path, whether or not
+// the upstream publishes it and before any upstream request (Hooks.
+// CurationFromPath, which the batch availability check relies on).
+func TestComposerCuration_RefusesFromThePathBeforeTheUpstreamIsAsked(t *testing.T) {
+	p := newFakePackagist(t)
+	f := composerFixture(t, p)
+	f.useCuration(curation.ModeDenylist, curation.Rule{Action: curation.ActionBlock, Package: "acme/*", Reason: "blocked vendor"})
+
+	ref := strings.Repeat("a", 64) + ".zip"
+
+	for _, path := range []string{"dists/acme/lib/9.9.9/" + ref, "dists/acme/never-published/1.0.0/" + ref} {
+		if w := f.do(http.MethodGet, path); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "blocked vendor") {
+			t.Errorf("GET %s = %d %q, want 403 naming the reason", path, w.Code, w.Body.String())
+		}
+	}
+
+	if f.hits.Load() != 0 || p.distHits.Load() != 0 {
+		t.Errorf("the upstream was asked %d times, the dist host %d times", f.hits.Load(), p.distHits.Load())
+	}
+
+	if !CuratesFromPath("composer") {
+		t.Error("CuratesFromPath(composer) = false")
+	}
+}
