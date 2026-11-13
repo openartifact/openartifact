@@ -13,7 +13,8 @@ import (
 
 // checkDeps asserts what Parse promises for any input it accepts: every
 // dependency has a name and a registry version, the list is sorted by name then
-// version with each pair once, and parsing again gives the same list.
+// version with each pair once, its requirers are sorted, unique and never itself,
+// and parsing again gives the same list.
 func checkDeps(t *testing.T, kind Kind, data []byte) {
 	t.Helper()
 
@@ -29,6 +30,12 @@ func checkDeps(t *testing.T, kind Kind, data []byte) {
 
 		if kind == NPM && (strings.Contains(d.Version, ":") || strings.Contains(d.Version, "/")) {
 			t.Fatalf("npm dependency %d has a non-registry version: %+v", i, d)
+		}
+
+		for j, r := range d.RequiredBy {
+			if r == "" || r == d.Name || (j > 0 && d.RequiredBy[j-1] >= r) {
+				t.Fatalf("dependency %d has an empty, self or unsorted requirer: %+v", i, d)
+			}
 		}
 
 		if i > 0 {

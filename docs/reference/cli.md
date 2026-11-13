@@ -1531,7 +1531,9 @@ oa bundle show <name> <version> [flags]
 
 Check a lockfile's dependencies against a repository before installing.
 
-Read the package versions a lockfile pins (composer.lock, package-lock.json or npm-shrinkwrap.json) and ask the repository, usually the group your package manager uses, whether it will serve each of them: available, held (by a curation rule, the minimum age, a quarantine or the license policy, with the reason), not_found or unknown (a proxy that has not cached the package's metadata yet). Local, linked, bundled and git or file dependencies are skipped. Reading needs read access on the repository.
+Read the package versions a lockfile pins (composer.lock, package-lock.json or npm-shrinkwrap.json) and ask the repository, usually the group your package manager uses, whether it will serve each of them: available, held (by a curation rule, the minimum age, a quarantine or the license policy, with the reason), not_found or unknown (a proxy that has not cached the package's metadata yet). Local, linked, bundled and git or file dependencies are skipped. REQUIRED BY lists the locked packages that require a dependency ("-" when none does, so the project requires it itself); a package the project also requires directly is not marked as such. Reading needs read access on the repository.
+
+A proxy only knows the packages it has fetched, so on a fresh proxy most answers are unknown. --fetch first requests each package's metadata through the repository, as the package manager would, so the proxies behind it fetch and cache it from their upstreams; then it checks.
 
 The exit status is 1 when a dependency is held or not found (or unknown, with --fail-on-unknown) and 0 otherwise; the result is printed either way (--format json for every dependency).
 
@@ -1542,6 +1544,7 @@ oa check <repo> --lockfile FILE [flags]
 | Flag | Value | Description |
 |---|---|---|
 | `--fail-on-unknown` | none | Exit 1 also when the repository cannot tell (unknown) |
+| `--fetch` | none | First request each package's metadata through the repository, so its proxies cache it |
 | `--lockfile` | `string` | Lockfile to check: composer.lock, package-lock.json or npm-shrinkwrap.json |
 | `--no-dev` | none | Skip the dependencies the lockfile marks as development only |
 
@@ -1550,6 +1553,7 @@ Examples:
 ```text
 oa check php --lockfile composer.lock
 oa check npm-all --lockfile package-lock.json --no-dev
+oa check php --lockfile composer.lock --fetch
 ```
 
 ### `oa gate`

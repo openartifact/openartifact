@@ -57,6 +57,23 @@ type checkResult struct {
 	MinAge      string        `json:"min_age,omitempty"`
 	PublishedAt string        `json:"published_at,omitempty"`
 	Dev         bool          `json:"dev,omitempty"`
+	// RequiredBy names the locked packages that depend on this one; empty for a
+	// direct dependency. It comes from the lockfile, not from the server.
+	RequiredBy []string `json:"required_by,omitempty"`
+}
+
+// checkQuery is one package version of an availability request: only what the
+// server reads.
+type checkQuery struct {
+	Package string `json:"package"`
+	Version string `json:"version"`
+}
+
+// fetchSummary reports --fetch: how many packages' metadata was requested and
+// how many requests did not answer 200.
+type fetchSummary struct {
+	Packages int `json:"packages"`
+	Failed   int `json:"failed"`
 }
 
 // checkReport is what `oa check` prints with --format json.
@@ -65,6 +82,7 @@ type checkReport struct {
 	Lockfile   string         `json:"lockfile"`
 	Kind       string         `json:"kind"`
 	Summary    map[string]int `json:"summary"`
+	Fetched    *fetchSummary  `json:"fetched,omitempty"`
 	Results    []checkResult  `json:"results"`
 }
 
@@ -76,10 +94,16 @@ func newCheckCmd(a *app) *cobra.Command {
 			"the repository, usually the group your package manager uses, whether it will serve each of them: available, " +
 			"held (by a curation rule, the minimum age, a quarantine or the license policy, with the reason), not_found or " +
 			"unknown (a proxy that has not cached the package's metadata yet). Local, linked, bundled and git or file " +
-			"dependencies are skipped. Reading needs read access on the repository.\n\n" +
+			"dependencies are skipped. REQUIRED BY lists the locked packages that require a dependency (\"-\" when none does, " +
+			"so the project requires it itself); a package the project also requires directly is not marked as such. " +
+			"Reading needs read access on the repository.\n\n" +
+			"A proxy only knows the packages it has fetched, so on a fresh proxy most answers are unknown. --fetch first " +
+			"requests each package's metadata through the repository, as the package manager would, so the proxies " +
+			"behind it fetch and cache it from their upstreams; then it checks.\n\n" +
 			"The exit status is 1 when a dependency is held or not found (or unknown, with --fail-on-unknown) and 0 " +
 			"otherwise; the result is printed either way (--format json for every dependency).",
-		Example:           "  oa check php --lockfile composer.lock\n  oa check npm-all --lockfile package-lock.json --no-dev",
+		Example: "  oa check php --lockfile composer.lock\n  oa check npm-all --lockfile package-lock.json --no-dev\n" +
+			"  oa check php --lockfile composer.lock --fetch",
 		Args:              usageArgs(1, 1),
 		ValidArgsFunction: positional(a.repoNames()),
 	}
@@ -87,6 +111,7 @@ func newCheckCmd(a *app) *cobra.Command {
 	path := cmd.Flags().String("lockfile", "", "Lockfile to check: composer.lock, package-lock.json or npm-shrinkwrap.json")
 	noDev := cmd.Flags().Bool("no-dev", false, "Skip the dependencies the lockfile marks as development only")
 	failUnknown := cmd.Flags().Bool("fail-on-unknown", false, "Exit 1 also when the repository cannot tell (unknown)")
+	fetch := cmd.Flags().Bool("fetch", false, "First request each package's metadata through the repository, so its proxies cache it")
 
 	flagValues(cmd, "lockfile", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return []string{"lock", "json"}, cobra.ShellCompDirectiveFilterFileExt
@@ -97,7 +122,7 @@ func newCheckCmd(a *app) *cobra.Command {
 			return errCheckLockfile
 		}
 
-		report, err := runCheck(c.Context(), newCIAPI(a.client), args[0], *path, *noDev)
+		report, err := runCheck(c.Context(), newCIAPI(a.client), args[0], *path, checkOptions{noDev: *noDev, fetch: *fetch})
 		if err != nil {
 			return err
 		}
@@ -114,9 +139,15 @@ func newCheckCmd(a *app) *cobra.Command {
 	return cmd
 }
 
+// checkOptions are the flags of oa check that shape the run.
+type checkOptions struct {
+	noDev bool
+	fetch bool
+}
+
 // runCheck parses the lockfile and asks repo about its dependencies, at most
-// checkBatch per request.
-func runCheck(ctx context.Context, api *ciAPI, repo, path string, noDev bool) (checkReport, error) {
+// checkBatch per request; with fetch it first warms the repository's proxies.
+func runCheck(ctx context.Context, api *ciAPI, repo, path string, opts checkOptions) (checkReport, error) {
 	kind, err := lockfile.KindOf(path)
 	if err != nil {
 		return checkReport{}, err
@@ -141,13 +172,17 @@ func runCheck(ctx context.Context, api *ciAPI, repo, path string, noDev bool) (c
 	var queries []lockfile.Dep
 
 	for _, d := range deps {
-		if !noDev || !d.Dev {
+		if !opts.noDev || !d.Dev {
 			queries = append(queries, d)
 		}
 	}
 
 	if ctx == nil {
 		ctx = context.Background()
+	}
+
+	if opts.fetch {
+		report.Fetched = warmMetadata(ctx, api, repo, kind, queries)
 	}
 
 	for start := 0; start < len(queries); start += checkBatch {
@@ -157,7 +192,7 @@ func runCheck(ctx context.Context, api *ciAPI, repo, path string, noDev bool) (c
 			Results []checkResult `json:"results"`
 		}
 
-		body := map[string]any{"packages": chunk}
+		body := map[string]any{"packages": checkQueries(chunk)}
 		if err := api.call(ctx, http.MethodPost, repoPath(repo, "availability"), body, &out); err != nil {
 			return checkReport{}, err
 		}
@@ -173,13 +208,23 @@ func runCheck(ctx context.Context, api *ciAPI, repo, path string, noDev bool) (c
 					errCheckResponse, start+i, r.Package, r.Version, chunk[i].Name, chunk[i].Version)
 			}
 
-			r.Dev = chunk[i].Dev
+			r.Dev, r.RequiredBy = chunk[i].Dev, chunk[i].RequiredBy
 			report.Summary[r.Status]++
 			report.Results = append(report.Results, r)
 		}
 	}
 
 	return report, nil
+}
+
+// checkQueries is the request body of deps: the package and version only.
+func checkQueries(deps []lockfile.Dep) []checkQuery {
+	out := make([]checkQuery, len(deps))
+	for i, d := range deps {
+		out[i] = checkQuery{Package: d.Name, Version: d.Version}
+	}
+
+	return out
 }
 
 // readLockfile reads path, refusing a file over maxLockfileBytes.
@@ -208,6 +253,15 @@ func (r checkReport) text() string {
 
 	total := len(r.Results)
 
+	if r.Fetched != nil {
+		fmt.Fprintf(&b, "Fetched the metadata of %d packages through %s", r.Fetched.Packages, r.Repository)
+		if r.Fetched.Failed > 0 {
+			fmt.Fprintf(&b, " (%d did not answer 200)", r.Fetched.Failed)
+		}
+
+		b.WriteString(".\n\n")
+	}
+
 	if total == 0 {
 		fmt.Fprintf(&b, "No registry dependencies to check in %s.", r.Lockfile)
 		return b.String()
@@ -219,14 +273,15 @@ func (r checkReport) text() string {
 	}
 
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "STATUS\tPACKAGE\tVERSION\tFROM\tREASON")
+	_, _ = fmt.Fprintln(w, "STATUS\tPACKAGE\tVERSION\tFROM\tREQUIRED BY\tREASON")
 
 	for _, res := range r.Results {
 		if res.Status == statusAvailable {
 			continue
 		}
 
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", res.Status, res.Package, res.Version, res.Repository, reasonLine(res.Reasons))
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			res.Status, res.Package, res.Version, res.Repository, requiredByLine(res.RequiredBy), reasonLine(res.Reasons))
 	}
 
 	_ = w.Flush()
@@ -235,6 +290,23 @@ func (r checkReport) text() string {
 		r.Summary[statusAvailable], r.Summary[statusHeld], r.Summary[statusNotFound], r.Summary[statusUnknown])
 
 	return b.String()
+}
+
+// requiredByLine is the locked packages that pull a dependency in, up to three
+// and how many more; "-" when no locked package requires it. The lockfile does
+// not say whether the project also requires a package itself, so a list does
+// not mean the dependency is only indirect.
+func requiredByLine(by []string) string {
+	const shown = 3
+
+	switch {
+	case len(by) == 0:
+		return "-"
+	case len(by) <= shown:
+		return strings.Join(by, ", ")
+	default:
+		return strings.Join(by[:shown], ", ") + fmt.Sprintf(" +%d more", len(by)-shown)
+	}
 }
 
 // dependencies is "1 dependency" or "n dependencies".

@@ -11,8 +11,9 @@ type composerLock struct {
 }
 
 type composerPackage struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
+	Name    string            `json:"name"`
+	Version string            `json:"version"`
+	Require map[string]string `json:"require"`
 	Dist    *struct {
 		Type string `json:"type"`
 	} `json:"dist"`
@@ -29,13 +30,22 @@ func parseComposer(data []byte) ([]Dep, error) {
 
 	deps := make([]Dep, 0, len(lock.Packages)+len(lock.PackagesDev))
 
+	// A package's "require" names what it depends on; the project's own
+	// requirements live in composer.json, so a package no locked package
+	// requires is a direct one. Platform requirements (php, ext-*) are not
+	// packages and never match a locked name.
+	by := requirers{}
+	for _, p := range append(append([]composerPackage{}, lock.Packages...), lock.PackagesDev...) {
+		by.add(p.Name, p.Require)
+	}
+
 	add := func(pkgs []composerPackage, dev bool) {
 		for _, p := range pkgs {
 			if p.Name == "" || p.Version == "" || (p.Dist != nil && p.Dist.Type == "path") {
 				continue
 			}
 
-			deps = append(deps, Dep{Name: p.Name, Version: p.Version, Dev: dev})
+			deps = append(deps, Dep{Name: p.Name, Version: p.Version, Dev: dev, RequiredBy: by[p.Name]})
 		}
 	}
 

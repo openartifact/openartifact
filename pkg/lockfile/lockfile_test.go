@@ -39,22 +39,22 @@ func TestParse(t *testing.T) {
 		want []Dep
 	}{
 		{"composer.lock", Composer, "testdata/composer.lock", []Dep{
-			{Name: "acme/console", Version: "v6.4.3"},
+			{Name: "acme/console", Version: "v6.4.3", RequiredBy: []string{"acme/test-runner"}},
 			{Name: "acme/http-client", Version: "7.8.1"},
-			{Name: "acme/polyfill", Version: "v1.29.0"},
+			{Name: "acme/polyfill", Version: "v1.29.0", RequiredBy: []string{"acme/console", "acme/http-client"}},
 			{Name: "acme/test-runner", Version: "10.5.10", Dev: true},
 		}},
 		{"package-lock.json v3", NPM, "testdata/package-lock.json", []Dep{
-			{Name: "@acme/shared", Version: "3.4.21"},
+			{Name: "@acme/shared", Version: "3.4.21", RequiredBy: []string{"acme-bundler"}},
 			{Name: "acme-bundler", Version: "5.1.4", Dev: true},
-			{Name: "acme-minifier", Version: "0.19.12", Dev: true},
+			{Name: "acme-minifier", Version: "0.19.12", Dev: true, RequiredBy: []string{"acme-bundler"}},
 			{Name: "acme-pad", Version: "1.3.0"},
-			{Name: "acme-width", Version: "4.2.3"},
+			{Name: "acme-width", Version: "4.2.3", RequiredBy: []string{"acme-pad"}},
 		}},
 		{"package-lock.json v1", NPM, "testdata/package-lock-v1.json", []Dep{
 			{Name: "@acme/real", Version: "1.2.3"},
-			{Name: "acme-log", Version: "2.6.9"},
-			{Name: "acme-log", Version: "4.3.4", Dev: true},
+			{Name: "acme-log", Version: "2.6.9", RequiredBy: []string{"@acme/real", "acme-server"}},
+			{Name: "acme-log", Version: "4.3.4", Dev: true, RequiredBy: []string{"@acme/real", "acme-server"}},
 			{Name: "acme-server", Version: "4.18.2"},
 		}},
 	} {
