@@ -234,7 +234,7 @@ describe('clientSetup (property)', () => {
   it('logs in to and pushes docker images by registry host, not by URL', () => {
     fc.assert(fc.property(origin, repoName, (o, repo) => {
       const [s] = clientSetup('docker', o.url, repo)
-      expect(s!.configure).toBe(`docker login ${o.host} -u <USERNAME> -p <TOKEN>`)
+      expect(s!.configure).toBe(`echo "<TOKEN>" | docker login ${o.host} -u <USERNAME> --password-stdin`)
       expect(s!.publish).toContain(`${o.host}/${repo}:latest`)
     }))
   })

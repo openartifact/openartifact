@@ -148,7 +148,7 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
     hosted: [
       {
         client: 'docker',
-        configure: 'docker login {{host}} -u <USERNAME> -p <TOKEN>',
+        configure: 'echo "<TOKEN>" | docker login {{host}} -u <USERNAME> --password-stdin',
         publish: 'docker tag my-image:latest {{host}}/{{repo}}:latest\ndocker push {{host}}/{{repo}}:latest',
       },
     ],
@@ -234,12 +234,12 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
     hosted: [
       {
         client: 'npm',
-        configure: 'npm config set registry {{base}}/\nnpm config set //{{host}}/repos/{{esc}}/:_authToken <TOKEN>',
+        configure: 'npm config set registry {{base}}/\nnpm config set //{{basePath}}/:_authToken <TOKEN>',
         publish: 'npm publish --registry {{base}}/',
       },
       {
         client: 'pnpm',
-        configure: 'pnpm config set registry {{base}}/\npnpm config set //{{host}}/repos/{{esc}}/:_authToken <TOKEN>',
+        configure: 'pnpm config set registry {{base}}/\npnpm config set //{{basePath}}/:_authToken <TOKEN>',
         publish: 'pnpm publish --registry {{base}}/',
       },
       {
