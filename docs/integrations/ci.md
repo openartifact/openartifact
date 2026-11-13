@@ -78,7 +78,7 @@ A group answers the way it serves, and the server never asks the upstream: see [
 You need `oa` 0.10.0 or newer. Download the archive for the runner from the [GitHub releases](https://github.com/openartifact/openartifact/releases) and verify it against `SHA256SUMS`:
 
 ```sh
-V=0.23.0 OS=linux ARCH=amd64
+V=0.24.0 OS=linux ARCH=amd64
 base=https://github.com/openartifact/openartifact/releases/download/v$V
 curl -fsSLO "$base/oa_${V}_${OS}_${ARCH}.tar.gz"
 curl -fsSL  "$base/SHA256SUMS" | grep "oa_${V}_${OS}_${ARCH}.tar.gz" | sha256sum -c -

@@ -29,7 +29,7 @@ spec:
       description: PEM bundle trusted for the OpenArtifact server.
     - name: IMAGE
       type: string
-      default: ghcr.io/openartifact/oa-tekton:0.23.0
+      default: ghcr.io/openartifact/oa-tekton:0.24.0
     - name: IMAGE_REF
       type: string
       description: Image reference with digest, for example artifacts.example.com/team/app@sha256:...
