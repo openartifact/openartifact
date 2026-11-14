@@ -137,6 +137,7 @@ Newest first. Each version starts with **What you must do**; the text below it l
 
 - **Batch availability: curation holds without cached metadata.** For proxies of formats that refuse a curated version from the request path (apk, Composer, Conan, Debian, Ivy, Maven, pacman, PyPI, RPM, sbt), `POST /availability`, `check_dependencies` and `oa check` report a version a curation rule hides as `held` even when the package was never fetched (it was `unknown`).
 - **`oa check --fetch` and "required by".** `--fetch` warms the repository's proxies by requesting each package's metadata before checking, so a fresh proxy no longer answers `unknown` for everything. The table names the locked packages that pull in a dependency that is not available (`-` when no locked package does), and `--format json` adds `required_by`.
+- **`oa check` reads `pnpm-lock.yaml` and `yarn.lock`.** pnpm lockfiles of pnpm 7 and later and the `yarn.lock` of Yarn 1 and of Yarn 2 and later are checked like `package-lock.json`, against an npm repository. `yarn.lock` does not mark development dependencies, so `--no-dev` is refused for it.
 
 ### 0.24.0
 

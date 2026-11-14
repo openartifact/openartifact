@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package lockfile reads the package versions a lockfile pins, for `oa check`:
-// composer.lock and npm's package-lock.json. It keeps only what a client
+// composer.lock, npm's package-lock.json, pnpm-lock.yaml and yarn.lock. It keeps only what a client
 // fetches from a package registry: local, linked, bundled and VCS or file
 // dependencies are left out, since no registry serves them.
 package lockfile
@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // Kind is the lockfile format.
@@ -24,6 +26,10 @@ type Kind string
 const (
 	Composer Kind = "composer"
 	NPM      Kind = "npm"
+	PNPM     Kind = "pnpm"
+	// Yarn is Yarn 1's yarn.lock or the YAML one of Yarn 2 and later. It does
+	// not record development dependencies: no Dep of it is Dev.
+	Yarn Kind = "yarn"
 )
 
 // Dep is one package version a lockfile pins. Dev reports that the lockfile
@@ -40,8 +46,10 @@ type Dep struct {
 
 var (
 	// ErrUnknownLockfile is a file name Parse cannot tell the format of.
-	ErrUnknownLockfile = errors.New("unknown lockfile: expected composer.lock or package-lock.json")
-	// ErrInvalid is a lockfile that is not the JSON document its format expects.
+	ErrUnknownLockfile = errors.New(
+		"unknown lockfile: expected composer.lock, package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml or yarn.lock",
+	)
+	// ErrInvalid is a lockfile that is not the document its format expects.
 	ErrInvalid = errors.New("invalid lockfile")
 )
 
@@ -52,6 +60,10 @@ func KindOf(path string) (Kind, error) {
 		return Composer, nil
 	case "package-lock.json", "npm-shrinkwrap.json":
 		return NPM, nil
+	case "pnpm-lock.yaml":
+		return PNPM, nil
+	case "yarn.lock":
+		return Yarn, nil
 	}
 
 	return "", fmt.Errorf("%w: %s", ErrUnknownLockfile, filepath.Base(path))
@@ -71,6 +83,10 @@ func Parse(kind Kind, data []byte) ([]Dep, error) {
 		deps, err = parseComposer(data)
 	case NPM:
 		deps, err = parseNPM(data)
+	case PNPM:
+		deps, err = parsePNPM(data)
+	case Yarn:
+		deps, err = parseYarn(data)
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnknownLockfile, kind)
 	}
@@ -100,6 +116,24 @@ func decode(data []byte, v any) error {
 	}
 
 	if err := json.Unmarshal(data, v); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+
+	return nil
+}
+
+// decodeYAML reads data as one YAML mapping into v.
+func decodeYAML(data []byte, v any) error {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+
+	if len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
+		return fmt.Errorf("%w: not a YAML mapping", ErrInvalid)
+	}
+
+	if err := doc.Content[0].Decode(v); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
 

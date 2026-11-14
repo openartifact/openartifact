@@ -28,7 +28,7 @@ func checkDeps(t *testing.T, kind Kind, data []byte) {
 			t.Fatalf("dependency %d has an empty name or version: %+v", i, d)
 		}
 
-		if kind == NPM && (strings.Contains(d.Version, ":") || strings.Contains(d.Version, "/")) {
+		if kind != Composer && (strings.Contains(d.Version, ":") || strings.Contains(d.Version, "/")) {
 			t.Fatalf("npm dependency %d has a non-registry version: %+v", i, d)
 		}
 
@@ -76,4 +76,21 @@ func FuzzPackageLock(f *testing.F) {
 	f.Add([]byte(`{"dependencies":{"a":{"version":"npm:@s/b@1.0.0","dependencies":{"c":{"version":"2.0.0"}}}}}`))
 
 	f.Fuzz(func(t *testing.T, data []byte) { checkDeps(t, NPM, data) })
+}
+
+func FuzzPnpmLock(f *testing.F) {
+	addSeed(f, "testdata/pnpm-lock.yaml")
+	addSeed(f, "testdata/pnpm-lock-v6.yaml")
+	addSeed(f, "testdata/pnpm-lock-v5.yaml")
+	f.Add([]byte("lockfileVersion: '9.0'\npackages:\n  '@s/a@1.0.0': {resolution: {integrity: x}}\nsnapshots:\n  '@s/a@1.0.0': {}\n"))
+
+	f.Fuzz(func(t *testing.T, data []byte) { checkDeps(t, PNPM, data) })
+}
+
+func FuzzYarnLock(f *testing.F) {
+	addSeed(f, "testdata/yarn.lock")
+	addSeed(f, "testdata/yarn-v1.lock")
+	f.Add([]byte("\"@s/x@npm:@o/y@^1\":\n  version \"1.0.0\"\n  dependencies:\n    z \"^2\"\n"))
+
+	f.Fuzz(func(t *testing.T, data []byte) { checkDeps(t, Yarn, data) })
 }

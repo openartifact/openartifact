@@ -36,6 +36,7 @@ var (
 	errCheckLockfile = errors.New("--lockfile is required")
 	errLockfileSize  = fmt.Errorf("lockfile larger than %d MiB", maxLockfileBytes>>20)
 	errCheckResponse = errors.New("unexpected availability response")
+	errNoDevYarn     = errors.New("--no-dev: yarn.lock does not record which dependencies are development-only")
 )
 
 // checkReason is one reason of an availability result.
@@ -90,7 +91,8 @@ func newCheckCmd(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "check <repo> --lockfile FILE",
 		Short: "Check a lockfile's dependencies against a repository before installing",
-		Long: "Read the package versions a lockfile pins (composer.lock, package-lock.json or npm-shrinkwrap.json) and ask " +
+		Long: "Read the package versions a lockfile pins (composer.lock, package-lock.json, npm-shrinkwrap.json, " +
+			"pnpm-lock.yaml or yarn.lock) and ask " +
 			"the repository, usually the group your package manager uses, whether it will serve each of them: available, " +
 			"held (by a curation rule, the minimum age, a quarantine or the license policy, with the reason), not_found or " +
 			"unknown (a proxy that has not cached the package's metadata yet). Local, linked, bundled and git or file " +
@@ -108,13 +110,14 @@ func newCheckCmd(a *app) *cobra.Command {
 		ValidArgsFunction: positional(a.repoNames()),
 	}
 
-	path := cmd.Flags().String("lockfile", "", "Lockfile to check: composer.lock, package-lock.json or npm-shrinkwrap.json")
-	noDev := cmd.Flags().Bool("no-dev", false, "Skip the dependencies the lockfile marks as development only")
+	path := cmd.Flags().
+		String("lockfile", "", "Lockfile to check: composer.lock, package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml or yarn.lock")
+	noDev := cmd.Flags().Bool("no-dev", false, "Skip the dependencies the lockfile marks as development only (not with yarn.lock)")
 	failUnknown := cmd.Flags().Bool("fail-on-unknown", false, "Exit 1 also when the repository cannot tell (unknown)")
 	fetch := cmd.Flags().Bool("fetch", false, "First request each package's metadata through the repository, so its proxies cache it")
 
 	flagValues(cmd, "lockfile", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
-		return []string{"lock", "json"}, cobra.ShellCompDirectiveFilterFileExt
+		return []string{"lock", "json", "yaml"}, cobra.ShellCompDirectiveFilterFileExt
 	})
 
 	cmd.RunE = func(c *cobra.Command, args []string) error {
@@ -151,6 +154,10 @@ func runCheck(ctx context.Context, api *ciAPI, repo, path string, opts checkOpti
 	kind, err := lockfile.KindOf(path)
 	if err != nil {
 		return checkReport{}, err
+	}
+
+	if opts.noDev && kind == lockfile.Yarn {
+		return checkReport{}, errNoDevYarn
 	}
 
 	data, err := readLockfile(path)

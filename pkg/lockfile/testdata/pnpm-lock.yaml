@@ -1,0 +1,144 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@acme/is':
+        specifier: 4.6.0
+        version: 4.6.0
+      acme-git:
+        specifier: github:acme/acme-number#98e8ff1
+        version: acme-number@https://codeload.github.com/acme/acme-number/tar.gz/98e8ff1
+      acme-odd:
+        specifier: 3.0.1
+        version: 3.0.1
+      acme-local:
+        specifier: file:./acme-local
+        version: file:acme-local
+      my-acme-pad:
+        specifier: npm:acme-pad@1.3.0
+        version: acme-pad@1.3.0
+      acme-react:
+        specifier: 18.2.0
+        version: 18.2.0
+      acme-store:
+        specifier: 1.2.0
+        version: 1.2.0(acme-react@18.2.0)
+    devDependencies:
+      acme-even:
+        specifier: 1.0.0
+        version: 1.0.0
+
+packages:
+
+  '@acme/is@4.6.0':
+    resolution: {integrity: sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw==}
+    engines: {node: '>=10'}
+
+  acme-buffer@1.1.6:
+    resolution: {integrity: sha512-NcdALwpXkTm5Zvvbk7owOUSvVvBKDgKP5/ewfXEznmQFfs4ZRmanOeKBTjRVjka3QFoN6XJ+9F3USqfHqTaU5w==}
+
+  acme-even@1.0.0:
+    resolution: {integrity: sha512-LEhnkAdJqic4Dbqn58A0y52IXoHWlsueqQkKfMfdEnIYG8A1sm/GHidKkS6yvXlMoRrkM34csHnXQtOqcb+Jzg==}
+    engines: {node: '>=0.10.0'}
+
+  acme-number@3.0.0:
+    resolution: {integrity: sha512-4cboCqIpliH+mAvFNegjZQ4kgKc3ZUhQVr3HvWbSh5q3WH2v82ct+T2Y1hdU5Gdtorx/cLifQjqCbL7bpznLTg==}
+    engines: {node: '>=0.10.0'}
+
+  acme-number@6.0.0:
+    resolution: {integrity: sha512-Wu1VHeILBK8KAWJUAiSZQX94GmOE45Rg6/538fKwiloUu21KncEkYGPqob2oSZ5mUT73vLGrHQjKw3KMPwfDzg==}
+    engines: {node: '>=0.10.0'}
+
+  acme-number@https://codeload.github.com/acme/acme-number/tar.gz/98e8ff1:
+    resolution: {tarball: https://codeload.github.com/acme/acme-number/tar.gz/98e8ff1}
+    version: 7.0.0
+    engines: {node: '>=0.12.0'}
+
+  acme-odd@0.1.2:
+    resolution: {integrity: sha512-Ri7C2K7o5IrUU9UEI8losXJCCD/UtsaIrkR5sxIcFg4xQ9cRJXlWA5DQvTE0yDc0krvSNLsRGXN11UPS6KyfBw==}
+    engines: {node: '>=0.10.0'}
+
+  acme-odd@3.0.1:
+    resolution: {integrity: sha512-CQpnWPrDwmP1+SMHXZhtLtJv90yiyVfluGsX5iNCVkrhQtU3TQHsUWPG9wkdk9Lgd5yNpAg9jQEo90CBaXgWMA==}
+    engines: {node: '>=4'}
+
+  acme-tokens@4.0.0:
+    resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
+
+  acme-kind@3.2.2:
+    resolution: {integrity: sha512-NOW9QQXMoZGg/oqnVNoNTTIFEIid1627WCffUBJEdMxYApq7mNE7CpzucIPc+ZQg25Phej7IJSmX3hO+oblOtQ==}
+    engines: {node: '>=0.10.0'}
+
+  acme-pad@1.3.0:
+    resolution: {integrity: sha512-XI5MPzVNApjAyhQzphX8BkmKsKUxD4LdyK24iZeQGinBN9yTQT3bFlCBy/aVx2HrNcqQGsdot8ghrjyrvMCoEA==}
+    deprecated: use String.prototype.padStart()
+
+  acme-local@file:acme-local:
+    resolution: {directory: acme-local, type: directory}
+
+  acme-envify@1.4.0:
+    resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
+    hasBin: true
+
+  acme-react@18.2.0:
+    resolution: {integrity: sha512-/3IjMdb2L9QbBdWiW5e3P2/npwMBaU9mHCSCUzNln0ZCYbcfTsGbTJrU/kGemdH2IWmB2ioZ+zkxtmq6g09fGQ==}
+    engines: {node: '>=0.10.0'}
+
+  acme-store@1.2.0:
+    resolution: {integrity: sha512-eEgnFxGQ1Ife9bzYs6VLi8/4X6CObHMw9Qr9tPY43iKwsPw8xE8+EFsf/2cFZ5S3esXgpWgtSCtLNS41F+sKPA==}
+    peerDependencies:
+      acme-react: ^16.8.0 || ^17.0.0 || ^18.0.0
+
+snapshots:
+
+  '@acme/is@4.6.0': {}
+
+  acme-buffer@1.1.6: {}
+
+  acme-even@1.0.0:
+    dependencies:
+      acme-odd: 0.1.2
+
+  acme-number@3.0.0:
+    dependencies:
+      acme-kind: 3.2.2
+
+  acme-number@6.0.0: {}
+
+  acme-number@https://codeload.github.com/acme/acme-number/tar.gz/98e8ff1: {}
+
+  acme-odd@0.1.2:
+    dependencies:
+      acme-number: 3.0.0
+
+  acme-odd@3.0.1:
+    dependencies:
+      acme-number: 6.0.0
+
+  acme-tokens@4.0.0: {}
+
+  acme-kind@3.2.2:
+    dependencies:
+      acme-buffer: 1.1.6
+
+  acme-pad@1.3.0: {}
+
+  acme-local@file:acme-local: {}
+
+  acme-envify@1.4.0:
+    dependencies:
+      acme-tokens: 4.0.0
+
+  acme-react@18.2.0:
+    dependencies:
+      acme-envify: 1.4.0
+
+  acme-store@1.2.0(acme-react@18.2.0):
+    dependencies:
+      acme-react: 18.2.0
