@@ -54,7 +54,8 @@ func (s *checkServer) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.Method == http.MethodGet && strings.HasPrefix(r.URL.EscapedPath(), "/repos/php/") {
+	if r.Method == http.MethodGet &&
+		(strings.HasPrefix(r.URL.EscapedPath(), "/repos/php/") || strings.HasPrefix(r.URL.EscapedPath(), "/repos/npm/")) {
 		s.mu.Lock()
 		s.gets = append(s.gets, r.URL.EscapedPath())
 		s.mu.Unlock()
@@ -69,7 +70,8 @@ func (s *checkServer) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.Method != http.MethodPost || r.URL.Path != "/api/v1/repositories/php/availability" {
+	if r.Method != http.MethodPost ||
+		!slices.Contains([]string{"/api/v1/repositories/php/availability", "/api/v1/repositories/npm/availability"}, r.URL.Path) {
 		http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusTeapot)
 		return
 	}
@@ -253,10 +255,11 @@ func TestCheckBatchesAndJSON(t *testing.T) {
 // invalid lockfile and a server error fail before or instead of a verdict.
 func TestCheckRefuses(t *testing.T) {
 	dir := t.TempDir()
+	cargo := filepath.Join(dir, "Cargo.lock")
 	yarn := filepath.Join(dir, "yarn.lock")
 	broken := filepath.Join(dir, "package-lock.json")
 
-	for path, data := range map[string]string{yarn: "# yarn", broken: "{not json"} {
+	for path, data := range map[string]string{cargo: "version = 3", yarn: "# yarn lockfile v1", broken: "{not json"} {
 		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -269,7 +272,8 @@ func TestCheckRefuses(t *testing.T) {
 		wantErr string
 	}{
 		{"no lockfile", []string{"check", "php"}, 0, "--lockfile is required"},
-		{"unknown lockfile", []string{"check", "php", "--lockfile", yarn}, 0, "unknown lockfile"},
+		{"unknown lockfile", []string{"check", "php", "--lockfile", cargo}, 0, "unknown lockfile"},
+		{"--no-dev with yarn.lock", []string{"check", "npm", "--lockfile", yarn, "--no-dev"}, 0, "does not record which dependencies"},
 		{"invalid lockfile", []string{"check", "php", "--lockfile", broken}, 0, "invalid lockfile"},
 		{"result missing", []string{"check", "php", "--lockfile", composerLock(t, []string{"short/a", "short/b"}, nil)}, 0, "unexpected availability response"},
 		{"server error", []string{"check", "php", "--lockfile", composerLock(t, []string{"ok/a"}, nil)}, http.StatusForbidden, "no read access"},
@@ -424,6 +428,34 @@ func TestCheckFetch(t *testing.T) {
 
 	if res := runOA(t, plain.Server, "", "check", "php", "--lockfile", lock); res.code != 0 || len(plain.gets) != 0 {
 		t.Errorf("without --fetch: exit %d, metadata requested %v", res.code, plain.gets)
+	}
+}
+
+// TestCheckJSLockfiles: pnpm-lock.yaml and yarn.lock are checked like
+// package-lock.json, and --fetch requests their packuments.
+func TestCheckJSLockfiles(t *testing.T) {
+	for _, lock := range []string{"pnpm-lock.yaml", "yarn.lock"} {
+		t.Run(lock, func(t *testing.T) {
+			srv := newCheckServer(t, 0)
+
+			res := runOA(
+				t,
+				srv.Server,
+				"",
+				"check",
+				"npm",
+				"--lockfile",
+				filepath.Join("..", "..", "pkg", "lockfile", "testdata", lock),
+				"--fetch",
+			)
+			if res.code != 0 || !strings.Contains(res.stdout, "All 13 dependencies of") {
+				t.Fatalf("exit %d, stdout %q, stderr %q", res.code, res.stdout, res.stderr)
+			}
+
+			if !slices.Contains(srv.gets, "/repos/npm/@acme%2fis") || len(srv.gets) != 11 {
+				t.Errorf("metadata requests = %v, want the 11 packuments (13 versions)", srv.gets)
+			}
+		})
 	}
 }
 
