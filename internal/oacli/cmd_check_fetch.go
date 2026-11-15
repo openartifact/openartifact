@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	pkgcargo "github.com/openartifact/openartifact/pkg/cargo"
 	pkgcomposer "github.com/openartifact/openartifact/pkg/composer"
 	"github.com/openartifact/openartifact/pkg/lockfile"
 )
@@ -66,17 +67,24 @@ func warmMetadata(ctx context.Context, api *ciAPI, repo string, kind lockfile.Ki
 // metadataPath is the native path of the metadata document in repo that lists
 // d's version: composer's p2 document (p2/<name>~dev.json for a branch such as
 // dev-main or 1.x-dev, as Composer requests it), npm's packument (a scoped name
-// with its slash escaped, as npm requests it).
+// with its slash escaped, as npm requests it), the project page of the simple
+// API (Python, the name normalized by the lockfile) and the sparse index file
+// of a crate.
 func metadataPath(repo string, kind lockfile.Kind, d lockfile.Dep) string {
 	base := "/repos/" + escape(repo) + "/"
 	name := d.Name
 
-	if kind == lockfile.Composer {
+	switch kind {
+	case lockfile.Composer:
 		if composerDev(d.Version) {
 			return base + "p2/" + name + "~dev.json"
 		}
 
 		return base + "p2/" + name + ".json"
+	case lockfile.Poetry, lockfile.UV:
+		return base + "simple/" + name + "/"
+	case lockfile.Cargo:
+		return base + "index/" + pkgcargo.IndexPathFor(strings.ToLower(name))
 	}
 
 	if scope, pkg, ok := strings.Cut(name, "/"); ok && strings.HasPrefix(scope, "@") {

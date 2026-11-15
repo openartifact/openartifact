@@ -36,6 +36,9 @@ type checkServer struct {
 	status int // non-zero: answer every request with this status and an error; set before serving
 }
 
+// checkRepos are the repositories the check server knows.
+var checkRepos = []string{"php", "npm", "pypi", "crates"} //nolint:gochecknoglobals // test fixture
+
 func newCheckServer(t *testing.T, status int) *checkServer {
 	t.Helper()
 
@@ -54,8 +57,9 @@ func (s *checkServer) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.Method == http.MethodGet &&
-		(strings.HasPrefix(r.URL.EscapedPath(), "/repos/php/") || strings.HasPrefix(r.URL.EscapedPath(), "/repos/npm/")) {
+	if r.Method == http.MethodGet && slices.ContainsFunc(checkRepos, func(repo string) bool {
+		return strings.HasPrefix(r.URL.EscapedPath(), "/repos/"+repo+"/")
+	}) {
 		s.mu.Lock()
 		s.gets = append(s.gets, r.URL.EscapedPath())
 		s.mu.Unlock()
@@ -70,8 +74,9 @@ func (s *checkServer) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.Method != http.MethodPost ||
-		!slices.Contains([]string{"/api/v1/repositories/php/availability", "/api/v1/repositories/npm/availability"}, r.URL.Path) {
+	repo, ok := strings.CutPrefix(r.URL.Path, "/api/v1/repositories/")
+	if r.Method != http.MethodPost || !ok || !slices.Contains(checkRepos, strings.TrimSuffix(repo, "/availability")) ||
+		!strings.HasSuffix(repo, "/availability") {
 		http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusTeapot)
 		return
 	}
@@ -255,11 +260,12 @@ func TestCheckBatchesAndJSON(t *testing.T) {
 // invalid lockfile and a server error fail before or instead of a verdict.
 func TestCheckRefuses(t *testing.T) {
 	dir := t.TempDir()
-	cargo := filepath.Join(dir, "Cargo.lock")
+	gems := filepath.Join(dir, "Gemfile.lock")
 	yarn := filepath.Join(dir, "yarn.lock")
 	broken := filepath.Join(dir, "package-lock.json")
+	testdata := filepath.Join("..", "..", "pkg", "lockfile", "testdata")
 
-	for path, data := range map[string]string{cargo: "version = 3", yarn: "# yarn lockfile v1", broken: "{not json"} {
+	for path, data := range map[string]string{gems: "GEM\n", yarn: "# yarn lockfile v1", broken: "{not json"} {
 		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -272,8 +278,12 @@ func TestCheckRefuses(t *testing.T) {
 		wantErr string
 	}{
 		{"no lockfile", []string{"check", "php"}, 0, "--lockfile is required"},
-		{"unknown lockfile", []string{"check", "php", "--lockfile", cargo}, 0, "unknown lockfile"},
+		{"unknown lockfile", []string{"check", "php", "--lockfile", gems}, 0, "unknown lockfile"},
 		{"--no-dev with yarn.lock", []string{"check", "npm", "--lockfile", yarn, "--no-dev"}, 0, "does not record which dependencies"},
+		{"--no-dev with Cargo.lock", []string{"check", "crates", "--lockfile", filepath.Join(testdata, "Cargo.lock"), "--no-dev"},
+			0, "does not record which dependencies"},
+		{"--no-dev with a Poetry 1.8 lockfile", []string{"check", "pypi", "--lockfile", filepath.Join(testdata, "poetry-1.8", "poetry.lock"), "--no-dev"},
+			0, "does not record which dependencies"},
 		{"invalid lockfile", []string{"check", "php", "--lockfile", broken}, 0, "invalid lockfile"},
 		{"result missing", []string{"check", "php", "--lockfile", composerLock(t, []string{"short/a", "short/b"}, nil)}, 0, "unexpected availability response"},
 		{"server error", []string{"check", "php", "--lockfile", composerLock(t, []string{"ok/a"}, nil)}, http.StatusForbidden, "no read access"},
@@ -431,29 +441,38 @@ func TestCheckFetch(t *testing.T) {
 	}
 }
 
-// TestCheckJSLockfiles: pnpm-lock.yaml and yarn.lock are checked like
-// package-lock.json, and --fetch requests their packuments.
-func TestCheckJSLockfiles(t *testing.T) {
-	for _, lock := range []string{"pnpm-lock.yaml", "yarn.lock"} {
-		t.Run(lock, func(t *testing.T) {
+// TestCheckLockfiles: every lockfile kind is checked like composer.lock, and
+// --fetch requests each package's metadata document once.
+func TestCheckLockfiles(t *testing.T) {
+	for _, tc := range []struct {
+		lock, repo string
+		noDev      bool
+		deps, gets int
+		sample     string
+	}{
+		{"pnpm-lock.yaml", "npm", false, 13, 11, "/repos/npm/@acme%2fis"},
+		{"yarn.lock", "npm", false, 13, 11, "/repos/npm/@acme%2fis"},
+		{"uv.lock", "pypi", false, 14, 14, "/repos/pypi/simple/acme-http/"},
+		{"uv.lock", "pypi", true, 6, 6, "/repos/pypi/simple/acme-http/"},
+		{"poetry.lock", "pypi", true, 6, 6, "/repos/pypi/simple/acme-url/"},
+		{"poetry-1.8/poetry.lock", "pypi", false, 14, 14, "/repos/pypi/simple/acme-charset/"},
+		{"Cargo.lock", "crates", false, 9, 9, "/repos/crates/index/ac/me/acme_serde_derive"},
+	} {
+		t.Run(fmt.Sprintf("%s no-dev=%v", tc.lock, tc.noDev), func(t *testing.T) {
 			srv := newCheckServer(t, 0)
 
-			res := runOA(
-				t,
-				srv.Server,
-				"",
-				"check",
-				"npm",
-				"--lockfile",
-				filepath.Join("..", "..", "pkg", "lockfile", "testdata", lock),
-				"--fetch",
-			)
-			if res.code != 0 || !strings.Contains(res.stdout, "All 13 dependencies of") {
+			args := []string{"check", tc.repo, "--lockfile", filepath.Join("..", "..", "pkg", "lockfile", "testdata", tc.lock), "--fetch"}
+			if tc.noDev {
+				args = append(args, "--no-dev")
+			}
+
+			res := runOA(t, srv.Server, "", args...)
+			if res.code != 0 || !strings.Contains(res.stdout, fmt.Sprintf("All %d dependencies of", tc.deps)) {
 				t.Fatalf("exit %d, stdout %q, stderr %q", res.code, res.stdout, res.stderr)
 			}
 
-			if !slices.Contains(srv.gets, "/repos/npm/@acme%2fis") || len(srv.gets) != 11 {
-				t.Errorf("metadata requests = %v, want the 11 packuments (13 versions)", srv.gets)
+			if !slices.Contains(srv.gets, tc.sample) || len(srv.gets) != tc.gets {
+				t.Errorf("metadata requests = %v, want %d with %s", srv.gets, tc.gets, tc.sample)
 			}
 		})
 	}
@@ -474,6 +493,11 @@ func TestMetadataPath(t *testing.T) {
 		{lockfile.Composer, "acme/a", "1.x-dev", "/repos/r%2Fx/p2/acme/a~dev.json"},
 		{lockfile.NPM, "@scope/pkg", "1.0.0", "/repos/r%2Fx/@scope%2fpkg"},
 		{lockfile.NPM, "plain", "1.0.0", "/repos/r%2Fx/plain"},
+		{lockfile.UV, "acme-http", "2.32.3", "/repos/r%2Fx/simple/acme-http/"},
+		{lockfile.Poetry, "acme-http", "2.32.3", "/repos/r%2Fx/simple/acme-http/"},
+		{lockfile.Cargo, "a", "1.0.0", "/repos/r%2Fx/index/1/a"},
+		{lockfile.Cargo, "abc", "1.0.0", "/repos/r%2Fx/index/3/a/abc"},
+		{lockfile.Cargo, "Serde_Json", "1.0.0", "/repos/r%2Fx/index/se/rd/serde_json"},
 	} {
 		if got := metadataPath("r/x", tc.kind, lockfile.Dep{Name: tc.name, Version: tc.version}); got != tc.want {
 			t.Errorf("metadataPath(%s, %s %s) = %q, want %q", tc.kind, tc.name, tc.version, got, tc.want)

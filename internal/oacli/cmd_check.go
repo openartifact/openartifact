@@ -36,7 +36,7 @@ var (
 	errCheckLockfile = errors.New("--lockfile is required")
 	errLockfileSize  = fmt.Errorf("lockfile larger than %d MiB", maxLockfileBytes>>20)
 	errCheckResponse = errors.New("unexpected availability response")
-	errNoDevYarn     = errors.New("--no-dev: yarn.lock does not record which dependencies are development-only")
+	errNoDev         = errors.New("--no-dev: the lockfile does not record which dependencies are development-only")
 )
 
 // checkReason is one reason of an availability result.
@@ -92,7 +92,7 @@ func newCheckCmd(a *app) *cobra.Command {
 		Use:   "check <repo> --lockfile FILE",
 		Short: "Check a lockfile's dependencies against a repository before installing",
 		Long: "Read the package versions a lockfile pins (composer.lock, package-lock.json, npm-shrinkwrap.json, " +
-			"pnpm-lock.yaml or yarn.lock) and ask " +
+			"pnpm-lock.yaml, yarn.lock, poetry.lock, uv.lock or Cargo.lock) and ask " +
 			"the repository, usually the group your package manager uses, whether it will serve each of them: available, " +
 			"held (by a curation rule, the minimum age, a quarantine or the license policy, with the reason), not_found or " +
 			"unknown (a proxy that has not cached the package's metadata yet). Local, linked, bundled and git or file " +
@@ -105,14 +105,16 @@ func newCheckCmd(a *app) *cobra.Command {
 			"The exit status is 1 when a dependency is held or not found (or unknown, with --fail-on-unknown) and 0 " +
 			"otherwise; the result is printed either way (--format json for every dependency).",
 		Example: "  oa check php --lockfile composer.lock\n  oa check npm-all --lockfile package-lock.json --no-dev\n" +
-			"  oa check php --lockfile composer.lock --fetch",
+			"  oa check php --lockfile composer.lock --fetch\n  oa check pypi-all --lockfile uv.lock --no-dev",
 		Args:              usageArgs(1, 1),
 		ValidArgsFunction: positional(a.repoNames()),
 	}
 
 	path := cmd.Flags().
-		String("lockfile", "", "Lockfile to check: composer.lock, package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml or yarn.lock")
-	noDev := cmd.Flags().Bool("no-dev", false, "Skip the dependencies the lockfile marks as development only (not with yarn.lock)")
+		String("lockfile", "", "Lockfile to check: composer.lock, package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, "+
+			"yarn.lock, poetry.lock, uv.lock or Cargo.lock")
+	noDev := cmd.Flags().Bool("no-dev", false,
+		"Skip the dependencies the lockfile marks as development only (not with yarn.lock, Cargo.lock or a poetry.lock of Poetry 1.5 to 1.8)")
 	failUnknown := cmd.Flags().Bool("fail-on-unknown", false, "Exit 1 also when the repository cannot tell (unknown)")
 	fetch := cmd.Flags().Bool("fetch", false, "First request each package's metadata through the repository, so its proxies cache it")
 
@@ -156,13 +158,13 @@ func runCheck(ctx context.Context, api *ciAPI, repo, path string, opts checkOpti
 		return checkReport{}, err
 	}
 
-	if opts.noDev && kind == lockfile.Yarn {
-		return checkReport{}, errNoDevYarn
-	}
-
 	data, err := readLockfile(path)
 	if err != nil {
 		return checkReport{}, err
+	}
+
+	if opts.noDev && !lockfile.DevRecorded(kind, data) {
+		return checkReport{}, fmt.Errorf("%w: %s", errNoDev, path)
 	}
 
 	deps, err := lockfile.Parse(kind, data)

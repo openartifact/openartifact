@@ -3,9 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package lockfile reads the package versions a lockfile pins, for `oa check`:
-// composer.lock, npm's package-lock.json, pnpm-lock.yaml and yarn.lock. It keeps only what a client
-// fetches from a package registry: local, linked, bundled and VCS or file
-// dependencies are left out, since no registry serves them.
+// composer.lock, npm's package-lock.json, pnpm-lock.yaml, yarn.lock, poetry.lock,
+// uv.lock and Cargo.lock. It keeps only what a client fetches from a package
+// registry: local, linked, bundled and VCS or file dependencies are left out,
+// since no registry serves them.
 package lockfile
 
 import (
@@ -16,6 +17,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/pelletier/go-toml/v2"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -30,6 +32,11 @@ const (
 	// Yarn is Yarn 1's yarn.lock or the YAML one of Yarn 2 and later. It does
 	// not record development dependencies: no Dep of it is Dev.
 	Yarn Kind = "yarn"
+	// Poetry and UV are Python lockfiles; their names are normalized (PEP 503).
+	Poetry Kind = "poetry"
+	UV     Kind = "uv"
+	// Cargo does not record development dependencies: no Dep of it is Dev.
+	Cargo Kind = "cargo"
 )
 
 // Dep is one package version a lockfile pins. Dev reports that the lockfile
@@ -47,7 +54,8 @@ type Dep struct {
 var (
 	// ErrUnknownLockfile is a file name Parse cannot tell the format of.
 	ErrUnknownLockfile = errors.New(
-		"unknown lockfile: expected composer.lock, package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml or yarn.lock",
+		"unknown lockfile: expected composer.lock, package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, yarn.lock, " +
+			"poetry.lock, uv.lock or Cargo.lock",
 	)
 	// ErrInvalid is a lockfile that is not the document its format expects.
 	ErrInvalid = errors.New("invalid lockfile")
@@ -64,6 +72,12 @@ func KindOf(path string) (Kind, error) {
 		return PNPM, nil
 	case "yarn.lock":
 		return Yarn, nil
+	case "poetry.lock":
+		return Poetry, nil
+	case "uv.lock":
+		return UV, nil
+	case "Cargo.lock":
+		return Cargo, nil
 	}
 
 	return "", fmt.Errorf("%w: %s", ErrUnknownLockfile, filepath.Base(path))
@@ -87,6 +101,12 @@ func Parse(kind Kind, data []byte) ([]Dep, error) {
 		deps, err = parsePNPM(data)
 	case Yarn:
 		deps, err = parseYarn(data)
+	case Poetry:
+		deps, err = parsePoetry(data)
+	case UV:
+		deps, err = parseUV(data)
+	case Cargo:
+		deps, err = parseCargo(data)
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnknownLockfile, kind)
 	}
@@ -96,6 +116,21 @@ func Parse(kind Kind, data []byte) ([]Dep, error) {
 	}
 
 	return normalize(deps), nil
+}
+
+// DevRecorded reports whether a lockfile of kind says which dependencies are
+// development-only, so that leaving them out means something: yarn.lock and
+// Cargo.lock never do, a poetry.lock only when Poetry 2 (or a Poetry before
+// 1.5) wrote it.
+func DevRecorded(kind Kind, data []byte) bool {
+	switch kind {
+	case Yarn, Cargo:
+		return false
+	case Poetry:
+		return poetryRecordsDev(data)
+	default:
+		return true
+	}
 }
 
 // requirers inverts a dependency map: for each required name, the names of the
@@ -121,6 +156,18 @@ func decode(data []byte, v any) error {
 
 	return nil
 }
+
+// decodeTOML reads data as one TOML document into v.
+func decodeTOML(data []byte, v any) error {
+	if err := toml.Unmarshal(data, v); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+
+	return nil
+}
+
+// invalid is ErrInvalid with why.
+func invalid(why string) error { return fmt.Errorf("%w: %s", ErrInvalid, why) }
 
 // decodeYAML reads data as one YAML mapping into v.
 func decodeYAML(data []byte, v any) error {
