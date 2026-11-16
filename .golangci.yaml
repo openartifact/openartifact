@@ -112,8 +112,14 @@ linters:
       require-explanation: true
 
     gocritic:
+      enabled-checks:
+        - ruleguard
       disabled-checks:
         - appendAssign
+      settings:
+        ruleguard:
+          # discarded strconv parse errors (x, _ = strconv.Atoi(...))
+          rules: "${base-path}/scripts/lintrules/*.go"
 
     lll:
       line-length: 140
@@ -172,6 +178,11 @@ linters:
           - unparam
           - errchkjson
           - forcetypeassert
+      # Test fixtures may drop a strconv error: a bad value fails the test anyway
+      - path: "_test\\.go"
+        linters:
+          - gocritic
+        text: "ruleguard: the error of strconv"
       # Integration tests directory
       - path: "tests/"
         linters:

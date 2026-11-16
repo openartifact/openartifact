@@ -380,8 +380,9 @@ func (f Finding) cdxVuln(ref, spec string) cdxVuln {
 
 	for _, c := range f.Vuln.CWEs {
 		if m := cweRe.FindStringSubmatch(strings.TrimSpace(c)); m != nil {
-			n, _ := strconv.Atoi(m[1])
-			v.CWEs = append(v.CWEs, n)
+			if n, err := strconv.Atoi(m[1]); err == nil {
+				v.CWEs = append(v.CWEs, n)
+			}
 		}
 	}
 

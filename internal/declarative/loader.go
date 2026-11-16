@@ -286,7 +286,9 @@ func yamlSyntaxError(file string, err error) error {
 	pos := Pos{File: file}
 
 	if m := yamlLineRe.FindStringSubmatch(err.Error()); m != nil {
-		pos.Line, _ = strconv.Atoi(m[1])
+		if n, err := strconv.Atoi(m[1]); err == nil {
+			pos.Line = n
+		}
 	}
 
 	msg := strings.TrimPrefix(err.Error(), "yaml: ")

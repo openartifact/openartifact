@@ -87,7 +87,11 @@ func parsePNPM(data []byte) ([]Dep, error) {
 		return nil, fmt.Errorf("%w: no lockfileVersion", ErrInvalid)
 	}
 
-	major, _ := strconv.ParseFloat(lock.LockfileVersion, 64)
+	major, err := strconv.ParseFloat(lock.LockfileVersion, 64)
+	if err != nil {
+		return nil, fmt.Errorf("%w: lockfileVersion %q is not a number", ErrInvalid, lock.LockfileVersion)
+	}
+
 	f := pnpmFormat{v5: major < 6}
 
 	// The dependency maps: in the snapshots from version 9 on, else in the

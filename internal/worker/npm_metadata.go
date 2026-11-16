@@ -9,7 +9,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -150,7 +149,7 @@ func compareSemver(a, b string) int {
 	bNums, bPre := semverParts(b)
 
 	for i := range 3 {
-		if c := cmp.Compare(aNums[i], bNums[i]); c != 0 {
+		if c := compareNumeric(aNums[i], bNums[i]); c != 0 {
 			return c
 		}
 	}
@@ -174,16 +173,46 @@ func compareSemver(a, b string) int {
 	return cmp.Compare(len(ai), len(bi))
 }
 
-func semverParts(v string) ([3]uint64, string) {
+// semverParts splits v into its major, minor and patch parts and the
+// prerelease. Each part is kept as a canonical decimal string (no leading
+// zeros, "0" when empty or not a number) so arbitrarily large components
+// compare exactly instead of saturating a fixed-width integer.
+func semverParts(v string) ([3]string, string) {
 	v, _, _ = strings.Cut(strings.TrimPrefix(strings.TrimSpace(v), "v"), "+")
 	v, pre, _ := strings.Cut(v, "-")
 	parts := strings.SplitN(v, ".", 3)
 
-	var nums [3]uint64
+	nums := [3]string{"0", "0", "0"}
 
 	for i := 0; i < 3 && i < len(parts); i++ {
-		nums[i], _ = strconv.ParseUint(parts[i], 10, 64)
+		nums[i] = canonicalDecimal(parts[i])
 	}
 
 	return nums, pre
+}
+
+// canonicalDecimal returns s without leading zeros, or "0" when s is empty or
+// contains a non-digit.
+func canonicalDecimal(s string) string {
+	for i := range len(s) {
+		if s[i] < '0' || s[i] > '9' {
+			return "0"
+		}
+	}
+
+	if s = strings.TrimLeft(s, "0"); s == "" {
+		return "0"
+	}
+
+	return s
+}
+
+// compareNumeric orders two canonical decimal strings by value: the longer
+// one is larger, equal lengths compare lexically.
+func compareNumeric(a, b string) int {
+	if c := cmp.Compare(len(a), len(b)); c != 0 {
+		return c
+	}
+
+	return strings.Compare(a, b)
 }
