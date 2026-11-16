@@ -197,7 +197,7 @@ The [openartifact-agent-plugin](https://github.com/openartifact/openartifact-age
 |---|---|
 | `configure-project` | points Composer, npm, pip and other package managers at a repository, keeping the token out of the project |
 | `check-dependency` | checks a version before adding or upgrading it, and picks one the repository serves |
-| `check-lockfile` | checks every dependency of a `composer.lock` or `package-lock.json` in one `check_dependencies` call |
+| `check-lockfile` | checks every dependency of a `composer.lock`, `package-lock.json`, `pnpm-lock.yaml` or `yarn.lock` in one `check_dependencies` call |
 | `find-artifact` | finds packages across repositories by name, project, project role or property |
 | `explain-install-failure` | turns a `403` or `404` into the reason, and a fix that respects it |
 
