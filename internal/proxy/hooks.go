@@ -109,6 +109,12 @@ type Hooks struct {
 	// the versions (see Service.HeldBackVersions).
 	Versions func(s *Service, ctx context.Context, repo *models.Repository, pkg string) ([]DatedVersion, bool)
 
+	// VersionKey maps a version to the form two spellings of one version share
+	// (pypi: the PEP 440 normalized form, so "1.0.0rc1" in a lockfile finds the
+	// "1.0.0-rc1" a file name spells). Nil means versions are compared as
+	// spelled. See VersionKey.
+	VersionKey func(version string) string
+
 	// BlobPath reports whether rel, a file below the repository root, is a
 	// package download that may be redirected to the object store rather than
 	// metadata (see presign.Register). Register hands it to presign. Nil means

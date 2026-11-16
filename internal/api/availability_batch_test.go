@@ -517,3 +517,37 @@ func TestCuratesFromPathFormats(t *testing.T) {
 		t.Errorf("formats that curate from the path = %v, want %v", got, want)
 	}
 }
+
+// TestAvailabilityBatchPyPISpellings: a lockfile names a PyPI version in its
+// PEP 440 normalized form, the cached project page as the file names spell it.
+// Both are one version, and the curation rules judge it as the files spell it,
+// as the proxy does when it serves them. A different local build is another
+// version.
+func TestAvailabilityBatchPyPISpellings(t *testing.T) {
+	day := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	pypi := &models.Repository{ID: "p-py", Name: "pypi-proxy", Format: "pypi", RepoType: "proxy", CurationMode: "denylist"}
+
+	st := &batchStore{rules: map[string][]curation.Rule{
+		pypi.ID: {{ID: "r-rc", Action: curation.ActionBlock, Package: "acme", Version: "2.0.0-rc*", Reason: "broken"}},
+	}}
+	cache := &batchCache{versions: map[string]map[string][]proxy.DatedVersion{pypi.ID: {"acme": {
+		{Version: "1.0.0-rc1", Published: day}, {Version: "2.0.0-rc1", Published: day}, {Version: "3.0+cpu", Published: day},
+	}}}}
+
+	got, err := ExplainAvailabilityBatch(context.Background(), st, cache, pypi,
+		q("acme", "1.0.0rc1", "acme", "2.0.0rc1", "acme", "3.0.0+cpu", "acme", "3.0+cu121"), readable)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	check(t, got, []wantResult{
+		{StatusAvailable, "pypi-proxy", ""},
+		{StatusHeld, "pypi-proxy", curation.SourceCuration},
+		{StatusAvailable, "pypi-proxy", ""},
+		{StatusNotFound, "pypi-proxy", sourceNotFound},
+	})
+
+	if got.Results[0].Version != "1.0.0rc1" {
+		t.Errorf("result version = %q, want the query's spelling", got.Results[0].Version)
+	}
+}

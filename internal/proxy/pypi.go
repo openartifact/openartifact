@@ -291,6 +291,7 @@ var PyPIHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	BlobPath:   presign.PyPIBlobPath,
 	Published:  (*Service).pypiPublished,
 	Versions:   (*Service).pypiVersions,
+	VersionKey: pypisimple.VersionKey,
 }
 
 // pypiPublished dates version of project (a release, in the spelling of its file
