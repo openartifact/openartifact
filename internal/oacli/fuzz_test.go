@@ -63,7 +63,7 @@ func FuzzMetadataPath(f *testing.F) {
 				t.Fatalf("%s %q: %q has a control character", kind, name, p)
 			}
 
-			for _, seg := range strings.Split(rest, "/") {
+			for _, seg := range strings.SplitSeq(rest, "/") {
 				if seg == ".." || seg == "." {
 					t.Fatalf("%s %q: %q has a dot segment", kind, name, p)
 				}
