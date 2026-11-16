@@ -92,7 +92,7 @@ func newCheckCmd(a *app) *cobra.Command {
 		Use:   "check <repo> --lockfile FILE",
 		Short: "Check a lockfile's dependencies against a repository before installing",
 		Long: "Read the package versions a lockfile pins (composer.lock, package-lock.json, npm-shrinkwrap.json, " +
-			"pnpm-lock.yaml, yarn.lock, poetry.lock, uv.lock or Cargo.lock) and ask " +
+			"pnpm-lock.yaml, yarn.lock, poetry.lock, uv.lock, Cargo.lock, Gemfile.lock or packages.lock.json) and ask " +
 			"the repository, usually the group your package manager uses, whether it will serve each of them: available, " +
 			"held (by a curation rule, the minimum age, a quarantine or the license policy, with the reason), not_found or " +
 			"unknown (a proxy that has not cached the package's metadata yet). Local, linked, bundled and git or file " +
@@ -105,21 +105,23 @@ func newCheckCmd(a *app) *cobra.Command {
 			"The exit status is 1 when a dependency is held or not found (or unknown, with --fail-on-unknown) and 0 " +
 			"otherwise; the result is printed either way (--format json for every dependency).",
 		Example: "  oa check php --lockfile composer.lock\n  oa check npm-all --lockfile package-lock.json --no-dev\n" +
-			"  oa check php --lockfile composer.lock --fetch\n  oa check pypi-all --lockfile uv.lock --no-dev",
+			"  oa check php --lockfile composer.lock --fetch\n  oa check pypi-all --lockfile uv.lock --no-dev\n" +
+			"  oa check gems --lockfile Gemfile.lock",
 		Args:              usageArgs(1, 1),
 		ValidArgsFunction: positional(a.repoNames()),
 	}
 
 	path := cmd.Flags().
 		String("lockfile", "", "Lockfile to check: composer.lock, package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, "+
-			"yarn.lock, poetry.lock, uv.lock or Cargo.lock")
+			"yarn.lock, poetry.lock, uv.lock, Cargo.lock, Gemfile.lock or packages.lock.json")
 	noDev := cmd.Flags().Bool("no-dev", false,
-		"Skip the dependencies the lockfile marks as development only (not with yarn.lock, Cargo.lock or a poetry.lock of Poetry 1.5 to 1.8)")
+		"Skip the dependencies the lockfile marks as development only "+
+			"(not with yarn.lock, Cargo.lock, Gemfile.lock, packages.lock.json or a poetry.lock of Poetry 1.5 to 1.8)")
 	failUnknown := cmd.Flags().Bool("fail-on-unknown", false, "Exit 1 also when the repository cannot tell (unknown)")
 	fetch := cmd.Flags().Bool("fetch", false, "First request each package's metadata through the repository, so its proxies cache it")
 
 	flagValues(cmd, "lockfile", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
-		return []string{"lock", "json", "yaml"}, cobra.ShellCompDirectiveFilterFileExt
+		return []string{"lock", "locked", "json", "yaml"}, cobra.ShellCompDirectiveFilterFileExt
 	})
 
 	cmd.RunE = func(c *cobra.Command, args []string) error {

@@ -132,6 +132,25 @@ func TestParse(t *testing.T) {
 			{Name: "acme-syn", Version: "2.0.119", RequiredBy: []string{"acme_serde_derive"}},
 			{Name: "acme_serde_derive", Version: "1.0.210", RequiredBy: []string{"acme-serde"}},
 		}},
+		// A git gem (acme-color) and a path gem (acme-local, the project's own:
+		// no requirer of acme-rack) are left out; the native builds of acme-xml
+		// (added by hand in Bundler's format: Bundler 2.6 locks only the generic
+		// one here) are one version with the generic one.
+		{"Gemfile.lock", Bundler, "testdata/Gemfile.lock", []Dep{
+			{Name: "acme-parse", Version: "1.8.1", RequiredBy: []string{"acme-xml"}},
+			{Name: "acme-rack", Version: "3.1.8"},
+			{Name: "acme-test", Version: "5.25.1"},
+			{Name: "acme-xml", Version: "1.16.7"},
+			{Name: "acme_build2", Version: "2.8.9", RequiredBy: []string{"acme-xml"}},
+		}},
+		// A project reference (shared) is left out and no requirer; acme.log
+		// requires Acme.Log in another case.
+		{"packages.lock.json", NuGet, "testdata/packages.lock.json", []Dep{
+			{Name: "Acme.Json", Version: "13.0.3"},
+			{Name: "Acme.Log", Version: "4.0.0", RequiredBy: []string{"Acme.Log.Console"}},
+			{Name: "Acme.Log.Console", Version: "6.0.0"},
+			{Name: "acme.assert", Version: "2.9.2"},
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := parseFile(t, tc.kind, tc.file); !reflect.DeepEqual(got, tc.want) {
@@ -175,6 +194,11 @@ func TestParseRejects(t *testing.T) {
 		{"uv wrong type", UV, "version = 1\npackage = \"a\"\n"},
 		{"cargo empty", Cargo, ""},
 		{"cargo wrong type", Cargo, "version = 4\npackage = [1]\n"},
+		{"bundler empty", Bundler, ""},
+		{"bundler indented only", Bundler, "    a (1.0.0)\n"},
+		{"nuget without version", NuGet, `{"dependencies": {}}`},
+		{"nuget wrong type", NuGet, `{"version": 1, "dependencies": {"net8.0": []}}`},
+		{"nuget not JSON", NuGet, "{"},
 	} {
 		if _, err := Parse(tc.kind, []byte(tc.data)); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: err = %v, want ErrInvalid", tc.name, err)
@@ -188,18 +212,22 @@ func TestParseRejects(t *testing.T) {
 
 func TestKindOf(t *testing.T) {
 	for path, want := range map[string]Kind{
-		"composer.lock":            Composer,
-		"app/composer.lock":        Composer,
-		"package-lock.json":        NPM,
-		"/src/npm-shrinkwrap.json": NPM,
-		"yarn.lock":                Yarn,
-		"web/pnpm-lock.yaml":       PNPM,
-		"Cargo.lock":               Cargo,
-		"py/poetry.lock":           Poetry,
-		"uv.lock":                  UV,
-		"cargo.lock":               "",
-		"Pipfile.lock":             "",
-		"composer.json":            "",
+		"composer.lock":              Composer,
+		"app/composer.lock":          Composer,
+		"package-lock.json":          NPM,
+		"/src/npm-shrinkwrap.json":   NPM,
+		"yarn.lock":                  Yarn,
+		"web/pnpm-lock.yaml":         PNPM,
+		"Cargo.lock":                 Cargo,
+		"py/poetry.lock":             Poetry,
+		"uv.lock":                    UV,
+		"cargo.lock":                 "",
+		"Pipfile.lock":               "",
+		"Gemfile.lock":               Bundler,
+		"app/gems.locked":            Bundler,
+		"src/App/packages.lock.json": NuGet,
+		"go.sum":                     "",
+		"composer.json":              "",
 	} {
 		got, err := KindOf(path)
 		if got != want || (want == "") != errors.Is(err, ErrUnknownLockfile) {
@@ -291,6 +319,19 @@ url = "https://example.test/acme_url-1.0.tar.gz"
 [metadata]
 lock-version = "1.1"
 `, []Dep{{Name: "acme-old", Version: "1.0", Dev: true}}},
+		{"bundler with CRLF, a plugin source and two gem servers", Bundler, "PLUGIN SOURCE\r\n  remote: x\r\n  specs:\r\n    p (1.0)\r\n\r\n" +
+			"GEM\r\n  remote: https://a.example/\r\n  specs:\r\n    a (1.0.0)\r\n      b\r\n\r\n" +
+			"GEM\r\n  remote: https://b.example/\r\n  specs:\r\n    b (2.0.0.pre1)\r\n", []Dep{
+			{Name: "a", Version: "1.0.0"},
+			{Name: "b", Version: "2.0.0.pre1", RequiredBy: []string{"a"}},
+		}},
+		{"nuget central transitive, two frameworks", NuGet, `{"version": 2, "dependencies": {
+			"net8.0": {"A": {"type": "Direct", "resolved": "1.0.0", "dependencies": {"B": "[2.0.0, )"}},
+			           "B": {"type": "CentralTransitive", "requested": "[2.0.0, )", "resolved": "2.0.0"}},
+			"net48": {"A": {"type": "Direct", "resolved": "1.0.0"}}}}`, []Dep{
+			{Name: "A", Version: "1.0.0"},
+			{Name: "B", Version: "2.0.0", RequiredBy: []string{"A"}},
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			deps, err := Parse(tc.kind, []byte(tc.data))
@@ -323,6 +364,8 @@ func TestDevRecorded(t *testing.T) {
 		{Poetry, "testdata/poetry-1.8/poetry.lock", false},
 		{Yarn, "testdata/yarn.lock", false},
 		{Cargo, "testdata/Cargo.lock", false},
+		{Bundler, "testdata/Gemfile.lock", false},
+		{NuGet, "testdata/packages.lock.json", false},
 	} {
 		if got := DevRecorded(tc.kind, read(tc.file)); got != tc.want {
 			t.Errorf("DevRecorded(%s, %s) = %v, want %v", tc.kind, tc.file, got, tc.want)

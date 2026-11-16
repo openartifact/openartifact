@@ -51,7 +51,7 @@ Promotion adds metadata rows that point at the same blobs. It costs the same for
 
 ## Check dependencies before installing
 
-`oa check` asks a repository whether it will serve every package version a lockfile pins, before `composer install`, `npm ci`, `uv sync` or `cargo build` fails halfway through on a held or missing version. Point it at the repository your package manager uses, usually a group:
+`oa check` asks a repository whether it will serve every package version a lockfile pins, before `composer install`, `npm ci`, `uv sync`, `cargo build`, `bundle install` or `dotnet restore` fails halfway through on a held or missing version. Point it at the repository your package manager uses, usually a group:
 
 ```sh
 oa check php --lockfile composer.lock
@@ -59,6 +59,7 @@ oa check npm-all --lockfile package-lock.json --no-dev
 oa check npm-all --lockfile pnpm-lock.yaml
 oa check pypi-all --lockfile uv.lock --no-dev
 oa check crates --lockfile Cargo.lock
+oa check gems --lockfile Gemfile.lock
 ```
 
 ```text
@@ -70,7 +71,7 @@ not_found  acme/internal      2.0.0    php        -              no member of th
 84 dependencies: 81 available, 2 held, 1 not found, 0 unknown.
 ```
 
-- **Lockfiles:** it reads `composer.lock` (a Composer repository); `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml` (pnpm 7 and later) and `yarn.lock` (Yarn 1 and Yarn 2 and later) (an npm repository); `poetry.lock` and `uv.lock` (a PyPI repository); and `Cargo.lock` (a cargo repository), picked by file name. Local, linked, bundled, workspace, patched and git, path, file or URL dependencies are skipped, because no registry serves them. `--no-dev` leaves out development-only dependencies (for `uv.lock`, the ones only dependency groups need). `yarn.lock`, `Cargo.lock` and the `poetry.lock` of Poetry 1.5 to 1.8 do not record which those are, so `oa check` refuses `--no-dev` for them.
+- **Lockfiles:** it reads `composer.lock` (a Composer repository); `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml` (pnpm 7 and later) and `yarn.lock` (Yarn 1 and Yarn 2 and later) (an npm repository); `poetry.lock` and `uv.lock` (a PyPI repository); `Cargo.lock` (a cargo repository); `Gemfile.lock` (a RubyGems repository); and `packages.lock.json` (a NuGet repository, every target framework), picked by file name. Local, linked, bundled, workspace, patched and git, path, file or URL dependencies are skipped, because no registry serves them. `--no-dev` leaves out development-only dependencies (for `uv.lock`, the ones only dependency groups need). `yarn.lock`, `Cargo.lock`, `Gemfile.lock`, `packages.lock.json` and the `poetry.lock` of Poetry 1.5 to 1.8 do not record which those are, so `oa check` refuses `--no-dev` for them.
 - **Required by:** the locked packages that pull a dependency in, so you know which of your dependencies to change; `-` when no locked package requires it, so the project requires it itself. A lockfile does not record what the project requires, so a dependency listed with requirers may be one the project also requires directly.
 - **A fresh proxy:** a proxy only knows the packages it has fetched, so on a new one most answers are `unknown`. `--fetch` first requests each package's metadata through the repository, as the package manager would, so the proxies behind it cache it, then checks. It downloads metadata only, never packages.
 - **Statuses:** each dependency is `available`, `held` (a curation rule, the minimum age, a quarantine or the license policy, with the reason), `not_found` or `unknown` (a proxy has not cached the package's metadata yet; one install fills the cache).
