@@ -369,7 +369,7 @@ func PacmanBuilder(c target) []Snippet {
 	}
 
 	configure := fmt.Sprintf("# /etc/pacman.conf\n[%s]\nSigLevel = Required\nServer = %s/os/$arch", c.repo, c.base) +
-		"\n\n# private repository: Server = https://<USER>:<TOKEN>@" + c.host + "/repos/" + c.esc + "/os/$arch" +
+		"\n\n# private repository: Server = https://<USER>:<TOKEN>@" + c.basePath + "/os/$arch" +
 		"\n\n# trust the repository key\ncurl -fsSL " + key + " | sudo pacman-key --add -" +
 		"\nsudo pacman-key --lsign-key $(curl -fsSL " + key +
 		" | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')"
@@ -435,7 +435,7 @@ func pacmanProxySnippets(c target) []Snippet {
 	return []Snippet{{
 		Client: "pacman",
 		Configure: "# top of /etc/pacman.d/mirrorlist\nServer = " + c.base + "/$repo/os/$arch" +
-			"\n\n# private repository: Server = https://<USER>:<TOKEN>@" + c.host + "/repos/" + c.esc + "/$repo/os/$arch" +
+			"\n\n# private repository: Server = https://<USER>:<TOKEN>@" + c.basePath + "/$repo/os/$arch" +
 			"\n\nsudo pacman -Syu",
 	}}
 }

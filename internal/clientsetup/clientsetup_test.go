@@ -5,6 +5,7 @@
 package clientsetup
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -367,5 +368,64 @@ func TestDockerLoginReadsTheTokenFromStdin(t *testing.T) {
 	got := Snippets("docker", "https://oa.example:8443", "images", "hosted")[0].Configure
 	if want := `echo "<TOKEN>" | docker login oa.example:8443 -u <USERNAME> --password-stdin`; got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// TestSnippetsKeepThePathPrefixAndPort renders every snippet of every format
+// and repository type for an origin with a path prefix and a port: no URL may
+// reach /repos/ or /v2 without the prefix. Docker and the registry-style host
+// forms (terraform, composer, sbt, nix) are host-only by protocol and must
+// carry host:port instead.
+func TestSnippetsKeepThePathPrefixAndPort(t *testing.T) {
+	const (
+		prefixed = "https://registry.example:8443/artifacts"
+		hostPort = "registry.example:8443"
+	)
+
+	urlRe := regexp.MustCompile(`https?://[^\s"'<>)]+`)
+
+	for _, format := range allFormats() {
+		for _, repoType := range []string{typeHosted, typeProxy, typeGroup} {
+			t.Run(format+"/"+repoType, func(t *testing.T) {
+				snippets := Snippets(format, prefixed, "repo1", repoType)
+				if len(snippets) == 0 {
+					t.Fatal("no snippets")
+				}
+
+				for _, s := range snippets {
+					text := s.Configure + "\n" + s.Publish
+
+					for _, u := range urlRe.FindAllString(text, -1) {
+						if !strings.Contains(u, hostPort) {
+							t.Errorf("%s: URL %q drops the host:port", s.Client, u)
+
+							continue
+						}
+
+						if format != "docker" && !strings.Contains(u, hostPort+"/artifacts/") {
+							t.Errorf("%s: URL %q drops the path prefix", s.Client, u)
+						}
+					}
+
+					for _, marker := range []string{"/repos/", "/v2"} {
+						for i := range len(text) {
+							if !strings.HasPrefix(text[i:], marker) {
+								continue
+							}
+
+							if !strings.HasSuffix(text[:i], "/artifacts") {
+								t.Errorf("%s: %q at offset %d is not preceded by /artifacts:\n%s", s.Client, marker, i, text)
+							}
+						}
+					}
+				}
+
+				if format == "docker" {
+					if got := snippets[0].Configure; !strings.Contains(got, "docker login "+hostPort+" ") {
+						t.Errorf("docker login does not name host:port: %s", got)
+					}
+				}
+			})
+		}
 	}
 }

@@ -262,20 +262,20 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
     hosted: [
       {
         client: 'pacman',
-        configure: '# /etc/pacman.conf\n[{{repo}}]\nSigLevel = Required\nServer = {{base}}/os/$arch\n\n# private repository: Server = https://<USER>:<TOKEN>@{{host}}/repos/{{esc}}/os/$arch\n\n# trust the repository key\ncurl -fsSL {{base}}/public.key | sudo pacman-key --add -\nsudo pacman-key --lsign-key $(curl -fsSL {{base}}/public.key | gpg --show-keys --with-colons | awk -F: \'/^fpr/{print $10; exit}\')',
+        configure: '# /etc/pacman.conf\n[{{repo}}]\nSigLevel = Required\nServer = {{base}}/os/$arch\n\n# private repository: Server = https://<USER>:<TOKEN>@{{basePath}}/os/$arch\n\n# trust the repository key\ncurl -fsSL {{base}}/public.key | sudo pacman-key --add -\nsudo pacman-key --lsign-key $(curl -fsSL {{base}}/public.key | gpg --show-keys --with-colons | awk -F: \'/^fpr/{print $10; exit}\')',
         publish: 'curl -fsS -H "Authorization: Bearer $OA_TOKEN" -T my-package-1.0-1-x86_64.pkg.tar.zst {{base}}/os/x86_64/my-package-1.0-1-x86_64.pkg.tar.zst\n\n# optional detached signature\ncurl -fsS -H "Authorization: Bearer $OA_TOKEN" -T my-package-1.0-1-x86_64.pkg.tar.zst.sig {{base}}/os/x86_64/my-package-1.0-1-x86_64.pkg.tar.zst.sig',
       },
     ],
     proxy: [
       {
         client: 'pacman',
-        configure: '# top of /etc/pacman.d/mirrorlist\nServer = {{base}}/$repo/os/$arch\n\n# private repository: Server = https://<USER>:<TOKEN>@{{host}}/repos/{{esc}}/$repo/os/$arch\n\nsudo pacman -Syu',
+        configure: '# top of /etc/pacman.d/mirrorlist\nServer = {{base}}/$repo/os/$arch\n\n# private repository: Server = https://<USER>:<TOKEN>@{{basePath}}/$repo/os/$arch\n\nsudo pacman -Syu',
       },
     ],
     group: [
       {
         client: 'pacman',
-        configure: '# /etc/pacman.conf\n[{{repo}}]\nSigLevel = Required\nServer = {{base}}/os/$arch\n\n# private repository: Server = https://<USER>:<TOKEN>@{{host}}/repos/{{esc}}/os/$arch\n\n# trust the repository key\ncurl -fsSL {{base}}/public.key | sudo pacman-key --add -\nsudo pacman-key --lsign-key $(curl -fsSL {{base}}/public.key | gpg --show-keys --with-colons | awk -F: \'/^fpr/{print $10; exit}\')\n\n# packages keep the signatures of the members that hold them: trust each hosted member\'s key too (it is the group\'s when they share the active key), for example\n# curl -fsSL {{origin}}/repos/<member>/public.key | sudo pacman-key --add -',
+        configure: '# /etc/pacman.conf\n[{{repo}}]\nSigLevel = Required\nServer = {{base}}/os/$arch\n\n# private repository: Server = https://<USER>:<TOKEN>@{{basePath}}/os/$arch\n\n# trust the repository key\ncurl -fsSL {{base}}/public.key | sudo pacman-key --add -\nsudo pacman-key --lsign-key $(curl -fsSL {{base}}/public.key | gpg --show-keys --with-colons | awk -F: \'/^fpr/{print $10; exit}\')\n\n# packages keep the signatures of the members that hold them: trust each hosted member\'s key too (it is the group\'s when they share the active key), for example\n# curl -fsSL {{origin}}/repos/<member>/public.key | sudo pacman-key --add -',
       },
     ],
   },

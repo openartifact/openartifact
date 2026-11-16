@@ -384,3 +384,26 @@ describe('huggingface', () => {
     expect(clientSetup('huggingface', origin, 'hf', 'hosted')).toEqual(setup)
   })
 })
+
+describe('clientSetup under a path prefix', () => {
+  const origin = 'https://registry.example:8443/artifacts'
+
+  it('keeps the prefix in every /repos/ URL, including pacman private-repository lines', () => {
+    for (const format of ALL_FORMATS) {
+      for (const repoType of ['hosted', 'proxy', 'group']) {
+        for (const s of clientSetup(format, origin, 'repo1', repoType)) {
+          const text = `${s.configure}\n${s.publish ?? ''}`
+          for (const m of text.matchAll(/\/repos\//g)) {
+            expect(text.slice(0, m.index).endsWith('/artifacts')).toBe(true)
+          }
+        }
+      }
+    }
+    const [pacman] = clientSetup('pacman', origin, 'r1')
+    expect(pacman!.configure).toContain('@registry.example:8443/artifacts/repos/r1/os/$arch')
+  })
+
+  it('leaves docker host-only with the port', () => {
+    expect(clientSetup('docker', origin, 'r1')[0]!.configure).toContain('docker login registry.example:8443 ')
+  })
+})
