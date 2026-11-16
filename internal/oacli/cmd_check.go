@@ -13,6 +13,7 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"unicode"
 
 	"github.com/spf13/cobra"
 
@@ -33,10 +34,11 @@ const (
 )
 
 var (
-	errCheckLockfile = errors.New("--lockfile is required")
-	errLockfileSize  = fmt.Errorf("lockfile larger than %d MiB", maxLockfileBytes>>20)
-	errCheckResponse = errors.New("unexpected availability response")
-	errNoDev         = errors.New("--no-dev: the lockfile does not record which dependencies are development-only")
+	errCheckLockfile      = errors.New("--lockfile is required")
+	errLockfileSize       = fmt.Errorf("lockfile larger than %d MiB", maxLockfileBytes>>20)
+	errCheckResponse      = errors.New("unexpected availability response")
+	errCheckUnknownStatus = errors.New("unexpected availability response: unknown status (a newer server? update oa)")
+	errNoDev              = errors.New("--no-dev: the lockfile does not record which dependencies are development-only")
 )
 
 // checkReason is one reason of an availability result.
@@ -224,6 +226,11 @@ func runCheck(ctx context.Context, api *ciAPI, repo, path string, opts checkOpti
 					errCheckResponse, start+i, r.Package, r.Version, chunk[i].Name, chunk[i].Version)
 			}
 
+			// A status this oa does not know must not pass as "nothing held".
+			if _, known := report.Summary[r.Status]; !known {
+				return checkReport{}, fmt.Errorf("%w: %q for %s %s", errCheckUnknownStatus, r.Status, r.Package, r.Version)
+			}
+
 			r.Dev, r.RequiredBy = chunk[i].Dev, chunk[i].RequiredBy
 			report.Summary[r.Status]++
 			report.Results = append(report.Results, r)
@@ -302,10 +309,11 @@ func (r checkReport) text() string {
 		}
 
 		if r.Graph {
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-				res.Status, res.Package, res.Version, res.Repository, requiredByLine(res.RequiredBy), reasonLine(res.Reasons))
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", res.Status, printable(res.Package), printable(res.Version),
+				printable(res.Repository), printable(requiredByLine(res.RequiredBy)), printable(reasonLine(res.Reasons)))
 		} else {
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", res.Status, res.Package, res.Version, res.Repository, reasonLine(res.Reasons))
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", res.Status, printable(res.Package), printable(res.Version),
+				printable(res.Repository), printable(reasonLine(res.Reasons)))
 		}
 	}
 
@@ -319,6 +327,20 @@ func (r checkReport) text() string {
 	}
 
 	return b.String()
+}
+
+// printable is s with every control and invisible formatting character (an
+// escape sequence, a bidirectional override) replaced: names and reasons come
+// from the lockfile, the upstream and the rules, and must not drive the
+// terminal or redraw a line of the table. JSON output escapes them itself.
+func printable(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == unicode.ReplacementChar {
+			return '?'
+		}
+
+		return r
+	}, s)
 }
 
 // requiredByLine is the locked packages that pull a dependency in, up to three
