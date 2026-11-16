@@ -12,6 +12,8 @@ import (
 	"sync"
 	"unicode"
 
+	"golang.org/x/mod/module"
+
 	pkgcargo "github.com/openartifact/openartifact/pkg/cargo"
 	pkgcomposer "github.com/openartifact/openartifact/pkg/composer"
 	"github.com/openartifact/openartifact/pkg/lockfile"
@@ -32,8 +34,8 @@ func warmMetadata(ctx context.Context, api *ciAPI, repo string, kind lockfile.Ki
 	seen := map[string]bool{}
 
 	var (
-		paths   []string
-		refused = map[string]bool{}
+		paths, extra []string
+		refused      = map[string]bool{}
 	)
 
 	for _, d := range deps {
@@ -46,6 +48,15 @@ func warmMetadata(ctx context.Context, api *ciAPI, repo string, kind lockfile.Ki
 		if !seen[p] {
 			seen[p] = true
 			paths = append(paths, p)
+		}
+
+		// go: a build fetches the .info of each version and never the version
+		// list; with it cached, a release the module does not have is
+		// not_found instead of unknown. Requested once per module, and not
+		// counted: it is no package of the lockfile.
+		if lp, ok := goListPath(repo, kind, d); ok && !seen[lp] {
+			seen[lp] = true
+			extra = append(extra, lp)
 		}
 	}
 
@@ -70,6 +81,16 @@ func warmMetadata(ctx context.Context, api *ciAPI, repo string, kind lockfile.Ki
 		})
 	}
 
+	for _, p := range extra {
+		sem <- struct{}{}
+
+		wg.Go(func() {
+			defer func() { <-sem }()
+
+			fetchOK(ctx, api, p)
+		})
+	}
+
 	wg.Wait()
 
 	return &fetchSummary{Packages: len(paths) + len(refused), Failed: failed}
@@ -80,8 +101,10 @@ func warmMetadata(ctx context.Context, api *ciAPI, repo string, kind lockfile.Ki
 // dev-main or 1.x-dev, as Composer requests it), npm's packument (a scoped name
 // with its slash escaped, as npm requests it), the project page of the simple
 // API (Python, the name normalized by the lockfile), the sparse index file of a
-// crate, the compact index info file of a gem (as Bundler requests it) and the
-// flat container version list of a NuGet package (as dotnet restore does).
+// crate, the compact index info file of a gem (as Bundler requests it), the
+// flat container version list of a NuGet package (as dotnet restore does) and
+// the ".info" of a go module version (as a build does; the version list never
+// names a pseudo-version).
 //
 // The name comes from the lockfile, which may be someone else's (a pull
 // request): it only ever fills the package part of the path, percent-escaped.
@@ -91,6 +114,12 @@ func warmMetadata(ctx context.Context, api *ciAPI, repo string, kind lockfile.Ki
 func metadataPath(repo string, kind lockfile.Kind, d lockfile.Dep) (string, bool) {
 	base := "/repos/" + escape(repo) + "/"
 	name := d.Name
+
+	// A go module path has as many "/" as it likes: the go module rules decide
+	// what is one, and escape it as the go command does.
+	if kind == lockfile.GoSum {
+		return goInfoPath(base, d)
+	}
 
 	// Composer names are vendor/package and npm ones may be @scope/package;
 	// every other format names a package in one segment.
@@ -133,6 +162,42 @@ func metadataPath(repo string, kind lockfile.Kind, d lockfile.Dep) (string, bool
 	}
 
 	return base + escape(name), true
+}
+
+// goInfoPath is the ".info" of a go module version, which a build requests for
+// every version it uses (the version list never names a pseudo-version). ok is
+// false for a module path or version the go command would refuse.
+func goInfoPath(base string, d lockfile.Dep) (string, bool) {
+	if module.Check(d.Name, d.Version) != nil {
+		return "", false
+	}
+
+	escPath, err := module.EscapePath(d.Name)
+	if err != nil {
+		return "", false
+	}
+
+	escVersion, err := module.EscapeVersion(d.Version)
+	if err != nil {
+		return "", false
+	}
+
+	return base + escapePath(escPath) + "/@v/" + escape(escVersion) + ".info", true
+}
+
+// goListPath is the version list of d's module in repo, for a go.sum; ok is
+// false for another lockfile or a module path the go command would refuse.
+func goListPath(repo string, kind lockfile.Kind, d lockfile.Dep) (string, bool) {
+	if kind != lockfile.GoSum || module.CheckPath(d.Name) != nil {
+		return "", false
+	}
+
+	escPath, err := module.EscapePath(d.Name)
+	if err != nil {
+		return "", false
+	}
+
+	return "/repos/" + escape(repo) + "/" + escapePath(escPath) + "/@v/list", true
 }
 
 // packageName reports whether name can be a package name with at most slashes
