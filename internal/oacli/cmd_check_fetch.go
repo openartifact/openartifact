@@ -68,8 +68,9 @@ func warmMetadata(ctx context.Context, api *ciAPI, repo string, kind lockfile.Ki
 // d's version: composer's p2 document (p2/<name>~dev.json for a branch such as
 // dev-main or 1.x-dev, as Composer requests it), npm's packument (a scoped name
 // with its slash escaped, as npm requests it), the project page of the simple
-// API (Python, the name normalized by the lockfile) and the sparse index file
-// of a crate.
+// API (Python, the name normalized by the lockfile), the sparse index file of a
+// crate, the compact index info file of a gem (as Bundler requests it) and the
+// flat container version list of a NuGet package (as dotnet restore does).
 func metadataPath(repo string, kind lockfile.Kind, d lockfile.Dep) string {
 	base := "/repos/" + escape(repo) + "/"
 	name := d.Name
@@ -85,6 +86,10 @@ func metadataPath(repo string, kind lockfile.Kind, d lockfile.Dep) string {
 		return base + "simple/" + name + "/"
 	case lockfile.Cargo:
 		return base + "index/" + pkgcargo.IndexPathFor(strings.ToLower(name))
+	case lockfile.Bundler:
+		return base + "info/" + name
+	case lockfile.NuGet:
+		return base + "v3/package/" + strings.ToLower(name) + "/index.json"
 	}
 
 	if scope, pkg, ok := strings.Cut(name, "/"); ok && strings.HasPrefix(scope, "@") {

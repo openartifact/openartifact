@@ -4,7 +4,7 @@
 
 // Package lockfile reads the package versions a lockfile pins, for `oa check`:
 // composer.lock, npm's package-lock.json, pnpm-lock.yaml, yarn.lock, poetry.lock,
-// uv.lock and Cargo.lock. It keeps only what a client fetches from a package
+// uv.lock, Cargo.lock, Bundler's Gemfile.lock and NuGet's packages.lock.json. It keeps only what a client fetches from a package
 // registry: local, linked, bundled and VCS or file dependencies are left out,
 // since no registry serves them.
 package lockfile
@@ -37,6 +37,10 @@ const (
 	UV     Kind = "uv"
 	// Cargo does not record development dependencies: no Dep of it is Dev.
 	Cargo Kind = "cargo"
+	// Bundler (Gemfile.lock) and NuGet (packages.lock.json) do not record
+	// development dependencies either.
+	Bundler Kind = "bundler"
+	NuGet   Kind = "nuget"
 )
 
 // Dep is one package version a lockfile pins. Dev reports that the lockfile
@@ -55,7 +59,7 @@ var (
 	// ErrUnknownLockfile is a file name Parse cannot tell the format of.
 	ErrUnknownLockfile = errors.New(
 		"unknown lockfile: expected composer.lock, package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, yarn.lock, " +
-			"poetry.lock, uv.lock or Cargo.lock",
+			"poetry.lock, uv.lock, Cargo.lock, Gemfile.lock or packages.lock.json",
 	)
 	// ErrInvalid is a lockfile that is not the document its format expects.
 	ErrInvalid = errors.New("invalid lockfile")
@@ -78,6 +82,10 @@ func KindOf(path string) (Kind, error) {
 		return UV, nil
 	case "Cargo.lock":
 		return Cargo, nil
+	case "Gemfile.lock", "gems.locked":
+		return Bundler, nil
+	case "packages.lock.json":
+		return NuGet, nil
 	}
 
 	return "", fmt.Errorf("%w: %s", ErrUnknownLockfile, filepath.Base(path))
@@ -107,6 +115,10 @@ func Parse(kind Kind, data []byte) ([]Dep, error) {
 		deps, err = parseUV(data)
 	case Cargo:
 		deps, err = parseCargo(data)
+	case Bundler:
+		deps, err = parseBundler(data)
+	case NuGet:
+		deps, err = parseNuGet(data)
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnknownLockfile, kind)
 	}
@@ -119,12 +131,13 @@ func Parse(kind Kind, data []byte) ([]Dep, error) {
 }
 
 // DevRecorded reports whether a lockfile of kind says which dependencies are
-// development-only, so that leaving them out means something: yarn.lock and
-// Cargo.lock never do, a poetry.lock only when Poetry 2 (or a Poetry before
+// development-only, so that leaving them out means something: yarn.lock,
+// Cargo.lock, Gemfile.lock and packages.lock.json never do, a poetry.lock only
+// when Poetry 2 (or a Poetry before
 // 1.5) wrote it.
 func DevRecorded(kind Kind, data []byte) bool {
 	switch kind {
-	case Yarn, Cargo:
+	case Yarn, Cargo, Bundler, NuGet:
 		return false
 	case Poetry:
 		return poetryRecordsDev(data)

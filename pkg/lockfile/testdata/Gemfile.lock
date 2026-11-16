@@ -1,0 +1,42 @@
+GIT
+  remote: https://github.com/acme/acme-color
+  revision: accffb58fb0dedd17d68f484031a571fd905acb3
+  tag: v3.1.1
+  specs:
+    acme-color (3.1.1)
+
+PATH
+  remote: acme-local
+  specs:
+    acme-local (0.1.0)
+      acme-rack (>= 3)
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+    acme_build2 (2.8.9)
+    acme-test (5.25.1)
+    acme-xml (1.16.7)
+      acme_build2 (~> 2.8.2)
+      acme-parse (~> 1.4)
+    acme-xml (1.16.7-aarch64-linux)
+      acme-parse (~> 1.4)
+    acme-xml (1.16.7-x86_64-linux)
+      acme-parse (~> 1.4)
+    acme-parse (1.8.1)
+    acme-rack (3.1.8)
+
+PLATFORMS
+  aarch64-linux
+  ruby
+  x86_64-linux
+
+DEPENDENCIES
+  acme-local!
+  acme-test (= 5.25.1)
+  acme-xml (= 1.16.7)
+  acme-rack (= 3.1.8)
+  acme-color!
+
+BUNDLED WITH
+   2.6.8

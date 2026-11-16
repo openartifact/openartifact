@@ -17,10 +17,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 const nugetRepoURL = oaBase + "/repos/nugetorg"
@@ -180,6 +182,8 @@ func (g *nugetFeed) handler(w http.ResponseWriter, r *http.Request) {
 		json200(g.serviceIndex())
 	case "/flat/lib.a/index.json":
 		json200(`{"versions":["1.0.0"]}`)
+	case "/flat/big/index.json":
+		json200(`{"versions":["1.0.0","2.0.0","3.0.0"]}`)
 	case "/flat/lib.a/1.0.0/lib.a.1.0.0.nupkg":
 		_, _ = w.Write(g.nupkg)
 	case "/flat/lib.a/1.0.0/lib.a.nuspec":
@@ -726,5 +730,85 @@ func TestNuGetProxy_OversizedGzipDocumentIsAnUpstreamError(t *testing.T) {
 
 	if w.Code != http.StatusBadGateway {
 		t.Errorf("status %d, want 502", w.Code)
+	}
+}
+
+// TestNuGetVersions_FlatContainerFillsInTheRegistration: the batch availability
+// check lists versions from the registration index; after a plain dotnet
+// restore only the flat container is cached, and nuget.org links the pages of
+// a package of many versions instead of inlining them. The flat container then
+// lists the versions, dated where the cached registration dates them.
+func TestNuGetVersions_FlatContainerFillsInTheRegistration(t *testing.T) {
+	ctx := context.Background()
+	f, _ := nugetFixture(t)
+
+	versions := func(id string) ([]string, bool, bool) {
+		list, ok := f.svc.CachedVersions(ctx, f.repo, id)
+
+		var (
+			out   []string
+			dated = len(list) > 0
+		)
+
+		for _, v := range list {
+			out = append(out, v.Version)
+			dated = dated && !v.Published.IsZero()
+		}
+
+		return out, dated, ok
+	}
+
+	if _, _, ok := versions("Lib.A"); ok {
+		t.Fatal("versions listed before anything was cached")
+	}
+
+	// What dotnet restore requests: the flat container.
+	if w := f.do(http.MethodGet, "v3/package/lib.a/index.json"); w.Code != http.StatusOK {
+		t.Fatalf("flat container = %d", w.Code)
+	}
+
+	if got, dated, ok := versions("Lib.A"); !ok || !slices.Equal(got, []string{"1.0.0"}) || dated {
+		t.Errorf("from the flat container: %v (dated %v), %v; want [1.0.0] undated", got, dated, ok)
+	}
+
+	// A complete registration index, once cached, lists them itself.
+	if w := f.do(http.MethodGet, "v3/registration/lib.a/index.json"); w.Code != http.StatusOK {
+		t.Fatalf("registration = %d", w.Code)
+	}
+
+	if got, _, ok := versions("lib.a"); !ok || !slices.Equal(got, []string{"1.0.0"}) {
+		t.Errorf("with the registration: %v, %v; want [1.0.0]", got, ok)
+	}
+
+	// Paged registration: the index inlines no version.
+	if w := f.do(http.MethodGet, "v3/registration/big/index.json"); w.Code != http.StatusOK {
+		t.Fatalf("paged registration = %d", w.Code)
+	}
+
+	if _, _, ok := versions("big"); ok {
+		t.Error("a paged registration index alone listed versions")
+	}
+
+	if w := f.do(http.MethodGet, "v3/package/big/index.json"); w.Code != http.StatusOK {
+		t.Fatalf("flat container of big = %d", w.Code)
+	}
+
+	if got, _, ok := versions("big"); !ok || !slices.Equal(got, []string{"1.0.0", "2.0.0", "3.0.0"}) {
+		t.Errorf("paged registration and flat container: %v, %v; want all three", got, ok)
+	}
+}
+
+// TestNuGetFlatDated: a flat container version is dated by the registration
+// item of the same version, compared without case.
+func TestNuGetFlatDated(t *testing.T) {
+	day := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+
+	got, ok := nugetFlatDated([]byte(`{"versions":["1.0.0","2.0.0-beta"]}`), []DatedVersion{{Version: "2.0.0-Beta", Published: day}})
+	if !ok || len(got) != 2 || !got[0].Published.IsZero() || got[1] != (DatedVersion{Version: "2.0.0-Beta", Published: day}) {
+		t.Errorf("nugetFlatDated = %+v, %v", got, ok)
+	}
+
+	if _, ok := nugetFlatDated([]byte("<html>"), nil); ok {
+		t.Error("a document that is not a version list was read")
 	}
 }

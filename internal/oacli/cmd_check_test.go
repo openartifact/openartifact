@@ -37,7 +37,7 @@ type checkServer struct {
 }
 
 // checkRepos are the repositories the check server knows.
-var checkRepos = []string{"php", "npm", "pypi", "crates"} //nolint:gochecknoglobals // test fixture
+var checkRepos = []string{"php", "npm", "pypi", "crates", "gems", "nuget"} //nolint:gochecknoglobals // test fixture
 
 func newCheckServer(t *testing.T, status int) *checkServer {
 	t.Helper()
@@ -260,12 +260,12 @@ func TestCheckBatchesAndJSON(t *testing.T) {
 // invalid lockfile and a server error fail before or instead of a verdict.
 func TestCheckRefuses(t *testing.T) {
 	dir := t.TempDir()
-	gems := filepath.Join(dir, "Gemfile.lock")
+	unknown := filepath.Join(dir, "Pipfile.lock")
 	yarn := filepath.Join(dir, "yarn.lock")
 	broken := filepath.Join(dir, "package-lock.json")
 	testdata := filepath.Join("..", "..", "pkg", "lockfile", "testdata")
 
-	for path, data := range map[string]string{gems: "GEM\n", yarn: "# yarn lockfile v1", broken: "{not json"} {
+	for path, data := range map[string]string{unknown: "{}", yarn: "# yarn lockfile v1", broken: "{not json"} {
 		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -278,7 +278,7 @@ func TestCheckRefuses(t *testing.T) {
 		wantErr string
 	}{
 		{"no lockfile", []string{"check", "php"}, 0, "--lockfile is required"},
-		{"unknown lockfile", []string{"check", "php", "--lockfile", gems}, 0, "unknown lockfile"},
+		{"unknown lockfile", []string{"check", "php", "--lockfile", unknown}, 0, "unknown lockfile"},
 		{"--no-dev with yarn.lock", []string{"check", "npm", "--lockfile", yarn, "--no-dev"}, 0, "does not record which dependencies"},
 		{"--no-dev with Cargo.lock", []string{"check", "crates", "--lockfile", filepath.Join(testdata, "Cargo.lock"), "--no-dev"},
 			0, "does not record which dependencies"},
@@ -457,6 +457,8 @@ func TestCheckLockfiles(t *testing.T) {
 		{"poetry.lock", "pypi", true, 6, 6, "/repos/pypi/simple/acme-url/"},
 		{"poetry-1.8/poetry.lock", "pypi", false, 14, 14, "/repos/pypi/simple/acme-charset/"},
 		{"Cargo.lock", "crates", false, 9, 9, "/repos/crates/index/ac/me/acme_serde_derive"},
+		{"Gemfile.lock", "gems", false, 5, 5, "/repos/gems/info/acme-xml"},
+		{"packages.lock.json", "nuget", false, 4, 4, "/repos/nuget/v3/package/acme.log.console/index.json"},
 	} {
 		t.Run(fmt.Sprintf("%s no-dev=%v", tc.lock, tc.noDev), func(t *testing.T) {
 			srv := newCheckServer(t, 0)
@@ -498,6 +500,8 @@ func TestMetadataPath(t *testing.T) {
 		{lockfile.Cargo, "a", "1.0.0", "/repos/r%2Fx/index/1/a"},
 		{lockfile.Cargo, "abc", "1.0.0", "/repos/r%2Fx/index/3/a/abc"},
 		{lockfile.Cargo, "Serde_Json", "1.0.0", "/repos/r%2Fx/index/se/rd/serde_json"},
+		{lockfile.Bundler, "acme-xml", "1.16.7", "/repos/r%2Fx/info/acme-xml"},
+		{lockfile.NuGet, "Acme.Log", "4.0.0", "/repos/r%2Fx/v3/package/acme.log/index.json"},
 	} {
 		if got := metadataPath("r/x", tc.kind, lockfile.Dep{Name: tc.name, Version: tc.version}); got != tc.want {
 			t.Errorf("metadataPath(%s, %s %s) = %q, want %q", tc.kind, tc.name, tc.version, got, tc.want)

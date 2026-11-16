@@ -117,3 +117,17 @@ func FuzzCargoLock(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, data []byte) { checkDeps(t, Cargo, data) })
 }
+
+func FuzzGemfileLock(f *testing.F) {
+	addSeed(f, "testdata/Gemfile.lock")
+	f.Add([]byte("GEM\n  specs:\n    a (1.0-x86_64-linux)\n      a\n      b (>= 1)\nPATH\n  specs:\n    c (0.1)\n      a\n"))
+
+	f.Fuzz(func(t *testing.T, data []byte) { checkDeps(t, Bundler, data) })
+}
+
+func FuzzNuGetLock(f *testing.F) {
+	addSeed(f, "testdata/packages.lock.json")
+	f.Add([]byte(`{"version":1,"dependencies":{"x":{"A":{"type":"Project","dependencies":{"a":"1"}},"a":{"resolved":"1.0"}}}}`))
+
+	f.Fuzz(func(t *testing.T, data []byte) { checkDeps(t, NuGet, data) })
+}

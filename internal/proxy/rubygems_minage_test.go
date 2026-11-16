@@ -7,10 +7,12 @@ package proxy
 import (
 	"bytes"
 	"compress/zlib"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -384,5 +386,51 @@ func TestParseGemDates(t *testing.T) {
 
 	if d, err := parseGemDates([]byte(`[]`)); d != nil || err != nil {
 		t.Errorf("empty = %v, %v", d, err)
+	}
+}
+
+// TestRubyGemsVersionsFromTheInfoFile: without the minimum age the proxy never
+// fetches the versions API document, so the versions of a gem come from the
+// info file Bundler requested, platforms folded and undated; the dated API
+// document wins once it is cached.
+func TestRubyGemsVersionsFromTheInfoFile(t *testing.T) {
+	ctx := context.Background()
+	f, _ := gemAgeFixture(t, 0)
+
+	if _, ok := f.svc.CachedVersions(ctx, f.repo, "lib"); ok {
+		t.Fatal("versions listed before anything was cached")
+	}
+
+	if w := gemDo(f, http.MethodGet, "info/lib", nil); w.Code != http.StatusOK {
+		t.Fatalf("info: %d", w.Code)
+	}
+
+	list, ok := f.svc.CachedVersions(ctx, f.repo, "lib")
+	if !ok {
+		t.Fatal("no versions from the cached info file")
+	}
+
+	var got []string
+
+	for _, v := range list {
+		if !v.Published.IsZero() {
+			t.Errorf("%s dated %v: the info file states no time", v.Version, v.Published)
+		}
+
+		got = append(got, v.Version)
+	}
+
+	if want := []string{"1.0.0", "1.1.0", "2.0.0", "3.0.0"}; !slices.Equal(got, want) {
+		t.Errorf("versions = %v, want %v", got, want)
+	}
+
+	// With the minimum age the API document is fetched, and its dates win.
+	f.repo.MinAgeHours = gemAgeGate
+	if w := gemDo(f, http.MethodGet, "info/lib", nil); w.Code != http.StatusOK {
+		t.Fatalf("info with the minimum age: %d", w.Code)
+	}
+
+	if list, ok = f.svc.CachedVersions(ctx, f.repo, "lib"); !ok || len(list) == 0 || list[0].Published.IsZero() {
+		t.Errorf("with the API document cached: %+v, %v; want dated versions", list, ok)
 	}
 }

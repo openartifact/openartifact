@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openartifact/openartifact/pkg/compactindex"
+
 	"golang.org/x/mod/module"
 
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -129,13 +131,31 @@ func (s *Service) helmVersions(ctx context.Context, repo *models.Repository, nam
 	return out, true
 }
 
-// nugetVersionList is Hooks.Versions: the versions of the cached registration
-// index of id whose pages are inline (a page the feed links instead is not in the
-// index document).
+// nugetVersionList is Hooks.Versions: the versions of package id, dated by the cached
+// registration index. When that index does not list every version (it is not
+// cached, or its pages are separate documents, as nuget.org's are for a package
+// of many versions), the versions come from the cached flat container document
+// dotnet restore requests, dated where the index dates them.
 func (s *Service) nugetVersionList(ctx context.Context, repo *models.Repository, id string) ([]DatedVersion, bool) {
-	p := nugetPath{kind: nugetRegIndex, id: strings.ToLower(id)}
+	id = strings.ToLower(id)
+	dated, complete := s.nugetRegistrationVersions(ctx, repo, id)
 
-	body, ok := s.cachedDocBody(ctx, repo, metaDoc{key: p.key(), limit: maxNuGetDocBytes, what: "nuget document"})
+	if !complete {
+		if body, ok := s.cachedDocBody(ctx, repo, nugetMetaDoc(nugetPath{kind: nugetVersions, id: id})); ok {
+			if flat, ok := nugetFlatDated(body, dated); ok {
+				return flat, true
+			}
+		}
+	}
+
+	return dated, len(dated) > 0
+}
+
+// nugetRegistrationVersions lists the versions the cached registration index of
+// id holds inline, with their publish times; complete is false when the index
+// is not cached or a page of it is a separate document.
+func (s *Service) nugetRegistrationVersions(ctx context.Context, repo *models.Repository, id string) ([]DatedVersion, bool) {
+	body, ok := s.cachedDocBody(ctx, repo, nugetMetaDoc(nugetPath{kind: nugetRegIndex, id: id}))
 	if !ok {
 		return nil, false
 	}
@@ -152,7 +172,11 @@ func (s *Service) nugetVersionList(ctx context.Context, repo *models.Repository,
 
 	var out []DatedVersion
 
+	complete := true
+
 	for _, page := range pages {
+		complete = complete && page.Inline
+
 		for _, it := range page.Items {
 			if v, published := nugetItemMeta(it); v != "" {
 				out = append(out, DatedVersion{Version: v, Published: published})
@@ -160,15 +184,52 @@ func (s *Service) nugetVersionList(ctx context.Context, repo *models.Repository,
 		}
 	}
 
-	return out, len(out) > 0
+	return out, complete
+}
+
+// nugetFlatDated lists the versions of a flat container document, each
+// dated as dated (the registration items) dates it, compared without case.
+func nugetFlatDated(body []byte, dated []DatedVersion) ([]DatedVersion, bool) {
+	doc, err := gunzipDoc(body)
+	if err != nil {
+		return nil, false
+	}
+
+	versions, err := pkgnuget.ParseVersionList(doc)
+	if err != nil {
+		return nil, false
+	}
+
+	when := make(map[string]DatedVersion, len(dated))
+	for _, d := range dated {
+		when[strings.ToLower(d.Version)] = d
+	}
+
+	out := make([]DatedVersion, len(versions))
+	for i, v := range versions {
+		if d, ok := when[strings.ToLower(v)]; ok {
+			out[i] = d
+		} else {
+			out[i] = DatedVersion{Version: v}
+		}
+	}
+
+	return out, true
+}
+
+// nugetMetaDoc reads the cached metadata document p names (never fetched).
+func nugetMetaDoc(p nugetPath) metaDoc {
+	return metaDoc{key: p.key(), limit: maxNuGetDocBytes, what: "nuget document"}
 }
 
 // rubygemsVersions lists the versions of the cached versions API document of
-// gem, each with the newest time of its platforms.
+// gem, each with the newest time of its platforms. The proxy fetches that
+// document only for the minimum age; without it, the versions come undated
+// from the cached compact index info file Bundler requests (rubygemsInfoVersions).
 func (s *Service) rubygemsVersions(ctx context.Context, repo *models.Repository, gem string) ([]DatedVersion, bool) {
 	body, ok := s.cachedDocBody(ctx, repo, rubygemsAPIDoc(gem))
 	if !ok {
-		return nil, false
+		return s.rubygemsInfoVersions(ctx, repo, gem)
 	}
 
 	dates, err := parseGemDates(body)
@@ -282,6 +343,33 @@ func (s *Service) ansibleVersions(ctx context.Context, repo *models.Repository, 
 	out := make([]DatedVersion, len(page.Versions))
 	for i, v := range page.Versions {
 		out[i] = DatedVersion{Version: v.Version, Published: galaxyPublished(v.CreatedAt)}
+	}
+
+	return out, true
+}
+
+// rubygemsInfoVersions lists the versions of the cached compact index info file
+// of gem, platforms folded into one version (gemNumber, as the gate judges
+// them), with no publish time: the info file states none.
+func (s *Service) rubygemsInfoVersions(ctx context.Context, repo *models.Repository, gem string) ([]DatedVersion, bool) {
+	body, ok := s.cachedDocBody(ctx, repo, rubygemsInfoDoc(gem))
+	if !ok {
+		return nil, false
+	}
+
+	lines, err := compactindex.ParseInfoBytes(body)
+	if err != nil {
+		return nil, false
+	}
+
+	seen := make(map[string]bool, len(lines))
+	out := make([]DatedVersion, 0, len(lines))
+
+	for _, l := range lines {
+		if n := gemNumber(l.Version); !seen[n] {
+			seen[n] = true
+			out = append(out, DatedVersion{Version: n})
+		}
 	}
 
 	return out, true
