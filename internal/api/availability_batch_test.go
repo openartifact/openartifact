@@ -551,3 +551,71 @@ func TestAvailabilityBatchPyPISpellings(t *testing.T) {
 		t.Errorf("result version = %q, want the query's spelling", got.Results[0].Version)
 	}
 }
+
+// TestAvailabilityBatchGoVersions: a go proxy has a version when the ".info" a
+// build fetched is cached, whether or not the cached "@v/list" names it (it
+// never names a pseudo-version, and a build never requests it). Without that
+// document a pseudo-version is unknown, and a release a cached list lacks is
+// not there.
+func TestAvailabilityBatchGoVersions(t *testing.T) {
+	day := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	goProxy := &models.Repository{ID: "p-go", Name: "go-proxy", Format: "go", RepoType: "proxy", CurationMode: "denylist"}
+
+	const (
+		pseudo   = "v0.0.0-20260102030405-0123456789ab"
+		uncached = "v0.0.0-20260203040506-ba9876543210"
+	)
+
+	st := &batchStore{rules: map[string][]curation.Rule{
+		goProxy.ID: {{ID: "r-evil", Action: curation.ActionBlock, Package: "example.com/evil", Reason: "malicious"}},
+	}}
+	cache := &batchCache{
+		fakePublished: fakePublished{
+			"example.com/lib@" + pseudo:  day,
+			"example.com/built@v1.2.0":   day,
+			"example.com/evil@" + pseudo: day,
+			"example.com/lib@v1.0.0":     day,
+		},
+		versions: map[string]map[string][]proxy.DatedVersion{goProxy.ID: {
+			"example.com/lib": {{Version: "v1.0.0", Published: day}, {Version: "v1.1.0"}},
+		}},
+	}
+
+	got, err := ExplainAvailabilityBatch(context.Background(), st, cache, goProxy, q(
+		"example.com/lib", "v1.0.0", // listed
+		"example.com/lib", pseudo, // not listed, its .info cached
+		"example.com/lib", uncached, // a pseudo-version nothing is cached of
+		"example.com/lib", "v9.9.9", // a release the cached list lacks
+		"example.com/built", "v1.2.0", // no list cached, its .info cached (after a build)
+		"example.com/built", "v1.3.0", // no list cached, nothing of it either
+		"example.com/evil", pseudo, // cached, and a rule blocks the module
+	), readable)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	check(t, got, []wantResult{
+		{StatusAvailable, "go-proxy", ""},
+		{StatusAvailable, "go-proxy", ""},
+		{StatusUnknown, "go-proxy", sourceUnknown},
+		{StatusNotFound, "go-proxy", sourceNotFound},
+		{StatusAvailable, "go-proxy", ""},
+		{StatusUnknown, "go-proxy", sourceUnknown},
+		{StatusHeld, "go-proxy", curation.SourceCuration},
+	})
+
+	if got.Results[1].PublishedAt == "" {
+		t.Error("the pseudo-version is not dated by its .info")
+	}
+
+	// A format that lists every version is not asked version by version.
+	st2, cache2 := newBatchWorld(&batchStore{})
+	cache2.fakePublished = fakePublished{"monolog/monolog@9.9.9": day}
+
+	got, err = ExplainAvailabilityBatch(context.Background(), st2, cache2, proxyP, q("monolog/monolog", "9.9.9"), readable)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	check(t, got, []wantResult{{StatusNotFound, "php-proxy", sourceNotFound}})
+}

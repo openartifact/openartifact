@@ -220,6 +220,25 @@ func VersionKey(format, version string) string {
 	return version
 }
 
+// DatesVersionsAlone reports whether a version of format that PublishTime dates
+// exists in the proxy even when CachedVersions does not list it
+// (Hooks.VersionDated): the batch availability check then asks PublishTime
+// about a version the list does not name, or when no list is cached.
+func DatesVersionsAlone(format string) bool {
+	h, found := hooks.Lookup(format)
+
+	return found && h.VersionDated && h.Published != nil
+}
+
+// Unlisted reports whether the version list of format never names version
+// (Hooks.Unlisted), so that a list without it does not mean the upstream
+// lacks it.
+func Unlisted(format, version string) bool {
+	h, found := hooks.Lookup(format)
+
+	return found && h.Unlisted != nil && h.Unlisted(version)
+}
+
 // HeldBack is a version of an upstream package the repository's gate keeps from
 // its clients.
 type HeldBack struct {
