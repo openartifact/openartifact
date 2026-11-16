@@ -1,0 +1,138 @@
+version = 1
+revision = 3
+requires-python = ">=3.10"
+
+[[package]]
+name = "acme-certs"
+version = "2026.10.23"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "acme-charset"
+version = "3.5.2"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "acme-color"
+version = "0.4.6"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "acme-app"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "acme-local" },
+    { name = "acme-http" },
+    { name = "acme-six" },
+]
+
+[package.optional-dependencies]
+fast = [
+    { name = "acme-json" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "acme-test" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "acme-local", directory = "acme-local" },
+    { name = "acme-http", specifier = "==2.32.3" },
+    { name = "acme-six", git = "https://github.com/acme/acme-six?rev=1.16.0" },
+    { name = "acme-json", marker = "extra == 'fast'", specifier = "==5.10.0" },
+]
+provides-extras = ["fast"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "acme-test", specifier = "==8.3.3" }]
+
+[[package]]
+name = "acme-exc"
+version = "1.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "acme-typing", marker = "python_full_version < '3.13'" },
+]
+
+[[package]]
+name = "acme-idna"
+version = "3.20"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "acme-ini"
+version = "2.3.1"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "acme-local"
+version = "0.1.0"
+source = { directory = "acme-local" }
+dependencies = [
+    { name = "acme-idna" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "acme-idna" }]
+
+[[package]]
+name = "acme-packaging"
+version = "26.3"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "acme-plug"
+version = "1.7.0"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "acme-test"
+version = "8.3.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "acme-color", marker = "sys_platform == 'win32'" },
+    { name = "acme-exc", marker = "python_full_version < '3.11'" },
+    { name = "acme-ini" },
+    { name = "acme-packaging" },
+    { name = "acme-plug" },
+    { name = "acme-toml", marker = "python_full_version < '3.11'" },
+]
+
+[[package]]
+name = "acme-http"
+version = "2.32.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "acme-certs" },
+    { name = "acme-charset" },
+    { name = "acme-idna" },
+    { name = "acme-url" },
+]
+
+[[package]]
+name = "acme-six"
+version = "1.16.0"
+source = { git = "https://github.com/acme/acme-six?rev=1.16.0#65486e4383f9f411da95937451205d3c7b61b9e1" }
+
+[[package]]
+name = "acme-toml"
+version = "2.5.0"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "acme-typing"
+version = "4.16.0"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "acme-json"
+version = "5.10.0"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "acme-url"
+version = "2.8.0"
+source = { registry = "https://pypi.org/simple" }

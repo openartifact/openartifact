@@ -94,3 +94,26 @@ func FuzzYarnLock(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, data []byte) { checkDeps(t, Yarn, data) })
 }
+
+func FuzzPoetryLock(f *testing.F) {
+	addSeed(f, "testdata/poetry.lock")
+	addSeed(f, "testdata/poetry-1.8/poetry.lock")
+	f.Add([]byte("[[package]]\nname = \"A_b\"\nversion = \"1\"\ncategory = \"dev\"\n[package.dependencies]\nc = \"*\"\n"))
+
+	f.Fuzz(func(t *testing.T, data []byte) { checkDeps(t, Poetry, data) })
+}
+
+func FuzzUVLock(f *testing.F) {
+	addSeed(f, "testdata/uv.lock")
+	f.Add([]byte("version = 1\n[[package]]\nname = \"a\"\nversion = \"1\"\nsource = { virtual = \".\" }\n" +
+		"dependencies = [{ name = \"a\" }]\n"))
+
+	f.Fuzz(func(t *testing.T, data []byte) { checkDeps(t, UV, data) })
+}
+
+func FuzzCargoLock(f *testing.F) {
+	addSeed(f, "testdata/Cargo.lock")
+	f.Add([]byte("[[package]]\nname = \"a\"\nversion = \"1.0.0\"\nsource = \"sparse+x\"\ndependencies = [\"a 1.0.0\", \" \"]\n"))
+
+	f.Fuzz(func(t *testing.T, data []byte) { checkDeps(t, Cargo, data) })
+}

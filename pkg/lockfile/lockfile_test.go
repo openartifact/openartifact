@@ -40,6 +40,31 @@ func jsDeps(dev, reactPeer bool) []Dep {
 	}
 }
 
+// pyDeps is what each Python fixture installs from an index: the same project
+// locked by uv, Poetry 2.2 and Poetry 1.8 (acme-six, a git dependency, and
+// acme-local, a directory one, are left out; acme-json is an extra). dev marks
+// the packages only the dev group needs; Poetry 1.8 records none.
+func pyDeps(dev bool) []Dep {
+	by := func(names ...string) []string { return names }
+
+	return []Dep{
+		{Name: "acme-certs", Version: "2026.10.23", RequiredBy: by("acme-http")},
+		{Name: "acme-charset", Version: "3.5.2", RequiredBy: by("acme-http")},
+		{Name: "acme-color", Version: "0.4.6", Dev: dev, RequiredBy: by("acme-test")},
+		{Name: "acme-exc", Version: "1.3.1", Dev: dev, RequiredBy: by("acme-test")},
+		{Name: "acme-http", Version: "2.32.3"},
+		{Name: "acme-idna", Version: "3.20", RequiredBy: by("acme-http", "acme-local")},
+		{Name: "acme-ini", Version: "2.3.1", Dev: dev, RequiredBy: by("acme-test")},
+		{Name: "acme-json", Version: "5.10.0"},
+		{Name: "acme-packaging", Version: "26.3", Dev: dev, RequiredBy: by("acme-test")},
+		{Name: "acme-plug", Version: "1.7.0", Dev: dev, RequiredBy: by("acme-test")},
+		{Name: "acme-test", Version: "8.3.3", Dev: dev},
+		{Name: "acme-toml", Version: "2.5.0", Dev: dev, RequiredBy: by("acme-test")},
+		{Name: "acme-typing", Version: "4.16.0", Dev: dev, RequiredBy: by("acme-exc")},
+		{Name: "acme-url", Version: "2.8.0", RequiredBy: by("acme-http")},
+	}
+}
+
 func parseFile(t *testing.T, kind Kind, path string) []Dep {
 	t.Helper()
 
@@ -91,6 +116,22 @@ func TestParse(t *testing.T) {
 		{"pnpm-lock.yaml v9.0", PNPM, "testdata/pnpm-lock.yaml", jsDeps(true, true)},
 		{"yarn.lock v1", Yarn, "testdata/yarn-v1.lock", jsDeps(false, false)},
 		{"yarn.lock berry", Yarn, "testdata/yarn.lock", jsDeps(false, true)},
+		{"uv.lock", UV, "testdata/uv.lock", pyDeps(true)},
+		{"poetry.lock 2.1", Poetry, "testdata/poetry.lock", pyDeps(true)},
+		{"poetry.lock 2.0", Poetry, "testdata/poetry-1.8/poetry.lock", pyDeps(false)},
+		// A workspace (acme-app, acme-helper) with a git crate (acme-cfg) and
+		// a dev-dependency (acme-hex) Cargo.lock does not mark.
+		{"Cargo.lock", Cargo, "testdata/Cargo.lock", []Dep{
+			{Name: "acme-hex", Version: "0.4.3"},
+			{Name: "acme-ident", Version: "1.0.27", RequiredBy: []string{"acme-macro", "acme-syn"}},
+			{Name: "acme-itoa", Version: "1.0.11"},
+			{Name: "acme-macro", Version: "1.0.107", RequiredBy: []string{"acme-quote", "acme-syn", "acme_serde_derive"}},
+			{Name: "acme-memchr", Version: "2.7.4"},
+			{Name: "acme-quote", Version: "1.0.47", RequiredBy: []string{"acme-syn", "acme_serde_derive"}},
+			{Name: "acme-serde", Version: "1.0.210"},
+			{Name: "acme-syn", Version: "2.0.119", RequiredBy: []string{"acme_serde_derive"}},
+			{Name: "acme_serde_derive", Version: "1.0.210", RequiredBy: []string{"acme-serde"}},
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := parseFile(t, tc.kind, tc.file); !reflect.DeepEqual(got, tc.want) {
@@ -127,13 +168,20 @@ func TestParseRejects(t *testing.T) {
 		{"yarn berry wrong type", Yarn, "__metadata:\n  version: 8\na@npm:1: x\n"},
 		{"yarn classic without a header", Yarn, "  version \"1.0.0\"\n"},
 		{"yarn classic header without a colon", Yarn, "a@^1.0.0\n"},
+		{"poetry empty", Poetry, ""},
+		{"poetry not TOML", Poetry, "[[package]\n"},
+		{"poetry wrong type", Poetry, "package = 1\n"},
+		{"uv without version", UV, "[[package]]\nname = \"a\"\n"},
+		{"uv wrong type", UV, "version = 1\npackage = \"a\"\n"},
+		{"cargo empty", Cargo, ""},
+		{"cargo wrong type", Cargo, "version = 4\npackage = [1]\n"},
 	} {
 		if _, err := Parse(tc.kind, []byte(tc.data)); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: err = %v, want ErrInvalid", tc.name, err)
 		}
 	}
 
-	if _, err := Parse("cargo", []byte("{}")); !errors.Is(err, ErrUnknownLockfile) {
+	if _, err := Parse("gradle", []byte("{}")); !errors.Is(err, ErrUnknownLockfile) {
 		t.Errorf("unknown kind: err = %v", err)
 	}
 }
@@ -146,12 +194,138 @@ func TestKindOf(t *testing.T) {
 		"/src/npm-shrinkwrap.json": NPM,
 		"yarn.lock":                Yarn,
 		"web/pnpm-lock.yaml":       PNPM,
-		"Cargo.lock":               "",
+		"Cargo.lock":               Cargo,
+		"py/poetry.lock":           Poetry,
+		"uv.lock":                  UV,
+		"cargo.lock":               "",
+		"Pipfile.lock":             "",
 		"composer.json":            "",
 	} {
 		got, err := KindOf(path)
 		if got != want || (want == "") != errors.Is(err, ErrUnknownLockfile) {
 			t.Errorf("KindOf(%q) = %q, %v; want %q", path, got, err, want)
+		}
+	}
+}
+
+// TestParseSources: only index and registry sources count, whichever spelling
+// of a dependency a lockfile uses.
+func TestParseSources(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		kind Kind
+		data string
+		want []Dep
+	}{
+		{"cargo sparse registry, old dependency spelling", Cargo, `
+[[package]]
+name = "a"
+version = "1.0.0"
+source = "sparse+https://oa.example.test/repos/crates/index/"
+dependencies = ["b 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)"]
+
+[[package]]
+name = "b"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "c"
+version = "0.1.0"
+source = "git+https://example.test/c#0123"
+dependencies = ["b"]
+`, []Dep{
+			{Name: "a", Version: "1.0.0"},
+			{Name: "b", Version: "2.0.0", RequiredBy: []string{"a", "c"}},
+		}},
+		{"uv two versions of a name, url and path sources", UV, `
+version = 1
+
+[[package]]
+name = "app"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [{ name = "b", version = "2.0.0", source = { registry = "https://pypi.org/simple" } }]
+
+[package.dev-dependencies]
+test = [{ name = "b", version = "1.0.0", source = { registry = "https://pypi.org/simple" } }]
+
+[[package]]
+name = "B"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "b"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "c"
+version = "1.0.0"
+source = { url = "https://example.test/c-1.0.0.tar.gz" }
+
+[[package]]
+name = "d"
+version = "1.0.0"
+source = { path = "dist/d-1.0.0.whl" }
+`, []Dep{
+			{Name: "b", Version: "1.0.0", Dev: true},
+			{Name: "b", Version: "2.0.0"},
+		}},
+		{"poetry before 1.5", Poetry, `
+[[package]]
+name = "Acme.Old"
+version = "1.0"
+category = "dev"
+
+[[package]]
+name = "acme-url"
+version = "1.0"
+category = "main"
+
+[package.source]
+type = "url"
+url = "https://example.test/acme_url-1.0.tar.gz"
+
+[metadata]
+lock-version = "1.1"
+`, []Dep{{Name: "acme-old", Version: "1.0", Dev: true}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			deps, err := Parse(tc.kind, []byte(tc.data))
+			if err != nil || !reflect.DeepEqual(deps, tc.want) {
+				t.Errorf("deps = %+v, %v\nwant %+v", deps, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestDevRecorded(t *testing.T) {
+	read := func(path string) []byte {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return data
+	}
+
+	for _, tc := range []struct {
+		kind Kind
+		file string
+		want bool
+	}{
+		{NPM, "testdata/package-lock.json", true},
+		{PNPM, "testdata/pnpm-lock.yaml", true},
+		{UV, "testdata/uv.lock", true},
+		{Poetry, "testdata/poetry.lock", true},
+		{Poetry, "testdata/poetry-1.8/poetry.lock", false},
+		{Yarn, "testdata/yarn.lock", false},
+		{Cargo, "testdata/Cargo.lock", false},
+	} {
+		if got := DevRecorded(tc.kind, read(tc.file)); got != tc.want {
+			t.Errorf("DevRecorded(%s, %s) = %v, want %v", tc.kind, tc.file, got, tc.want)
 		}
 	}
 }
