@@ -34,10 +34,7 @@ func procCPU(pid int) float64 {
 		return 0
 	}
 
-	ut, _ := strconv.ParseFloat(f[11], 64)
-	st, _ := strconv.ParseFloat(f[12], 64)
-
-	return (ut + st) / clkTck
+	return (parseFloat(f[11]) + parseFloat(f[12])) / clkTck
 }
 
 func procStatusKB(pid int, key string) float64 {
@@ -55,9 +52,7 @@ func procStatusKB(pid int, key string) float64 {
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		if v, ok := strings.CutPrefix(sc.Text(), key+":"); ok {
-			n, _ := strconv.ParseFloat(strings.Fields(v)[0], 64)
-
-			return n
+			return parseFloat(strings.Fields(v)[0])
 		}
 	}
 
@@ -98,11 +93,22 @@ func scrapeGo(hc *http.Client, url, tok string) goMem {
 	for line := range strings.SplitSeq(string(b), "\n") {
 		switch {
 		case strings.HasPrefix(line, "go_memstats_mallocs_total "):
-			m.mallocs, _ = strconv.ParseFloat(strings.Fields(line)[1], 64)
+			m.mallocs = parseFloat(strings.Fields(line)[1])
 		case strings.HasPrefix(line, "go_memstats_alloc_bytes_total "):
-			m.allocBytes, _ = strconv.ParseFloat(strings.Fields(line)[1], 64)
+			m.allocBytes = parseFloat(strings.Fields(line)[1])
 		}
 	}
 
 	return m
+}
+
+// parseFloat reads a /proc or Prometheus number; a malformed one counts as 0,
+// as for a process that has gone away.
+func parseFloat(s string) float64 {
+	n, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+
+	return n
 }

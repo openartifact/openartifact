@@ -145,7 +145,7 @@ func parseSumdbTile(req sumdbRequest) (sumdbRequest, bool) {
 		return sumdbRequest{}, false
 	}
 
-	height, _ := strconv.Atoi(m[1]) // two digits by the pattern
+	height, _ := strconv.Atoi(m[1]) //nolint:gocritic // one or two digits by the pattern
 
 	// The go command uses height 8; a height beyond what 1<<height hashes of a
 	// reasonable size allow is no tile.
@@ -156,7 +156,7 @@ func parseSumdbTile(req sumdbRequest) (sumdbRequest, bool) {
 	req.kind, req.data, req.width = sumdbTile, m[2] == "data", 1<<height
 
 	if m[3] != "" {
-		width, _ := strconv.Atoi(m[3]) // three digits by the pattern
+		width, _ := strconv.Atoi(m[3]) //nolint:gocritic // one to three digits by the pattern
 		if width < 1 || width >= req.width {
 			return sumdbRequest{}, false
 		}

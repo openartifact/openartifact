@@ -60,10 +60,10 @@ func parse(v string) (pep440Key, bool) {
 	}
 
 	k := pep440Key{original: v, preRank: 4, post: -1, dev: noDev}
-	k.epoch, _ = strconv.Atoi(m[1])
+	k.epoch, _ = strconv.Atoi(m[1]) //nolint:gocritic // digits by the pattern, bounded by fits
 
 	for part := range strings.SplitSeq(m[2], ".") {
-		n, _ := strconv.Atoi(part)
+		n, _ := strconv.Atoi(part) //nolint:gocritic // digits by the pattern, bounded by fits
 		k.release = append(k.release, n)
 	}
 
@@ -81,20 +81,20 @@ func parse(v string) (pep440Key, bool) {
 			k.preRank = 3
 		}
 
-		k.preNum, _ = strconv.Atoi(m[4])
+		k.preNum, _ = strconv.Atoi(m[4]) //nolint:gocritic // digits by the pattern, bounded by fits
 	}
 
 	switch {
 	case m[5] != "":
-		k.post, _ = strconv.Atoi(m[5])
+		k.post, _ = strconv.Atoi(m[5]) //nolint:gocritic // digits by the pattern, bounded by fits
 	case m[6] != "":
-		k.post, _ = strconv.Atoi(m[7])
+		k.post, _ = strconv.Atoi(m[7]) //nolint:gocritic // digits by the pattern, bounded by fits
 	}
 
 	k.local = strings.NewReplacer("-", ".", "_", ".").Replace(m[10])
 
 	if m[8] != "" {
-		k.dev, _ = strconv.Atoi(m[9])
+		k.dev, _ = strconv.Atoi(m[9]) //nolint:gocritic // digits by the pattern, bounded by fits
 		// A dev-only release sorts before every pre-release of its number.
 		if k.preRank == 4 && k.post < 0 {
 			k.preRank = 0
