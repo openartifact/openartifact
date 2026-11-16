@@ -1,0 +1,46 @@
+lock-version = "1.0"
+created-by = "pip"
+
+[[packages]]
+name = "acme-certs"
+version = "2026.10.23"
+
+[[packages.wheels]]
+name = "acme_certs-2026.10.23-py3-none-any.whl"
+url = "https://files.pythonhosted.org/packages/32/d1/a3652fe2c19134d0d15922177821d863cbd7e842d53a21bbe7e8e3a1b5ac/acme_certs-2026.10.23-py3-none-any.whl"
+
+[packages.wheels.hashes]
+sha256 = "e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1"
+
+[[packages]]
+name = "acme-charset"
+version = "3.5.2"
+
+[[packages]]
+name = "acme-idna"
+version = "3.20"
+
+[[packages]]
+name = "acme-ini"
+version = "2.3.1"
+
+[[packages]]
+name = "acme-packaging"
+version = "26.3"
+
+[[packages]]
+name = "acme-plug"
+version = "1.7.0"
+
+[[packages]]
+name = "acme-test"
+version = "8.3.3"
+
+[[packages]]
+name = "acme-http"
+version = "2.32.3"
+
+[[packages]]
+name = "acme-url"
+version = "2.8.0"
+

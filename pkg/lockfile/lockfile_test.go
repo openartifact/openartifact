@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -65,6 +66,20 @@ func pyDeps(dev bool) []Dep {
 	}
 }
 
+// noGraph is deps without the named packages and without requirers: what a
+// lockfile that records no dependency graph gives.
+func noGraph(deps []Dep, without ...string) []Dep {
+	var out []Dep
+
+	for _, d := range deps {
+		if !slices.Contains(without, d.Name) {
+			out = append(out, Dep{Name: d.Name, Version: d.Version, Dev: d.Dev})
+		}
+	}
+
+	return out
+}
+
 func parseFile(t *testing.T, kind Kind, path string) []Dep {
 	t.Helper()
 
@@ -119,6 +134,12 @@ func TestParse(t *testing.T) {
 		{"uv.lock", UV, "testdata/uv.lock", pyDeps(true)},
 		{"poetry.lock 2.1", Poetry, "testdata/poetry.lock", pyDeps(true)},
 		{"poetry.lock 2.0", Poetry, "testdata/poetry-1.8/poetry.lock", pyDeps(false)},
+		// uv export and pip lock record no dependency graph and no groups: the
+		// same project (uv exports no extra, so acme-json is not in it) and a
+		// pip lock of acme-http and acme-test.
+		{"pylock.toml uv", Pylock, "testdata/pylock.toml", noGraph(pyDeps(false), "acme-json")},
+		{"pylock.toml pip", Pylock, "testdata/pylock-pip/pylock.toml",
+			noGraph(pyDeps(false), "acme-json", "acme-color", "acme-exc", "acme-toml", "acme-typing")},
 		// A workspace (acme-app, acme-helper) with a git crate (acme-cfg) and
 		// a dev-dependency (acme-hex) Cargo.lock does not mark.
 		{"Cargo.lock", Cargo, "testdata/Cargo.lock", []Dep{
@@ -199,6 +220,8 @@ func TestParseRejects(t *testing.T) {
 		{"nuget without version", NuGet, `{"dependencies": {}}`},
 		{"nuget wrong type", NuGet, `{"version": 1, "dependencies": {"net8.0": []}}`},
 		{"nuget not JSON", NuGet, "{"},
+		{"pylock without lock-version", Pylock, "[[packages]]\nname = \"a\"\nversion = \"1\"\n"},
+		{"pylock wrong type", Pylock, "lock-version = \"1.0\"\npackages = \"a\"\n"},
 	} {
 		if _, err := Parse(tc.kind, []byte(tc.data)); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: err = %v, want ErrInvalid", tc.name, err)
@@ -227,6 +250,11 @@ func TestKindOf(t *testing.T) {
 		"app/gems.locked":            Bundler,
 		"src/App/packages.lock.json": NuGet,
 		"go.sum":                     "",
+		"pylock.toml":                Pylock,
+		"py/pylock.dev.toml":         Pylock,
+		"pylock.a.b.toml":            "",
+		"pylock..toml":               "",
+		"pylock.toml.bak":            "",
 		"composer.json":              "",
 	} {
 		got, err := KindOf(path)
@@ -332,6 +360,32 @@ lock-version = "1.1"
 			{Name: "A", Version: "1.0.0"},
 			{Name: "B", Version: "2.0.0", RequiredBy: []string{"A"}},
 		}},
+		{"pylock with dependencies, archive and directory packages", Pylock, `
+lock-version = "1.0"
+
+[[packages]]
+name = "A_Pkg"
+version = "1.0"
+dependencies = [{ name = "b" }, { name = "C.D" }]
+wheels = [{ url = "https://example.test/a_pkg-1.0-py3-none-any.whl", hashes = { sha256 = "00" } }]
+
+[[packages]]
+name = "b"
+version = "2.0"
+
+[[packages]]
+name = "c-d"
+version = "3.0"
+archive = { url = "https://example.test/c_d-3.0.tar.gz", hashes = { sha256 = "00" } }
+
+[[packages]]
+name = "e"
+directory = { path = "e" }
+dependencies = [{ name = "b" }]
+`, []Dep{
+			{Name: "a-pkg", Version: "1.0"},
+			{Name: "b", Version: "2.0", RequiredBy: []string{"a-pkg", "e"}},
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			deps, err := Parse(tc.kind, []byte(tc.data))
@@ -366,9 +420,27 @@ func TestDevRecorded(t *testing.T) {
 		{Cargo, "testdata/Cargo.lock", false},
 		{Bundler, "testdata/Gemfile.lock", false},
 		{NuGet, "testdata/packages.lock.json", false},
+		{Pylock, "testdata/pylock.toml", false},
 	} {
 		if got := DevRecorded(tc.kind, read(tc.file)); got != tc.want {
 			t.Errorf("DevRecorded(%s, %s) = %v, want %v", tc.kind, tc.file, got, tc.want)
+		}
+	}
+}
+
+func TestGraphRecorded(t *testing.T) {
+	for _, tc := range []struct {
+		kind Kind
+		data string
+		want bool
+	}{
+		{Composer, "{}", true},
+		{Pylock, "lock-version = \"1.0\"\n[[packages]]\nname = \"a\"\nversion = \"1\"\n", false},
+		{Pylock, "lock-version = \"1.0\"\n[[packages]]\nname = \"a\"\nversion = \"1\"\ndependencies = []\n", true},
+		{Pylock, "not toml [", false},
+	} {
+		if got := GraphRecorded(tc.kind, []byte(tc.data)); got != tc.want {
+			t.Errorf("GraphRecorded(%s, %q) = %v, want %v", tc.kind, tc.data, got, tc.want)
 		}
 	}
 }

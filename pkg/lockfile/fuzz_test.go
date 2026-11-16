@@ -131,3 +131,11 @@ func FuzzNuGetLock(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, data []byte) { checkDeps(t, NuGet, data) })
 }
+
+func FuzzPylock(f *testing.F) {
+	addSeed(f, "testdata/pylock.toml")
+	addSeed(f, "testdata/pylock-pip/pylock.toml")
+	f.Add([]byte("lock-version = \"1.0\"\n[[packages]]\nname = \"A_b\"\nversion = \"1\"\ndependencies = [{ name = \"a-b\" }]\n"))
+
+	f.Fuzz(func(t *testing.T, data []byte) { checkDeps(t, Pylock, data) })
+}

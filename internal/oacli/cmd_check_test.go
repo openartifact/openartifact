@@ -459,6 +459,7 @@ func TestCheckLockfiles(t *testing.T) {
 		{"Cargo.lock", "crates", false, 9, 9, "/repos/crates/index/ac/me/acme_serde_derive"},
 		{"Gemfile.lock", "gems", false, 5, 5, "/repos/gems/info/acme-xml"},
 		{"packages.lock.json", "nuget", false, 4, 4, "/repos/nuget/v3/package/acme.log.console/index.json"},
+		{"pylock.toml", "pypi", false, 13, 13, "/repos/pypi/simple/acme-http/"},
 	} {
 		t.Run(fmt.Sprintf("%s no-dev=%v", tc.lock, tc.noDev), func(t *testing.T) {
 			srv := newCheckServer(t, 0)
@@ -506,5 +507,51 @@ func TestMetadataPath(t *testing.T) {
 		if got := metadataPath("r/x", tc.kind, lockfile.Dep{Name: tc.name, Version: tc.version}); got != tc.want {
 			t.Errorf("metadataPath(%s, %s %s) = %q, want %q", tc.kind, tc.name, tc.version, got, tc.want)
 		}
+	}
+}
+
+// TestCheckWithoutAGraph: a pylock.toml that lists no dependencies (uv export,
+// pip lock) says nothing about who requires what, so the table has no REQUIRED
+// BY column, says why, and the JSON report says so; one that lists them keeps
+// the column.
+func TestCheckWithoutAGraph(t *testing.T) {
+	for _, tc := range []struct {
+		name, deps string
+		graph      bool
+	}{
+		{"without dependency lists", "", false},
+		{"with dependency lists", "dependencies = [{ name = \"held/x\" }]\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lock := filepath.Join(t.TempDir(), "pylock.toml")
+
+			data := "lock-version = \"1.0\"\n\n[[packages]]\nname = \"held/x\"\nversion = \"1.0\"\n\n" +
+				"[[packages]]\nname = \"ok/y\"\nversion = \"2.0\"\n" + tc.deps
+			if err := os.WriteFile(lock, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			srv := newCheckServer(t, 0)
+
+			res := runOA(t, srv.Server, "", "check", "pypi", "--lockfile", lock)
+			if res.code != 1 || !strings.Contains(res.stdout, "held/x") ||
+				strings.Contains(res.stdout, "REQUIRED BY") != tc.graph ||
+				strings.Contains(res.stdout, "does not record which package requires which") == tc.graph {
+				t.Fatalf("exit %d, stdout:\n%s", res.code, res.stdout)
+			}
+
+			if tc.graph {
+				if got := requiredByColumn(res.stdout)["held/x"]; got != "ok/y" {
+					t.Errorf("REQUIRED BY of held/x = %q, want ok/y", got)
+				}
+			}
+
+			res = runOA(t, srv.Server, "", "--format", "json", "check", "pypi", "--lockfile", lock)
+
+			var report checkReport
+			if err := json.Unmarshal([]byte(res.stdout), &report); err != nil || report.Graph != tc.graph {
+				t.Errorf("dependency_graph = %v (%v), want %v:\n%s", report.Graph, err, tc.graph, res.stdout)
+			}
+		})
 	}
 }

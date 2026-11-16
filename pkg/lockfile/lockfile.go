@@ -4,7 +4,8 @@
 
 // Package lockfile reads the package versions a lockfile pins, for `oa check`:
 // composer.lock, npm's package-lock.json, pnpm-lock.yaml, yarn.lock, poetry.lock,
-// uv.lock, Cargo.lock, Bundler's Gemfile.lock and NuGet's packages.lock.json. It keeps only what a client fetches from a package
+// uv.lock, pylock.toml (PEP 751), Cargo.lock, Bundler's Gemfile.lock and
+// NuGet's packages.lock.json. It keeps only what a client fetches from a package
 // registry: local, linked, bundled and VCS or file dependencies are left out,
 // since no registry serves them.
 package lockfile
@@ -16,6 +17,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 	"go.yaml.in/yaml/v3"
@@ -35,6 +37,10 @@ const (
 	// Poetry and UV are Python lockfiles; their names are normalized (PEP 503).
 	Poetry Kind = "poetry"
 	UV     Kind = "uv"
+	// Pylock is PEP 751's pylock.toml (or pylock.<name>.toml), written by
+	// uv export and pip lock. It may record no dependency graph
+	// (GraphRecorded) and records no development dependencies.
+	Pylock Kind = "pylock"
 	// Cargo does not record development dependencies: no Dep of it is Dev.
 	Cargo Kind = "cargo"
 	// Bundler (Gemfile.lock) and NuGet (packages.lock.json) do not record
@@ -59,7 +65,7 @@ var (
 	// ErrUnknownLockfile is a file name Parse cannot tell the format of.
 	ErrUnknownLockfile = errors.New(
 		"unknown lockfile: expected composer.lock, package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, yarn.lock, " +
-			"poetry.lock, uv.lock, Cargo.lock, Gemfile.lock or packages.lock.json",
+			"poetry.lock, uv.lock, pylock.toml, Cargo.lock, Gemfile.lock or packages.lock.json",
 	)
 	// ErrInvalid is a lockfile that is not the document its format expects.
 	ErrInvalid = errors.New("invalid lockfile")
@@ -67,6 +73,10 @@ var (
 
 // KindOf returns the format of a lockfile from its file name.
 func KindOf(path string) (Kind, error) {
+	if pylockName(filepath.Base(path)) {
+		return Pylock, nil
+	}
+
 	switch filepath.Base(path) {
 	case "composer.lock":
 		return Composer, nil
@@ -113,6 +123,8 @@ func Parse(kind Kind, data []byte) ([]Dep, error) {
 		deps, err = parsePoetry(data)
 	case UV:
 		deps, err = parseUV(data)
+	case Pylock:
+		deps, err = parsePylock(data)
 	case Cargo:
 		deps, err = parseCargo(data)
 	case Bundler:
@@ -132,18 +144,46 @@ func Parse(kind Kind, data []byte) ([]Dep, error) {
 
 // DevRecorded reports whether a lockfile of kind says which dependencies are
 // development-only, so that leaving them out means something: yarn.lock,
-// Cargo.lock, Gemfile.lock and packages.lock.json never do, a poetry.lock only
-// when Poetry 2 (or a Poetry before
-// 1.5) wrote it.
+// Cargo.lock, Gemfile.lock, packages.lock.json and pylock.toml never do, a
+// poetry.lock only when Poetry 2 (or a Poetry before 1.5) wrote it.
 func DevRecorded(kind Kind, data []byte) bool {
 	switch kind {
-	case Yarn, Cargo, Bundler, NuGet:
+	case Yarn, Cargo, Bundler, NuGet, Pylock:
 		return false
 	case Poetry:
 		return poetryRecordsDev(data)
 	default:
 		return true
 	}
+}
+
+// GraphRecorded reports whether a lockfile of kind says which locked package
+// requires which, so that a Dep without RequiredBy is one the project requires
+// itself: every format does, except a pylock.toml without dependency lists
+// (what uv export and pip lock write).
+func GraphRecorded(kind Kind, data []byte) bool {
+	if kind == Pylock {
+		return pylockRecordsGraph(data)
+	}
+
+	return true
+}
+
+// pylockName reports whether name is a PEP 751 lockfile name: pylock.toml, or
+// pylock.<name>.toml with a name of its own (no dot).
+func pylockName(name string) bool {
+	if name == "pylock.toml" {
+		return true
+	}
+
+	middle, ok := strings.CutPrefix(name, "pylock.")
+	if !ok {
+		return false
+	}
+
+	middle, ok = strings.CutSuffix(middle, ".toml")
+
+	return ok && middle != "" && !strings.Contains(middle, ".")
 }
 
 // requirers inverts a dependency map: for each required name, the names of the
