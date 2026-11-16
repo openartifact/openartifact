@@ -77,3 +77,32 @@ func FuzzCanonical(f *testing.F) {
 		}
 	})
 }
+
+// TestHugeNumbersAreNotVersions: a number too large for an int does not make
+// two versions equal, nor a dev release its final one; such a string is not a
+// PEP 440 version here, and compares as text.
+func TestHugeNumbersAreNotVersions(t *testing.T) {
+	for _, pair := range [][2]string{
+		{"1.0", "1.0.dev99999999999999999999"},
+		{"1.0", "1.0.dev9223372036854775807"},
+		{"99999999999999999998.0", "99999999999999999999.0"},
+		{"1.0rc99999999999999999998", "1.0rc99999999999999999999"},
+		{"1.0.post99999999999999999999", "1.0.post9223372036854775807"},
+		{"99999999999999999999!1.0", "99999999999999999998!1.0"},
+	} {
+		if Canonical(pair[0]) == Canonical(pair[1]) || Compare(pair[0], pair[1]) == 0 {
+			t.Errorf("%q and %q are one version: canonical %q and %q, Compare %d",
+				pair[0], pair[1], Canonical(pair[0]), Canonical(pair[1]), Compare(pair[0], pair[1]))
+		}
+	}
+
+	if Valid("1.0.dev9223372036854775807") || Valid("1.99999999999999999999") {
+		t.Error("a version with a number that does not fit an int is valid")
+	}
+
+	// Leading zeros do not count, and 18 digits are fine (a timestamp version).
+	if !Valid("000000000000000000000001.0") || !Valid("999999999999999999.20261116123456") ||
+		Canonical("000000000000000000000001.0") != "1" {
+		t.Error("a long number that fits was refused")
+	}
+}
