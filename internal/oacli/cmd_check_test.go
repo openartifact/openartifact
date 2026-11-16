@@ -110,6 +110,8 @@ func (s *checkServer) serve(w http.ResponseWriter, r *http.Request) {
 		case "missing":
 			res["status"], res["available"], res["repository"] = "not_found", false, "php"
 			res["reasons"] = []any{map[string]any{"source": "not_found", "detail": "no member of the group has this version"}}
+		case "weird":
+			res["status"], res["available"] = "embargoed", false
 		case "unknown":
 			res["status"], res["available"] = "unknown", false
 			res["reasons"] = []any{map[string]any{"source": "unknown", "detail": "the proxy has not cached the metadata"}}
@@ -501,11 +503,16 @@ func TestMetadataPath(t *testing.T) {
 		{lockfile.Cargo, "a", "1.0.0", "/repos/r%2Fx/index/1/a"},
 		{lockfile.Cargo, "abc", "1.0.0", "/repos/r%2Fx/index/3/a/abc"},
 		{lockfile.Cargo, "Serde_Json", "1.0.0", "/repos/r%2Fx/index/se/rd/serde_json"},
+		// What is left of a name is escaped: it stays the package part of the path.
+		{lockfile.NPM, "a?x=1#y", "1.0.0", "/repos/r%2Fx/a%3Fx=1%23y"},
+		{lockfile.NPM, "@s/p q%2f", "1.0.0", "/repos/r%2Fx/@s%2fp%20q%252f"},
+		{lockfile.Bundler, "a?b", "1.0.0", "/repos/r%2Fx/info/a%3Fb"},
+		{lockfile.Composer, "acme/a?b", "1.0.0", "/repos/r%2Fx/p2/acme/a%3Fb.json"},
 		{lockfile.Bundler, "acme-xml", "1.16.7", "/repos/r%2Fx/info/acme-xml"},
 		{lockfile.NuGet, "Acme.Log", "4.0.0", "/repos/r%2Fx/v3/package/acme.log/index.json"},
 	} {
-		if got := metadataPath("r/x", tc.kind, lockfile.Dep{Name: tc.name, Version: tc.version}); got != tc.want {
-			t.Errorf("metadataPath(%s, %s %s) = %q, want %q", tc.kind, tc.name, tc.version, got, tc.want)
+		if got, ok := metadataPath("r/x", tc.kind, lockfile.Dep{Name: tc.name, Version: tc.version}); got != tc.want || !ok {
+			t.Errorf("metadataPath(%s, %s %s) = %q, %v; want %q", tc.kind, tc.name, tc.version, got, ok, tc.want)
 		}
 	}
 }
@@ -553,5 +560,92 @@ func TestCheckWithoutAGraph(t *testing.T) {
 				t.Errorf("dependency_graph = %v (%v), want %v:\n%s", report.Graph, err, tc.graph, res.stdout)
 			}
 		})
+	}
+}
+
+// TestMetadataPathRefusesNonNames: a lockfile cannot aim --fetch at another
+// path: a name with a dot segment, an empty segment, a control character or a
+// "/" its format does not have is not requested.
+func TestMetadataPathRefusesNonNames(t *testing.T) {
+	for _, tc := range []struct {
+		kind lockfile.Kind
+		name string
+	}{
+		{lockfile.NPM, ""},
+		{lockfile.NPM, "../../api/v1/admin/users"},
+		{lockfile.NPM, "@scope/../x"},
+		{lockfile.NPM, "a/b"},
+		{lockfile.NPM, "@a/b/c"},
+		{lockfile.NPM, "a//b"},
+		{lockfile.NPM, "a\x1b[2K"},
+		{lockfile.Composer, "acme/.."},
+		{lockfile.Composer, "acme/a/b"},
+		{lockfile.UV, "a/b"},
+		{lockfile.Cargo, "../x"},
+		{lockfile.Bundler, "."},
+		{lockfile.NuGet, "A/../B"},
+	} {
+		if got, ok := metadataPath("r", tc.kind, lockfile.Dep{Name: tc.name, Version: "1.0.0"}); ok {
+			t.Errorf("metadataPath(%s, %q) = %q, want it refused", tc.kind, tc.name, got)
+		}
+	}
+}
+
+// TestCheckDistrustsTheLockfile: a crafted lockfile neither aims --fetch at
+// another path nor draws on the terminal, and a status this oa does not know
+// fails the check instead of passing as "nothing held".
+func TestCheckDistrustsTheLockfile(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, data string) string {
+		t.Helper()
+
+		path := filepath.Join(dir, name, "package-lock.json")
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		return path
+	}
+
+	crafted := write("crafted", `{"lockfileVersion":3,"packages":{`+
+		`"node_modules/a":{"name":"../../api/v1/users","version":"1.0.0"},`+
+		`"node_modules/b":{"name":"held/x\u001b[2K\rAll 9 dependencies are available\u202e","version":"1.0.0"},`+
+		`"node_modules/c":{"name":"ok/y?z=1","version":"1.0.0"},`+
+		`"node_modules/d":{"name":"plain?z=1","version":"1.0.0"}}}`)
+
+	srv := newCheckServer(t, 0)
+
+	res := runOA(t, srv.Server, "", "check", "npm", "--lockfile", crafted, "--fetch")
+	if res.code != 1 {
+		t.Fatalf("exit %d, stdout %q, stderr %q", res.code, res.stdout, res.stderr)
+	}
+
+	for _, get := range srv.gets {
+		if !strings.HasPrefix(get, "/repos/npm/") || strings.Contains(get, "..") || strings.Contains(get, "?") {
+			t.Errorf("--fetch requested %q", get)
+		}
+	}
+
+	if !slices.Equal(srv.gets, []string{"/repos/npm/plain%3Fz=1"}) {
+		t.Errorf("--fetch requested %v, want only the escaped plain name", srv.gets)
+	}
+
+	if !strings.Contains(res.stdout, "4 packages through npm (3 did not answer 200)") {
+		t.Errorf("the names that are no package names were not counted as not fetched:\n%s", res.stdout)
+	}
+
+	if strings.ContainsAny(res.stdout, "\x1b\r\u202e") || !strings.Contains(res.stdout, "held/x?[2K?All 9 dependencies are available?") {
+		t.Errorf("the table carries control characters, or lost the name:\n%q", res.stdout)
+	}
+
+	weird := write("weird", `{"lockfileVersion":3,"packages":{"node_modules/a":{"name":"weird/x","version":"1.0.0"}}}`)
+
+	res = runOA(t, srv.Server, "", "check", "npm", "--lockfile", weird)
+	if res.code != 1 || !strings.Contains(res.stderr, "unknown status") {
+		t.Errorf("unknown status: exit %d, stdout %q, stderr %q", res.code, res.stdout, res.stderr)
 	}
 }

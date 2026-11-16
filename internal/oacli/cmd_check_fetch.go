@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"unicode"
 
 	pkgcargo "github.com/openartifact/openartifact/pkg/cargo"
 	pkgcomposer "github.com/openartifact/openartifact/pkg/composer"
@@ -25,14 +26,24 @@ const fetchConcurrency = 8
 // from its upstream and caches it, which is what the availability check reads.
 // Nothing is downloaded but metadata. A request that does not answer 200 (a
 // package the upstream does not have, an error) is counted, not fatal: the
-// check then reports that package as it finds it.
+// check then reports that package as it finds it. So is a name that is not a
+// package name (metadataPath): a lockfile never chooses the path of a request.
 func warmMetadata(ctx context.Context, api *ciAPI, repo string, kind lockfile.Kind, deps []lockfile.Dep) *fetchSummary {
 	seen := map[string]bool{}
 
-	var paths []string
+	var (
+		paths   []string
+		refused = map[string]bool{}
+	)
 
 	for _, d := range deps {
-		if p := metadataPath(repo, kind, d); !seen[p] {
+		p, ok := metadataPath(repo, kind, d)
+		if !ok {
+			refused[d.Name] = true
+			continue
+		}
+
+		if !seen[p] {
 			seen[p] = true
 			paths = append(paths, p)
 		}
@@ -41,7 +52,7 @@ func warmMetadata(ctx context.Context, api *ciAPI, repo string, kind lockfile.Ki
 	var (
 		mu     sync.Mutex
 		wg     sync.WaitGroup
-		failed int
+		failed = len(refused)
 		sem    = make(chan struct{}, fetchConcurrency)
 	)
 
@@ -61,7 +72,7 @@ func warmMetadata(ctx context.Context, api *ciAPI, repo string, kind lockfile.Ki
 
 	wg.Wait()
 
-	return &fetchSummary{Packages: len(paths), Failed: failed}
+	return &fetchSummary{Packages: len(paths) + len(refused), Failed: failed}
 }
 
 // metadataPath is the native path of the metadata document in repo that lists
@@ -71,32 +82,69 @@ func warmMetadata(ctx context.Context, api *ciAPI, repo string, kind lockfile.Ki
 // API (Python, the name normalized by the lockfile), the sparse index file of a
 // crate, the compact index info file of a gem (as Bundler requests it) and the
 // flat container version list of a NuGet package (as dotnet restore does).
-func metadataPath(repo string, kind lockfile.Kind, d lockfile.Dep) string {
+//
+// The name comes from the lockfile, which may be someone else's (a pull
+// request): it only ever fills the package part of the path, percent-escaped.
+// ok is false for a name that is not a package name of the format (an empty,
+// "." or ".." segment, a control character, a "/" where the format has none),
+// which is not requested.
+func metadataPath(repo string, kind lockfile.Kind, d lockfile.Dep) (string, bool) {
 	base := "/repos/" + escape(repo) + "/"
 	name := d.Name
+
+	// Composer names are vendor/package and npm ones may be @scope/package;
+	// every other format names a package in one segment.
+	slashes := 0
+	if kind == lockfile.Composer || kind == lockfile.NPM || kind == lockfile.PNPM || kind == lockfile.Yarn {
+		slashes = 1
+	}
+
+	if !packageName(name, slashes) {
+		return "", false
+	}
 
 	switch kind {
 	case lockfile.Composer:
 		if composerDev(d.Version) {
-			return base + "p2/" + name + "~dev.json"
+			return base + "p2/" + escapePath(name) + "~dev.json", true
 		}
 
-		return base + "p2/" + name + ".json"
+		return base + "p2/" + escapePath(name) + ".json", true
 	case lockfile.Poetry, lockfile.UV, lockfile.Pylock:
-		return base + "simple/" + name + "/"
+		return base + "simple/" + escape(name) + "/", true
 	case lockfile.Cargo:
-		return base + "index/" + pkgcargo.IndexPathFor(strings.ToLower(name))
+		return base + "index/" + escapePath(pkgcargo.IndexPathFor(strings.ToLower(name))), true
 	case lockfile.Bundler:
-		return base + "info/" + name
+		return base + "info/" + escape(name), true
 	case lockfile.NuGet:
-		return base + "v3/package/" + strings.ToLower(name) + "/index.json"
+		return base + "v3/package/" + escape(strings.ToLower(name)) + "/index.json", true
 	}
 
-	if scope, pkg, ok := strings.Cut(name, "/"); ok && strings.HasPrefix(scope, "@") {
-		return base + scope + "%2f" + pkg
+	if scope, pkg, ok := strings.Cut(name, "/"); ok {
+		if !strings.HasPrefix(scope, "@") {
+			return "", false
+		}
+
+		return base + escape(scope) + "%2f" + escape(pkg), true
 	}
 
-	return base + name
+	return base + escape(name), true
+}
+
+// packageName reports whether name can be a package name with at most slashes
+// "/" in it: no empty, "." or ".." segment and no control character.
+func packageName(name string, slashes int) bool {
+	if name == "" || strings.Count(name, "/") > slashes || strings.ContainsFunc(name, unicode.IsControl) {
+		return false
+	}
+
+	for seg := range strings.SplitSeq(name, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return false
+		}
+	}
+
+	return true
 }
 
 // composerDev reports whether a locked Composer version is a branch, which
