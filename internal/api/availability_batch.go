@@ -75,10 +75,18 @@ type BatchAvailabilityStore interface {
 // it: that 403 does not depend on the metadata. Otherwise a proxy member whose
 // cache cannot say makes the answer unknown: it might have the version.
 //
+// A go proxy lists versions from "@v/list", which a build never requests and
+// which names no pseudo-version; a build caches the ".info" of each version it
+// uses. So a version the cached list does not name (or with no list cached) is
+// looked up by that document (proxy.DatesVersionsAlone): cached, the member
+// has the version; not cached, a pseudo-version is unknown and a release the
+// cached list lacks is not there.
+//
 // The cost does not grow with the queries by more than one cached-metadata read
-// per proxy member and distinct package, run at most proxyReadConcurrency at a
-// time and only for queries no earlier member decided: the members, the curation
-// rules of each proxy member and the hosted data (two queries) are loaded once.
+// per proxy member and distinct package (and, for go, one per version the list
+// does not name), run at most proxyReadConcurrency at a time and only for
+// queries no earlier member decided: the members, the curation rules of each
+// proxy member and the hosted data (two queries) are loaded once.
 func ExplainAvailabilityBatch(
 	ctx context.Context, db BatchAvailabilityStore, published PublishTimeSource, repo *models.Repository,
 	queries []responses.AvailabilityQuery, canRead func(*models.Repository) bool,
@@ -93,6 +101,7 @@ func ExplainAvailabilityBatch(
 		db: db, published: published, repo: repo, queries: unique, now: time.Now(),
 		results: make([]batchResult, len(unique)),
 		cached:  map[cacheKey]cachedVersions{},
+		dated:   map[versionKey]datedVersion{},
 	}
 
 	if err := b.run(ctx, canRead); err != nil {
@@ -135,6 +144,26 @@ func dedupeQueries(queries []responses.AvailabilityQuery) ([]models.NameVersion,
 // cacheKey names one cached-metadata read: a proxy member and a package.
 type cacheKey struct {
 	repoID, pkg string
+}
+
+// versionKey names the read of the cached document of one version of a
+// package in a proxy member, for the formats that date a version from a
+// document of its own (proxy.DatesVersionsAlone).
+type versionKey struct {
+	repoID, pkg, version string
+}
+
+// cacheNeed is the cached metadata a round of decideAll still has to read.
+type cacheNeed struct {
+	lists    map[cacheKey]*models.Repository
+	versions map[versionKey]*models.Repository
+}
+
+// datedVersion is what the cached document of one version says: ok is false
+// when it is not cached (or states no time).
+type datedVersion struct {
+	published time.Time
+	ok        bool
 }
 
 // cachedVersions is what the cached metadata of a proxy says about a package:
@@ -183,6 +212,7 @@ type availabilityBatch struct {
 	owned   map[int]bool
 	stored  map[storedKey]models.VersionHolds
 	cached  map[cacheKey]cachedVersions
+	dated   map[versionKey]datedVersion
 	results []batchResult
 }
 
@@ -315,7 +345,7 @@ func (b *availabilityBatch) loadHosted(ctx context.Context) error {
 // of the proxy members a query reaches in rounds, until every query is decided.
 func (b *availabilityBatch) decideAll(ctx context.Context) error {
 	for {
-		need := map[cacheKey]*models.Repository{}
+		need := cacheNeed{lists: map[cacheKey]*models.Repository{}, versions: map[versionKey]*models.Repository{}}
 
 		for i := range b.results {
 			if !b.results[i].decided {
@@ -323,7 +353,7 @@ func (b *availabilityBatch) decideAll(ctx context.Context) error {
 			}
 		}
 
-		if len(need) == 0 {
+		if len(need.lists)+len(need.versions) == 0 {
 			return nil
 		}
 
@@ -346,7 +376,7 @@ func (b *availabilityBatch) candidates(i int) []*models.Repository {
 // advance consults the members of query i from its cursor on until one decides
 // it, or until a proxy member whose cached metadata has not been read yet; that
 // read is added to need.
-func (b *availabilityBatch) advance(i int, need map[cacheKey]*models.Repository) {
+func (b *availabilityBatch) advance(i int, need cacheNeed) {
 	q := b.queries[i]
 	members := b.candidates(i)
 
@@ -374,17 +404,42 @@ func (b *availabilityBatch) advance(i int, need map[cacheKey]*models.Repository)
 
 		cv, read := b.cached[key]
 		if !read {
-			need[key] = m
-			return
-		}
-
-		if !cv.ok {
-			b.decide(i, m.Name, StatusUnknown, unknownResponse())
+			need.lists[key] = m
 			return
 		}
 
 		if listed, has := cv.versions[proxy.VersionKey(m.Format, q.Version)]; has {
 			b.decideProxy(i, m, listed)
+			return
+		}
+
+		// The list does not name the version, or is not cached. A format that
+		// dates a version from a document of its own (go's ".info", which a build
+		// fetches without the list) has the version when that document is
+		// cached; when it is not, a version the list never names (a go
+		// pseudo-version) is unknown, not missing.
+		if proxy.DatesVersionsAlone(m.Format) {
+			vkey := versionKey{m.ID, q.Name, q.Version}
+
+			dv, read := b.dated[vkey]
+			if !read {
+				need.versions[vkey] = m
+				return
+			}
+
+			if dv.ok {
+				b.decideProxy(i, m, listedVersion{spelled: q.Version, published: dv.published})
+				return
+			}
+
+			if proxy.Unlisted(m.Format, q.Version) {
+				b.decide(i, m.Name, StatusUnknown, unknownResponse())
+				return
+			}
+		}
+
+		if !cv.ok {
+			b.decide(i, m.Name, StatusUnknown, unknownResponse())
 			return
 		}
 	}
@@ -393,17 +448,36 @@ func (b *availabilityBatch) advance(i int, need map[cacheKey]*models.Repository)
 }
 
 // readCached reads the cached metadata of the (proxy member, package) pairs in
-// need, at most proxyReadConcurrency at a time. A read has no error to report:
-// CachedVersions answers ok=false when it cannot say, which is the "unknown"
+// need, and the cached documents of its single versions, at most
+// proxyReadConcurrency at a time. A read has no error to report: CachedVersions
+// and PublishTime answer ok=false when they cannot say, which is the "unknown"
 // state, so the reads run under a plain WaitGroup and semaphore.
-func (b *availabilityBatch) readCached(ctx context.Context, need map[cacheKey]*models.Repository) error {
+func (b *availabilityBatch) readCached(ctx context.Context, need cacheNeed) error {
 	var (
 		mu  sync.Mutex
 		wg  sync.WaitGroup
 		sem = make(chan struct{}, proxyReadConcurrency)
 	)
 
-	for key, m := range need {
+	for key, m := range need.versions {
+		sem <- struct{}{}
+
+		wg.Go(func() {
+			defer func() { <-sem }()
+
+			dv := datedVersion{}
+
+			if b.published != nil {
+				dv.published, dv.ok = b.published.PublishTime(ctx, m, key.pkg, key.version)
+			}
+
+			mu.Lock()
+			b.dated[key] = dv
+			mu.Unlock()
+		})
+	}
+
+	for key, m := range need.lists {
 		sem <- struct{}{}
 
 		wg.Go(func() {

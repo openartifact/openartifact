@@ -308,5 +308,9 @@ var GoHooks = Hooks{ //nolint:gochecknoglobals // format hook table
 	},
 	Published: (*Service).goInfoPublished,
 	Versions:  (*Service).goVersions,
-	BlobPath:  presign.GoBlobPath,
+	// A build fetches the ".info" of each version and never the list, which
+	// names no pseudo-version either.
+	VersionDated: true,
+	Unlisted:     module.IsPseudoVersion,
+	BlobPath:     presign.GoBlobPath,
 }

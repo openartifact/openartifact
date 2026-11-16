@@ -115,6 +115,19 @@ type Hooks struct {
 	// spelled. See VersionKey.
 	VersionKey func(version string) string
 
+	// VersionDated says that Published reads a document of the version itself,
+	// which a client fetches without the document Versions reads (go: a build
+	// requests each version's ".info" and never "@v/list"). A version Published
+	// dates is then one the proxy has, whether or not Versions lists it. See
+	// DatesVersionsAlone.
+	VersionDated bool
+
+	// Unlisted reports whether the document Versions reads never names version
+	// although the upstream serves it (go: "@v/list" names no pseudo-version).
+	// Its absence from the list then says nothing. Nil means the list names
+	// every version. See Unlisted.
+	Unlisted func(version string) bool
+
 	// BlobPath reports whether rel, a file below the repository root, is a
 	// package download that may be redirected to the object store rather than
 	// metadata (see presign.Register). Register hands it to presign. Nil means

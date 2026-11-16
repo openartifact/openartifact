@@ -257,3 +257,53 @@ func TestGoGate_ZeroGateIsUnchanged(t *testing.T) {
 		t.Errorf("info: status %d, want 200", w.Code)
 	}
 }
+
+// TestGoVersionsADocumentOfTheirOwn: what a build leaves in the cache is the
+// ".info" of each version, not the list; that document alone dates a version,
+// and a pseudo-version is never in the list. The batch availability check
+// relies on both (DatesVersionsAlone, Unlisted).
+func TestGoVersionsADocumentOfTheirOwn(t *testing.T) {
+	const pseudo = "v0.0.0-20260102030405-0123456789ab"
+
+	ctx := context.Background()
+	e := newGoEnv(t)
+	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	e.setInfo(pseudo, at)
+
+	if _, ok := e.svc.PublishTime(ctx, e.repo, goMod1, pseudo); ok {
+		t.Fatal("a version nothing is cached of is dated")
+	}
+
+	// A build: the .info of the version, no list.
+	if w := e.get(goGateBase + pseudo + ".info"); w.Code != http.StatusOK {
+		t.Fatalf(".info = %d", w.Code)
+	}
+
+	if _, ok := e.svc.CachedVersions(ctx, e.repo, goMod1); ok {
+		t.Error("versions are listed without a cached list")
+	}
+
+	if got, ok := e.svc.PublishTime(ctx, e.repo, goMod1, pseudo); !ok || !got.Equal(at) {
+		t.Errorf("PublishTime = %v, %v; want %v from the cached .info", got, ok, at)
+	}
+
+	// With the list cached, the pseudo-version is still not in it.
+	e.setList("v1.0.0")
+
+	if w := e.get(goGateBase + "list"); w.Code != http.StatusOK {
+		t.Fatalf("list = %d", w.Code)
+	}
+
+	list, ok := e.svc.CachedVersions(ctx, e.repo, goMod1)
+	if !ok || len(list) != 1 || list[0].Version != "v1.0.0" {
+		t.Errorf("CachedVersions = %+v, %v; want only v1.0.0", list, ok)
+	}
+
+	if !DatesVersionsAlone("go") || DatesVersionsAlone("composer") || DatesVersionsAlone("npm") {
+		t.Error("only go dates a version from a document of its own")
+	}
+
+	if !Unlisted("go", pseudo) || Unlisted("go", "v1.0.0") || Unlisted("go", "v2.0.0+incompatible") || Unlisted("npm", pseudo) {
+		t.Error("only a go pseudo-version is never listed")
+	}
+}
