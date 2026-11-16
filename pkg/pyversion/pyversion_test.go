@@ -4,7 +4,10 @@
 
 package pyversion
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestComparePEP440(t *testing.T) {
 	order := []string{"1.0.dev1", "1.0a1", "1.0b2", "1.0rc1", "1.0", "1.0.post1", "1.1", "9.0.0", "10.0.0", "1!0.1"}
@@ -66,6 +69,10 @@ func FuzzCanonical(f *testing.F) {
 		f.Add(s)
 	}
 
+	for _, s := range boundarySpellings() {
+		f.Add(s)
+	}
+
 	f.Fuzz(func(t *testing.T, v string) {
 		c := Canonical(v)
 		if again := Canonical(c); again != c {
@@ -105,4 +112,59 @@ func TestHugeNumbersAreNotVersions(t *testing.T) {
 		Canonical("000000000000000000000001.0") != "1" {
 		t.Error("a long number that fits was refused")
 	}
+}
+
+// boundarySpellings are versions with a number at an int boundary or with
+// leading zeros, in every position a number can take (epoch, release, pre, post,
+// dev, local).
+func boundarySpellings() []string {
+	var out []string
+
+	for _, n := range []string{
+		"9223372036854775807", "9223372036854775808", "99999999999999999999", "999999999999999999",
+		"0009223372036854775807", "000000000000000000001", "00",
+	} {
+		for _, tmpl := range []string{
+			"%", "%!1", "1!%", "1.%", "%.0.1", "1.0a%", "1.0rc%", "1.0.post%", "1.0-%", "1.0.dev%",
+			"1.0a1.post%.dev%", "1.0+%", "%!%.%a%.post%.dev%",
+		} {
+			out = append(out, strings.ReplaceAll(tmpl, "%", n))
+		}
+	}
+
+	return out
+}
+
+// FuzzCanonicalCompare: two valid versions have one canonical form exactly when
+// Compare calls them equal. The local label is the one difference: Canonical
+// keeps it and Compare ignores it, so a label makes the forms differ, never
+// the comparison.
+func FuzzCanonicalCompare(f *testing.F) {
+	spellings := boundarySpellings()
+	for i, a := range spellings {
+		f.Add(a, spellings[(i+1)%len(spellings)])
+		f.Add(a, "0"+a)
+		f.Add(a, a)
+	}
+
+	f.Add("1.0", "1.0.0")
+	f.Add("1.0rc1", "1.0c1")
+	f.Add("1.0-1", "1.0.post1")
+
+	f.Fuzz(func(t *testing.T, a, b string) {
+		if !Valid(a) || !Valid(b) {
+			return
+		}
+
+		same := Canonical(a) == Canonical(b)
+		equal := Compare(a, b) == 0
+
+		if same && !equal {
+			t.Fatalf("%q and %q share the canonical form %q but Compare = %d", a, b, Canonical(a), Compare(a, b))
+		}
+
+		if equal && !same && !strings.Contains(a, "+") && !strings.Contains(b, "+") {
+			t.Fatalf("%q and %q compare equal but canonicalize to %q and %q", a, b, Canonical(a), Canonical(b))
+		}
+	})
 }
