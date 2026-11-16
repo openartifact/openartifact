@@ -649,3 +649,19 @@ func TestCheckDistrustsTheLockfile(t *testing.T) {
 		t.Errorf("unknown status: exit %d, stdout %q, stderr %q", res.code, res.stdout, res.stderr)
 	}
 }
+
+// TestMetadataPathCargoNames: the index path is cut from the crate name's
+// bytes, so a name that is not a crate name is not requested (".00" and "..ab"
+// would have put a "." or ".." segment in it).
+func TestMetadataPathCargoNames(t *testing.T) {
+	for _, name := range []string{".00", "..ab", "-ab", "1ab", "é", "ab\u00e9cd", "a b"} {
+		if got, ok := metadataPath("r", lockfile.Cargo, lockfile.Dep{Name: name, Version: "1.0.0"}); ok {
+			t.Errorf("metadataPath(cargo, %q) = %q, want it rejected", name, got)
+		}
+	}
+
+	if got, ok := metadataPath("r", lockfile.Cargo, lockfile.Dep{Name: "Serde_json", Version: "1.0.0"}); !ok ||
+		got != "/repos/r/index/se/rd/serde_json" {
+		t.Errorf("metadataPath(cargo, Serde_json) = %q, %v", got, ok)
+	}
+}

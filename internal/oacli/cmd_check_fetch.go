@@ -113,6 +113,10 @@ func metadataPath(repo string, kind lockfile.Kind, d lockfile.Dep) (string, bool
 	case lockfile.Poetry, lockfile.UV, lockfile.Pylock:
 		return base + "simple/" + escape(name) + "/", true
 	case lockfile.Cargo:
+		if !crateName(name) {
+			return "", false
+		}
+
 		return base + "index/" + escapePath(pkgcargo.IndexPathFor(strings.ToLower(name))), true
 	case lockfile.Bundler:
 		return base + "info/" + escape(name), true
@@ -145,6 +149,20 @@ func packageName(name string, slashes int) bool {
 	}
 
 	return true
+}
+
+// crateName reports whether name is a crate name (an ASCII letter, then letters,
+// digits, "-" and "_"). The sparse index path is cut from the name's bytes, so
+// a name such as "..ab" would put a dot segment into it.
+func crateName(name string) bool {
+	for i, c := range name {
+		letter := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+		if !letter && (i == 0 || (c < '0' || c > '9') && c != '-' && c != '_') {
+			return false
+		}
+	}
+
+	return name != ""
 }
 
 // composerDev reports whether a locked Composer version is a branch, which
