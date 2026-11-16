@@ -82,7 +82,7 @@ func metadataPath(repo string, kind lockfile.Kind, d lockfile.Dep) string {
 		}
 
 		return base + "p2/" + name + ".json"
-	case lockfile.Poetry, lockfile.UV:
+	case lockfile.Poetry, lockfile.UV, lockfile.Pylock:
 		return base + "simple/" + name + "/"
 	case lockfile.Cargo:
 		return base + "index/" + pkgcargo.IndexPathFor(strings.ToLower(name))

@@ -79,12 +79,16 @@ type fetchSummary struct {
 
 // checkReport is what `oa check` prints with --format json.
 type checkReport struct {
-	Repository string         `json:"repository"`
-	Lockfile   string         `json:"lockfile"`
-	Kind       string         `json:"kind"`
-	Summary    map[string]int `json:"summary"`
-	Fetched    *fetchSummary  `json:"fetched,omitempty"`
-	Results    []checkResult  `json:"results"`
+	Repository string `json:"repository"`
+	Lockfile   string `json:"lockfile"`
+	Kind       string `json:"kind"`
+	// Graph is false when the lockfile does not record which package requires
+	// which (a pylock.toml of uv export or pip lock): an empty required_by then
+	// says nothing.
+	Graph   bool           `json:"dependency_graph"`
+	Summary map[string]int `json:"summary"`
+	Fetched *fetchSummary  `json:"fetched,omitempty"`
+	Results []checkResult  `json:"results"`
 }
 
 func newCheckCmd(a *app) *cobra.Command {
@@ -92,12 +96,13 @@ func newCheckCmd(a *app) *cobra.Command {
 		Use:   "check <repo> --lockfile FILE",
 		Short: "Check a lockfile's dependencies against a repository before installing",
 		Long: "Read the package versions a lockfile pins (composer.lock, package-lock.json, npm-shrinkwrap.json, " +
-			"pnpm-lock.yaml, yarn.lock, poetry.lock, uv.lock, Cargo.lock, Gemfile.lock or packages.lock.json) and ask " +
+			"pnpm-lock.yaml, yarn.lock, poetry.lock, uv.lock, pylock.toml, Cargo.lock, Gemfile.lock or packages.lock.json) and ask " +
 			"the repository, usually the group your package manager uses, whether it will serve each of them: available, " +
 			"held (by a curation rule, the minimum age, a quarantine or the license policy, with the reason), not_found or " +
 			"unknown (a proxy that has not cached the package's metadata yet). Local, linked, bundled and git or file " +
 			"dependencies are skipped. REQUIRED BY lists the locked packages that require a dependency (\"-\" when none does, " +
-			"so the project requires it itself); a package the project also requires directly is not marked as such. " +
+			"so the project requires it itself); a package the project also requires directly is not marked as such, and a " +
+			"pylock.toml that lists no dependencies (uv export, pip lock) has no REQUIRED BY column. " +
 			"Reading needs read access on the repository.\n\n" +
 			"A proxy only knows the packages it has fetched, so on a fresh proxy most answers are unknown. --fetch first " +
 			"requests each package's metadata through the repository, as the package manager would, so the proxies " +
@@ -113,10 +118,10 @@ func newCheckCmd(a *app) *cobra.Command {
 
 	path := cmd.Flags().
 		String("lockfile", "", "Lockfile to check: composer.lock, package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, "+
-			"yarn.lock, poetry.lock, uv.lock, Cargo.lock, Gemfile.lock or packages.lock.json")
+			"yarn.lock, poetry.lock, uv.lock, pylock.toml, Cargo.lock, Gemfile.lock or packages.lock.json")
 	noDev := cmd.Flags().Bool("no-dev", false,
 		"Skip the dependencies the lockfile marks as development only "+
-			"(not with yarn.lock, Cargo.lock, Gemfile.lock, packages.lock.json or a poetry.lock of Poetry 1.5 to 1.8)")
+			"(not with yarn.lock, Cargo.lock, Gemfile.lock, packages.lock.json, pylock.toml or a poetry.lock of Poetry 1.5 to 1.8)")
 	failUnknown := cmd.Flags().Bool("fail-on-unknown", false, "Exit 1 also when the repository cannot tell (unknown)")
 	fetch := cmd.Flags().Bool("fetch", false, "First request each package's metadata through the repository, so its proxies cache it")
 
@@ -175,7 +180,7 @@ func runCheck(ctx context.Context, api *ciAPI, repo, path string, opts checkOpti
 	}
 
 	report := checkReport{
-		Repository: repo, Lockfile: path, Kind: string(kind),
+		Repository: repo, Lockfile: path, Kind: string(kind), Graph: lockfile.GraphRecorded(kind, data),
 		Summary: map[string]int{statusAvailable: 0, statusHeld: 0, statusNotFound: 0, statusUnknown: 0},
 		Results: []checkResult{},
 	}
@@ -284,21 +289,34 @@ func (r checkReport) text() string {
 	}
 
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "STATUS\tPACKAGE\tVERSION\tFROM\tREQUIRED BY\tREASON")
+
+	if r.Graph {
+		_, _ = fmt.Fprintln(w, "STATUS\tPACKAGE\tVERSION\tFROM\tREQUIRED BY\tREASON")
+	} else {
+		_, _ = fmt.Fprintln(w, "STATUS\tPACKAGE\tVERSION\tFROM\tREASON")
+	}
 
 	for _, res := range r.Results {
 		if res.Status == statusAvailable {
 			continue
 		}
 
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			res.Status, res.Package, res.Version, res.Repository, requiredByLine(res.RequiredBy), reasonLine(res.Reasons))
+		if r.Graph {
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+				res.Status, res.Package, res.Version, res.Repository, requiredByLine(res.RequiredBy), reasonLine(res.Reasons))
+		} else {
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", res.Status, res.Package, res.Version, res.Repository, reasonLine(res.Reasons))
+		}
 	}
 
 	_ = w.Flush()
 
 	fmt.Fprintf(&b, "\n%s: %d available, %d held, %d not found, %d unknown.", dependencies(total),
 		r.Summary[statusAvailable], r.Summary[statusHeld], r.Summary[statusNotFound], r.Summary[statusUnknown])
+
+	if !r.Graph {
+		fmt.Fprintf(&b, "\n%s does not record which package requires which, so what pulls a dependency in is not shown.", r.Lockfile)
+	}
 
 	return b.String()
 }

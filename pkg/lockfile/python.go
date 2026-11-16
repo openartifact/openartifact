@@ -247,3 +247,72 @@ func uvReachable(pkgs []uvPackage) map[int]bool {
 
 	return prod
 }
+
+// pylockLock is the part of a PEP 751 pylock.toml Parse reads.
+type pylockLock struct {
+	LockVersion string          `toml:"lock-version"`
+	Packages    []pylockPackage `toml:"packages"`
+}
+
+type pylockPackage struct {
+	Name    string `toml:"name"`
+	Version string `toml:"version"`
+	// A package installed from a VCS, a local directory or an archive URL
+	// names it in one of these tables; one from an index has sdist or wheels.
+	VCS       any `toml:"vcs"`
+	Directory any `toml:"directory"`
+	Archive   any `toml:"archive"`
+	// Dependencies is optional in PEP 751, and neither uv nor pip writes it.
+	Dependencies []pylockDependency `toml:"dependencies"`
+}
+
+type pylockDependency struct {
+	Name string `toml:"name"`
+}
+
+// parsePylock reads the index packages of a pylock.toml (PEP 751): those that
+// are no VCS, directory or archive package. A requirer is known only when the
+// file lists dependencies (GraphRecorded); it does not say which packages only
+// a dependency group needs: no Dep of it is Dev.
+func parsePylock(data []byte) ([]Dep, error) {
+	var lock pylockLock
+	if err := decodeTOML(data, &lock); err != nil {
+		return nil, err
+	}
+
+	if lock.LockVersion == "" {
+		return nil, invalid("no lock-version")
+	}
+
+	by := requirers{}
+
+	for _, p := range lock.Packages {
+		for _, d := range p.Dependencies {
+			by[pythonName(d.Name)] = append(by[pythonName(d.Name)], pythonName(p.Name))
+		}
+	}
+
+	deps := make([]Dep, 0, len(lock.Packages))
+
+	for _, p := range lock.Packages {
+		name := pythonName(p.Name)
+		if name == "" || p.VCS != nil || p.Directory != nil || p.Archive != nil || !fromRegistry(p.Version, "") {
+			continue
+		}
+
+		deps = append(deps, Dep{Name: name, Version: p.Version, RequiredBy: by[name]})
+	}
+
+	return deps, nil
+}
+
+// pylockRecordsGraph reports whether a pylock.toml lists the dependencies of
+// its packages (PEP 751 makes them optional).
+func pylockRecordsGraph(data []byte) bool {
+	var lock pylockLock
+	if decodeTOML(data, &lock) != nil {
+		return false
+	}
+
+	return slices.ContainsFunc(lock.Packages, func(p pylockPackage) bool { return p.Dependencies != nil })
+}
