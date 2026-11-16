@@ -63,42 +63,68 @@ type Dep struct {
 
 var (
 	// ErrUnknownLockfile is a file name Parse cannot tell the format of.
-	ErrUnknownLockfile = errors.New(
-		"unknown lockfile: expected composer.lock, package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, yarn.lock, " +
-			"poetry.lock, uv.lock, pylock.toml, Cargo.lock, Gemfile.lock or packages.lock.json",
-	)
+	ErrUnknownLockfile = errors.New("unknown lockfile: expected " + fileList())
 	// ErrInvalid is a lockfile that is not the document its format expects.
 	ErrInvalid = errors.New("invalid lockfile")
 )
 
+// kindByFile maps each lockfile name KindOf recognizes to its format. A new
+// Kind needs an entry here; the docs that list the supported lockfiles are
+// checked against Files (cmd/docgen).
+var kindByFile = []struct { //nolint:gochecknoglobals // read-only table
+	name string
+	kind Kind
+}{
+	{"composer.lock", Composer},
+	{"package-lock.json", NPM},
+	{"npm-shrinkwrap.json", NPM},
+	{"pnpm-lock.yaml", PNPM},
+	{"yarn.lock", Yarn},
+	{"poetry.lock", Poetry},
+	{"uv.lock", UV},
+	{"pylock.toml", Pylock},
+	{"Cargo.lock", Cargo},
+	{"Gemfile.lock", Bundler},
+	{"packages.lock.json", NuGet},
+}
+
+// Files returns the lockfile names `oa check` reads, in a stable order: every
+// name in kindByFile. Aliases such as gems.locked and pylock.<name>.toml are
+// not listed.
+func Files() []string {
+	names := make([]string, len(kindByFile))
+	for i, f := range kindByFile {
+		names[i] = f.name
+	}
+
+	return names
+}
+
+// fileList renders Files as "a, b or c".
+func fileList() string {
+	names := Files()
+
+	return strings.Join(names[:len(names)-1], ", ") + " or " + names[len(names)-1]
+}
+
 // KindOf returns the format of a lockfile from its file name.
 func KindOf(path string) (Kind, error) {
-	if pylockName(filepath.Base(path)) {
+	base := filepath.Base(path)
+	if pylockName(base) {
 		return Pylock, nil
 	}
 
-	switch filepath.Base(path) {
-	case "composer.lock":
-		return Composer, nil
-	case "package-lock.json", "npm-shrinkwrap.json":
-		return NPM, nil
-	case "pnpm-lock.yaml":
-		return PNPM, nil
-	case "yarn.lock":
-		return Yarn, nil
-	case "poetry.lock":
-		return Poetry, nil
-	case "uv.lock":
-		return UV, nil
-	case "Cargo.lock":
-		return Cargo, nil
-	case "Gemfile.lock", "gems.locked":
-		return Bundler, nil
-	case "packages.lock.json":
-		return NuGet, nil
+	for _, f := range kindByFile {
+		if f.name == base {
+			return f.kind, nil
+		}
 	}
 
-	return "", fmt.Errorf("%w: %s", ErrUnknownLockfile, filepath.Base(path))
+	if base == "gems.locked" {
+		return Bundler, nil
+	}
+
+	return "", fmt.Errorf("%w: %s", ErrUnknownLockfile, base)
 }
 
 // Parse reads the dependencies of a lockfile of the given kind, sorted by name
