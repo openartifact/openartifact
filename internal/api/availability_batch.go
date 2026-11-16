@@ -138,10 +138,18 @@ type cacheKey struct {
 }
 
 // cachedVersions is what the cached metadata of a proxy says about a package:
-// ok is false when it cannot say (not cached, or the format lists no versions).
+// the versions it lists by proxy.VersionKey, each in the spelling the metadata
+// uses; ok is false when it cannot say (not cached, or the format lists no
+// versions).
 type cachedVersions struct {
-	versions map[string]time.Time
+	versions map[string]listedVersion
 	ok       bool
+}
+
+// listedVersion is a version the cached metadata lists, as it spells it.
+type listedVersion struct {
+	spelled   string
+	published time.Time
 }
 
 // storedKey names a stored version of a hosted member.
@@ -375,8 +383,8 @@ func (b *availabilityBatch) advance(i int, need map[cacheKey]*models.Repository)
 			return
 		}
 
-		if published, has := cv.versions[q.Version]; has {
-			b.decideProxy(i, m, published)
+		if listed, has := cv.versions[proxy.VersionKey(m.Format, q.Version)]; has {
+			b.decideProxy(i, m, listed)
 			return
 		}
 	}
@@ -405,7 +413,7 @@ func (b *availabilityBatch) readCached(ctx context.Context, need map[cacheKey]*m
 
 			if b.published != nil {
 				if list, ok := b.published.CachedVersions(ctx, m, key.pkg); ok {
-					cv = cachedVersions{versions: datedVersions(list), ok: true}
+					cv = cachedVersions{versions: listedVersions(m.Format, list), ok: true}
 				}
 			}
 
@@ -424,10 +432,14 @@ func (b *availabilityBatch) readCached(ctx context.Context, need map[cacheKey]*m
 	return nil
 }
 
-func datedVersions(list []proxy.DatedVersion) map[string]time.Time {
-	out := make(map[string]time.Time, len(list))
+// listedVersions indexes list by proxy.VersionKey; when two spellings share a
+// key, the first listed is kept.
+func listedVersions(format string, list []proxy.DatedVersion) map[string]listedVersion {
+	out := make(map[string]listedVersion, len(list))
 	for _, v := range list {
-		out[v.Version] = v.Published
+		if _, dup := out[proxy.VersionKey(format, v.Version)]; !dup {
+			out[proxy.VersionKey(format, v.Version)] = listedVersion{spelled: v.Version, published: v.Published}
+		}
 	}
 
 	return out
@@ -453,9 +465,13 @@ func (b *availabilityBatch) decideHosted(i int, m *models.Repository, holds mode
 }
 
 // decideProxy decides query i on proxy member m, whose cached metadata lists the
-// version, with the gate of m (published is zero when the metadata dates none).
-func (b *availabilityBatch) decideProxy(i int, m *models.Repository, published time.Time) {
-	q := b.queries[i]
+// version, with the gate of m (listed.published is zero when the metadata dates
+// none).
+//
+// The gate judges the version as the metadata spells it, as the proxy does when
+// it serves the file (a lockfile may spell it another way).
+func (b *availabilityBatch) decideProxy(i int, m *models.Repository, listed listedVersion) {
+	q, published := b.queries[i], listed.published
 	gate := b.gates[m.ID]
 	resp := responses.AvailabilityResponse{Reasons: []responses.AvailabilityReason{}, MinAge: minAgeOff}
 
@@ -472,7 +488,7 @@ func (b *availabilityBatch) decideProxy(i int, m *models.Repository, published t
 	}
 
 	status := StatusAvailable
-	if hidden, hold := gate.Hidden(q.Name, q.Version, published); hidden {
+	if hidden, hold := gate.Hidden(q.Name, listed.spelled, published); hidden {
 		resp.Reasons = append(resp.Reasons, holdReason(hold))
 		status = StatusHeld
 	}

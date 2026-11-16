@@ -208,6 +208,18 @@ func (s *Service) CachedVersions(ctx context.Context, repo *models.Repository, p
 	return h.Versions(s, ctx, repo, pkg)
 }
 
+// VersionKey is the form two spellings of one version of format share, by
+// which a version a client names is looked up among those the metadata lists
+// (Hooks.VersionKey); version itself for a format that spells each version one
+// way.
+func VersionKey(format, version string) string {
+	if h, found := hooks.Lookup(format); found && h.VersionKey != nil {
+		return h.VersionKey(version)
+	}
+
+	return version
+}
+
 // HeldBack is a version of an upstream package the repository's gate keeps from
 // its clients.
 type HeldBack struct {

@@ -6,6 +6,7 @@ package pyversion
 
 import (
 	"cmp"
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -14,7 +15,7 @@ import (
 // pep440Re matches the public version scheme of PEP 440 (after lowercasing).
 var pep440Re = regexp.MustCompile(
 	`^v?(?:(\d+)!)?(\d+(?:\.\d+)*)(?:[-_.]?(a|b|c|rc|alpha|beta|pre|preview)[-_.]?(\d*))?` +
-		`(?:(?:-(\d+))|(?:[-_.]?(post|rev|r)[-_.]?(\d*)))?(?:[-_.]?(dev)[-_.]?(\d*))?(?:\+.*)?$`,
+		`(?:(?:-(\d+))|(?:[-_.]?(post|rev|r)[-_.]?(\d*)))?(?:[-_.]?(dev)[-_.]?(\d*))?(?:\+(.*))?$`,
 )
 
 // pep440Key is a parsed version, comparable via Compare.
@@ -25,6 +26,7 @@ type pep440Key struct {
 	preNum   int
 	post     int // -1 when absent
 	dev      int // maxInt when absent
+	local    string
 	original string
 }
 
@@ -67,6 +69,8 @@ func parse(v string) (pep440Key, bool) {
 	case m[6] != "":
 		k.post, _ = strconv.Atoi(m[7])
 	}
+
+	k.local = strings.NewReplacer("-", ".", "_", ".").Replace(m[10])
 
 	if m[8] != "" {
 		k.dev, _ = strconv.Atoi(m[9])
@@ -126,4 +130,54 @@ func Valid(v string) bool {
 	_, ok := parse(v)
 
 	return ok
+}
+
+// Canonical returns the PEP 440 normalized form of v with trailing zeros of
+// the release dropped, so that two spellings of one version compare equal:
+// "1.0.0-RC1", "v1.0rc1" and "1.0.0.rc.1" are all "1rc1", "1.0-1" is
+// "1.post1" and "1.0+CPU_1" is "1+cpu.1". The local label is kept (unlike in
+// Compare): "1.0+cpu" and "1.0+cu121" are different files. A v that is not a
+// PEP 440 version is returned trimmed and lowercased.
+func Canonical(v string) string {
+	k, ok := parse(v)
+	if !ok {
+		return strings.ToLower(strings.TrimSpace(v))
+	}
+
+	var b strings.Builder
+
+	if k.epoch != 0 {
+		fmt.Fprintf(&b, "%d!", k.epoch)
+	}
+
+	for i, n := range k.release {
+		if i > 0 {
+			b.WriteByte('.')
+		}
+
+		fmt.Fprintf(&b, "%d", n)
+	}
+
+	switch k.preRank {
+	case 1:
+		fmt.Fprintf(&b, "a%d", k.preNum)
+	case 2:
+		fmt.Fprintf(&b, "b%d", k.preNum)
+	case 3:
+		fmt.Fprintf(&b, "rc%d", k.preNum)
+	}
+
+	if k.post >= 0 {
+		fmt.Fprintf(&b, ".post%d", k.post)
+	}
+
+	if k.dev != noDev {
+		fmt.Fprintf(&b, ".dev%d", k.dev)
+	}
+
+	if k.local != "" {
+		b.WriteString("+" + k.local)
+	}
+
+	return b.String()
 }

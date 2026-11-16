@@ -7,6 +7,8 @@ package pypisimple
 import (
 	"strings"
 	"time"
+
+	"github.com/openartifact/openartifact/pkg/pyversion"
 )
 
 // archiveSuffixes are the extensions a distribution file name can end in.
@@ -104,10 +106,16 @@ func versionAfterName(project, stem string) string {
 	return ""
 }
 
-// canonicalVersion lowercases a version and drops a leading "v", turns the
-// "-" and "_" separators into "." and removes trailing ".0" components, so
-// "1.0", "1.0.0" and "V1_0" are one spelling.
+// canonicalVersion is the PEP 440 normalized form of a version (pyversion.Canonical),
+// so "1.0", "1.0.0", "1.0.0-RC1" and "1.0rc1" (or "1.0-1" and "1.0.post1")
+// name one release as they do for pip and Warehouse. A version PEP 440 does not
+// parse is lowercased, a leading "v" dropped, its "-" and "_" separators turned
+// into "." and trailing ".0" components removed, so "1.0" and "V1_0" stay one.
 func canonicalVersion(v string) string {
+	if pyversion.Valid(v) {
+		return pyversion.Canonical(v)
+	}
+
 	v = strings.TrimPrefix(strings.ToLower(v), "v")
 	v = strings.NewReplacer("-", ".", "_", ".").Replace(v)
 
@@ -118,6 +126,10 @@ func canonicalVersion(v string) string {
 
 	return strings.Join(parts, ".")
 }
+
+// VersionKey is the canonical spelling of version that every spelling of one
+// release shares (see canonicalVersion).
+func VersionKey(version string) string { return canonicalVersion(version) }
 
 // SameVersion reports whether two spellings name one release ("1.0" and "1.0.0").
 func SameVersion(a, b string) bool {

@@ -21,8 +21,14 @@ func TestFileVersion(t *testing.T) {
 		{"requests", "requests-2.32.0-py3-none-any.whl.metadata", "2.32"},
 		{"zope-interface", "zope.interface-6.0-cp311-cp311-linux_x86_64.whl", "6"},
 		{"zope-interface", "zope.interface-6.0.tar.gz", "6"},
-		{"foo-bar", "foo_bar-1.0rc1.zip", "1.0rc1"},
-		{"foo-bar", "foo-bar-1.0.post1.tar.bz2", "1.0.post1"},
+		{"foo-bar", "foo_bar-1.0rc1.zip", "1rc1"},
+		{"foo-bar", "foo-bar-1.0.post1.tar.bz2", "1.post1"},
+		// PEP 440 spellings of one version: the sdist and the wheel of a release.
+		{"foo", "foo-1.0.0-rc1.tar.gz", "1rc1"},
+		{"foo", "foo-1.0.0rc1-py3-none-any.whl", "1rc1"},
+		{"foo", "foo-1.0.0.RC.1.zip", "1rc1"},
+		{"foo", "foo-1.0alpha1.tar.gz", "1a1"},
+		{"foo", "foo-2.0.0+cpu-cp311-cp311-linux_x86_64.whl", "2+cpu"},
 		{"foo", "Foo-V1_2_0.tar.gz", "1.2"},
 		{"foo", "foo-1.0.0.egg", "1"},
 		{"foo", "other-name-3.1.tar.gz", "3.1"},
@@ -132,5 +138,27 @@ func TestReleases_EarliestFileDatesTheRelease(t *testing.T) {
 
 	if len(files) != 7 {
 		t.Errorf("Filter modified its input")
+	}
+}
+
+// TestSameVersion: PEP 440 spellings of one release are the same version, and
+// a local label tells two builds apart.
+func TestSameVersion(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		a, b string
+		same bool
+	}{
+		{"1.0", "1.0.0", true},
+		{"1.0.0rc1", "1.0.0-rc1", true},
+		{"1.0-1", "1.0.post1", true},
+		{"V1_0", "1.0", true},
+		{"2.0+cpu", "2.0+cu121", false},
+		{"1.0rc1", "1.0", false},
+	} {
+		if got := SameVersion(tc.a, tc.b); got != tc.same {
+			t.Errorf("SameVersion(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.same)
+		}
 	}
 }
