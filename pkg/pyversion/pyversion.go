@@ -32,9 +32,30 @@ type pep440Key struct {
 
 const noDev = int(^uint(0) >> 1)
 
+// maxDigits bounds a number of a version: 18 digits always fit an int, so two
+// numbers never meet at the overflow value, and none reaches noDev.
+const maxDigits = 18
+
+// fits reports whether every number of a version (the "."-separated parts of
+// each of nums) has at most maxDigits significant digits.
+func fits(nums ...string) bool {
+	for _, n := range nums {
+		for part := range strings.SplitSeq(n, ".") {
+			if len(strings.TrimLeft(part, "0")) > maxDigits {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+// parse reads v as a PEP 440 version. A version with a number too large to
+// compare (fits) is not one: it would otherwise equal every other such version,
+// and a huge dev number the absence of one.
 func parse(v string) (pep440Key, bool) {
 	m := pep440Re.FindStringSubmatch(strings.ToLower(strings.TrimSpace(v)))
-	if m == nil {
+	if m == nil || !fits(m[1], m[2], m[4], m[5], m[7], m[9]) {
 		return pep440Key{}, false
 	}
 
