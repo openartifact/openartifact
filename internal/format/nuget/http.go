@@ -203,8 +203,24 @@ func (h *HTTPHandler) handleServiceIndex(w http.ResponseWriter, r *http.Request)
 				"@type": "SearchQueryService",
 			},
 			{
+				"@id":   baseURL + "/v3/query",
+				"@type": "SearchQueryService/3.0.0-beta",
+			},
+			{
+				"@id":   baseURL + "/v3/query",
+				"@type": "SearchQueryService/3.0.0-rc",
+			},
+			{
 				"@id":   baseURL + "/v3/autocomplete",
 				"@type": "SearchAutocompleteService",
+			},
+			{
+				"@id":   baseURL + "/v3/autocomplete",
+				"@type": "SearchAutocompleteService/3.0.0-beta",
+			},
+			{
+				"@id":   baseURL + "/v3/autocomplete",
+				"@type": "SearchAutocompleteService/3.0.0-rc",
 			},
 			{
 				"@id":   baseURL + "/v3/package",
