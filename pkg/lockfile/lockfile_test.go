@@ -166,6 +166,16 @@ func TestParse(t *testing.T) {
 		}},
 		// A project reference (shared) is left out and no requirer; acme.log
 		// requires Acme.Log in another case.
+		// A real go.sum (renamed): each module version once, the /go.mod-only
+		// line of acme/mod included; two pseudo-versions.
+		{"go.sum", GoSum, "testdata/go.sum", []Dep{
+			{Name: "example.com/acme/exp", Version: "v0.0.0-20240613232115-7f521ea00fb8"},
+			{Name: "example.com/acme/mod", Version: "v0.17.0"},
+			{Name: "example.com/acme/quote", Version: "v1.5.2"},
+			{Name: "example.com/acme/sampler", Version: "v1.3.0"},
+			{Name: "example.com/acme/text", Version: "v0.0.0-20170915032832-14c0d48ead0c"},
+			{Name: "example.com/acme/uuid", Version: "v1.6.0"},
+		}},
 		{"packages.lock.json", NuGet, "testdata/packages.lock.json", []Dep{
 			{Name: "Acme.Json", Version: "13.0.3"},
 			{Name: "Acme.Log", Version: "4.0.0", RequiredBy: []string{"Acme.Log.Console"}},
@@ -216,6 +226,10 @@ func TestParseRejects(t *testing.T) {
 		{"cargo empty", Cargo, ""},
 		{"cargo wrong type", Cargo, "version = 4\npackage = [1]\n"},
 		{"bundler empty", Bundler, ""},
+		{"go.sum with two fields", GoSum, "example.com/a v1.0.0\n"},
+		{"go.sum with a version that is not one", GoSum, "example.com/a 1.0.0 h1:x=\n"},
+		{"go.sum with a dot-dot path", GoSum, "example.com/../a v1.0.0 h1:x=\n"},
+		{"go.sum with a major version the path does not carry", GoSum, "example.com/a v2.0.0 h1:x=\n"},
 		{"bundler indented only", Bundler, "    a (1.0.0)\n"},
 		{"nuget without version", NuGet, `{"dependencies": {}}`},
 		{"nuget wrong type", NuGet, `{"version": 1, "dependencies": {"net8.0": []}}`},
@@ -241,6 +255,7 @@ func TestKindOf(t *testing.T) {
 		"/src/npm-shrinkwrap.json":   NPM,
 		"yarn.lock":                  Yarn,
 		"web/pnpm-lock.yaml":         PNPM,
+		"go.work.sum":                "",
 		"Cargo.lock":                 Cargo,
 		"py/poetry.lock":             Poetry,
 		"uv.lock":                    UV,
@@ -249,7 +264,7 @@ func TestKindOf(t *testing.T) {
 		"Gemfile.lock":               Bundler,
 		"app/gems.locked":            Bundler,
 		"src/App/packages.lock.json": NuGet,
-		"go.sum":                     "",
+		"go.sum":                     GoSum,
 		"pylock.toml":                Pylock,
 		"py/pylock.dev.toml":         Pylock,
 		"pylock.a.b.toml":            "",
@@ -347,6 +362,12 @@ url = "https://example.test/acme_url-1.0.tar.gz"
 [metadata]
 lock-version = "1.1"
 `, []Dep{{Name: "acme-old", Version: "1.0", Dev: true}}},
+		{"go.sum: blank lines, +incompatible, a /v2 module", GoSum,
+			"\nexample.com/a v2.0.0+incompatible h1:x=\n\nexample.com/b/v2 v2.1.0/go.mod h1:y=\n", []Dep{
+				{Name: "example.com/a", Version: "v2.0.0+incompatible"},
+				{Name: "example.com/b/v2", Version: "v2.1.0"},
+			}},
+		{"go.sum of a module without dependencies", GoSum, "", []Dep{}},
 		{"bundler with CRLF, a plugin source and two gem servers", Bundler, "PLUGIN SOURCE\r\n  remote: x\r\n  specs:\r\n    p (1.0)\r\n\r\n" +
 			"GEM\r\n  remote: https://a.example/\r\n  specs:\r\n    a (1.0.0)\r\n      b\r\n\r\n" +
 			"GEM\r\n  remote: https://b.example/\r\n  specs:\r\n    b (2.0.0.pre1)\r\n", []Dep{
@@ -420,6 +441,7 @@ func TestDevRecorded(t *testing.T) {
 		{Cargo, "testdata/Cargo.lock", false},
 		{Bundler, "testdata/Gemfile.lock", false},
 		{NuGet, "testdata/packages.lock.json", false},
+		{GoSum, "testdata/go.sum", false},
 		{Pylock, "testdata/pylock.toml", false},
 	} {
 		if got := DevRecorded(tc.kind, read(tc.file)); got != tc.want {
@@ -438,6 +460,7 @@ func TestGraphRecorded(t *testing.T) {
 		{Pylock, "lock-version = \"1.0\"\n[[packages]]\nname = \"a\"\nversion = \"1\"\n", false},
 		{Pylock, "lock-version = \"1.0\"\n[[packages]]\nname = \"a\"\nversion = \"1\"\ndependencies = []\n", true},
 		{Pylock, "not toml [", false},
+		{GoSum, "", false},
 	} {
 		if got := GraphRecorded(tc.kind, []byte(tc.data)); got != tc.want {
 			t.Errorf("GraphRecorded(%s, %q) = %v, want %v", tc.kind, tc.data, got, tc.want)

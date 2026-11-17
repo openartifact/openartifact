@@ -37,7 +37,7 @@ type checkServer struct {
 }
 
 // checkRepos are the repositories the check server knows.
-var checkRepos = []string{"php", "npm", "pypi", "crates", "gems", "nuget"} //nolint:gochecknoglobals // test fixture
+var checkRepos = []string{"php", "npm", "pypi", "crates", "gems", "nuget", "go"} //nolint:gochecknoglobals // test fixture
 
 func newCheckServer(t *testing.T, status int) *checkServer {
 	t.Helper()
@@ -459,6 +459,8 @@ func TestCheckLockfiles(t *testing.T) {
 		{"poetry.lock", "pypi", true, 6, 6, "/repos/pypi/simple/acme-url/"},
 		{"poetry-1.8/poetry.lock", "pypi", false, 14, 14, "/repos/pypi/simple/acme-charset/"},
 		{"Cargo.lock", "crates", false, 9, 9, "/repos/crates/index/ac/me/acme_serde_derive"},
+		// go: the .info of each of the 6 versions, and the list of each module.
+		{"go.sum", "go", false, 6, 12, "/repos/go/example.com/acme/exp/@v/list"},
 		{"Gemfile.lock", "gems", false, 5, 5, "/repos/gems/info/acme-xml"},
 		{"packages.lock.json", "nuget", false, 4, 4, "/repos/nuget/v3/package/acme.log.console/index.json"},
 		{"pylock.toml", "pypi", false, 13, 13, "/repos/pypi/simple/acme-http/"},
@@ -510,6 +512,11 @@ func TestMetadataPath(t *testing.T) {
 		{lockfile.Composer, "acme/a?b", "1.0.0", "/repos/r%2Fx/p2/acme/a%3Fb.json"},
 		{lockfile.Bundler, "acme-xml", "1.16.7", "/repos/r%2Fx/info/acme-xml"},
 		{lockfile.NuGet, "Acme.Log", "4.0.0", "/repos/r%2Fx/v3/package/acme.log/index.json"},
+		// go: the .info of the version, escaped as the go command does.
+		{lockfile.GoSum, "github.com/Azure/sdk/v2", "v2.1.0", "/repos/r%2Fx/github.com/%21azure/sdk/v2/@v/v2.1.0.info"},
+		{lockfile.GoSum, "example.com/a", "v0.0.0-20240613232115-7f521ea00fb8",
+			"/repos/r%2Fx/example.com/a/@v/v0.0.0-20240613232115-7f521ea00fb8.info"},
+		{lockfile.GoSum, "example.com/a", "v1.0.0-RC.1", "/repos/r%2Fx/example.com/a/@v/v1.0.0-%21r%21c.1.info"},
 	} {
 		if got, ok := metadataPath("r/x", tc.kind, lockfile.Dep{Name: tc.name, Version: tc.version}); got != tc.want || !ok {
 			t.Errorf("metadataPath(%s, %s %s) = %q, %v; want %q", tc.kind, tc.name, tc.version, got, ok, tc.want)
@@ -584,6 +591,10 @@ func TestMetadataPathRefusesNonNames(t *testing.T) {
 		{lockfile.Cargo, "../x"},
 		{lockfile.Bundler, "."},
 		{lockfile.NuGet, "A/../B"},
+		{lockfile.GoSum, "example.com/../x"},
+		{lockfile.GoSum, "example.com/a?b"},
+		{lockfile.GoSum, "../x"},
+		{lockfile.GoSum, ""},
 	} {
 		if got, ok := metadataPath("r", tc.kind, lockfile.Dep{Name: tc.name, Version: "1.0.0"}); ok {
 			t.Errorf("metadataPath(%s, %q) = %q, want it refused", tc.kind, tc.name, got)
@@ -663,5 +674,35 @@ func TestMetadataPathCargoNames(t *testing.T) {
 	if got, ok := metadataPath("r", lockfile.Cargo, lockfile.Dep{Name: "Serde_json", Version: "1.0.0"}); !ok ||
 		got != "/repos/r/index/se/rd/serde_json" {
 		t.Errorf("metadataPath(cargo, Serde_json) = %q, %v", got, ok)
+	}
+}
+
+// TestGoFetchCountsPackagesNotLists: --fetch on a go.sum asks for the .info of
+// every version and the list of every module, but reports the versions only.
+func TestGoFetchCountsPackagesNotLists(t *testing.T) {
+	srv := newCheckServer(t, 0)
+
+	res := runOA(
+		t,
+		srv.Server,
+		"",
+		"check",
+		"go",
+		"--lockfile",
+		filepath.Join("..", "..", "pkg", "lockfile", "testdata", "go.sum"),
+		"--fetch",
+	)
+	if res.code != 0 || !strings.Contains(res.stdout, "Fetched the metadata of 6 packages through go.") {
+		t.Fatalf("exit %d, stdout %q", res.code, res.stdout)
+	}
+
+	for _, want := range []string{
+		"/repos/go/example.com/acme/text/@v/v0.0.0-20170915032832-14c0d48ead0c.info",
+		"/repos/go/example.com/acme/mod/@v/v0.17.0.info",
+		"/repos/go/example.com/acme/mod/@v/list",
+	} {
+		if !slices.Contains(srv.gets, want) {
+			t.Errorf("--fetch did not request %s: %v", want, srv.gets)
+		}
 	}
 }

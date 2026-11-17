@@ -31,7 +31,7 @@ func FuzzMetadataPath(f *testing.F) {
 
 	kinds := []lockfile.Kind{
 		lockfile.Composer, lockfile.NPM, lockfile.PNPM, lockfile.Yarn, lockfile.Poetry, lockfile.UV,
-		lockfile.Pylock, lockfile.Cargo, lockfile.Bundler, lockfile.NuGet,
+		lockfile.Pylock, lockfile.Cargo, lockfile.Bundler, lockfile.NuGet, lockfile.GoSum,
 	}
 
 	f.Fuzz(func(t *testing.T, repo, name, version string) {

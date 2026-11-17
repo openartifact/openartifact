@@ -47,6 +47,9 @@ const (
 	// development dependencies either.
 	Bundler Kind = "bundler"
 	NuGet   Kind = "nuget"
+	// GoSum is a Go module's go.sum: module versions only, with neither
+	// requirers (GraphRecorded) nor test-only modules.
+	GoSum Kind = "gosum"
 )
 
 // Dep is one package version a lockfile pins. Dev reports that the lockfile
@@ -86,6 +89,7 @@ var kindByFile = []struct { //nolint:gochecknoglobals // read-only table
 	{"Cargo.lock", Cargo},
 	{"Gemfile.lock", Bundler},
 	{"packages.lock.json", NuGet},
+	{"go.sum", GoSum},
 }
 
 // Files returns the lockfile names `oa check` reads, in a stable order: every
@@ -157,6 +161,8 @@ func Parse(kind Kind, data []byte) ([]Dep, error) {
 		deps, err = parseBundler(data)
 	case NuGet:
 		deps, err = parseNuGet(data)
+	case GoSum:
+		deps, err = parseGoSum(data)
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnknownLockfile, kind)
 	}
@@ -174,7 +180,7 @@ func Parse(kind Kind, data []byte) ([]Dep, error) {
 // poetry.lock only when Poetry 2 (or a Poetry before 1.5) wrote it.
 func DevRecorded(kind Kind, data []byte) bool {
 	switch kind {
-	case Yarn, Cargo, Bundler, NuGet, Pylock:
+	case Yarn, Cargo, Bundler, NuGet, Pylock, GoSum:
 		return false
 	case Poetry:
 		return poetryRecordsDev(data)
@@ -188,11 +194,14 @@ func DevRecorded(kind Kind, data []byte) bool {
 // itself: every format does, except a pylock.toml without dependency lists
 // (what uv export and pip lock write).
 func GraphRecorded(kind Kind, data []byte) bool {
-	if kind == Pylock {
+	switch kind {
+	case Pylock:
 		return pylockRecordsGraph(data)
+	case GoSum:
+		return false
+	default:
+		return true
 	}
-
-	return true
 }
 
 // pylockName reports whether name is a PEP 751 lockfile name: pylock.toml, or

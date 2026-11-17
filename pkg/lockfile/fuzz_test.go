@@ -139,3 +139,10 @@ func FuzzPylock(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, data []byte) { checkDeps(t, Pylock, data) })
 }
+
+func FuzzGoSum(f *testing.F) {
+	addSeed(f, "testdata/go.sum")
+	f.Add([]byte("example.com/a/v2 v2.0.0/go.mod h1:x=\nexample.com/A v1.0.0-RC.1 h1:y=\n"))
+
+	f.Fuzz(func(t *testing.T, data []byte) { checkDeps(t, GoSum, data) })
+}

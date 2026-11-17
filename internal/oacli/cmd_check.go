@@ -98,13 +98,14 @@ func newCheckCmd(a *app) *cobra.Command {
 		Use:   "check <repo> --lockfile FILE",
 		Short: "Check a lockfile's dependencies against a repository before installing",
 		Long: "Read the package versions a lockfile pins (composer.lock, package-lock.json, npm-shrinkwrap.json, " +
-			"pnpm-lock.yaml, yarn.lock, poetry.lock, uv.lock, pylock.toml, Cargo.lock, Gemfile.lock or packages.lock.json) and ask " +
+			"pnpm-lock.yaml, yarn.lock, poetry.lock, uv.lock, pylock.toml, Cargo.lock, Gemfile.lock, packages.lock.json or go.sum) " +
+			"and ask " +
 			"the repository, usually the group your package manager uses, whether it will serve each of them: available, " +
 			"held (by a curation rule, the minimum age, a quarantine or the license policy, with the reason), not_found or " +
 			"unknown (a proxy that has not cached the package's metadata yet). Local, linked, bundled and git or file " +
 			"dependencies are skipped. REQUIRED BY lists the locked packages that require a dependency (\"-\" when none does, " +
 			"so the project requires it itself); a package the project also requires directly is not marked as such, and a " +
-			"pylock.toml that lists no dependencies (uv export, pip lock) has no REQUIRED BY column. " +
+			"pylock.toml that lists no dependencies (uv export, pip lock) or a go.sum has no REQUIRED BY column. " +
 			"Reading needs read access on the repository.\n\n" +
 			"A proxy only knows the packages it has fetched, so on a fresh proxy most answers are unknown. --fetch first " +
 			"requests each package's metadata through the repository, as the package manager would, so the proxies " +
@@ -120,10 +121,10 @@ func newCheckCmd(a *app) *cobra.Command {
 
 	path := cmd.Flags().
 		String("lockfile", "", "Lockfile to check: composer.lock, package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, "+
-			"yarn.lock, poetry.lock, uv.lock, pylock.toml, Cargo.lock, Gemfile.lock or packages.lock.json")
+			"yarn.lock, poetry.lock, uv.lock, pylock.toml, Cargo.lock, Gemfile.lock, packages.lock.json or go.sum")
 	noDev := cmd.Flags().Bool("no-dev", false,
 		"Skip the dependencies the lockfile marks as development only "+
-			"(not with yarn.lock, Cargo.lock, Gemfile.lock, packages.lock.json, pylock.toml or a poetry.lock of Poetry 1.5 to 1.8)")
+			"(not with yarn.lock, Cargo.lock, Gemfile.lock, packages.lock.json, pylock.toml, go.sum or a poetry.lock of Poetry 1.5 to 1.8)")
 	failUnknown := cmd.Flags().Bool("fail-on-unknown", false, "Exit 1 also when the repository cannot tell (unknown)")
 	fetch := cmd.Flags().Bool("fetch", false, "First request each package's metadata through the repository, so its proxies cache it")
 
