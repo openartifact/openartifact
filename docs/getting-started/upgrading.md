@@ -127,7 +127,7 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
-### Unreleased
+### 0.25.0
 
 **What you must do**
 
@@ -144,6 +144,11 @@ Newest first. Each version starts with **What you must do**; the text below it l
 - **`oa check` reads `Gemfile.lock` and `packages.lock.json`.** Bundler lockfiles are checked against a RubyGems repository (a gem locked for several platforms is one version) and NuGet lockfiles against a NuGet repository; `--fetch` requests the compact index info file or the flat container version list of each package. Neither marks development dependencies, so `--no-dev` is refused for them. RubyGems and NuGet proxies now answer from the metadata `bundle install` and `dotnet restore` fetch: a RubyGems proxy without a minimum age, and a NuGet package whose registration nuget.org splits into pages, answered `unknown` before.
 - **`oa check` reads `pylock.toml`.** The PEP 751 lockfile (`pylock.toml` or `pylock.<name>.toml`) of `uv export` and `pip lock` is checked against a PyPI repository. It records neither development dependencies (`--no-dev` is refused) nor, usually, which package requires which: the table then has no REQUIRED BY column, and `--format json` adds `dependency_graph` (`false` for such a file, `true` for every other lockfile).
 - **`oa check` distrusts the lockfile.** `--fetch` percent-escapes package names and does not request a name that is not one (a `..` segment, a control character), which is counted as not fetched; the table replaces control and invisible formatting characters in names and reasons; and a status this `oa` does not know (a newer server) is an error instead of passing as nothing held.
+- **pacman client setup under a path prefix.** The private-repository `Server =` line of the pacman snippets keeps the path prefix of the public URL (it was built from the host and `/repos/NAME` only).
+- **npm `latest` with very large version numbers.** When the npm metadata picks the highest version, a version part too large for a 64-bit number no longer compares equal to another such part.
+- **`pnpm-lock.yaml` with a non-numeric `lockfileVersion`** is refused as an invalid lockfile instead of being read as version 0.
+
+New: `oa check` for `pnpm-lock.yaml`, `yarn.lock`, `poetry.lock`, `uv.lock`, `pylock.toml`, `Cargo.lock`, `Gemfile.lock` and `packages.lock.json`, `--fetch` to warm proxies, and PyPI versions matched in any PEP 440 spelling.
 
 ### 0.24.0
 
