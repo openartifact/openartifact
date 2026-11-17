@@ -143,6 +143,24 @@ func TestServiceIndexUsesDerivedOrigin(t *testing.T) {
 	}
 }
 
+// Search service aliases of different API versions resolve to the same endpoint.
+func TestServiceIndexSearchAliasesShareURL(t *testing.T) {
+	t.Parallel()
+
+	w := urlGet(t, urlRouter(t, "", trustNoPeers), "/repos/myrepo/v3/index.json", nil)
+	ids := serviceIndexIDs(t, w)
+
+	queryURL := ids["SearchQueryService"]
+	require.NotEmpty(t, queryURL)
+	assert.Equal(t, queryURL, ids["SearchQueryService/3.0.0-beta"])
+	assert.Equal(t, queryURL, ids["SearchQueryService/3.0.0-rc"])
+
+	autocompleteURL := ids["SearchAutocompleteService"]
+	require.NotEmpty(t, autocompleteURL)
+	assert.Equal(t, autocompleteURL, ids["SearchAutocompleteService/3.0.0-beta"])
+	assert.Equal(t, autocompleteURL, ids["SearchAutocompleteService/3.0.0-rc"])
+}
+
 // Every URL of the registration index, a leaf and a search result is on the
 // request's origin, and the index's validator and cache key differ per origin:
 // a client holding an ETag for one origin never gets a 304 for another.
