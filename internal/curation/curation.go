@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/openartifact/openartifact/pkg/pyversion"
 )
 
 // Modes of a repository's curation.
@@ -163,6 +165,85 @@ func globRunes(p, t []rune) bool {
 	return pi == len(p)
 }
 
+// matchesAny reports whether pattern matches one of forms.
+func matchesAny(pattern []rune, forms [][]rune) bool {
+	for _, f := range forms {
+		if globRunes(pattern, f) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// versionForms is version as a rule's version pattern is matched against it:
+// the version itself and, for the formats whose clients treat several
+// spellings as one version, the others they do.
+//
+// pypi (PEP 440): pip reads "2.0", "2.0.0.0", "02.0.0", "v2.0.0" and "2.0.0" as
+// one version, so a file name may spell a release any of these ways; and
+// "==2.0.0" also selects the local build "2.0.0+anything" (preferring it). The
+// forms are the spelling, its lowercase (PEP 440 ignores case), the canonical
+// form (pyversion.Canonical: "2" for all of the above) and, for a local
+// version, the canonical public version ("2" for "2.0.0+cpu"). A plain
+// version pattern is canonical too (versionPattern), so it matches any
+// spelling; a glob is matched as written, against the spelling and the
+// canonical form (see versionPattern).
+func versionForms(format, version string) [][]rune {
+	forms := [][]rune{[]rune(version)}
+
+	if format != "pypi" {
+		return forms
+	}
+
+	add := func(f string) {
+		for _, have := range forms {
+			if string(have) == f {
+				return
+			}
+		}
+
+		forms = append(forms, []rune(f))
+	}
+
+	add(strings.ToLower(version))
+
+	if pyversion.Valid(version) {
+		canonical := pyversion.Canonical(version)
+		add(canonical)
+
+		if public, _, local := strings.Cut(canonical, "+"); local {
+			add(public)
+		}
+	}
+
+	return forms
+}
+
+// versionPattern is a rule's version pattern as it is matched. pypi: a plain
+// PEP 440 version (no "*" or "?") is put in canonical form, so the rule "2.0.0"
+// matches every spelling of that release ("2.0", "v2.0.0", "2.0.0+cpu"); a
+// glob is lowercased (PEP 440 ignores case) and otherwise kept: it is matched
+// against the spelling and the canonical form, and the canonical form drops
+// trailing zeros, so "2.0.*" matches "2.0.0" and "2.0.5" through their
+// spelling but not a release spelled "2.0" (canonical "2"). A rule for one
+// release is therefore best written as a plain version.
+func versionPattern(format, pattern string) string {
+	if format != "pypi" {
+		return pattern
+	}
+
+	if strings.ContainsAny(pattern, "*?") {
+		return strings.ToLower(pattern)
+	}
+
+	if pyversion.Valid(pattern) {
+		return pyversion.Canonical(pattern)
+	}
+
+	return pattern
+}
+
 // Verdict is what a Set decides for one package version.
 type Verdict struct {
 	// Hidden: the version is unavailable. Rule is the matching block rule, nil
@@ -201,7 +282,7 @@ func NewSet(format, mode string, rules []Rule) *Set {
 	for i := range rules {
 		c := compiled{rule: &rules[i], pkg: []rune(NormalizePackage(format, rules[i].Package))}
 		if rules[i].Version != "" {
-			c.version = []rune(rules[i].Version)
+			c.version = []rune(versionPattern(format, rules[i].Version))
 		}
 
 		s.rules[i] = c
@@ -233,14 +314,14 @@ func (s *Set) Evaluate(pkg, version string) Verdict {
 	}
 
 	name := []rune(NormalizePackage(s.format, pkg))
-	ver := []rune(version)
+	forms := versionForms(s.format, version)
 
 	var blocked, allowed *Rule
 
 	for i := range s.rules {
 		c := &s.rules[i]
 
-		if !globRunes(c.pkg, name) || (c.version != nil && !globRunes(c.version, ver)) {
+		if !globRunes(c.pkg, name) || (c.version != nil && !matchesAny(c.version, forms)) {
 			continue
 		}
 

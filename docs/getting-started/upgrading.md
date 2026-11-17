@@ -135,6 +135,7 @@ Newest first. Each version starts with **What you must do**; the text below it l
 
 **Changes.**
 
+- **Security: PyPI version rules hold every spelling of a release** ([GHSA-8483-q77r-q9xm](https://github.com/openartifact/openartifact/security/advisories/GHSA-8483-q77r-q9xm)). A curation rule's version on a PyPI proxy matched only the version as the file name spells it, so a block on `2.0.0` still served the files spelled `2.0`, `2.0.0.0`, `02.0.0`, `v2.0.0` and the local build `2.0.0+cpu`. A plain version rule now matches every PEP 440 spelling of the release and its local builds; a glob is matched against the spelling and the canonical form (`2.0.*` does not cover a release spelled `2.0`: add the plain rule for it). The single availability check judges a version as the cached project page spells it, as the batch check does.
 - **AI analysis trigger without a body.** `POST /api/v1/repositories/{name}/ai-analysis/{artifactID}/trigger` accepts a request with no body, as the documentation shows (it answered `400 invalid JSON body`). Malformed JSON is still refused.
 - **Dependencies.** Go modules, web packages, the Go builder image (1.27.4), the runtime Alpine image (3.24) and the bundled scanners and tools (Trivy 0.76.2, Grype 0.122.0, cosign 3.1.5, oras 1.4.0) are updated.
 

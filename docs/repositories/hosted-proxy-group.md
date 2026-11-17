@@ -207,7 +207,7 @@ Rules are matched against the package name in the form below and against the ver
 | Format | Package name | Version |
 |---|---|---|
 | npm | lower case with its scope: `@scope/name` | as in the packument |
-| pypi | PEP 503 normalized: lower case, runs of `-`, `_`, `.` as one `-` | as the file names spell it |
+| pypi | PEP 503 normalized: lower case, runs of `-`, `_`, `.` as one `-` | any PEP 440 spelling of the release (see below) |
 | composer | `vendor/name`, lower case | as the p2 document shows it (`1.2.3`, `v1.2.3`, `dev-main`) |
 | helm | chart name (the key under `entries`) | as in the index |
 | nuget | package id, lower case | normalized (`1.0` is `1.0.0`) |
@@ -221,6 +221,11 @@ Rules are matched against the package name in the form below and against the ver
 | docker | image name as written below the repository (`library/alpine`) | tag or digest as requested |
 | conan | recipe name, lower case | as the reference shows it |
 | deb, rpm, apk, pacman | package name from the file name | `version` as the file name shows it (`<version>-<release>` for rpm, apk and pacman) |
+
+PyPI versions have many spellings: pip reads `2.0`, `2.0.0`, `2.0.0.0`, `02.0.0` and `v2.0.0` as one version, a file name may use any of them, and `==2.0.0` also selects a local build such as `2.0.0+cpu`. A PyPI rule therefore matches a version in its PEP 440 canonical form as well as in its spelling, ignoring case:
+
+- A plain version pattern (no `*` or `?`) matches every spelling of that release and its local builds: `2.0.0` holds `requests-2.0-py3-none-any.whl` and `requests-2.0.0+cpu-cp312-…whl` too. `2.0.0+cpu` holds that local build only. Write a rule for one release this way.
+- A glob is matched against the version as spelled and against its canonical form, which drops trailing zeros (`2.0.0` is `2`). So `2.0.*` matches `2.0.0`, `2.0.5` and `2.0.0.post1`, but not a release whose files spell it `2.0` (canonical `2`): to cover the `2.0` release with a glob as well, add the plain rule `2.0`.
 
 How a rule is applied:
 
@@ -321,7 +326,7 @@ A group is answered the way it serves:
 
 A curation rule can decide without the cache. A proxy of a format that refuses a curated version from the request path alone (apk, Composer, Conan, Debian, Ivy, Maven, pacman, PyPI, RPM, sbt) answers `403` whether or not its upstream has the version, so such a version is `held` at that proxy even when the package was never fetched, and in a group even when a later member has it. The other formats (npm, Helm and the rest) apply their rules once the version is found in the cached metadata; for a package they have not fetched the answer stays `unknown`.
 
-A `version_pattern` is matched against the version as you send it, while these proxies match it against the version spelled in the file name. Send the version in that form when a rule has a version pattern: Debian and RPM file names leave out the epoch (`2.0-1`, not `1:2.0-1`), RPM and pacman versions include the release (`2.0-1`), and PyPI takes the version from the distribution file name as published.
+A `version_pattern` is matched against the version as you send it, while these proxies match it against the version spelled in the file name. Send the version in that form when a rule has a version pattern: Debian and RPM file names leave out the epoch (`2.0-1`, not `1:2.0-1`), RPM and pacman versions include the release (`2.0-1`). PyPI is the exception: it matches any PEP 440 spelling of the release (see the curation rules above), and the single and batch checks judge the version as the cached project page spells it.
 
 Like the single check, it reads the cached metadata only and never asks the upstream. It needs read access to the repository. The body is at most 1 MiB (`413` above); more than 1000 entries or a missing `package` or `version` is `400 validation_failed`, and so is a docker repository, which the batch does not support. Coding agents can use the same check through the MCP tool `check_dependencies` ([MCP server](../integrations/mcp.md)).
 
