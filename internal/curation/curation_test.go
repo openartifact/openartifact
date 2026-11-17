@@ -306,3 +306,69 @@ func TestGateStamp(t *testing.T) {
 		t.Error("curation-only stamp depends on time")
 	}
 }
+
+// TestPyPIVersionSpellings: pip reads many spellings as one version, and a file
+// name may use any of them; a rule for a version must hold every spelling of
+// it, and the local builds "==version" also selects.
+func TestPyPIVersionSpellings(t *testing.T) {
+	block := func(version string) *Set {
+		return NewSet("pypi", ModeDenylist, []Rule{{ID: "r", Action: ActionBlock, Package: "acme", Version: version}})
+	}
+
+	for _, tc := range []struct {
+		rule      string
+		blocked   []string
+		available []string
+	}{
+		// The report: a plain version.
+		{"2.0.0",
+			[]string{"2.0.0", "2.0", "2", "2.0.0.0", "02.0.0", "v2.0.0", "V2.0.0", "2.0.0+evil", "2.0+cpu.1"},
+			[]string{"2.0.1", "2.0.0.post1", "2.0.0rc1", "2.0.0.dev1", "1!2.0.0", "20.0"}},
+		// Written in a non-canonical spelling, it means the same release.
+		{"v2.0", []string{"2.0.0", "2", "2.0.0+evil"}, []string{"2.0.1"}},
+		{"1.0.0-RC1", []string{"1.0.0rc1", "1.0rc1", "1.0.0.RC.1", "1.0.0-rc1"}, []string{"1.0.0", "1.0.0rc2"}},
+		// A local version blocks that build only.
+		{"2.0.0+cpu", []string{"2.0.0+cpu", "2.0+CPU"}, []string{"2.0.0", "2.0.0+cu121"}},
+		// Globs: matched against the spelling (lowercased) and the canonical
+		// form. "2.0.*" keeps matching through the spelling, though the
+		// canonical form drops trailing zeros; a release spelled "2.0" has
+		// canonical form "2" and is not matched (documented).
+		{"2.0.*", []string{"2.0.0", "2.0.5", "2.0.0.post1", "2.0.0RC1", "2.0.0+cpu"}, []string{"2.1.0", "2.0", "20.0"}},
+		{"*rc*", []string{"1.0.0RC1", "1.0c1"}, []string{"1.0.0"}},
+		// Not a PEP 440 version: matched as written, ignoring case.
+		{"nightly", []string{"nightly", "Nightly"}, []string{"1.0", "nightly2"}},
+	} {
+		s := block(tc.rule)
+
+		for _, v := range tc.blocked {
+			if !s.Evaluate("acme", v).Hidden {
+				t.Errorf("rule %q: %q is not blocked", tc.rule, v)
+			}
+		}
+
+		for _, v := range tc.available {
+			if s.Evaluate("acme", v).Hidden {
+				t.Errorf("rule %q: %q is blocked", tc.rule, v)
+			}
+		}
+	}
+
+	// Allowlist: an allow rule admits every spelling of the release, and a
+	// block rule on any spelling still wins.
+	allow := NewSet("pypi", ModeAllowlist, []Rule{
+		{ID: "a", Action: ActionAllow, Package: "acme", Version: "2.0.0"},
+		{ID: "b", Action: ActionBlock, Package: "acme", Version: "2.0.0+evil"},
+	})
+
+	for v, hidden := range map[string]bool{"2.0": false, "v2.0.0": false, "2.0.0+evil": true, "2.0.1": true} {
+		if got := allow.Evaluate("acme", v).Hidden; got != hidden {
+			t.Errorf("allowlist: %q hidden = %v, want %v", v, got, hidden)
+		}
+	}
+
+	// Other formats compare versions as written.
+	npm := NewSet("npm", ModeDenylist, []Rule{{ID: "r", Action: ActionBlock, Package: "acme", Version: "2.0.0"}})
+	if npm.Evaluate("acme", "2.0").Hidden || !npm.Evaluate("acme", "2.0.0").Hidden {
+		t.Error("an npm rule is not matched as written")
+	}
+}

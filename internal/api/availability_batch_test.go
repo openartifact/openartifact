@@ -619,3 +619,38 @@ func TestAvailabilityBatchGoVersions(t *testing.T) {
 
 	check(t, got, []wantResult{{StatusNotFound, "php-proxy", sourceNotFound}})
 }
+
+// TestAvailabilitySingleAndBatchAgreeOnPyPISpellings: the single check judges
+// the version as the cached page spells it, as the batch check and the proxy
+// do. A glob written against the file spelling ("0.6c*") holds the version a
+// lockfile names in its normalized form ("0.6rc11") in both.
+func TestAvailabilitySingleAndBatchAgreeOnPyPISpellings(t *testing.T) {
+	day := time.Date(2009, 10, 20, 0, 0, 0, 0, time.UTC)
+	pypi := &models.Repository{ID: "p-py", Name: "pypi-proxy", Format: "pypi", RepoType: "proxy", CurationMode: "denylist"}
+	st := &batchStore{rules: map[string][]curation.Rule{
+		pypi.ID: {{ID: "r-old", Action: curation.ActionBlock, Package: "setuptools", Version: "0.6c*", Reason: "ancient"}},
+	}}
+	cache := &batchCache{versions: map[string]map[string][]proxy.DatedVersion{pypi.ID: {
+		"setuptools": {{Version: "0.6c11", Published: day}, {Version: "0.7", Published: day}},
+	}}}
+
+	for _, v := range []string{"0.6rc11", "0.6c11", "0.6.0rc11"} {
+		single, err := ExplainAvailability(context.Background(), st, cache, pypi, "setuptools", v)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		batch, err := ExplainAvailabilityBatch(context.Background(), st, cache, pypi, q("setuptools", v), readable)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if single.Available || batch.Results[0].Status != StatusHeld {
+			t.Errorf("%s: single available = %v, batch %s; want both held", v, single.Available, batch.Results[0].Status)
+		}
+	}
+
+	if single, _ := ExplainAvailability(context.Background(), st, cache, pypi, "setuptools", "0.7.0"); !single.Available {
+		t.Error("0.7.0 is held")
+	}
+}

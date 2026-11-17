@@ -250,3 +250,42 @@ func TestPyPICuration_RefusesFromTheFileNameBeforeTheUpstreamIsAsked(t *testing.
 		t.Error("CuratesFromPath: want pypi true, npm and helm false")
 	}
 }
+
+// TestPyPICuration_EverySpellingOfTheRelease: a block rule for 2.0.0 holds
+// every file pip reads as 2.0.0 (or selects for "==2.0.0", a local build),
+// whatever its file name spells: on the project page and as a download.
+func TestPyPICuration_EverySpellingOfTheRelease(t *testing.T) {
+	spellings := []string{
+		"requests-2.0.0.tar.gz",
+		"requests-2.0-py3-none-any.whl",
+		"requests-2.0.0.0.tar.gz",
+		"requests-02.0.0.zip",
+		"Requests-v2.0.0.tar.gz",
+		"requests-2.0.0+evil-py3-none-any.whl",
+	}
+	other := []string{"requests-2.0.1.tar.gz", "requests-2.0.0.post1.tar.gz"}
+
+	files := make([]ageFile, 0, len(spellings)+len(other))
+	for _, name := range append(append([]string{}, spellings...), other...) {
+		files = append(files, ageFile{name, 400 * hour})
+	}
+
+	f := agePyPIFixture(t, 0, files...)
+	f.useCuration(curation.ModeDenylist,
+		curation.Rule{Action: curation.ActionBlock, Package: "requests", Version: "2.0.0", Reason: "malicious"})
+
+	w := f.doAccept(http.MethodGet, "simple/requests/", pypisimple.ContentTypeJSON)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+
+	if got := listedFiles(t, w.Body.Bytes()); !sameNames(got, other) {
+		t.Errorf("the page lists %v, want only %v", got, other)
+	}
+
+	for _, name := range spellings {
+		if w := f.do(http.MethodGet, "files/requests/"+name); w.Code != http.StatusForbidden {
+			t.Errorf("%s = %d, want 403", name, w.Code)
+		}
+	}
+}
