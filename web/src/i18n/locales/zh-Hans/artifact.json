@@ -249,5 +249,8 @@
   "artifact.attestations.statementFailed": "无法加载声明",
   "artifact.attestations.reverify": "重新验证",
   "artifact.attestations.reverified_other": "已重新验证 {count} 个附件",
-  "artifact.attestations.reverifyFailed": "无法重新验证证明"
+  "artifact.attestations.reverifyFailed": "无法重新验证证明",
+  "artifact.ai.title": "AI 分析",
+  "artifact.ai.none": "此版本尚未运行过 AI 分析。",
+  "artifact.ai.failedNoReason": "分析失败，未给出原因。"
 }

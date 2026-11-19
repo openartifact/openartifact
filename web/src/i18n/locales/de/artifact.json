@@ -252,5 +252,8 @@
   "artifact.attestations.reverify": "Erneut verifizieren",
   "artifact.attestations.reverified_one": "{n} Anhang erneut verifiziert",
   "artifact.attestations.reverified_other": "{count} Anhänge erneut verifiziert",
-  "artifact.attestations.reverifyFailed": "Die Attestierungen konnten nicht erneut verifiziert werden"
+  "artifact.attestations.reverifyFailed": "Die Attestierungen konnten nicht erneut verifiziert werden",
+  "artifact.ai.title": "KI-Analyse",
+  "artifact.ai.none": "Für diese Version wurde keine KI-Analyse ausgeführt.",
+  "artifact.ai.failedNoReason": "Die Analyse ist ohne Angabe eines Grundes fehlgeschlagen."
 }

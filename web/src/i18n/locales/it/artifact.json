@@ -252,5 +252,8 @@
   "artifact.attestations.reverify": "Verifica di nuovo",
   "artifact.attestations.reverified_one": "{n} allegato verificato di nuovo",
   "artifact.attestations.reverified_other": "{count} allegati verificati di nuovo",
-  "artifact.attestations.reverifyFailed": "Impossibile verificare di nuovo le attestazioni"
+  "artifact.attestations.reverifyFailed": "Impossibile verificare di nuovo le attestazioni",
+  "artifact.ai.title": "Analisi AI",
+  "artifact.ai.none": "Nessuna analisi AI è stata eseguita per questa versione.",
+  "artifact.ai.failedNoReason": "L'analisi è fallita senza indicare un motivo."
 }

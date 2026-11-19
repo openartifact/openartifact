@@ -173,5 +173,16 @@
   "rl.settings.deleteHint": "Видалення репозиторію вилучає його пакети. Це не можна скасувати.",
   "rl.settings.delete": "Видалити репозиторій",
   "rl.federation.off": "Федерацію вимкнено: цим репозиторієм не діляться з іншими інстансами.",
-  "rl.federation.setup": "Налаштувати федерацію"
+  "rl.federation.setup": "Налаштувати федерацію",
+  "rl.tab.ai": "Аналіз ШІ",
+  "rl.ai.caption": "Аналізи ШІ цього репозиторію",
+  "rl.ai.filter": "Фільтр за статусом",
+  "rl.ai.status.all": "Усі",
+  "rl.ai.empty": "Немає аналізів ШІ",
+  "rl.ai.emptyHint": "Аналізи з’являться тут, щойно пакет буде проаналізовано.",
+  "rl.ai.col.artifact": "Пакет",
+  "rl.ai.col.status": "Статус",
+  "rl.ai.col.license": "Ліцензія",
+  "rl.ai.col.tags": "Теги",
+  "rl.ai.col.updated": "Оновлено"
 }
