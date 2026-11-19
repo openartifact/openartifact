@@ -677,23 +677,62 @@ func (b *whereBuilder) add(clause string, arg any) {
 	b.args = append(b.args, arg)
 }
 
+// rowsOfRefs is the SQL of the search row ids that artifact_refs rows stand for:
+// the package_files row or docker tag of the same repository whose id the ref's
+// artifact_path holds (the id the web UI and oa use; a docker tag keeps its id when
+// it is pushed again). from yields the refs as ar and where selects among them. Only
+// artifact paths shaped like a UUID are cast, so ids written by external tools never
+// reach the cast.
+func rowsOfRefs(from, where string) string {
+	branch := func(table string) string {
+		return fmt.Sprintf(`SELECT t.id FROM %[1]s
+		JOIN %[2]s t ON t.id = CASE WHEN ar.artifact_path ~ '%[3]s' THEN ar.artifact_path::uuid END
+			AND t.repository_id = ar.repository_id
+		WHERE %[4]s`, from, table, uuidPattern, where)
+	}
+
+	return branch("package_files") + "\n\t\tUNION ALL\n\t\t" + branch("docker_tags")
+}
+
 // matchedArtifacts is the SQL of the search row ids that carry the property bound to
-// $k=$v: the package_files row or docker tag of the same repository whose id the
-// property is stored under (the id the web UI and oa use; a docker tag keeps its id
-// when it is pushed again). Only artifact paths shaped like a UUID are cast, so ids
-// written by external tools never reach the cast.
+// $k=$v.
 func matchedArtifacts(k, v int) string {
-	return fmt.Sprintf(`SELECT pf.id FROM artifact_properties ap
-		JOIN artifact_refs ar ON ar.id = ap.artifact_ref_id
-		JOIN package_files pf ON pf.id = CASE WHEN ar.artifact_path ~ '%[1]s' THEN ar.artifact_path::uuid END
-			AND pf.repository_id = ar.repository_id
-		WHERE ap.key = $%[2]d AND ap.value = $%[3]d
-		UNION ALL
-		SELECT dt.id FROM artifact_properties ap
-		JOIN artifact_refs ar ON ar.id = ap.artifact_ref_id
-		JOIN docker_tags dt ON dt.id = CASE WHEN ar.artifact_path ~ '%[1]s' THEN ar.artifact_path::uuid END
-			AND dt.repository_id = ar.repository_id
-		WHERE ap.key = $%[2]d AND ap.value = $%[3]d`, uuidPattern, k, v)
+	return rowsOfRefs(`artifact_properties ap JOIN artifact_refs ar ON ar.id = ap.artifact_ref_id`,
+		fmt.Sprintf(`ap.key = $%d AND ap.value = $%d`, k, v))
+}
+
+// aiTagsLower is the lower-cased tags array of an ai_results row aliased air, the
+// expression idx_ai_results_tags_lower indexes (migration 030). The index only serves
+// a probe written exactly like this.
+const aiTagsLower = `lower(air.tags::text)::jsonb`
+
+// aiTaggedArtifacts is the SQL of the search row ids whose AI analysis has the tag
+// bound to $t, compared case-insensitively and as a whole (a tag "web" is not
+// found by "we"). One scan job per artifact and scan type is kept ("ai", no
+// scanner), so there is no later analysis to look past; and since only a completed
+// analysis writes tags (a pending, processing or failed one keeps those of the last
+// completed run, see UpsertAIAnalysis) the status needs no test: the tags are
+// always those of the latest completed analysis.
+func aiTaggedArtifacts(t int) string {
+	return rowsOfRefs(`ai_results air
+		JOIN scan_jobs sj ON sj.id = air.scan_job_id AND sj.scan_type = 'ai'
+		JOIN artifact_refs ar ON ar.id = sj.artifact_ref_id`,
+		fmt.Sprintf(`%s @> jsonb_build_array(lower($%d::text))`, aiTagsLower, t))
+}
+
+// addFreeText appends the predicate of the free text: a case-insensitive substring
+// of the package name, or the whole text equal to a tag of the artifact's AI
+// analysis (aiTaggedArtifacts). The tag ids are collected once, as an array, and
+// pushed into every branch of the search source, like addPropByID, so the name
+// and the tag side can both use their indexes.
+func (b *whereBuilder) addFreeText(nameExpr, text string) {
+	if text == "" {
+		return
+	}
+
+	b.args = append(b.args, "%"+escapeLike(text)+"%", text)
+	b.clauses = append(b.clauses, fmt.Sprintf(`(%s ILIKE $%d OR s.id = ANY (ARRAY(SELECT m.id FROM (%s) m)))`,
+		nameExpr, len(b.args)-1, aiTaggedArtifacts(len(b.args))))
 }
 
 // addPropByID applies a property filter with few matches: the matching row ids are
@@ -808,7 +847,9 @@ func escapeLike(s string) string {
 func buildWhereClause(filter SearchFilter, readableRepos map[uuid.UUID]struct{}) (string, string, []any) {
 	var b whereBuilder
 
-	b.addNameMatch("s.name", filter)
+	// The name: qualifier matches names only; free text also matches the AI tags.
+	b.addNameMatch("s.name", SearchFilter{Name: filter.Name})
+	b.addFreeText("s.name", filter.FreeText)
 
 	if filter.SHA256Prefix != "" {
 		b.add("s.sha256 LIKE $%d", escapeLike(filter.SHA256Prefix)+"%")

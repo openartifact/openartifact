@@ -249,5 +249,8 @@
   "artifact.attestations.statementFailed": "ステートメントを読み込めませんでした",
   "artifact.attestations.reverify": "再検証",
   "artifact.attestations.reverified_other": "{count} 件の添付を再検証しました",
-  "artifact.attestations.reverifyFailed": "アテステーションを再検証できませんでした"
+  "artifact.attestations.reverifyFailed": "アテステーションを再検証できませんでした",
+  "artifact.ai.title": "AI 分析",
+  "artifact.ai.none": "このバージョンでは AI 分析が実行されていません。",
+  "artifact.ai.failedNoReason": "分析は理由が示されないまま失敗しました。"
 }

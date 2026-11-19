@@ -173,5 +173,16 @@
   "rl.settings.deleteHint": "Usunięcie repozytorium usuwa jego pakiety. Tej operacji nie można cofnąć.",
   "rl.settings.delete": "Usuń repozytorium",
   "rl.federation.off": "Federacja jest wyłączona: to repozytorium nie jest udostępniane innym instancjom.",
-  "rl.federation.setup": "Skonfiguruj federację"
+  "rl.federation.setup": "Skonfiguruj federację",
+  "rl.tab.ai": "Analiza AI",
+  "rl.ai.caption": "Analizy AI tego repozytorium",
+  "rl.ai.filter": "Filtruj według statusu",
+  "rl.ai.status.all": "Wszystkie",
+  "rl.ai.empty": "Brak analiz AI",
+  "rl.ai.emptyHint": "Analizy pojawią się tutaj po przeanalizowaniu pakietu.",
+  "rl.ai.col.artifact": "Pakiet",
+  "rl.ai.col.status": "Status",
+  "rl.ai.col.license": "Licencja",
+  "rl.ai.col.tags": "Tagi",
+  "rl.ai.col.updated": "Zaktualizowano"
 }

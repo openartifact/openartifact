@@ -78,6 +78,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
     </section>
 
+    <section v-if="ctx.caps.value.admin && ctx.entry.value" aria-labelledby="artifact-sec-ai">
+      <h2 id="artifact-sec-ai" class="mb-3 text-base font-semibold text-foreground">{{ t('artifact.ai.title') }}</h2>
+      <ArtifactAIAnalysis :repo="ctx.repoName.value" :artifact-ids="ctx.entry.value.files.map((f) => f.id)" />
+    </section>
+
     <VexDecisionDialog
       v-if="deciding"
       :open="true"
@@ -96,6 +101,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import AppButton from '../AppButton.vue'
+import ArtifactAIAnalysis from './ArtifactAIAnalysis.vue'
 import StateBlock from '../ui/StateBlock.vue'
 import SeverityBadge from '../ui/SeverityBadge.vue'
 import VexDecisionDialog from '../VexDecisionDialog.vue'

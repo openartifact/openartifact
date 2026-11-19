@@ -252,5 +252,8 @@
   "artifact.attestations.reverify": "Verify again",
   "artifact.attestations.reverified_one": "{n} attachment verified again",
   "artifact.attestations.reverified_other": "{count} attachments verified again",
-  "artifact.attestations.reverifyFailed": "Could not verify the attestations again"
+  "artifact.attestations.reverifyFailed": "Could not verify the attestations again",
+  "artifact.ai.title": "AI analysis",
+  "artifact.ai.none": "No AI analysis has been run for this version.",
+  "artifact.ai.failedNoReason": "The analysis failed without a reason."
 }

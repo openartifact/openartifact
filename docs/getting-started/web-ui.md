@@ -39,6 +39,7 @@ Press **Ctrl+K** (**Cmd+K** on macOS) anywhere, or use the search field in the h
 ### What it searches
 
 - Repositories, packages (one hit per package), projects, bundles, settings sections and users, in one list.
+- Packages are found by name, and by the tags of their [AI analysis](../integrations/ai-analysis.md#search-by-tag) when the text equals a tag.
 - A hex string of 32, 40 or 64 characters offers **Look up checksum in Packages**.
 - A query that matches too many packages asks you to refine it with `name:`, `format:`, `repo:` or `project:`.
 - Settings you may not open are listed with "Requires admin".

@@ -165,5 +165,16 @@
   "rl.settings.deleteHint": "Al eliminar un repositorio se eliminan sus paquetes. Esto no se puede deshacer.",
   "rl.settings.delete": "Eliminar repositorio",
   "rl.federation.off": "La federación está desactivada: este repositorio no se comparte con otras instancias.",
-  "rl.federation.setup": "Configurar la federación"
+  "rl.federation.setup": "Configurar la federación",
+  "rl.tab.ai": "Análisis de IA",
+  "rl.ai.caption": "Análisis de IA de este repositorio",
+  "rl.ai.filter": "Filtrar por estado",
+  "rl.ai.status.all": "Todos",
+  "rl.ai.empty": "Sin análisis de IA",
+  "rl.ai.emptyHint": "Los análisis aparecen aquí cuando se ha analizado un paquete.",
+  "rl.ai.col.artifact": "Paquete",
+  "rl.ai.col.status": "Estado",
+  "rl.ai.col.license": "Licencia",
+  "rl.ai.col.tags": "Etiquetas",
+  "rl.ai.col.updated": "Actualizado"
 }
