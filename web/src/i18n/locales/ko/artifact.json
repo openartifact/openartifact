@@ -249,5 +249,8 @@
   "artifact.attestations.statementFailed": "스테이트먼트를 불러오지 못했습니다",
   "artifact.attestations.reverify": "다시 검증",
   "artifact.attestations.reverified_other": "첨부 {count}개를 다시 검증했습니다",
-  "artifact.attestations.reverifyFailed": "증명을 다시 검증하지 못했습니다"
+  "artifact.attestations.reverifyFailed": "증명을 다시 검증하지 못했습니다",
+  "artifact.ai.title": "AI 분석",
+  "artifact.ai.none": "이 버전에 대해 실행된 AI 분석이 없습니다.",
+  "artifact.ai.failedNoReason": "분석이 사유 없이 실패했습니다."
 }

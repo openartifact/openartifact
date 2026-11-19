@@ -252,5 +252,8 @@
   "artifact.attestations.reverify": "Verificar novamente",
   "artifact.attestations.reverified_one": "{n} anexo verificado novamente",
   "artifact.attestations.reverified_other": "{count} anexos verificados novamente",
-  "artifact.attestations.reverifyFailed": "Não foi possível verificar os atestados novamente"
+  "artifact.attestations.reverifyFailed": "Não foi possível verificar os atestados novamente",
+  "artifact.ai.title": "Análise de IA",
+  "artifact.ai.none": "Nenhuma análise de IA foi executada para esta versão.",
+  "artifact.ai.failedNoReason": "A análise falhou sem informar um motivo."
 }

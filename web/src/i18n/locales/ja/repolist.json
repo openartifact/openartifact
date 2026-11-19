@@ -161,5 +161,16 @@
   "rl.settings.deleteHint": "リポジトリを削除すると、そのパッケージも削除されます。この操作は元に戻せません。",
   "rl.settings.delete": "リポジトリを削除",
   "rl.federation.off": "フェデレーションはオフです。このリポジトリは他のインスタンスと共有されていません。",
-  "rl.federation.setup": "フェデレーションを設定"
+  "rl.federation.setup": "フェデレーションを設定",
+  "rl.tab.ai": "AI 分析",
+  "rl.ai.caption": "このリポジトリの AI 分析",
+  "rl.ai.filter": "ステータスで絞り込み",
+  "rl.ai.status.all": "すべて",
+  "rl.ai.empty": "AI 分析はありません",
+  "rl.ai.emptyHint": "パッケージが分析されると、結果がここに表示されます。",
+  "rl.ai.col.artifact": "パッケージ",
+  "rl.ai.col.status": "ステータス",
+  "rl.ai.col.license": "ライセンス",
+  "rl.ai.col.tags": "タグ",
+  "rl.ai.col.updated": "更新日時"
 }

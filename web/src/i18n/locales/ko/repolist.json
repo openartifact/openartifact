@@ -161,5 +161,16 @@
   "rl.settings.deleteHint": "저장소를 삭제하면 패키지도 함께 제거됩니다. 되돌릴 수 없습니다.",
   "rl.settings.delete": "저장소 삭제",
   "rl.federation.off": "페더레이션이 꺼져 있습니다. 이 저장소는 다른 인스턴스와 공유되지 않습니다.",
-  "rl.federation.setup": "페더레이션 설정"
+  "rl.federation.setup": "페더레이션 설정",
+  "rl.tab.ai": "AI 분석",
+  "rl.ai.caption": "이 저장소의 AI 분석",
+  "rl.ai.filter": "상태로 필터",
+  "rl.ai.status.all": "전체",
+  "rl.ai.empty": "AI 분석 없음",
+  "rl.ai.emptyHint": "패키지가 분석되면 결과가 여기에 표시됩니다.",
+  "rl.ai.col.artifact": "패키지",
+  "rl.ai.col.status": "상태",
+  "rl.ai.col.license": "라이선스",
+  "rl.ai.col.tags": "태그",
+  "rl.ai.col.updated": "업데이트됨"
 }

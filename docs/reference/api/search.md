@@ -16,7 +16,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 Search packages and repositories
 
-Search the packages of the repositories the caller can read, and the names of those repositories. Matching is a case-insensitive literal substring match; results are ordered best match first (exact name, then prefix, then other substring matches, newest first within each). A query matching more than 10000 packages is rejected with 400 query_too_broad. limit and offset apply to the packages and repositories lists independently.
+Search the packages of the repositories the caller can read, and the names of those repositories. Matching is a case-insensitive literal substring match on the name, and free text also finds the artifacts whose AI analysis has that whole text as a tag (case-insensitive, never a part of a tag); results are ordered best match first (exact name, then prefix, then other substring matches, newest first within each). A query matching more than 10000 packages is rejected with 400 query_too_broad. limit and offset apply to the packages and repositories lists independently.
 
 **Parameters**
 
