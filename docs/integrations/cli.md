@@ -15,7 +15,7 @@ make build-cli          # builds bin/oa
 go build -o bin/oa ./cmd/oa
 ```
 
-Release archives are named `oa_<version>_<os>_<arch>` and exist for linux, darwin and windows (amd64, arm64). Source: [`internal/oacli`](../../internal/oacli).
+Release archives are named `oa_<version>_<os>_<arch>` and exist for linux, darwin and windows (amd64, arm64). Native `deb` and `rpm` packages install `oa` with its completions on Debian 12/13, Fedora, RHEL, CentOS and openSUSE; see [installation](../getting-started/installation.md#native-packages-deb-and-rpm). Source: [`internal/oacli`](../../internal/oacli).
 
 ```sh
 oa version              # prints "oa version <version>" ("dev" for an untagged build); also oa --version
