@@ -157,14 +157,17 @@ describe('StorageBackendsPage', () => {
       const calls = stubFetch(primaryStore)
       const wrapper = mountPage()
       await flushPromises()
-      const before = calls.filter((c) => c.method === 'GET').length
+      // Only list reloads count: a stray GET from another suite file sharing the
+      // fetch spy must not fail this test.
+      const listUrl = '/api/v1/admin/storage'
+      const before = calls.filter((c) => c.method === 'GET' && c.url === listUrl).length
 
       await wrapper.find('[aria-label="Test connection: primary"]').trigger('click')
       await flushPromises()
 
       const post = calls.find((c) => c.method === 'POST')
       expect(post?.url).toBe('/api/v1/admin/storage/primary/test')
-      expect(calls.filter((c) => c.method === 'GET').length).toBe(before + 1)
+      expect(calls.filter((c) => c.method === 'GET' && c.url === listUrl).length).toBe(before + 1)
       wrapper.unmount()
     })
 
