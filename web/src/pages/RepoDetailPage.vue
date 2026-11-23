@@ -45,6 +45,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <template #panel-packages><RepoPackagesTab :key="uploads" :repo="repo" :can-upload="canUpload" @upload="openUpload" /></template>
         <template #panel-activity><RepoActivityTab :repo="repo.name" :admin="repoAdmin" /></template>
         <template #panel-security><RepoSecurityTab :repo="repo.name" /></template>
+        <template #panel-ai><RepoAIAnalysisTab :repo="repo.name" /></template>
         <template #panel-trash><TrashList :repo="repo.name" :permissions="repo.permissions" /></template>
         <template #panel-settings><RepoSettings :repo="repo" @saved="(r: Repository) => (repo = r)" /></template>
       </AppTabs>
@@ -79,6 +80,7 @@ const session = useSessionStore()
 const RepoActivityTab = asyncTab(() => import('../components/repos/RepoActivityTab.vue'))
 const RepoMembersTab = asyncTab(() => import('../components/repos/RepoMembersTab.vue'))
 const RepoSecurityTab = asyncTab(() => import('../components/repos/RepoSecurityTab.vue'))
+const RepoAIAnalysisTab = asyncTab(() => import('../components/repos/RepoAIAnalysisTab.vue'))
 const TrashList = asyncTab(() => import('../components/trash/TrashList.vue'))
 const RepoSettings = asyncTab(() => import('../components/repos/RepoSettings.vue'))
 const PackageUploadZone = defineAsyncComponent(() => import('../components/PackageUploadZone.vue'))
@@ -111,6 +113,8 @@ const tabs = computed<TabDef[]>(() => {
     { id: 'packages', label: type === 'proxy' ? t('repoDetail.tab.cached') : t('repoDetail.tab.packages'), hidden: type === 'group' },
     { id: 'activity', label: t('rl.tab.activity') },
     { id: 'security', label: t('rl.tab.security') },
+    // The AI analysis endpoints need the global manage permission.
+    { id: 'ai', label: t('rl.tab.ai'), hidden: !session.isAdmin },
     // Repo-scoped permissions come from the server, so principals with a delete grant also see the trash.
     { id: 'trash', label: t('trash.title'), hidden: !(session.isAdmin || repo.value?.permissions?.delete === true) },
     { id: 'settings', label: t('rl.tab.settings'), hidden: !repoAdmin.value },

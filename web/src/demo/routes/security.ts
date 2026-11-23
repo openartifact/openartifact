@@ -18,6 +18,7 @@ import type {
 import type { SecretScan } from '../../api/security'
 import type { DemoRepository } from '../fixtures/repos'
 import { ago } from '../fixtures/time'
+import type { AIAnalysis } from '../../api/ai'
 import { failure, type DemoRequest, type DemoRoute, type Ok } from '../http'
 import { matches, repoFiles } from '../query'
 import type { DemoFile, DemoState, DemoStoredFinding } from '../state'
@@ -219,6 +220,44 @@ function vexStatements({ state, query }: DemoRequest, repo: DemoRepository): Ok<
   }
 }
 
+/** A completed analysis for one file of a package version. */
+function aiAnalysis(repo: DemoRepository, file: DemoFile): AIAnalysis {
+  return {
+    id: `ai-${file.id}`,
+    repository_id: repo.id,
+    artifact_id: file.id,
+    artifact_format: file.format,
+    artifact_name: file.name,
+    artifact_version: file.version,
+    summary: `${file.name} is a package published to ${repo.name}.`,
+    tags: [file.format, 'library'],
+    license_status: 'SAFE',
+    license_name: 'MIT',
+    security_notes: '',
+    quarantine_recommended: false,
+    status: 'completed',
+    error_message: '',
+    model_used: 'demo-model',
+    prompt_tokens: 0,
+    completion_tokens: 0,
+    created_at: ago(1),
+    updated_at: ago(1),
+  }
+}
+
+function listAIAnalyses({ state, query }: DemoRequest, repo: DemoRepository) {
+  const wanted = query.get('status')
+  const all = wanted && wanted !== 'completed' ? [] : versionHeads(repoFiles(state, repo)).map((f) => aiAnalysis(repo, f))
+  const limit = Number(query.get('limit')) || 20
+  const offset = Number(query.get('offset')) || 0
+  return { analyses: all.slice(offset, offset + limit), total: all.length }
+}
+
+function getAIAnalysis({ state, params }: DemoRequest, repo: DemoRepository) {
+  const file = repoFiles(state, repo).find((f) => f.id === params.artifactID)
+  return file ? aiAnalysis(repo, file) : failure(404, 'no AI analysis for this artifact', 'not_found')
+}
+
 export const securityRoutes: DemoRoute[] = [
   ['GET', '/api/v1/security/findings', listFindings],
   ['GET', '/api/v1/security/findings/summary', summary],
@@ -230,4 +269,6 @@ export const securityRoutes: DemoRoute[] = [
   ['GET', '/api/v1/repositories/:name/license/scans/:id', withRepo(getLicenseScan)],
   ['GET', '/api/v1/repositories/:name/secrets/scans/:id', withRepo(getSecretScan)],
   ['GET', '/api/v1/repositories/:name/vex/statements', withRepo(vexStatements)],
+  ['GET', '/api/v1/repositories/:name/ai-analysis', withRepo(listAIAnalyses)],
+  ['GET', '/api/v1/repositories/:name/ai-analysis/:artifactID', withRepo(getAIAnalysis)],
 ]

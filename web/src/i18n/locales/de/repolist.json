@@ -165,5 +165,16 @@
   "rl.settings.deleteHint": "Beim Löschen eines Repositorys werden seine Pakete entfernt. Dies kann nicht rückgängig gemacht werden.",
   "rl.settings.delete": "Repository löschen",
   "rl.federation.off": "Föderation ist aus: Dieses Repository wird nicht mit anderen Instanzen geteilt.",
-  "rl.federation.setup": "Föderation einrichten"
+  "rl.federation.setup": "Föderation einrichten",
+  "rl.tab.ai": "KI-Analyse",
+  "rl.ai.caption": "KI-Analysen dieses Repositorys",
+  "rl.ai.filter": "Nach Status filtern",
+  "rl.ai.status.all": "Alle",
+  "rl.ai.empty": "Keine KI-Analysen",
+  "rl.ai.emptyHint": "Analysen erscheinen hier, sobald ein Paket analysiert wurde.",
+  "rl.ai.col.artifact": "Paket",
+  "rl.ai.col.status": "Status",
+  "rl.ai.col.license": "Lizenz",
+  "rl.ai.col.tags": "Tags",
+  "rl.ai.col.updated": "Aktualisiert"
 }

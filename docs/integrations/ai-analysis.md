@@ -24,12 +24,30 @@ Use AI analysis to send a package's manifest to an LLM and store a summary, sear
    curl -sS -H "Authorization: Bearer <TOKEN>" "HOST/api/v1/repositories/REPO/ai-analysis/ARTIFACT_ID"
    ```
 
-In the web UI, use **Security > AI analysis**. You can also trigger it through [MCP](mcp.md).
+In the web UI, administrators see the latest analysis of a version, whatever its outcome (status, summary, tags, license verdict, security notes, error) on the **Security** tab of the artifact page and can re-run it there. The **AI analysis** tab of a repository lists all its analyses, filterable by status. You can also trigger it through [MCP](mcp.md).
+
+The tags are searchable: see [Search by tag](#search-by-tag).
 
 Two rules to know:
 
 - The result is advisory. `quarantine_recommended: true` is recorded for human review and never quarantines anything, because the manifest is attacker-controlled input to the model.
 - Analysis does not start on upload unless you turn on `ai.autoAnalyze` (off by default).
+
+## Search by tag
+
+The tags of an analysis are searchable. `GET /api/v1/search?q=TERM` (and the search field of the web UI) returns the artifacts whose AI analysis has a tag equal to the term, next to the packages whose name contains it:
+
+```sh
+curl -sS -H "Authorization: Bearer <TOKEN>" "HOST/api/v1/search?q=cryptography"
+```
+
+- The whole text of `q` must equal one tag. Case does not matter (`Cryptography` finds a tag `cryptography`), but a part does not: `crypto` finds no tag `cryptography`. Several words are one tag (`web framework`).
+- Only tags are indexed. The summary, security notes and license name are not searched.
+- A result is the stored file or docker image tag the analysis was run for, so `format`, `repo`, `project` and `group=package` apply as for any other hit. The `name:` qualifier matches names only, never tags.
+- The search follows the usual read scope: you only find artifacts in repositories you can read, and tags of other repositories are never revealed. No admin token is needed.
+- A re-analysis that is `pending`, `processing` or `failed` keeps the tags of the last `completed` run (see [Processing](#processing)), so they stay searchable until a new completed run replaces them. An artifact that was never analysed successfully has no tags.
+
+Migration `030` adds the index that serves this lookup (`idx_ai_results_tags_lower`, built with `CREATE INDEX CONCURRENTLY`, so it does not block writes).
 
 ## Settings
 

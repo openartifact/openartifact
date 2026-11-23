@@ -165,5 +165,16 @@
   "rl.settings.deleteHint": "Deleting a repository removes its packages. This cannot be undone.",
   "rl.settings.delete": "Delete repository",
   "rl.federation.off": "Federation is off: this repository is not shared with other instances.",
-  "rl.federation.setup": "Set up federation"
+  "rl.federation.setup": "Set up federation",
+  "rl.tab.ai": "AI analysis",
+  "rl.ai.caption": "AI analyses of this repository",
+  "rl.ai.filter": "Filter by status",
+  "rl.ai.status.all": "All",
+  "rl.ai.empty": "No AI analyses",
+  "rl.ai.emptyHint": "Analyses appear here once a package has been analyzed.",
+  "rl.ai.col.artifact": "Package",
+  "rl.ai.col.status": "Status",
+  "rl.ai.col.license": "License",
+  "rl.ai.col.tags": "Tags",
+  "rl.ai.col.updated": "Updated"
 }

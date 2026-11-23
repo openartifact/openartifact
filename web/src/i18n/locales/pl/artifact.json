@@ -258,5 +258,8 @@
   "artifact.attestations.reverified_other": "Ponownie zweryfikowano załączniki: {count}",
   "artifact.attestations.reverified_few": "{count} załączniki zweryfikowane ponownie",
   "artifact.attestations.reverified_many": "{count} załączników zweryfikowanych ponownie",
-  "artifact.attestations.reverifyFailed": "Nie udało się ponownie zweryfikować atestów"
+  "artifact.attestations.reverifyFailed": "Nie udało się ponownie zweryfikować atestów",
+  "artifact.ai.title": "Analiza AI",
+  "artifact.ai.none": "Dla tej wersji nie uruchomiono analizy AI.",
+  "artifact.ai.failedNoReason": "Analiza nie powiodła się bez podania przyczyny."
 }

@@ -6,6 +6,7 @@ package search
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -376,12 +377,18 @@ func TestSearchRepositoriesPostFilterRemovesUnreadableRepo(t *testing.T) {
 	}
 }
 
+// freeTextPredicate is the where predicate of free text whose name pattern is
+// $nameArg and whose tag is the next argument.
+func freeTextPredicate(nameArg int) string {
+	return fmt.Sprintf(`(s.name ILIKE $%d OR s.id = ANY (ARRAY(SELECT m.id FROM (%s) m)))`, nameArg, aiTaggedArtifacts(nameArg+1))
+}
+
 func TestBuildWhereClauseTreatsLikeMetacharactersLiterally(t *testing.T) {
 	repoID := uuid.New()
 
 	where, join, args := buildWhereClause(SearchFilter{FreeText: `ui_kit%`, SHA256Prefix: `ab_`}, map[uuid.UUID]struct{}{repoID: {}})
 
-	if want := `s.name ILIKE $1 AND s.sha256 LIKE $2 AND s.repository_id = ANY($3::uuid[])`; where != want {
+	if want := freeTextPredicate(1) + ` AND s.sha256 LIKE $3 AND s.repository_id = ANY($4::uuid[])`; where != want {
 		t.Errorf("where = %q, want %q", where, want)
 	}
 
@@ -389,8 +396,12 @@ func TestBuildWhereClauseTreatsLikeMetacharactersLiterally(t *testing.T) {
 		t.Errorf("join = %q, want none for a small readable set", join)
 	}
 
-	if args[0] != `%ui\_kit\%%` || args[1] != `ab\_%` {
-		t.Errorf("args = %q, %q; LIKE metacharacters must be escaped", args[0], args[1])
+	if args[0] != `%ui\_kit\%%` || args[2] != `ab\_%` {
+		t.Errorf("args = %q, %q; LIKE metacharacters must be escaped", args[0], args[2])
+	}
+
+	if args[1] != `ui_kit%` {
+		t.Errorf("tag argument = %q, want the text as typed: a tag is compared whole, not as a pattern", args[1])
 	}
 }
 
@@ -410,19 +421,19 @@ func TestBuildWhereClauseLargeReadableSetJoinsUnnest(t *testing.T) {
 
 	where, join, args := buildWhereClause(SearchFilter{FreeText: "lodash"}, readable)
 
-	if want := `s.name ILIKE $1`; where != want {
+	if want := freeTextPredicate(1); where != want {
 		t.Errorf("where = %q, want %q", where, want)
 	}
 
-	if want := ` JOIN unnest($2::uuid[]) AS ru(id) ON ru.id = s.repository_id`; join != want {
+	if want := ` JOIN unnest($3::uuid[]) AS ru(id) ON ru.id = s.repository_id`; join != want {
 		t.Errorf("join = %q, want %q", join, want)
 	}
 
-	if len(args) != 2 {
-		t.Fatalf("got %d args, want the name pattern and the id array", len(args))
+	if len(args) != 3 {
+		t.Fatalf("got %d args, want the name pattern, the tag and the id array", len(args))
 	}
 
-	if got := strings.Count(args[1].(string), ",") + 1; got != len(readable) {
+	if got := strings.Count(args[2].(string), ",") + 1; got != len(readable) {
 		t.Errorf("array carries %d ids, want %d", got, len(readable))
 	}
 

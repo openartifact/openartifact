@@ -161,5 +161,16 @@
   "rl.settings.deleteHint": "删除仓库会移除其中的软件包，且无法撤销。",
   "rl.settings.delete": "删除仓库",
   "rl.federation.off": "联邦已关闭：此仓库未与其他实例共享。",
-  "rl.federation.setup": "设置联邦"
+  "rl.federation.setup": "设置联邦",
+  "rl.tab.ai": "AI 分析",
+  "rl.ai.caption": "此仓库的 AI 分析",
+  "rl.ai.filter": "按状态筛选",
+  "rl.ai.status.all": "全部",
+  "rl.ai.empty": "没有 AI 分析",
+  "rl.ai.emptyHint": "软件包被分析后，分析结果会显示在这里。",
+  "rl.ai.col.artifact": "软件包",
+  "rl.ai.col.status": "状态",
+  "rl.ai.col.license": "许可证",
+  "rl.ai.col.tags": "标签",
+  "rl.ai.col.updated": "更新时间"
 }

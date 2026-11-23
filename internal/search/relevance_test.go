@@ -155,9 +155,9 @@ func TestSearchPageRanksBeforeRecencyAndBindsRankArguments(t *testing.T) {
 
 	defer func() { _ = db.Close() }()
 
-	// where: name, readable; rank: the term; then limit and offset.
+	// where: name pattern, tag, readable; rank: the term; then limit and offset.
 	mock.ExpectQuery(`(?s)ORDER BY relevance, created_at DESC, id.*ORDER BY p\.relevance, p\.created_at DESC, p\.id`).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), `lodash`, 5, 0).
+		WithArgs(sqlmock.AnyArg(), `lodash`, sqlmock.AnyArg(), `lodash`, 5, 0).
 		WillReturnRows(sqlmock.NewRows(pageCols()))
 
 	readable := map[uuid.UUID]struct{}{uuid.New(): {}}

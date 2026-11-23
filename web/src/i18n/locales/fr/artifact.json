@@ -252,5 +252,8 @@
   "artifact.attestations.reverify": "Vérifier à nouveau",
   "artifact.attestations.reverified_one": "{n} pièce jointe vérifiée à nouveau",
   "artifact.attestations.reverified_other": "{count} pièces jointes vérifiées à nouveau",
-  "artifact.attestations.reverifyFailed": "Impossible de vérifier à nouveau les attestations"
+  "artifact.attestations.reverifyFailed": "Impossible de vérifier à nouveau les attestations",
+  "artifact.ai.title": "Analyse IA",
+  "artifact.ai.none": "Aucune analyse IA n'a été exécutée pour cette version.",
+  "artifact.ai.failedNoReason": "L'analyse a échoué sans indiquer de raison."
 }

@@ -165,5 +165,16 @@
   "rl.settings.deleteHint": "Supprimer un dépôt supprime ses paquets. Cette action est irréversible.",
   "rl.settings.delete": "Supprimer le dépôt",
   "rl.federation.off": "La fédération est désactivée : ce dépôt n'est pas partagé avec d'autres instances.",
-  "rl.federation.setup": "Configurer la fédération"
+  "rl.federation.setup": "Configurer la fédération",
+  "rl.tab.ai": "Analyse IA",
+  "rl.ai.caption": "Analyses IA de ce dépôt",
+  "rl.ai.filter": "Filtrer par statut",
+  "rl.ai.status.all": "Toutes",
+  "rl.ai.empty": "Aucune analyse IA",
+  "rl.ai.emptyHint": "Les analyses apparaissent ici une fois qu'un paquet a été analysé.",
+  "rl.ai.col.artifact": "Paquet",
+  "rl.ai.col.status": "Statut",
+  "rl.ai.col.license": "Licence",
+  "rl.ai.col.tags": "Tags",
+  "rl.ai.col.updated": "Mise à jour"
 }
