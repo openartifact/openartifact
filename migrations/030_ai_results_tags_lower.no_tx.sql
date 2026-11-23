@@ -3,7 +3,7 @@
 -- SPDX-License-Identifier: AGPL-3.0-or-later
 
 -- GET /api/v1/search?q=TERM matches the AI analysis tags of an artifact
--- case-insensitively and exactly (internal/search, whereBuilder.addAITagMatch).
+-- case-insensitively and exactly (internal/search, aiTaggedArtifacts).
 -- idx_ai_results_tags is a plain containment index over the tags as the model
 -- wrote them, so it can only answer a case-sensitive match; this one indexes the
 -- lower-cased array, and the search probes it with the same expression. The build

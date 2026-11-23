@@ -127,6 +127,18 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
+### Unreleased
+
+**What you must do**
+
+- Nothing is required. Migration `030` adds the index `idx_ai_results_tags_lower` with `CREATE INDEX CONCURRENTLY`, so it does not block writes.
+
+**Changes.**
+
+- **AI analysis results in the web UI.** Administrators see the latest analysis of a version on the **Security** tab of the artifact page whatever its outcome (a clean or failed run showed nothing before) and can re-run it there; a repository gets an **AI analysis** tab listing its analyses by status. See [AI analysis](../integrations/ai-analysis.md).
+- **Search by AI tag.** `GET /api/v1/search?q=TERM` and the web UI search also return the artifacts whose AI analysis has a tag equal to the term, case-insensitively, within the repositories you can read. See [Search by tag](../integrations/ai-analysis.md#search-by-tag).
+- **`oa check` reads `go.sum`.** Every module version it lists is checked against a Go repository, also the ones it lists only as `/go.mod` (the go command fetches that file through the proxy too). `--fetch` requests the `.info` of each version, as a build does, and the version list of each module, so a release the module does not have is `not_found` instead of `unknown`. `go.sum` records neither requirers (no REQUIRED BY column, `"dependency_graph": false`) nor test-only modules (`--no-dev` is refused).
+
 ### 0.25.0
 
 **What you must do**
@@ -136,7 +148,6 @@ Newest first. Each version starts with **What you must do**; the text below it l
 **Changes.**
 
 - **Batch availability for Go modules.** `POST /availability`, `check_dependencies` and `oa check` recognise a Go version by the `.info` a build cached, not only by the module's version list: a pseudo-version (never in the list) was `not_found`, and every version was `unknown` after a plain `go build`, which does not fetch the list. A pseudo-version nothing is cached of is `unknown`.
-- **`oa check` reads `go.sum`.** Every module version it lists is checked against a Go repository, also the ones it lists only as `/go.mod` (the go command fetches that file through the proxy too). `--fetch` requests the `.info` of each version, as a build does, and the version list of each module, so a release the module does not have is `not_found` instead of `unknown`. `go.sum` records neither requirers (no REQUIRED BY column, `"dependency_graph": false`) nor test-only modules (`--no-dev` is refused).
 - **Batch availability: curation holds without cached metadata.** For proxies of formats that refuse a curated version from the request path (apk, Composer, Conan, Debian, Ivy, Maven, pacman, PyPI, RPM, sbt), `POST /availability`, `check_dependencies` and `oa check` report a version a curation rule hides as `held` even when the package was never fetched (it was `unknown`).
 - **`oa check --fetch` and "required by".** `--fetch` warms the repository's proxies by requesting each package's metadata before checking, so a fresh proxy no longer answers `unknown` for everything. The table names the locked packages that pull in a dependency that is not available (`-` when no locked package does), and `--format json` adds `required_by`.
 - **`oa check` reads `pnpm-lock.yaml` and `yarn.lock`.** pnpm lockfiles of pnpm 7 and later and the `yarn.lock` of Yarn 1 and of Yarn 2 and later are checked like `package-lock.json`, against an npm repository. `yarn.lock` does not mark development dependencies, so `--no-dev` is refused for it.
