@@ -337,8 +337,8 @@ Each release also ships native packages, built from the same binaries as the arc
 
 | Package | Contents | Formats |
 |---|---|---|
-| `openartifact_<version>_amd64.deb` / `openartifact-<version>.x86_64.rpm` | `openartifact` (server), `resetpw`, a systemd unit and its config at `/etc/openartifact/openartifact.yaml` | deb (Debian 12/13), rpm (Fedora, RHEL, CentOS, openSUSE) |
-| `oa_<version>_amd64.deb` / `oa-<version>.x86_64.rpm` | `oa` CLI with bash, zsh and fish completions | same |
+| `openartifact_<version>_amd64.deb` / `openartifact-<version>-1.x86_64.rpm` | `openartifact` (server), `resetpw`, a systemd unit and its config at `/etc/openartifact/openartifact.yaml` | deb (Debian 12/13), rpm (Fedora, RHEL, CentOS, openSUSE) |
+| `oa_<version>_amd64.deb` / `oa-<version>-1.x86_64.rpm` | `oa` CLI with bash, zsh and fish completions | same |
 
 Both exist for amd64 and arm64. Install with your system package manager:
 
@@ -347,16 +347,16 @@ Both exist for amd64 and arm64. Install with your system package manager:
 sudo apt install ./openartifact_0.25.0_amd64.deb ./oa_0.25.0_amd64.deb
 
 # Fedora / RHEL / CentOS
-sudo dnf install ./openartifact-0.25.0.x86_64.rpm ./oa-0.25.0.x86_64.rpm
+sudo dnf install ./openartifact-0.25.0-1.x86_64.rpm ./oa-0.25.0-1.x86_64.rpm
 
 # openSUSE
-sudo zypper install ./openartifact-0.25.0.x86_64.rpm ./oa-0.25.0.x86_64.rpm
+sudo zypper install ./openartifact-0.25.0-1.x86_64.rpm ./oa-0.25.0-1.x86_64.rpm
 ```
 
-The server package creates a system user `openartifact`, the state directories under `/var/lib`, the systemd unit `/usr/lib/systemd/system/openartifact.service` and the config `/etc/openartifact/openartifact.yaml` (a conffile: upgrades keep your edits). Finish the install:
+The server package creates a system user `openartifact`, the state directories under `/var/lib`, the systemd unit `/usr/lib/systemd/system/openartifact.service` and the config `/etc/openartifact/openartifact.yaml` (a conffile: upgrades keep your edits; readable by root and the `openartifact` group only, since it holds the database password). On the first install it also generates `OPENARTIFACT_SECRET_KEY` into `/etc/openartifact/openartifact.env`, which the systemd unit loads. That key encrypts upstream passwords, webhook secrets and signing keys at rest: back the file up and never change it (see [upgrading](upgrading.md#secrets-to-preserve)); removing the package keeps it. Other environment overrides can go in the same file. Finish the install:
 
 ```sh
-sudo editor /etc/openartifact/openartifact.yaml   # database.*, baseUrl, storage.*; the server refuses to start while database.password is CHANGE_ME
+sudoedit /etc/openartifact/openartifact.yaml   # database.*, baseUrl, storage.*; the server refuses to start while database.password is CHANGE_ME
 sudo systemctl enable --now openartifact
 sudo journalctl -u openartifact   # the first start prints the generated admin password (OPENARTIFACT BOOTSTRAP block)
 ```

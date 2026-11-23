@@ -95,10 +95,14 @@ nfpms:
     license: AGPL-3.0-or-later
     formats: [deb, rpm]
     contents:
-      # conffile: upgrades keep local edits
+      # conffile: upgrades keep local edits (rpm needs noreplace for that; plain
+      # config replaces an edited file and saves it as .rpmsave). It holds the
+      # database password: postinstall gives it to the openartifact group.
       - src: openartifact.example.yaml
         dst: /etc/openartifact/openartifact.yaml
-        type: config
+        type: config|noreplace
+        file_info:
+          mode: 0640
       - src: packaging/systemd/openartifact.service
         dst: /usr/lib/systemd/system/openartifact.service
     scripts:
