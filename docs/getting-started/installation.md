@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Installation
 
-Install OpenArtifact with Docker Compose, on Kubernetes with Helm, or as a single binary against your own PostgreSQL. Start with Compose to try it on one machine.
+Install OpenArtifact with Docker Compose, on Kubernetes with Helm, as a native deb or rpm package, or as a single binary against your own PostgreSQL. Start with Compose to try it on one machine.
 
 OpenArtifact is one Go binary with the web UI embedded. It needs PostgreSQL (the compose file and CI use `postgres:18-alpine`) and a blob store. The blob store is the local filesystem by default; see [storage](../operations/storage.md) for the others.
 
@@ -15,6 +15,7 @@ OpenArtifact is one Go binary with the web UI embedded. It needs PostgreSQL (the
 | [Docker Compose](#docker-compose) | Trying it out and small single-host installs. Builds the image from the checkout and bundles PostgreSQL. |
 | [Helm](#helm) | Kubernetes, with an optional CloudNativePG database, high availability and Ingress or Gateway API. |
 | [AWS with Terraform](#aws-with-terraform) | AWS, with ECS Fargate or an existing EKS cluster, S3, RDS PostgreSQL and an HTTPS load balancer. |
+| [Native packages (deb and rpm)](#native-packages-deb-and-rpm) | Debian 12/13, Fedora, RHEL, CentOS and openSUSE hosts, with systemd and your own PostgreSQL. |
 | [Release binary or source build](#binary-and-build-from-source) | Bare metal, VMs and systemd, with your own PostgreSQL. |
 
 ## Docker Compose
@@ -329,6 +330,38 @@ cp openartifact.example.yaml openartifact.yaml   # edit database.*, baseUrl, sto
 ```
 
 The example file ships `database.password: CHANGE_ME`, `sslMode: require` and a placeholder `corsOrigins` entry; adjust all three (the server refuses to start while the database password is still `CHANGE_ME`). The defaults `storage.path: /var/lib/artifacts` and `backup.backupDir: /var/lib/openartifact/backups` must exist or be creatable by the process user (the filesystem store creates its directory). Migrations run at startup; the first start creates the `admin` user (see [First login](#first-login)). Options and environment variables: [configuration](configuration.md).
+
+### Native packages (deb and rpm)
+
+Each release also ships native packages, built from the same binaries as the archives. There are two independent packages, so you can install the server, the CLI, or both:
+
+| Package | Contents | Formats |
+|---|---|---|
+| `openartifact_<version>_amd64.deb` / `openartifact-<version>-1.x86_64.rpm` | `openartifact` (server), `resetpw`, a systemd unit and its config at `/etc/openartifact/openartifact.yaml` | deb (Debian 12/13), rpm (Fedora, RHEL, CentOS, openSUSE) |
+| `oa_<version>_amd64.deb` / `oa-<version>-1.x86_64.rpm` | `oa` CLI with bash, zsh and fish completions | same |
+
+Both exist for amd64 and arm64. Install with your system package manager:
+
+```sh
+# Debian 12/13
+sudo apt install ./openartifact_0.25.0_amd64.deb ./oa_0.25.0_amd64.deb
+
+# Fedora / RHEL / CentOS
+sudo dnf install ./openartifact-0.25.0-1.x86_64.rpm ./oa-0.25.0-1.x86_64.rpm
+
+# openSUSE
+sudo zypper install ./openartifact-0.25.0-1.x86_64.rpm ./oa-0.25.0-1.x86_64.rpm
+```
+
+The server package creates a system user `openartifact`, the state directories under `/var/lib`, the systemd unit `/usr/lib/systemd/system/openartifact.service` and the config `/etc/openartifact/openartifact.yaml` (a conffile: upgrades keep your edits; readable by root and the `openartifact` group only, since it holds the database password). On the first install it also generates `OPENARTIFACT_SECRET_KEY` into `/etc/openartifact/openartifact.env`, which the systemd unit loads. That key encrypts upstream passwords, webhook secrets and signing keys at rest: back the file up and never change it (see [upgrading](upgrading.md#secrets-to-preserve)); removing the package keeps it. Other environment overrides can go in the same file. Finish the install:
+
+```sh
+sudoedit /etc/openartifact/openartifact.yaml   # database.*, baseUrl, storage.*; the server refuses to start while database.password is CHANGE_ME
+sudo systemctl enable --now openartifact
+sudo journalctl -u openartifact   # the first start prints the generated admin password (OPENARTIFACT BOOTSTRAP block)
+```
+
+The package does not install PostgreSQL; point `database.*` at your own server (the [compose file](https://github.com/openartifact/openartifact/blob/main/docker/docker-compose.yml) is a way to run one). After an upgrade, the running server restarts automatically; check it with `systemctl status openartifact`. To reset the admin password, use the installed `resetpw` (see [Reset the admin password](#reset-the-admin-password)).
 
 ### Build from source
 

@@ -7,6 +7,8 @@
 /oa
 /openartifact
 /bin/
+# GoReleaser build output (release --snapshot locally: archives and deb/rpm packages)
+/dist/
 # Shell completion scripts generated for release archives (scripts/completions.sh)
 /completions/
 

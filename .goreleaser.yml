@@ -74,6 +74,66 @@ checksum:
   name_template: SHA256SUMS
   algorithm: sha256
 
+# Native packages (deb: Debian 12/13, rpm: Fedora/RHEL/CentOS/openSUSE), built
+# from the same binaries as the archives. Two independent packages so the
+# server and the CLI can be installed separately or together. GoReleaser puts
+# the binaries of the builds listed in ids into /usr/bin automatically.
+nfpms:
+  - id: server
+    package_name: openartifact
+    ids: [openartifact, resetpw]
+    file_name_template: "{{ .ConventionalFileName }}"
+    vendor: OpenArtifact
+    maintainer: The OpenArtifact Authors <openartifact@users.noreply.github.com>
+    homepage: https://github.com/openartifact/openartifact
+    description: |-
+      Self-hosted, multi-format artifact repository server: serves Maven, npm,
+      PyPI, Docker/OCI, Helm, Debian, RPM, Alpine (apk), Pacman, Go, Cargo,
+      NuGet, RubyGems, Composer, Conda, Conan, Ivy, sbt, Terraform, Ansible,
+      Nix and raw formats. Ships the server binary, the resetpw tool, a systemd
+      unit and its config. Needs your own PostgreSQL.
+    license: AGPL-3.0-or-later
+    formats: [deb, rpm]
+    contents:
+      # conffile: upgrades keep local edits (rpm needs noreplace for that; plain
+      # config replaces an edited file and saves it as .rpmsave). It holds the
+      # database password: postinstall gives it to the openartifact group.
+      - src: openartifact.example.yaml
+        dst: /etc/openartifact/openartifact.yaml
+        type: config|noreplace
+        file_info:
+          mode: 0640
+      - src: packaging/systemd/openartifact.service
+        dst: /usr/lib/systemd/system/openartifact.service
+    scripts:
+      postinstall: packaging/server/postinstall.sh
+      preremove: packaging/server/preremove.sh
+  - id: cli
+    package_name: oa
+    ids: [oa]
+    file_name_template: "{{ .ConventionalFileName }}"
+    vendor: OpenArtifact
+    maintainer: The OpenArtifact Authors <openartifact@users.noreply.github.com>
+    homepage: https://github.com/openartifact/openartifact
+    description: |-
+      Command-line client for OpenArtifact: manage repositories, users, tokens,
+      scans, webhooks and backups, apply declarative manifests and import from
+      Nexus or Artifactory.
+    license: AGPL-3.0-or-later
+    formats: [deb, rpm]
+    contents:
+      - src: completions/oa.bash
+        dst: /usr/share/bash-completion/completions/oa
+      # zsh completion lives in a different directory on each side
+      - src: completions/_oa
+        dst: /usr/share/zsh/vendor-completions/_oa
+        packager: deb
+      - src: completions/_oa
+        dst: /usr/share/zsh/site-functions/_oa
+        packager: rpm
+      - src: completions/oa.fish
+        dst: /usr/share/fish/vendor_completions.d/oa.fish
+
 release:
   github:
     owner: openartifact
