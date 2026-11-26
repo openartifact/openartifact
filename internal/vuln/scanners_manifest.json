@@ -1,34 +1,34 @@
 {
   "scanners": {
     "trivy": {
-      "version": "0.76.1",
+      "version": "0.76.2",
       "binary": "trivy",
       "platforms": {
         "linux/amd64": {
-          "path": "aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-64bit.tar.gz",
-          "archive_sha256": "c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0",
-          "binary_sha256": "d1dfca6ae10a1ad4540bb94e64f0510077c47008920a9b554986b39dca573d83"
+          "path": "aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz",
+          "archive_sha256": "bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf",
+          "binary_sha256": "6a972c69606c7b3ea4c6bdcc6fc9332ea9ad38381624310c1e85cc77345909f3"
         },
         "linux/arm64": {
-          "path": "aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-ARM64.tar.gz",
-          "archive_sha256": "e174dff2a6dba5e3ae41f8d0537a6324405bd08132497340304c6b20e0f16a1f",
-          "binary_sha256": "b422130ea54e53e142e65c838662e48919ce9c3f23f17d80066b43e70550cb85"
+          "path": "aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-ARM64.tar.gz",
+          "archive_sha256": "ab9d51f86e6a5fb936f605faff6b593ac51bc378fff4d3e8b9d58358b9c367c3",
+          "binary_sha256": "7844c3851b28470b6d7f0975fa0b3262c5b2272c9a54a91f522801bb8926f51f"
         }
       }
     },
     "grype": {
-      "version": "0.121.1",
+      "version": "0.122.0",
       "binary": "grype",
       "platforms": {
         "linux/amd64": {
-          "path": "anchore/grype/releases/download/v0.121.1/grype_0.121.1_linux_amd64.tar.gz",
-          "archive_sha256": "bc3ea3f9e6fd56ac781c08c6c5e614271b79f438200757f6932085c19b0a4657",
-          "binary_sha256": "497a3587a0a9fbce68888dffc7cb80670ddf92d827ca49939e430a02168e7c91"
+          "path": "anchore/grype/releases/download/v0.122.0/grype_0.122.0_linux_amd64.tar.gz",
+          "archive_sha256": "e697e6f7224637df87e267e4318cc027feae99a8e1b80280241d32b9ee5d4920",
+          "binary_sha256": "a9f39bf31dbe7b863dc458aade4cb94c10f672921ff2393c0d018101e023e42c"
         },
         "linux/arm64": {
-          "path": "anchore/grype/releases/download/v0.121.1/grype_0.121.1_linux_arm64.tar.gz",
-          "archive_sha256": "33670612aad351c48cf3c37f4a85d8b043d1b64b21e6034e675bb00b956d78c1",
-          "binary_sha256": "11ce78fe1ee658ac519f53c3f04b110203d2f1ea3ab98a14c88cc92523a2a8ca"
+          "path": "anchore/grype/releases/download/v0.122.0/grype_0.122.0_linux_arm64.tar.gz",
+          "archive_sha256": "7ebb44a7e69f8ca2491040e140a802117b2bf3ca8360d3856b3e0b9fe79962c4",
+          "binary_sha256": "d62f4e8342bec6b5c0ed5fc8f611de1d41fbc6b1cc4ab852ec279ea87611c4c7"
         }
       }
     }
