@@ -13,6 +13,7 @@ import (
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/curation"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repotype"
 )
 
@@ -198,6 +199,10 @@ func explainProxy(
 
 	gate := curation.NewGate(repo.Format, repo.CurationMode, rules, repo.MinAgeHours, time.Now())
 
+	// The gate judges the version as the cached metadata spells it, as the
+	// proxy does when it serves the files and as the batch check does.
+	version = listedSpelling(ctx, published, repo, pkg, version)
+
 	var publishedAt time.Time
 
 	if published != nil {
@@ -221,6 +226,30 @@ func explainProxy(
 	}
 
 	return nil
+}
+
+// listedSpelling is the spelling the cached metadata of proxy repository repo
+// gives version of pkg (proxy.VersionKey: for pypi any PEP 440 spelling of the
+// release), or version itself when the metadata is not cached or does not
+// list it.
+func listedSpelling(ctx context.Context, published PublishTimeSource, repo *models.Repository, pkg, version string) string {
+	if published == nil {
+		return version
+	}
+
+	list, ok := published.CachedVersions(ctx, repo, pkg)
+	if !ok {
+		return version
+	}
+
+	want := proxy.VersionKey(repo.Format, version)
+	for _, v := range list {
+		if proxy.VersionKey(repo.Format, v.Version) == want {
+			return v.Version
+		}
+	}
+
+	return version
 }
 
 // explainHosted adds the quarantine and license-policy holds of the stored
