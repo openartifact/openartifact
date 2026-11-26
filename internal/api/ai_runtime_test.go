@@ -300,6 +300,9 @@ func TestAITriggerWithoutManifestText(t *testing.T) {
 		{"unknown artifact", "nope", `{}`, http.StatusNotFound},
 		{"artifact without a readable manifest", "docker-1", `{}`, http.StatusUnprocessableEntity},
 		{"supported artifact", "npm-1", `{}`, http.StatusAccepted},
+		{"no body means no fields", "npm-1", ``, http.StatusAccepted},
+		{"no body still needs a stored artifact", "nope", ``, http.StatusNotFound},
+		{"malformed body", "npm-1", `{`, http.StatusBadRequest},
 		{"caller text still needs a stored artifact", "nope", `{"manifest_text":"x","artifact_format":"npm"}`, http.StatusNotFound},
 		{"caller text for a stored artifact", "docker-1", `{"manifest_text":"x"}`, http.StatusAccepted},
 	}

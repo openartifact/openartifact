@@ -127,6 +127,17 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
+### 0.25.1
+
+**What you must do**
+
+- Nothing is required.
+
+**Changes.**
+
+- **AI analysis trigger without a body.** `POST /api/v1/repositories/{name}/ai-analysis/{artifactID}/trigger` accepts a request with no body, as the documentation shows (it answered `400 invalid JSON body`). Malformed JSON is still refused.
+- **Dependencies.** Go modules, web packages, the Go builder image (1.27.4), the runtime Alpine image (3.24) and the bundled scanners and tools (Trivy 0.76.2, Grype 0.122.0, cosign 3.1.5, oras 1.4.0) are updated.
+
 ### 0.25.0
 
 **What you must do**

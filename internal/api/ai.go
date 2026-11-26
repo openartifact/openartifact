@@ -7,6 +7,8 @@
 package api
 
 import (
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -169,7 +171,8 @@ func (h *AIHandler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 		ArtifactName    string `json:"artifact_name"`
 		ArtifactVersion string `json:"artifact_version"`
 	}
-	if err := decodeJSON(r, &body); err != nil {
+	// Every field is optional, so a request without a body means "{}".
+	if err := decodeJSON(r, &body); err != nil && !errors.Is(err, io.EOF) {
 		writeBadJSON(w, err)
 		return
 	}
