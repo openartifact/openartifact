@@ -87,7 +87,7 @@ RUN mkdir -p /rootfs/var/lib/artifacts /rootfs/var/lib/openartifact/backups \
 # ---- Scanner binaries (static, digest-pinned) -------------------------------
 # Selected by the SCANNERS build argument; only the chosen stage is used.
 FROM docker.io/aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb AS trivy-src
-FROM docker.io/anchore/grype:v0.121.3@sha256:13113eeceab017260370cf540e1d25442c59665fd07d1b09b66d63bb0c282887 AS grype-src
+FROM docker.io/anchore/grype:v0.122.0@sha256:013e16ae96bd64108973e3e9fecec63f7ff276358d34c46c25d33e2aac96539f AS grype-src
 
 FROM scratch AS scanners-none
 COPY --from=builder /rootfs/scanners/ /scanners/
