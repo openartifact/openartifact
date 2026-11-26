@@ -98,12 +98,11 @@ export function initTelemetry(settings: FrontendTelemetryConfig): Telemetry {
   })
 
   // Unhandled errors and rejections as `exception` events, Core Web Vitals as
-  // `browser.web_vital` events. Created disabled so nothing is captured
-  // before they write to our provider instead of the (no-op) global one.
-  const instrumentations = [new ErrorsInstrumentation({ enabled: false }), new WebVitalsInstrumentation({ enabled: false })]
+  // `browser.web_vital` events. They capture nothing until enable(), whose
+  // first call locks our provider in place of the (no-op) global one.
+  const instrumentations = [new ErrorsInstrumentation(), new WebVitalsInstrumentation()]
   for (const instrumentation of instrumentations) {
-    instrumentation.setLoggerProvider(loggerProvider)
-    instrumentation.enable()
+    instrumentation.enable({ loggerProvider })
   }
 
   const tracer = tracerProvider.getTracer(SERVICE_NAME, version)
