@@ -5,12 +5,16 @@
 import { describe, it, expect } from 'bun:test'
 import { mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
+import { reactive } from 'vue'
 import type { SSOProvider } from '../../api/sso'
 import SSOProviderForm from '../../pages/settings/sections/SSOProviderForm.vue'
 import { emptyForm, formFromProvider } from '../../lib/ssoProviderForm'
 import { SSO_ICON_KEYS, ssoIcon } from '../../lib/brandIcons'
 
-function mountForm(editing: SSOProvider | null = null, form = editing ? formFromProvider(editing) : emptyForm()) {
+function mountForm(editing: SSOProvider | null = null, initial = editing ? formFromProvider(editing) : emptyForm()) {
+  // The form edits the model in place, as the page's ref does: mount props are
+  // not deeply reactive, so the test passes a reactive model too.
+  const form = reactive(initial)
   const wrapper = mount(SSOProviderForm, {
     props: { editing, modelValue: form, 'onUpdate:modelValue': () => {} },
     global: { plugins: [createPinia()] },
