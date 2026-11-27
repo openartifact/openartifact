@@ -73,6 +73,8 @@ var GoHooks = Hooks{PURL: goPURL, TrivyManifest: goManifest} //nolint:gochecknog
 var NuGetHooks = Hooks{TrivyManifest: nugetManifest} //nolint:gochecknoglobals // immutable format hook value
 // RubyGemsHooks: the plain Package URL, a Gemfile.lock for trivy.
 var RubyGemsHooks = Hooks{TrivyManifest: rubygemsManifest} //nolint:gochecknoglobals // immutable format hook value
+// PubHooks: the plain Package URL, a pubspec.lock for trivy.
+var PubHooks = Hooks{TrivyManifest: pubManifest} //nolint:gochecknoglobals // immutable format hook value
 // DebHooks: the distribution vendor is the namespace, distro a qualifier.
 var DebHooks = Hooks{PURL: debPURL} //nolint:gochecknoglobals // immutable format hook value
 // RPMHooks: as DebHooks, plus the epoch qualifier.
@@ -216,6 +218,13 @@ func cargoManifest(dir, name, version string) error {
 	content := fmt.Sprintf("version = 3\n\n[[package]]\nname = %q\nversion = %q\n", name, version)
 
 	return os.WriteFile(filepath.Join(dir, "Cargo.lock"), []byte(content), 0600)
+}
+
+func pubManifest(dir, name, version string) error {
+	content := fmt.Sprintf("packages:\n  %s:\n    dependency: \"direct main\"\n    description:\n      name: %s\n"+
+		"      url: \"https://pub.dev\"\n    source: hosted\n    version: %q\nsdks:\n  dart: \">=3.0.0 <4.0.0\"\n", name, name, version)
+
+	return os.WriteFile(filepath.Join(dir, "pubspec.lock"), []byte(content), 0600)
 }
 
 func composerManifest(dir, name, version string) error {

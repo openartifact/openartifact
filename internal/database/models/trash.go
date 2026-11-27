@@ -29,6 +29,7 @@ const (
 	TrashKindConda             TrashKind = "conda_package"
 	TrashKindPacman            TrashKind = "pacman"
 	TrashKindAnsible           TrashKind = "ansible"
+	TrashKindPub               TrashKind = "pub"
 	TrashKindConan             TrashKind = "conan_package"
 	TrashKindTerraformModule   TrashKind = "terraform_module"
 	TrashKindTerraformProvider TrashKind = "terraform_provider"

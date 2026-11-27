@@ -6,18 +6,18 @@
 // Add or change a format in the Go registry, then run `make generate`.
 
 /** Every package format id, in alphabetical (picker) order. */
-export const FORMAT_IDS = ['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'] as const
+export const FORMAT_IDS = ['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pub', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'] as const
 
 export type FormatId = (typeof FORMAT_IDS)[number]
 
 /** Formats that can be created as hosted repositories (the rest are proxy and group only). */
-export const HOSTED_FORMATS: readonly FormatId[] = ['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
+export const HOSTED_FORMATS: readonly FormatId[] = ['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pub', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
 
 /** Formats that can be created as proxy repositories. */
-export const PROXY_FORMATS: readonly FormatId[] = ['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
+export const PROXY_FORMATS: readonly FormatId[] = ['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pub', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
 
 /** Formats that can be created as group repositories. */
-export const GROUP_FORMATS: readonly FormatId[] = ['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
+export const GROUP_FORMATS: readonly FormatId[] = ['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pub', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
 
 /** Formats whose hosted repositories can be federated. */
 export const FEDERATION_FORMATS: readonly FormatId[] = ['cargo', 'docker', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw']
@@ -26,10 +26,10 @@ export const FEDERATION_FORMATS: readonly FormatId[] = ['cargo', 'docker', 'go',
 export const GPG_SIGNED_FORMATS: readonly FormatId[] = ['deb', 'pacman', 'rpm', 'terraform']
 
 /** Formats served under /repos/<format>/{repo} instead of /repos/{repo}. */
-export const ISOLATED_FORMATS: readonly FormatId[] = ['ivy', 'maven', 'raw', 'sbt']
+export const ISOLATED_FORMATS: readonly FormatId[] = ['ivy', 'maven', 'pub', 'raw', 'sbt']
 
 /** Formats the OSV scanner has an ecosystem for (format id = ecosystem id). */
-export const VULN_ECOSYSTEMS: readonly FormatId[] = ['cargo', 'composer', 'deb', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'rpm', 'rubygems']
+export const VULN_ECOSYSTEMS: readonly FormatId[] = ['cargo', 'composer', 'deb', 'go', 'helm', 'maven', 'npm', 'nuget', 'pub', 'pypi', 'rpm', 'rubygems']
 
 /** Upstream a proxy repository uses when none is given; formats not listed need one. */
 export const DEFAULT_UPSTREAMS: Readonly<Partial<Record<FormatId, string>>> = {
@@ -43,6 +43,7 @@ export const DEFAULT_UPSTREAMS: Readonly<Partial<Record<FormatId, string>>> = {
   nix: 'https://cache.nixos.org',
   nuget: 'https://api.nuget.org/v3/index.json',
   pacman: 'https://geo.mirror.pkgbuild.com',
+  pub: 'https://pub.dev',
   pypi: 'https://pypi.org/simple',
   rubygems: 'https://rubygems.org',
   terraform: 'https://registry.terraform.io',

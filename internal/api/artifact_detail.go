@@ -123,6 +123,7 @@ var dependencyDecoders = map[string]func([]byte) []responses.PackageDependencyRe
 	"go-mod":           decodeGoDeps,
 	"pacman-depends":   decodePacmanDeps,
 	"ansible-map":      decodeAnsibleDeps,
+	"pubspec":          decodePubDeps,
 }
 
 // decodeDependencies returns the declared dependencies of a package version
@@ -303,6 +304,41 @@ func decodeAnsibleDeps(raw []byte) []responses.PackageDependencyResponse {
 
 	for _, name := range slices.Sorted(maps.Keys(deps)) {
 		out = append(out, responses.PackageDependencyResponse{Name: name, Version: deps[name]})
+	}
+
+	return out
+}
+
+// decodePubDeps reads the dependencies and dev_dependencies of a pubspec. A
+// dependency is a version constraint, or a mapping (hosted, git, path, sdk) whose
+// constraint, when it has one, is its "version".
+func decodePubDeps(raw []byte) []responses.PackageDependencyResponse {
+	var spec map[string]json.RawMessage
+	if json.Unmarshal(raw, &spec) != nil {
+		return nil
+	}
+
+	var out []responses.PackageDependencyResponse
+
+	for _, section := range []struct{ key, kind string }{{"dependencies", "runtime"}, {"dev_dependencies", "dev"}} {
+		var deps map[string]json.RawMessage
+		if json.Unmarshal(spec[section.key], &deps) != nil {
+			continue
+		}
+
+		for _, name := range slices.Sorted(maps.Keys(deps)) {
+			var constraint string
+
+			var detail struct {
+				Version string `json:"version"`
+			}
+
+			if json.Unmarshal(deps[name], &constraint) != nil && json.Unmarshal(deps[name], &detail) == nil {
+				constraint = detail.Version
+			}
+
+			out = append(out, responses.PackageDependencyResponse{Name: name, Version: constraint, Kind: section.kind})
+		}
 	}
 
 	return out

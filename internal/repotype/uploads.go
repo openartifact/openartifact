@@ -93,6 +93,9 @@ var (
 	pacmanUploads = []UploadRoute{
 		counted("/repos/{name}/os/{arch}/{filename}", http.MethodPut),
 	}
+	pubUploads = []UploadRoute{
+		counted("/repos/pub/{name}/api/packages/versions/newUpload", http.MethodPost),
+	}
 	pypiUploads = []UploadRoute{
 		counted("/repos/{name}/legacy", http.MethodPost),
 	}

@@ -36,7 +36,7 @@ func TestRepoBaseURL(t *testing.T) {
 func allFormats() []string {
 	return []string{
 		"ansible", "apk", "cargo", "composer", "conan", "conda", "deb", "docker", "go", "helm", "huggingface", "ivy", "maven", "nix", "npm",
-		"nuget", "pacman", "pypi", "raw", "rpm", "rubygems", "sbt", "terraform",
+		"nuget", "pacman", "pub", "pypi", "raw", "rpm", "rubygems", "sbt", "terraform",
 	}
 }
 

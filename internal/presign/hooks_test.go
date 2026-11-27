@@ -26,6 +26,7 @@ func TestMain(m *testing.M) {
 		"npm":       NPMBlobPath,
 		"nuget":     NuGetBlobPath,
 		"pacman":    PacmanBlobPath,
+		"pub":       PubBlobPath,
 		"pypi":      PyPIBlobPath,
 		"raw":       RawBlobPath,
 		"rpm":       RPMBlobPath,

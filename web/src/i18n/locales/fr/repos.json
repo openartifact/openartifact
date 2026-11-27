@@ -224,6 +224,7 @@
   "trash.purgesInDays": "Purge dans {n} jours",
   "trash.kind.repository": "Dépôt",
   "trash.kind.ansible": "Collection Ansible",
+  "trash.kind.pub": "Paquet Pub",
   "trash.kind.apk_package": "Paquet Alpine",
   "trash.kind.cargo_crate": "Crate Cargo",
   "trash.kind.composer": "Paquet Composer",

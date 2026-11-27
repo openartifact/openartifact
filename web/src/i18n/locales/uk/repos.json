@@ -232,6 +232,7 @@
   "trash.purgesInDays": "Очищення за {n} дн.",
   "trash.kind.repository": "Репозиторій",
   "trash.kind.ansible": "Колекція Ansible",
+  "trash.kind.pub": "Пакет Pub",
   "trash.kind.apk_package": "Пакет Alpine",
   "trash.kind.cargo_crate": "Crate Cargo",
   "trash.kind.composer": "Пакет Composer",

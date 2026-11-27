@@ -24,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/publicurl"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/pkg/logger"
+	pkgpub "github.com/openartifact/openartifact/pkg/pub"
 )
 
 // AuthRealm is the realm of the Basic and Bearer challenges. It is a protocol
@@ -849,6 +850,10 @@ func classifyRoute(r *http.Request) routeScope {
 		action = "delete"
 	}
 
+	if isPubPublishStep(r.Method, r.URL.Path, artifactPath) {
+		action = "write"
+	}
+
 	return routeScope{action: action, repoName: repoName, artifactPath: artifactPath}
 }
 
@@ -861,6 +866,18 @@ func isConanV1Delete(method, artifactPath string) bool {
 	}
 
 	return strings.HasSuffix(artifactPath, "/packages/delete") || strings.HasSuffix(artifactPath, "/remove_files")
+}
+
+// isPubPublishStep reports whether the request is one of the GETs of `dart pub
+// publish` (the upload URL and the finishing request): they belong to the
+// publish, so they need "write" like the upload POST between them. A caller that
+// may only read a repository learns that before the client sends the archive.
+func isPubPublishStep(method, urlPath, artifactPath string) bool {
+	if method != http.MethodGet || !strings.HasPrefix(urlPath, "/repos/pub/") {
+		return false
+	}
+
+	return artifactPath == pkgpub.NewPath || artifactPath == pkgpub.FinishPath
 }
 
 // repoDataSegments are the sub-resources of /api/v1/repositories/{name}/ that

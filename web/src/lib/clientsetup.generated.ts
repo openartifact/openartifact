@@ -29,6 +29,7 @@ export const BASE_TEMPLATES: Readonly<Record<string, string>> = {
   docker: '{{origin}}',
   ivy: '{{origin}}/repos/ivy/{{esc}}',
   maven: '{{origin}}/repos/maven/{{esc}}',
+  pub: '{{origin}}/repos/pub/{{esc}}',
   raw: '{{origin}}/repos/raw/{{esc}}',
   sbt: '{{origin}}/repos/sbt/{{esc}}',
 }
@@ -276,6 +277,27 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
       {
         client: 'pacman',
         configure: '# /etc/pacman.conf\n[{{repo}}]\nSigLevel = Required\nServer = {{base}}/os/$arch\n\n# private repository: Server = https://<USER>:<TOKEN>@{{basePath}}/os/$arch\n\n# trust the repository key\ncurl -fsSL {{base}}/public.key | sudo pacman-key --add -\nsudo pacman-key --lsign-key $(curl -fsSL {{base}}/public.key | gpg --show-keys --with-colons | awk -F: \'/^fpr/{print $10; exit}\')\n\n# packages keep the signatures of the members that hold them: trust each hosted member\'s key too (it is the group\'s when they share the active key), for example\n# curl -fsSL {{origin}}/repos/<member>/public.key | sudo pacman-key --add -',
+      },
+    ],
+  },
+  pub: {
+    hosted: [
+      {
+        client: 'dart',
+        configure: '# token: paste <TOKEN> when prompted\ndart pub token add {{base}}\n\n# resolve against this repository for every package\nexport PUB_HOSTED_URL={{base}}\n\n# or per dependency, in pubspec.yaml\ndependencies:\n  NAME:\n    hosted: {{base}}\n    version: ^1.0.0\n\n# install\ndart pub get',
+        publish: 'dart pub publish --server {{base}}',
+      },
+    ],
+    proxy: [
+      {
+        client: 'dart',
+        configure: '# token: paste <TOKEN> when prompted\ndart pub token add {{base}}\n\n# resolve against this repository for every package\nexport PUB_HOSTED_URL={{base}}\n\n# or per dependency, in pubspec.yaml\ndependencies:\n  NAME:\n    hosted: {{base}}\n    version: ^1.0.0\n\n# install\ndart pub get',
+      },
+    ],
+    group: [
+      {
+        client: 'dart',
+        configure: '# token: paste <TOKEN> when prompted\ndart pub token add {{base}}\n\n# resolve against this repository for every package\nexport PUB_HOSTED_URL={{base}}\n\n# or per dependency, in pubspec.yaml\ndependencies:\n  NAME:\n    hosted: {{base}}\n    version: ^1.0.0\n\n# install\ndart pub get',
       },
     ],
   },

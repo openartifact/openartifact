@@ -135,7 +135,7 @@ func TestRepositoriesCreatePersistsPublicFlag(t *testing.T) {
 	h := NewRepositoriesHandler(db, log, auth.NewEvaluator(db, log, false))
 
 	rw := httptest.NewRecorder()
-	h.handleCreate(rw, adminRequest(db, http.MethodPost, "/api/v1/repositories", `{"name":"pub","format":"go","public":true}`))
+	h.handleCreate(rw, adminRequest(db, http.MethodPost, "/api/v1/repositories", `{"name":"public-mirror","format":"go","public":true}`))
 
 	if rw.Code != http.StatusCreated {
 		t.Fatalf("status = %d; body = %s", rw.Code, rw.Body.String())

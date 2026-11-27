@@ -649,6 +649,30 @@ func AnsibleBuilder(c target) []Snippet {
 	}}
 }
 
+// PubBuilder configures the Dart and Flutter pub client against the repository
+// root, which is the hosted URL: pub serves /api/packages/... below it. The
+// client stores bearer tokens per hosted URL and only sends them over https (or
+// to localhost). Proxy and group repositories are read-only, so they carry no
+// publish hint.
+func PubBuilder(c target) []Snippet {
+	publish := "dart pub publish --server " + c.base
+	if c.repoType == "proxy" || c.repoType == "group" {
+		publish = "" // proxy and group repositories are read-only
+	}
+
+	return []Snippet{{
+		Client: "dart",
+		Configure: fmt.Sprintf(
+			"# token: paste <TOKEN> when prompted\ndart pub token add %[1]s"+
+				"\n\n# resolve against this repository for every package\nexport PUB_HOSTED_URL=%[1]s"+
+				"\n\n# or per dependency, in pubspec.yaml\ndependencies:\n  NAME:\n    hosted: %[1]s\n    version: ^1.0.0"+
+				"\n\n# install\ndart pub get",
+			c.base,
+		),
+		Publish: publish,
+	}}
+}
+
 // ComposerBuilder configures Composer against the repository root, which
 // serves packages.json. Composer matches http-basic credentials by host name
 // plus the port when the URL names one, and refuses plain http unless

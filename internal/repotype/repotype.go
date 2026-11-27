@@ -275,6 +275,11 @@ var specs = [...]Spec{
 		Signing: SigningGPG, PURLType: "alpm",
 	},
 	{
+		Name: "pub", Uploads: pubUploads,
+		Proxy: true, Group: true, Mount: MountIsolated, DefaultUpstream: "https://pub.dev",
+		Versioning: VersionSemver, PURLType: "pub", OSVEcosystem: "Pub", GrypeScan: true,
+	},
+	{
 		Name: "pypi", Uploads: pypiUploads,
 		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://pypi.org/simple",
 		Versioning: VersionPEP440, PURLType: "pypi", OSVEcosystem: "PyPI", GrypeScan: true,
