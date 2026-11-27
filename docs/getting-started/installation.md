@@ -344,13 +344,13 @@ Both exist for amd64 and arm64. Install with your system package manager:
 
 ```sh
 # Debian 12/13
-sudo apt install ./openartifact_0.25.0_amd64.deb ./oa_0.25.0_amd64.deb
+sudo apt install ./openartifact_0.26.0_amd64.deb ./oa_0.26.0_amd64.deb
 
 # Fedora / RHEL / CentOS
-sudo dnf install ./openartifact-0.25.0-1.x86_64.rpm ./oa-0.25.0-1.x86_64.rpm
+sudo dnf install ./openartifact-0.26.0-1.x86_64.rpm ./oa-0.26.0-1.x86_64.rpm
 
 # openSUSE
-sudo zypper install ./openartifact-0.25.0-1.x86_64.rpm ./oa-0.25.0-1.x86_64.rpm
+sudo zypper install ./openartifact-0.26.0-1.x86_64.rpm ./oa-0.26.0-1.x86_64.rpm
 ```
 
 The server package creates a system user `openartifact`, the state directories under `/var/lib`, the systemd unit `/usr/lib/systemd/system/openartifact.service` and the config `/etc/openartifact/openartifact.yaml` (a conffile: upgrades keep your edits; readable by root and the `openartifact` group only, since it holds the database password). On the first install it also generates `OPENARTIFACT_SECRET_KEY` into `/etc/openartifact/openartifact.env`, which the systemd unit loads. That key encrypts upstream passwords, webhook secrets and signing keys at rest: back the file up and never change it (see [upgrading](upgrading.md#secrets-to-preserve)); removing the package keeps it. Other environment overrides can go in the same file. Finish the install:
