@@ -104,6 +104,7 @@
   "activity.action.artifact.downloaded": "Downloaded",
   "activity.action.artifact.deleted": "Moved to trash",
   "activity.action.artifact.moved": "Moved",
+  "activity.action.artifact.copied": "Copied",
   "activity.action.artifact.promoted": "Promoted out",
   "activity.action.artifact.quarantined": "Quarantined",
   "activity.action.artifact.released": "Released from quarantine",

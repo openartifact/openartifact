@@ -330,6 +330,12 @@ func (a *app) registerRepositoryRoutes() {
 	// The retention purge worker is started above; the manual purge lives in
 	// TrashHandler.
 
+	api.NewCopyMoveHandler(db, log, evaluator).
+		WithPublisher(w.webhook).
+		WithWorkers(w.metadata).
+		WithLicenseFiles(db, a.store.blobs).
+		RegisterAuthed(authedAPI)
+
 	api.NewBundlesHandler(db, log, evaluator).
 		WithGPGKeys(w.gpgKeys).
 		WithBundleSigners(a.cfg.GPG.BundleSigners).

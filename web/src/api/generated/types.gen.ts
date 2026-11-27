@@ -150,6 +150,95 @@ export type BundlePromotion = {
     completed_at: string | null;
 };
 
+/**
+ * What to copy: a package version (`package` and `version`: every live file of that version) or a content digest (`sha256` with an optional `path`, read as a release bundle item is; for docker the manifest digest with an optional `tag`). Docker images are selected by digest only.
+ */
+export type CopyItem = {
+    package?: string;
+    version?: string;
+    /**
+     * Hex sha256 of the artifact's stored file (docker: of the manifest).
+     */
+    sha256?: string;
+    /**
+     * The artifact path, to pick one of several artifacts that share the digest.
+     */
+    path?: string;
+    /**
+     * Docker only: the tag naming the image among those that share the manifest digest.
+     */
+    tag?: string;
+};
+
+export type CopyRequest = {
+    /**
+     * Name of the hosted repository to copy (move) into. It must have the source's format.
+     */
+    target: string;
+    items: Array<CopyItem>;
+    /**
+     * Return the report without writing anything.
+     */
+    dry_run?: boolean;
+    /**
+     * Administrators only: replace content the target holds at the same coordinates (the replaced rows go to the target's trash) and, for a move, let releases leave a source repository with `immutable_releases`.
+     */
+    force?: boolean;
+};
+
+export type CopyItemReport = {
+    package?: string;
+    version?: string;
+    sha256?: string;
+    artifact_path?: string;
+    format?: string;
+    /**
+     * Artifacts newly written to the target.
+     */
+    copied?: Array<{
+        name?: string;
+        version?: string;
+        path?: string;
+        sha256?: string;
+        size?: number;
+    }>;
+    /**
+     * Artifacts the target already held with the same content.
+     */
+    existing?: Array<{
+        name?: string;
+        version?: string;
+        path?: string;
+        sha256?: string;
+        size?: number;
+    }>;
+    /**
+     * Target artifacts a forced copy moved to the target's trash.
+     */
+    replaced?: Array<{
+        name?: string;
+        version?: string;
+        path?: string;
+        sha256?: string;
+        size?: number;
+    }>;
+};
+
+export type CopyResult = {
+    operation?: 'copy' | 'move';
+    source?: string;
+    target?: string;
+    dry_run?: boolean;
+    copied?: number;
+    existing?: number;
+    replaced?: number;
+    /**
+     * Move only: artifacts taken out of the source repository (into its trash).
+     */
+    moved?: number;
+    items?: Array<CopyItemReport>;
+};
+
 export type PipelineStage = {
     name: string;
     /**
@@ -5773,6 +5862,114 @@ export type PostApiV1RepositoriesByNameVexSuggestionsByIdDismissResponses = {
 };
 
 export type PostApiV1RepositoriesByNameVexSuggestionsByIdDismissResponse = PostApiV1RepositoriesByNameVexSuggestionsByIdDismissResponses[keyof PostApiV1RepositoriesByNameVexSuggestionsByIdDismissResponses];
+
+export type PostApiV1RepositoriesByNameCopyData = {
+    body: CopyRequest;
+    path: {
+        /**
+         * Source repository
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/copy';
+};
+
+export type PostApiV1RepositoriesByNameCopyErrors = {
+    /**
+     * Invalid body, unknown or non-hosted repository type, or the formats differ
+     */
+    400: Error;
+    /**
+     * Authentication required
+     */
+    401: Error;
+    /**
+     * Not allowed to read the source artifact, write the target or delete the source artifact, `force` without admin, quarantined source, or a blocking license policy of the target
+     */
+    403: Error;
+    /**
+     * Source or target repository not found (or not visible), or no such artifact in the source
+     */
+    404: Error;
+    /**
+     * The target holds different content at the same coordinates (`artifact_conflict`, `immutable_release`), the source artifact is held by a sealed bundle (`held_by_bundle`) or protected by immutable releases
+     */
+    409: Error;
+    /**
+     * The target has a blocking license policy and the license cannot be read from the package file
+     */
+    422: Error;
+    /**
+     * The target's storage quota would be exceeded
+     */
+    507: Error;
+};
+
+export type PostApiV1RepositoriesByNameCopyError = PostApiV1RepositoriesByNameCopyErrors[keyof PostApiV1RepositoriesByNameCopyErrors];
+
+export type PostApiV1RepositoriesByNameCopyResponses = {
+    /**
+     * The report per item (also for a dry run, which wrote nothing)
+     */
+    200: CopyResult;
+};
+
+export type PostApiV1RepositoriesByNameCopyResponse = PostApiV1RepositoriesByNameCopyResponses[keyof PostApiV1RepositoriesByNameCopyResponses];
+
+export type PostApiV1RepositoriesByNameMoveData = {
+    body: CopyRequest;
+    path: {
+        /**
+         * Source repository
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/move';
+};
+
+export type PostApiV1RepositoriesByNameMoveErrors = {
+    /**
+     * Invalid body, unknown or non-hosted repository type, or the formats differ
+     */
+    400: Error;
+    /**
+     * Authentication required
+     */
+    401: Error;
+    /**
+     * Not allowed to read the source artifact, write the target or delete the source artifact, `force` without admin, quarantined source, or a blocking license policy of the target
+     */
+    403: Error;
+    /**
+     * Source or target repository not found (or not visible), or no such artifact in the source
+     */
+    404: Error;
+    /**
+     * The target holds different content at the same coordinates (`artifact_conflict`, `immutable_release`), the source artifact is held by a sealed bundle (`held_by_bundle`) or protected by immutable releases
+     */
+    409: Error;
+    /**
+     * The target has a blocking license policy and the license cannot be read from the package file
+     */
+    422: Error;
+    /**
+     * The target's storage quota would be exceeded
+     */
+    507: Error;
+};
+
+export type PostApiV1RepositoriesByNameMoveError = PostApiV1RepositoriesByNameMoveErrors[keyof PostApiV1RepositoriesByNameMoveErrors];
+
+export type PostApiV1RepositoriesByNameMoveResponses = {
+    /**
+     * The report per item (also for a dry run, which wrote nothing)
+     */
+    200: CopyResult;
+};
+
+export type PostApiV1RepositoriesByNameMoveResponse = PostApiV1RepositoriesByNameMoveResponses[keyof PostApiV1RepositoriesByNameMoveResponses];
 
 export type PostApiV1RepositoriesByNameLicenseScanData = {
     body: {

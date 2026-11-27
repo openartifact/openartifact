@@ -40,6 +40,7 @@ These pages are also published, one version per release, at <https://openartifac
 | [Cleanup and quotas](repositories/cleanup-and-quotas.md) | Cleanup policies, per-repository and per-project storage quotas, project default cleanup policies |
 | [Properties](repositories/properties.md) | Artifact key/value properties: API, limits, search |
 | [Release bundles](repositories/release-bundles.md) | Release bundles and promotion pipelines |
+| [Copy and move](repositories/copy-and-move.md) | Copy or move package versions between hosted repositories: CLI, web UI, API, permissions |
 
 ## Migration
 

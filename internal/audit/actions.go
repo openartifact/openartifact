@@ -16,6 +16,8 @@ const (
 	ActionArtifactUploaded    = "artifact.uploaded"
 	ActionArtifactDeleted     = "artifact.deleted"
 	ActionArtifactPromoted    = "artifact.promoted"
+	ActionArtifactCopied      = "artifact.copied"
+	ActionArtifactMoved       = "artifact.moved"
 	ActionArtifactQuarantined = "artifact.quarantined"
 	ActionArtifactReleased    = "artifact.released"
 	ActionArtifactRestored    = "artifact.restored"
@@ -180,7 +182,7 @@ const (
 //nolint:gochecknoglobals // immutable registry read by tests
 var KnownActions = []string{
 	ActionArtifactUploaded, ActionArtifactDeleted,
-	ActionArtifactPromoted, ActionArtifactQuarantined, ActionArtifactReleased,
+	ActionArtifactPromoted, ActionArtifactCopied, ActionArtifactMoved, ActionArtifactQuarantined, ActionArtifactReleased,
 	ActionArtifactRestored, ActionArtifactPurged,
 
 	ActionRepositoryCreated, ActionRepositoryUpdated, ActionRepositoryDeleted,

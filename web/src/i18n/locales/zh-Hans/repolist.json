@@ -100,6 +100,7 @@
   "activity.action.artifact.downloaded": "已下载",
   "activity.action.artifact.deleted": "已移入回收站",
   "activity.action.artifact.moved": "已移动",
+  "activity.action.artifact.copied": "已复制",
   "activity.action.artifact.promoted": "已晋升",
   "activity.action.artifact.quarantined": "已隔离",
   "activity.action.artifact.released": "已解除隔离",

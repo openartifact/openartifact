@@ -455,6 +455,69 @@ A stored GPG key the caller may seal bundles with. Never carries private key mat
 | `error` | string | no | - |
 | `success` | boolean | yes | - |
 
+### CopyItem
+
+What to copy: a package version (`package` and `version`: every live file of that version) or a content digest (`sha256` with an optional `path`, read as a release bundle item is; for docker the manifest digest with an optional `tag`). Docker images are selected by digest only.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `package` | string | no | - |
+| `path` | string | no | The artifact path, to pick one of several artifacts that share the digest. |
+| `sha256` | string | no | Hex sha256 of the artifact's stored file (docker: of the manifest). |
+| `tag` | string | no | Docker only: the tag naming the image among those that share the manifest digest. |
+| `version` | string | no | - |
+
+### CopyItemReport
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `artifact_path` | string | no | - |
+| `copied` | array of object | no | Artifacts newly written to the target. |
+| `copied[].name` | string | no | - |
+| `copied[].path` | string | no | - |
+| `copied[].sha256` | string | no | - |
+| `copied[].size` | integer (int64) | no | - |
+| `copied[].version` | string | no | - |
+| `existing` | array of object | no | Artifacts the target already held with the same content. |
+| `existing[].name` | string | no | - |
+| `existing[].path` | string | no | - |
+| `existing[].sha256` | string | no | - |
+| `existing[].size` | integer (int64) | no | - |
+| `existing[].version` | string | no | - |
+| `format` | string | no | - |
+| `package` | string | no | - |
+| `replaced` | array of object | no | Target artifacts a forced copy moved to the target's trash. |
+| `replaced[].name` | string | no | - |
+| `replaced[].path` | string | no | - |
+| `replaced[].sha256` | string | no | - |
+| `replaced[].size` | integer (int64) | no | - |
+| `replaced[].version` | string | no | - |
+| `sha256` | string | no | - |
+| `version` | string | no | - |
+
+### CopyRequest
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `dry_run` | boolean | no | Return the report without writing anything. |
+| `force` | boolean | no | Administrators only: replace content the target holds at the same coordinates (the replaced rows go to the target's trash) and, for a move, let releases leave a source repository with `immutable_releases`. |
+| `items` | array of [CopyItem](#copyitem) | yes | - |
+| `target` | string | yes | Name of the hosted repository to copy (move) into. It must have the source's format. |
+
+### CopyResult
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `copied` | integer | no | - |
+| `dry_run` | boolean | no | - |
+| `existing` | integer | no | - |
+| `items` | array of [CopyItemReport](#copyitemreport) | no | - |
+| `moved` | integer | no | Move only: artifacts taken out of the source repository (into its trash). |
+| `operation` | string | no | One of: `copy`, `move`. |
+| `replaced` | integer | no | - |
+| `source` | string | no | - |
+| `target` | string | no | - |
+
 ### CreateFederationPeerRequest
 
 | Field | Type | Required | Description |

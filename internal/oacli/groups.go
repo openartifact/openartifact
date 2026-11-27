@@ -16,7 +16,11 @@ type helpGroup struct {
 func helpGroups() []helpGroup {
 	return []helpGroup{
 		{"auth", "Auth", []string{"auth"}},
-		{"repos", "Repositories and packages", []string{"repo", "trash", "artifact", "search", "props", "quota", "cleanup", "delta"}},
+		{
+			"repos",
+			"Repositories and packages",
+			[]string{"repo", "trash", "artifact", "cp", "mv", "search", "props", "quota", "cleanup", "delta"},
+		},
 		{"admin", "Administration", []string{"user", "group", "project", "token", "gpg", "storage", "backup", "audit", "system"}},
 		{"security", "Security and integrations", []string{"webhook", "sbom", "vex", "dtrack", "vuln", "license", "secret"}},
 		{"ci", "CI and delivery", []string{"upload", "bundle", "promote", "gate", "check", "attestations", "oidc"}},
@@ -32,6 +36,8 @@ func addCommandGroups(root *cobra.Command, a *app) {
 		newRepoCmd(a),
 		newTrashCmd(a),
 		newArtifactCmd(a),
+		newCpCmd(a),
+		newMvCmd(a),
 		newSearchCmd(a),
 		newPropsCmd(a),
 		newQuotaCmd(a),

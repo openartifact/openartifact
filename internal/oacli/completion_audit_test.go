@@ -61,6 +61,8 @@ var noSuggestion = map[string]string{
 	"oa bundle seal#2":         "bundles have no list endpoint",
 	"oa bundle show#1":         "bundles have no list endpoint",
 	"oa bundle show#2":         "bundles have no list endpoint",
+	"oa cp#3":                  "package versions are the user's to name",
+	"oa mv#3":                  "package versions are the user's to name",
 	"oa promote#1":             "bundles have no list endpoint",
 	"oa promote#2":             "bundles have no list endpoint",
 	"oa group create#1":        "a new name",
