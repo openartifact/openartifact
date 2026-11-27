@@ -62,6 +62,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <FormRow v-if="form.type === 'group'" id="members" :label="t('rl.row.members')" :summary="membersSummary(form)">
       <RepoMembersEditor v-model="form.members" :candidates="candidates" />
+      <FormField v-if="deployShown" :label="t('rl.deploy.label')" id="rl-deploy-target" :hint="t('rl.deploy.hint')">
+        <select id="rl-deploy-target" v-model="form.deployTarget" :class="INPUT_CLASS">
+          <option value="">{{ t('rl.deploy.none') }}</option>
+          <option v-for="n in deployChoices" :key="n" :value="n">{{ n }}</option>
+        </select>
+      </FormField>
     </FormRow>
 
     <FormRow id="retention" :label="mode === 'create' ? t('rl.row.retentionQuota') : t('rl.row.retention')" :summary="retentionSummary(form, mode === 'create')">
@@ -143,7 +149,7 @@ import {
   visibilitySummary,
   type RepoForm,
 } from '../../lib/repoForm'
-import { federationAvailable, upstreamUrlPlaceholder, upstreamUrlRequired, type RepoType } from '../../lib/repoTypes'
+import { federationAvailable, groupDeployAvailable, upstreamUrlPlaceholder, upstreamUrlRequired, type RepoType } from '../../lib/repoTypes'
 import { t } from '../../i18n'
 
 const TYPES: RepoType[] = ['hosted', 'proxy', 'group']
@@ -155,6 +161,8 @@ const props = defineProps<{
   policy: RepoPolicy | null
   /** Names a group may take as members (same format, not a group). */
   candidates: string[]
+  /** Names among the candidates that are hosted repositories: what a group can publish to. */
+  hosted: string[]
 }>()
 const form = defineModel<RepoForm>({ required: true })
 const emit = defineEmits<{ project: [project: Project | null] }>()
@@ -171,6 +179,12 @@ watch(
 const publicAllowed = computed(() => policyAllowsPublic(props.policy))
 const signable = computed(() => form.value.type === 'hosted' && form.value.format === 'rpm')
 const quayExpirable = computed(() => form.value.type === 'hosted' && form.value.format === 'docker')
+const deployShown = computed(() => form.value.type === 'group' && groupDeployAvailable(form.value.format))
+// The deploy target is one of the group's hosted members.
+const deployChoices = computed(() => form.value.members.filter((n) => props.hosted.includes(n)))
+watch(deployChoices, (names) => {
+  if (form.value.deployTarget !== '' && !names.includes(form.value.deployTarget)) form.value.deployTarget = ''
+})
 const canFederate = computed(() => federationAvailable(form.value.type, form.value.format))
 const upstreamHint = computed(() => {
   if (form.value.format === 'pacman') return t('rl.upstream.pacman')
