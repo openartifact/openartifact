@@ -126,6 +126,12 @@ func (fp *filePromoter) promote(ctx context.Context, tx Tx, req Request) (*Resul
 		return nil, err
 	}
 
+	for _, f := range files {
+		res.SourceFiles = append(res.SourceFiles, f.id)
+	}
+
+	res.SourceRegen = fp.sourceRegen(files)
+
 	if err := fp.copyFiles(ctx, tx, req, toCopy, res); err != nil {
 		return nil, err
 	}
@@ -209,6 +215,10 @@ func (fp *filePromoter) sourceFileSelect(where string) string {
 // narrowed to the one req.Path names when it names one of them; with
 // WholeVersion, with every live file of their versions too.
 func (fp *filePromoter) sourceFiles(ctx context.Context, tx Tx, req Request) ([]srcFile, error) {
+	if req.Package != "" {
+		return fp.versionFiles(ctx, tx, req)
+	}
+
 	files, err := fp.scanFiles(ctx, tx, fp.sourceFileSelect(`b.sha256 = $2::text`), req.Src.ID, req.SHA256)
 	if err != nil {
 		return nil, err
@@ -251,6 +261,26 @@ func (fp *filePromoter) sourceFiles(ctx context.Context, tx Tx, req Request) ([]
 	}
 
 	return fp.wholeVersions(ctx, tx, req, matched)
+}
+
+// versionFiles returns every live source file of the version req.Package and
+// req.Version name, all of them part of the item.
+func (fp *filePromoter) versionFiles(ctx context.Context, tx Tx, req Request) ([]srcFile, error) {
+	files, err := fp.scanFiles(ctx, tx, fp.sourceFileSelect(`sp.name = $2::text AND sv.version = $3::text AND sv.deleted_at IS NULL`),
+		req.Src.ID, req.Package, req.Version)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(files) == 0 {
+		return nil, ErrItemNotFound
+	}
+
+	for i := range files {
+		files[i].matched = true
+	}
+
+	return files, nil
 }
 
 // wholeVersions expands matched to every live file of their versions, the
@@ -577,6 +607,8 @@ func (fp *filePromoter) copyFiles(ctx context.Context, tx Tx, req Request, files
 			}
 		}
 
+		res.Copies = append(res.Copies, RowCopy{Src: f.id, Dst: fileID})
+
 		if !versionSeen[versionID] {
 			versionSeen[versionID] = true
 
@@ -644,6 +676,32 @@ func (fp *filePromoter) finishVersions(ctx context.Context, tx Tx, req Request, 
 	}
 
 	return nil
+}
+
+// sourceRegen lists the metadata refreshes the source repository needs once
+// files leave it (a move): the repository's generated metadata, or the packument
+// of each source package for npm.
+func (fp *filePromoter) sourceRegen(files []srcFile) []Regen {
+	switch fp.p.Regen {
+	case "":
+		return nil
+	case storage.RegenNPM:
+		var out []Regen
+
+		seen := map[string]bool{}
+
+		for _, f := range files {
+			if !seen[f.packageID] {
+				seen[f.packageID] = true
+
+				out = append(out, Regen{Format: fp.format, PackageID: f.packageID})
+			}
+		}
+
+		return out
+	default:
+		return []Regen{{Format: fp.format}}
+	}
 }
 
 // stmtArgs keeps the leading args a descriptor statement binds: the driver

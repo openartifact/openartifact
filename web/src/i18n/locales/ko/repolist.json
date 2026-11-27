@@ -103,6 +103,7 @@
   "activity.action.artifact.downloaded": "다운로드됨",
   "activity.action.artifact.deleted": "휴지통으로 이동됨",
   "activity.action.artifact.moved": "이동됨",
+  "activity.action.artifact.copied": "복사됨",
   "activity.action.artifact.promoted": "다른 곳으로 승격됨",
   "activity.action.artifact.quarantined": "격리됨",
   "activity.action.artifact.released": "격리 해제됨",

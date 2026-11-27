@@ -115,6 +115,7 @@
   "activity.action.artifact.downloaded": "Завантажено",
   "activity.action.artifact.deleted": "Переміщено до кошика",
   "activity.action.artifact.moved": "Переміщено",
+  "activity.action.artifact.copied": "Скопійовано",
   "activity.action.artifact.promoted": "Просунуто звідси",
   "activity.action.artifact.quarantined": "Поміщено в карантин",
   "activity.action.artifact.released": "Звільнено з карантину",

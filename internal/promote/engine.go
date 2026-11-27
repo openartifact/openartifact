@@ -28,6 +28,7 @@ type EngineStore interface {
 	BeginTx(ctx context.Context) (database.Transaction, error)
 	ConsumePendingUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
 	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
 	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
@@ -98,11 +99,14 @@ type Params struct {
 
 // ItemReport is what happened to one bundle item.
 type ItemReport struct {
-	SHA256       string     `json:"sha256"`
-	ArtifactPath string     `json:"artifact_path"`
-	Format       string     `json:"format"`
-	Copied       []Artifact `json:"copied"`
-	Existing     []Artifact `json:"existing"`
+	SHA256       string `json:"sha256,omitempty"`
+	ArtifactPath string `json:"artifact_path,omitempty"`
+	// Package and Version name the item of a copy by package version.
+	Package  string     `json:"package,omitempty"`
+	Version  string     `json:"version,omitempty"`
+	Format   string     `json:"format"`
+	Copied   []Artifact `json:"copied"`
+	Existing []Artifact `json:"existing"`
 	// Replaced lists the target artifacts a forced promotion moved to the trash.
 	Replaced []Artifact `json:"replaced"`
 }

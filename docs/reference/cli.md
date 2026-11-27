@@ -259,6 +259,23 @@ oa cleanup update <repo> <id> [flags]
 | `--name-pattern` | `string` | Regular expression selecting the package names the policy applies to |
 | `--schedule` | `string` | Cron schedule (5 fields) |
 
+### `oa cp`
+
+Copy artifacts to another hosted repository.
+
+Copy the live files of package versions (or one artifact by --sha256) from a hosted repository into another hosted repository of the same format, in one transaction and without moving any bytes. Properties are copied; the target scans the copies as uploads. Needs read on the source and write on the target.
+
+```text
+oa cp <source> <target> [package@version...] [flags]
+```
+
+| Flag | Value | Description |
+|---|---|---|
+| `--dry-run` | none | Show what would happen; write nothing |
+| `--force` | none | Administrators: replace conflicting content in the target (it goes to the target's trash) |
+| `--path` | `string` | With --sha256: the artifact path (docker: the tag) to pick among artifacts sharing the digest |
+| `--sha256` | `string` | Select an artifact by the sha256 of its stored file (docker: of the manifest) instead of package@version |
+
 ### `oa delta`
 
 Package deltas.
@@ -282,6 +299,23 @@ List the available deltas of a package.
 ```text
 oa delta list <repo> <pkg-id> [flags]
 ```
+
+### `oa mv`
+
+Move artifacts to another hosted repository.
+
+Copy, then take the source files to the source repository's trash (restorable with `oa trash restore`). Needs read and delete on the source and write on the target. A source artifact held by a sealed release bundle, or a release of a repository with immutable releases, is refused.
+
+```text
+oa mv <source> <target> [package@version...] [flags]
+```
+
+| Flag | Value | Description |
+|---|---|---|
+| `--dry-run` | none | Show what would happen; write nothing |
+| `--force` | none | Administrators: replace conflicting content in the target (it goes to the target's trash) |
+| `--path` | `string` | With --sha256: the artifact path (docker: the tag) to pick among artifacts sharing the digest |
+| `--sha256` | `string` | Select an artifact by the sha256 of its stored file (docker: of the manifest) instead of package@version |
 
 ### `oa props`
 

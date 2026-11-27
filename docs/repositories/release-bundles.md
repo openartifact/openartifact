@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 A release bundle is a named, versioned set of artifacts (referenced by SHA-256) that is assembled as a draft, sealed to freeze it, and archived when retired. Promotion pipelines define the ordered stages a bundle is meant to move through.
 
-Promoting a sealed bundle copies its artifacts into the repository of the next pipeline stage ([Promoting a bundle](#promoting-a-bundle)). Sealing can add a GPG signature (see [Signing](#signing-a-bundle)). Everything is also available in the [web UI](#web-ui).
+To copy single versions without a bundle, see [Copy and move](copy-and-move.md). Promoting a sealed bundle copies its artifacts into the repository of the next pipeline stage ([Promoting a bundle](#promoting-a-bundle)). Sealing can add a GPG signature (see [Signing](#signing-a-bundle)). Everything is also available in the [web UI](#web-ui).
 
 All routes are under `/api/v1`. Administrators can do everything; other authenticated callers, including CI [deploy tokens](../security/authentication.md#api-tokens), are limited by [Permissions](#permissions). Listing bundles and the pipelines routes are administrator-only (`403 forbidden` otherwise). `oa` drives the whole flow for CI: see [CI integration](../integrations/ci.md). Names and versions are 1-255 bytes, valid UTF-8, without `/`, `\` or control characters.
 
