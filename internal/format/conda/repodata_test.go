@@ -337,6 +337,54 @@ func TestPackageIndexFields(t *testing.T) {
 	}
 }
 
+// A number in info/index.json is kept as the literal it is, so it must be one
+// PostgreSQL's numeric holds: jsonb answers "value overflows numeric format" to
+// 1e131072 and fails the whole upload. A number it refuses is left out of the
+// extra fields, like a string with a NUL. The boundaries are what PostgreSQL 18
+// accepts (131072 digits before the decimal point, 16383 after it);
+// 117255555555555e5555, which the nightly fuzz run took for an overflow, is
+// within them.
+func TestPackageIndexJSONBNumbers(t *testing.T) {
+	for lit, stored := range map[string]bool{
+		"117255555555555e5555":                  true,
+		"1e131071":                              true,
+		"12e131070":                             true,
+		"0.15e131072":                           true,
+		"1e-16383":                              true,
+		"-1.5E+3":                               true,
+		"0":                                     true,
+		"0e999999":                              true,
+		"1" + strings.Repeat("0", 131071):       true,
+		"0." + strings.Repeat("0", 16382) + "1": true,
+		"1e131072":                              false,
+		"-1e131072":                             false,
+		"12e131071":                             false,
+		"0.15e131073":                           false,
+		"1e-16384":                              false,
+		"0e-999999":                             false,
+		"1e999999999999":                        false,
+		"1e99999999999999999999":                false,
+		"1" + strings.Repeat("0", 131072):       false,
+		"0." + strings.Repeat("0", 16383) + "1": false,
+		"1." + strings.Repeat("1", 16384):       false,
+	} {
+		idx := parsePackageIndex([]byte(`{"arch":"x86_64","platform":` + lit + `}`))
+
+		var extra map[string]json.RawMessage
+		if err := json.Unmarshal(idx.Extra, &extra); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, ok := extra["platform"]; ok != stored {
+			t.Errorf("platform %.30s (%d bytes): stored = %v, want %v", lit, len(lit), ok, stored)
+		}
+
+		if string(extra["arch"]) != `"x86_64"` {
+			t.Errorf("platform %.30s: the other fields are lost: %s", lit, idx.Extra)
+		}
+	}
+}
+
 type zeros struct{}
 
 func (zeros) Read(p []byte) (int, error) { clear(p); return len(p), nil }

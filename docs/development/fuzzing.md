@@ -37,7 +37,7 @@ When the fuzzer finds a failing input, it writes the input to `testdata/fuzz/Fuz
 | Workflow | Trigger | Fuzzes |
 |---|---|---|
 | `clusterfuzzlite-pr.yml` | Pull requests touching Go files, `go.mod`/`go.sum` or `.clusterfuzzlite/` | The targets the PR can affect, 5 minutes |
-| `clusterfuzzlite-batch.yml` | Daily at 02:41 UTC, manual | The full set, 1 hour |
+| `clusterfuzzlite-batch.yml` | Daily at 02:41 UTC, manual | The full set, a budget of up to 1 hour |
 
 ### Pull request run
 
@@ -60,10 +60,26 @@ git diff --name-only --no-renames -z origin/main... | FUZZ_MAX_TARGETS=30 bash .
 
 Three jobs run in sequence on `main`. One concurrency group serializes them, so nothing else writes the storage repository meanwhile.
 
-- `batch` builds every target, fuzzes for 1 hour and adds what it finds to the stored corpus.
-- `prune` minimizes the corpus. Its 1 hour budget is shared by the targets and caps each merge; a budget that is too small fails the job with `Merging new testcases timed out`.
+- `batch` builds every target, fuzzes them and adds what it finds to the stored corpus. It has a 3-hour timeout and sizes the run to it, see [the time budget](#nightly-time-budget).
+- `prune` minimizes the corpus. Its budget is 30 seconds per target, at least 1 hour, shared by the targets; it caps each merge, and a budget that is too small fails the job with `Merging new testcases timed out`.
 - `coverage` builds the coverage report that the pull request job uses to pick the affected targets.
-- `report` runs after the others on scheduled runs. When any of them failed it opens the issue `Nightly fuzz failure: ClusterFuzzLite batch`, or comments on it while it is open, with the crashing target, the failing input (the `Base64:` line) and the run link. The next passing run comments and closes it. A cancelled run changes nothing. The job is the only one with `issues: write`; the logic is in `scripts/fuzz-issue.sh`. The nightly `api-fuzz` workflow does the same with the issue `Nightly fuzz failure: api-fuzz`, showing the seed and the `curl` reproducer.
+- `report` runs after the others on scheduled runs. When any of them failed it opens the issue `Nightly fuzz failure: ClusterFuzzLite batch`, or comments on it while it is open. The issue lists the failed jobs and the steps that stopped them, the crashing target, the failing input (the `Base64:` line) and the error lines of the log (a git error, a Python traceback), and links the run. The next passing run comments and closes it.
+
+A job that hits its timeout counts as failed and updates the issue. GitHub reports it as cancelled, like a cancel by hand; `report` tells them apart by the job's annotation `The job has exceeded the maximum execution time`. A run you cancel by hand changes nothing.
+
+`report` is the only job with `issues: write`; the logic is in `scripts/fuzz-issue.sh`, tested by `scripts/fuzz-issue_test.sh` in the CI job `go`. The nightly `api-fuzz` workflow does the same with the issue `Nightly fuzz failure: api-fuzz`, showing the seed and the `curl` reproducer.
+
+#### Nightly time budget
+
+`batch` is sized to end inside its timeout instead of being cancelled by it:
+
+- The build takes 15 to 55 minutes on the 4-vCPU hosted runner; the same code compiles faster or slower from one night to the next.
+- ClusterFuzzLite gives every target `fuzz-seconds / targets` seconds (17 s for 204 targets and 3600 s) and counts nothing else. Starting and stopping libFuzzer, fetching the corpus and pushing the new one add about 7 s per target, 33 s at most. The run takes about 80 minutes for 3600 s of fuzzing.
+- The `Fuzz budget` step counts the targets in the build output and divides the time left until the timeout, minus a 15-minute reserve, among them, minus 10 s of overhead each. `fuzz-seconds` is that, but never more than 3600. After a normal build it is 3600; after a 110-minute build the targets get 6 s each instead of the job being cancelled.
+- The step fails at once, naming the build, when a target would get less than 5 s.
+- Raising `timeout-minutes` needs the same number in the `Start the clock` step.
+
+Before the run, the `Wait for the storage repository` step waits up to 10 minutes until `main` and `gh-pages` of the storage repository can be read. ClusterFuzzLite clones it once with five tries within 31 seconds, and GitHub sometimes answers HTTP 403 for longer, which fails the job with a Python traceback and no crash.
 
 ### The build
 
@@ -73,7 +89,7 @@ The build is defined in [`.clusterfuzzlite/`](../../.clusterfuzzlite):
 - `build.sh`: compiles each target with `compile_native_go_fuzzer_v2` into a binary named `<package path>_<FuzzX>`.
 - `project.yaml` (`language: go`) and the `dicts/` directory.
 
-Targets are compiled in parallel, at most `min(nproc, free memory / 1.5 GiB)` at a time. Set `FUZZ_BUILD_JOBS=<n>` to override it. The build is CPU-bound and takes 13 to 19 minutes on the 4-vCPU hosted runner whatever the number of jobs; more jobs help only on a bigger machine. Each target builds in its own scratch directory, merged into the output in sorted order. The first failure stops the remaining targets and fails the build.
+Targets are compiled in parallel, at most `min(nproc, free memory / 1.5 GiB)` at a time. Set `FUZZ_BUILD_JOBS=<n>` to override it. The build is CPU-bound and takes 15 to 55 minutes on the 4-vCPU hosted runner whatever the number of jobs; more jobs help only on a bigger machine. Each target builds in its own scratch directory, merged into the output in sorted order. The first failure stops the remaining targets and fails the build.
 
 ## Seeds and dictionaries
 
@@ -129,4 +145,12 @@ mkdir -p corpus && unzip -q -o out/pkg_npm_FuzzParseTarball_seed_corpus.zip -d c
 
 A crash artifact from CI reproduces with `./out/<binary> <crash-file>`.
 
-To keep it as a regression seed, add the decoded arguments as a `testdata/fuzz/FuzzX/` file in the `go test fuzz v1` form. The artifact holds the raw libFuzzer bytes, which the OSS-Fuzz shim splits into the arguments of the fuzz function: fixed-size values first, then one weight byte per `string` or `[]byte` argument, then their data.
+To keep it as a regression seed, add the decoded arguments as a `testdata/fuzz/FuzzX/` file in the `go test fuzz v1` form. The artifact holds the raw libFuzzer bytes, which the OSS-Fuzz shim splits into the arguments of the fuzz function, in order, with `ConsumeFuzzer` of `github.com/AdaLogics/go-fuzz-headers`:
+
+- A `string` is a 4-byte big-endian length and that many bytes.
+- A `[]byte` is a 4-byte big-endian length, taken modulo the bytes left (0 means 30), and the bytes.
+- An input too short for all the arguments runs nothing.
+
+To decode an artifact, pass it to `fuzz.NewConsumer` and call `GetString` or `GetBytes` once per argument.
+
+libFuzzer copies the crash message of a job to the log up to its first NUL byte. A target that prints its string arguments in the failure message, such as `FuzzMarshalRoundTrip`, therefore shows a message cut short, and the `Test unit written to` line that names the crash file is lost with the rest. ClusterFuzzLite then reproduces with a file that is not the crash, reports `Not reproducible` and does not fail the run. Print arguments with `%q` or `%#v` in an oracle's failure message, which escapes a NUL, and rerun the crashing target for a while with the CI binary to get the artifact.

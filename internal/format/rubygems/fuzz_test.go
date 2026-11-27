@@ -896,6 +896,24 @@ func FuzzMarshalRoundTrip(f *testing.F) {
 			Dependencies: []rubymarshal.Dependency{{Name: depName, Requirement: depReq, Type: depType}},
 		}
 
+		checkSpecsListRoundTrip(t, name, version, platform)
+
+		// The decoder reads what an upload holds, with the caps that keep a
+		// hostile gemspec small; the encoder writes any requirement a stored gem
+		// has. Past the cap the contract is the refusal, not a round trip.
+		if requirementClauses(depReq) > rubymarshal.MaxRequirementClauses {
+			data, err := rubymarshal.EncodeSpecification(spec)
+			if err != nil {
+				t.Fatalf("EncodeSpecification(%#v): %v", spec, err)
+			}
+
+			if _, err := rubymarshal.DecodeSpecification(data); !errors.Is(err, rubymarshal.ErrInvalid) {
+				t.Fatalf("a requirement of %d clauses decodes with err = %v, want ErrInvalid", requirementClauses(depReq), err)
+			}
+
+			return
+		}
+
 		first := fuzzRoundTripSpec(t, spec)
 
 		wantPlatform := platform
@@ -907,7 +925,7 @@ func FuzzMarshalRoundTrip(f *testing.F) {
 			first.Description != desc || first.Homepage != home || first.Email != email ||
 			!reflect.DeepEqual(first.Authors, spec.Authors) || !reflect.DeepEqual(first.Licenses, spec.Licenses) ||
 			len(first.Dependencies) != 1 || first.Dependencies[0].Name != depName {
-			t.Fatalf("gemspec round trip changed %+v into %+v", spec, first)
+			t.Fatalf("gemspec round trip changed %#v into %#v", spec, first)
 		}
 
 		// A clause that is an operator without a version has no Marshal
@@ -917,11 +935,23 @@ func FuzzMarshalRoundTrip(f *testing.F) {
 		}
 
 		if second := fuzzRoundTripSpec(t, *first); !reflect.DeepEqual(first, second) {
-			t.Fatalf("second gemspec round trip changed %+v into %+v", first, second)
+			t.Fatalf("second gemspec round trip changed %#v into %#v", first, second)
 		}
-
-		checkSpecsListRoundTrip(t, name, version, platform)
 	})
+}
+
+// requirementClauses counts the clauses EncodeSpecification writes for a
+// requirement: the non-empty comma-separated parts, or one (">= 0") for none.
+func requirementClauses(requirement string) int {
+	n := 0
+
+	for part := range strings.SplitSeq(requirement, ",") {
+		if strings.TrimSpace(part) != "" {
+			n++
+		}
+	}
+
+	return max(n, 1)
 }
 
 func fuzzRoundTripSpec(t *testing.T, spec rubymarshal.Specification) *rubymarshal.Specification {
@@ -929,12 +959,12 @@ func fuzzRoundTripSpec(t *testing.T, spec rubymarshal.Specification) *rubymarsha
 
 	data, err := rubymarshal.EncodeSpecification(spec)
 	if err != nil {
-		t.Fatalf("EncodeSpecification(%+v): %v", spec, err)
+		t.Fatalf("EncodeSpecification(%#v): %v", spec, err)
 	}
 
 	got, err := rubymarshal.DecodeSpecification(data)
 	if err != nil {
-		t.Fatalf("DecodeSpecification of the encoding of %+v: %v", spec, err)
+		t.Fatalf("DecodeSpecification of the encoding of %#v: %v", spec, err)
 	}
 
 	return got
@@ -1009,7 +1039,9 @@ func FuzzServeGemGet(f *testing.F) {
 		switch w.Code {
 		case http.StatusNotFound, http.StatusMethodNotAllowed:
 		case http.StatusOK:
-			if file, ok := strings.CutPrefix(tail, "gems/"); ok && !bytes.Equal(w.Body.Bytes(), stored[file]) {
+			// The route matches the path: a query string is not part of the gem's file name.
+			path, _, _ := strings.Cut(tail, "?")
+			if file, ok := strings.CutPrefix(path, "gems/"); ok && !bytes.Equal(w.Body.Bytes(), stored[file]) {
 				t.Fatalf("GET %q served %q, which is not the stored gem of that name", tail, w.Body.Bytes())
 			}
 		default:

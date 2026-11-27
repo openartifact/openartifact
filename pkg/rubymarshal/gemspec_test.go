@@ -5,7 +5,9 @@
 package rubymarshal
 
 import (
+	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -82,6 +84,37 @@ func TestGemSpecificationRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got.Dependencies, wantDeps) {
 		t.Errorf("Dependencies = %#v, want %#v", got.Dependencies, wantDeps)
+	}
+}
+
+// The encoder writes a requirement of any length, the decoder reads up to
+// MaxRequirementClauses clauses and refuses more: the round trip holds at the
+// cap and the refusal is ErrInvalid just past it (the nightly fuzz run of
+// FuzzMarshalRoundTrip reached this with a requirement of 103 clauses).
+func TestSpecificationRequirementClauseCap(t *testing.T) {
+	for _, clauses := range []int{1, MaxRequirementClauses, MaxRequirementClauses + 1, 2 * MaxRequirementClauses} {
+		requirement := strings.TrimSuffix(strings.Repeat(">= 1, ", clauses), ", ")
+		spec := Specification{
+			Name: "x", Version: "1",
+			Dependencies: []Dependency{{Name: "d", Requirement: requirement, Type: "runtime"}},
+		}
+
+		data, err := EncodeSpecification(spec)
+		if err != nil {
+			t.Fatalf("%d clauses: EncodeSpecification: %v", clauses, err)
+		}
+
+		got, err := DecodeSpecification(data)
+
+		switch {
+		case clauses > MaxRequirementClauses && !errors.Is(err, ErrInvalid):
+			t.Errorf("%d clauses: DecodeSpecification err = %v, want ErrInvalid", clauses, err)
+		case clauses > MaxRequirementClauses:
+		case err != nil:
+			t.Errorf("%d clauses: DecodeSpecification: %v", clauses, err)
+		case got.Dependencies[0].Requirement != requirement:
+			t.Errorf("%d clauses: requirement = %q, want %q", clauses, got.Dependencies[0].Requirement, requirement)
+		}
 	}
 }
 

@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"\":\",ythhon\",\"platform\":117255555555555e5555,\"version\":\"-2.9.0\"}")
