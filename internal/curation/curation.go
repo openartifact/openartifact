@@ -114,7 +114,7 @@ var separatorRuns = regexp.MustCompile(`[-_.]+`)
 // NormalizePackage returns the form of a package name curation rules are
 // matched in: PEP 503 for pypi (lower case, runs of "-", "_" and "." become one
 // "-"), lower case for the registries that compare names case-insensitively
-// (npm, composer, nuget, conda, ansible, conan), lower case with "_" read as "-"
+// (npm, composer, nuget, conda, ansible, conan, swift), lower case with "_" read as "-"
 // for cargo, and the name as the format shows it otherwise (go module path,
 // maven "group:artifact", helm, rubygems, deb, rpm, ...). Rule patterns are put
 // through the same function, so "Django-*" and "django_*" both match "django-rest".
@@ -124,7 +124,7 @@ func NormalizePackage(format, name string) string {
 		return strings.ToLower(separatorRuns.ReplaceAllString(name, "-"))
 	case "cargo":
 		return strings.ToLower(strings.ReplaceAll(name, "_", "-"))
-	case "npm", "composer", "nuget", "conda", "ansible", "conan", "huggingface":
+	case "npm", "composer", "nuget", "conda", "ansible", "conan", "huggingface", "swift":
 		return strings.ToLower(name)
 	default:
 		return name
