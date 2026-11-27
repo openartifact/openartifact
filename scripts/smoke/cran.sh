@@ -13,7 +13,8 @@ smoke_init cran docker.io/library/r-base:latest "$@"
 smoke_run "$(cat <<'SCRIPT'
 set -eu
 R --version | head -1
-command -v curl >/dev/null || { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl >/dev/null; }
+# r-base is Debian testing with R from unstable: curl must come from unstable too to match R's libcurl
+command -v curl >/dev/null || { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -t unstable curl >/dev/null; }
 base="$OA_URL/repos/cran/$REPO"
 hp="${OA_URL#*://}"; scheme="${OA_URL%%://*}"
 [ "$SMOKE_MODE" = install ] || {

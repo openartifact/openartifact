@@ -60,15 +60,16 @@ public class Hello {
 EOJ
   mvn -B -q -s /tmp/settings.xml -Dmaven.repo.local="$1/m2" package
   # compiled against org.eclipse.core.runtime.Path, a class of the bundle the proxy served
-  unzip -l target/com.smoke.consumer-1.0.0-SNAPSHOT.jar | grep -q 'com/smoke/Hello.class'
+  jar tf target/com.smoke.consumer-1.0.0-SNAPSHOT.jar | grep -q 'com/smoke/Hello.class'
 }
 [ "$SMOKE_MODE" = install ] || build /tmp/first
 [ "$SMOKE_MODE" = publish ] || {
   build /tmp/second
   # the metadata is served by the proxy, with the composite children relocated
   curl -fsS -u "smoke:$OA_TOKEN" -o /tmp/composite.jar "${url}compositeContent.jar"
-  unzip -p /tmp/composite.jar compositeContent.xml | grep -q "_host/technology/epp/"
-  ! unzip -p /tmp/composite.jar compositeContent.xml | grep -q '\.\./\.\./technology'
+  (cd /tmp && jar xf composite.jar compositeContent.xml)
+  grep -q "_host/technology/epp/" /tmp/compositeContent.xml
+  ! grep -q '\.\./\.\./technology' /tmp/compositeContent.xml
 }
 SCRIPT
 )"
