@@ -52,7 +52,7 @@ curl -u <USERNAME>:<TOKEN> -T mypackage_1.0.0.zip HOST/repos/cran/REPO/bin/windo
 curl -u <USERNAME>:<TOKEN> -T mypackage_1.0.0.tgz HOST/repos/cran/REPO/bin/macosx/big-sur-arm64/contrib/4.5/mypackage_1.0.0.tgz
 ```
 
-The answer is `201` with `{"id","name","version"}`.
+The answer is `201` with `{"id","package","version","path","md5","sha256","size"}`.
 
 - The file name must be `<package>_<version>.tar.gz` (source), `.zip` (Windows) or `.tgz` (macOS), and the path must be the tree it belongs to. The archive's `DESCRIPTION` is read: its `Package` and `Version` must match the file name and the archive's top directory. Anything else is `400`.
 - A package is at most 1 GiB (`413`).
@@ -74,7 +74,7 @@ Relative to `HOST/repos/cran/REPO`:
 | `GET /bin/windows/contrib/<R>/PACKAGES` and the file | Windows binaries, for example `4.5` |
 | `GET /bin/macosx/[<flavour>/]contrib/<R>/PACKAGES` and the file | macOS binaries |
 | `PUT` on any file path above | upload |
-| `DELETE` on any file path above | delete one file, `200` |
+| `DELETE` on any file path above | delete one file, `204` |
 
 ### Index
 
