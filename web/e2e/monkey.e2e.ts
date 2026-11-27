@@ -119,6 +119,15 @@ async function collect(ui: Ui): Promise<{ candidates: Candidate[]; dialog: boole
         }
         return true
       }
+      // The same test `act` applies (`enabled` in lib/inpage.ts): a control inside an aria-disabled subtree or a
+      // disabled fieldset is refused by click and fill, so it is not a candidate. A page dims a form this way.
+      const enabled = (el: Element): boolean => {
+        for (let n: Element | null = el; n; n = n.parentElement) {
+          if (n.getAttribute('aria-disabled') === 'true') return false
+          if (n.tagName === 'FIELDSET' && n.hasAttribute('disabled')) return false
+        }
+        return !(el as HTMLButtonElement).disabled
+      }
       const nameOf = (el: Element): string =>
         (el.getAttribute('aria-label') || el.textContent || el.getAttribute('title') || '').replace(/\s+/g, ' ').trim().slice(0, 80)
 
@@ -138,7 +147,7 @@ async function collect(ui: Ui): Promise<{ candidates: Candidate[]; dialog: boole
       for (const root of roots) {
         // The header's only link is the logo; the walk reaches areas through the sidebar.
         for (const el of root.tagName === 'HEADER' ? [] : root.querySelectorAll('a[href]')) {
-          if (!shown(el) || el.hasAttribute('download') || (el.getAttribute('target') ?? '') !== '' || el.getAttribute('aria-disabled') === 'true') continue
+          if (!shown(el) || !enabled(el) || el.hasAttribute('download') || (el.getAttribute('target') ?? '') !== '') continue
           const href = el.getAttribute('href') ?? ''
           if (!href.startsWith('/') || href.startsWith('//')) continue
           if (!areas.includes(href.split(/[?#]/)[0]?.split('/')[1] ?? '')) continue
@@ -147,7 +156,7 @@ async function collect(ui: Ui): Promise<{ candidates: Candidate[]; dialog: boole
           add(el, 'link', label, href)
         }
         for (const el of root.querySelectorAll('button, [role="tab"], [role="menuitem"]')) {
-          if (!shown(el) || (el as HTMLButtonElement).disabled || el.getAttribute('aria-disabled') === 'true') continue
+          if (!shown(el) || !enabled(el)) continue
           if ((el as HTMLButtonElement).type === 'submit') continue
           const label = nameOf(el)
           if (label === '' || deny.test(label)) continue
@@ -157,7 +166,7 @@ async function collect(ui: Ui): Promise<{ candidates: Candidate[]; dialog: boole
         if (!dialog) {
           for (const el of root.querySelectorAll('input, textarea')) {
             const type = (el.getAttribute('type') ?? 'text').toLowerCase()
-            if (!['text', 'search', ''].includes(type) || !shown(el) || (el as HTMLInputElement).disabled || (el as HTMLInputElement).readOnly) continue
+            if (!['text', 'search', ''].includes(type) || !shown(el) || !enabled(el) || (el as HTMLInputElement).readOnly) continue
             const label = `${el.getAttribute('aria-label') ?? ''} ${el.getAttribute('placeholder') ?? ''} ${el.getAttribute('name') ?? ''} ${type}`.trim()
             if (type !== 'search' && !search.test(label)) continue
             add(el, 'input', label, '')
@@ -297,9 +306,11 @@ async function walk(ui: Ui, role: Role, seed: number, log: string[]): Promise<vo
           await target.click(2000)
         }
       } catch (err) {
-        // The page re-rendered between collecting and acting (data arrived): the control is gone, not broken.
-        if ((await target.count()) > 0) throw err
-        log.push(`step ${step}: control vanished, skipped`)
+        // The page re-rendered between collecting and acting (data arrived): the control is gone or has been
+        // disabled meanwhile, not broken. Anything else about a control that is still there is a failure.
+        const now = await target.snapshot()
+        if (now.first?.enabled) throw err
+        log.push(`step ${step}: control ${now.first === null ? 'vanished' : 'was disabled'}, skipped`)
         continue
       }
       await quiet()
@@ -360,5 +371,44 @@ describe('monkey harness', () => {
     })
     await ui.page.evaluate(() => fetch('/api/v1/canary-5xx'))
     await eventually(() => expect(ui.findings.serverErrors.join('|')).toContain('503'))
+  })
+
+  // `click` and `fill` refuse a control inside an aria-disabled subtree or a disabled fieldset (a user cannot press it either),
+  // so the walk must not offer one: the AI settings form is dimmed this way while AI is off, and a walk that
+  // landed there failed with "element is not enabled" (nightly run 45998601602, seed 248447929).
+  it('offers only controls the harness can act on', async (ui) => {
+    await ui.goto('/')
+    await shellReady(ui)
+    await ui.page.evaluate(() => {
+      const fixture = document.createElement('div')
+      fixture.innerHTML = [
+        '<button type="button">Alpha live</button>',
+        '<input type="search" aria-label="Search live">',
+        '<div aria-disabled="true">',
+        '  <button type="button">Beta nested</button>',
+        '  <a href="/repos">Gamma nested link</a>',
+        '  <input type="search" aria-label="Search nested">',
+        '</div>',
+        '<fieldset disabled><button type="button">Delta fieldset</button></fieldset>',
+      ].join('')
+      document.querySelector('main')?.append(fixture)
+    })
+
+    const { candidates } = await collect(ui)
+    const labels = candidates.map((c) => c.label)
+    expect(labels).toContain('Alpha live')
+    expect(labels.some((l) => l.startsWith('Search live'))).toBe(true)
+    for (const hidden of ['Beta nested', 'Gamma nested link', 'Search nested', 'Delta fieldset']) {
+      expect(
+        labels.filter((l) => l.startsWith(hidden)),
+        hidden,
+      ).toEqual([])
+    }
+
+    // Whatever is offered, on this page, is something `act` accepts.
+    for (const c of candidates) {
+      const snap = await ui.locator(`[data-monkey-id="${c.id}"]`).snapshot()
+      expect(snap.first?.enabled, `${c.kind} "${c.label}"`).toBe(true)
+    }
   })
 })
