@@ -626,6 +626,35 @@ func HuggingFaceBuilder(c target) []Snippet {
 	}}
 }
 
+// P2Builder configures Eclipse p2 clients (Tycho builds, the Eclipse IDE, the
+// p2 director) with the repository as an update site. The format is proxy only,
+// so no snippet publishes. Tycho matches the settings.xml server entry by the
+// repository id; the update site URL ends in a slash.
+func P2Builder(c target) []Snippet {
+	return []Snippet{
+		{
+			Client: "Tycho (Maven)",
+			Configure: fmt.Sprintf(
+				"<!-- pom.xml -->\n<repositories>\n  <repository>\n    <id>%[1]s</id>\n    <layout>p2</layout>\n"+
+					"    <url>%[2]s/</url>\n  </repository>\n</repositories>"+
+					"\n\n<!-- ~/.m2/settings.xml -->\n<settings>\n  <servers>\n    <server>\n      <id>%[1]s</id>\n"+
+					"      <username><USERNAME></username>\n      <password><TOKEN></password>\n"+
+					"    </server>\n  </servers>\n</settings>",
+				c.repo, c.base,
+			),
+		},
+		{
+			Client: "Eclipse IDE / p2 director",
+			Configure: fmt.Sprintf(
+				"# Help > Install New Software > Add... > Location\n%[1]s/"+
+					"\n\n# command line\neclipse -nosplash -application org.eclipse.equinox.p2.director \\\n"+
+					"  -repository %[1]s/ -installIU org.example.feature.feature.group",
+				c.base,
+			),
+		},
+	}
+}
+
 // AnsibleBuilder configures ansible-galaxy against the Galaxy v3 API rooted at
 // the repository's /api/ path. Galaxy sends the API token as `Token <token>`.
 // Proxy and group repositories are read-only, so they carry no publish hint.

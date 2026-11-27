@@ -39,6 +39,7 @@ func registrations() []plugin.Format {
 		rubygemsFormat(), condaFormat(), pacmanFormat(), ansibleFormat(), conanFormat(), goFormat(), terraformFormat(), huggingFaceFormat(),
 		// Not on the shared subrouter, or guarded.
 		apkFormat(), composerFormat(), dockerFormat(), ivyFormat(), mavenFormat(), nixFormat(), rawFormat(), sbtFormat(),
+		p2Format(),
 	}
 }
 

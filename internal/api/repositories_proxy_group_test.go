@@ -67,9 +67,19 @@ func TestUnsupportedRepoTypeMessage(t *testing.T) {
 				continue // pacman groups arrive in a later change
 			}
 
+			if repoType == "group" && format == "p2" {
+				continue // p2 is proxy only; refused below
+			}
+
 			if msg := unsupportedRepoTypeMessage(repoType, format); msg != "" {
 				t.Errorf("%s of %s: unexpected message %q", repoType, format, msg)
 			}
+		}
+	}
+
+	for _, repoType := range []string{"hosted", "group"} {
+		if msg := unsupportedRepoTypeMessage(repoType, "p2"); !strings.Contains(msg, "not supported for format \"p2\"") {
+			t.Errorf("%s of p2: message %q, want a refusal", repoType, msg)
 		}
 	}
 

@@ -270,6 +270,9 @@ var specs = [...]Spec{
 		Versioning: VersionSemver, PURLType: "nuget", OSVEcosystem: "NuGet", GrypeScan: true,
 	},
 	{
+		Name: "p2", NoHosted: true, Proxy: true, Mount: MountIsolated,
+	},
+	{
 		Name: "pacman", Uploads: pacmanUploads,
 		Proxy: true, Group: true, GeneratedGroupMetadata: true, DefaultUpstream: "https://geo.mirror.pkgbuild.com",
 		Signing: SigningGPG, PURLType: "alpm",

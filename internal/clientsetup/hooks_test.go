@@ -21,6 +21,7 @@ func TestMain(m *testing.M) {
 		"nuget": NuGetBuilder, "rubygems": RubyGemsBuilder, "raw": RawBuilder, "conda": CondaBuilder,
 		"conan": ConanBuilder, "apk": APKBuilder, "terraform": TerraformBuilder,
 		"ansible": AnsibleBuilder, "sbt": SBTBuilder, "ivy": IvyBuilder, "huggingface": HuggingFaceBuilder,
+		"p2": P2Builder,
 	} {
 		Register(format, b)
 	}

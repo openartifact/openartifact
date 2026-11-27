@@ -898,10 +898,10 @@ func (s *Service) fetchTFModuleArchive(
 	return s.fetchDownload(ctx, repo, key, download{url: src.url, opts: o})
 }
 
-// tfSpoolFile is a temporary file that is removed when it is closed.
-type tfSpoolFile struct{ *os.File }
+// spoolFile is a temporary file that is removed when it is closed.
+type spoolFile struct{ *os.File }
 
-func (f tfSpoolFile) Close() error {
+func (f spoolFile) Close() error {
 	err := f.File.Close()
 	if rerr := os.Remove(f.Name()); rerr != nil && err == nil {
 		err = rerr
@@ -910,15 +910,15 @@ func (f tfSpoolFile) Close() error {
 	return err
 }
 
-// newTFSpool creates an anonymous temporary file of the proxy's kind.
-func (s *Service) newTFSpool() (tfSpoolFile, error) {
+// newSpool creates an anonymous temporary file of the proxy's kind.
+func (s *Service) newSpool() (spoolFile, error) {
 	f, err := os.CreateTemp("", "openartifact-proxy-*")
 	if err != nil {
 		s.log.Errorw("failed to create proxy spool file", "error", err)
-		return tfSpoolFile{}, errInternal
+		return spoolFile{}, errInternal
 	}
 
-	return tfSpoolFile{f}, nil
+	return spoolFile{f}, nil
 }
 
 // repackTFModule replaces the body of a module archive answer by the repacked
@@ -932,7 +932,7 @@ func (s *Service) repackTFModule(repo *models.Repository, key string, src tfModu
 		return errUpstream
 	}
 
-	in, err := s.newTFSpool()
+	in, err := s.newSpool()
 	if err != nil {
 		return err
 	}
@@ -961,7 +961,7 @@ func (s *Service) repackTFModule(repo *models.Repository, key string, src tfModu
 		return errVerify
 	}
 
-	out, err := s.newTFSpool()
+	out, err := s.newSpool()
 	if err != nil {
 		return err
 	}

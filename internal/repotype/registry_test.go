@@ -85,8 +85,9 @@ func TestPolicy(t *testing.T) {
 
 	all := "ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform"
 
-	if got := repotype.ProxyFormats(); got != all {
-		t.Errorf("ProxyFormats() = %q, want %q", got, all)
+	// p2 is proxy only: an update site is merged by a composite repository, not a group.
+	if got, want := repotype.ProxyFormats(), strings.Replace(all, "nuget, pacman", "nuget, p2, pacman", 1); got != want {
+		t.Errorf("ProxyFormats() = %q, want %q", got, want)
 	}
 
 	if got := repotype.GroupFormats(); got != all {

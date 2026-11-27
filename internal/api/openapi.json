@@ -1020,6 +1020,7 @@
               "nix",
               "npm",
               "nuget",
+              "p2",
               "pacman",
               "pypi",
               "raw",
@@ -9317,6 +9318,7 @@
                 "nix",
                 "npm",
                 "nuget",
+                "p2",
                 "pacman",
                 "pypi",
                 "raw",
@@ -9501,6 +9503,7 @@
                       "nix",
                       "npm",
                       "nuget",
+                      "p2",
                       "pacman",
                       "pypi",
                       "raw",
@@ -9518,7 +9521,7 @@
                   },
                   "repo_type": {
                     "type": "string",
-                    "description": "hosted (default), proxy or group. Every format can be a proxy or a group repository; huggingface only exists as proxy or group (a hosted huggingface repository is rejected with 400). apk, deb, rpm and pacman groups serve generated Release/Packages, repodata, APKINDEX or database files merged across their members. Docker proxies and groups are served under /v2/ only. Proxy and group repositories are read-only.",
+                    "description": "hosted (default), proxy or group. Every format can be a proxy or a group repository; huggingface only exists as proxy or group (a hosted huggingface repository is rejected with 400); p2 only exists as proxy (a hosted or group p2 repository is rejected with 400). apk, deb, rpm and pacman groups serve generated Release/Packages, repodata, APKINDEX or database files merged across their members. Docker proxies and groups are served under /v2/ only. Proxy and group repositories are read-only.",
                     "enum": [
                       "hosted",
                       "proxy",

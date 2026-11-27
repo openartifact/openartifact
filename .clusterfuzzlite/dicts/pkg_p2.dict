@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# zip and xz magic
+"PK\x03\x04"
+"PK\x01\x02"
+"PK\x05\x06"
+"\xfd7zXZ\x00"
+
+# repository documents
+"<?xml version='1.0' encoding='UTF-8'?>"
+"<?artifactRepository version='1.1.0'?>"
+"<?compositeArtifactRepository version='1.0.0'?>"
+"<?compositeMetadataRepository version='1.0.0'?>"
+"<repository"
+"</repository>"
+"<properties size='"
+"<property name='p2.mirrorsURL' value='"
+"<property name='p2.statsURI' value='"
+"<children size='"
+"<child location='"
+"<!DOCTYPE"
+"../"
+"_host/"
+"https://"
+"/>"
