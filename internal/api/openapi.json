@@ -1026,6 +1026,7 @@
               "rpm",
               "rubygems",
               "sbt",
+              "swift",
               "terraform"
             ],
             "description": "Package format"
@@ -7065,7 +7066,8 @@
               "docker_manifest",
               "docker_tag",
               "rpm_package",
-              "deb_package"
+              "deb_package",
+              "swift_release"
             ]
           },
           "repository_id": {
@@ -9323,6 +9325,7 @@
                 "rpm",
                 "rubygems",
                 "sbt",
+                "swift",
                 "terraform"
               ]
             }
@@ -9507,6 +9510,7 @@
                       "rpm",
                       "rubygems",
                       "sbt",
+                      "swift",
                       "terraform"
                     ]
                   },

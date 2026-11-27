@@ -165,6 +165,8 @@ export function pullCommand(
       return `gem install ${q(pkg)} -v ${q(version)} --source ${q(`${base}/`)}`
     case 'sbt':
       return `resolvers += "${repo}" at "${base}"`
+    case 'swift':
+      return `.package(id: ${JSON.stringify(pkg)}, from: ${JSON.stringify(version)})`
     case 'terraform':
       return terraformUsage(hostOf(origin), repo, pkg, version)
     default:

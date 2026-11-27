@@ -7,8 +7,8 @@
 // authenticated by the browser session (cookie plus CSRF header), so nothing here is browser-only.
 //
 // Formats without a plan cannot be published from a browser: cargo (the crate's dependency metadata is
-// computed by `cargo publish`), conan, docker, ivy and sbt (many files in a client-specific layout) and nix
-// (`nix copy`). `uploadMode` says which of the three a format is.
+// computed by `cargo publish`), conan, docker, ivy and sbt (many files in a client-specific layout), nix
+// (`nix copy`) and swift (the client builds the source archive and signs it). `uploadMode` says which of the three a format is.
 
 import type { UploadStartOptions } from '../composables/useUpload'
 import type { TranslationKey } from '../i18n'

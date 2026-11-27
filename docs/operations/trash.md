@@ -94,6 +94,7 @@ Trash items are addressed by `kind` and `id` (both shown by the list endpoints).
 | `raw_artifact` | a raw file |
 | `rpm_package` | an RPM package |
 | `rubygems_gem` | a gem version |
+| `swift_release` | a Swift package release (its source archive) |
 | `terraform_module` | a Terraform/OpenTofu module version |
 | `terraform_provider` | one platform zip of a Terraform/OpenTofu provider version |
 

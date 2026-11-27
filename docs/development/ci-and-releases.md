@@ -89,7 +89,7 @@ Every format is verified with its real client once, when it is added. `client-ma
 4. Installs or resolves the package back.
 5. Compares the content and prints the client version.
 
-The clients are apt, dnf, apk, pacman, npm, pip, mvn, docker, helm, cargo, go, dotnet, gem, composer, conda, terraform, ansible-galaxy, nix, conan, sbt (for both ivy and sbt) and curl. The shared plumbing (repository creation and cleanup, container start, image overrides) is `scripts/smoke/lib.sh`. The client logic exists only in the format's script.
+The clients are apt, dnf, apk, pacman, npm, pip, mvn, docker, helm, cargo, go, dotnet, gem, composer, conda, terraform, ansible-galaxy, nix, conan, sbt (for both ivy and sbt), swift and curl. The shared plumbing (repository creation and cleanup, container start, image overrides) is `scripts/smoke/lib.sh`. The client logic exists only in the format's script.
 
 ### Run it locally
 
@@ -134,6 +134,7 @@ SMOKE_MODE=install SMOKE_ID=42 scripts/smoke-formats.sh NEW_URL
 - `go.sh` makes its repository public for the `go get` step, because the go command never sends credentials over http.
 - `terraform.sh` puts a Caddy with a self-signed certificate in front of the server, because Terraform needs https and a dotted host name for a registry.
 - `nuget.sh` allows the insecure (http) source.
+- `swift.sh` makes its repository public and publishes with curl, because SwiftPM sends no credentials over plain http (`login` refuses the URL and `~/.netrc` is ignored); the consumer reads it with `--allow-insecure-http`.
 - `cargo.sh` selects the `cargo:token` credential provider; newer cargo requires one for an authenticated registry.
 
 ## Documentation site

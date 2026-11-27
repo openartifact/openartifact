@@ -31,6 +31,7 @@ export const BASE_TEMPLATES: Readonly<Record<string, string>> = {
   maven: '{{origin}}/repos/maven/{{esc}}',
   raw: '{{origin}}/repos/raw/{{esc}}',
   sbt: '{{origin}}/repos/sbt/{{esc}}',
+  swift: '{{origin}}/repos/swift/{{esc}}',
 }
 
 /** Snippets of a format the registry does not know: the bare repository URL. */
@@ -325,6 +326,27 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
         client: 'sbt',
         configure: '// build.sbt\nresolvers += "{{repo}}" at "{{base}}"\ncredentials += Credentials("openartifact", "{{hostname}}", "<USERNAME>", "<TOKEN>")',
         publish: 'ThisBuild / publishTo := Some("{{repo}}" at "{{base}}")\n// then: sbt publish',
+      },
+    ],
+  },
+  swift: {
+    hosted: [
+      {
+        client: 'swift',
+        configure: 'swift package-registry set {{base}}{{#http}} --allow-insecure-http{{/http}}\nswift package-registry login {{base}}/login --token <TOKEN>{{#http}}\n# SwiftPM sends no credentials over plain http: a private repository needs HTTPS{{/http}}\n\n# Package.swift\n.package(id: "SCOPE.NAME", from: "1.0.0")\n\n# resolve\nswift package resolve',
+        publish: 'swift package-registry publish SCOPE.NAME 1.0.0 --url {{base}}{{#http}} --allow-insecure-http{{/http}}',
+      },
+    ],
+    proxy: [
+      {
+        client: 'swift',
+        configure: 'swift package-registry set {{base}}{{#http}} --allow-insecure-http{{/http}}\nswift package-registry login {{base}}/login --token <TOKEN>{{#http}}\n# SwiftPM sends no credentials over plain http: a private repository needs HTTPS{{/http}}\n\n# Package.swift\n.package(id: "SCOPE.NAME", from: "1.0.0")\n\n# resolve\nswift package resolve',
+      },
+    ],
+    group: [
+      {
+        client: 'swift',
+        configure: 'swift package-registry set {{base}}{{#http}} --allow-insecure-http{{/http}}\nswift package-registry login {{base}}/login --token <TOKEN>{{#http}}\n# SwiftPM sends no credentials over plain http: a private repository needs HTTPS{{/http}}\n\n# Package.swift\n.package(id: "SCOPE.NAME", from: "1.0.0")\n\n# resolve\nswift package resolve',
       },
     ],
   },

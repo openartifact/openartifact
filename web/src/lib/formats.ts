@@ -8,7 +8,7 @@
 // uses the Apache mark (Ivy is an Apache project with no mark of its own).
 // Ansible uses the Ansible mark, apk the Alpine Linux mark, Cargo the Rust mark,
 // Composer the Composer mark, Hugging Face the Hugging Face mark, Conda the Anaconda mark, nix the NixOS mark, pacman the Arch Linux mark,
-// RPM the Red Hat mark, sbt the Scala mark and Terraform the Terraform mark (also used for OpenTofu
+// RPM the Red Hat mark, sbt the Scala mark, Swift the Swift mark and Terraform the Terraform mark (also used for OpenTofu
 // repositories: one `terraform` format serves both clients).
 
 import {
@@ -33,6 +33,7 @@ import {
   siRubygems,
   siRust,
   siScala,
+  siSwift,
   siTerraform,
 } from 'simple-icons'
 
@@ -86,6 +87,7 @@ export const FORMAT_META: Record<FormatId, FormatMeta> = {
   rpm: brand('RPM', siRedhat),
   rubygems: brand('RubyGems', siRubygems),
   sbt: brand('sbt', siScala),
+  swift: brand('Swift', siSwift),
   terraform: brand('Terraform', siTerraform),
 }
 

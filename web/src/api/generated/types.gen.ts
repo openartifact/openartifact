@@ -427,7 +427,7 @@ export type Repository = {
     /**
      * Package format
      */
-    format: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
+    format: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'swift' | 'terraform';
     /**
      * Repository description
      */
@@ -4479,7 +4479,7 @@ export type GetApiV1RepositoriesData = {
         /**
          * Filter by package format
          */
-        format?: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
+        format?: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'swift' | 'terraform';
         /**
          * Page number (default: 1)
          */
@@ -4553,7 +4553,7 @@ export type PostApiV1RepositoriesData = {
          * Repository name (1-100 letters, digits, hyphen or underscore; starts with a letter or digit)
          */
         name: string;
-        format: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
+        format: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'swift' | 'terraform';
         description?: string;
         public?: boolean;
         /**
