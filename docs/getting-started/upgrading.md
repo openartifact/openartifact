@@ -127,12 +127,16 @@ An older binary does not refuse a database with newer migrations, because it onl
 
 Newest first. Each version starts with **What you must do**; the text below it lists the details. When you skip versions, read every section between yours and the target.
 
-### Unreleased
+### 0.26.0
 
 **What you must do**
 
 - Rename any repository named `cran`, `gitlfs`, `p2`, `pub` or `swift` before you upgrade. These names are now format prefixes (`/repos/<format>/REPO`), so a repository with one of them is no longer reachable by its generic URL, as already for `maven`, `raw`, `ivy` and `sbt`.
-- Nothing else is required. Migration `030` adds the index `idx_ai_results_tags_lower` with `CREATE INDEX CONCURRENTLY`, so it does not block writes. Migration `033` adds the six new formats to the allowed repository formats: it widens `chk_repo_format` as `NOT VALID` in a short transaction and validates it in a separate `*_validate.no_tx` file without blocking writes. No table is created; the new formats use the generic package tables.
+- Nothing else is required. The migrations apply at start and take no long lock:
+  - `030` adds the index `idx_ai_results_tags_lower` with `CREATE INDEX CONCURRENTLY`, so it does not block writes.
+  - `031` adds the nullable `deploy_target_id` column to `repositories`.
+  - `032` adds the `artifact.copied` audit action. Like `033`, it widens its check constraint as `NOT VALID` and validates it in a separate file.
+  - `033` adds the six new formats to the allowed repository formats. It widens `chk_repo_format` as `NOT VALID` in a short transaction and validates it in a separate `*_validate.no_tx` file without blocking writes. No table is created; the new formats use the generic package tables.
 
 **Changes.**
 
@@ -143,10 +147,30 @@ Newest first. Each version starts with **What you must do**; the text below it l
   - **R packages** (`cran`): hosted, proxy (default upstream `https://cloud.r-project.org`) and group repositories with the CRAN layout (`src/contrib`, `Archive`, Windows and macOS binary trees) at `HOST/repos/cran/REPO` for `install.packages()` and `renv`. See [CRAN](../formats/cran.md).
   - **Git LFS** (`gitlfs`): hosted repositories serving the Git LFS batch API at `HOST/repos/gitlfs/REPO` (`lfs.url`), with the same tokens, quota, quarantine and trash as other formats. File locking is not supported (the locks endpoints answer `501`). See [Git LFS](../formats/gitlfs.md).
   - **Eclipse p2** (`p2`): proxy repositories of p2 update sites, including composite repositories, at `HOST/repos/p2/REPO/` for Eclipse and Tycho. The mirrors URL is removed from the artifact metadata so downloads stay on the proxy. See [Eclipse p2](../formats/p2.md).
+- **Publishing through a group.** A group can name one of its hosted members as its `deploy_target` (`oa repo update GROUP --deploy-target MEMBER`, or the group's settings in the web UI). Clients then publish to the group's URL, the one they install from, and the upload is stored in that member, with the member's authorization, quota, policies, scans and webhooks; the audit entry records `via_group`. It covers ansible, cargo, composer, conan, conda, go, helm, ivy, maven, nix, npm, nuget, pypi, raw, rubygems, sbt and terraform; deletes through a group still answer `405` ([#510](https://github.com/openartifact/openartifact/issues/510)). See [Publishing through a group](../repositories/hosted-proxy-group.md#publishing-through-a-group-deploy-target).
+- **Copy and move artifacts between hosted repositories** of the same format: `POST /api/v1/repositories/{source}/copy` and `/move`, `oa cp` and `oa mv`, and *Copy to…* / *Move to…* on the artifact page, each with a dry run. No bytes are copied; properties come along, scan results do not (the target scans per its own policy). A move puts the source files in the trash, where they can be restored. Read on the source and write on the target are needed, plus delete on the source for a move ([#511](https://github.com/openartifact/openartifact/issues/511)). See [Copy and move](../repositories/copy-and-move.md).
+- **Native server packages.** Each release ships `.deb` and `.rpm` packages of the server (with a systemd unit) and of the `oa` CLI, for amd64 and arm64. See [Native packages](installation.md#native-packages-deb-and-rpm).
 - **Scoped tokens use the intersection of their scopes and the owner's rights.** A token created with `scopes` naming a permission target that is not assigned to its owner (typically an admin's token limited to a fresh, narrow target) was denied everything. It now works as documented: a request is allowed when one scope target covers it and the owner's own targets allow it too. Access never exceeds the owner's rights, and a token whose scopes are assigned to the owner behaves as before.
 - **AI analysis results in the web UI.** Administrators see the latest analysis of a version on the **Security** tab of the artifact page whatever its outcome (a clean or failed run showed nothing before) and can re-run it there; a repository gets an **AI analysis** tab listing its analyses by status. See [AI analysis](../integrations/ai-analysis.md).
 - **Search by AI tag.** `GET /api/v1/search?q=TERM` and the web UI search also return the artifacts whose AI analysis has a tag equal to the term, case-insensitively, within the repositories you can read. See [Search by tag](../integrations/ai-analysis.md#search-by-tag).
 - **`oa check` reads `go.sum`.** Every module version it lists is checked against a Go repository, also the ones it lists only as `/go.mod` (the go command fetches that file through the proxy too). `--fetch` requests the `.info` of each version, as a build does, and the version list of each module, so a release the module does not have is `not_found` instead of `unknown`. `go.sum` records neither requirers (no REQUIRED BY column, `"dependency_graph": false`) nor test-only modules (`--no-dev` is refused).
+- **AI connection test and model list use the effective configuration.** `POST /api/v1/admin/ai/test` without a body and `GET /api/v1/admin/ai/models` read the same environment and YAML settings as the worker; with an environment-only setup they tested the default OpenAI endpoint ([#507](https://github.com/openartifact/openartifact/issues/507)).
+- **NuGet search in Visual Studio.** The service index advertises the versioned `SearchQueryService/3.0.0-beta` and `SearchAutocompleteService/3.0.0-beta` resources, which Visual Studio's package manager needs to search a feed.
+- **Conda uploads with out-of-range numbers.** A package index whose JSON holds a number PostgreSQL `jsonb` cannot store (such as `1e131072`) no longer fails the upload with `500`; the key is dropped, like keys holding a NUL.
+- **Dependencies.** Go modules, web packages and build tools are updated.
+
+### 0.25.1
+
+**What you must do**
+
+- Nothing is required.
+
+**Changes.**
+
+- **Security: PyPI version rules hold every spelling of a release** ([GHSA-8483-q77r-q9xm](https://github.com/openartifact/openartifact/security/advisories/GHSA-8483-q77r-q9xm)). A curation rule's version on a PyPI proxy matched only the version as the file name spells it, so a block on `2.0.0` still served the files spelled `2.0`, `2.0.0.0`, `02.0.0`, `v2.0.0` and the local build `2.0.0+cpu`. A plain version rule now matches every PEP 440 spelling of the release and its local builds; a glob is matched against the spelling and the canonical form (`2.0.*` does not cover a release spelled `2.0`: add the plain rule for it). The single availability check judges a version as the cached project page spells it, as the batch check does.
+- **AI analysis trigger without a body.** `POST /api/v1/repositories/{name}/ai-analysis/{artifactID}/trigger` accepts a request with no body, as the documentation shows (it answered `400 invalid JSON body`). Malformed JSON is still refused.
+- **Dependencies.** Go modules, web packages, the Go builder image (1.27.4), the runtime Alpine image (3.24) and the bundled scanners and tools (Trivy 0.76.2, Grype 0.122.0, cosign 3.1.5, oras 1.4.0) are updated.
+
 ### 0.25.0
 
 **What you must do**
