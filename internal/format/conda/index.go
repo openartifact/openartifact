@@ -14,6 +14,7 @@ import (
 	"math"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/klauspost/compress/zstd"
@@ -119,15 +120,16 @@ func parsePackageIndex(raw []byte) packageIndex {
 func hasNUL(s string) bool { return strings.ContainsRune(s, 0) }
 
 // storableJSON returns v re-encoded the way PostgreSQL jsonb accepts it, and
-// false for a value jsonb cannot hold (a NUL in a string or key). Re-encoding
-// replaces invalid UTF-8 and unpaired surrogate escapes, which jsonb refuses, by
-// U+FFFD, as the decoder reads them.
+// false for a value jsonb cannot hold (a NUL in a string or key, a number
+// beyond PostgreSQL's numeric type). Re-encoding replaces invalid UTF-8 and
+// unpaired surrogate escapes, which jsonb refuses, by U+FFFD, as the decoder
+// reads them.
 func storableJSON(v json.RawMessage) (json.RawMessage, bool) {
 	dec := json.NewDecoder(bytes.NewReader(v))
 	dec.UseNumber()
 
 	var decoded any
-	if dec.Decode(&decoded) != nil || jsonHasNUL(decoded) {
+	if dec.Decode(&decoded) != nil || jsonbRefuses(decoded) {
 		return nil, false
 	}
 
@@ -136,21 +138,70 @@ func storableJSON(v json.RawMessage) (json.RawMessage, bool) {
 	return out, err == nil
 }
 
-func jsonHasNUL(v any) bool {
+// jsonbRefuses reports whether a decoded JSON value holds what a jsonb column
+// cannot: a NUL in a string or key, or a number out of the numeric range.
+func jsonbRefuses(v any) bool {
 	switch v := v.(type) {
 	case string:
 		return hasNUL(v)
+	case json.Number:
+		return !jsonbNumber(v)
 	case []any:
-		return slices.ContainsFunc(v, jsonHasNUL)
+		return slices.ContainsFunc(v, jsonbRefuses)
 	case map[string]any:
 		for k, e := range v {
-			if hasNUL(k) || jsonHasNUL(e) {
+			if hasNUL(k) || jsonbRefuses(e) {
 				return true
 			}
 		}
 	}
 
 	return false
+}
+
+const (
+	// jsonbMaxIntDigits and jsonbMaxScale are the digits PostgreSQL's numeric
+	// holds before and after the decimal point.
+	jsonbMaxIntDigits = 131072
+	jsonbMaxScale     = 16383
+	// jsonbMaxExponent bounds the exponent that is read at all: PostgreSQL
+	// refuses every non-zero number with a larger one anyway.
+	jsonbMaxExponent = 1 << 20
+)
+
+// jsonbNumber reports whether PostgreSQL stores the JSON number n: jsonb keeps
+// it as a numeric, and "value overflows numeric format" (SQLSTATE 22003) fails
+// the whole INSERT for 1e131072 or 1e-16384, though the number is valid JSON.
+// n is a literal the decoder accepted, so only its shape needs reading.
+func jsonbNumber(n json.Number) bool {
+	mantissa, exponent, hasExponent := strings.Cut(strings.ToLower(string(n)), "e")
+
+	exp := 0
+
+	if hasExponent {
+		var err error
+
+		if exp, err = strconv.Atoi(exponent); err != nil || exp > jsonbMaxExponent || exp < -jsonbMaxExponent {
+			return false
+		}
+	}
+
+	intPart, fracPart, _ := strings.Cut(strings.TrimPrefix(mantissa, "-"), ".")
+
+	// Digits after the decimal point once the exponent is applied.
+	if len(fracPart)-exp > jsonbMaxScale {
+		return false
+	}
+
+	// Digits before it: those of the integer part, or, below 1, minus the zeros
+	// that follow the point. Zero has none.
+	if sig := strings.TrimLeft(intPart, "0"); sig != "" {
+		return len(sig)+exp <= jsonbMaxIntDigits
+	}
+
+	sig := strings.TrimLeft(fracPart, "0")
+
+	return sig == "" || exp-(len(fracPart)-len(sig)) <= jsonbMaxIntDigits
 }
 
 // indexFromConda reads info/index.json from the info-*.tar.zst member of a

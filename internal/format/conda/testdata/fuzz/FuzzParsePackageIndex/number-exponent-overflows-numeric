@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"arch\":\"x86_64\",\"platform\":1e131072,\"features\":[1e-16384,0e-999999,12e131071]}")

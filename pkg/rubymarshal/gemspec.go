@@ -176,9 +176,14 @@ func DecodeSpecification(data []byte) (*Specification, error) {
 const (
 	maxSpecDependencies = 10_000
 	maxSpecListItems    = 1_000 // authors, licenses
-	maxSpecClauses      = 64    // clauses of one Gem::Requirement
 	maxSpecStringBytes  = 1 << 20
 )
+
+// MaxRequirementClauses is the most clauses DecodeSpecification reads in one
+// Gem::Requirement; a gemspec with more is refused with ErrInvalid. Real
+// requirements hold a handful. EncodeSpecification has no such cap: it writes
+// the requirement it is given (a stored gem's), the decoder reads uploads.
+const MaxRequirementClauses = 64
 
 // specBudget tracks the string bytes still available to one specification.
 type specBudget struct {
@@ -422,8 +427,8 @@ func decodeRequirement(v any, budget *specBudget) (string, error) {
 		return "", nil
 	}
 
-	if len(clauses) > maxSpecClauses {
-		return "", fmt.Errorf("%w: %d requirement clauses exceeds maximum %d", ErrInvalid, len(clauses), maxSpecClauses)
+	if len(clauses) > MaxRequirementClauses {
+		return "", fmt.Errorf("%w: %d requirement clauses exceeds maximum %d", ErrInvalid, len(clauses), MaxRequirementClauses)
 	}
 
 	parts := make([]string, 0, len(clauses))
