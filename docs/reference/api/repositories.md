@@ -46,7 +46,7 @@ List all repositories with optional filtering
 
 | Name | In | Type | Required | Description |
 |---|---|---|---|---|
-| `format` | query | string | no | Filter by package format. One of: `ansible`, `apk`, `cargo`, `composer`, `conan`, `conda`, `deb`, `docker`, `go`, `helm`, `huggingface`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `p2`, `pacman`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. |
+| `format` | query | string | no | Filter by package format. One of: `ansible`, `apk`, `cargo`, `composer`, `conan`, `conda`, `deb`, `docker`, `gitlfs`, `go`, `helm`, `huggingface`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `p2`, `pacman`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. |
 | `page` | query | integer | no | Page number (default: 1). Minimum: 1. |
 | `limit` | query | integer | no | Items per page (default: 25, max: 100). Minimum: 1. Maximum: 100. |
 | `q` | query | string | no | Only repositories whose name contains this text (case-insensitive, at most 200 characters). Maximum length: 200. |
@@ -91,7 +91,7 @@ Create a new repository (admin only)
 | `curation_mode` | string | no | Proxy repositories only (400 for other types). off ignores the curation rules (default), denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches. One of: `off`, `denylist`, `allowlist`. |
 | `description` | string | no | - |
 | `federated` | boolean | no | Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true). |
-| `format` | string | yes | One of: `ansible`, `apk`, `cargo`, `composer`, `conan`, `conda`, `deb`, `docker`, `go`, `helm`, `huggingface`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `p2`, `pacman`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. |
+| `format` | string | yes | One of: `ansible`, `apk`, `cargo`, `composer`, `conan`, `conda`, `deb`, `docker`, `gitlfs`, `go`, `helm`, `huggingface`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `p2`, `pacman`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. |
 | `honour_quay_expiry` | boolean | no | Hosted docker repositories only (400 validation_failed otherwise when true, and when combined with immutable_releases=true). When true, a manifest carrying the quay.expires-after annotation (or image config label) is deleted with its tags and dependents once that time has passed. |
 | `immutable_releases` | boolean | no | When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true. |
 | `max_stale_seconds` | integer | no | Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000. |
@@ -103,7 +103,7 @@ Create a new repository (admin only)
 | `presign_downloads` | boolean | no | Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected. Nullable. |
 | `project` | string | no | Name of the owning project. Defaults to the built-in system project, whose membership grants nothing. Unknown project: 404. |
 | `public` | boolean | no | - |
-| `repo_type` | string | no | hosted (default), proxy or group. Every format can be a proxy or a group repository; huggingface only exists as proxy or group (a hosted huggingface repository is rejected with 400); p2 only exists as proxy (a hosted or group p2 repository is rejected with 400). apk, deb, rpm and pacman groups serve generated Release/Packages, repodata, APKINDEX or database files merged across their members. Docker proxies and groups are served under /v2/ only. Proxy and group repositories are read-only. One of: `hosted`, `proxy`, `group`. |
+| `repo_type` | string | no | hosted (default), proxy or group. Every format except gitlfs can be a proxy and every format except gitlfs and p2 a group repository (a proxy or group gitlfs repository is rejected with 400); huggingface only exists as proxy or group (a hosted huggingface repository is rejected with 400); p2 only exists as proxy (a hosted or group p2 repository is rejected with 400). apk, deb, rpm and pacman groups serve generated Release/Packages, repodata, APKINDEX or database files merged across their members. Docker proxies and groups are served under /v2/ only. Proxy and group repositories are read-only. One of: `hosted`, `proxy`, `group`. |
 | `sign_packages` | boolean | no | Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed. |
 | `trash_retention_days` | integer | no | Days a deleted item (or the repository itself) stays restorable in the trash before the retention purge removes it. null/absent = the server default (TRASH_RETENTION_DAYS); 0 = no trash, deletes are immediate and permanent. Nullable. Minimum: 0. Maximum: 36500. |
 | `upstream_password` | string | no | - |

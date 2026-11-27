@@ -233,6 +233,9 @@ var specs = [...]Spec{
 		DefaultUpstream: DockerHubUpstream, PURLType: "docker",
 	},
 	{
+		Name: "gitlfs", Mount: MountIsolated, Uploads: gitlfsUploads,
+	},
+	{
 		Name: "go", Uploads: goUploads,
 		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://proxy.golang.org",
 		Versioning: VersionSemver, PURLType: "golang", OSVEcosystem: "Go", GrypeScan: true,

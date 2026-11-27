@@ -131,6 +131,10 @@ export function pullCommand(
       // The listed package name already is the registry name, `<repo>` or
       // `<repo>/<image path>` (internal/ocipath), so it is the pull path.
       return `docker pull ${q(`${hostOf(origin)}/${pkg}:${version}`)}`
+    case 'gitlfs':
+      // The listed package name is the object id; this fetches the object itself
+      // (a checkout gets its files through `git lfs pull`).
+      return `curl -fO ${q(`${base}/objects/${pkg}`)}`
     case 'go':
       // A quoted value is still a valid environment assignment; a quoted word is not.
       return `GOPROXY=${q(base)} go get ${q(`${pkg}@${version}`)}`

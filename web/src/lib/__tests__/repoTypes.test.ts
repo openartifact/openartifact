@@ -27,6 +27,12 @@ describe('allowedFormats', () => {
   it('offers every format but huggingface and p2 for hosted repositories', () => {
     expect(allowedFormats('hosted')).toEqual(ALL_FORMATS.filter((f) => f !== 'huggingface' && f !== 'p2'))
   })
+  it('offers gitlfs for hosted repositories only', () => {
+    expect(allowedFormats('hosted')).toContain('gitlfs')
+    expect(allowedFormats('proxy')).not.toContain('gitlfs')
+    expect(allowedFormats('group')).not.toContain('gitlfs')
+    expect(isFormatAllowed('proxy', 'gitlfs')).toBe(false)
+  })
   it('offers huggingface for proxy and group repositories only', () => {
     expect(allowedFormats('hosted')).not.toContain('huggingface')
     expect(allowedFormats('proxy')).toContain('huggingface')

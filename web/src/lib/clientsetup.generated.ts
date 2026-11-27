@@ -27,6 +27,7 @@ export const DEFAULT_BASE_TEMPLATE = '{{origin}}/repos/{{esc}}'
 /** Base URL templates of the formats that do not use DEFAULT_BASE_TEMPLATE. */
 export const BASE_TEMPLATES: Readonly<Record<string, string>> = {
   docker: '{{origin}}',
+  gitlfs: '{{origin}}/repos/gitlfs/{{esc}}',
   ivy: '{{origin}}/repos/ivy/{{esc}}',
   maven: '{{origin}}/repos/maven/{{esc}}',
   p2: '{{origin}}/repos/p2/{{esc}}',
@@ -151,6 +152,15 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
         client: 'docker',
         configure: 'echo "<TOKEN>" | docker login {{host}} -u <USERNAME> --password-stdin',
         publish: 'docker tag my-image:latest {{host}}/{{repo}}:latest\ndocker push {{host}}/{{repo}}:latest',
+      },
+    ],
+  },
+  gitlfs: {
+    hosted: [
+      {
+        client: 'git-lfs',
+        configure: '# once per machine: a credential helper that remembers the token\ngit config --global credential.helper store\ngit credential approve <<EOF\nurl={{base}}\nusername=<USERNAME>\npassword=<TOKEN>\n\nEOF\n\n# in the repository\ngit lfs install\ngit config lfs.url {{base}}\n# or commit it for everyone\ngit config -f .lfsconfig lfs.url {{base}}\ngit lfs track "*.bin"\ngit add .gitattributes',
+        publish: 'git add big.bin && git commit -m "add big.bin" && git push origin main  # the objects go to lfs.url, the commits to origin',
       },
     ],
   },

@@ -83,6 +83,7 @@ Trash items are addressed by `kind` and `id` (both shown by the list endpoints).
 | `deb_package` | a Debian package |
 | `docker_manifest` | a Docker/OCI manifest (and its tags) |
 | `docker_tag` | a single Docker tag |
+| `gitlfs_object` | a Git LFS object |
 | `go_module` | a Go module version |
 | `helm_chart` | a Helm chart version |
 | `ivy_artifact`, `maven_artifact`, `sbt_artifact` | a file in an Ivy, Maven or sbt repository |

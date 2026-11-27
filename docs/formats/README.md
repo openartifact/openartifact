@@ -20,7 +20,7 @@ Start here:
 Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO` with the repository name (`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$`).
 
 - Every repository is served under `/repos/REPO/...`.
-- Ivy, Maven, raw and sbt are served under a format prefix: `/repos/ivy/REPO`, `/repos/maven/REPO`, `/repos/raw/REPO`, `/repos/sbt/REPO`. Repositories named like these prefixes are not reachable by the generic URL.
+- Git LFS, Ivy, Maven, raw and sbt are served under a format prefix: `/repos/gitlfs/REPO`, `/repos/ivy/REPO`, `/repos/maven/REPO`, `/repos/raw/REPO`, `/repos/sbt/REPO`. Repositories named like these prefixes are not reachable by the generic URL.
 - Docker / OCI is the exception: the registry API is at `HOST/v2/`, and the first path segment after `/v2/` is the repository name ([details](docker.md)).
 - `BASE_URL` (`baseUrl`) is optional for package clients. Set it when the server sits behind a proxy that does not forward the original host.
   - Helm, PyPI and Terraform metadata use relative references and need no host.
@@ -29,7 +29,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 
 ## Format matrix
 
-`Format id` is the `format` value you use when creating a repository. Every format can be a proxy, every format but Eclipse p2 a group repository, and every format but Hugging Face and Eclipse p2 a hosted one (see [hosted, proxy, group](../repositories/hosted-proxy-group.md)). The Upload column shows how you publish to a hosted repository.
+`Format id` is the `format` value you use when creating a repository. Every format but Git LFS can be a proxy, every format but Git LFS and Eclipse p2 a group repository, and every format but Hugging Face and Eclipse p2 a hosted one (see [hosted, proxy, group](../repositories/hosted-proxy-group.md)). The Upload column shows how you publish to a hosted repository.
 
 | Format | Format id | Client URL | Types | Upload | Page |
 |---|---|---|---|---|---|
@@ -41,6 +41,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | Conda | `conda` | `HOST/repos/REPO/<platform>/repodata.json` | hosted, proxy, group | `POST /<platform>` with `X-Filename` | [conda](conda.md) |
 | Debian (APT) | `deb` | `HOST/repos/REPO/` (`dists/`, `pool/`) | hosted, proxy, group | `POST /api/v1/repositories/REPO/debs` (multipart) | [debian](debian.md) |
 | Docker / OCI | `docker` | `HOST/v2/` (image `HOST/REPO[/image]`) | hosted, proxy, group | `docker push` | [docker](docker.md) |
+| Git LFS | `gitlfs` | `HOST/repos/gitlfs/REPO` (`lfs.url`) | hosted | `git push` (`PUT /objects/<oid>` after `POST /objects/batch`) | [gitlfs](gitlfs.md) |
 | Go modules | `go` | `GOPROXY=HOST/repos/REPO` | hosted, proxy, group | `PUT <module>/@v/<version>` (module zip) | [go](go.md) |
 | Helm | `helm` | `HOST/repos/REPO/` (`index.yaml`, `charts/`) | hosted, proxy, group | `POST /charts` (raw chart `.tgz`) | [helm](helm.md) |
 | Hugging Face | `huggingface` | `HF_ENDPOINT=HOST/repos/REPO` | proxy, group | none (download only) | [huggingface](huggingface.md) |

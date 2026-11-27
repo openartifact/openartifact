@@ -232,6 +232,7 @@
   "trash.kind.deb_package": "Deb-Paket",
   "trash.kind.docker_manifest": "Docker-Manifest",
   "trash.kind.docker_tag": "Docker-Tag",
+  "trash.kind.gitlfs_object": "Git-LFS-Objekt",
   "trash.kind.go_module": "Go-Modul",
   "trash.kind.helm_chart": "Helm-Chart",
   "trash.kind.ivy_artifact": "Ivy-Artefakt",

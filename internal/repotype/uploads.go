@@ -71,6 +71,14 @@ var (
 	dockerUploads = []UploadRoute{
 		counted("/v2/*", ""),
 	}
+	gitlfsUploads = []UploadRoute{
+		counted("/repos/gitlfs/{name}/objects/{oid}", http.MethodPut),
+		notUpload("/repos/gitlfs/{name}/objects/batch"),
+		notUpload("/repos/gitlfs/{name}/verify"),
+		notUpload("/repos/gitlfs/{name}/locks"),
+		notUpload("/repos/gitlfs/{name}/locks/verify"),
+		notUpload("/repos/gitlfs/{name}/locks/{id}/unlock"),
+	}
 	goUploads = []UploadRoute{
 		byHandler(sharedPut),
 	}

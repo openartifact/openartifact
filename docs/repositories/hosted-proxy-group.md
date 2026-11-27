@@ -26,7 +26,7 @@ Proxy and group repositories use the same client URLs as hosted ones.
 
 ## Type and format support
 
-Every format can be a proxy, every format except p2 can be a group, and every format except huggingface and p2 can be hosted (a hosted huggingface repository, and a hosted or group p2 repository, are refused with `400 validation_failed`). Proxy and group repositories are read-only: uploads and deletes answer `405`.
+Every format except gitlfs can be a proxy, every format except gitlfs and p2 can be a group, and every format except huggingface and p2 can be hosted (a hosted huggingface or p2 repository, a group p2 repository and a proxy or group gitlfs repository are refused with `400 validation_failed`). Proxy and group repositories are read-only: uploads and deletes answer `405`.
 
 A proxy needs an `upstream_url`. These formats have a default, so you may leave it out:
 

@@ -232,6 +232,7 @@
   "trash.kind.deb_package": "Pacchetto deb",
   "trash.kind.docker_manifest": "Manifest Docker",
   "trash.kind.docker_tag": "Tag Docker",
+  "trash.kind.gitlfs_object": "Oggetto Git LFS",
   "trash.kind.go_module": "Modulo Go",
   "trash.kind.helm_chart": "Chart Helm",
   "trash.kind.ivy_artifact": "Artefatto Ivy",
