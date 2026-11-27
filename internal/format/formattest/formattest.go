@@ -348,6 +348,7 @@ type formatStore interface {
 	GetPacmanPackageByFilename(ctx context.Context, repoID string, filename string) (*models.PacmanPackage, error)
 	GetPermissionTargetByName(ctx context.Context, name string) (*models.PermissionTarget, error)
 	GetPermissionTargetsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]*models.PermissionTarget, error)
+	GetPermissionTargetsByIDs(ctx context.Context, ids []string) ([]*models.PermissionTarget, error)
 	GetProjectByName(ctx context.Context, name string) (*models.Project, error)
 	GetPyPIPackageByFilename(ctx context.Context, repoID string, filename string) (*models.PyPIPackage, error)
 	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)

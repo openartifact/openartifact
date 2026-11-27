@@ -106,7 +106,7 @@ Create body for `POST /api/v1/auth/tokens` (HTTP 201, response includes `token`)
 |---|---|
 | `name` | required, at most 100 characters |
 | `kind` | `access` or `deploy` |
-| `scopes` | optional list (max 64) of permission-target IDs; the token gets the intersection of these targets and the owner's rights. Admins may name any target, others only targets they hold |
+| `scopes` | optional list (max 64) of permission-target IDs; a request is allowed only when one of these targets covers it **and** the owner's own permission targets allow it too (the intersection). A scope target does not have to be assigned to the owner, it grants nothing by itself, and a deleted target covers nothing. Admins may name any target, others only targets they hold |
 | `expires_at` | optional RFC 3339 time, in the future and at most 2 years ahead; omitted means never |
 
 | Endpoint | Who |

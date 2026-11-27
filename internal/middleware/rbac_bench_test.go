@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -40,6 +41,18 @@ type benchRBACDB struct {
 
 func (d *benchRBACDB) GetPermissionTargetsForPrincipal(context.Context, string, []string) ([]*models.PermissionTarget, error) {
 	return d.targets, nil
+}
+
+func (d *benchRBACDB) GetPermissionTargetsByIDs(_ context.Context, ids []string) ([]*models.PermissionTarget, error) {
+	var out []*models.PermissionTarget
+
+	for _, t := range d.targets {
+		if slices.Contains(ids, t.ID) {
+			out = append(out, t)
+		}
+	}
+
+	return out, nil
 }
 
 func (d *benchRBACDB) GetPermissionTargetByName(context.Context, string) (*models.PermissionTarget, error) {
