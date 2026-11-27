@@ -18,6 +18,7 @@ func init() { //nolint:gochecknoinits // test-only format registry, see above
 		"composer":    ComposerHooks,
 		"conan":       ConanHooks,
 		"conda":       CondaHooks,
+		"cran":        CRANHooks,
 		"deb":         DebHooks,
 		"docker":      DockerHooks,
 		"go":          GoHooks,

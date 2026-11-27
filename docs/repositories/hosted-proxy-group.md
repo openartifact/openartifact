@@ -37,6 +37,7 @@ A proxy needs an `upstream_url`. These formats have a default, so you may leave 
 | cocoapods | `https://cdn.cocoapods.org` |
 | composer | `https://repo.packagist.org` |
 | conan | `https://center2.conan.io` |
+| cran | `https://cloud.r-project.org` |
 | docker | `https://registry-1.docker.io` |
 | go | `https://proxy.golang.org` |
 | huggingface | `https://huggingface.co` |
@@ -127,7 +128,7 @@ A proxy repository mirrors an upstream registry. A file is fetched on the first 
 - Paths with empty segments, `.`, `..`, backslashes, control characters or a trailing `/` answer `404`.
 - Requests to the upstream ask for `Accept-Encoding: identity`, so bytes are mirrored unchanged.
 
-Format-specific proxy behaviour is on the format pages: [Ansible](../formats/ansible.md#proxy), [apk](../formats/apk.md#proxy), [Cargo](../formats/cargo.md#proxy), [CocoaPods](../formats/cocoapods.md#what-is-cached), [Composer](../formats/composer.md#proxy), [Conan](../formats/conan.md#proxy), [Conda](../formats/conda.md#proxy), [Debian](../formats/debian.md#proxy), [Docker](../formats/docker.md#proxy), [Go](../formats/go.md#proxy), [Helm](../formats/helm.md#proxy), [Hugging Face](../formats/huggingface.md#caching-and-revision-pinning), [Ivy and sbt](../formats/ivy-sbt.md#proxy), [Maven](../formats/maven.md#proxy), [Nix](../formats/nix.md#proxy), [npm](../formats/npm.md#proxy), [NuGet](../formats/nuget.md#proxy), [Eclipse p2](../formats/p2.md#what-the-proxy-rewrites), [pacman](../formats/pacman.md#proxy), [Pub](../formats/pub.md#proxy), [PyPI](../formats/pypi.md#proxy), [raw](../formats/raw.md#proxy), [RPM](../formats/rpm.md#proxy), [RubyGems](../formats/rubygems.md#proxy) and [Terraform](../formats/terraform.md#proxy-repositories).
+Format-specific proxy behaviour is on the format pages: [Ansible](../formats/ansible.md#proxy), [apk](../formats/apk.md#proxy), [Cargo](../formats/cargo.md#proxy), [CocoaPods](../formats/cocoapods.md#what-is-cached), [Composer](../formats/composer.md#proxy), [Conan](../formats/conan.md#proxy), [Conda](../formats/conda.md#proxy), [CRAN](../formats/cran.md#proxy), [Debian](../formats/debian.md#proxy), [Docker](../formats/docker.md#proxy), [Go](../formats/go.md#proxy), [Helm](../formats/helm.md#proxy), [Hugging Face](../formats/huggingface.md#caching-and-revision-pinning), [Ivy and sbt](../formats/ivy-sbt.md#proxy), [Maven](../formats/maven.md#proxy), [Nix](../formats/nix.md#proxy), [npm](../formats/npm.md#proxy), [NuGet](../formats/nuget.md#proxy), [Eclipse p2](../formats/p2.md#what-the-proxy-rewrites), [pacman](../formats/pacman.md#proxy), [Pub](../formats/pub.md#proxy), [PyPI](../formats/pypi.md#proxy), [raw](../formats/raw.md#proxy), [RPM](../formats/rpm.md#proxy), [RubyGems](../formats/rubygems.md#proxy) and [Terraform](../formats/terraform.md#proxy-repositories).
 
 ### Editing proxy settings in the web UI
 
@@ -223,6 +224,7 @@ Rules are matched against the package name in the form below and against the ver
 | maven, ivy, sbt | `group:artifact` | as the version directory shows it |
 | docker | image name as written below the repository (`library/alpine`) | tag or digest as requested |
 | conan | recipe name, lower case | as the reference shows it |
+| cran | package name as written (`data.table`) | as the index shows it (`1.2-3`) |
 | deb, rpm, apk, pacman | package name from the file name | `version` as the file name shows it (`<version>-<release>` for rpm, apk and pacman) |
 
 PyPI versions have many spellings: pip reads `2.0`, `2.0.0`, `2.0.0.0`, `02.0.0` and `v2.0.0` as one version, a file name may use any of them, and `==2.0.0` also selects a local build such as `2.0.0+cpu`. A PyPI rule therefore matches a version in its PEP 440 canonical form as well as in its spelling, ignoring case:

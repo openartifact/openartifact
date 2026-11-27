@@ -80,6 +80,7 @@ Trash items are addressed by `kind` and `id` (both shown by the list endpoints).
 | `composer` | a Composer package version |
 | `conan_package` | one stored file of a Conan recipe or package revision |
 | `conda_package` | a Conda package |
+| `cran_package` | an R package file (a source tarball or a binary) |
 | `deb_package` | a Debian package |
 | `docker_manifest` | a Docker/OCI manifest (and its tags) |
 | `docker_tag` | a single Docker tag |

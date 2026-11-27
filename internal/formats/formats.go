@@ -51,6 +51,7 @@ func registrations() []plugin.Format {
 		terraformFormat(),
 		huggingFaceFormat(),
 		cocoapodsFormat(),
+		cranFormat(),
 		// Not on the shared subrouter, or guarded.
 		apkFormat(),
 		composerFormat(),

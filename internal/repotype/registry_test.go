@@ -85,10 +85,10 @@ func TestPolicy(t *testing.T) {
 
 	// gitlfs is hosted only. cocoapods and p2 are proxy only: CDN shards cannot
 	// be merged by a group, and update sites are merged by a composite repository.
-	proxies := "ansible, apk, cargo, cocoapods, composer, conan, conda, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, p2, " +
+	proxies := "ansible, apk, cargo, cocoapods, composer, conan, conda, cran, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, " +
+		"nuget, p2, pacman, pub, pypi, raw, rpm, rubygems, sbt, terraform"
+	groups := "ansible, apk, cargo, composer, conan, conda, cran, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, " +
 		"pacman, pub, pypi, raw, rpm, rubygems, sbt, terraform"
-	groups := "ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pub, " +
-		"pypi, raw, rpm, rubygems, sbt, terraform"
 
 	if got := repotype.ProxyFormats(); got != proxies {
 		t.Errorf("ProxyFormats() = %q, want %q", got, proxies)
@@ -118,6 +118,7 @@ func TestPolicy(t *testing.T) {
 		"huggingface": "https://huggingface.co",
 		"pub":         "https://pub.dev",
 		"cocoapods":   "https://cdn.cocoapods.org",
+		"cran":        "https://cloud.r-project.org",
 	}
 
 	for _, name := range repotype.Names() {

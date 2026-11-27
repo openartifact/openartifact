@@ -95,6 +95,7 @@ type PostgresDB struct {
 	*AttestationStore
 	*QuayStore
 	*GitLFSStore
+	*CRANStore
 	// STORES-STRUCT
 }
 
@@ -172,6 +173,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		AttestationStore:     &AttestationStore{core: c},
 		QuayStore:            &QuayStore{core: c},
 		GitLFSStore:          &GitLFSStore{core: c},
+		CRANStore:            &CRANStore{core: c},
 		// STORES-INIT
 	}
 }

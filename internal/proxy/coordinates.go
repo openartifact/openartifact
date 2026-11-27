@@ -20,6 +20,7 @@ import (
 var coordinateParsers = map[string]func(key string) (string, string, bool){ //nolint:gochecknoglobals // constant lookup table
 	"cargo":     cargoCoordinates,
 	"cocoapods": cocoapodsKeyCoordinates,
+	"cran":      cranCoordinates,
 	"go":        goCoordinates,
 	"helm":      helmCoordinates,
 	"maven":     mavenCoordinates,

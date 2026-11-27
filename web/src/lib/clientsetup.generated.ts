@@ -26,6 +26,7 @@ export const DEFAULT_BASE_TEMPLATE = '{{origin}}/repos/{{esc}}'
 
 /** Base URL templates of the formats that do not use DEFAULT_BASE_TEMPLATE. */
 export const BASE_TEMPLATES: Readonly<Record<string, string>> = {
+  cran: '{{origin}}/repos/cran/{{esc}}',
   docker: '{{origin}}',
   gitlfs: '{{origin}}/repos/gitlfs/{{esc}}',
   ivy: '{{origin}}/repos/ivy/{{esc}}',
@@ -143,6 +144,27 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
         client: 'conda',
         configure: 'conda config --add channels {{base}}',
         publish: 'curl -u <USERNAME>:<TOKEN> -H "X-Filename: my-package-1.0-0.conda" --data-binary @my-package-1.0-0.conda {{base}}/linux-64',
+      },
+    ],
+  },
+  cran: {
+    hosted: [
+      {
+        client: 'R',
+        configure: '# ~/.Rprofile (or Rprofile.site)\noptions(repos = c(oa = "{{base}}"))\n\n# a private repository: credentials in the URL (or a ~/.netrc entry)\noptions(repos = c(oa = "{{authBase}}"))\n\n# install\ninstall.packages("mypackage")',
+        publish: 'R CMD build mypackage\ncurl -u <USERNAME>:<TOKEN> -T mypackage_1.0.0.tar.gz {{base}}/src/contrib/mypackage_1.0.0.tar.gz\n\n# a Windows binary package (R CMD INSTALL --build), for R 4.5\ncurl -u <USERNAME>:<TOKEN> -T mypackage_1.0.0.zip {{base}}/bin/windows/contrib/4.5/mypackage_1.0.0.zip',
+      },
+    ],
+    proxy: [
+      {
+        client: 'R',
+        configure: '# ~/.Rprofile (or Rprofile.site)\noptions(repos = c(oa = "{{base}}"))\n\n# a private repository: credentials in the URL (or a ~/.netrc entry)\noptions(repos = c(oa = "{{authBase}}"))\n\n# install\ninstall.packages("mypackage")',
+      },
+    ],
+    group: [
+      {
+        client: 'R',
+        configure: '# ~/.Rprofile (or Rprofile.site)\noptions(repos = c(oa = "{{base}}"))\n\n# a private repository: credentials in the URL (or a ~/.netrc entry)\noptions(repos = c(oa = "{{authBase}}"))\n\n# install\ninstall.packages("mypackage")',
       },
     ],
   },

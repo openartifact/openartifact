@@ -590,6 +590,32 @@ func CondaBuilder(c target) []Snippet {
 	}
 }
 
+// CRANBuilder is the snippet builder of the cran format: R reads the repository
+// through options(repos), install.packages and the PACKAGES indexes it serves.
+// Proxy and group repositories are read-only, so they carry no publish hint.
+func CRANBuilder(c target) []Snippet {
+	publish := fmt.Sprintf(
+		"R CMD build mypackage\ncurl -u <USERNAME>:<TOKEN> -T mypackage_1.0.0.tar.gz %[1]s/src/contrib/mypackage_1.0.0.tar.gz"+
+			"\n\n# a Windows binary package (R CMD INSTALL --build), for R 4.5\n"+
+			"curl -u <USERNAME>:<TOKEN> -T mypackage_1.0.0.zip %[1]s/bin/windows/contrib/4.5/mypackage_1.0.0.zip",
+		c.base,
+	)
+	if c.repoType == typeProxy || c.repoType == typeGroup {
+		publish = "" // proxy and group repositories are read-only
+	}
+
+	return []Snippet{{
+		Client: "R",
+		Configure: fmt.Sprintf(
+			"# ~/.Rprofile (or Rprofile.site)\noptions(repos = c(oa = \"%s\"))"+
+				"\n\n# a private repository: credentials in the URL (or a ~/.netrc entry)\noptions(repos = c(oa = \"%s\"))"+
+				"\n\n# install\ninstall.packages(\"mypackage\")",
+			c.base, c.authBase,
+		),
+		Publish: publish,
+	}}
+}
+
 // ConanBuilder is the snippet builder of the conan format.
 func ConanBuilder(c target) []Snippet {
 	return []Snippet{{

@@ -334,8 +334,8 @@ describe('clientSetup', () => {
     expect(clientSetup('npm', origin, 'r1')[0]!.configure).toContain('npm config set //oa.example:8080/repos/r1/:_authToken <TOKEN>')
   })
 
-  it('uses the isolated prefix for ivy, maven, raw and sbt', () => {
-    for (const f of ['ivy', 'maven', 'raw', 'sbt']) {
+  it('uses the isolated prefix for cran, ivy, maven, raw and sbt', () => {
+    for (const f of ['cran', 'ivy', 'maven', 'raw', 'sbt']) {
       const text = clientSetup(f, origin, 'r1')
         .map((c) => c.configure + (c.publish ?? ''))
         .join('\n')
@@ -407,6 +407,26 @@ describe('cocoapods', () => {
     expect(setup[0]!.configure).toContain('pod repo add-cdn openartifact https://oa.example/repos/trunk')
     expect(setup[0]!.configure).toContain('machine oa.example login oa password <TOKEN>')
     expect(setup[0]!.publish).toBeUndefined()
+  })
+})
+
+describe('cran', () => {
+  const origin = 'https://oa.example'
+
+  it('installs the pinned source file by URL, with the package as an argument rather than R code', () => {
+    expect(repoBaseUrl('cran', origin, 'r')).toBe('https://oa.example/repos/cran/r')
+    expect(pullCommand('cran', origin, 'r', 'glue', '1.8.0')).toBe(
+      `Rscript -e 'install.packages(commandArgs(TRUE), repos = NULL, type = "source")' https://oa.example/repos/cran/r/src/contrib/glue_1.8.0.tar.gz`,
+    )
+  })
+
+  it('points options(repos) at the repository and publishes with curl', () => {
+    const [r] = clientSetup('cran', origin, 'r', 'hosted')
+    expect(r!.client).toBe('R')
+    expect(r!.configure).toContain('options(repos = c(oa = "https://oa.example/repos/cran/r"))')
+    expect(r!.configure).toContain('options(repos = c(oa = "https://<USERNAME>:<TOKEN>@oa.example/repos/cran/r"))')
+    expect(r!.publish).toContain('-T mypackage_1.0.0.tar.gz https://oa.example/repos/cran/r/src/contrib/mypackage_1.0.0.tar.gz')
+    expect(clientSetup('cran', origin, 'r', 'group')[0]!.publish).toBeUndefined()
   })
 })
 

@@ -19,6 +19,7 @@ func TestMain(m *testing.M) {
 		"composer":  ComposerBlobPath,
 		"conan":     ConanBlobPath,
 		"conda":     CondaBlobPath,
+		"cran":      CRANBlobPath,
 		"deb":       DebBlobPath,
 		"go":        GoBlobPath,
 		"helm":      HelmBlobPath,

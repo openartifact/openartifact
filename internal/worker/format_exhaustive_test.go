@@ -48,7 +48,7 @@ func TestGroupMetadataCoversEveryFormat(t *testing.T) {
 		"cocoapods",
 		"composer",
 		"conan",
-		"conda",
+		"conda", "cran",
 		"docker",
 		"gitlfs",
 		"go",

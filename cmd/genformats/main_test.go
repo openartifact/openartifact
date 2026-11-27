@@ -40,7 +40,7 @@ func TestRenderCoversPolicy(t *testing.T) {
 		"export type FormatId = (typeof FORMAT_IDS)[number]",
 		"export const HOSTED_FORMATS: readonly FormatId[] = ['ansible', 'apk',",
 		"export const FEDERATION_FORMATS: readonly FormatId[] = ['cargo', 'docker', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw']",
-		"export const ISOLATED_FORMATS: readonly FormatId[] = ['gitlfs', 'ivy', 'maven', 'p2', 'pub', 'raw', 'sbt']",
+		"export const ISOLATED_FORMATS: readonly FormatId[] = ['cran', 'gitlfs', 'ivy', 'maven', 'p2', 'pub', 'raw', 'sbt']",
 		"  docker: 'https://registry-1.docker.io',",
 	} {
 		if !strings.Contains(out, want) {

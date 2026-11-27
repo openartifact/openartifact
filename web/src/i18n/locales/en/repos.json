@@ -229,6 +229,7 @@
   "trash.kind.cargo_crate": "Cargo crate",
   "trash.kind.composer": "Composer package",
   "trash.kind.conan_package": "Conan package",
+  "trash.kind.cran_package": "CRAN package",
   "trash.kind.conda_package": "Conda package",
   "trash.kind.deb_package": "Deb package",
   "trash.kind.docker_manifest": "Docker manifest",

@@ -225,6 +225,7 @@
   "trash.kind.cargo_crate": "Cargo 크레이트",
   "trash.kind.composer": "Composer 패키지",
   "trash.kind.conan_package": "Conan 패키지",
+  "trash.kind.cran_package": "CRAN 패키지",
   "trash.kind.conda_package": "Conda 패키지",
   "trash.kind.deb_package": "Deb 패키지",
   "trash.kind.docker_manifest": "Docker 매니페스트",

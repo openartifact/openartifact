@@ -1011,6 +1011,7 @@
               "composer",
               "conan",
               "conda",
+              "cran",
               "deb",
               "docker",
               "gitlfs",
@@ -7071,7 +7072,8 @@
               "docker_tag",
               "rpm_package",
               "deb_package",
-              "gitlfs_object"
+              "gitlfs_object",
+              "cran_package"
             ]
           },
           "repository_id": {
@@ -9314,6 +9316,7 @@
                 "composer",
                 "conan",
                 "conda",
+                "cran",
                 "deb",
                 "docker",
                 "gitlfs",
@@ -9502,6 +9505,7 @@
                       "composer",
                       "conan",
                       "conda",
+                      "cran",
                       "deb",
                       "docker",
                       "gitlfs",
@@ -9541,7 +9545,7 @@
                   },
                   "upstream_url": {
                     "type": "string",
-                    "description": "Required for proxy repos, except for formats with a default upstream: ansible (https://galaxy.ansible.com), cargo (https://index.crates.io), cocoapods (https://cdn.cocoapods.org), composer (https://repo.packagist.org), conan (https://center2.conan.io), docker (https://registry-1.docker.io), go (https://proxy.golang.org), huggingface (https://huggingface.co), nix (https://cache.nixos.org), nuget (https://api.nuget.org/v3/index.json), pacman (https://geo.mirror.pkgbuild.com), pub (https://pub.dev), pypi (https://pypi.org/simple), rubygems (https://rubygems.org) and terraform (https://registry.terraform.io). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy."
+                    "description": "Required for proxy repos, except for formats with a default upstream: ansible (https://galaxy.ansible.com), cargo (https://index.crates.io), cocoapods (https://cdn.cocoapods.org), composer (https://repo.packagist.org), conan (https://center2.conan.io), cran (https://cloud.r-project.org), docker (https://registry-1.docker.io), go (https://proxy.golang.org), huggingface (https://huggingface.co), nix (https://cache.nixos.org), nuget (https://api.nuget.org/v3/index.json), pacman (https://geo.mirror.pkgbuild.com), pub (https://pub.dev), pypi (https://pypi.org/simple), rubygems (https://rubygems.org) and terraform (https://registry.terraform.io). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy."
                   },
                   "upstream_username": {
                     "type": "string"
@@ -26665,7 +26669,8 @@
                 "docker_tag",
                 "rpm_package",
                 "deb_package",
-                "gitlfs_object"
+                "gitlfs_object",
+                "cran_package"
               ]
             }
           },
@@ -26765,7 +26770,8 @@
                 "docker_tag",
                 "rpm_package",
                 "deb_package",
-                "gitlfs_object"
+                "gitlfs_object",
+                "cran_package"
               ]
             },
             "description": "One of the TrashItem kind values."
@@ -26869,7 +26875,8 @@
                 "docker_tag",
                 "rpm_package",
                 "deb_package",
-                "gitlfs_object"
+                "gitlfs_object",
+                "cran_package"
               ]
             },
             "description": "One of the TrashItem kind values."
@@ -26974,7 +26981,8 @@
                 "docker_tag",
                 "rpm_package",
                 "deb_package",
-                "gitlfs_object"
+                "gitlfs_object",
+                "cran_package"
               ]
             }
           },
@@ -27122,7 +27130,8 @@
                 "docker_tag",
                 "rpm_package",
                 "deb_package",
-                "gitlfs_object"
+                "gitlfs_object",
+                "cran_package"
               ]
             },
             "description": "One of the TrashItem kind values."

@@ -18,7 +18,7 @@ func TestMain(m *testing.M) {
 		"npm": NPMBuilder, "docker": DockerBuilder, "pypi": PyPIBuilder, "maven": MavenBuilder,
 		"helm": HelmBuilder, "deb": DebBuilder, "rpm": RPMBuilder, "pacman": PacmanBuilder,
 		"nix": NixBuilder, "cargo": CargoBuilder, "composer": ComposerBuilder, "go": GoBuilder,
-		"nuget": NuGetBuilder, "rubygems": RubyGemsBuilder, "raw": RawBuilder, "conda": CondaBuilder,
+		"nuget": NuGetBuilder, "rubygems": RubyGemsBuilder, "raw": RawBuilder, "conda": CondaBuilder, "cran": CRANBuilder,
 		"conan": ConanBuilder, "apk": APKBuilder, "terraform": TerraformBuilder,
 		"ansible": AnsibleBuilder, "sbt": SBTBuilder, "ivy": IvyBuilder, "huggingface": HuggingFaceBuilder,
 		"gitlfs": GitLFSBuilder,

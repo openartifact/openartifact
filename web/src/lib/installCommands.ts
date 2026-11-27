@@ -4,7 +4,7 @@
 
 // Builds the native client URL / install command for a package. Repository
 // routes mirror cmd/server/main.go: most formats live under /repos/{repo};
-// ivy, maven, p2, raw and sbt use an isolated /repos/{format}/{repo} prefix, and
+// cran, ivy, maven, p2, raw and sbt use an isolated /repos/{format}/{repo} prefix, and
 // docker serves the registry API at the host root (/v2/). The repository base
 // URL and the per-client configure/publish snippets are templates generated
 // from internal/clientsetup (clientsetup.generated.ts); this file only
@@ -133,6 +133,9 @@ export function pullCommand(
       return `conan install ${q(`--requires=${pkg}/${version}`)} -r ${q(repo)}`
     case 'conda':
       return `conda install -c ${q(base)} ${q(`${pkg}=${version}`)}`
+    case 'cran':
+      // The file is installed by its URL so the version is pinned (install.packages(pkg, repos) always takes the newest).
+      return `Rscript -e ${q('install.packages(commandArgs(TRUE), repos = NULL, type = "source")')} ${q(`${base}/src/contrib/${encodeURIComponent(pkg)}_${encodeURIComponent(version)}.tar.gz`)}`
     case 'deb':
       return `apt install ${q(`${pkg}=${version}`)}`
     case 'docker':

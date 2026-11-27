@@ -38,6 +38,7 @@ const (
 	FormatTerraform = "terraform"
 	FormatGitLFS    = "gitlfs"
 	FormatPub       = "pub"
+	FormatCRAN      = "cran"
 )
 
 // Upload result label values of openartifact_uploads_total.

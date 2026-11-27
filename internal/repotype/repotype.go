@@ -227,6 +227,11 @@ var specs = [...]Spec{
 		Proxy: true, Group: true, PURLType: "conda",
 	},
 	{
+		Name: "cran", Uploads: cranUploads,
+		Proxy: true, Group: true, Mount: MountIsolated, DefaultUpstream: "https://cloud.r-project.org",
+		PURLType: "cran", OSVEcosystem: "CRAN",
+	},
+	{
 		Name: "deb", RestUploadEndpoint: "debs", Uploads: debUploads,
 		Proxy: true, Group: true, GeneratedGroupMetadata: true, Signing: SigningGPG,
 		PURLType: "deb", OSVEcosystem: "Debian", GrypeScan: true, DistroScoped: true,
