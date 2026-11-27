@@ -22,6 +22,7 @@ func TestRepoBaseURL(t *testing.T) {
 		{"maven", "libs", origin + "/repos/maven/libs"},
 		{"sbt", "libs", origin + "/repos/sbt/libs"},
 		{"ivy", "libs", origin + "/repos/ivy/libs"},
+		{"swift", "libs", origin + "/repos/swift/libs"},
 		{"raw", "files", origin + "/repos/raw/files"},
 		{"pypi", "my repo", origin + "/repos/my%20repo"},
 	}
@@ -36,7 +37,7 @@ func TestRepoBaseURL(t *testing.T) {
 func allFormats() []string {
 	return []string{
 		"ansible", "apk", "cargo", "composer", "conan", "conda", "deb", "docker", "go", "helm", "huggingface", "ivy", "maven", "nix", "npm",
-		"nuget", "pacman", "pypi", "raw", "rpm", "rubygems", "sbt", "terraform",
+		"nuget", "pacman", "pypi", "raw", "rpm", "rubygems", "sbt", "swift", "terraform",
 	}
 }
 
