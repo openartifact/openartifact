@@ -556,6 +556,26 @@ func RawBuilder(c target) []Snippet {
 	}}
 }
 
+// GitLFSBuilder is the snippet builder of the gitlfs format. Credentials go
+// through git's credential helper, never into lfs.url, so a committed
+// .lfsconfig carries no secret. The format is hosted only.
+func GitLFSBuilder(c target) []Snippet {
+	return []Snippet{
+		{
+			Client: "git-lfs",
+			Configure: fmt.Sprintf(
+				"# once per machine: a credential helper that remembers the token\ngit config --global credential.helper store"+
+					"\ngit credential approve <<EOF\nurl=%[1]s\nusername=<USERNAME>\npassword=<TOKEN>\n\nEOF"+
+					"\n\n# in the repository\ngit lfs install\ngit config lfs.url %[1]s"+
+					"\n# or commit it for everyone\ngit config -f .lfsconfig lfs.url %[1]s"+
+					"\ngit lfs track \"*.bin\"\ngit add .gitattributes",
+				c.base,
+			),
+			Publish: "git add big.bin && git commit -m \"add big.bin\" && git push origin main  # the objects go to lfs.url, the commits to origin",
+		},
+	}
+}
+
 // CondaBuilder is the snippet builder of the conda format.
 func CondaBuilder(c target) []Snippet {
 	return []Snippet{

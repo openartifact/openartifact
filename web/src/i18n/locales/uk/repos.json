@@ -240,6 +240,7 @@
   "trash.kind.deb_package": "Пакет Deb",
   "trash.kind.docker_manifest": "Маніфест Docker",
   "trash.kind.docker_tag": "Тег Docker",
+  "trash.kind.gitlfs_object": "Об'єкт Git LFS",
   "trash.kind.go_module": "Модуль Go",
   "trash.kind.helm_chart": "Чарт Helm",
   "trash.kind.ivy_artifact": "Артефакт Ivy",

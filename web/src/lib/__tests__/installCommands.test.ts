@@ -385,6 +385,26 @@ describe('huggingface', () => {
   })
 })
 
+describe('gitlfs', () => {
+  const origin = 'https://oa.example'
+  const oid = 'a'.repeat(64)
+
+  it('lives under the isolated /repos/gitlfs prefix and pulls an object by its id', () => {
+    expect(repoBaseUrl('gitlfs', origin, 'lfs')).toBe('https://oa.example/repos/gitlfs/lfs')
+    expect(pullCommand('gitlfs', origin, 'lfs', oid, '')).toBe(`curl -fO https://oa.example/repos/gitlfs/lfs/objects/${oid}`)
+  })
+
+  it('sets lfs.url to the repository and keeps the token out of it', () => {
+    const [setup] = clientSetup('gitlfs', origin, 'lfs')
+    expect(setup!.client).toBe('git-lfs')
+    expect(setup!.configure).toContain('git config lfs.url https://oa.example/repos/gitlfs/lfs')
+    expect(setup!.configure).toContain('password=<TOKEN>')
+    expect(setup!.configure).not.toContain('<TOKEN>@')
+    expect(setup!.configure).toContain('url=https://oa.example/repos/gitlfs/lfs')
+    expect(setup!.publish).toContain('git push')
+  })
+})
+
 describe('clientSetup under a path prefix', () => {
   const origin = 'https://registry.example:8443/artifacts'
 

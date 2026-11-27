@@ -228,6 +228,7 @@
   "trash.kind.deb_package": "Deb パッケージ",
   "trash.kind.docker_manifest": "Docker マニフェスト",
   "trash.kind.docker_tag": "Docker タグ",
+  "trash.kind.gitlfs_object": "Git LFS オブジェクト",
   "trash.kind.go_module": "Go モジュール",
   "trash.kind.helm_chart": "Helm チャート",
   "trash.kind.ivy_artifact": "Ivy アーティファクト",

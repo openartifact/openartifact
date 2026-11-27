@@ -54,8 +54,8 @@ func newProxyGroupDB() *proxyGroupMockDB {
 	return db
 }
 
-// Every real format supports proxy and group repositories, so the guard is
-// exercised with a name no handler serves.
+// Every format that supports proxy and group repositories is accepted; the
+// guard refuses a name no handler serves and the hosted-only formats.
 func TestUnsupportedRepoTypeMessage(t *testing.T) {
 	for _, repoType := range []string{"proxy", "group"} {
 		if msg := unsupportedRepoTypeMessage(repoType, "bogus"); !strings.Contains(msg, "not supported for format") {
@@ -65,6 +65,15 @@ func TestUnsupportedRepoTypeMessage(t *testing.T) {
 		for _, format := range repotype.Names() {
 			if repoType == "group" && format == "pacman" {
 				continue // pacman groups arrive in a later change
+			}
+
+			if !repotype.ProxySupported(format) && repoType == "proxy" || !repotype.GroupSupported(format) && repoType == "group" {
+				// A hosted-only format (gitlfs) has no proxy or group.
+				if msg := unsupportedRepoTypeMessage(repoType, format); !strings.Contains(msg, "not supported for format") {
+					t.Errorf("%s of %s: message %q", repoType, format, msg)
+				}
+
+				continue
 			}
 
 			if msg := unsupportedRepoTypeMessage(repoType, format); msg != "" {

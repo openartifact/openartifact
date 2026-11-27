@@ -22,6 +22,7 @@ import (
 	formatconda "github.com/openartifact/openartifact/internal/format/conda"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	formatdocker "github.com/openartifact/openartifact/internal/format/docker"
+	formatgitlfs "github.com/openartifact/openartifact/internal/format/gitlfs"
 	formatgomod "github.com/openartifact/openartifact/internal/format/gomod"
 	formathelm "github.com/openartifact/openartifact/internal/format/helm"
 	formativy "github.com/openartifact/openartifact/internal/format/ivy"
@@ -79,6 +80,7 @@ func serverRoutes(t *testing.T) chi.Router {
 	r.Route("/repos/maven/{name}", func(r chi.Router) { formatmaven.NewHTTPHandler(nil, nil, nil).RegisterRepoRoutes(r) })
 	r.Route("/repos/sbt/{name}", func(r chi.Router) { formatsbt.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
 	r.Route("/repos/ivy/{name}", func(r chi.Router) { formativy.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
+	r.Route("/repos/gitlfs/{name}", func(r chi.Router) { formatgitlfs.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
 	formatdocker.NewHTTPHandler(nil, nil, nil).RegisterRoutes(r)
 
 	api.NewDebUploadHandler(log, nil, nil, nil).Register(r)
@@ -147,14 +149,35 @@ func TestEveryFormatHasUploadLabel(t *testing.T) {
 	// directory under internal/format -> upload format label; "" is a support
 	// package without hosted uploads.
 	known := map[string]string{
-		"base": "", "filerepo": "", "formattest": "", "lifecycle": "", "plugin": "", "storage": "",
-		"ansible": metrics.FormatAnsible, "apk": metrics.FormatApk, "cargo": metrics.FormatCargo,
-		"composer": metrics.FormatComposer, "conan": metrics.FormatConan, "conda": metrics.FormatConda,
-		"deb": metrics.FormatDeb, "docker": metrics.FormatDocker, "gomod": metrics.FormatGo, "helm": metrics.FormatHelm,
-		"ivy": metrics.FormatIvy, "maven": metrics.FormatMaven, "nix": metrics.FormatNix,
-		"npm": metrics.FormatNPM, "nuget": metrics.FormatNuGet, "pacman": metrics.FormatPacman,
-		"pypi": metrics.FormatPyPI, "raw": metrics.FormatRaw, "rpm": metrics.FormatRPM,
-		"rubygems": metrics.FormatRubyGems, "sbt": metrics.FormatSBT, "terraform": metrics.FormatTerraform,
+		"base":       "",
+		"filerepo":   "",
+		"formattest": "",
+		"lifecycle":  "",
+		"plugin":     "",
+		"storage":    "",
+		"ansible":    metrics.FormatAnsible,
+		"apk":        metrics.FormatApk,
+		"cargo":      metrics.FormatCargo,
+		"composer":   metrics.FormatComposer,
+		"conan":      metrics.FormatConan,
+		"conda":      metrics.FormatConda,
+		"deb":        metrics.FormatDeb,
+		"docker":     metrics.FormatDocker,
+		"gitlfs":     metrics.FormatGitLFS,
+		"gomod":      metrics.FormatGo,
+		"helm":       metrics.FormatHelm,
+		"ivy":        metrics.FormatIvy,
+		"maven":      metrics.FormatMaven,
+		"nix":        metrics.FormatNix,
+		"npm":        metrics.FormatNPM,
+		"nuget":      metrics.FormatNuGet,
+		"pacman":     metrics.FormatPacman,
+		"pypi":       metrics.FormatPyPI,
+		"raw":        metrics.FormatRaw,
+		"rpm":        metrics.FormatRPM,
+		"rubygems":   metrics.FormatRubyGems,
+		"sbt":        metrics.FormatSBT,
+		"terraform":  metrics.FormatTerraform,
 	}
 
 	entries, err := os.ReadDir("../format")

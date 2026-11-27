@@ -1012,6 +1012,7 @@
               "conda",
               "deb",
               "docker",
+              "gitlfs",
               "go",
               "helm",
               "huggingface",
@@ -7065,7 +7066,8 @@
               "docker_manifest",
               "docker_tag",
               "rpm_package",
-              "deb_package"
+              "deb_package",
+              "gitlfs_object"
             ]
           },
           "repository_id": {
@@ -9309,6 +9311,7 @@
                 "conda",
                 "deb",
                 "docker",
+                "gitlfs",
                 "go",
                 "helm",
                 "huggingface",
@@ -9493,6 +9496,7 @@
                       "conda",
                       "deb",
                       "docker",
+                      "gitlfs",
                       "go",
                       "helm",
                       "huggingface",
@@ -9518,7 +9522,7 @@
                   },
                   "repo_type": {
                     "type": "string",
-                    "description": "hosted (default), proxy or group. Every format can be a proxy or a group repository; huggingface only exists as proxy or group (a hosted huggingface repository is rejected with 400). apk, deb, rpm and pacman groups serve generated Release/Packages, repodata, APKINDEX or database files merged across their members. Docker proxies and groups are served under /v2/ only. Proxy and group repositories are read-only.",
+                    "description": "hosted (default), proxy or group. Every format except gitlfs can be a proxy or a group repository (a proxy or group gitlfs repository is rejected with 400); huggingface only exists as proxy or group (a hosted huggingface repository is rejected with 400). apk, deb, rpm and pacman groups serve generated Release/Packages, repodata, APKINDEX or database files merged across their members. Docker proxies and groups are served under /v2/ only. Proxy and group repositories are read-only.",
                     "enum": [
                       "hosted",
                       "proxy",
@@ -26649,7 +26653,8 @@
                 "docker_manifest",
                 "docker_tag",
                 "rpm_package",
-                "deb_package"
+                "deb_package",
+                "gitlfs_object"
               ]
             }
           },
@@ -26747,7 +26752,8 @@
                 "docker_manifest",
                 "docker_tag",
                 "rpm_package",
-                "deb_package"
+                "deb_package",
+                "gitlfs_object"
               ]
             },
             "description": "One of the TrashItem kind values."
@@ -26849,7 +26855,8 @@
                 "docker_manifest",
                 "docker_tag",
                 "rpm_package",
-                "deb_package"
+                "deb_package",
+                "gitlfs_object"
               ]
             },
             "description": "One of the TrashItem kind values."
@@ -26952,7 +26959,8 @@
                 "docker_manifest",
                 "docker_tag",
                 "rpm_package",
-                "deb_package"
+                "deb_package",
+                "gitlfs_object"
               ]
             }
           },
@@ -27098,7 +27106,8 @@
                 "docker_manifest",
                 "docker_tag",
                 "rpm_package",
-                "deb_package"
+                "deb_package",
+                "gitlfs_object"
               ]
             },
             "description": "One of the TrashItem kind values."

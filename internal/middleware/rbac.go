@@ -485,6 +485,11 @@ func writeAccessDenied(
 			w.Header().Add("WWW-Authenticate", `Basic realm="`+AuthRealm+`"`)
 		}
 
+		// git-lfs reads the credential challenge of its own header first.
+		if strings.HasPrefix(r.URL.Path, "/repos/gitlfs/") {
+			w.Header().Add("Lfs-Authenticate", `Basic realm="`+AuthRealm+`"`)
+		}
+
 		// Cargo only sends its token after a challenge naming its login page
 		// (RFC 3139 auth-required flow).
 		if scope.repoName != "" {
@@ -847,6 +852,10 @@ func classifyRoute(r *http.Request) routeScope {
 
 	if isConanV1Delete(r.Method, artifactPath) {
 		action = "delete"
+	}
+
+	if isGitLFSBatch(r, artifactPath) {
+		action = gitLFSBatchAction(r)
 	}
 
 	return routeScope{action: action, repoName: repoName, artifactPath: artifactPath}

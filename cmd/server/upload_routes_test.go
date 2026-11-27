@@ -43,6 +43,7 @@ var documentedUploads = map[string]documentedUpload{ //nolint:gochecknoglobals /
 	"sbt":    {http.MethodPut, "/repos/sbt/{name}/*", "sbt publish", "HOST/repos/sbt/REPO"},
 	"ivy":    {http.MethodPut, "/repos/ivy/{name}/*", "ivy:publish", "HOST/repos/ivy/REPO"},
 	"raw":    {http.MethodPut, "/repos/raw/{name}/*", "PUT <path>", "-T file.bin HOST/repos/raw/REPO/path/to/file.bin"},
+	"gitlfs": {http.MethodPut, "/repos/gitlfs/{name}/objects/{oid}", "git push", "PUT /objects/OID"},
 	"npm":    {http.MethodPut, "/repos/{name}/*", "PUT /<pkg>", "PUT /repos/REPO/<package>"},
 	"pypi":   {http.MethodPost, "/repos/{name}/legacy/", "HOST/repos/REPO/legacy/", "HOST/repos/REPO/legacy/"},
 	"docker": {http.MethodPost, "/v2/*", "docker push", "docker push HOSTPORT/REPO:latest"},

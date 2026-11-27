@@ -7,7 +7,7 @@
 // package (CC0); `raw` uses a generic heroicons archive-box glyph and `ivy`
 // uses the Apache mark (Ivy is an Apache project with no mark of its own).
 // Ansible uses the Ansible mark, apk the Alpine Linux mark, Cargo the Rust mark,
-// Composer the Composer mark, Hugging Face the Hugging Face mark, Conda the Anaconda mark, nix the NixOS mark, pacman the Arch Linux mark,
+// Composer the Composer mark, Hugging Face the Hugging Face mark, Git LFS the Git LFS mark, Conda the Anaconda mark, nix the NixOS mark, pacman the Arch Linux mark,
 // RPM the Red Hat mark, sbt the Scala mark and Terraform the Terraform mark (also used for OpenTofu
 // repositories: one `terraform` format serves both clients).
 
@@ -22,6 +22,7 @@ import {
   siConan,
   siDebian,
   siDocker,
+  siGitlfs,
   siGo,
   siHelm,
   siHuggingface,
@@ -72,6 +73,7 @@ export const FORMAT_META: Record<FormatId, FormatMeta> = {
   conda: brand('Conda', siAnaconda),
   deb: brand('Deb', siDebian),
   docker: brand('Docker', siDocker),
+  gitlfs: brand('Git LFS', siGitlfs),
   go: brand('Go', siGo),
   helm: brand('Helm', siHelm),
   huggingface: brand('Hugging Face', siHuggingface),
