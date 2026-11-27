@@ -20,11 +20,11 @@ Start here:
 Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO` with the repository name (`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$`).
 
 - Every repository is served under `/repos/REPO/...`.
-- Ivy, Maven, raw and sbt are served under a format prefix: `/repos/ivy/REPO`, `/repos/maven/REPO`, `/repos/raw/REPO`, `/repos/sbt/REPO`. Repositories named like these prefixes are not reachable by the generic URL.
+- Ivy, Maven, pub, raw and sbt are served under a format prefix: `/repos/ivy/REPO`, `/repos/maven/REPO`, `/repos/pub/REPO`, `/repos/raw/REPO`, `/repos/sbt/REPO`. Repositories named like these prefixes are not reachable by the generic URL.
 - Docker / OCI is the exception: the registry API is at `HOST/v2/`, and the first path segment after `/v2/` is the repository name ([details](docker.md)).
 - `BASE_URL` (`baseUrl`) is optional for package clients. Set it when the server sits behind a proxy that does not forward the original host.
   - Helm, PyPI and Terraform metadata use relative references and need no host.
-  - npm, Cargo, NuGet, Conan 1.x, Composer `dist.url` and Ansible use the origin of the request (`Host`, or `X-Forwarded-Host` and `X-Forwarded-Proto` from a trusted proxy). `BASE_URL` overrides it when set.
+  - npm, Cargo, NuGet, Conan 1.x, Composer `dist.url`, Pub `archive_url` and Ansible use the origin of the request (`Host`, or `X-Forwarded-Host` and `X-Forwarded-Proto` from a trusted proxy). `BASE_URL` overrides it when set.
   - Details: [the public URL](../getting-started/installation.md#the-public-url-and-base_url).
 
 ## Format matrix
@@ -50,6 +50,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | npm | `npm` | `HOST/repos/REPO/` | hosted, proxy, group | `npm publish` (`PUT /<pkg>`) | [npm](npm.md) |
 | NuGet | `nuget` | `HOST/repos/REPO/v3/index.json` | hosted, proxy, group | `dotnet nuget push` (`PUT /v3/package`) | [nuget](nuget.md) |
 | Arch Linux (pacman) | `pacman` | `HOST/repos/REPO/os/<arch>` (`<name>.db`, packages) | hosted, proxy, group | `PUT /os/<arch>/<pkg>.pkg.tar.zst` (+ `.sig`) | [pacman](pacman.md) |
+| Pub (Dart and Flutter) | `pub` | `PUB_HOSTED_URL=HOST/repos/pub/REPO` | hosted, proxy, group | `dart pub publish --server HOST/repos/pub/REPO` | [pub](pub.md) |
 | PyPI | `pypi` | `HOST/repos/REPO/simple/` | hosted, proxy, group | `twine upload` to `HOST/repos/REPO/legacy/` | [pypi](pypi.md) |
 | Raw | `raw` | `HOST/repos/raw/REPO/<path>` | hosted, proxy, group | `PUT <path>` (`curl -T`) | [raw](raw.md) |
 | RPM (YUM/DNF) | `rpm` | `HOST/repos/REPO/` (`repodata/repomd.xml`, `Packages/`) | hosted, proxy, group | `POST /api/v1/repositories/REPO/packages` (multipart) | [rpm](rpm.md) |
@@ -78,6 +79,7 @@ Not available in the browser:
 
 - Cargo: `cargo publish` computes the dependency metadata the registry stores.
 - Conan, Docker, Ivy and sbt: many files in a client-specific layout.
+- Pub: `dart pub publish` is a three-step exchange.
 - Nix: `nix copy` pushes the NAR and `.narinfo`; the page shows the command.
 
 Use the clients in the matrix for those. You can drop several files at once; each shows progress and can be cancelled.

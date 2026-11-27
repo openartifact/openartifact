@@ -29,7 +29,7 @@ The cure has two halves, delivered together:
 
 | In | Out (kept dedicated) |
 |---|---|
-| ansible, apk, cargo, composer, conan, conda, deb, go, helm, ivy, maven, npm, nix, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform | **docker** |
+| ansible, apk, cargo, composer, conan, conda, deb, go, helm, ivy, maven, npm, nix, nuget, pacman, pub, pypi, raw, rpm, rubygems, sbt, terraform | **docker** |
 
 **Why docker stays dedicated.** Docker is an object graph, not a package list. Manifests, layer blobs, referrers (`subject_digest`), upload sessions, the GC advisory lock (`docker-repo:<id>`), cross-repository mounts and a hand-written federation codec all depend on the dedicated `docker_*` tables. The listing unit is a tag, not a file. Moving it is a separate, larger change.
 
