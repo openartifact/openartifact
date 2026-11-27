@@ -224,6 +224,7 @@
   "trash.kind.cargo_crate": "Cargo クレート",
   "trash.kind.composer": "Composer パッケージ",
   "trash.kind.conan_package": "Conan パッケージ",
+  "trash.kind.cran_package": "CRAN パッケージ",
   "trash.kind.conda_package": "Conda パッケージ",
   "trash.kind.deb_package": "Deb パッケージ",
   "trash.kind.docker_manifest": "Docker マニフェスト",

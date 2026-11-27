@@ -83,7 +83,7 @@ func TestRegistryShape(t *testing.T) {
 func TestPolicy(t *testing.T) {
 	t.Parallel()
 
-	all := "ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform"
+	all := "ansible, apk, cargo, composer, conan, conda, cran, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform"
 
 	if got := repotype.ProxyFormats(); got != all {
 		t.Errorf("ProxyFormats() = %q, want %q", got, all)
@@ -111,6 +111,7 @@ func TestPolicy(t *testing.T) {
 		"ansible":     "https://galaxy.ansible.com",
 		"composer":    "https://repo.packagist.org",
 		"huggingface": "https://huggingface.co",
+		"cran":        "https://cloud.r-project.org",
 	}
 
 	for _, name := range repotype.Names() {

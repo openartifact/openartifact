@@ -30,6 +30,7 @@ var cacheKeyPrefixes = map[string]func(pkg string) (string, bool){ //nolint:goch
 		esc, err := module.EscapePath(pkg)
 		return esc + "/@v/", err == nil
 	},
+	"cran":     func(pkg string) (string, bool) { return cranSourcePrefix + pkg + "_", true },
 	"helm":     func(string) (string, bool) { return helmChartsDir, true },
 	"npm":      func(pkg string) (string, bool) { return pkg + "/-/", true },
 	"nuget":    func(pkg string) (string, bool) { return "v3/package/" + strings.ToLower(pkg) + "/", true },

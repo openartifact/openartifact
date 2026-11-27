@@ -20,6 +20,7 @@ import (
 	formatcargo "github.com/openartifact/openartifact/internal/format/cargo"
 	formatconan "github.com/openartifact/openartifact/internal/format/conan"
 	formatconda "github.com/openartifact/openartifact/internal/format/conda"
+	formatcran "github.com/openartifact/openartifact/internal/format/cran"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	formatdocker "github.com/openartifact/openartifact/internal/format/docker"
 	formatgomod "github.com/openartifact/openartifact/internal/format/gomod"
@@ -78,6 +79,7 @@ func serverRoutes(t *testing.T) chi.Router {
 	r.Route("/repos/raw/{name}", func(r chi.Router) { formatraw.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
 	r.Route("/repos/maven/{name}", func(r chi.Router) { formatmaven.NewHTTPHandler(nil, nil, nil).RegisterRepoRoutes(r) })
 	r.Route("/repos/sbt/{name}", func(r chi.Router) { formatsbt.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
+	r.Route("/repos/cran/{name}", func(r chi.Router) { formatcran.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
 	r.Route("/repos/ivy/{name}", func(r chi.Router) { formativy.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
 	formatdocker.NewHTTPHandler(nil, nil, nil).RegisterRoutes(r)
 
@@ -150,7 +152,8 @@ func TestEveryFormatHasUploadLabel(t *testing.T) {
 		"base": "", "filerepo": "", "formattest": "", "lifecycle": "", "plugin": "", "storage": "",
 		"ansible": metrics.FormatAnsible, "apk": metrics.FormatApk, "cargo": metrics.FormatCargo,
 		"composer": metrics.FormatComposer, "conan": metrics.FormatConan, "conda": metrics.FormatConda,
-		"deb": metrics.FormatDeb, "docker": metrics.FormatDocker, "gomod": metrics.FormatGo, "helm": metrics.FormatHelm,
+		"cran": metrics.FormatCRAN,
+		"deb":  metrics.FormatDeb, "docker": metrics.FormatDocker, "gomod": metrics.FormatGo, "helm": metrics.FormatHelm,
 		"ivy": metrics.FormatIvy, "maven": metrics.FormatMaven, "nix": metrics.FormatNix,
 		"npm": metrics.FormatNPM, "nuget": metrics.FormatNuGet, "pacman": metrics.FormatPacman,
 		"pypi": metrics.FormatPyPI, "raw": metrics.FormatRaw, "rpm": metrics.FormatRPM,
@@ -234,7 +237,7 @@ func TestUploadRoutesCounted(t *testing.T) {
 		for _, f := range []string{
 			metrics.FormatCargo, metrics.FormatRubyGems, metrics.FormatHelm, metrics.FormatPyPI,
 			metrics.FormatNuGet, metrics.FormatConda, metrics.FormatConan, metrics.FormatRaw,
-			metrics.FormatIvy, metrics.FormatSBT, metrics.FormatTerraform,
+			metrics.FormatIvy, metrics.FormatSBT, metrics.FormatTerraform, metrics.FormatCRAN,
 		} {
 			if got := testutil.ToFloat64(reg.UploadsTotal.WithLabelValues(f, result)); got < 1 {
 				t.Errorf("status %d: format %s counted %v times, want >= 1", status, f, got)

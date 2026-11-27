@@ -72,6 +72,14 @@ func CondaBlobPath(rel string) bool {
 	return strings.HasSuffix(base, ".conda") || strings.HasSuffix(base, ".tar.bz2")
 }
 
+// CRANBlobPath accepts R package files (source tarballs and the Windows and
+// macOS binaries); the PACKAGES indexes are rendered by the server.
+func CRANBlobPath(rel string) bool {
+	base := path.Base(rel)
+
+	return strings.HasSuffix(base, ".tar.gz") || strings.HasSuffix(base, ".tgz") || strings.HasSuffix(base, ".zip")
+}
+
 // DebBlobPath accepts everything below pool/.
 func DebBlobPath(rel string) bool { return strings.HasPrefix(rel, "pool/") }
 

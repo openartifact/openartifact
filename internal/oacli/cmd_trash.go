@@ -99,6 +99,7 @@ func trashKinds() []string {
 		"go_module", "cargo_crate", "composer", "rubygems_gem", "conda_package", "pacman", "ansible", "conan_package",
 		"terraform_module", "terraform_provider", "nix_path", "apk_package", "helm_chart", "raw_artifact",
 		"docker_manifest", "docker_tag", "rpm_package", "deb_package",
+		"cran_package",
 	}
 }
 

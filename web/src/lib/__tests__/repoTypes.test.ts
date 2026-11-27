@@ -33,11 +33,11 @@ describe('allowedFormats', () => {
     expect(allowedFormats('group')).toContain('huggingface')
     expect(isFormatAllowed('hosted', 'huggingface')).toBe(false)
   })
-  it('restricts proxy to ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform in picker order', () => {
-    expect(allowedFormats('proxy')).toEqual(['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'])
+  it('restricts proxy to ansible, apk, cargo, composer, conan, conda, cran, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform in picker order', () => {
+    expect(allowedFormats('proxy')).toEqual(['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'cran', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'])
   })
-  it('restricts group to ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform', () => {
-    expect(allowedFormats('group')).toEqual(['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'])
+  it('restricts group to ansible, apk, cargo, composer, conan, conda, cran, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform', () => {
+    expect(allowedFormats('group')).toEqual(['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'cran', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'])
     expect(isFormatAllowed('group', 'deb')).toBe(true)
     expect(isFormatAllowed('group', 'rpm')).toBe(true)
     expect(isFormatAllowed('group', 'conda')).toBe(true)
@@ -116,7 +116,7 @@ describe('federationAvailable', () => {
     expect(federationAvailable('group', 'maven')).toBe(false)
   })
   it('is false for formats without a federation codec', () => {
-    for (const f of ['apk', 'conan', 'conda', 'deb', 'ivy', 'rpm', 'rubygems', 'sbt']) {
+    for (const f of ['apk', 'conan', 'conda', 'cran', 'deb', 'ivy', 'rpm', 'rubygems', 'sbt']) {
       expect(federationAvailable('hosted', f)).toBe(false)
     }
     expect(federationAvailable('hosted', undefined)).toBe(false)

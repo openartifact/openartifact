@@ -39,9 +39,15 @@ type documentedUpload struct {
 // every format to the route table. Changing a route, or the documentation of
 // one, fails a test here until both agree.
 var documentedUploads = map[string]documentedUpload{ //nolint:gochecknoglobals // read-only test table
-	"maven":  {http.MethodPut, "/repos/maven/{name}/*", "mvn deploy", "PUT /repos/maven/REPO/<group/path>/<artifactId>/<version>/<file>"},
-	"sbt":    {http.MethodPut, "/repos/sbt/{name}/*", "sbt publish", "HOST/repos/sbt/REPO"},
-	"ivy":    {http.MethodPut, "/repos/ivy/{name}/*", "ivy:publish", "HOST/repos/ivy/REPO"},
+	"maven": {http.MethodPut, "/repos/maven/{name}/*", "mvn deploy", "PUT /repos/maven/REPO/<group/path>/<artifactId>/<version>/<file>"},
+	"sbt":   {http.MethodPut, "/repos/sbt/{name}/*", "sbt publish", "HOST/repos/sbt/REPO"},
+	"ivy":   {http.MethodPut, "/repos/ivy/{name}/*", "ivy:publish", "HOST/repos/ivy/REPO"},
+	"cran": {
+		http.MethodPut,
+		"/repos/cran/{name}/*",
+		"PUT src/contrib/<pkg>_<ver>.tar.gz",
+		"-T mypackage_1.0.0.tar.gz HOST/repos/cran/REPO/src/contrib/mypackage_1.0.0.tar.gz",
+	},
 	"raw":    {http.MethodPut, "/repos/raw/{name}/*", "PUT <path>", "-T file.bin HOST/repos/raw/REPO/path/to/file.bin"},
 	"npm":    {http.MethodPut, "/repos/{name}/*", "PUT /<pkg>", "PUT /repos/REPO/<package>"},
 	"pypi":   {http.MethodPost, "/repos/{name}/legacy/", "HOST/repos/REPO/legacy/", "HOST/repos/REPO/legacy/"},

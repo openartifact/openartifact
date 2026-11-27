@@ -46,7 +46,7 @@ List all repositories with optional filtering
 
 | Name | In | Type | Required | Description |
 |---|---|---|---|---|
-| `format` | query | string | no | Filter by package format. One of: `ansible`, `apk`, `cargo`, `composer`, `conan`, `conda`, `deb`, `docker`, `go`, `helm`, `huggingface`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `pacman`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. |
+| `format` | query | string | no | Filter by package format. One of: `ansible`, `apk`, `cargo`, `composer`, `conan`, `conda`, `cran`, `deb`, `docker`, `go`, `helm`, `huggingface`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `pacman`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. |
 | `page` | query | integer | no | Page number (default: 1). Minimum: 1. |
 | `limit` | query | integer | no | Items per page (default: 25, max: 100). Minimum: 1. Maximum: 100. |
 | `q` | query | string | no | Only repositories whose name contains this text (case-insensitive, at most 200 characters). Maximum length: 200. |
@@ -91,7 +91,7 @@ Create a new repository (admin only)
 | `curation_mode` | string | no | Proxy repositories only (400 for other types). off ignores the curation rules (default), denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches. One of: `off`, `denylist`, `allowlist`. |
 | `description` | string | no | - |
 | `federated` | boolean | no | Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true). |
-| `format` | string | yes | One of: `ansible`, `apk`, `cargo`, `composer`, `conan`, `conda`, `deb`, `docker`, `go`, `helm`, `huggingface`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `pacman`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. |
+| `format` | string | yes | One of: `ansible`, `apk`, `cargo`, `composer`, `conan`, `conda`, `cran`, `deb`, `docker`, `go`, `helm`, `huggingface`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `pacman`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. |
 | `honour_quay_expiry` | boolean | no | Hosted docker repositories only (400 validation_failed otherwise when true, and when combined with immutable_releases=true). When true, a manifest carrying the quay.expires-after annotation (or image config label) is deleted with its tags and dependents once that time has passed. |
 | `immutable_releases` | boolean | no | When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true. |
 | `max_stale_seconds` | integer | no | Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000. |
@@ -107,7 +107,7 @@ Create a new repository (admin only)
 | `sign_packages` | boolean | no | Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed. |
 | `trash_retention_days` | integer | no | Days a deleted item (or the repository itself) stays restorable in the trash before the retention purge removes it. null/absent = the server default (TRASH_RETENTION_DAYS); 0 = no trash, deletes are immediate and permanent. Nullable. Minimum: 0. Maximum: 36500. |
 | `upstream_password` | string | no | - |
-| `upstream_url` | string | no | Required for proxy repos, except for formats with a default upstream: ansible (https://galaxy.ansible.com), cargo (https://index.crates.io), composer (https://repo.packagist.org), conan (https://center2.conan.io), docker (https://registry-1.docker.io), go (https://proxy.golang.org), huggingface (https://huggingface.co), nix (https://cache.nixos.org), nuget (https://api.nuget.org/v3/index.json), pacman (https://geo.mirror.pkgbuild.com), pypi (https://pypi.org/simple), rubygems (https://rubygems.org) and terraform (https://registry.terraform.io). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy. |
+| `upstream_url` | string | no | Required for proxy repos, except for formats with a default upstream: ansible (https://galaxy.ansible.com), cargo (https://index.crates.io), composer (https://repo.packagist.org), conan (https://center2.conan.io), cran (https://cloud.r-project.org), docker (https://registry-1.docker.io), go (https://proxy.golang.org), huggingface (https://huggingface.co), nix (https://cache.nixos.org), nuget (https://api.nuget.org/v3/index.json), pacman (https://geo.mirror.pkgbuild.com), pypi (https://pypi.org/simple), rubygems (https://rubygems.org) and terraform (https://registry.terraform.io). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy. |
 | `upstream_username` | string | no | - |
 
 **Responses**

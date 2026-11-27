@@ -1010,6 +1010,7 @@
               "composer",
               "conan",
               "conda",
+              "cran",
               "deb",
               "docker",
               "go",
@@ -7065,7 +7066,8 @@
               "docker_manifest",
               "docker_tag",
               "rpm_package",
-              "deb_package"
+              "deb_package",
+              "cran_package"
             ]
           },
           "repository_id": {
@@ -9307,6 +9309,7 @@
                 "composer",
                 "conan",
                 "conda",
+                "cran",
                 "deb",
                 "docker",
                 "go",
@@ -9491,6 +9494,7 @@
                       "composer",
                       "conan",
                       "conda",
+                      "cran",
                       "deb",
                       "docker",
                       "go",
@@ -9527,7 +9531,7 @@
                   },
                   "upstream_url": {
                     "type": "string",
-                    "description": "Required for proxy repos, except for formats with a default upstream: ansible (https://galaxy.ansible.com), cargo (https://index.crates.io), composer (https://repo.packagist.org), conan (https://center2.conan.io), docker (https://registry-1.docker.io), go (https://proxy.golang.org), huggingface (https://huggingface.co), nix (https://cache.nixos.org), nuget (https://api.nuget.org/v3/index.json), pacman (https://geo.mirror.pkgbuild.com), pypi (https://pypi.org/simple), rubygems (https://rubygems.org) and terraform (https://registry.terraform.io). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy."
+                    "description": "Required for proxy repos, except for formats with a default upstream: ansible (https://galaxy.ansible.com), cargo (https://index.crates.io), composer (https://repo.packagist.org), conan (https://center2.conan.io), cran (https://cloud.r-project.org), docker (https://registry-1.docker.io), go (https://proxy.golang.org), huggingface (https://huggingface.co), nix (https://cache.nixos.org), nuget (https://api.nuget.org/v3/index.json), pacman (https://geo.mirror.pkgbuild.com), pypi (https://pypi.org/simple), rubygems (https://rubygems.org) and terraform (https://registry.terraform.io). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy."
                   },
                   "upstream_username": {
                     "type": "string"
@@ -26649,7 +26653,8 @@
                 "docker_manifest",
                 "docker_tag",
                 "rpm_package",
-                "deb_package"
+                "deb_package",
+                "cran_package"
               ]
             }
           },
@@ -26747,7 +26752,8 @@
                 "docker_manifest",
                 "docker_tag",
                 "rpm_package",
-                "deb_package"
+                "deb_package",
+                "cran_package"
               ]
             },
             "description": "One of the TrashItem kind values."
@@ -26849,7 +26855,8 @@
                 "docker_manifest",
                 "docker_tag",
                 "rpm_package",
-                "deb_package"
+                "deb_package",
+                "cran_package"
               ]
             },
             "description": "One of the TrashItem kind values."
@@ -26952,7 +26959,8 @@
                 "docker_manifest",
                 "docker_tag",
                 "rpm_package",
-                "deb_package"
+                "deb_package",
+                "cran_package"
               ]
             }
           },
@@ -27098,7 +27106,8 @@
                 "docker_manifest",
                 "docker_tag",
                 "rpm_package",
-                "deb_package"
+                "deb_package",
+                "cran_package"
               ]
             },
             "description": "One of the TrashItem kind values."

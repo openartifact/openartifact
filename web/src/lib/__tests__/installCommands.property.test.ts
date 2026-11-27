@@ -54,7 +54,7 @@ const origin = fc
 const repoName = fc.stringMatching(/^[a-zA-Z0-9_-]{1,40}$/)
 const imagePath = fc.array(fc.stringMatching(/^[a-z0-9][a-z0-9._-]{0,15}$/), { minLength: 1, maxLength: 4 }).map((s) => s.join('/'))
 
-const ISOLATED = ['ivy', 'maven', 'raw', 'sbt']
+const ISOLATED = ['cran', 'ivy', 'maven', 'raw', 'sbt']
 const encode = encodeURIComponent
 const encodePath = (p: string) => p.split('/').map(encode).join('/')
 
@@ -68,6 +68,7 @@ function expectedArgv(format: string, o: { url: string; host: string }, repo: st
     case 'composer': return ['composer', 'require', `${pkg}:${version}`]
     case 'conan': return ['conan', 'install', `--requires=${pkg}/${version}`, '-r', repo]
     case 'conda': return ['conda', 'install', '-c', base, `${pkg}=${version}`]
+    case 'cran': return ['Rscript', '-e', 'install.packages(commandArgs(TRUE), repos = NULL, type = "source")', `${base}/src/contrib/${encode(pkg)}_${encode(version)}.tar.gz`]
     case 'deb': return ['apt', 'install', `${pkg}=${version}`]
     case 'docker': return ['docker', 'pull', `${o.host}/${pkg}:${version}`]
     case 'go': return [`GOPROXY=${base}`, 'go', 'get', `${pkg}@${version}`]

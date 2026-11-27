@@ -36,6 +36,7 @@ const (
 	FormatNix       = "nix"
 	FormatAnsible   = "ansible"
 	FormatTerraform = "terraform"
+	FormatCRAN      = "cran"
 )
 
 // Upload result label values of openartifact_uploads_total.

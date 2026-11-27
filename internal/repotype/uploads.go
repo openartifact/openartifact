@@ -65,6 +65,9 @@ var (
 	condaUploads = []UploadRoute{
 		counted("/repos/{name}/{platform}", http.MethodPost),
 	}
+	cranUploads = []UploadRoute{
+		counted("/repos/cran/{name}/*", http.MethodPut),
+	}
 	debUploads = []UploadRoute{
 		byHandler("/api/v1/repositories/{name}/debs"),
 	}

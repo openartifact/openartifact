@@ -19,6 +19,7 @@ import (
 // sbt, terraform) or are not proxied at all.
 var coordinateParsers = map[string]func(key string) (string, string, bool){ //nolint:gochecknoglobals // constant lookup table
 	"cargo":    cargoCoordinates,
+	"cran":     cranCoordinates,
 	"go":       goCoordinates,
 	"helm":     helmCoordinates,
 	"maven":    mavenCoordinates,

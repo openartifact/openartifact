@@ -20,7 +20,7 @@ Start here:
 Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO` with the repository name (`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$`).
 
 - Every repository is served under `/repos/REPO/...`.
-- Ivy, Maven, raw and sbt are served under a format prefix: `/repos/ivy/REPO`, `/repos/maven/REPO`, `/repos/raw/REPO`, `/repos/sbt/REPO`. Repositories named like these prefixes are not reachable by the generic URL.
+- CRAN, Ivy, Maven, raw and sbt are served under a format prefix: `/repos/cran/REPO`, `/repos/ivy/REPO`, `/repos/maven/REPO`, `/repos/raw/REPO`, `/repos/sbt/REPO`. Repositories named like these prefixes are not reachable by the generic URL.
 - Docker / OCI is the exception: the registry API is at `HOST/v2/`, and the first path segment after `/v2/` is the repository name ([details](docker.md)).
 - `BASE_URL` (`baseUrl`) is optional for package clients. Set it when the server sits behind a proxy that does not forward the original host.
   - Helm, PyPI and Terraform metadata use relative references and need no host.
@@ -39,6 +39,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | Composer (PHP) | `composer` | `HOST/repos/REPO` (`packages.json`, Composer repository v2) | hosted, proxy, group | `PUT /packages/upload/VENDOR/NAME/VERSION` (zip) | [composer](composer.md) |
 | Conan (1.x and 2) | `conan` | `HOST/repos/REPO/` (`v2/conans/...`, `v1/conans/...`) | hosted, proxy, group | `conan upload` | [conan](conan.md) |
 | Conda | `conda` | `HOST/repos/REPO/<platform>/repodata.json` | hosted, proxy, group | `POST /<platform>` with `X-Filename` | [conda](conda.md) |
+| CRAN (R) | `cran` | `HOST/repos/cran/REPO` (`src/contrib/PACKAGES`, `bin/`) | hosted, proxy, group | `PUT src/contrib/<pkg>_<ver>.tar.gz` (`curl -T`) | [cran](cran.md) |
 | Debian (APT) | `deb` | `HOST/repos/REPO/` (`dists/`, `pool/`) | hosted, proxy, group | `POST /api/v1/repositories/REPO/debs` (multipart) | [debian](debian.md) |
 | Docker / OCI | `docker` | `HOST/v2/` (image `HOST/REPO[/image]`) | hosted, proxy, group | `docker push` | [docker](docker.md) |
 | Go modules | `go` | `GOPROXY=HOST/repos/REPO` | hosted, proxy, group | `PUT <module>/@v/<version>` (module zip) | [go](go.md) |
@@ -77,6 +78,7 @@ The *Upload* button on a hosted repository (users with write permission) sends t
 Not available in the browser:
 
 - Cargo: `cargo publish` computes the dependency metadata the registry stores.
+- CRAN: the browser form has no R package reader yet; use `curl -T`.
 - Conan, Docker, Ivy and sbt: many files in a client-specific layout.
 - Nix: `nix copy` pushes the NAR and `.narinfo`; the page shows the command.
 

@@ -224,6 +224,7 @@
   "trash.kind.cargo_crate": "Cargo crate",
   "trash.kind.composer": "Composer 软件包",
   "trash.kind.conan_package": "Conan 软件包",
+  "trash.kind.cran_package": "CRAN 软件包",
   "trash.kind.conda_package": "Conda 软件包",
   "trash.kind.deb_package": "deb 软件包",
   "trash.kind.docker_manifest": "Docker 清单",
