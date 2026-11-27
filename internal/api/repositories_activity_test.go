@@ -60,6 +60,10 @@ func (*repoActivityDB) GetPermissionTargetByName(context.Context, string) (*mode
 	return nil, nil
 }
 
+func (*repoActivityDB) GetPermissionTargetsByIDs(context.Context, []string) ([]*models.PermissionTarget, error) {
+	return nil, nil
+}
+
 func (*repoActivityDB) GetPermissionTargetsForPrincipal(context.Context, string, []string) ([]*models.PermissionTarget, error) {
 	return nil, nil
 }

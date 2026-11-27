@@ -80,6 +80,10 @@ func (db *securityMockDB) GetPermissionTargetsForPrincipal(
 	return nil, nil
 }
 
+func (db *securityMockDB) GetPermissionTargetsByIDs(_ context.Context, ids []string) ([]*models.PermissionTarget, error) {
+	return adminTargetsByID(ids), nil
+}
+
 func (db *securityMockDB) ListProjectGrantsByUser(_ context.Context, userID string) ([]*models.ProjectGrant, error) {
 	return db.grants[userID], nil
 }
