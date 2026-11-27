@@ -354,6 +354,51 @@ func (q *Queries) GetPermissionTargetByName(ctx context.Context, name string) (G
 	return i, err
 }
 
+const getPermissionTargetsByIDs = `-- name: GetPermissionTargetsByIDs :many
+SELECT id, name, repository_filter, path_pattern, actions, created_at, updated_at
+FROM permission_targets WHERE id = ANY($1::uuid[])
+ORDER BY name ASC
+`
+
+type GetPermissionTargetsByIDsRow struct {
+	ID               string    `db:"id" json:"id"`
+	Name             string    `db:"name" json:"name"`
+	RepositoryFilter string    `db:"repository_filter" json:"repository_filter"`
+	PathPattern      string    `db:"path_pattern" json:"path_pattern"`
+	Actions          []string  `db:"actions" json:"actions"`
+	CreatedAt        time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt        time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// The scope targets of an API token, whether or not they are assigned to anyone.
+func (q *Queries) GetPermissionTargetsByIDs(ctx context.Context, ids []string) ([]GetPermissionTargetsByIDsRow, error) {
+	rows, err := q.db.Query(ctx, getPermissionTargetsByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetPermissionTargetsByIDsRow{}
+	for rows.Next() {
+		var i GetPermissionTargetsByIDsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.RepositoryFilter,
+			&i.PathPattern,
+			&i.Actions,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPermissionTargetsForPrincipal = `-- name: GetPermissionTargetsForPrincipal :many
 SELECT DISTINCT pt.id, pt.name, pt.repository_filter, pt.path_pattern, pt.actions, pt.created_at, pt.updated_at
 FROM permission_targets pt

@@ -124,6 +124,7 @@ type webhooksTestRouterWithStore interface {
 	WebhooksStore
 	GetPermissionTargetByName(ctx context.Context, name string) (*models.PermissionTarget, error)
 	GetPermissionTargetsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]*models.PermissionTarget, error)
+	GetPermissionTargetsByIDs(ctx context.Context, ids []string) ([]*models.PermissionTarget, error)
 	GetProjectByName(ctx context.Context, name string) (*models.Project, error)
 	ListProjectGrantsByUser(ctx context.Context, userID string) ([]*models.ProjectGrant, error)
 	ListPublicRepositoryNames(ctx context.Context) ([]string, error)

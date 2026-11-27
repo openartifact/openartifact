@@ -188,6 +188,7 @@ type EngineStore interface {
 	AddGroupMember(ctx context.Context, groupRepoID string, memberRepoID string, priority int) error
 	AddProjectMember(ctx context.Context, projectID string, userID string, role string) error
 	AddUserToGroup(ctx context.Context, userID string, groupID string) error
+	SetGroupDeployTarget(ctx context.Context, groupRepoID string, memberRepoID string) error
 	BeginBackupSnapshot(ctx context.Context, leaseTTL time.Duration) (database.SnapshotReader, error)
 	CreateBundlePromotion(ctx context.Context, p *models.BundlePromotion) error
 	CreateCleanupPolicy(ctx context.Context, policy *models.CleanupPolicy) error
@@ -1585,6 +1586,28 @@ func (e *Engine) restoreGroupMembers(ctx context.Context, r io.Reader, st *resto
 				"error",
 				err,
 			)
+		}
+	}
+
+	return e.restoreDeployTargets(ctx, st)
+}
+
+// restoreDeployTargets re-points the restored groups at their deploy targets,
+// which are members restored just above, under their new ids.
+func (e *Engine) restoreDeployTargets(ctx context.Context, st *restoreState) error {
+	for oldID, repo := range st.restoredRepos {
+		if repo.RepoType != repotype.Group || repo.DeployTargetID == nil {
+			continue
+		}
+
+		targetID, ok := st.repoIDMap[*repo.DeployTargetID]
+		if !ok {
+			e.restoreWarn("skipping deploy target: repository not restored", "group_repo_id", oldID, "target_repo_id", *repo.DeployTargetID)
+			continue
+		}
+
+		if err := e.db.SetGroupDeployTarget(ctx, repo.ID, targetID); err != nil {
+			e.restoreWarn("failed to restore deploy target", "group_repo_id", oldID, "error", err)
 		}
 	}
 

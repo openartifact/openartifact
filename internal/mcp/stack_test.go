@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -81,6 +82,20 @@ func (d *stackDB) ListGroupsByUser(context.Context, string) ([]*models.Group, er
 
 func (d *stackDB) GetPermissionTargetsForPrincipal(_ context.Context, userID string, _ []string) ([]*models.PermissionTarget, error) {
 	return d.targets[userID], nil
+}
+
+func (d *stackDB) GetPermissionTargetsByIDs(_ context.Context, ids []string) ([]*models.PermissionTarget, error) {
+	var out []*models.PermissionTarget
+
+	for _, ts := range d.targets {
+		for _, t := range ts {
+			if slices.Contains(ids, t.ID) {
+				out = append(out, t)
+			}
+		}
+	}
+
+	return out, nil
 }
 
 func (d *stackDB) GetPermissionTargetByName(context.Context, string) (*models.PermissionTarget, error) {

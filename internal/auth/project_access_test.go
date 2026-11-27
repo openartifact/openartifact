@@ -33,6 +33,10 @@ func (m *projMockDB) GetPermissionTargetsForPrincipal(_ context.Context, _ strin
 	return m.targets, nil
 }
 
+func (m *projMockDB) GetPermissionTargetsByIDs(_ context.Context, ids []string) ([]*models.PermissionTarget, error) {
+	return targetsWithIDs(m.targets, ids), nil
+}
+
 func (m *projMockDB) GetRepositoryByName(_ context.Context, name string) (*models.Repository, error) {
 	return m.repos[name], nil
 }

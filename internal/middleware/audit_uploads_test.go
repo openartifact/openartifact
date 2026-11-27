@@ -125,3 +125,32 @@ func TestUploadAuditPublisherWithoutWrappedPublisher(t *testing.T) {
 		t.Fatalf("audit rows = %d, want 1", len(got))
 	}
 }
+
+// An upload that came through a group's deploy target is recorded against the
+// target, with the group it came through.
+func TestUploadAuditPublisherRecordsTheGroupAnUploadCameThrough(t *testing.T) {
+	_, pub, rows := uploadAuditHarness(t)
+
+	uid := "u-1"
+	ctx := WithPrincipal(context.Background(), &auth.Principal{UserID: &uid, Username: "alice", Credential: auth.CredentialSession})
+	ctx = WithGroupDeploy(ctx, "all", "libs")
+	payload := webhook.ArtifactPayload(
+		webhook.EventArtifactUploaded,
+		webhook.Artifact{Repository: "libs", Name: "lib", Version: "1.0", Path: "lib-1.0.tgz"},
+	)
+
+	pub.Dispatch(ctx, "repo-1", webhook.EventArtifactUploaded, payload)
+
+	got := rows()
+	if len(got) != 1 || got[0].RepositoryID == nil || *got[0].RepositoryID != "repo-1" {
+		t.Fatalf("rows = %+v, want one against the target", got)
+	}
+
+	var d struct {
+		ViaGroup string `json:"via_group"`
+	}
+
+	if err := json.Unmarshal(got[0].DetailsJSON, &d); err != nil || d.ViaGroup != "all" {
+		t.Errorf("details = %s (%v), want via_group all", got[0].DetailsJSON, err)
+	}
+}

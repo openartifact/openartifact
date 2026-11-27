@@ -37,6 +37,20 @@ describe('repo form', () => {
     expect(buildCreateBody(emptyRepoForm({ name: 'g', type: 'group', project: 'acme' }), { isAdmin: true }).project).toBe('acme')
   })
 
+  it('sends the deploy target of a group of a supporting format only', () => {
+    const group = (format: string, over = {}) => emptyRepoForm({ name: 'g', type: 'group', format: format as 'npm', members: ['a'], deployTarget: 'a', ...over })
+    expect(buildCreateBody(group('npm'), { isAdmin: false }).deploy_target).toBe('a')
+    expect(buildCreateBody(group('npm', { deployTarget: '' }), { isAdmin: false }).deploy_target).toBeUndefined()
+    expect(buildCreateBody(group('deb'), { isAdmin: false }).deploy_target).toBeUndefined()
+
+    const repo = { name: 'g', format: 'npm', repo_type: 'group', deploy_target: 'a', member_repos: ['a'] } as Parameters<typeof repoFormFrom>[0]
+    expect(repoFormFrom(repo).deployTarget).toBe('a')
+    expect(buildUpdateBody(repoFormFrom(repo), repo, { isAdmin: false }).deploy_target).toBe('a')
+    // '' clears it
+    expect(buildUpdateBody({ ...repoFormFrom(repo), deployTarget: '' }, repo, { isAdmin: false }).deploy_target).toBe('')
+    expect('deploy_target' in buildUpdateBody(repoFormFrom({ ...repo, format: 'deb' }), { ...repo, format: 'deb' }, { isAdmin: false })).toBe(false)
+  })
+
   it('never sends upstream fields on update: ProxySettingsForm owns them', () => {
     const repo = { name: 'p', format: 'npm', repo_type: 'proxy', upstream_url: 'https://u' } as Repository
     const body = buildUpdateBody({ ...repoFormFrom(repo), upstreamUrl: 'https://other', upstreamPassword: 'x' }, repo, { isAdmin: true })

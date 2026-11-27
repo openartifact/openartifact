@@ -8,6 +8,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -67,6 +68,22 @@ func (d *authzMockDB) grant(userID, repoFilter string, actions ...string) {
 
 func (d *authzMockDB) GetPermissionTargetsForPrincipal(_ context.Context, userID string, _ []string) ([]*models.PermissionTarget, error) {
 	return d.targets[userID], nil
+}
+
+// GetPermissionTargetsByIDs loads token scope targets by ID, whoever they are
+// granted to.
+func (d *authzMockDB) GetPermissionTargetsByIDs(_ context.Context, ids []string) ([]*models.PermissionTarget, error) {
+	var out []*models.PermissionTarget
+
+	for _, ts := range d.targets {
+		for _, t := range ts {
+			if slices.Contains(ids, t.ID) {
+				out = append(out, t)
+			}
+		}
+	}
+
+	return out, nil
 }
 
 func (d *authzMockDB) ListProjectGrantsByUser(context.Context, string) ([]*models.ProjectGrant, error) {

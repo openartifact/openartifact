@@ -73,45 +73,6 @@ func (h *AdminAIHandler) requireAdmin(w http.ResponseWriter, r *http.Request) bo
 	return requireAdminCode(w, r, h.evaluator, "admin_required")
 }
 
-// loadConfigFromDB reads AI config from system_settings table.
-func (h *AdminAIHandler) loadConfigFromDB(ctx context.Context) ai.Config {
-	cfg := ai.Config{}
-
-	// Read each setting
-	// Note: enabled is not stored in ai.Config, it's handled separately
-
-	provider, _ := h.db.GetSystemSetting(ctx, ai.SettingProvider)
-	cfg.Provider = provider
-
-	baseURL, _ := h.db.GetSystemSetting(ctx, ai.SettingBaseURL)
-	cfg.BaseURL = baseURL
-
-	apiKey, _ := h.db.GetSystemSetting(ctx, ai.SettingAPIKey)
-	cfg.APIKey = apiKey
-
-	model, _ := h.db.GetSystemSetting(ctx, ai.SettingModel)
-	cfg.Model = model
-
-	maxTokensStr, _ := h.db.GetSystemSetting(ctx, ai.SettingMaxTokens)
-	if maxTokensStr != "" {
-		if n, err := strconv.Atoi(maxTokensStr); err == nil {
-			cfg.MaxTokens = n
-		}
-	}
-
-	timeoutSecsStr, _ := h.db.GetSystemSetting(ctx, ai.SettingTimeoutSecs)
-	if timeoutSecsStr != "" {
-		if n, err := strconv.Atoi(timeoutSecsStr); err == nil {
-			cfg.TimeoutSecs = n
-		}
-	}
-
-	systemPrompt, _ := h.db.GetSystemSetting(ctx, ai.SettingSystemPrompt)
-	cfg.SystemPrompt = systemPrompt
-
-	return cfg
-}
-
 func (h *AdminAIHandler) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	if !h.requireAdmin(w, r) {
 		return
@@ -485,7 +446,8 @@ func (h *AdminAIHandler) handleTest(w http.ResponseWriter, r *http.Request) {
 
 	var body *aiConfigPatch
 
-	// The body is optional: without one, the stored configuration is tested.
+	// The body is optional: without one, the effective configuration (stored
+	// settings layered over env/YAML) is tested.
 	_ = decodeJSON(r, &body)
 
 	var cfg ai.Config
@@ -499,7 +461,7 @@ func (h *AdminAIHandler) handleTest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		cfg = h.loadConfigFromDB(r.Context())
+		cfg = ai.LoadSettings(r.Context(), h.db, h.envAI).Config
 	}
 
 	models, err := ai.NewClient(cfg).ListModels(r.Context())
@@ -524,7 +486,7 @@ func (h *AdminAIHandler) handleGetModels(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	cfg := h.loadConfigFromDB(r.Context())
+	cfg := ai.LoadSettings(r.Context(), h.db, h.envAI).Config
 
 	models, err := ai.NewClient(cfg).ListModels(r.Context())
 	if err != nil {

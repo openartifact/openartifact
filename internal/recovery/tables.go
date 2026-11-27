@@ -109,7 +109,8 @@ func headTables() []Table {
 	return []Table{
 		{Name: "projects", Key: idKey(), Exclude: []string{"owner_id"}},
 		{Name: "blobs", Key: idKey(), Exclude: []string{"storage_backend_id", "last_accessed_at", "tier_changed_at"}},
-		{Name: "repositories", Key: idKey(), Exclude: []string{"upstream_password_enc"}},
+		// deploy_target_id points at another row of the table, which a chunked rebuild may not have restored yet.
+		{Name: "repositories", Key: idKey(), Exclude: []string{"upstream_password_enc", "deploy_target_id"}},
 		{Name: "repository_group_members", Key: []KeyColumn{{"group_repo_id", keyUUID}, {"member_repo_id", keyUUID}}},
 		{Name: "rpm_repos", Key: idKey(), Exclude: []string{"metadata_stale", "updated_at"}},
 		{Name: "debian_distributions", Key: idKey()},

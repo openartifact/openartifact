@@ -1339,6 +1339,10 @@
             "type": "boolean",
             "description": "Group repositories only. false (default): for a package name held by a readable hosted member, proxy members' versions of that name are hidden (hosted members win, dependency-confusion protection). true: merge proxy versions with the hosted ones. Only administrators can set it."
           },
+          "deploy_target": {
+            "type": "string",
+            "description": "Group repositories only: the hosted member a publish sent to the group is served by (name of one of its members; same format). Absent when the group has none, and writes through the group are then refused with 405. Authorization is the target's: the caller needs write on the target."
+          },
           "sign_packages": {
             "type": "boolean",
             "description": "Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed."
@@ -9775,6 +9779,10 @@
                   "merge_proxy_versions": {
                     "type": "boolean",
                     "description": "Group repositories only, administrators only (403 otherwise). Default false: hosted members win a package name and proxy versions of the same name are hidden. true merges proxy versions into the group."
+                  },
+                  "deploy_target": {
+                    "type": "string",
+                    "description": "Group repositories only (400 otherwise). Name of a hosted member listed in member_repos that serves the writes (PUT/POST that publish) sent to the group, as if they had been sent to it. Supported formats: ansible, cargo, composer, conan, conda, go, helm, ivy, maven, nix, npm, nuget, pypi, raw, rubygems, sbt, terraform (400 otherwise). Authorization is the target's: the caller needs write on the target, a permission on the group neither grants nor is needed. Deletes through a group stay 405."
                   },
                   "sign_packages": {
                     "type": "boolean",
@@ -21852,6 +21860,10 @@
                     "type": "boolean",
                     "description": "Group repositories only, administrators only (403 otherwise). Default false: hosted members win a package name and proxy versions of the same name are hidden. true merges proxy versions into the group."
                   },
+                  "deploy_target": {
+                    "type": "string",
+                    "description": "Group repositories only: the hosted member a publish sent to the group is served by (name of one of its members; same format). Absent when the group has none, and writes through the group are then refused with 405. Authorization is the target's: the caller needs write on the target."
+                  },
                   "sign_packages": {
                     "type": "boolean",
                     "description": "Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed."
@@ -23686,6 +23698,10 @@
                   "merge_proxy_versions": {
                     "type": "boolean",
                     "description": "Group repositories only, administrators only (403 otherwise). Absent leaves it unchanged."
+                  },
+                  "deploy_target": {
+                    "type": "string",
+                    "description": "Group repositories only (400 otherwise). Absent leaves it unchanged; a name (a hosted member of the group after this update) sets it; an empty string clears it. A member that leaves the group stops being the target."
                   },
                   "sign_packages": {
                     "type": "boolean",

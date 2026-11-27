@@ -44,6 +44,12 @@ type Repository struct {
 	// hosted member win a package name: proxy members' versions and files of
 	// a name any hosted member holds are hidden. true merges all members.
 	MergeProxyVersions bool
+	// DeployTargetID and DeployTarget (group only) name the hosted member a
+	// write sent to the group is served by (Spec.GroupDeploy formats): the id
+	// is the column, DeployTarget the name of a live target, "" when there is
+	// none or it is in the trash. Writes through the group are 405 without one.
+	DeployTargetID *string
+	DeployTarget   string
 	// SignPackages (hosted rpm only) signs uploaded RPMs with the active GPG key.
 	SignPackages bool
 	// HonourQuayExpiry (hosted docker only) deletes manifests once the

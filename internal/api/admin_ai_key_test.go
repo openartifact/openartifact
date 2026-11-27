@@ -235,3 +235,50 @@ func TestAdminAIPutKeepsStoredKeyOnlyForStoredEndpoint(t *testing.T) {
 		})
 	}
 }
+
+// TestAdminAITestAndModelsUseEffectiveConfig: with the AI settings coming only
+// from env/YAML (nothing in system_settings), the body-less test and the model
+// list reach the configured endpoint, not the provider default.
+func TestAdminAITestAndModelsUseEffectiveConfig(t *testing.T) {
+	t.Setenv(netutil.EnvAllowPrivate, "true")
+
+	llm := newRecordingLLM(t)
+
+	log, err := logger.New("error", "console", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db := &aiSettingsDB{settings: map[string]string{}}
+	env := ai.Settings{Enabled: true, Config: ai.Config{Provider: "custom", BaseURL: llm.srv.URL}}
+
+	r := chi.NewRouter()
+	NewAdminAIHandler(db, log, auth.NewEvaluator(db, log, false)).WithRuntime(nil, env).Register(r)
+
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodPost, "/api/v1/admin/ai/test"},
+		{http.MethodGet, "/api/v1/admin/ai/models"},
+	} {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			before := len(llm.seen())
+
+			req := httptest.NewRequestWithContext(context.Background(), tc.method, tc.path, nil)
+			req = req.WithContext(middleware.WithPrincipal(req.Context(), &auth.Principal{Username: "admin", IsLegacy: true}))
+
+			rw := httptest.NewRecorder()
+			r.ServeHTTP(rw, req)
+
+			if rw.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: %s", rw.Code, rw.Body)
+			}
+
+			if !strings.Contains(rw.Body.String(), `"m"`) {
+				t.Errorf("response does not list the configured endpoint's models: %s", rw.Body)
+			}
+
+			if n := len(llm.seen()) - before; n != 1 {
+				t.Errorf("configured endpoint got %d requests, want 1", n)
+			}
+		})
+	}
+}

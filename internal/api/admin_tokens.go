@@ -293,9 +293,10 @@ type authorizeTokenScopesStore interface {
 }
 
 // authorizeTokenScopes verifies the requested scope IDs. Admins may name any
-// existing permission target (the evaluator still intersects a token's scopes
-// with its owner's targets, so a scope can only ever narrow access); everyone
-// else may only name targets they hold themselves. A non-zero status means the
+// existing permission target, assigned to them or not: at request time the
+// evaluator allows a scoped token only what a scope target covers AND the
+// owner's own targets allow, so a scope can only ever narrow access.
+// Everyone else may only name targets they hold themselves. A non-zero status means the
 // request must be rejected with that status/code/message.
 func authorizeTokenScopes(
 	ctx context.Context,

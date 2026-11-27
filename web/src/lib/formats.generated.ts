@@ -19,6 +19,9 @@ export const PROXY_FORMATS: readonly FormatId[] = ['ansible', 'apk', 'cargo', 'c
 /** Formats that can be created as group repositories. */
 export const GROUP_FORMATS: readonly FormatId[] = ['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
 
+/** Formats whose groups can publish through a hosted member (the deploy target). */
+export const GROUP_DEPLOY_FORMATS: readonly FormatId[] = ['ansible', 'cargo', 'composer', 'conan', 'conda', 'go', 'helm', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pypi', 'raw', 'rubygems', 'sbt', 'terraform']
+
 /** Formats whose hosted repositories can be federated. */
 export const FEDERATION_FORMATS: readonly FormatId[] = ['cargo', 'docker', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw']
 

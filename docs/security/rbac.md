@@ -78,7 +78,7 @@ Rules that apply on top:
 - Reads through proxy and group repositories are re-authorized for each member repository as if requested directly, so a public group never exposes a private member. See [hosted, proxy and group repositories](../repositories/hosted-proxy-group.md).
 - The [MCP server](../integrations/mcp.md) uses the same evaluator, per tool rather than per HTTP method: the HTTP layer only requires an authenticated principal, tools need `read` on the repository, `trigger_ai_analysis` needs `write`, and `get_vulnerabilities`, `get_licenses` and `get_sbom` need global `manage`. `get_repository_activity` leaves the administrator categories to repository admins. A denied or missing repository returns `not found or access denied`.
 - Static web UI assets are served without RBAC. Self-service endpoints (change own password, own tokens, edit own profile) skip permission targets but need a session.
-- A token's `scopes` can only narrow its owner's targets, and a `deploy` token is never granted `manage` ([tokens](authentication.md#api-tokens)).
+- A token's `scopes` can only narrow its owner's rights: a request needs a scope target that covers it and an owner target that allows it, whether or not the scope target is assigned to the owner. A `deploy` token is never granted `manage` ([tokens](authentication.md#api-tokens)).
 
 Example: CI may publish to `releases-*` repositories but only read elsewhere:
 

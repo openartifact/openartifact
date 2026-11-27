@@ -268,7 +268,9 @@ func (a *app) registerFormatRoutes() error {
 
 	w := &a.workers
 	repoDispatch := repodispatch.New(a.log, a.db, w.proxySvc, a.web.evaluator, a.hostedRouters()).
-		WithBaseURL(a.cfg.ClientBaseURL()).WithGroupMetadata(a.store.blobs, w.groupMeta).WithApkKeys(w.apkKeys).WithNixKeys(w.nixKeys)
+		WithBaseURL(a.cfg.ClientBaseURL()).
+		WithDeployRouters(plugin.WriteRouters(a.web.hosted)).
+		WithGroupMetadata(a.store.blobs, w.groupMeta).WithApkKeys(w.apkKeys).WithNixKeys(w.nixKeys)
 
 	if err := a.mountFormats(repoDispatch); err != nil {
 		return a.fail("failed to mount the format handlers", err)

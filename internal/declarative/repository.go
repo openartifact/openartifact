@@ -122,6 +122,7 @@ func (repositoryKind) Schema() *Field {
 		"min_age_hours":              repoIntField(0),
 		"curation_mode":              {Type: TString, Enum: []string{curation.ModeOff, curation.ModeDenylist, curation.ModeAllowlist}},
 		"member_repos":               {Type: TList, Elem: repoStrField()},
+		"deploy_target":              repoStrField(),
 		"presign_downloads":          {Type: TBool, Nullable: true},
 		"trash_retention_days":       {Type: TInt, Nullable: true, Min: 0, HasMin: true},
 		"immutable_releases":         repoBoolField(),
@@ -221,7 +222,7 @@ func repoValidateType(o *Object, repoType, format string) []error {
 	}
 
 	if repoType != repoTypeGroup {
-		for _, k := range []string{"member_repos", "merge_proxy_versions"} {
+		for _, k := range []string{"member_repos", "merge_proxy_versions", "deploy_target"} {
 			if _, ok := o.Spec[k]; ok {
 				add("%s is only valid for group repositories", k)
 			}
@@ -318,6 +319,17 @@ func repoValidateMembers(o *Object) []error {
 		seen[m] = true
 	}
 
+	if target := Str(o.Spec, "deploy_target"); target != "" {
+		if !seen[target] {
+			errs = append(errs, fmt.Errorf("%w: deploy_target %q must be one of member_repos", errRepositoryInvalid, target))
+		}
+
+		if format := Str(o.Spec, "format"); !repotype.GroupDeploySupported(format) {
+			errs = append(errs, fmt.Errorf("%w: deploy_target is not supported for %s groups; it is for: %s",
+				errRepositoryInvalid, format, repotype.GroupDeployFormats()))
+		}
+	}
+
 	return errs
 }
 
@@ -387,6 +399,7 @@ type repoAPI struct {
 	TrashRetentionDays      *int    `json:"trash_retention_days"`
 	ImmutableReleases       bool    `json:"immutable_releases"`
 	MergeProxyVersions      bool    `json:"merge_proxy_versions"`
+	DeployTarget            string  `json:"deploy_target"`
 	SignPackages            bool    `json:"sign_packages"`
 	HonourQuayExpiry        bool    `json:"honour_quay_expiry"`
 	UpstreamURL             string  `json:"upstream_url"`
@@ -453,6 +466,7 @@ func (r *repoAPI) spec() map[string]any {
 		}
 	case repoTypeGroup:
 		s["merge_proxy_versions"] = r.MergeProxyVersions
+		s["deploy_target"] = r.DeployTarget
 	case repoTypeHosted:
 		if repotype.PackageSigning(r.Format) {
 			s["sign_packages"] = r.SignPackages

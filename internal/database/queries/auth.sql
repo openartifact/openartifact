@@ -113,6 +113,12 @@ RETURNING id, created_at, updated_at;
 SELECT id, name, repository_filter, path_pattern, actions, created_at, updated_at
 FROM permission_targets WHERE id = $1;
 
+-- name: GetPermissionTargetsByIDs :many
+-- The scope targets of an API token, whether or not they are assigned to anyone.
+SELECT id, name, repository_filter, path_pattern, actions, created_at, updated_at
+FROM permission_targets WHERE id = ANY(sqlc.arg(ids)::uuid[])
+ORDER BY name ASC;
+
 -- name: GetPermissionTargetByName :one
 SELECT id, name, repository_filter, path_pattern, actions, created_at, updated_at
 FROM permission_targets WHERE name = $1;
