@@ -385,6 +385,31 @@ describe('generated templates', () => {
   })
 })
 
+describe('cocoapods', () => {
+  const origin = 'https://oa.example'
+
+  it('puts the repository in the Podfile as a source and pins the pod', () => {
+    expect(repoBaseUrl('cocoapods', origin, 'trunk')).toBe('https://oa.example/repos/trunk')
+    expect(pullCommand('cocoapods', origin, 'trunk', 'Alamofire', '5.9.1')).toBe(
+      "source 'https://oa.example/repos/trunk'\npod 'Alamofire', '5.9.1'",
+    )
+  })
+
+  it('escapes what would end the Ruby string literal', () => {
+    expect(pullCommand('cocoapods', origin, "a'b", "x\\y'", "1'")).toBe(
+      "source 'https://oa.example/repos/a\\'b'\npod 'x\\\\y\\'', '1\\''",
+    )
+  })
+
+  it('gives the same read-only client setup for the proxy and the hosted lookup', () => {
+    const setup = clientSetup('cocoapods', origin, 'trunk', 'proxy')
+    expect(setup[0]!.configure).toContain("source 'https://oa.example/repos/trunk'")
+    expect(setup[0]!.configure).toContain('pod repo add-cdn openartifact https://oa.example/repos/trunk')
+    expect(setup[0]!.configure).toContain('machine oa.example login oa password <TOKEN>')
+    expect(setup[0]!.publish).toBeUndefined()
+  })
+})
+
 describe('huggingface', () => {
   const origin = 'https://oa.example'
 

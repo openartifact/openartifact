@@ -15,6 +15,7 @@ func TestMain(m *testing.M) {
 	for format, blobPath := range map[string]func(string) bool{
 		"ansible":   AnsibleBlobPath,
 		"cargo":     CargoBlobPath,
+		"cocoapods": CocoaPodsBlobPath,
 		"composer":  ComposerBlobPath,
 		"conan":     ConanBlobPath,
 		"conda":     CondaBlobPath,

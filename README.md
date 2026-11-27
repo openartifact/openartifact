@@ -33,7 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </p>
 
 OpenArtifact stores and serves Alpine (apk), Ansible collections, Arch Linux (pacman),
-Cargo, Composer (PHP), Conan, Conda, Debian, Docker/OCI, Git LFS (hosted), Go, Helm, Hugging Face (proxy),
+Cargo, CocoaPods (proxy), Composer (PHP), Conan, Conda, Debian, Docker/OCI, Git LFS (hosted), Go, Helm, Hugging Face (proxy),
 Ivy, Maven, Nix, npm, NuGet, PyPI, raw files, RPM, RubyGems, sbt and Terraform/OpenTofu
 behind one URL scheme and one permission model, on your own infrastructure. Free software under
 the AGPL.
@@ -51,7 +51,7 @@ the AGPL.
 
 ## Formats
 
-Hosted, proxy (read-only mirror of an upstream) and group (ordered members, first hit wins) repositories are available for 22 of the 24 formats; Hugging Face has no hosted repositories and Git LFS has no proxy or group. Docker/OCI proxies and groups are served under `/v2/`. Federation between instances covers cargo, docker, go, helm, maven, npm, nuget, pypi and raw ([federation](docs/operations/federation.md)).
+Hosted, proxy (read-only mirror of an upstream) and group (ordered members, first hit wins) repositories are available for 22 of the 24 formats; Hugging Face has no hosted repositories and Git LFS has no proxy or group, and CocoaPods is a proxy-only mirror. Docker/OCI proxies and groups are served under `/v2/`. Federation between instances covers cargo, docker, go, helm, maven, npm, nuget, pypi and raw ([federation](docs/operations/federation.md)).
 
 Client URLs and setup per format: [docs/formats](docs/formats/README.md).
 

@@ -512,7 +512,7 @@ func TestCuratesFromPathFormats(t *testing.T) {
 
 	slices.Sort(got)
 
-	want := []string{"apk", "composer", "conan", "deb", "ivy", "maven", "p2", "pacman", "pypi", "rpm", "sbt"}
+	want := []string{"apk", "cocoapods", "composer", "conan", "deb", "ivy", "maven", "p2", "pacman", "pypi", "rpm", "sbt"}
 	if !slices.Equal(got, want) {
 		t.Errorf("formats that curate from the path = %v, want %v", got, want)
 	}

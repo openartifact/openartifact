@@ -23,7 +23,7 @@ func TestMain(m *testing.M) {
 		"ansible": AnsibleBuilder, "sbt": SBTBuilder, "ivy": IvyBuilder, "huggingface": HuggingFaceBuilder,
 		"gitlfs": GitLFSBuilder,
 		"p2":     P2Builder,
-		"pub":    PubBuilder,
+		"pub":    PubBuilder, "cocoapods": CocoaPodsBuilder,
 	} {
 		Register(format, b)
 	}

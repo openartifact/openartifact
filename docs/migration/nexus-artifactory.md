@@ -74,7 +74,7 @@ Format names on the source side differ from OpenArtifact's:
 
 ### Formats without a Nexus or Artifactory importer
 
-OpenArtifact hosts 24 formats; these eight have no Nexus or Artifactory importer and are refused with an error for that `--repo`: `ansible`, `apk`, `composer`, `gitlfs`, `huggingface`, `nix`, `pacman`, `pub` and `terraform`. Recreate those repositories in OpenArtifact and publish their packages with the native client. The 0.14 importer in [Upgrading from OpenArtifact 0.14](openartifact.md) does cover them (except `pub`, which 0.14 does not have), but only for an OpenArtifact source.
+OpenArtifact hosts 24 formats; these eight have no Nexus or Artifactory importer and are refused with an error for that `--repo`: `ansible`, `apk`, `cocoapods`, `composer`, `gitlfs`, `huggingface`, `nix`, `pacman`, `pub` and `terraform`. Recreate those repositories in OpenArtifact and publish their packages with the native client. The 0.14 importer in [Upgrading from OpenArtifact 0.14](openartifact.md) does cover them (except `pub`, which 0.14 does not have), but only for an OpenArtifact source.
 
 ## Flags
 
