@@ -156,6 +156,44 @@ func TestAuthCache_PermissionsVisible(t *testing.T) {
 	}
 }
 
+// TestAuthCache_ScopeTargetsVisible: the scope targets of a token are loaded by
+// ID (assigned or not) through the cache, and an edit or delete of a target is
+// visible to the very next lookup.
+func TestAuthCache_ScopeTargetsVisible(t *testing.T) {
+	f := newAuthCacheFixture(t)
+	ctx := context.Background()
+
+	pt, err := f.pg.CreatePermissionTarget(
+		ctx,
+		&models.PermissionTarget{Name: "scope-pt", RepositoryFilter: "docker-ci", PathPattern: ".*", Actions: []string{"read"}},
+	)
+	if err != nil {
+		t.Fatalf("CreatePermissionTarget: %v", err)
+	}
+
+	ids := []string{pt.ID}
+
+	if ts, err := f.pg.GetPermissionTargetsByIDs(ctx, ids); err != nil || len(ts) != 1 || ts[0].ID != pt.ID {
+		t.Fatalf("unassigned scope target not loaded: %v, %v", ts, err)
+	}
+
+	if _, err := f.pg.PatchPermissionTarget(ctx, pt.ID, database.PermissionTargetPatch{Actions: []string{"read", "write"}}); err != nil {
+		t.Fatalf("PatchPermissionTarget: %v", err)
+	}
+
+	if ts, _ := f.pg.GetPermissionTargetsByIDs(ctx, ids); len(ts) != 1 || len(ts[0].Actions) != 2 {
+		t.Fatalf("updated actions not visible: %v", ts)
+	}
+
+	if err := f.pg.DeletePermissionTarget(ctx, pt.ID); err != nil {
+		t.Fatalf("DeletePermissionTarget: %v", err)
+	}
+
+	if ts, _ := f.pg.GetPermissionTargetsByIDs(ctx, ids); len(ts) != 0 {
+		t.Fatalf("deleted scope target still visible: %v", ts)
+	}
+}
+
 func TestAuthCache_RepositoryChangesVisible(t *testing.T) {
 	f := newAuthCacheFixture(t)
 	ctx := context.Background()

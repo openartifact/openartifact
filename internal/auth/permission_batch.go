@@ -40,7 +40,7 @@ func (e *Evaluator) PathReadFilter(
 		return e.anonymousReadFilter(ctx)
 	}
 
-	targets, err := e.principalTargets(ctx, principal)
+	held, err := e.principalGrants(ctx, principal)
 	if err != nil {
 		return nil, err
 	}
@@ -57,18 +57,7 @@ func (e *Evaluator) PathReadFilter(
 			}
 		}
 
-		for _, target := range targets {
-			ok, err := e.matchTarget(target, repo.Name, artifactPath, "read")
-			if err != nil {
-				return false, err
-			}
-
-			if ok {
-				return true, nil
-			}
-		}
-
-		return false, nil
+		return e.grantsAllow(held, repo.Name, artifactPath, "read")
 	}, nil
 }
 

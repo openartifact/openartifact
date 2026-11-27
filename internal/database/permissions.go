@@ -263,6 +263,30 @@ func (p *PermissionStore) GetPermissionTargetsForPrincipal(
 		})
 }
 
+// GetPermissionTargetsByIDs returns the permission targets with the given IDs
+// (unknown IDs are skipped), whether or not they are assigned to anyone. It is
+// how the evaluator loads the scope targets of an API token, from the auth
+// cache when fresh.
+func (p *PermissionStore) GetPermissionTargetsByIDs(ctx context.Context, ids []string) ([]*models.PermissionTarget, error) {
+	// The prefix keeps these keys apart from the "<user id>\x00<group ids>" ones.
+	key := "ids\x00" + strings.Join(ids, "\x00")
+
+	return cachedList(ctx, &p.authCache, &p.authCache.perms, key, clonePermTargets,
+		func(ctx context.Context, _ string) ([]*models.PermissionTarget, error) {
+			rows, err := p.q.GetPermissionTargetsByIDs(ctx, ids)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get permission targets by ids: %w", err)
+			}
+
+			targets := make([]*models.PermissionTarget, 0, len(rows))
+			for _, row := range rows {
+				targets = append(targets, permissionTargetFromRow(dbsqlc.GetPermissionTargetByIDRow(row)))
+			}
+
+			return targets, nil
+		})
+}
+
 func (p *PermissionStore) GetOrCreatePermissionAssignment(ctx context.Context, targetID, principalType, principalID string) error {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()

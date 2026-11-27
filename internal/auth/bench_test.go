@@ -42,6 +42,10 @@ func (d *benchAuthDB) GetPermissionTargetsForPrincipal(context.Context, string, 
 	return d.targets, nil
 }
 
+func (d *benchAuthDB) GetPermissionTargetsByIDs(_ context.Context, ids []string) ([]*models.PermissionTarget, error) {
+	return targetsWithIDs(d.targets, ids), nil
+}
+
 func (d *benchAuthDB) GetPermissionTargetByName(context.Context, string) (*models.PermissionTarget, error) {
 	return nil, nil
 }
@@ -126,8 +130,8 @@ func BenchmarkEvaluate(b *testing.B) {
 	}
 }
 
-// BenchmarkEvaluateScopedToken adds the token-scope filtering of
-// principalTargets: a token scoped to 3 of the user's targets.
+// BenchmarkEvaluateScopedToken adds the token-scope check of
+// principalGrants: a token scoped to 3 of the user's targets.
 func BenchmarkEvaluateScopedToken(b *testing.B) {
 	for _, n := range benchTargetCounts {
 		principal := benchPrincipal()

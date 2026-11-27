@@ -126,6 +126,23 @@ func (db *projectsMockDB) GetPermissionTargetsForPrincipal(
 	return nil, nil
 }
 
+func (db *projectsMockDB) GetPermissionTargetsByIDs(_ context.Context, ids []string) ([]*models.PermissionTarget, error) {
+	return adminTargetsByID(ids), nil
+}
+
+// adminTargetsByID returns the admin targets whose ID is in ids.
+func adminTargetsByID(ids []string) []*models.PermissionTarget {
+	var out []*models.PermissionTarget
+
+	for _, t := range adminTargets() {
+		if slices.Contains(ids, t.ID) {
+			out = append(out, t)
+		}
+	}
+
+	return out
+}
+
 func (db *projectsMockDB) GetProjectByName(_ context.Context, name string) (*models.Project, error) {
 	return db.projects[name], nil
 }

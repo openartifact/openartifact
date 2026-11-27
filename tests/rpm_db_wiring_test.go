@@ -1275,6 +1275,18 @@ func (m *MockDatabase) GetPermissionTargetsForPrincipal(
 	return targets, nil
 }
 
+func (m *MockDatabase) GetPermissionTargetsByIDs(_ context.Context, ids []string) ([]*models.PermissionTarget, error) {
+	var targets []*models.PermissionTarget
+
+	for _, id := range ids {
+		if t, ok := m.permissionTargets[id]; ok {
+			targets = append(targets, t)
+		}
+	}
+
+	return targets, nil
+}
+
 func (m *MockDatabase) GetOrCreatePermissionAssignment(ctx context.Context, targetID, principalType, principalID string) error {
 	return nil
 }
