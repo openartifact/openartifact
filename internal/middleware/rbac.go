@@ -195,6 +195,19 @@ func RBACMiddleware(cfg RBACConfig, db RBACMiddlewareStore, evaluator *auth.Eval
 				return
 			}
 
+			// A write to a group with a deploy target is authorized as a write
+			// to that target.
+			var deployCtx context.Context
+
+			scope, deployCtx, err = groupDeployScope(r.Context(), db, r, scope)
+			if err != nil {
+				writeAuthUnavailable(w, r, log, "group deploy target lookup error", err)
+
+				return
+			}
+
+			r = r.WithContext(deployCtx)
+
 			if authorizeRepoScope(w, r, cfg, db, evaluator, log, principal, credential, scope) {
 				next.ServeHTTP(w, r)
 			}

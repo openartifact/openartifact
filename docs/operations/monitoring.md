@@ -607,7 +607,7 @@ Fields, in this order. The set is stable: fields may be appended, never renamed 
 | `resource_type`, `resource_id` | the object the event names, if any |
 | `repository_id`, `project_id` | UUIDs of the repository or project concerned, if any |
 | `ip` | client address |
-| `details` | the event details: a JSON object in JSONL, its JSON text in one CSV cell. Keys, each present only when set: `message`, `actor`, `package`, `version`, `subject`, `outcome` (`success` or `failure`), `username` (login name of the authenticated user), `token_id` (API token the request used), `request_id` (its `X-Request-ID`) and `status` (HTTP status, a number) |
+| `details` | the event details: a JSON object in JSONL, its JSON text in one CSV cell. Keys, each present only when set: `message`, `actor`, `package`, `version`, `subject`, `via_group` (an upload that came through a group's [deploy target](../repositories/hosted-proxy-group.md#publishing-through-a-group-deploy-target): the group's name, the event's repository is the target), `outcome` (`success` or `failure`), `username` (login name of the authenticated user), `token_id` (API token the request used), `request_id` (its `X-Request-ID`) and `status` (HTTP status, a number) |
 
 Unset values are `null` in JSONL and an empty cell in CSV. CSV is RFC 4180 (quoted cells, doubled quotes, newlines allowed inside quotes). To keep spreadsheets from running attacker-controlled text, a CSV cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return is written with a leading `'`; read JSONL when you need the exact value.
 
@@ -681,6 +681,7 @@ Attributes, each present only when the event has a value. They are named after t
 | `openartifact.audit.resource_type`, `openartifact.audit.resource_id` | string | the object the event names |
 | `openartifact.audit.repository_id`, `openartifact.audit.project_id` | string | UUIDs of the repository or project concerned |
 | `openartifact.audit.package`, `openartifact.audit.version`, `openartifact.audit.subject` | string | package version the event concerns and the display name of what it acted on |
+| `openartifact.audit.via_group` | string | the group an upload came through when the group's deploy target stored it |
 | `openartifact.audit.ip` | string | client address |
 | `openartifact.audit.request_id` | string | `X-Request-ID` of the request, also in the `HTTP request` log line |
 | `openartifact.audit.status` | int | HTTP status of the request, for events recorded by the HTTP middleware |

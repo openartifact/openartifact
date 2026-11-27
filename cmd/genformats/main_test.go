@@ -39,6 +39,7 @@ func TestRenderCoversPolicy(t *testing.T) {
 		"export const FORMAT_IDS = ['ansible', 'apk',",
 		"export type FormatId = (typeof FORMAT_IDS)[number]",
 		"export const HOSTED_FORMATS: readonly FormatId[] = ['ansible', 'apk',",
+		"export const GROUP_DEPLOY_FORMATS: readonly FormatId[] = ['ansible', 'cargo', 'composer', 'conan', 'conda', 'go', 'helm', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pypi', 'raw', 'rubygems', 'sbt', 'terraform']",
 		"export const FEDERATION_FORMATS: readonly FormatId[] = ['cargo', 'docker', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw']",
 		"export const ISOLATED_FORMATS: readonly FormatId[] = ['ivy', 'maven', 'raw', 'sbt']",
 		"  docker: 'https://registry-1.docker.io',",

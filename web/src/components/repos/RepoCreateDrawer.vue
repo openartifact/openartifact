@@ -34,7 +34,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div>
         <h3 class="text-sm font-semibold text-foreground">{{ t('rl.create.defaults') }}</h3>
         <p class="mb-2 text-xs text-muted">{{ t('rl.create.defaultsHint') }}</p>
-        <RepoDefaultsRows v-model="form" mode="create" :is-admin="session.isAdmin" :policy="policy" :candidates="candidates" @project="selectedProject = $event" />
+        <RepoDefaultsRows v-model="form" mode="create" :is-admin="session.isAdmin" :policy="policy" :candidates="candidates" :hosted="hostedNames" @project="selectedProject = $event" />
       </div>
 
       <p v-if="failure" role="alert" class="text-sm text-danger">{{ failure }}</p>
@@ -92,6 +92,7 @@ const nameErr = computed(() => nameError(form.value.name, prefix.value))
 const candidates = computed(() =>
   existing.value.filter((r) => r.format === form.value.format && r.repo_type !== 'group').map((r) => r.name),
 )
+const hostedNames = computed(() => existing.value.filter((r) => r.format === form.value.format && r.repo_type === 'hosted').map((r) => r.name))
 const valid = computed(() => formValid(form.value, prefix.value, upstreamUrlRequired(form.value.format)))
 
 // A fresh form every time the drawer opens.

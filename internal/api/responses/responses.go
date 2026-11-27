@@ -114,6 +114,9 @@ type RepositoryResponse struct {
 	// package name and proxy members' versions of it are hidden; true merges
 	// every member's versions.
 	MergeProxyVersions bool `json:"merge_proxy_versions"`
+	// DeployTarget (groups only) is the hosted member a write sent to the group
+	// is served by; absent when the group has none (writes are refused).
+	DeployTarget string `json:"deploy_target,omitempty"`
 	// SignPackages (hosted rpm only): uploads are signed with the active GPG key.
 	SignPackages bool `json:"sign_packages"`
 	// HonourQuayExpiry (hosted docker only): images with quay.expires-after are deleted when due.

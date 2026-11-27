@@ -661,6 +661,7 @@ Create a repository owned by the project. Requires the maintainer or owner role 
 |---|---|---|---|
 | `cache_ttl_seconds` | integer | no | - |
 | `curation_mode` | string | no | Proxy repositories only (400 for other types). off ignores the curation rules (default), denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches. One of: `off`, `denylist`, `allowlist`. |
+| `deploy_target` | string | no | Group repositories only: the hosted member a publish sent to the group is served by (name of one of its members; same format). Absent when the group has none, and writes through the group are then refused with 405. Authorization is the target's: the caller needs write on the target. |
 | `description` | string | no | - |
 | `federated` | boolean | no | Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true). |
 | `format` | string | yes | - |

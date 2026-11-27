@@ -127,7 +127,7 @@ func repoListFixture() map[string]any {
 		},
 		map[string]any{
 			"id": "id-grp", "name": "npm-all", "format": "npm", "description": "", "public": false,
-			"repo_type": "group", "project": "platform", "merge_proxy_versions": true,
+			"repo_type": "group", "project": "platform", "merge_proxy_versions": true, "deploy_target": "npm-local",
 			"cache_ttl_seconds": 3600,
 		},
 	}}
@@ -222,8 +222,8 @@ func TestRepositoryList(t *testing.T) {
 				"format": "npm", "repo_type": "group", "description": "", "public": false,
 				"project": "platform", "presign_downloads": nil, "trash_retention_days": nil,
 				"immutable_releases": false, "merge_proxy_versions": true,
-				"member_repos": []any{"npm-local", "npm-proxy"},
-				"quota":        zeroQuota, "cleanup_policies": []any{},
+				"member_repos": []any{"npm-local", "npm-proxy"}, "deploy_target": "npm-local",
+				"quota": zeroQuota, "cleanup_policies": []any{},
 			},
 		},
 	}
@@ -786,6 +786,25 @@ func TestRepositoryValidate(t *testing.T) {
 			name:    "merge_proxy_versions on proxy",
 			obj:     &Object{Name: "r", Spec: map[string]any{"format": "raw", "repo_type": "proxy", "merge_proxy_versions": true}},
 			wantErr: "merge_proxy_versions is only valid for group",
+		},
+		{
+			name:    "deploy_target on hosted",
+			obj:     &Object{Name: "r", Spec: map[string]any{"format": "raw", "deploy_target": "a"}},
+			wantErr: "deploy_target is only valid for group",
+		},
+		{
+			name: "deploy_target outside the members",
+			obj: &Object{Name: "r", Spec: map[string]any{
+				"format": "raw", "repo_type": "group", "member_repos": []any{"a"}, "deploy_target": "b",
+			}},
+			wantErr: "must be one of member_repos",
+		},
+		{
+			name: "deploy_target on a format without support",
+			obj: &Object{Name: "r", Spec: map[string]any{
+				"format": "deb", "repo_type": "group", "member_repos": []any{"a"}, "deploy_target": "a",
+			}},
+			wantErr: "deploy_target is not supported for deb",
 		},
 		{
 			name:    "sign_packages on hosted deb",
