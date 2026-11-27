@@ -63,7 +63,7 @@ func registrations() []plugin.Format {
 		pubFormat(),
 		rawFormat(),
 		sbtFormat(),
-		p2Format(),
+		p2Format(), swiftFormat(),
 	}
 }
 

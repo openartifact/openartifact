@@ -41,7 +41,13 @@ type documentedUpload struct {
 var documentedUploads = map[string]documentedUpload{ //nolint:gochecknoglobals // read-only test table
 	"maven": {http.MethodPut, "/repos/maven/{name}/*", "mvn deploy", "PUT /repos/maven/REPO/<group/path>/<artifactId>/<version>/<file>"},
 	"sbt":   {http.MethodPut, "/repos/sbt/{name}/*", "sbt publish", "HOST/repos/sbt/REPO"},
-	"ivy":   {http.MethodPut, "/repos/ivy/{name}/*", "ivy:publish", "HOST/repos/ivy/REPO"},
+	"swift": {
+		http.MethodPut,
+		"/repos/swift/{name}/{scope}/{pkg}/{version}",
+		"swift package-registry publish",
+		"PUT /repos/swift/REPO/<scope>/<name>/<version>",
+	},
+	"ivy": {http.MethodPut, "/repos/ivy/{name}/*", "ivy:publish", "HOST/repos/ivy/REPO"},
 	"cran": {
 		http.MethodPut,
 		"/repos/cran/{name}/*",

@@ -86,9 +86,9 @@ func TestPolicy(t *testing.T) {
 	// gitlfs is hosted only. cocoapods and p2 are proxy only: CDN shards cannot
 	// be merged by a group, and update sites are merged by a composite repository.
 	proxies := "ansible, apk, cargo, cocoapods, composer, conan, conda, cran, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, " +
-		"nuget, p2, pacman, pub, pypi, raw, rpm, rubygems, sbt, terraform"
+		"nuget, p2, pacman, pub, pypi, raw, rpm, rubygems, sbt, swift, terraform"
 	groups := "ansible, apk, cargo, composer, conan, conda, cran, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, " +
-		"pacman, pub, pypi, raw, rpm, rubygems, sbt, terraform"
+		"pacman, pub, pypi, raw, rpm, rubygems, sbt, swift, terraform"
 
 	if got := repotype.ProxyFormats(); got != proxies {
 		t.Errorf("ProxyFormats() = %q, want %q", got, proxies)

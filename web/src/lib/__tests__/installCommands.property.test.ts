@@ -54,7 +54,7 @@ const origin = fc
 const repoName = fc.stringMatching(/^[a-zA-Z0-9_-]{1,40}$/)
 const imagePath = fc.array(fc.stringMatching(/^[a-z0-9][a-z0-9._-]{0,15}$/), { minLength: 1, maxLength: 4 }).map((s) => s.join('/'))
 
-const ISOLATED = ['cran', 'gitlfs', 'ivy', 'maven', 'p2', 'pub', 'raw', 'sbt']
+const ISOLATED = ['cran', 'gitlfs', 'ivy', 'maven', 'p2', 'pub', 'raw', 'sbt', 'swift']
 const encode = encodeURIComponent
 const encodePath = (p: string) => p.split('/').map(encode).join('/')
 
@@ -90,7 +90,7 @@ function expectedArgv(format: string, o: { url: string; host: string }, repo: st
     case 'raw': return ['curl', '-fO', `${base}/${encodePath(pkg)}`]
     case 'rpm': return ['dnf', 'install', `${pkg}-${version}`]
     case 'rubygems': return ['gem', 'install', pkg, '-v', version, '--source', `${base}/`]
-    default: return null // ivy and sbt emit build-file fragments, not shell
+    default: return null // ivy, sbt and swift emit build-file fragments, not shell
   }
 }
 
@@ -151,7 +151,7 @@ describe('pullCommand (property)', () => {
   })
 
   it('splits into exactly the intended words however hostile the names are', () => {
-    const shellFormats = ALL_FORMATS.filter((f) => f !== 'cocoapods' && f !== 'ivy' && f !== 'sbt' && f !== 'terraform')
+    const shellFormats = ALL_FORMATS.filter((f) => f !== 'cocoapods' && f !== 'ivy' && f !== 'sbt' && f !== 'swift' && f !== 'terraform')
     fc.assert(fc.property(fc.constantFrom(...shellFormats), origin, hostileWord, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
       fc.pre(repo !== '.' && repo !== '..')
       fc.pre(format !== 'raw' || pkg.split('/').every((s) => s !== '.' && s !== '..'))
@@ -160,7 +160,7 @@ describe('pullCommand (property)', () => {
   })
 
   it('points every URL argument under the repository base URL (apk, composer, conan, deb, pacman and rpm commands carry none)', () => {
-    fc.assert(fc.property(fc.constantFrom(...ALL_FORMATS.filter((f) => f !== 'apk' && f !== 'composer' && f !== 'conan' && f !== 'deb' && f !== 'docker' && f !== 'pacman' && f !== 'rpm' && f !== 'terraform')), origin, repoName, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
+    fc.assert(fc.property(fc.constantFrom(...ALL_FORMATS.filter((f) => f !== 'apk' && f !== 'composer' && f !== 'conan' && f !== 'deb' && f !== 'docker' && f !== 'pacman' && f !== 'rpm' && f !== 'swift' && f !== 'terraform')), origin, repoName, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
       const base = repoBaseUrl(format, o.url, repo)
       const cmd = pullCommand(format, o.url, repo, pkg, version)
       const words = format === 'sbt' || format === 'ivy' || format === 'cocoapods' ? [cmd] : shellWords(cmd)

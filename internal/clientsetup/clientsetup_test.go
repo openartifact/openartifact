@@ -22,6 +22,7 @@ func TestRepoBaseURL(t *testing.T) {
 		{"maven", "libs", origin + "/repos/maven/libs"},
 		{"sbt", "libs", origin + "/repos/sbt/libs"},
 		{"ivy", "libs", origin + "/repos/ivy/libs"},
+		{"swift", "libs", origin + "/repos/swift/libs"},
 		{"raw", "files", origin + "/repos/raw/files"},
 		{"pypi", "my repo", origin + "/repos/my%20repo"},
 	}
@@ -57,7 +58,7 @@ func allFormats() []string {
 		"rpm",
 		"rubygems",
 		"sbt",
-		"terraform",
+		"swift", "terraform",
 	}
 }
 

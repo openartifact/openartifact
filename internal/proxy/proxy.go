@@ -258,7 +258,12 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
-		http.Error(w, "proxy repositories are read-only", http.StatusMethodNotAllowed)
+
+		if h, ok := hooks.Lookup(repo.Format); ok && h.MethodNotAllowed != nil {
+			h.MethodNotAllowed(w)
+		} else {
+			http.Error(w, "proxy repositories are read-only", http.StatusMethodNotAllowed)
+		}
 
 		return
 	}

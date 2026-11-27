@@ -43,6 +43,7 @@ const (
 	TrashKindDeb               TrashKind = "deb_package"
 	TrashKindGitLFS            TrashKind = "gitlfs_object"
 	TrashKindCRAN              TrashKind = "cran_package"
+	TrashKindSwift             TrashKind = "swift_release"
 )
 
 // TrashItem is one entry of the trash listing: a soft-deleted repository or

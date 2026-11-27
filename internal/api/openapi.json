@@ -1031,6 +1031,7 @@
               "rpm",
               "rubygems",
               "sbt",
+              "swift",
               "terraform"
             ],
             "description": "Package format"
@@ -7073,7 +7074,8 @@
               "rpm_package",
               "deb_package",
               "gitlfs_object",
-              "cran_package"
+              "cran_package",
+              "swift_release"
             ]
           },
           "repository_id": {
@@ -9336,6 +9338,7 @@
                 "rpm",
                 "rubygems",
                 "sbt",
+                "swift",
                 "terraform"
               ]
             }
@@ -9525,6 +9528,7 @@
                       "rpm",
                       "rubygems",
                       "sbt",
+                      "swift",
                       "terraform"
                     ]
                   },

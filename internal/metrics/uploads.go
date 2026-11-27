@@ -39,6 +39,7 @@ const (
 	FormatGitLFS    = "gitlfs"
 	FormatPub       = "pub"
 	FormatCRAN      = "cran"
+	FormatSwift     = "swift"
 )
 
 // Upload result label values of openartifact_uploads_total.

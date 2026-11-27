@@ -30,7 +30,7 @@ These pages are also published, one version per release, at <https://openartifac
 | [Ansible](formats/ansible.md) · [Alpine (apk)](formats/apk.md) · [Cargo](formats/cargo.md) · [Composer](formats/composer.md) · [Conan](formats/conan.md) · [Conda](formats/conda.md) · [CRAN (R)](formats/cran.md) · [Debian](formats/debian.md) | Client setup and publishing |
 | [CocoaPods](formats/cocoapods.md) · [Docker/OCI](formats/docker.md) · [Git LFS](formats/gitlfs.md) · [Go](formats/go.md) · [Helm](formats/helm.md) · [Hugging Face](formats/huggingface.md) · [Ivy and sbt](formats/ivy-sbt.md) · [Maven](formats/maven.md) · [Nix](formats/nix.md) · [Eclipse p2](formats/p2.md) · [Pub](formats/pub.md) | Client setup and publishing |
 | [npm](formats/npm.md) · [NuGet](formats/nuget.md) · [Arch Linux](formats/pacman.md) · [PyPI](formats/pypi.md) · [Raw](formats/raw.md) · [RPM](formats/rpm.md) | Client setup and publishing |
-| [RubyGems](formats/rubygems.md) · [Terraform/OpenTofu](formats/terraform.md) | Client setup and publishing |
+| [RubyGems](formats/rubygems.md) · [Swift](formats/swift.md) · [Terraform/OpenTofu](formats/terraform.md) | Client setup and publishing |
 
 ## Repositories
 

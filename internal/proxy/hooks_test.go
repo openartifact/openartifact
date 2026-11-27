@@ -37,6 +37,7 @@ func init() { //nolint:gochecknoinits // test-only format registry, see above
 		"rpm":         RPMHooks,
 		"rubygems":    RubyGemsHooks,
 		"sbt":         SbtHooks,
+		"swift":       SwiftHooks,
 		"terraform":   TerraformHooks,
 	} {
 		Register(format, h)

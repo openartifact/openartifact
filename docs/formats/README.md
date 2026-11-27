@@ -20,7 +20,7 @@ Start here:
 Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO` with the repository name (`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$`).
 
 - Every repository is served under `/repos/REPO/...`.
-- Git LFS, CRAN, Ivy, Maven, pub, raw and sbt are served under a format prefix: `/repos/cran/REPO`, `/repos/gitlfs/REPO`, `/repos/ivy/REPO`, `/repos/maven/REPO`, `/repos/pub/REPO`, `/repos/raw/REPO`, `/repos/sbt/REPO`. Repositories named like these prefixes are not reachable by the generic URL.
+- Git LFS, CRAN, Ivy, Maven, pub, raw, sbt and Swift are served under a format prefix: `/repos/cran/REPO`, `/repos/gitlfs/REPO`, `/repos/ivy/REPO`, `/repos/maven/REPO`, `/repos/pub/REPO`, `/repos/raw/REPO`, `/repos/sbt/REPO`, `/repos/swift/REPO`. Repositories named like these prefixes are not reachable by the generic URL.
 - Docker / OCI is the exception: the registry API is at `HOST/v2/`, and the first path segment after `/v2/` is the repository name ([details](docker.md)).
 - `BASE_URL` (`baseUrl`) is optional for package clients. Set it when the server sits behind a proxy that does not forward the original host.
   - Helm, PyPI and Terraform metadata use relative references and need no host.
@@ -60,6 +60,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | RPM (YUM/DNF) | `rpm` | `HOST/repos/REPO/` (`repodata/repomd.xml`, `Packages/`) | hosted, proxy, group | `POST /api/v1/repositories/REPO/packages` (multipart) | [rpm](rpm.md) |
 | RubyGems | `rubygems` | `HOST/repos/REPO/` | hosted, proxy, group | `gem push` (`POST /api/v1/gems`) | [rubygems](rubygems.md) |
 | sbt | `sbt` | `HOST/repos/sbt/REPO` | hosted, proxy, group | `PUT` per file (`sbt publish`) | [ivy-sbt](ivy-sbt.md) |
+| Swift | `swift` | `HOST/repos/swift/REPO` (Swift Package Registry, ids `scope.name`) | hosted, proxy, group (a proxy needs an `upstream_url`) | `swift package-registry publish` (`PUT /repos/swift/REPO/<scope>/<name>/<version>`) | [swift](swift.md) |
 | Terraform / OpenTofu | `terraform` | registry host `HOST`, source `HOST/REPO/...` (discovery at `/.well-known/terraform.json`) | hosted, proxy, group | `PUT /_api/modules/MODULE/SYSTEM/VERSION`, `PUT /_api/providers/TYPE/VERSION/OS/ARCH` (relative to `HOST/repos/REPO`) | [terraform](terraform.md) |
 
 ## Upload from the web UI

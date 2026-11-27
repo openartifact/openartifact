@@ -65,7 +65,7 @@ func TestGroupMetadataCoversEveryFormat(t *testing.T) {
 		"raw",
 		"rubygems",
 		"sbt",
-		"terraform",
+		"swift", "terraform",
 	}
 
 	// run dispatches to buildDeb/buildRPM/buildPacman/buildApk: it needs a database and storage, so it is classified only.

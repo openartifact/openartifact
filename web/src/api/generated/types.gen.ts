@@ -427,7 +427,7 @@ export type Repository = {
     /**
      * Package format
      */
-    format: 'ansible' | 'apk' | 'cargo' | 'cocoapods' | 'composer' | 'conan' | 'conda' | 'cran' | 'deb' | 'docker' | 'gitlfs' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'p2' | 'pacman' | 'pub' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
+    format: 'ansible' | 'apk' | 'cargo' | 'cocoapods' | 'composer' | 'conan' | 'conda' | 'cran' | 'deb' | 'docker' | 'gitlfs' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'p2' | 'pacman' | 'pub' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'swift' | 'terraform';
     /**
      * Repository description
      */
@@ -3165,7 +3165,7 @@ export type TrashItem = {
      * Primary key of the trashed row (the repository id for kind repository). Together with kind it addresses the item.
      */
     id: string;
-    kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'composer' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'nix_path' | 'ansible' | 'pub' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package' | 'gitlfs_object' | 'cran_package';
+    kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'composer' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'nix_path' | 'ansible' | 'pub' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package' | 'gitlfs_object' | 'cran_package' | 'swift_release';
     repository_id: string;
     /**
      * Name of the owning repository (the trashed repository itself for kind repository).
@@ -4479,7 +4479,7 @@ export type GetApiV1RepositoriesData = {
         /**
          * Filter by package format
          */
-        format?: 'ansible' | 'apk' | 'cargo' | 'cocoapods' | 'composer' | 'conan' | 'conda' | 'cran' | 'deb' | 'docker' | 'gitlfs' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'p2' | 'pacman' | 'pub' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
+        format?: 'ansible' | 'apk' | 'cargo' | 'cocoapods' | 'composer' | 'conan' | 'conda' | 'cran' | 'deb' | 'docker' | 'gitlfs' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'p2' | 'pacman' | 'pub' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'swift' | 'terraform';
         /**
          * Page number (default: 1)
          */
@@ -4553,7 +4553,7 @@ export type PostApiV1RepositoriesData = {
          * Repository name (1-100 letters, digits, hyphen or underscore; starts with a letter or digit)
          */
         name: string;
-        format: 'ansible' | 'apk' | 'cargo' | 'cocoapods' | 'composer' | 'conan' | 'conda' | 'cran' | 'deb' | 'docker' | 'gitlfs' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'p2' | 'pacman' | 'pub' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
+        format: 'ansible' | 'apk' | 'cargo' | 'cocoapods' | 'composer' | 'conan' | 'conda' | 'cran' | 'deb' | 'docker' | 'gitlfs' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'p2' | 'pacman' | 'pub' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'swift' | 'terraform';
         description?: string;
         public?: boolean;
         /**

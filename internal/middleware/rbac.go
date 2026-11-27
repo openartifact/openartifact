@@ -863,6 +863,10 @@ func classifyRoute(r *http.Request) routeScope {
 		action = "write"
 	}
 
+	if isSwiftLogin(r.Method, r.URL.Path, artifactPath) {
+		action = "read"
+	}
+
 	return routeScope{action: action, repoName: repoName, artifactPath: artifactPath}
 }
 
@@ -887,6 +891,14 @@ func isPubPublishStep(method, urlPath, artifactPath string) bool {
 	}
 
 	return artifactPath == pkgpub.NewPath || artifactPath == pkgpub.FinishPath
+}
+
+// isSwiftLogin reports whether the request is "swift package-registry login":
+// a POST to /repos/swift/{name}/login that only checks the credential, so it
+// needs "read" like the downloads the credential is for, not the "write" every
+// POST maps to.
+func isSwiftLogin(method, urlPath, artifactPath string) bool {
+	return method == http.MethodPost && artifactPath == "login" && strings.HasPrefix(urlPath, "/repos/swift/")
 }
 
 // repoDataSegments are the sub-resources of /api/v1/repositories/{name}/ that

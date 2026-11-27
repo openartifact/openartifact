@@ -34,7 +34,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 OpenArtifact stores and serves Alpine (apk), Ansible collections, Arch Linux (pacman),
 Cargo, CocoaPods (proxy), Composer (PHP), Conan, Conda, CRAN (R), Debian, Docker/OCI, Git LFS (hosted), Go, Helm, Hugging Face (proxy),
-Ivy, Maven, Nix, npm, NuGet, PyPI, raw files, RPM, RubyGems, sbt and Terraform/OpenTofu
+Ivy, Maven, Nix, npm, NuGet, PyPI, raw files, RPM, RubyGems, sbt, Swift and Terraform/OpenTofu
 behind one URL scheme and one permission model, on your own infrastructure. Free software under
 the AGPL.
 

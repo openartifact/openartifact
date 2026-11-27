@@ -809,6 +809,27 @@ func SBTBuilder(c target) []Snippet {
 	}
 }
 
+// SwiftBuilder configures SwiftPM against the registry URL of the repository.
+// `login` takes the login URL (the registry URL plus /login). SwiftPM sends no
+// credentials over plain http and `login` refuses such a URL, so a plain-http
+// origin gets --allow-insecure-http (enough for a public repository) and a
+// note that a private one needs https. Proxy and group repositories are
+// read-only: no publish hint.
+func SwiftBuilder(c target) []Snippet {
+	publish := "swift package-registry publish SCOPE.NAME 1.0.0 --url " + c.base + "{{#http}} --allow-insecure-http{{/http}}"
+	if c.repoType == "proxy" || c.repoType == "group" {
+		publish = "" // proxy and group repositories are read-only
+	}
+
+	configure := "swift package-registry set " + c.base + "{{#http}} --allow-insecure-http{{/http}}" +
+		"\nswift package-registry login " + c.base + "/login --token <TOKEN>" +
+		"{{#http}}\n# SwiftPM sends no credentials over plain http: a private repository needs HTTPS{{/http}}" +
+		"\n\n# Package.swift\n.package(id: \"SCOPE.NAME\", from: \"1.0.0\")" +
+		"\n\n# resolve\nswift package resolve"
+
+	return []Snippet{{Client: "swift", Configure: configure, Publish: publish}}
+}
+
 // IvyBuilder is the snippet builder of the ivy format.
 func IvyBuilder(c target) []Snippet {
 	return []Snippet{

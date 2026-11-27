@@ -37,6 +37,7 @@ import (
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	formatrubygems "github.com/openartifact/openartifact/internal/format/rubygems"
 	formatsbt "github.com/openartifact/openartifact/internal/format/sbt"
+	formatswift "github.com/openartifact/openartifact/internal/format/swift"
 	formatterraform "github.com/openartifact/openartifact/internal/format/terraform"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -83,6 +84,7 @@ func serverRoutes(t *testing.T) chi.Router {
 	r.Route("/repos/sbt/{name}", func(r chi.Router) { formatsbt.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
 	r.Route("/repos/pub/{name}", func(r chi.Router) { formatpub.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
 	r.Route("/repos/cran/{name}", func(r chi.Router) { formatcran.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
+	r.Route("/repos/swift/{name}", func(r chi.Router) { formatswift.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
 	r.Route("/repos/ivy/{name}", func(r chi.Router) { formativy.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
 	r.Route("/repos/gitlfs/{name}", func(r chi.Router) { formatgitlfs.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
 	formatdocker.NewHTTPHandler(nil, nil, nil).RegisterRoutes(r)
@@ -178,11 +180,11 @@ func TestEveryFormatHasUploadLabel(t *testing.T) {
 		"nuget":      metrics.FormatNuGet,
 		"pacman":     metrics.FormatPacman,
 		"pub":        metrics.FormatPub, "pypi": metrics.FormatPyPI,
-		"raw":       metrics.FormatRaw,
-		"rpm":       metrics.FormatRPM,
-		"rubygems":  metrics.FormatRubyGems,
-		"sbt":       metrics.FormatSBT,
-		"terraform": metrics.FormatTerraform,
+		"raw":      metrics.FormatRaw,
+		"rpm":      metrics.FormatRPM,
+		"rubygems": metrics.FormatRubyGems,
+		"sbt":      metrics.FormatSBT,
+		"swift":    metrics.FormatSwift, "terraform": metrics.FormatTerraform,
 	}
 
 	entries, err := os.ReadDir("../format")
@@ -262,7 +264,7 @@ func TestUploadRoutesCounted(t *testing.T) {
 		for _, f := range []string{
 			metrics.FormatCargo, metrics.FormatRubyGems, metrics.FormatHelm, metrics.FormatPyPI,
 			metrics.FormatNuGet, metrics.FormatConda, metrics.FormatConan, metrics.FormatRaw,
-			metrics.FormatIvy, metrics.FormatSBT, metrics.FormatTerraform, metrics.FormatPub, metrics.FormatCRAN,
+			metrics.FormatIvy, metrics.FormatSBT, metrics.FormatSwift, metrics.FormatTerraform, metrics.FormatPub, metrics.FormatCRAN,
 		} {
 			if got := testutil.ToFloat64(reg.UploadsTotal.WithLabelValues(f, result)); got < 1 {
 				t.Errorf("status %d: format %s counted %v times, want >= 1", status, f, got)

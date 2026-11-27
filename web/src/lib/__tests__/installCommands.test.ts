@@ -334,8 +334,11 @@ describe('clientSetup', () => {
     expect(clientSetup('npm', origin, 'r1')[0]!.configure).toContain('npm config set //oa.example:8080/repos/r1/:_authToken <TOKEN>')
   })
 
-  it('uses the isolated prefix for cran, ivy, maven, raw and sbt', () => {
-    for (const f of ['cran', 'ivy', 'maven', 'raw', 'sbt']) {
+  it('renders the Swift dependency line', () => {
+    expect(pullCommand('swift', origin, 'r1', 'mona.LinkedList', '1.2.3')).toBe('.package(id: "mona.LinkedList", from: "1.2.3")')
+  })
+  it('uses the isolated prefix for cran, ivy, maven, raw, sbt and swift', () => {
+    for (const f of ['cran', 'ivy', 'maven', 'raw', 'sbt', 'swift']) {
       const text = clientSetup(f, origin, 'r1')
         .map((c) => c.configure + (c.publish ?? ''))
         .join('\n')
