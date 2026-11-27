@@ -45,7 +45,9 @@ dependencies:
     version: $VERSION
 EOF
   dart pub get
-  [ "$(cat "$PUB_CACHE/hosted/$(echo "$SERVER" | sed -e 's|^[a-z]*://||' -e 's|/|%47|g' -e 's|:|%58|g')/$PKG-$VERSION/lib/$PKG.dart")" = "int marker() => 42;" ]
+  # pub names the cache directory after the hosted URL in its own spelling (127.0.0.1 becomes localhost)
+  got="$(find "$PUB_CACHE/hosted" -path "*/$PKG-$VERSION/lib/$PKG.dart" | head -n1)"
+  [ -n "$got" ] && [ "$(cat "$got")" = "int marker() => 42;" ]
 }
 SCRIPT
 )"

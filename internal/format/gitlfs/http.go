@@ -69,10 +69,14 @@ func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 
 	// File locking is not offered: every locks endpoint answers 501, which a
 	// client reads as "this server has no locking API".
-	r.Post("/locks", h.handleLocksUnsupported)
-	r.Get("/locks", h.handleLocksUnsupported)
-	r.Post("/locks/verify", h.handleLocksUnsupported)
-	r.Post("/locks/{id}/unlock", h.handleLocksUnsupported)
+	for _, route := range []struct{ method, pattern string }{
+		{http.MethodPost, "/locks"},
+		{http.MethodGet, "/locks"},
+		{http.MethodPost, "/locks/verify"},
+		{http.MethodPost, "/locks/{id}/unlock"},
+	} {
+		r.MethodFunc(route.method, route.pattern, h.handleLocksUnsupported)
+	}
 }
 
 // RegisterRoutes registers the protocol routes under prefix.

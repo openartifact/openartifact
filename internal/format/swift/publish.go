@@ -18,9 +18,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
-	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/quota"
-	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/swift"
@@ -404,31 +402,12 @@ func (h *HTTPHandler) store(
 	return false
 }
 
-// commit stores the blob first, then inserts the referencing row under the
-// per-blob lock so a concurrent delete cannot remove the blob in between. When
-// no row results the blob is dropped again unless something else references it.
-func (h *HTTPHandler) commit(ctx context.Context, row *models.SwiftRelease, archive *base.Spool) (err error) {
-	defer func() {
-		if err != nil {
-			h.dropBlob(ctx, row.SHA256, "publish")
-		}
-	}()
-
-	blob := storage.SeekerBlob(row.SHA256, archive.Reader(), map[string]string{"sha256": row.SHA256, "filename": row.Filename})
-
-	return storage.CommitBlob(ctx, h.DB, h.BlobStore, blob, func(ctx context.Context, blobKey string) error {
-		row.BlobKey = blobKey
-		row.CreatedAt = importmeta.CreatedAt(ctx)
-
+// commit stores the blob and inserts the row that references it; see
+// base.Handler.CommitBlobRow.
+func (h *HTTPHandler) commit(ctx context.Context, row *models.SwiftRelease, archive *base.Spool) error {
+	return h.CommitBlobRow(ctx, archive, row.SHA256, row.Filename, &row.BlobKey, &row.CreatedAt, func(ctx context.Context) error {
 		return h.DB.CreateSwiftRelease(ctx, row) //nolint:wrapcheck // the caller reports the failure
 	})
-}
-
-// dropBlob removes the content-addressed blob once no row references it.
-func (h *HTTPHandler) dropBlob(ctx context.Context, sha256, after string) {
-	if err := storage.SafeDeleteBlob(ctx, h.DB, h.BlobStore, sha256); err != nil {
-		h.Log.Warnw("failed to clean up swift blob", "after", after, "sha256", sha256, "error", err)
-	}
 }
 
 // handleDelete serves DELETE /{scope}/{name}/{version}: the removal of a
@@ -461,34 +440,22 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := trash.Delete(r.Context(), h.DB, trash.Request{
-		RepoID:   repo.ID,
-		Kind:     models.TrashKindSwift,
-		IDs:      []string{rel.ID},
-		Resource: rel.Filename,
-		Package:  swift.ID(rel.Scope, rel.Name),
-		Version:  rel.Version,
+	found, err := h.DeleteRelease(r.Context(), repo, models.TrashKindSwift, rel.ID, webhook.Artifact{
+		Name:    swift.ID(rel.Scope, rel.Name),
+		Version: rel.Version,
+		Path:    rel.Filename,
+		SHA256:  rel.SHA256,
+		Size:    rel.SizeBytes,
 	}, func() error { return h.hardDelete(r.Context(), repo, rel) })
 	if err != nil {
-		if errors.Is(err, database.ErrTrashNotFound) {
-			notFound(w, "release")
-			return
-		}
-
 		h.internalError(w, "failed to delete swift release", err, "id", rel.ID)
-
 		return
 	}
 
-	h.Emit(r.Context(), repo.ID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
-		Repository: repo.Name,
-		Format:     FormatName,
-		Name:       swift.ID(rel.Scope, rel.Name),
-		Version:    rel.Version,
-		Path:       rel.Filename,
-		SHA256:     rel.SHA256,
-		Size:       rel.SizeBytes,
-	}))
+	if !found {
+		notFound(w, "release")
+		return
+	}
 
 	w.WriteHeader(http.StatusNoContent)
 }

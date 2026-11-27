@@ -6,7 +6,7 @@
 # gitlfs: git-lfs pushes a 1 MiB binary to a hosted Git LFS repository (lfs.url) with a token,
 # a fresh clone pulls it back and the sha256 is compared. The install phase builds the pointer
 # from the same deterministic content, so it needs no clone of the publish phase.
-# Image: GITLFS_IMAGE (default alpine:latest; git and git-lfs are installed with apk).
+# Image: GITLFS_IMAGE (default alpine:latest; git, git-lfs and curl are installed with apk).
 # Usage: OA_TOKEN=... scripts/smoke/gitlfs.sh [URL]
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
@@ -14,7 +14,7 @@ smoke_init gitlfs alpine:latest "$@"
 
 smoke_run "$(cat <<'SCRIPT'
 set -eu
-command -v git-lfs >/dev/null || apk add -q git git-lfs
+command -v git-lfs >/dev/null && command -v curl >/dev/null || apk add -q git git-lfs curl
 git lfs version
 export HOME=/tmp/home GIT_TERMINAL_PROMPT=0
 mkdir -p "$HOME" && cd "$HOME"

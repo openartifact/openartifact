@@ -921,35 +921,54 @@ func (s *Service) newSpool() (spoolFile, error) {
 	return spoolFile{f}, nil
 }
 
+// spoolUpstreamBody copies the body of resp into a new spool file removed when
+// the caller closes it, refusing a body over limit bytes (errUpstream) and one
+// that cannot be read in full (errUpstreamDown). It returns the file, positioned
+// at its end, and the body size.
+func (s *Service) spoolUpstreamBody(repo *models.Repository, key string, resp *http.Response, limit int64) (spoolFile, int64, error) {
+	if resp.ContentLength > limit {
+		s.log.Warnw("proxy upstream file exceeds size limit", "repo", repo.Name, "path", key, "size", resp.ContentLength)
+		return spoolFile{}, 0, errUpstream
+	}
+
+	in, err := s.newSpool()
+	if err != nil {
+		return spoolFile{}, 0, err
+	}
+
+	size, err := iocopy.Copy(in, io.LimitReader(resp.Body, limit+1))
+
+	switch {
+	case err != nil:
+		s.log.Warnw("proxy upstream body read failed", "repo", repo.Name, "path", key, "error", err)
+		err = errUpstreamDown
+	case size > limit:
+		s.log.Warnw("proxy upstream body oversized", "repo", repo.Name, "path", key, "size", size)
+		err = errUpstream
+	case resp.ContentLength >= 0 && size != resp.ContentLength:
+		s.log.Warnw("proxy upstream body truncated", "repo", repo.Name, "path", key, "size", size)
+		err = errUpstreamDown
+	}
+
+	if err != nil {
+		base.CloseLog(in, s.log)
+		return spoolFile{}, 0, err
+	}
+
+	return in, size, nil
+}
+
 // repackTFModule replaces the body of a module archive answer by the repacked
 // archive (wrapper directory and subdirectory handled as src says). The
 // upstream body is spooled first, under the proxy's size limit, so a network
 // failure is an upstream failure and the archive can be read at random; the
 // repacked file becomes resp.Body and is removed when fetchURL closes it.
 func (s *Service) repackTFModule(repo *models.Repository, key string, src tfModuleSource, resp *http.Response) error {
-	if resp.ContentLength > s.maxBody {
-		s.log.Warnw("proxy upstream file exceeds size limit", "repo", repo.Name, "path", key, "size", resp.ContentLength)
-		return errUpstream
-	}
-
-	in, err := s.newSpool()
+	in, size, err := s.spoolUpstreamBody(repo, key, resp, s.maxBody)
 	if err != nil {
 		return err
 	}
 	defer func() { base.CloseLog(in, s.log) }()
-
-	size, err := iocopy.Copy(in, io.LimitReader(resp.Body, s.maxBody+1))
-	switch {
-	case err != nil:
-		s.log.Warnw("proxy upstream body read failed", "repo", repo.Name, "path", key, "error", err)
-		return errUpstreamDown
-	case size > s.maxBody:
-		s.log.Warnw("proxy upstream body oversized", "repo", repo.Name, "path", key, "size", size)
-		return errUpstream
-	case resp.ContentLength >= 0 && size != resp.ContentLength:
-		s.log.Warnw("proxy upstream body truncated", "repo", repo.Name, "path", key, "size", size)
-		return errUpstreamDown
-	}
 
 	if _, err := in.Seek(0, io.SeekStart); err != nil {
 		s.log.Errorw("failed to rewind proxy spool file", "error", err)

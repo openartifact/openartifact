@@ -23,7 +23,6 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
-	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -39,16 +38,10 @@ const metadataMaxAge = 60
 
 // HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
-	quarantine.Checker
-	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	base.HandlerStore
 	CreatePubPackage(ctx context.Context, c *models.PubPackage) error
-	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	GetPubPackage(ctx context.Context, repoID string, name string, version string) (*models.PubPackage, error)
-	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
-	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
 	ListPubVersions(ctx context.Context, repoID string, name string) ([]*models.PubPackage, error)
-	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
-	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
 }
 
 // HTTPHandler serves hosted pub repositories.

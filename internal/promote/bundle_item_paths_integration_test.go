@@ -39,7 +39,13 @@ var itemFormatCases = []itemFormatCase{
 	{"composer", "composer", "acme/lib", "1.0.0", "acme/lib/1.0.0/lib-1.0.0.zip", "lib-1.0.0.zip", nil},
 	{"conan", "conan", "zlib", "1.3", "zlib/1.3/_/_/rev1/export/conan_sources.tgz", "conan_sources.tgz", nil},
 	{"conda", "conda", "numpy", "1.0", "linux-64/numpy-1.0-py39_0.conda", "numpy-1.0-py39_0.conda", nil},
+	{"cran source", "cran", "glue", "1.7.0", "src/contrib/glue_1.7.0.tar.gz", "glue_1.7.0.tar.gz", nil},
+	{"cran binary", "cran", "glue", "1.7.0", "bin/windows/contrib/4.5/glue_1.7.0.zip", "glue_1.7.0.zip", nil},
 	{"deb", "deb", "foo", "1.0", "pool/main/f/foo/foo_1.0_amd64.deb", "foo_1.0_amd64.deb", nil},
+	{
+		"gitlfs", "gitlfs", gitlfsOID, "",
+		"objects/" + gitlfsOID[:2] + "/" + gitlfsOID[2:4] + "/" + gitlfsOID, gitlfsOID, nil,
+	},
 	{"go", "go", "example.com/mod", "v1.0.0", "example.com/mod/@v/v1.0.0.zip", "v1.0.0.zip", nil},
 	{"helm", "helm", "chart", "1.0.0", "chart/1.0.0/chart-1.0.0.tgz", "chart-1.0.0.tgz", nil},
 	{
@@ -57,6 +63,7 @@ var itemFormatCases = []itemFormatCase{
 	{"npm", "npm", "@scope/name", "1.0.0", "@scope/name/-/name-1.0.0.tgz", "name-1.0.0.tgz", []string{"@scope%2Fname/-/name-1.0.0.tgz"}},
 	{"nuget", "nuget", "demo", "1.0.0", "demo/1.0.0/demo.1.0.0.nupkg", "demo.1.0.0.nupkg", nil},
 	{"pacman", "pacman", "foo", "1.0-1", "foo-1.0-1-x86_64.pkg.tar.zst", "foo-1.0-1-x86_64.pkg.tar.zst", nil},
+	{"pub", "pub", "demo", "1.0.0", "demo/1.0.0/demo-1.0.0.tar.gz", "demo-1.0.0.tar.gz", nil},
 	{
 		"pypi",
 		"pypi",
@@ -74,8 +81,13 @@ var itemFormatCases = []itemFormatCase{
 		"org.scala/lib_2.13/1.0/lib_2.13-1.0.jar", "lib_2.13-1.0.jar",
 		[]string{"org/scala/lib_2.13/1.0/lib_2.13-1.0.jar", "/org/scala/lib_2.13/1.0/lib_2.13-1.0.jar"},
 	},
+	{"swift", "swift", "mona.LinkedList", "1.0.0", "mona/linkedlist/1.0.0.zip", "LinkedList-1.0.0.zip", nil},
 	{"terraform", "terraform", "ns/name/aws", "1.0.0", "ns/name/aws/1.0.0/name-1.0.0.tar.gz", "name-1.0.0.tar.gz", nil},
 }
+
+// gitlfsOID is the oid of a Git LFS object: its package name, file name and
+// the last segment of its path.
+const gitlfsOID = "4d7a214614ab2935c943f9e0ff69d22eadbb8f32b1258daaa5e2ca24d17e2393"
 
 // TestBundleItemPathsResolveAlikeWhenAddedAndPromoted pins, for every format, that
 // each spelling of an item path a client sends is accepted when the item is added

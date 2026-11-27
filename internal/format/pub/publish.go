@@ -15,9 +15,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
-	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/quota"
-	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/webhook"
 	pkgpub "github.com/openartifact/openartifact/pkg/pub"
 )
@@ -211,24 +209,10 @@ func (h *HTTPHandler) store(
 	return false
 }
 
-// commit stores the blob first, then inserts the referencing row under the
-// per-blob lock so a concurrent delete cannot remove the blob in between. When
-// no row results the blob is dropped again unless something else references it.
-func (h *HTTPHandler) commit(ctx context.Context, row *models.PubPackage, part *base.Spool) (err error) {
-	defer func() {
-		if err != nil {
-			if derr := storage.SafeDeleteBlob(ctx, h.DB, h.BlobStore, row.SHA256); derr != nil {
-				h.Log.Warnw("failed to clean up pub blob", "sha256", row.SHA256, "error", derr)
-			}
-		}
-	}()
-
-	blob := storage.SeekerBlob(row.SHA256, part.Reader(), map[string]string{"sha256": row.SHA256, "filename": row.Filename})
-
-	return storage.CommitBlob(ctx, h.DB, h.BlobStore, blob, func(ctx context.Context, blobKey string) error {
-		row.BlobKey = blobKey
-		row.CreatedAt = importmeta.CreatedAt(ctx)
-
+// commit stores the blob and inserts the row that references it; see
+// base.Handler.CommitBlobRow.
+func (h *HTTPHandler) commit(ctx context.Context, row *models.PubPackage, part *base.Spool) error {
+	return h.CommitBlobRow(ctx, part, row.SHA256, row.Filename, &row.BlobKey, &row.CreatedAt, func(ctx context.Context) error {
 		return h.DB.CreatePubPackage(ctx, row) //nolint:wrapcheck // the caller reports the failure
 	})
 }

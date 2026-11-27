@@ -9,13 +9,13 @@
 # proxy relocated (including the `_host/` one outside the repository), and downloads
 # the bundle. The publish phase is the build that fills the proxy cache, the install
 # phase a second build with an empty local Maven repository and p2 agent cache.
-# Image: P2_IMAGE (default maven:3-eclipse-temurin-21; Tycho 4 supports its Maven 3.9).
+# Image: P2_IMAGE (default maven:3.9-eclipse-temurin-21: Tycho 4.0 does not start on Maven 3.10).
 # Needs Internet access for the server and the container (download.eclipse.org, Maven Central).
 # Usage: OA_TOKEN=... scripts/smoke/p2.sh [URL]
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 SMOKE_REPO_BODY='{"repo_type":"proxy","upstream_url":"https://download.eclipse.org/releases/2024-12"}'
-smoke_init p2 "${P2_IMAGE:-maven:3-eclipse-temurin-21}" "$@"
+smoke_init p2 "${P2_IMAGE:-maven:3.9-eclipse-temurin-21}" "$@"
 
 smoke_run "$(cat <<'SCRIPT'
 set -eu

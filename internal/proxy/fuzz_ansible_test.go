@@ -33,7 +33,7 @@ func FuzzAnsibleVersionDoc(f *testing.F) {
 			t.Fatalf("verifier accepted a document ParseVersionDoc refuses: %v", err)
 		}
 
-		if target, err := ansibleDownloadTarget("https://galaxy.example/x/", doc.DownloadURL); err == nil {
+		if target, err := resolveDocLink("https://galaxy.example/x/", doc.DownloadURL, "download", pkgansible.ErrDoc); err == nil {
 			if u, perr := url.Parse(target); perr != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 				t.Fatalf("download target %q is not an absolute http(s) URL", target)
 			}

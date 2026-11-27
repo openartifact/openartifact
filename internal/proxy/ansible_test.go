@@ -536,7 +536,7 @@ func TestAnsibleProxy_BlobPolicy(t *testing.T) {
 	}
 }
 
-func TestAnsibleDownloadTarget(t *testing.T) {
+func TestResolveDocLink(t *testing.T) {
 	const doc = "https://galaxy.example/api/v3/collections/ns/demo/versions/1.0.0/"
 
 	for in, want := range map[string]string{
@@ -546,9 +546,9 @@ func TestAnsibleDownloadTarget(t *testing.T) {
 		"file:///etc/passwd":                    "",
 		"":                                      "https://galaxy.example/api/v3/collections/ns/demo/versions/1.0.0/",
 	} {
-		got, err := ansibleDownloadTarget(doc, in)
+		got, err := resolveDocLink(doc, in, "download", pkgansible.ErrDoc)
 		if (err != nil) != (want == "") || got != want && want != "" {
-			t.Errorf("ansibleDownloadTarget(%q) = %q, %v; want %q", in, got, err, want)
+			t.Errorf("resolveDocLink(%q) = %q, %v; want %q", in, got, err, want)
 		}
 	}
 }

@@ -19,7 +19,7 @@ smoke_init swift swift:latest "$@"
 smoke_run "$(cat <<'SCRIPT'
 set -eu
 swift --version 2>&1 | head -1
-command -v zip >/dev/null || { apt-get update -qq && apt-get install -y -qq zip >/dev/null; }
+command -v zip >/dev/null && command -v curl >/dev/null || { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq zip curl >/dev/null; }
 # the scope and the name must match the Swift grammar: letters, digits and single dashes
 SCOPE=smoke
 NAME="$(printf '%s' "$PKG" | tr -c 'A-Za-z0-9-' '-')"

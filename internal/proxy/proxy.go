@@ -1003,6 +1003,31 @@ func upstreamURL(baseURL, key string) (string, error) {
 	return u.String(), nil
 }
 
+// resolveDocLink resolves ref, the link of kind what ("download", "archive")
+// that a metadata document names, against docURL, the URL the document was
+// fetched from. The result must be an absolute http(s) URL; a link that is not
+// is reported wrapping invalid, the document error of the format.
+func resolveDocLink(docURL, ref, what string, invalid error) (string, error) {
+	docRef, err := url.Parse(docURL)
+	if err != nil {
+		return "", fmt.Errorf("parse document url: %w", err)
+	}
+
+	linkRef, err := url.Parse(ref)
+	if err != nil {
+		return "", fmt.Errorf("parse %s url: %w", what, err)
+	}
+
+	target := docRef.ResolveReference(linkRef)
+	if (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" {
+		return "", fmt.Errorf("%w: unusable %s url %q", invalid, what, ref)
+	}
+
+	target.Fragment = ""
+
+	return target.String(), nil
+}
+
 // flightGroup collapses concurrent fetches of the same key into one.
 type flightGroup struct {
 	mu    sync.Mutex

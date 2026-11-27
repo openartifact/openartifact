@@ -182,29 +182,6 @@ func (s *Service) servePubArchive(w http.ResponseWriter, r *http.Request, repo *
 	})
 }
 
-// pubArchiveTarget resolves the archive_url of a release against the URL its
-// package document was fetched from; it must be an absolute http(s) URL.
-func pubArchiveTarget(docURL, archiveURL string) (string, error) {
-	docRef, err := url.Parse(docURL)
-	if err != nil {
-		return "", fmt.Errorf("parse document url: %w", err)
-	}
-
-	ref, err := url.Parse(archiveURL)
-	if err != nil {
-		return "", fmt.Errorf("parse archive url: %w", err)
-	}
-
-	target := docRef.ResolveReference(ref)
-	if (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" {
-		return "", fmt.Errorf("%w: unusable archive url %q", pkgpub.ErrInvalidDoc, archiveURL)
-	}
-
-	target.Fragment = ""
-
-	return target.String(), nil
-}
-
 // locatePubArchive finds an archive at the URL its release names in the package
 // document, cached only when it matches the document's digest. A release the
 // document does not list is errNotFound, one g holds back is its gateError.
@@ -231,7 +208,7 @@ func (s *Service) locatePubArchive(ctx context.Context, repo *models.Repository,
 		return download{}, errInternal
 	}
 
-	target, err := pubArchiveTarget(docURL, v.ArchiveURL)
+	target, err := resolveDocLink(docURL, v.ArchiveURL, "archive", pkgpub.ErrInvalidDoc)
 	if err != nil {
 		s.log.Warnw("proxy upstream archive url refused", "repo", repo.Name, "package", p.Name, "version", p.Version, "error", err)
 		return download{}, errUpstream

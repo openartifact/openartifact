@@ -11,7 +11,6 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
-	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/pkg/p2"
 )
 
@@ -58,35 +57,17 @@ func (s *Service) fetchP2(
 // document that does not rewrite (not XML, a bomb, a directive) is refused like
 // any upstream body that fails verification.
 func (s *Service) rewriteP2(repo *models.Repository, key, target string, doc p2.Doc, resp *http.Response) error {
-	if resp.ContentLength > s.maxMeta {
-		s.log.Warnw("proxy upstream file exceeds size limit", "repo", repo.Name, "path", key, "size", resp.ContentLength)
-		return errUpstream
-	}
-
 	rel, err := p2.NewRelocator(repo.UpstreamURL, target, key)
 	if err != nil {
 		s.log.Errorw("p2 upstream URL unusable", "repo", repo.Name, "path", key, "error", err)
 		return errInternal
 	}
 
-	in, err := s.newSpool()
+	in, size, err := s.spoolUpstreamBody(repo, key, resp, s.maxMeta)
 	if err != nil {
 		return err
 	}
 	defer func() { base.CloseLog(in, s.log) }()
-
-	size, err := iocopy.Copy(in, io.LimitReader(resp.Body, s.maxMeta+1))
-	switch {
-	case err != nil:
-		s.log.Warnw("proxy upstream body read failed", "repo", repo.Name, "path", key, "error", err)
-		return errUpstreamDown
-	case size > s.maxMeta:
-		s.log.Warnw("proxy upstream body oversized", "repo", repo.Name, "path", key, "size", size)
-		return errUpstream
-	case resp.ContentLength >= 0 && size != resp.ContentLength:
-		s.log.Warnw("proxy upstream body truncated", "repo", repo.Name, "path", key, "size", size)
-		return errUpstreamDown
-	}
 
 	out, err := s.newSpool()
 	if err != nil {

@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # cran: R CMD build of a tiny package + curl upload to the repository, then
-# install.packages() it back through PACKAGES. Image: CRAN_IMAGE (default r-base:latest).
+# install.packages() it back through PACKAGES. Image: CRAN_IMAGE (default r-base:latest; curl is installed with apt-get).
 # Usage: OA_TOKEN=... scripts/smoke/cran.sh [URL]
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
@@ -13,6 +13,7 @@ smoke_init cran docker.io/library/r-base:latest "$@"
 smoke_run "$(cat <<'SCRIPT'
 set -eu
 R --version | head -1
+command -v curl >/dev/null || { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl >/dev/null; }
 base="$OA_URL/repos/cran/$REPO"
 hp="${OA_URL#*://}"; scheme="${OA_URL%%://*}"
 [ "$SMOKE_MODE" = install ] || {

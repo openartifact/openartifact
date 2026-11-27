@@ -18,11 +18,9 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
-	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/quota"
-	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/ansible"
@@ -243,31 +241,12 @@ func (h *HTTPHandler) store(
 	return false
 }
 
-// commit stores the blob first, then inserts the referencing row under the
-// per-blob lock so a concurrent delete cannot remove the blob in between. When
-// no row results the blob is dropped again unless something else references it.
-func (h *HTTPHandler) commit(ctx context.Context, row *models.AnsibleCollection, part *base.Spool) (err error) {
-	defer func() {
-		if err != nil {
-			h.dropBlob(ctx, row.SHA256, "publish")
-		}
-	}()
-
-	blob := storage.SeekerBlob(row.SHA256, part.Reader(), map[string]string{"sha256": row.SHA256, "filename": row.Filename})
-
-	return storage.CommitBlob(ctx, h.DB, h.BlobStore, blob, func(ctx context.Context, blobKey string) error {
-		row.BlobKey = blobKey
-		row.CreatedAt = importmeta.CreatedAt(ctx)
-
+// commit stores the blob and inserts the row that references it; see
+// base.Handler.CommitBlobRow.
+func (h *HTTPHandler) commit(ctx context.Context, row *models.AnsibleCollection, part *base.Spool) error {
+	return h.CommitBlobRow(ctx, part, row.SHA256, row.Filename, &row.BlobKey, &row.CreatedAt, func(ctx context.Context) error {
 		return h.DB.CreateAnsibleCollection(ctx, row) //nolint:wrapcheck // the caller reports the failure
 	})
-}
-
-// dropBlob removes the content-addressed blob once no row references it.
-func (h *HTTPHandler) dropBlob(ctx context.Context, sha256, after string) {
-	if err := storage.SafeDeleteBlob(ctx, h.DB, h.BlobStore, sha256); err != nil {
-		h.Log.Warnw("failed to clean up ansible blob", "after", after, "sha256", sha256, "error", err)
-	}
 }
 
 // serveBlob streams the artifact of c.
@@ -313,35 +292,24 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := trash.Delete(r.Context(), h.DB, trash.Request{
-		RepoID:   repo.ID,
-		Kind:     models.TrashKindAnsible,
-		IDs:      []string{c.ID},
-		Resource: c.Filename,
-		Package:  ansible.FQCN(c.Namespace, c.Name),
-		Version:  c.Version,
+	found, err := h.DeleteRelease(r.Context(), repo, models.TrashKindAnsible, c.ID, webhook.Artifact{
+		Name:    ansible.FQCN(c.Namespace, c.Name),
+		Version: c.Version,
+		Path:    c.Filename,
+		SHA256:  c.SHA256,
+		Size:    c.SizeBytes,
 	}, func() error { return h.hardDelete(r.Context(), repo, c) })
 	if err != nil {
-		if errors.Is(err, database.ErrTrashNotFound) {
-			writeError(w, http.StatusNotFound, "not_found", "Not found.", "")
-			return
-		}
-
 		h.Log.Errorw("failed to delete ansible collection", "id", c.ID, "error", err)
 		writeError(w, http.StatusInternalServerError, "error", "Internal error.", "")
 
 		return
 	}
 
-	h.Emit(r.Context(), repo.ID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
-		Repository: repo.Name,
-		Format:     FormatName,
-		Name:       ansible.FQCN(c.Namespace, c.Name),
-		Version:    c.Version,
-		Path:       c.Filename,
-		SHA256:     c.SHA256,
-		Size:       c.SizeBytes,
-	}))
+	if !found {
+		writeError(w, http.StatusNotFound, "not_found", "Not found.", "")
+		return
+	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
