@@ -26,11 +26,16 @@ export const DEFAULT_BASE_TEMPLATE = '{{origin}}/repos/{{esc}}'
 
 /** Base URL templates of the formats that do not use DEFAULT_BASE_TEMPLATE. */
 export const BASE_TEMPLATES: Readonly<Record<string, string>> = {
+  cran: '{{origin}}/repos/cran/{{esc}}',
   docker: '{{origin}}',
+  gitlfs: '{{origin}}/repos/gitlfs/{{esc}}',
   ivy: '{{origin}}/repos/ivy/{{esc}}',
   maven: '{{origin}}/repos/maven/{{esc}}',
+  p2: '{{origin}}/repos/p2/{{esc}}',
+  pub: '{{origin}}/repos/pub/{{esc}}',
   raw: '{{origin}}/repos/raw/{{esc}}',
   sbt: '{{origin}}/repos/sbt/{{esc}}',
+  swift: '{{origin}}/repos/swift/{{esc}}',
 }
 
 /** Snippets of a format the registry does not know: the bare repository URL. */
@@ -96,6 +101,14 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
       },
     ],
   },
+  cocoapods: {
+    hosted: [
+      {
+        client: 'CocoaPods',
+        configure: '# Podfile\nsource \'{{base}}\'\n\n# or register it once for every project\npod repo add-cdn openartifact {{base}}\n\n# private repository: ~/.netrc (chmod 600)\nmachine {{hostname}} login oa password <TOKEN>\n\n# install\npod install',
+      },
+    ],
+  },
   composer: {
     hosted: [
       {
@@ -135,6 +148,27 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
       },
     ],
   },
+  cran: {
+    hosted: [
+      {
+        client: 'R',
+        configure: '# ~/.Rprofile (or Rprofile.site)\noptions(repos = c(oa = "{{base}}"))\n\n# a private repository: credentials in the URL (or a ~/.netrc entry)\noptions(repos = c(oa = "{{authBase}}"))\n\n# install\ninstall.packages("mypackage")',
+        publish: 'R CMD build mypackage\ncurl -u <USERNAME>:<TOKEN> -T mypackage_1.0.0.tar.gz {{base}}/src/contrib/mypackage_1.0.0.tar.gz\n\n# a Windows binary package (R CMD INSTALL --build), for R 4.5\ncurl -u <USERNAME>:<TOKEN> -T mypackage_1.0.0.zip {{base}}/bin/windows/contrib/4.5/mypackage_1.0.0.zip',
+      },
+    ],
+    proxy: [
+      {
+        client: 'R',
+        configure: '# ~/.Rprofile (or Rprofile.site)\noptions(repos = c(oa = "{{base}}"))\n\n# a private repository: credentials in the URL (or a ~/.netrc entry)\noptions(repos = c(oa = "{{authBase}}"))\n\n# install\ninstall.packages("mypackage")',
+      },
+    ],
+    group: [
+      {
+        client: 'R',
+        configure: '# ~/.Rprofile (or Rprofile.site)\noptions(repos = c(oa = "{{base}}"))\n\n# a private repository: credentials in the URL (or a ~/.netrc entry)\noptions(repos = c(oa = "{{authBase}}"))\n\n# install\ninstall.packages("mypackage")',
+      },
+    ],
+  },
   deb: {
     hosted: [
       {
@@ -150,6 +184,15 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
         client: 'docker',
         configure: 'echo "<TOKEN>" | docker login {{host}} -u <USERNAME> --password-stdin',
         publish: 'docker tag my-image:latest {{host}}/{{repo}}:latest\ndocker push {{host}}/{{repo}}:latest',
+      },
+    ],
+  },
+  gitlfs: {
+    hosted: [
+      {
+        client: 'git-lfs',
+        configure: '# once per machine: a credential helper that remembers the token\ngit config --global credential.helper store\ngit credential approve <<EOF\nurl={{base}}\nusername=<USERNAME>\npassword=<TOKEN>\n\nEOF\n\n# in the repository\ngit lfs install\ngit config lfs.url {{base}}\n# or commit it for everyone\ngit config -f .lfsconfig lfs.url {{base}}\ngit lfs track "*.bin"\ngit add .gitattributes',
+        publish: 'git add big.bin && git commit -m "add big.bin" && git push origin main  # the objects go to lfs.url, the commits to origin',
       },
     ],
   },
@@ -258,6 +301,18 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
       },
     ],
   },
+  p2: {
+    hosted: [
+      {
+        client: 'Tycho (Maven)',
+        configure: '<!-- pom.xml -->\n<repositories>\n  <repository>\n    <id>{{repo}}</id>\n    <layout>p2</layout>\n    <url>{{base}}/</url>\n  </repository>\n</repositories>\n\n<!-- ~/.m2/settings.xml -->\n<settings>\n  <servers>\n    <server>\n      <id>{{repo}}</id>\n      <username><USERNAME></username>\n      <password><TOKEN></password>\n    </server>\n  </servers>\n</settings>',
+      },
+      {
+        client: 'Eclipse IDE / p2 director',
+        configure: '# Help > Install New Software > Add... > Location\n{{base}}/\n\n# command line\neclipse -nosplash -application org.eclipse.equinox.p2.director \\\n  -repository {{base}}/ -installIU org.example.feature.feature.group',
+      },
+    ],
+  },
   pacman: {
     hosted: [
       {
@@ -276,6 +331,27 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
       {
         client: 'pacman',
         configure: '# /etc/pacman.conf\n[{{repo}}]\nSigLevel = Required\nServer = {{base}}/os/$arch\n\n# private repository: Server = https://<USER>:<TOKEN>@{{basePath}}/os/$arch\n\n# trust the repository key\ncurl -fsSL {{base}}/public.key | sudo pacman-key --add -\nsudo pacman-key --lsign-key $(curl -fsSL {{base}}/public.key | gpg --show-keys --with-colons | awk -F: \'/^fpr/{print $10; exit}\')\n\n# packages keep the signatures of the members that hold them: trust each hosted member\'s key too (it is the group\'s when they share the active key), for example\n# curl -fsSL {{origin}}/repos/<member>/public.key | sudo pacman-key --add -',
+      },
+    ],
+  },
+  pub: {
+    hosted: [
+      {
+        client: 'dart',
+        configure: '# token: paste <TOKEN> when prompted\ndart pub token add {{base}}\n\n# resolve against this repository for every package\nexport PUB_HOSTED_URL={{base}}\n\n# or per dependency, in pubspec.yaml\ndependencies:\n  NAME:\n    hosted: {{base}}\n    version: ^1.0.0\n\n# install\ndart pub get',
+        publish: 'dart pub publish --server {{base}}',
+      },
+    ],
+    proxy: [
+      {
+        client: 'dart',
+        configure: '# token: paste <TOKEN> when prompted\ndart pub token add {{base}}\n\n# resolve against this repository for every package\nexport PUB_HOSTED_URL={{base}}\n\n# or per dependency, in pubspec.yaml\ndependencies:\n  NAME:\n    hosted: {{base}}\n    version: ^1.0.0\n\n# install\ndart pub get',
+      },
+    ],
+    group: [
+      {
+        client: 'dart',
+        configure: '# token: paste <TOKEN> when prompted\ndart pub token add {{base}}\n\n# resolve against this repository for every package\nexport PUB_HOSTED_URL={{base}}\n\n# or per dependency, in pubspec.yaml\ndependencies:\n  NAME:\n    hosted: {{base}}\n    version: ^1.0.0\n\n# install\ndart pub get',
       },
     ],
   },
@@ -325,6 +401,27 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
         client: 'sbt',
         configure: '// build.sbt\nresolvers += "{{repo}}" at "{{base}}"\ncredentials += Credentials("openartifact", "{{hostname}}", "<USERNAME>", "<TOKEN>")',
         publish: 'ThisBuild / publishTo := Some("{{repo}}" at "{{base}}")\n// then: sbt publish',
+      },
+    ],
+  },
+  swift: {
+    hosted: [
+      {
+        client: 'swift',
+        configure: 'swift package-registry set {{base}}{{#http}} --allow-insecure-http{{/http}}\nswift package-registry login {{base}}/login --token <TOKEN>{{#http}}\n# SwiftPM sends no credentials over plain http: a private repository needs HTTPS{{/http}}\n\n# Package.swift\n.package(id: "SCOPE.NAME", from: "1.0.0")\n\n# resolve\nswift package resolve',
+        publish: 'swift package-registry publish SCOPE.NAME 1.0.0 --url {{base}}{{#http}} --allow-insecure-http{{/http}}',
+      },
+    ],
+    proxy: [
+      {
+        client: 'swift',
+        configure: 'swift package-registry set {{base}}{{#http}} --allow-insecure-http{{/http}}\nswift package-registry login {{base}}/login --token <TOKEN>{{#http}}\n# SwiftPM sends no credentials over plain http: a private repository needs HTTPS{{/http}}\n\n# Package.swift\n.package(id: "SCOPE.NAME", from: "1.0.0")\n\n# resolve\nswift package resolve',
+      },
+    ],
+    group: [
+      {
+        client: 'swift',
+        configure: 'swift package-registry set {{base}}{{#http}} --allow-insecure-http{{/http}}\nswift package-registry login {{base}}/login --token <TOKEN>{{#http}}\n# SwiftPM sends no credentials over plain http: a private repository needs HTTPS{{/http}}\n\n# Package.swift\n.package(id: "SCOPE.NAME", from: "1.0.0")\n\n# resolve\nswift package resolve',
       },
     ],
   },

@@ -65,11 +65,22 @@ var (
 	condaUploads = []UploadRoute{
 		counted("/repos/{name}/{platform}", http.MethodPost),
 	}
+	cranUploads = []UploadRoute{
+		counted("/repos/cran/{name}/*", http.MethodPut),
+	}
 	debUploads = []UploadRoute{
 		byHandler("/api/v1/repositories/{name}/debs"),
 	}
 	dockerUploads = []UploadRoute{
 		counted("/v2/*", ""),
+	}
+	gitlfsUploads = []UploadRoute{
+		counted("/repos/gitlfs/{name}/objects/{oid}", http.MethodPut),
+		notUpload("/repos/gitlfs/{name}/objects/batch"),
+		notUpload("/repos/gitlfs/{name}/verify"),
+		notUpload("/repos/gitlfs/{name}/locks"),
+		notUpload("/repos/gitlfs/{name}/locks/verify"),
+		notUpload("/repos/gitlfs/{name}/locks/{id}/unlock"),
 	}
 	goUploads = []UploadRoute{
 		byHandler(sharedPut),
@@ -93,6 +104,9 @@ var (
 	pacmanUploads = []UploadRoute{
 		counted("/repos/{name}/os/{arch}/{filename}", http.MethodPut),
 	}
+	pubUploads = []UploadRoute{
+		counted("/repos/pub/{name}/api/packages/versions/newUpload", http.MethodPost),
+	}
 	pypiUploads = []UploadRoute{
 		counted("/repos/{name}/legacy", http.MethodPost),
 	}
@@ -114,6 +128,11 @@ var (
 	}
 	sbtUploads = []UploadRoute{
 		counted("/repos/sbt/{name}/*", http.MethodPut),
+	}
+	swiftUploads = []UploadRoute{
+		counted("/repos/swift/{name}/{scope}/{pkg}/{version}", http.MethodPut),
+		// swift package-registry login: a credential check, nothing is stored.
+		notUpload("/repos/swift/{name}/login"),
 	}
 	terraformUploads = []UploadRoute{
 		counted("/repos/{name}/_api/modules/{mod}/{system}/{version}", http.MethodPut),

@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"\x1f\x8b\x08\x00"
+"ustar"
+"pubspec.yaml"
+"name:"
+"version:"
+"description:"
+"environment:"
+"dependencies:"
+"dev_dependencies:"
+"publish_to: none"
+"&a"
+"*a"
+"archive_url"
+"archive_sha256"
+"retracted"
+"isDiscontinued"
+"api/packages/"
+"api/archives/"
+".tar.gz"

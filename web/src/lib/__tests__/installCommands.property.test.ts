@@ -54,7 +54,7 @@ const origin = fc
 const repoName = fc.stringMatching(/^[a-zA-Z0-9_-]{1,40}$/)
 const imagePath = fc.array(fc.stringMatching(/^[a-z0-9][a-z0-9._-]{0,15}$/), { minLength: 1, maxLength: 4 }).map((s) => s.join('/'))
 
-const ISOLATED = ['ivy', 'maven', 'raw', 'sbt']
+const ISOLATED = ['cran', 'gitlfs', 'ivy', 'maven', 'p2', 'pub', 'raw', 'sbt', 'swift']
 const encode = encodeURIComponent
 const encodePath = (p: string) => p.split('/').map(encode).join('/')
 
@@ -68,8 +68,10 @@ function expectedArgv(format: string, o: { url: string; host: string }, repo: st
     case 'composer': return ['composer', 'require', `${pkg}:${version}`]
     case 'conan': return ['conan', 'install', `--requires=${pkg}/${version}`, '-r', repo]
     case 'conda': return ['conda', 'install', '-c', base, `${pkg}=${version}`]
+    case 'cran': return ['Rscript', '-e', 'install.packages(commandArgs(TRUE), repos = NULL, type = "source")', `${base}/src/contrib/${encode(pkg)}_${encode(version)}.tar.gz`]
     case 'deb': return ['apt', 'install', `${pkg}=${version}`]
     case 'docker': return ['docker', 'pull', `${o.host}/${pkg}:${version}`]
+    case 'gitlfs': return ['curl', '-fO', `${base}/objects/${pkg}`]
     case 'go': return [`GOPROXY=${base}`, 'go', 'get', `${pkg}@${version}`]
     case 'helm': return ['helm', 'pull', pkg, '--repo', base, '--version', version]
     case 'huggingface': {
@@ -81,12 +83,14 @@ function expectedArgv(format: string, o: { url: string; host: string }, repo: st
     case 'nix': return ['nix', 'copy', '--from', base, `/nix/store/${version}-${pkg}`]
     case 'npm': return ['npm', 'install', `${pkg}@${version}`, `--registry=${base}/`]
     case 'nuget': return ['dotnet', 'add', 'package', pkg, '--version', version, '--source', `${base}/v3/index.json`]
+    case 'p2': return ['eclipse', '-nosplash', '-application', 'org.eclipse.equinox.p2.director', '-repository', `${base}/`, '-installIU', `${pkg}/${version}`]
     case 'pacman': return ['sudo', 'pacman', '-Sy', `${repo}/${pkg}`]
+    case 'pub': return ['dart', 'pub', 'add', `${pkg}:${version}`, '--hosted-url', base]
     case 'pypi': return ['pip', 'install', `${pkg}==${version}`, '--index-url', `${base}/simple/`]
     case 'raw': return ['curl', '-fO', `${base}/${encodePath(pkg)}`]
     case 'rpm': return ['dnf', 'install', `${pkg}-${version}`]
     case 'rubygems': return ['gem', 'install', pkg, '-v', version, '--source', `${base}/`]
-    default: return null // ivy and sbt emit build-file fragments, not shell
+    default: return null // ivy, sbt and swift emit build-file fragments, not shell
   }
 }
 
@@ -147,7 +151,7 @@ describe('pullCommand (property)', () => {
   })
 
   it('splits into exactly the intended words however hostile the names are', () => {
-    const shellFormats = ALL_FORMATS.filter((f) => f !== 'ivy' && f !== 'sbt' && f !== 'terraform')
+    const shellFormats = ALL_FORMATS.filter((f) => f !== 'cocoapods' && f !== 'ivy' && f !== 'sbt' && f !== 'swift' && f !== 'terraform')
     fc.assert(fc.property(fc.constantFrom(...shellFormats), origin, hostileWord, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
       fc.pre(repo !== '.' && repo !== '..')
       fc.pre(format !== 'raw' || pkg.split('/').every((s) => s !== '.' && s !== '..'))
@@ -156,10 +160,10 @@ describe('pullCommand (property)', () => {
   })
 
   it('points every URL argument under the repository base URL (apk, composer, conan, deb, pacman and rpm commands carry none)', () => {
-    fc.assert(fc.property(fc.constantFrom(...ALL_FORMATS.filter((f) => f !== 'apk' && f !== 'composer' && f !== 'conan' && f !== 'deb' && f !== 'docker' && f !== 'pacman' && f !== 'rpm' && f !== 'terraform')), origin, repoName, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
+    fc.assert(fc.property(fc.constantFrom(...ALL_FORMATS.filter((f) => f !== 'apk' && f !== 'composer' && f !== 'conan' && f !== 'deb' && f !== 'docker' && f !== 'pacman' && f !== 'rpm' && f !== 'swift' && f !== 'terraform')), origin, repoName, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
       const base = repoBaseUrl(format, o.url, repo)
       const cmd = pullCommand(format, o.url, repo, pkg, version)
-      const words = format === 'sbt' || format === 'ivy' ? [cmd] : shellWords(cmd)
+      const words = format === 'sbt' || format === 'ivy' || format === 'cocoapods' ? [cmd] : shellWords(cmd)
       const withOrigin = words.filter((w) => w.includes(o.url))
       expect(withOrigin.length).toBeGreaterThan(0)
       for (const w of withOrigin) expect(w).toContain(base)

@@ -216,6 +216,10 @@ var specs = [...]Spec{
 		Versioning: VersionSemver, PURLType: "cargo", OSVEcosystem: "crates.io", GrypeScan: true,
 	},
 	{
+		Name: "cocoapods", Proxy: true, NoHosted: true, DefaultUpstream: "https://cdn.cocoapods.org",
+		Versioning: VersionGem, PURLType: "cocoapods",
+	},
+	{
 		Name: "composer", GroupDeploy: true, Mount: MountGuarded,
 		Proxy: true, Group: true, DefaultUpstream: "https://repo.packagist.org",
 		Versioning: VersionSemver, PURLType: "composer", OSVEcosystem: "Packagist", GrypeScan: true,
@@ -229,6 +233,11 @@ var specs = [...]Spec{
 		Proxy: true, Group: true, PURLType: "conda",
 	},
 	{
+		Name: "cran", Uploads: cranUploads,
+		Proxy: true, Group: true, Mount: MountIsolated, DefaultUpstream: "https://cloud.r-project.org",
+		PURLType: "cran", OSVEcosystem: "CRAN",
+	},
+	{
 		Name: "deb", RestUploadEndpoint: "debs", Uploads: debUploads,
 		Proxy: true, Group: true, GeneratedGroupMetadata: true, Signing: SigningGPG,
 		PURLType: "deb", OSVEcosystem: "Debian", GrypeScan: true, DistroScoped: true,
@@ -237,6 +246,9 @@ var specs = [...]Spec{
 		Name: "docker", Mount: MountOCI, Uploads: dockerUploads,
 		Proxy: true, Group: true, Federation: true,
 		DefaultUpstream: DockerHubUpstream, PURLType: "docker",
+	},
+	{
+		Name: "gitlfs", Mount: MountIsolated, Uploads: gitlfsUploads,
 	},
 	{
 		Name: "go", GroupDeploy: true, Uploads: goUploads,
@@ -276,9 +288,17 @@ var specs = [...]Spec{
 		Versioning: VersionSemver, PURLType: "nuget", OSVEcosystem: "NuGet", GrypeScan: true,
 	},
 	{
+		Name: "p2", NoHosted: true, Proxy: true, Mount: MountIsolated,
+	},
+	{
 		Name: "pacman", Uploads: pacmanUploads,
 		Proxy: true, Group: true, GeneratedGroupMetadata: true, DefaultUpstream: "https://geo.mirror.pkgbuild.com",
 		Signing: SigningGPG, PURLType: "alpm",
+	},
+	{
+		Name: "pub", Uploads: pubUploads,
+		Proxy: true, Group: true, Mount: MountIsolated, DefaultUpstream: "https://pub.dev",
+		Versioning: VersionSemver, PURLType: "pub", OSVEcosystem: "Pub", GrypeScan: true,
 	},
 	{
 		Name: "pypi", GroupDeploy: true, Uploads: pypiUploads,
@@ -302,6 +322,10 @@ var specs = [...]Spec{
 	{
 		Name: "sbt", GroupDeploy: true, Uploads: sbtUploads,
 		Proxy: true, Group: true, Mount: MountIsolated, Versioning: VersionMaven, PURLType: "maven",
+	},
+	{
+		Name: "swift", Mount: MountIsolated, Uploads: swiftUploads,
+		Proxy: true, Group: true, Versioning: VersionSemver, PURLType: "swift", OSVEcosystem: "SwiftURL",
 	},
 	{
 		Name: "terraform", GroupDeploy: true, NoCuration: true, Uploads: terraformUploads,

@@ -516,7 +516,7 @@ export type Repository = {
     /**
      * Package format
      */
-    format: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
+    format: 'ansible' | 'apk' | 'cargo' | 'cocoapods' | 'composer' | 'conan' | 'conda' | 'cran' | 'deb' | 'docker' | 'gitlfs' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'p2' | 'pacman' | 'pub' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'swift' | 'terraform';
     /**
      * Repository description
      */
@@ -3258,7 +3258,7 @@ export type TrashItem = {
      * Primary key of the trashed row (the repository id for kind repository). Together with kind it addresses the item.
      */
     id: string;
-    kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'composer' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'nix_path' | 'ansible' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+    kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'composer' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'nix_path' | 'ansible' | 'pub' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package' | 'gitlfs_object' | 'cran_package' | 'swift_release';
     repository_id: string;
     /**
      * Name of the owning repository (the trashed repository itself for kind repository).
@@ -4572,7 +4572,7 @@ export type GetApiV1RepositoriesData = {
         /**
          * Filter by package format
          */
-        format?: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
+        format?: 'ansible' | 'apk' | 'cargo' | 'cocoapods' | 'composer' | 'conan' | 'conda' | 'cran' | 'deb' | 'docker' | 'gitlfs' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'p2' | 'pacman' | 'pub' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'swift' | 'terraform';
         /**
          * Page number (default: 1)
          */
@@ -4646,15 +4646,15 @@ export type PostApiV1RepositoriesData = {
          * Repository name (1-100 letters, digits, hyphen or underscore; starts with a letter or digit)
          */
         name: string;
-        format: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
+        format: 'ansible' | 'apk' | 'cargo' | 'cocoapods' | 'composer' | 'conan' | 'conda' | 'cran' | 'deb' | 'docker' | 'gitlfs' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'p2' | 'pacman' | 'pub' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'swift' | 'terraform';
         description?: string;
         public?: boolean;
         /**
-         * hosted (default), proxy or group. Every format can be a proxy or a group repository; huggingface only exists as proxy or group (a hosted huggingface repository is rejected with 400). apk, deb, rpm and pacman groups serve generated Release/Packages, repodata, APKINDEX or database files merged across their members. Docker proxies and groups are served under /v2/ only. Proxy and group repositories are read-only.
+         * hosted (default), proxy or group. Every format except gitlfs can be a proxy and every format except cocoapods, gitlfs and p2 a group repository (a proxy or group gitlfs repository is rejected with 400); huggingface only exists as proxy or group (a hosted huggingface repository is rejected with 400); cocoapods and p2 only exist as proxy (a hosted or group cocoapods or p2 repository is rejected with 400). apk, deb, rpm and pacman groups serve generated Release/Packages, repodata, APKINDEX or database files merged across their members. Docker proxies and groups are served under /v2/ only. Proxy and group repositories are read-only.
          */
         repo_type?: 'hosted' | 'proxy' | 'group';
         /**
-         * Required for proxy repos, except for formats with a default upstream: ansible (https://galaxy.ansible.com), cargo (https://index.crates.io), composer (https://repo.packagist.org), conan (https://center2.conan.io), docker (https://registry-1.docker.io), go (https://proxy.golang.org), huggingface (https://huggingface.co), nix (https://cache.nixos.org), nuget (https://api.nuget.org/v3/index.json), pacman (https://geo.mirror.pkgbuild.com), pypi (https://pypi.org/simple), rubygems (https://rubygems.org) and terraform (https://registry.terraform.io). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy.
+         * Required for proxy repos, except for formats with a default upstream: ansible (https://galaxy.ansible.com), cargo (https://index.crates.io), cocoapods (https://cdn.cocoapods.org), composer (https://repo.packagist.org), conan (https://center2.conan.io), cran (https://cloud.r-project.org), docker (https://registry-1.docker.io), go (https://proxy.golang.org), huggingface (https://huggingface.co), nix (https://cache.nixos.org), nuget (https://api.nuget.org/v3/index.json), pacman (https://geo.mirror.pkgbuild.com), pub (https://pub.dev), pypi (https://pypi.org/simple), rubygems (https://rubygems.org) and terraform (https://registry.terraform.io). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy.
          */
         upstream_url?: string;
         upstream_username?: string;
@@ -14837,7 +14837,7 @@ export type GetApiV1TrashData = {
         /**
          * Only items of this kind.
          */
-        kind?: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'composer' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'nix_path' | 'ansible' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        kind?: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'composer' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'nix_path' | 'ansible' | 'pub' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package' | 'gitlfs_object' | 'cran_package';
         /**
          * Only items of the repository with this name (a repository that is itself in the trash is not matched by name; its items are hidden).
          */
@@ -14882,7 +14882,7 @@ export type PostApiV1TrashByKindByIdRestoreData = {
         /**
          * One of the TrashItem kind values.
          */
-        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'composer' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'nix_path' | 'ansible' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'composer' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'nix_path' | 'ansible' | 'pub' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package' | 'gitlfs_object' | 'cran_package';
         /**
          * Trash item id.
          */
@@ -14928,7 +14928,7 @@ export type DeleteApiV1TrashByKindByIdData = {
         /**
          * One of the TrashItem kind values.
          */
-        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'composer' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'nix_path' | 'ansible' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'composer' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'nix_path' | 'ansible' | 'pub' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package' | 'gitlfs_object' | 'cran_package';
         /**
          * Trash item id.
          */
@@ -15012,7 +15012,7 @@ export type GetApiV1RepositoriesByNameTrashData = {
         /**
          * Only items of this kind.
          */
-        kind?: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'composer' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'nix_path' | 'ansible' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        kind?: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'composer' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'nix_path' | 'ansible' | 'pub' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package' | 'gitlfs_object' | 'cran_package';
         /**
          * Page number (default 1).
          */
@@ -15058,7 +15058,7 @@ export type PostApiV1RepositoriesByNameTrashByKindByIdRestoreData = {
         /**
          * One of the TrashItem kind values.
          */
-        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'composer' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'nix_path' | 'ansible' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'composer' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'nix_path' | 'ansible' | 'pub' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package' | 'gitlfs_object' | 'cran_package';
         /**
          * Trash item id.
          */

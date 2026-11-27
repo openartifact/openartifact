@@ -54,8 +54,8 @@ func newProxyGroupDB() *proxyGroupMockDB {
 	return db
 }
 
-// Every real format supports proxy and group repositories, so the guard is
-// exercised with a name no handler serves.
+// Every format that supports proxy repositories and every one but cocoapods
+// group repositories is accepted; the guard refuses a name no handler serves and the hosted-only formats.
 func TestUnsupportedRepoTypeMessage(t *testing.T) {
 	for _, repoType := range []string{"proxy", "group"} {
 		if msg := unsupportedRepoTypeMessage(repoType, "bogus"); !strings.Contains(msg, "not supported for format") {
@@ -67,9 +67,33 @@ func TestUnsupportedRepoTypeMessage(t *testing.T) {
 				continue // pacman groups arrive in a later change
 			}
 
+			if !repotype.ProxySupported(format) && repoType == "proxy" || !repotype.GroupSupported(format) && repoType == "group" {
+				// gitlfs has no proxy or group, p2 no group.
+				if msg := unsupportedRepoTypeMessage(repoType, format); !strings.Contains(msg, "not supported for format") {
+					t.Errorf("%s of %s: message %q", repoType, format, msg)
+				}
+
+				continue
+			}
+
+			if repoType == "group" && format == "cocoapods" {
+				msg := unsupportedRepoTypeMessage(repoType, format)
+				if !strings.Contains(msg, `group repositories are not supported for format "cocoapods"`) {
+					t.Errorf("group of cocoapods: message %q", msg)
+				}
+
+				continue
+			}
+
 			if msg := unsupportedRepoTypeMessage(repoType, format); msg != "" {
 				t.Errorf("%s of %s: unexpected message %q", repoType, format, msg)
 			}
+		}
+	}
+
+	for _, repoType := range []string{"hosted", "group"} {
+		if msg := unsupportedRepoTypeMessage(repoType, "p2"); !strings.Contains(msg, "not supported for format \"p2\"") {
+			t.Errorf("%s of p2: message %q, want a refusal", repoType, msg)
 		}
 	}
 

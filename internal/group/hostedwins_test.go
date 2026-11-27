@@ -96,6 +96,19 @@ func hostedWinsCases() map[string]hostedWinsCase {
 			hostedHas: `"1.0.0"`, proxyOnly: `"9.9.9"`,
 			file: "api/v1/crates/demo/9.9.9/download", other: "index/ot/he/other",
 		},
+		"pub": {
+			format: "pub",
+			setup: func(_ *testing.T, f *fixture) {
+				f.h.SetBaseURL(pubBase + "/")
+				f.set("hosted", "api/packages/demo", 200, pubMemberDoc("hosted", "1.0.0"))
+				f.set("mirror", "api/packages/demo", 200, pubMemberDoc("mirror", "1.0.0", "9.9.9"))
+				f.set("mirror", "api/archives/demo-9.9.9.tar.gz", 200, "evil")
+				f.set("mirror", "api/packages/other", 200, pubNamedDoc("other", "mirror", "1.0.0"))
+			},
+			meta: "api/packages/demo", probe: "api/packages/demo",
+			hostedHas: `"1.0.0"`, proxyOnly: `"9.9.9"`,
+			file: "api/archives/demo-9.9.9.tar.gz", other: "api/packages/other",
+		},
 		"nuget": {
 			format: "nuget",
 			setup: func(_ *testing.T, f *fixture) {

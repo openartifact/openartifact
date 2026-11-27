@@ -13,6 +13,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/pypisimple"
+	pkgcocoapods "github.com/openartifact/openartifact/pkg/cocoapods"
 )
 
 // maxCachedKeys bounds the cache keys read for one package: more files than
@@ -26,10 +27,14 @@ const maxCachedKeys = 20000
 // format cannot have.
 var cacheKeyPrefixes = map[string]func(pkg string) (string, bool){ //nolint:gochecknoglobals // constant lookup table
 	"cargo": func(pkg string) (string, bool) { return cargoCrateDir + strings.ToLower(pkg) + "/", true },
+	"cocoapods": func(pkg string) (string, bool) {
+		return pkgcocoapods.ArchiveKeyPrefix(pkg), pkgcocoapods.ValidName(pkg)
+	},
 	"go": func(pkg string) (string, bool) {
 		esc, err := module.EscapePath(pkg)
 		return esc + "/@v/", err == nil
 	},
+	"cran":     func(pkg string) (string, bool) { return cranSourcePrefix + pkg + "_", true },
 	"helm":     func(string) (string, bool) { return helmChartsDir, true },
 	"npm":      func(pkg string) (string, bool) { return pkg + "/-/", true },
 	"nuget":    func(pkg string) (string, bool) { return "v3/package/" + strings.ToLower(pkg) + "/", true },

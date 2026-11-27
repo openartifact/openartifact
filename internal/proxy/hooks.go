@@ -35,6 +35,12 @@ type Hooks struct {
 	// handling of serveResolved.
 	Serve func(s *Service, w http.ResponseWriter, r *http.Request, repo *models.Repository, rel string)
 
+	// MethodNotAllowed answers a request that is neither GET nor HEAD (the
+	// Allow header is already set), for the formats whose clients expect an
+	// error body of their own (swift: problem+json). Nil answers a plain-text
+	// 405.
+	MethodNotAllowed func(w http.ResponseWriter)
+
 	// Fetch downloads key from target, the upstream URL of key, and records
 	// the cache entry, for the formats that verify a file against a published
 	// digest or have a flow of their own (apk, ivy, nix, sbt). Nil is a plain

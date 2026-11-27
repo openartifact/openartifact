@@ -20,27 +20,30 @@ Start here:
 Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO` with the repository name (`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$`).
 
 - Every repository is served under `/repos/REPO/...`.
-- Ivy, Maven, raw and sbt are served under a format prefix: `/repos/ivy/REPO`, `/repos/maven/REPO`, `/repos/raw/REPO`, `/repos/sbt/REPO`. Repositories named like these prefixes are not reachable by the generic URL.
+- CRAN, Eclipse p2, Git LFS, Ivy, Maven, Pub, raw, sbt and Swift are served under a format prefix: `/repos/cran/REPO`, `/repos/gitlfs/REPO`, `/repos/ivy/REPO`, `/repos/maven/REPO`, `/repos/p2/REPO`, `/repos/pub/REPO`, `/repos/raw/REPO`, `/repos/sbt/REPO`, `/repos/swift/REPO`. Repositories named like these prefixes are not reachable by the generic URL.
 - Docker / OCI is the exception: the registry API is at `HOST/v2/`, and the first path segment after `/v2/` is the repository name ([details](docker.md)).
 - `BASE_URL` (`baseUrl`) is optional for package clients. Set it when the server sits behind a proxy that does not forward the original host.
   - Helm, PyPI and Terraform metadata use relative references and need no host.
-  - npm, Cargo, NuGet, Conan 1.x, Composer `dist.url` and Ansible use the origin of the request (`Host`, or `X-Forwarded-Host` and `X-Forwarded-Proto` from a trusted proxy). `BASE_URL` overrides it when set.
+  - npm, Cargo, NuGet, Conan 1.x, Composer `dist.url`, Pub `archive_url` and Ansible use the origin of the request (`Host`, or `X-Forwarded-Host` and `X-Forwarded-Proto` from a trusted proxy). `BASE_URL` overrides it when set.
   - Details: [the public URL](../getting-started/installation.md#the-public-url-and-base_url).
 
 ## Format matrix
 
-`Format id` is the `format` value you use when creating a repository. Every format can be a proxy or a group repository, and every format but Hugging Face a hosted one (see [hosted, proxy, group](../repositories/hosted-proxy-group.md)). The Upload column shows how you publish to a hosted repository.
+`Format id` is the `format` value you use when creating a repository. Every format but Git LFS can be a proxy, every format but CocoaPods, Git LFS and Eclipse p2 a group repository, and every format but CocoaPods, Hugging Face and Eclipse p2 a hosted one (see [hosted, proxy, group](../repositories/hosted-proxy-group.md)). The Upload column shows how you publish to a hosted repository.
 
 | Format | Format id | Client URL | Types | Upload | Page |
 |---|---|---|---|---|---|
 | Ansible collections | `ansible` | `HOST/repos/REPO/api/` (Galaxy API v3) | hosted, proxy, group | `ansible-galaxy collection publish` (`POST /api/v3/artifacts/collections/`, multipart) | [ansible](ansible.md) |
 | Alpine (apk) | `apk` | `HOST/repos/REPO/<branch>/<repo>` (`<arch>/APKINDEX.tar.gz`) | hosted, proxy, group | `PUT <branch>/<repo>/<arch>/<name>-<version>.apk` or `POST /api/v1/repositories/REPO/apks` (multipart) | [apk](apk.md) |
 | Cargo | `cargo` | `sparse+HOST/repos/REPO/index/` | hosted, proxy, group | `cargo publish` (`PUT /api/v1/crates/new`) | [cargo](cargo.md) |
+| CocoaPods | `cocoapods` | `source 'HOST/repos/REPO'` in the Podfile, or `pod repo add-cdn NAME HOST/repos/REPO` | proxy | none (download only) | [cocoapods](cocoapods.md) |
 | Composer (PHP) | `composer` | `HOST/repos/REPO` (`packages.json`, Composer repository v2) | hosted, proxy, group | `PUT /packages/upload/VENDOR/NAME/VERSION` (zip) | [composer](composer.md) |
 | Conan (1.x and 2) | `conan` | `HOST/repos/REPO/` (`v2/conans/...`, `v1/conans/...`) | hosted, proxy, group | `conan upload` | [conan](conan.md) |
 | Conda | `conda` | `HOST/repos/REPO/<platform>/repodata.json` | hosted, proxy, group | `POST /<platform>` with `X-Filename` | [conda](conda.md) |
+| CRAN (R) | `cran` | `HOST/repos/cran/REPO` (`src/contrib/PACKAGES`, `bin/`) | hosted, proxy, group | `PUT src/contrib/<pkg>_<ver>.tar.gz` (`curl -T`) | [cran](cran.md) |
 | Debian (APT) | `deb` | `HOST/repos/REPO/` (`dists/`, `pool/`) | hosted, proxy, group | `POST /api/v1/repositories/REPO/debs` (multipart) | [debian](debian.md) |
 | Docker / OCI | `docker` | `HOST/v2/` (image `HOST/REPO[/image]`) | hosted, proxy, group | `docker push` | [docker](docker.md) |
+| Git LFS | `gitlfs` | `HOST/repos/gitlfs/REPO` (`lfs.url`) | hosted | `git push` (`PUT /objects/<oid>` after `POST /objects/batch`) | [gitlfs](gitlfs.md) |
 | Go modules | `go` | `GOPROXY=HOST/repos/REPO` | hosted, proxy, group | `PUT <module>/@v/<version>` (module zip) | [go](go.md) |
 | Helm | `helm` | `HOST/repos/REPO/` (`index.yaml`, `charts/`) | hosted, proxy, group | `POST /charts` (raw chart `.tgz`) | [helm](helm.md) |
 | Hugging Face | `huggingface` | `HF_ENDPOINT=HOST/repos/REPO` | proxy, group | none (download only) | [huggingface](huggingface.md) |
@@ -49,12 +52,15 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | Nix | `nix` | `HOST/repos/REPO` (`/nix-cache-info`, `/<hash>.narinfo`, `/nar/`) | hosted, proxy, group | `nix copy --to 'HOST/repos/REPO' /nix/store/...` (netrc token) | [nix](nix.md) |
 | npm | `npm` | `HOST/repos/REPO/` | hosted, proxy, group | `npm publish` (`PUT /<pkg>`) | [npm](npm.md) |
 | NuGet | `nuget` | `HOST/repos/REPO/v3/index.json` | hosted, proxy, group | `dotnet nuget push` (`PUT /v3/package`) | [nuget](nuget.md) |
+| Eclipse p2 | `p2` | `HOST/repos/p2/REPO/` (update site: `p2.index`, `content.jar`, `artifacts.jar`) | proxy | none (download only) | [p2](p2.md) |
 | Arch Linux (pacman) | `pacman` | `HOST/repos/REPO/os/<arch>` (`<name>.db`, packages) | hosted, proxy, group | `PUT /os/<arch>/<pkg>.pkg.tar.zst` (+ `.sig`) | [pacman](pacman.md) |
+| Pub (Dart and Flutter) | `pub` | `PUB_HOSTED_URL=HOST/repos/pub/REPO` | hosted, proxy, group | `dart pub publish --server HOST/repos/pub/REPO` | [pub](pub.md) |
 | PyPI | `pypi` | `HOST/repos/REPO/simple/` | hosted, proxy, group | `twine upload` to `HOST/repos/REPO/legacy/` | [pypi](pypi.md) |
 | Raw | `raw` | `HOST/repos/raw/REPO/<path>` | hosted, proxy, group | `PUT <path>` (`curl -T`) | [raw](raw.md) |
 | RPM (YUM/DNF) | `rpm` | `HOST/repos/REPO/` (`repodata/repomd.xml`, `Packages/`) | hosted, proxy, group | `POST /api/v1/repositories/REPO/packages` (multipart) | [rpm](rpm.md) |
 | RubyGems | `rubygems` | `HOST/repos/REPO/` | hosted, proxy, group | `gem push` (`POST /api/v1/gems`) | [rubygems](rubygems.md) |
 | sbt | `sbt` | `HOST/repos/sbt/REPO` | hosted, proxy, group | `PUT` per file (`sbt publish`) | [ivy-sbt](ivy-sbt.md) |
+| Swift | `swift` | `HOST/repos/swift/REPO` (Swift Package Registry, ids `scope.name`) | hosted, proxy, group (a proxy needs an `upstream_url`) | `swift package-registry publish` (`PUT /repos/swift/REPO/<scope>/<name>/<version>`) | [swift](swift.md) |
 | Terraform / OpenTofu | `terraform` | registry host `HOST`, source `HOST/REPO/...` (discovery at `/.well-known/terraform.json`) | hosted, proxy, group | `PUT /_api/modules/MODULE/SYSTEM/VERSION`, `PUT /_api/providers/TYPE/VERSION/OS/ARCH` (relative to `HOST/repos/REPO`) | [terraform](terraform.md) |
 
 ## Upload from the web UI
@@ -77,7 +83,9 @@ The *Upload* button on a hosted repository (users with write permission) sends t
 Not available in the browser:
 
 - Cargo: `cargo publish` computes the dependency metadata the registry stores.
+- CRAN: the browser form has no R package reader yet; use `curl -T`.
 - Conan, Docker, Ivy and sbt: many files in a client-specific layout.
+- Pub: `dart pub publish` is a three-step exchange.
 - Nix: `nix copy` pushes the NAR and `.narinfo`; the page shows the command.
 
 Use the clients in the matrix for those. You can drop several files at once; each shows progress and can be cancelled.
@@ -86,7 +94,7 @@ Debian and RPM have no upload route under `/repos/REPO/`. Upload them through th
 
 ## Proxy and group repositories
 
-Every format in the matrix can be a proxy or a group repository; Hugging Face exists only as those two. Proxy and group repositories are read-only: writes answer `405`. Each format page has a Proxy and a Group section with the format-specific behaviour.
+Every format in the matrix but Git LFS can be a proxy repository, and every format but CocoaPods, Eclipse p2 and Git LFS a group; Hugging Face exists only as proxy and group, CocoaPods and Eclipse p2 only as proxy, Git LFS only as hosted. Proxy and group repositories are read-only: writes answer `405`. Each format page has a Proxy and a Group section with the format-specific behaviour.
 
 ## Authentication
 

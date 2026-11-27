@@ -44,6 +44,10 @@ func AnsibleBlobPath(rel string) bool {
 	return strings.HasPrefix(rel, "api/v3/artifacts/collections/")
 }
 
+// PubBlobPath accepts the package archives; the package and version documents
+// are streamed.
+func PubBlobPath(rel string) bool { return strings.HasPrefix(rel, "api/archives/") }
+
 // HuggingFaceBlobPath accepts the cached files of the Hugging Face Hub proxy
 // (keys under f/); repository info, listings and file metadata are streamed.
 func HuggingFaceBlobPath(rel string) bool { return strings.HasPrefix(rel, "f/") }
@@ -52,6 +56,10 @@ func HuggingFaceBlobPath(rel string) bool { return strings.HasPrefix(rel, "f/") 
 func CargoBlobPath(rel string) bool {
 	return strings.HasPrefix(rel, "api/v1/crates/") && path.Base(rel) == "download"
 }
+
+// CocoaPodsBlobPath accepts the source archives (dl/...) only; the shards, the
+// version file and the podspecs are generated or small and streamed.
+func CocoaPodsBlobPath(rel string) bool { return strings.HasPrefix(rel, "dl/") }
 
 // ComposerBlobPath accepts dists only; packages.json and the p2 documents are
 // generated.
@@ -70,6 +78,14 @@ func CondaBlobPath(rel string) bool {
 	base := path.Base(rel)
 
 	return strings.HasSuffix(base, ".conda") || strings.HasSuffix(base, ".tar.bz2")
+}
+
+// CRANBlobPath accepts R package files (source tarballs and the Windows and
+// macOS binaries); the PACKAGES indexes are rendered by the server.
+func CRANBlobPath(rel string) bool {
+	base := path.Base(rel)
+
+	return strings.HasSuffix(base, ".tar.gz") || strings.HasSuffix(base, ".tgz") || strings.HasSuffix(base, ".zip")
 }
 
 // DebBlobPath accepts everything below pool/.

@@ -69,6 +69,7 @@ func TestNormalizePackage(t *testing.T) {
 		{"npm", "@Scope/Name", "@scope/name"},
 		{"cargo", "Serde_Json", "serde-json"},
 		{"nuget", "Newtonsoft.Json", "newtonsoft.json"},
+		{"swift", "Mona.LinkedList", "mona.linkedlist"},
 		{"go", "github.com/Foo/Bar", "github.com/Foo/Bar"},
 		{"maven", "org.Apache:Commons", "org.Apache:Commons"},
 		{"helm", "Nginx", "Nginx"},

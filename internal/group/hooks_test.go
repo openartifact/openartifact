@@ -18,6 +18,7 @@ func init() { //nolint:gochecknoinits // test-only format registry, see above
 		"composer":  ComposerHooks,
 		"conan":     ConanHooks,
 		"conda":     CondaHooks,
+		"cran":      CRANHooks,
 		"deb":       DebHooks,
 		"go":        GoHooks,
 		"helm":      HelmHooks,
@@ -27,10 +28,12 @@ func init() { //nolint:gochecknoinits // test-only format registry, see above
 		"npm":       NPMHooks,
 		"nuget":     NuGetHooks,
 		"pacman":    PacmanHooks,
+		"pub":       PubHooks,
 		"pypi":      PyPIHooks,
 		"rpm":       RPMHooks,
 		"rubygems":  RubyGemsHooks,
 		"sbt":       SBTHooks,
+		"swift":     SwiftHooks,
 		"terraform": TerraformHooks,
 	} {
 		Register(format, h)

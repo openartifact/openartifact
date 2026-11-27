@@ -39,10 +39,23 @@ type documentedUpload struct {
 // every format to the route table. Changing a route, or the documentation of
 // one, fails a test here until both agree.
 var documentedUploads = map[string]documentedUpload{ //nolint:gochecknoglobals // read-only test table
-	"maven":  {http.MethodPut, "/repos/maven/{name}/*", "mvn deploy", "PUT /repos/maven/REPO/<group/path>/<artifactId>/<version>/<file>"},
-	"sbt":    {http.MethodPut, "/repos/sbt/{name}/*", "sbt publish", "HOST/repos/sbt/REPO"},
-	"ivy":    {http.MethodPut, "/repos/ivy/{name}/*", "ivy:publish", "HOST/repos/ivy/REPO"},
+	"maven": {http.MethodPut, "/repos/maven/{name}/*", "mvn deploy", "PUT /repos/maven/REPO/<group/path>/<artifactId>/<version>/<file>"},
+	"sbt":   {http.MethodPut, "/repos/sbt/{name}/*", "sbt publish", "HOST/repos/sbt/REPO"},
+	"swift": {
+		http.MethodPut,
+		"/repos/swift/{name}/{scope}/{pkg}/{version}",
+		"swift package-registry publish",
+		"PUT /repos/swift/REPO/<scope>/<name>/<version>",
+	},
+	"ivy": {http.MethodPut, "/repos/ivy/{name}/*", "ivy:publish", "HOST/repos/ivy/REPO"},
+	"cran": {
+		http.MethodPut,
+		"/repos/cran/{name}/*",
+		"PUT src/contrib/<pkg>_<ver>.tar.gz",
+		"-T mypackage_1.0.0.tar.gz HOST/repos/cran/REPO/src/contrib/mypackage_1.0.0.tar.gz",
+	},
 	"raw":    {http.MethodPut, "/repos/raw/{name}/*", "PUT <path>", "-T file.bin HOST/repos/raw/REPO/path/to/file.bin"},
+	"gitlfs": {http.MethodPut, "/repos/gitlfs/{name}/objects/{oid}", "git push", "PUT /objects/OID"},
 	"npm":    {http.MethodPut, "/repos/{name}/*", "PUT /<pkg>", "PUT /repos/REPO/<package>"},
 	"pypi":   {http.MethodPost, "/repos/{name}/legacy/", "HOST/repos/REPO/legacy/", "HOST/repos/REPO/legacy/"},
 	"docker": {http.MethodPost, "/v2/*", "docker push", "docker push HOSTPORT/REPO:latest"},
@@ -70,6 +83,12 @@ var documentedUploads = map[string]documentedUpload{ //nolint:gochecknoglobals /
 		"/repos/{name}/*",
 		"nix copy --to 'HOST/repos/REPO' /nix/store/...",
 		"nix copy --to 'https://HOST/repos/REPO'",
+	},
+	"pub": {
+		http.MethodPost,
+		"/repos/pub/{name}/api/packages/versions/newUpload",
+		"dart pub publish",
+		"dart pub publish --server https://HOST/repos/pub/REPO",
 	},
 	"ansible": {
 		http.MethodPost,
@@ -148,7 +167,7 @@ func uploadRouteTable(t *testing.T) chi.Router {
 // matrixRow is one row of the format matrix in docs/formats/README.md.
 type matrixRow struct{ upload, page string }
 
-var matrixPageLink = regexp.MustCompile(`\(([a-z-]+\.md)\)`)
+var matrixPageLink = regexp.MustCompile(`\(([a-z0-9-]+\.md)\)`)
 
 // formatMatrix reads the "Format matrix" table of docs/formats/README.md,
 // keyed by format id.

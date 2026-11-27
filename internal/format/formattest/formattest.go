@@ -269,6 +269,7 @@ type formatStore interface {
 	CreateNixPath(ctx context.Context, p *models.NixPath) error
 	CreateNuGetPackage(ctx context.Context, pkg *models.NuGetPackage) error
 	CreatePacmanPackage(ctx context.Context, pkg *models.PacmanPackage) error
+	CreatePubPackage(ctx context.Context, c *models.PubPackage) error
 	CreatePyPIPackage(ctx context.Context, pkg *models.PyPIPackage) error
 	CreateRubyGem(ctx context.Context, gem *models.RubyGem) error
 	CreateSBTArtifact(ctx context.Context, artifact *models.SBTArtifact) error
@@ -350,6 +351,7 @@ type formatStore interface {
 	GetPermissionTargetsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]*models.PermissionTarget, error)
 	GetPermissionTargetsByIDs(ctx context.Context, ids []string) ([]*models.PermissionTarget, error)
 	GetProjectByName(ctx context.Context, name string) (*models.Project, error)
+	GetPubPackage(ctx context.Context, repoID string, name string, version string) (*models.PubPackage, error)
 	GetPyPIPackageByFilename(ctx context.Context, repoID string, filename string) (*models.PyPIPackage, error)
 	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
 	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
@@ -401,6 +403,7 @@ type formatStore interface {
 	NuGetVersionsStamp(ctx context.Context, repoID string, packageID string) (string, error)
 	ListProjectGrantsByUser(ctx context.Context, userID string) ([]*models.ProjectGrant, error)
 	ListPublicRepositoryNames(ctx context.Context) ([]string, error)
+	ListPubVersions(ctx context.Context, repoID string, name string) ([]*models.PubPackage, error)
 	ListPyPIPackageNames(ctx context.Context, repoID string) ([]string, error)
 	ListPyPIPackageVersions(ctx context.Context, repoID string, name string) ([]*models.PyPIPackage, error)
 	PyPIIndexStamp(ctx context.Context, repoID string) (string, error)

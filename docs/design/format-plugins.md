@@ -22,14 +22,14 @@ Before 0.15 a format cost:
 
 The cure has two halves, delivered together:
 
-1. **Generic package tables** (`packages`, `package_versions`, `package_files`, `package_tags`) hold the data of every format but docker. Everything that spans formats reads them once instead of unioning the tables of 22 formats.
+1. **Generic package tables** (`packages`, `package_versions`, `package_files`, `package_tags`) hold the data of every format but docker. Everything that spans formats reads them once instead of unioning one set of tables per format.
 2. **A format plugin** (`internal/format/plugin`) is the single registration a format makes: hosted routes, analysis hooks (dependencies, license, PURL, manifest), client setup, proxy and group hooks, lifecycle hooks and the storage descriptor. Every method of the interface is required, so a forgotten capability is a compile error. The exhaustiveness tests that only existed to find forgotten switch arms are deleted.
 
 ## Scope
 
 | In | Out (kept dedicated) |
 |---|---|
-| ansible, apk, cargo, composer, conan, conda, deb, go, helm, ivy, maven, npm, nix, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform | **docker** |
+| ansible, apk, cargo, composer, conan, conda, deb, go, helm, ivy, maven, npm, nix, nuget, pacman, pub, pypi, raw, rpm, rubygems, sbt, terraform | **docker** |
 
 **Why docker stays dedicated.** Docker is an object graph, not a package list. Manifests, layer blobs, referrers (`subject_digest`), upload sessions, the GC advisory lock (`docker-repo:<id>`), cross-repository mounts and a hand-written federation codec all depend on the dedicated `docker_*` tables. The listing unit is a tag, not a file. Moving it is a separate, larger change.
 

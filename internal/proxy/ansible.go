@@ -453,29 +453,6 @@ func (s *Service) serveAnsibleDownload(w http.ResponseWriter, r *http.Request, r
 	})
 }
 
-// ansibleDownloadTarget resolves the download_url of a version document against
-// the URL the document was fetched from; it must be an absolute http(s) URL.
-func ansibleDownloadTarget(docURL, downloadURL string) (string, error) {
-	docRef, err := url.Parse(docURL)
-	if err != nil {
-		return "", fmt.Errorf("parse document url: %w", err)
-	}
-
-	ref, err := url.Parse(downloadURL)
-	if err != nil {
-		return "", fmt.Errorf("parse download url: %w", err)
-	}
-
-	target := docRef.ResolveReference(ref)
-	if (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" {
-		return "", fmt.Errorf("%w: unusable download url %q", pkgansible.ErrDoc, downloadURL)
-	}
-
-	target.Fragment = ""
-
-	return target.String(), nil
-}
-
 // locateAnsibleTarball finds a collection tarball at the URL its version
 // document names, cached only when it matches the document's digest. A version
 // the upstream does not list is errNotFound, one g holds back is its gateError.
@@ -497,7 +474,7 @@ func (s *Service) locateAnsibleTarball(
 		return download{}, errInternal
 	}
 
-	target, err := ansibleDownloadTarget(docURL, doc.DownloadURL)
+	target, err := resolveDocLink(docURL, doc.DownloadURL, "download", pkgansible.ErrDoc)
 	if err != nil {
 		s.log.Warnw("proxy upstream download url refused", "repo", repo.Name, "path", key, "error", err)
 		return download{}, errUpstream

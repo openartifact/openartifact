@@ -74,6 +74,13 @@ func TestIsProxyBlobPath(t *testing.T) {
 		{"conda", "linux-64/repodata.json", false},
 		{"conda", "linux-64/repodata.json.zst", false},
 		{"conda", "channeldata.json", false},
+		{"cran", "src/contrib/glue_1.8.0.tar.gz", true},
+		{"cran", "src/contrib/Archive/glue/glue_1.6.0.tar.gz", true},
+		{"cran", "bin/windows/contrib/4.5/glue_1.8.0.zip", true},
+		{"cran", "bin/macosx/big-sur-arm64/contrib/4.5/glue_1.8.0.tgz", true},
+		{"cran", "src/contrib/PACKAGES", false},
+		{"cran", "src/contrib/PACKAGES.gz", false},
+		{"cran", "src/contrib/PACKAGES.rds", false},
 		{"docker", "v2/x/manifests/latest", false},
 		{"", "a", false},
 	}

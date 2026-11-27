@@ -18,14 +18,16 @@ import (
 // version (apk, conan, conda, deb, docker, ivy, pacman, raw, rpm,
 // sbt, terraform) or are not proxied at all.
 var coordinateParsers = map[string]func(key string) (string, string, bool){ //nolint:gochecknoglobals // constant lookup table
-	"cargo":    cargoCoordinates,
-	"go":       goCoordinates,
-	"helm":     helmCoordinates,
-	"maven":    mavenCoordinates,
-	"npm":      npmCoordinates,
-	"nuget":    nugetCoordinates,
-	"pypi":     pypiCoordinates,
-	"rubygems": rubygemsCoordinates,
+	"cargo":     cargoCoordinates,
+	"cocoapods": cocoapodsKeyCoordinates,
+	"cran":      cranCoordinates,
+	"go":        goCoordinates,
+	"helm":      helmCoordinates,
+	"maven":     mavenCoordinates,
+	"npm":       npmCoordinates,
+	"nuget":     nugetCoordinates,
+	"pypi":      pypiCoordinates,
+	"rubygems":  rubygemsCoordinates,
 }
 
 // PackageCoordinates recovers the package name and version from the cache key

@@ -12,7 +12,7 @@ Deleting an artifact, a version, a Docker tag or a whole repository does not des
 
 Everything a delete can remove, in every format, plus repositories:
 
-- Package rows of the hosted formats: Alpine packages, Ansible collections, Cargo, Composer, Conan, Conda, Debian packages, Docker manifests and tags, Go modules, Helm, Ivy, Maven, Nix store paths, npm versions, NuGet, Arch Linux (pacman), PyPI, raw files, RPM, RubyGems, sbt and Terraform modules and providers.
+- Package rows of the hosted formats: Alpine packages, Ansible collections, Cargo, Composer, Conan, Conda, Debian packages, Docker manifests and tags, Go modules, Helm, Ivy, Maven, Nix store paths, npm versions, NuGet, Arch Linux (pacman), Pub, PyPI, raw files, RPM, RubyGems, sbt and Terraform modules and providers.
 - Whole repositories.
 - Items removed by a [cleanup policy](../repositories/cleanup-and-quotas.md#cleanup-policies).
 
@@ -80,13 +80,16 @@ Trash items are addressed by `kind` and `id` (both shown by the list endpoints).
 | `composer` | a Composer package version |
 | `conan_package` | one stored file of a Conan recipe or package revision |
 | `conda_package` | a Conda package |
+| `cran_package` | an R package file (a source tarball or a binary) |
 | `deb_package` | a Debian package |
 | `docker_manifest` | a Docker/OCI manifest (and its tags) |
 | `docker_tag` | a single Docker tag |
+| `gitlfs_object` | a Git LFS object |
 | `go_module` | a Go module version |
 | `helm_chart` | a Helm chart version |
 | `ivy_artifact`, `maven_artifact`, `sbt_artifact` | a file in an Ivy, Maven or sbt repository |
 | `nix_path` | a Nix store path (its NAR and narinfo) |
+| `pub` | a Pub package version |
 | `npm_version` | one npm package version |
 | `nuget_package` | a NuGet package version |
 | `pacman` | an Arch Linux (pacman) package |
@@ -94,6 +97,7 @@ Trash items are addressed by `kind` and `id` (both shown by the list endpoints).
 | `raw_artifact` | a raw file |
 | `rpm_package` | an RPM package |
 | `rubygems_gem` | a gem version |
+| `swift_release` | a Swift package release (its source archive) |
 | `terraform_module` | a Terraform/OpenTofu module version |
 | `terraform_provider` | one platform zip of a Terraform/OpenTofu provider version |
 
@@ -227,7 +231,7 @@ What counts as a release:
 
 | Format | A version is a release when |
 |---|---|
-| Ansible, Cargo, Helm, npm, NuGet, Terraform | it is semver without a pre-release part (`1.2.3` yes, `1.2.3-rc.1` no) |
+| Ansible, Cargo, Helm, npm, NuGet, Pub, Terraform | it is semver without a pre-release part (`1.2.3` yes, `1.2.3-rc.1` no) |
 | Alpine, Conan, Conda, Debian, Docker, Nix, pacman, Raw, RPM | every version is a release; there is no snapshot concept |
 | Go | semver without a pre-release part; pseudo-versions (`v0.0.0-2026...-abcdef123456`) count as pre-releases |
 | Ivy, Maven, sbt | it is not a `-SNAPSHOT` version |

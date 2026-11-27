@@ -24,8 +24,14 @@ describe('allowedFormats', () => {
     expect(allowedFormats('proxy')).toContain('pacman')
     expect(allowedFormats('group')).toContain('pacman')
   })
-  it('offers every format but huggingface for hosted repositories', () => {
-    expect(allowedFormats('hosted')).toEqual(ALL_FORMATS.filter((f) => f !== 'huggingface'))
+  it('offers every format but huggingface and p2 and cocoapods for hosted repositories', () => {
+    expect(allowedFormats('hosted')).toEqual(ALL_FORMATS.filter((f) => f !== 'huggingface' && f !== 'p2' && f !== 'cocoapods'))
+  })
+  it('offers gitlfs for hosted repositories only', () => {
+    expect(allowedFormats('hosted')).toContain('gitlfs')
+    expect(allowedFormats('proxy')).not.toContain('gitlfs')
+    expect(allowedFormats('group')).not.toContain('gitlfs')
+    expect(isFormatAllowed('proxy', 'gitlfs')).toBe(false)
   })
   it('offers huggingface for proxy and group repositories only', () => {
     expect(allowedFormats('hosted')).not.toContain('huggingface')
@@ -33,11 +39,26 @@ describe('allowedFormats', () => {
     expect(allowedFormats('group')).toContain('huggingface')
     expect(isFormatAllowed('hosted', 'huggingface')).toBe(false)
   })
-  it('restricts proxy to ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform in picker order', () => {
-    expect(allowedFormats('proxy')).toEqual(['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'])
+  it('offers cocoapods for proxy repositories only', () => {
+    expect(allowedFormats('hosted')).not.toContain('cocoapods')
+    expect(allowedFormats('proxy')).toContain('cocoapods')
+    expect(allowedFormats('group')).not.toContain('cocoapods')
+    expect(isFormatAllowed('group', 'cocoapods')).toBe(false)
+    expect(coerceFormat('group', 'cocoapods')).toBe(allowedFormats('group')[0])
   })
-  it('restricts group to ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform', () => {
-    expect(allowedFormats('group')).toEqual(['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'])
+  it('restricts proxy to ansible, apk, cargo, cocoapods, composer, conan, conda, cran, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, p2, pacman, pub, pypi, raw, rpm, rubygems, sbt, swift and terraform in picker order', () => {
+    expect(allowedFormats('proxy')).toEqual(['ansible', 'apk', 'cargo', 'cocoapods', 'composer', 'conan', 'conda', 'cran', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'p2', 'pacman', 'pub', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'swift', 'terraform'])
+  })
+  it('offers p2 for proxy repositories only', () => {
+    expect(allowedFormats('proxy')).toContain('p2')
+    expect(allowedFormats('hosted')).not.toContain('p2')
+    expect(allowedFormats('group')).not.toContain('p2')
+    expect(coerceFormat('group', 'p2')).toBe(allowedFormats('group')[0])
+    expect(upstreamUrlRequired('p2')).toBe(true)
+    expect(upstreamUrlPlaceholder('p2')).toBe('https://download.eclipse.org/releases/2024-12')
+  })
+  it('restricts group to ansible, apk, cargo, composer, conan, conda, cran, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pub, pypi, raw, rpm, rubygems, sbt, swift and terraform', () => {
+    expect(allowedFormats('group')).toEqual(['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'cran', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pub', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'swift', 'terraform'])
     expect(isFormatAllowed('group', 'deb')).toBe(true)
     expect(isFormatAllowed('group', 'rpm')).toBe(true)
     expect(isFormatAllowed('group', 'conda')).toBe(true)
@@ -45,7 +66,7 @@ describe('allowedFormats', () => {
   })
   it('does not leak the shared format list through mutation', () => {
     allowedFormats('hosted').pop()
-    expect(allowedFormats('hosted')).toEqual(ALL_FORMATS.filter((f) => f !== 'huggingface'))
+    expect(allowedFormats('hosted')).toEqual(ALL_FORMATS.filter((f) => f !== 'huggingface' && f !== 'p2' && f !== 'cocoapods'))
   })
 })
 
@@ -69,7 +90,7 @@ describe('coerceFormat', () => {
 })
 
 describe('upstream URL', () => {
-  it('is optional only for cargo, conan, docker, go, nuget, pypi, rubygems terraform and huggingface (well-known defaults)', () => {
+  it('is optional only for cargo, cocoapods, conan, docker, go, nuget, pypi, rubygems terraform and huggingface (well-known defaults)', () => {
     expect(upstreamUrlRequired('terraform')).toBe(false)
     expect(upstreamUrlPlaceholder('terraform')).toBe('https://registry.terraform.io')
     expect(upstreamUrlRequired('docker')).toBe(false)
@@ -80,6 +101,8 @@ describe('upstream URL', () => {
     expect(upstreamUrlRequired('conan')).toBe(false)
     expect(upstreamUrlRequired('rubygems')).toBe(false)
     expect(upstreamUrlRequired('huggingface')).toBe(false)
+    expect(upstreamUrlRequired('cocoapods')).toBe(false)
+    expect(upstreamUrlPlaceholder('cocoapods')).toBe('https://cdn.cocoapods.org')
     expect(upstreamUrlPlaceholder('huggingface')).toBe('https://huggingface.co')
     expect(upstreamUrlRequired('maven')).toBe(true)
     expect(upstreamUrlPlaceholder('go')).toBe('https://proxy.golang.org')
@@ -116,7 +139,7 @@ describe('federationAvailable', () => {
     expect(federationAvailable('group', 'maven')).toBe(false)
   })
   it('is false for formats without a federation codec', () => {
-    for (const f of ['apk', 'conan', 'conda', 'deb', 'ivy', 'rpm', 'rubygems', 'sbt']) {
+    for (const f of ['apk', 'conan', 'conda', 'cran', 'deb', 'ivy', 'rpm', 'rubygems', 'sbt']) {
       expect(federationAvailable('hosted', f)).toBe(false)
     }
     expect(federationAvailable('hosted', undefined)).toBe(false)

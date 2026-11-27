@@ -7,8 +7,8 @@
 // package (CC0); `raw` uses a generic heroicons archive-box glyph and `ivy`
 // uses the Apache mark (Ivy is an Apache project with no mark of its own).
 // Ansible uses the Ansible mark, apk the Alpine Linux mark, Cargo the Rust mark,
-// Composer the Composer mark, Hugging Face the Hugging Face mark, Conda the Anaconda mark, nix the NixOS mark, pacman the Arch Linux mark,
-// RPM the Red Hat mark, sbt the Scala mark and Terraform the Terraform mark (also used for OpenTofu
+// Cocoapods the CocoaPods mark, Composer the Composer mark, pub the Dart mark, CRAN the R mark, Hugging Face the Hugging Face mark, Git LFS the Git LFS mark, Conda the Anaconda mark, nix the NixOS mark, pacman the Arch Linux mark,
+// RPM the Red Hat mark, sbt the Scala mark, Swift the Swift mark and Terraform the Terraform mark (also used for OpenTofu
 // repositories: one `terraform` format serves both clients).
 
 import {
@@ -18,10 +18,14 @@ import {
   siApache,
   siApachemaven,
   siArchlinux,
+  siCocoapods,
   siComposer,
   siConan,
+  siDart,
   siDebian,
   siDocker,
+  siEclipseide,
+  siGitlfs,
   siGo,
   siHelm,
   siHuggingface,
@@ -29,10 +33,12 @@ import {
   siNpm,
   siNuget,
   siPypi,
+  siR,
   siRedhat,
   siRubygems,
   siRust,
   siScala,
+  siSwift,
   siTerraform,
 } from 'simple-icons'
 
@@ -67,11 +73,14 @@ export const FORMAT_META: Record<FormatId, FormatMeta> = {
   ansible: brand('Ansible', siAnsible),
   apk: brand('Alpine (apk)', siAlpinelinux),
   cargo: brand('Cargo', siRust),
+  cocoapods: brand('CocoaPods', siCocoapods),
   composer: brand('Composer', siComposer),
   conan: brand('Conan', siConan),
   conda: brand('Conda', siAnaconda),
+  cran: brand('CRAN (R)', siR),
   deb: brand('Deb', siDebian),
   docker: brand('Docker', siDocker),
+  gitlfs: brand('Git LFS', siGitlfs),
   go: brand('Go', siGo),
   helm: brand('Helm', siHelm),
   huggingface: brand('Hugging Face', siHuggingface),
@@ -80,12 +89,15 @@ export const FORMAT_META: Record<FormatId, FormatMeta> = {
   nix: brand('Nix', siNixos),
   npm: brand('npm', siNpm),
   nuget: brand('NuGet', siNuget),
+  p2: brand('Eclipse p2', siEclipseide),
   pacman: brand('Arch Linux (pacman)', siArchlinux),
+  pub: brand('Pub', siDart),
   pypi: brand('PyPI', siPypi),
   raw: { label: 'Raw', color: FALLBACK_COLOR, icon: RAW_ICON, evenodd: true },
   rpm: brand('RPM', siRedhat),
   rubygems: brand('RubyGems', siRubygems),
   sbt: brand('sbt', siScala),
+  swift: brand('Swift', siSwift),
   terraform: brand('Terraform', siTerraform),
 }
 

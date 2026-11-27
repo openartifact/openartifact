@@ -556,6 +556,26 @@ func RawBuilder(c target) []Snippet {
 	}}
 }
 
+// GitLFSBuilder is the snippet builder of the gitlfs format. Credentials go
+// through git's credential helper, never into lfs.url, so a committed
+// .lfsconfig carries no secret. The format is hosted only.
+func GitLFSBuilder(c target) []Snippet {
+	return []Snippet{
+		{
+			Client: "git-lfs",
+			Configure: fmt.Sprintf(
+				"# once per machine: a credential helper that remembers the token\ngit config --global credential.helper store"+
+					"\ngit credential approve <<EOF\nurl=%[1]s\nusername=<USERNAME>\npassword=<TOKEN>\n\nEOF"+
+					"\n\n# in the repository\ngit lfs install\ngit config lfs.url %[1]s"+
+					"\n# or commit it for everyone\ngit config -f .lfsconfig lfs.url %[1]s"+
+					"\ngit lfs track \"*.bin\"\ngit add .gitattributes",
+				c.base,
+			),
+			Publish: "git add big.bin && git commit -m \"add big.bin\" && git push origin main  # the objects go to lfs.url, the commits to origin",
+		},
+	}
+}
+
 // CondaBuilder is the snippet builder of the conda format.
 func CondaBuilder(c target) []Snippet {
 	return []Snippet{
@@ -568,6 +588,32 @@ func CondaBuilder(c target) []Snippet {
 			),
 		},
 	}
+}
+
+// CRANBuilder is the snippet builder of the cran format: R reads the repository
+// through options(repos), install.packages and the PACKAGES indexes it serves.
+// Proxy and group repositories are read-only, so they carry no publish hint.
+func CRANBuilder(c target) []Snippet {
+	publish := fmt.Sprintf(
+		"R CMD build mypackage\ncurl -u <USERNAME>:<TOKEN> -T mypackage_1.0.0.tar.gz %[1]s/src/contrib/mypackage_1.0.0.tar.gz"+
+			"\n\n# a Windows binary package (R CMD INSTALL --build), for R 4.5\n"+
+			"curl -u <USERNAME>:<TOKEN> -T mypackage_1.0.0.zip %[1]s/bin/windows/contrib/4.5/mypackage_1.0.0.zip",
+		c.base,
+	)
+	if c.repoType == typeProxy || c.repoType == typeGroup {
+		publish = "" // proxy and group repositories are read-only
+	}
+
+	return []Snippet{{
+		Client: "R",
+		Configure: fmt.Sprintf(
+			"# ~/.Rprofile (or Rprofile.site)\noptions(repos = c(oa = \"%s\"))"+
+				"\n\n# a private repository: credentials in the URL (or a ~/.netrc entry)\noptions(repos = c(oa = \"%s\"))"+
+				"\n\n# install\ninstall.packages(\"mypackage\")",
+			c.base, c.authBase,
+		),
+		Publish: publish,
+	}}
 }
 
 // ConanBuilder is the snippet builder of the conan format.
@@ -626,6 +672,51 @@ func HuggingFaceBuilder(c target) []Snippet {
 	}}
 }
 
+// P2Builder configures Eclipse p2 clients (Tycho builds, the Eclipse IDE, the
+// p2 director) with the repository as an update site. The format is proxy only,
+// so no snippet publishes. Tycho matches the settings.xml server entry by the
+// repository id; the update site URL ends in a slash.
+func P2Builder(c target) []Snippet {
+	return []Snippet{
+		{
+			Client: "Tycho (Maven)",
+			Configure: fmt.Sprintf(
+				"<!-- pom.xml -->\n<repositories>\n  <repository>\n    <id>%[1]s</id>\n    <layout>p2</layout>\n"+
+					"    <url>%[2]s/</url>\n  </repository>\n</repositories>"+
+					"\n\n<!-- ~/.m2/settings.xml -->\n<settings>\n  <servers>\n    <server>\n      <id>%[1]s</id>\n"+
+					"      <username><USERNAME></username>\n      <password><TOKEN></password>\n"+
+					"    </server>\n  </servers>\n</settings>",
+				c.repo, c.base,
+			),
+		},
+		{
+			Client: "Eclipse IDE / p2 director",
+			Configure: fmt.Sprintf(
+				"# Help > Install New Software > Add... > Location\n%[1]s/"+
+					"\n\n# command line\neclipse -nosplash -application org.eclipse.equinox.p2.director \\\n"+
+					"  -repository %[1]s/ -installIU org.example.feature.feature.group",
+				c.base,
+			),
+		},
+	}
+}
+
+// CocoaPodsBuilder configures CocoaPods against the repository root, which is a
+// CDN spec repository. The format is proxy-only, so the read-only snippet
+// carries no publish hint. CocoaPods sends credentials from ~/.netrc (matched on
+// the host name without the port), both for the CDN and for the archives.
+func CocoaPodsBuilder(c target) []Snippet {
+	return []Snippet{{
+		Client: "CocoaPods",
+		Configure: fmt.Sprintf(
+			"# Podfile\nsource '%[1]s'\n\n# or register it once for every project\npod repo add-cdn openartifact %[1]s"+
+				"\n\n# private repository: ~/.netrc (chmod 600)\nmachine %[2]s login oa password <TOKEN>"+
+				"\n\n# install\npod install",
+			c.base, c.name,
+		),
+	}}
+}
+
 // AnsibleBuilder configures ansible-galaxy against the Galaxy v3 API rooted at
 // the repository's /api/ path. Galaxy sends the API token as `Token <token>`.
 // Proxy and group repositories are read-only, so they carry no publish hint.
@@ -644,6 +735,30 @@ func AnsibleBuilder(c target) []Snippet {
 				"\n\n# install\nansible-galaxy collection install NAMESPACE.NAME --server openartifact"+
 				"\n\n# requirements.yml\ncollections:\n  - name: NAMESPACE.NAME\n    version: 1.0.0\n    source: %s",
 			api, api,
+		),
+		Publish: publish,
+	}}
+}
+
+// PubBuilder configures the Dart and Flutter pub client against the repository
+// root, which is the hosted URL: pub serves /api/packages/... below it. The
+// client stores bearer tokens per hosted URL and only sends them over https (or
+// to localhost). Proxy and group repositories are read-only, so they carry no
+// publish hint.
+func PubBuilder(c target) []Snippet {
+	publish := "dart pub publish --server " + c.base
+	if c.repoType == "proxy" || c.repoType == "group" {
+		publish = "" // proxy and group repositories are read-only
+	}
+
+	return []Snippet{{
+		Client: "dart",
+		Configure: fmt.Sprintf(
+			"# token: paste <TOKEN> when prompted\ndart pub token add %[1]s"+
+				"\n\n# resolve against this repository for every package\nexport PUB_HOSTED_URL=%[1]s"+
+				"\n\n# or per dependency, in pubspec.yaml\ndependencies:\n  NAME:\n    hosted: %[1]s\n    version: ^1.0.0"+
+				"\n\n# install\ndart pub get",
+			c.base,
 		),
 		Publish: publish,
 	}}
@@ -692,6 +807,27 @@ func SBTBuilder(c target) []Snippet {
 			Publish: fmt.Sprintf("ThisBuild / publishTo := Some(\"%s\" at \"%s\")\n// then: sbt publish", c.repo, c.base),
 		},
 	}
+}
+
+// SwiftBuilder configures SwiftPM against the registry URL of the repository.
+// `login` takes the login URL (the registry URL plus /login). SwiftPM sends no
+// credentials over plain http and `login` refuses such a URL, so a plain-http
+// origin gets --allow-insecure-http (enough for a public repository) and a
+// note that a private one needs https. Proxy and group repositories are
+// read-only: no publish hint.
+func SwiftBuilder(c target) []Snippet {
+	publish := "swift package-registry publish SCOPE.NAME 1.0.0 --url " + c.base + "{{#http}} --allow-insecure-http{{/http}}"
+	if c.repoType == "proxy" || c.repoType == "group" {
+		publish = "" // proxy and group repositories are read-only
+	}
+
+	configure := "swift package-registry set " + c.base + "{{#http}} --allow-insecure-http{{/http}}" +
+		"\nswift package-registry login " + c.base + "/login --token <TOKEN>" +
+		"{{#http}}\n# SwiftPM sends no credentials over plain http: a private repository needs HTTPS{{/http}}" +
+		"\n\n# Package.swift\n.package(id: \"SCOPE.NAME\", from: \"1.0.0\")" +
+		"\n\n# resolve\nswift package resolve"
+
+	return []Snippet{{Client: "swift", Configure: configure, Publish: publish}}
 }
 
 // IvyBuilder is the snippet builder of the ivy format.

@@ -20,8 +20,10 @@ import (
 	formatcargo "github.com/openartifact/openartifact/internal/format/cargo"
 	formatconan "github.com/openartifact/openartifact/internal/format/conan"
 	formatconda "github.com/openartifact/openartifact/internal/format/conda"
+	formatcran "github.com/openartifact/openartifact/internal/format/cran"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	formatdocker "github.com/openartifact/openartifact/internal/format/docker"
+	formatgitlfs "github.com/openartifact/openartifact/internal/format/gitlfs"
 	formatgomod "github.com/openartifact/openartifact/internal/format/gomod"
 	formathelm "github.com/openartifact/openartifact/internal/format/helm"
 	formativy "github.com/openartifact/openartifact/internal/format/ivy"
@@ -29,11 +31,13 @@ import (
 	formatnpm "github.com/openartifact/openartifact/internal/format/npm"
 	formatnuget "github.com/openartifact/openartifact/internal/format/nuget"
 	formatpacman "github.com/openartifact/openartifact/internal/format/pacman"
+	formatpub "github.com/openartifact/openartifact/internal/format/pub"
 	formatpypi "github.com/openartifact/openartifact/internal/format/pypi"
 	formatraw "github.com/openartifact/openartifact/internal/format/raw"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	formatrubygems "github.com/openartifact/openartifact/internal/format/rubygems"
 	formatsbt "github.com/openartifact/openartifact/internal/format/sbt"
+	formatswift "github.com/openartifact/openartifact/internal/format/swift"
 	formatterraform "github.com/openartifact/openartifact/internal/format/terraform"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -78,7 +82,11 @@ func serverRoutes(t *testing.T) chi.Router {
 	r.Route("/repos/raw/{name}", func(r chi.Router) { formatraw.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
 	r.Route("/repos/maven/{name}", func(r chi.Router) { formatmaven.NewHTTPHandler(nil, nil, nil).RegisterRepoRoutes(r) })
 	r.Route("/repos/sbt/{name}", func(r chi.Router) { formatsbt.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
+	r.Route("/repos/pub/{name}", func(r chi.Router) { formatpub.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
+	r.Route("/repos/cran/{name}", func(r chi.Router) { formatcran.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
+	r.Route("/repos/swift/{name}", func(r chi.Router) { formatswift.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
 	r.Route("/repos/ivy/{name}", func(r chi.Router) { formativy.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
+	r.Route("/repos/gitlfs/{name}", func(r chi.Router) { formatgitlfs.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
 	formatdocker.NewHTTPHandler(nil, nil, nil).RegisterRoutes(r)
 
 	api.NewDebUploadHandler(log, nil, nil, nil).Register(r)
@@ -147,14 +155,36 @@ func TestEveryFormatHasUploadLabel(t *testing.T) {
 	// directory under internal/format -> upload format label; "" is a support
 	// package without hosted uploads.
 	known := map[string]string{
-		"base": "", "filerepo": "", "formattest": "", "lifecycle": "", "plugin": "", "storage": "",
-		"ansible": metrics.FormatAnsible, "apk": metrics.FormatApk, "cargo": metrics.FormatCargo,
-		"composer": metrics.FormatComposer, "conan": metrics.FormatConan, "conda": metrics.FormatConda,
-		"deb": metrics.FormatDeb, "docker": metrics.FormatDocker, "gomod": metrics.FormatGo, "helm": metrics.FormatHelm,
-		"ivy": metrics.FormatIvy, "maven": metrics.FormatMaven, "nix": metrics.FormatNix,
-		"npm": metrics.FormatNPM, "nuget": metrics.FormatNuGet, "pacman": metrics.FormatPacman,
-		"pypi": metrics.FormatPyPI, "raw": metrics.FormatRaw, "rpm": metrics.FormatRPM,
-		"rubygems": metrics.FormatRubyGems, "sbt": metrics.FormatSBT, "terraform": metrics.FormatTerraform,
+		"base":       "",
+		"filerepo":   "",
+		"formattest": "",
+		"lifecycle":  "",
+		"plugin":     "",
+		"storage":    "",
+		"ansible":    metrics.FormatAnsible,
+		"apk":        metrics.FormatApk,
+		"cargo":      metrics.FormatCargo,
+		"composer":   metrics.FormatComposer,
+		"conan":      metrics.FormatConan,
+		"conda":      metrics.FormatConda,
+		"cran":       metrics.FormatCRAN,
+		"deb":        metrics.FormatDeb,
+		"docker":     metrics.FormatDocker,
+		"gitlfs":     metrics.FormatGitLFS,
+		"gomod":      metrics.FormatGo,
+		"helm":       metrics.FormatHelm,
+		"ivy":        metrics.FormatIvy,
+		"maven":      metrics.FormatMaven,
+		"nix":        metrics.FormatNix,
+		"npm":        metrics.FormatNPM,
+		"nuget":      metrics.FormatNuGet,
+		"pacman":     metrics.FormatPacman,
+		"pub":        metrics.FormatPub, "pypi": metrics.FormatPyPI,
+		"raw":      metrics.FormatRaw,
+		"rpm":      metrics.FormatRPM,
+		"rubygems": metrics.FormatRubyGems,
+		"sbt":      metrics.FormatSBT,
+		"swift":    metrics.FormatSwift, "terraform": metrics.FormatTerraform,
 	}
 
 	entries, err := os.ReadDir("../format")
@@ -234,7 +264,7 @@ func TestUploadRoutesCounted(t *testing.T) {
 		for _, f := range []string{
 			metrics.FormatCargo, metrics.FormatRubyGems, metrics.FormatHelm, metrics.FormatPyPI,
 			metrics.FormatNuGet, metrics.FormatConda, metrics.FormatConan, metrics.FormatRaw,
-			metrics.FormatIvy, metrics.FormatSBT, metrics.FormatTerraform,
+			metrics.FormatIvy, metrics.FormatSBT, metrics.FormatSwift, metrics.FormatTerraform, metrics.FormatPub, metrics.FormatCRAN,
 		} {
 			if got := testutil.ToFloat64(reg.UploadsTotal.WithLabelValues(f, result)); got < 1 {
 				t.Errorf("status %d: format %s counted %v times, want >= 1", status, f, got)

@@ -108,6 +108,27 @@ describe('pullCommand quoting', () => {
   })
 })
 
+describe('pub', () => {
+  const origin = 'https://oa.example:8443'
+
+  it('adds the package from the repository', () => {
+    expect(pullCommand('pub', origin, 'r1', 'http_parser', '4.0.2')).toBe(
+      'dart pub add http_parser:4.0.2 --hosted-url https://oa.example:8443/repos/pub/r1',
+    )
+  })
+
+  it('stores the token for the repository and publishes to it; proxies and groups only read', () => {
+    const [setup] = clientSetup('pub', origin, 'r1')
+    expect(setup!.configure).toContain('dart pub token add https://oa.example:8443/repos/pub/r1')
+    expect(setup!.configure).toContain('PUB_HOSTED_URL=https://oa.example:8443/repos/pub/r1')
+    expect(setup!.publish).toBe('dart pub publish --server https://oa.example:8443/repos/pub/r1')
+
+    for (const type of ['proxy', 'group']) {
+      expect(clientSetup('pub', origin, 'r1', type)[0]!.publish).toBeUndefined()
+    }
+  })
+})
+
 describe('pacman', () => {
   const origin = 'https://oa.example:8443'
 
@@ -313,8 +334,11 @@ describe('clientSetup', () => {
     expect(clientSetup('npm', origin, 'r1')[0]!.configure).toContain('npm config set //oa.example:8080/repos/r1/:_authToken <TOKEN>')
   })
 
-  it('uses the isolated prefix for ivy, maven, raw and sbt', () => {
-    for (const f of ['ivy', 'maven', 'raw', 'sbt']) {
+  it('renders the Swift dependency line', () => {
+    expect(pullCommand('swift', origin, 'r1', 'mona.LinkedList', '1.2.3')).toBe('.package(id: "mona.LinkedList", from: "1.2.3")')
+  })
+  it('uses the isolated prefix for cran, ivy, maven, raw, sbt and swift', () => {
+    for (const f of ['cran', 'ivy', 'maven', 'raw', 'sbt', 'swift']) {
       const text = clientSetup(f, origin, 'r1')
         .map((c) => c.configure + (c.publish ?? ''))
         .join('\n')
@@ -364,6 +388,51 @@ describe('generated templates', () => {
   })
 })
 
+describe('cocoapods', () => {
+  const origin = 'https://oa.example'
+
+  it('puts the repository in the Podfile as a source and pins the pod', () => {
+    expect(repoBaseUrl('cocoapods', origin, 'trunk')).toBe('https://oa.example/repos/trunk')
+    expect(pullCommand('cocoapods', origin, 'trunk', 'Alamofire', '5.9.1')).toBe(
+      "source 'https://oa.example/repos/trunk'\npod 'Alamofire', '5.9.1'",
+    )
+  })
+
+  it('escapes what would end the Ruby string literal', () => {
+    expect(pullCommand('cocoapods', origin, "a'b", "x\\y'", "1'")).toBe(
+      "source 'https://oa.example/repos/a\\'b'\npod 'x\\\\y\\'', '1\\''",
+    )
+  })
+
+  it('gives the same read-only client setup for the proxy and the hosted lookup', () => {
+    const setup = clientSetup('cocoapods', origin, 'trunk', 'proxy')
+    expect(setup[0]!.configure).toContain("source 'https://oa.example/repos/trunk'")
+    expect(setup[0]!.configure).toContain('pod repo add-cdn openartifact https://oa.example/repos/trunk')
+    expect(setup[0]!.configure).toContain('machine oa.example login oa password <TOKEN>')
+    expect(setup[0]!.publish).toBeUndefined()
+  })
+})
+
+describe('cran', () => {
+  const origin = 'https://oa.example'
+
+  it('installs the pinned source file by URL, with the package as an argument rather than R code', () => {
+    expect(repoBaseUrl('cran', origin, 'r')).toBe('https://oa.example/repos/cran/r')
+    expect(pullCommand('cran', origin, 'r', 'glue', '1.8.0')).toBe(
+      `Rscript -e 'install.packages(commandArgs(TRUE), repos = NULL, type = "source")' https://oa.example/repos/cran/r/src/contrib/glue_1.8.0.tar.gz`,
+    )
+  })
+
+  it('points options(repos) at the repository and publishes with curl', () => {
+    const [r] = clientSetup('cran', origin, 'r', 'hosted')
+    expect(r!.client).toBe('R')
+    expect(r!.configure).toContain('options(repos = c(oa = "https://oa.example/repos/cran/r"))')
+    expect(r!.configure).toContain('options(repos = c(oa = "https://<USERNAME>:<TOKEN>@oa.example/repos/cran/r"))')
+    expect(r!.publish).toContain('-T mypackage_1.0.0.tar.gz https://oa.example/repos/cran/r/src/contrib/mypackage_1.0.0.tar.gz')
+    expect(clientSetup('cran', origin, 'r', 'group')[0]!.publish).toBeUndefined()
+  })
+})
+
 describe('huggingface', () => {
   const origin = 'https://oa.example'
 
@@ -382,6 +451,46 @@ describe('huggingface', () => {
     expect(setup[0]!.configure).toContain('export HF_ENDPOINT=https://oa.example/repos/hf\nexport HF_TOKEN=<TOKEN>')
     expect(setup[0]!.publish).toBeUndefined()
     expect(clientSetup('huggingface', origin, 'hf', 'hosted')).toEqual(setup)
+  })
+})
+
+describe('p2', () => {
+  const origin = 'https://oa.example'
+
+  it('serves the update site below /repos/p2 and installs through the director', () => {
+    expect(repoBaseUrl('p2', origin, 'eclipse')).toBe('https://oa.example/repos/p2/eclipse')
+    expect(pullCommand('p2', origin, 'eclipse', 'org.eclipse.core.runtime', '3.31.0.v20240101')).toBe(
+      'eclipse -nosplash -application org.eclipse.equinox.p2.director -repository https://oa.example/repos/p2/eclipse/ -installIU org.eclipse.core.runtime/3.31.0.v20240101',
+    )
+  })
+
+  it('gives a Tycho and an Eclipse snippet, with the update site URL ending in a slash and no publish step', () => {
+    const setup = clientSetup('p2', origin, 'eclipse', 'proxy')
+    expect(setup.map((s) => s.client)).toEqual(['Tycho (Maven)', 'Eclipse IDE / p2 director'])
+    expect(setup[0]!.configure).toContain('<layout>p2</layout>\n    <url>https://oa.example/repos/p2/eclipse/</url>')
+    expect(setup[0]!.configure).toContain('<id>eclipse</id>\n      <username><USERNAME></username>')
+    expect(setup[1]!.configure).toContain('https://oa.example/repos/p2/eclipse/')
+    expect(setup.every((s) => s.publish === undefined)).toBe(true)
+  })
+})
+
+describe('gitlfs', () => {
+  const origin = 'https://oa.example'
+  const oid = 'a'.repeat(64)
+
+  it('lives under the isolated /repos/gitlfs prefix and pulls an object by its id', () => {
+    expect(repoBaseUrl('gitlfs', origin, 'lfs')).toBe('https://oa.example/repos/gitlfs/lfs')
+    expect(pullCommand('gitlfs', origin, 'lfs', oid, '')).toBe(`curl -fO https://oa.example/repos/gitlfs/lfs/objects/${oid}`)
+  })
+
+  it('sets lfs.url to the repository and keeps the token out of it', () => {
+    const [setup] = clientSetup('gitlfs', origin, 'lfs')
+    expect(setup!.client).toBe('git-lfs')
+    expect(setup!.configure).toContain('git config lfs.url https://oa.example/repos/gitlfs/lfs')
+    expect(setup!.configure).toContain('password=<TOKEN>')
+    expect(setup!.configure).not.toContain('<TOKEN>@')
+    expect(setup!.configure).toContain('url=https://oa.example/repos/gitlfs/lfs')
+    expect(setup!.publish).toContain('git push')
   })
 })
 

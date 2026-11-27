@@ -94,7 +94,12 @@ func NewHandler(log *logger.Logger, db HandlerStore) *Handler {
 func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repository, relPath string, be Backend) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
-		http.Error(w, "group repositories are read-only", http.StatusMethodNotAllowed)
+
+		if hk, ok := Lookup(grp.Format); ok && hk.MethodNotAllowed != nil {
+			hk.MethodNotAllowed(w)
+		} else {
+			http.Error(w, "group repositories are read-only", http.StatusMethodNotAllowed)
+		}
 
 		return
 	}

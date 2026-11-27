@@ -87,14 +87,19 @@ func TestRegistryShape(t *testing.T) {
 func TestPolicy(t *testing.T) {
 	t.Parallel()
 
-	all := "ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform"
+	// gitlfs is hosted only. cocoapods and p2 are proxy only: CDN shards cannot
+	// be merged by a group, and update sites are merged by a composite repository.
+	proxies := "ansible, apk, cargo, cocoapods, composer, conan, conda, cran, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, " +
+		"nuget, p2, pacman, pub, pypi, raw, rpm, rubygems, sbt, swift, terraform"
+	groups := "ansible, apk, cargo, composer, conan, conda, cran, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, " +
+		"pacman, pub, pypi, raw, rpm, rubygems, sbt, swift, terraform"
 
-	if got := repotype.ProxyFormats(); got != all {
-		t.Errorf("ProxyFormats() = %q, want %q", got, all)
+	if got := repotype.ProxyFormats(); got != proxies {
+		t.Errorf("ProxyFormats() = %q, want %q", got, proxies)
 	}
 
-	if got := repotype.GroupFormats(); got != all {
-		t.Errorf("GroupFormats() = %q, want %q", got, all)
+	if got := repotype.GroupFormats(); got != groups {
+		t.Errorf("GroupFormats() = %q, want %q", got, groups)
 	}
 
 	deploy := "ansible, cargo, composer, conan, conda, go, helm, ivy, maven, nix, npm, nuget, pypi, raw, rubygems, sbt, terraform"
@@ -120,6 +125,9 @@ func TestPolicy(t *testing.T) {
 		"ansible":     "https://galaxy.ansible.com",
 		"composer":    "https://repo.packagist.org",
 		"huggingface": "https://huggingface.co",
+		"pub":         "https://pub.dev",
+		"cocoapods":   "https://cdn.cocoapods.org",
+		"cran":        "https://cloud.r-project.org",
 	}
 
 	for _, name := range repotype.Names() {

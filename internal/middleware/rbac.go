@@ -24,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/publicurl"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/pkg/logger"
+	pkgpub "github.com/openartifact/openartifact/pkg/pub"
 )
 
 // AuthRealm is the realm of the Basic and Bearer challenges. It is a protocol
@@ -503,6 +504,11 @@ func writeAccessDenied(
 			w.Header().Add("WWW-Authenticate", `Basic realm="`+AuthRealm+`"`)
 		}
 
+		// git-lfs reads the credential challenge of its own header first.
+		if strings.HasPrefix(r.URL.Path, "/repos/gitlfs/") {
+			w.Header().Add("Lfs-Authenticate", `Basic realm="`+AuthRealm+`"`)
+		}
+
 		// Cargo only sends its token after a challenge naming its login page
 		// (RFC 3139 auth-required flow).
 		if scope.repoName != "" {
@@ -867,6 +873,18 @@ func classifyRoute(r *http.Request) routeScope {
 		action = "delete"
 	}
 
+	if isGitLFSBatch(r, artifactPath) {
+		action = gitLFSBatchAction(r)
+	}
+
+	if isPubPublishStep(r.Method, r.URL.Path, artifactPath) {
+		action = "write"
+	}
+
+	if isSwiftLogin(r.Method, r.URL.Path, artifactPath) {
+		action = "read"
+	}
+
 	return routeScope{action: action, repoName: repoName, artifactPath: artifactPath}
 }
 
@@ -879,6 +897,26 @@ func isConanV1Delete(method, artifactPath string) bool {
 	}
 
 	return strings.HasSuffix(artifactPath, "/packages/delete") || strings.HasSuffix(artifactPath, "/remove_files")
+}
+
+// isPubPublishStep reports whether the request is one of the GETs of `dart pub
+// publish` (the upload URL and the finishing request): they belong to the
+// publish, so they need "write" like the upload POST between them. A caller that
+// may only read a repository learns that before the client sends the archive.
+func isPubPublishStep(method, urlPath, artifactPath string) bool {
+	if method != http.MethodGet || !strings.HasPrefix(urlPath, "/repos/pub/") {
+		return false
+	}
+
+	return artifactPath == pkgpub.NewPath || artifactPath == pkgpub.FinishPath
+}
+
+// isSwiftLogin reports whether the request is "swift package-registry login":
+// a POST to /repos/swift/{name}/login that only checks the credential, so it
+// needs "read" like the downloads the credential is for, not the "write" every
+// POST maps to.
+func isSwiftLogin(method, urlPath, artifactPath string) bool {
+	return method == http.MethodPost && artifactPath == "login" && strings.HasPrefix(urlPath, "/repos/swift/")
 }
 
 // repoDataSegments are the sub-resources of /api/v1/repositories/{name}/ that

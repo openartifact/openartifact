@@ -4,7 +4,7 @@
 
 // Builds the native client URL / install command for a package. Repository
 // routes mirror cmd/server/main.go: most formats live under /repos/{repo};
-// ivy, maven, raw and sbt use an isolated /repos/{format}/{repo} prefix, and
+// cran, ivy, maven, p2, raw and sbt use an isolated /repos/{format}/{repo} prefix, and
 // docker serves the registry API at the host root (/v2/). The repository base
 // URL and the per-client configure/publish snippets are templates generated
 // from internal/clientsetup (clientsetup.generated.ts); this file only
@@ -101,6 +101,11 @@ function huggingfaceRepoArgs(pkg: string): { id: string; type: string } {
   return { id: pkg, type: 'model' }
 }
 
+/** A Ruby single-quoted string literal (the Podfile is Ruby). */
+function rubyQuote(token: string): string {
+  return `'${token.replace(/[\\']/g, '\\$&')}'`
+}
+
 /** Install/pull command for a package version, built from the real server origin. */
 export function pullCommand(
   format: string,
@@ -119,18 +124,28 @@ export function pullCommand(
       return `apk add ${q(`${pkg}=${version}`)}`
     case 'cargo':
       return `cargo install ${q(pkg)} --version ${q(version)} --index ${q(`sparse+${base}/index/`)}`
+    case 'cocoapods':
+      // A Podfile fragment: CocoaPods has no command that adds a pod.
+      return `source ${rubyQuote(base)}\npod ${rubyQuote(pkg)}, ${rubyQuote(version)}`
     case 'composer':
       return `composer require ${q(`${pkg}:${version}`)}`
     case 'conan':
       return `conan install ${q(`--requires=${pkg}/${version}`)} -r ${q(repo)}`
     case 'conda':
       return `conda install -c ${q(base)} ${q(`${pkg}=${version}`)}`
+    case 'cran':
+      // The file is installed by its URL so the version is pinned (install.packages(pkg, repos) always takes the newest).
+      return `Rscript -e ${q('install.packages(commandArgs(TRUE), repos = NULL, type = "source")')} ${q(`${base}/src/contrib/${encodeURIComponent(pkg)}_${encodeURIComponent(version)}.tar.gz`)}`
     case 'deb':
       return `apt install ${q(`${pkg}=${version}`)}`
     case 'docker':
       // The listed package name already is the registry name, `<repo>` or
       // `<repo>/<image path>` (internal/ocipath), so it is the pull path.
       return `docker pull ${q(`${hostOf(origin)}/${pkg}:${version}`)}`
+    case 'gitlfs':
+      // The listed package name is the object id; this fetches the object itself
+      // (a checkout gets its files through `git lfs pull`).
+      return `curl -fO ${q(`${base}/objects/${pkg}`)}`
     case 'go':
       // A quoted value is still a valid environment assignment; a quoted word is not.
       return `GOPROXY=${q(base)} go get ${q(`${pkg}@${version}`)}`
@@ -152,9 +167,13 @@ export function pullCommand(
       return `npm install ${q(`${pkg}@${version}`)} ${q(`--registry=${base}/`)}`
     case 'nuget':
       return `dotnet add package ${q(pkg)} --version ${q(version)} --source ${q(`${base}/v3/index.json`)}`
+    case 'p2':
+      return `eclipse -nosplash -application org.eclipse.equinox.p2.director -repository ${q(`${base}/`)} -installIU ${q(`${pkg}/${version}`)}`
     case 'pacman':
       // A proxy mirrors the whole Arch mirror: the package is named without a repository qualifier.
       return repoType === 'proxy' ? `sudo pacman -Sy ${q(pkg)}` : `sudo pacman -Sy ${q(`${repo}/${pkg}`)}`
+    case 'pub':
+      return `dart pub add ${q(`${pkg}:${version}`)} --hosted-url ${q(base)}`
     case 'pypi':
       return `pip install ${q(`${pkg}==${version}`)} --index-url ${q(`${base}/simple/`)}`
     case 'raw':
@@ -165,6 +184,8 @@ export function pullCommand(
       return `gem install ${q(pkg)} -v ${q(version)} --source ${q(`${base}/`)}`
     case 'sbt':
       return `resolvers += "${repo}" at "${base}"`
+    case 'swift':
+      return `.package(id: ${JSON.stringify(pkg)}, from: ${JSON.stringify(version)})`
     case 'terraform':
       return terraformUsage(hostOf(origin), repo, pkg, version)
     default:

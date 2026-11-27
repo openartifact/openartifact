@@ -22,6 +22,12 @@ import (
 // hide). Both are plain first-hit groups. ivy and sbt only differ in the
 // hosted-wins reference.
 type Hooks struct {
+	// MethodNotAllowed answers a request that is neither GET nor HEAD (the
+	// Allow header is already set), for the formats whose clients expect an
+	// error body of their own (swift: problem+json). Nil answers a plain-text
+	// 405.
+	MethodNotAllowed func(w http.ResponseWriter)
+
 	// ServeMerged answers the requests the group of this format merges over its
 	// readable members, or answers itself; false means the request is a plain
 	// first-hit one. Nil is a plain first-hit group.

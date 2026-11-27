@@ -78,6 +78,7 @@ type PostgresDB struct {
 	*TerraformStore
 	*ComposerStore
 	*AnsibleStore
+	*PubStore
 	*NixStore
 	*GoModStore
 	*DockerStore
@@ -91,8 +92,11 @@ type PostgresDB struct {
 	*ConanStore
 	*IvyStore
 	*SBTStore
+	*SwiftStore
 	*AttestationStore
 	*QuayStore
+	*GitLFSStore
+	*CRANStore
 	// STORES-STRUCT
 }
 
@@ -153,6 +157,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		TerraformStore:       &TerraformStore{core: c},
 		ComposerStore:        &ComposerStore{core: c},
 		AnsibleStore:         &AnsibleStore{core: c},
+		PubStore:             &PubStore{core: c},
 		NixStore:             &NixStore{core: c},
 		GoModStore:           &GoModStore{core: c},
 		DockerStore:          &DockerStore{core: c},
@@ -166,8 +171,11 @@ func newPostgresDB(c *core) *PostgresDB {
 		ConanStore:           &ConanStore{core: c},
 		IvyStore:             &IvyStore{core: c},
 		SBTStore:             &SBTStore{core: c},
+		SwiftStore:           &SwiftStore{core: c},
 		AttestationStore:     &AttestationStore{core: c},
 		QuayStore:            &QuayStore{core: c},
+		GitLFSStore:          &GitLFSStore{core: c},
+		CRANStore:            &CRANStore{core: c},
 		// STORES-INIT
 	}
 }
