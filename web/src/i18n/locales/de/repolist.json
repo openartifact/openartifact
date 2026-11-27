@@ -107,6 +107,7 @@
   "activity.action.artifact.downloaded": "Heruntergeladen",
   "activity.action.artifact.deleted": "In den Papierkorb verschoben",
   "activity.action.artifact.moved": "Verschoben",
+  "activity.action.artifact.copied": "Kopiert",
   "activity.action.artifact.promoted": "Befördert",
   "activity.action.artifact.quarantined": "In Quarantäne gestellt",
   "activity.action.artifact.released": "Aus der Quarantäne freigegeben",

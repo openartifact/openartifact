@@ -40,6 +40,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <LinkIcon class="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />{{ t('artifact.action.permalink') }}
               </button>
             </MenuItem>
+            <MenuItem v-if="transferable" v-slot="{ active }">
+              <button type="button" :class="[ITEM, active && 'bg-surface-hover']" data-testid="action-copy" @click="transferMode = 'copy'">
+                <DocumentDuplicateIcon class="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />{{ t('artifact.action.copyTo') }}
+              </button>
+            </MenuItem>
+            <MenuItem v-if="transferable && ctx.caps.value.remove" v-slot="{ active }">
+              <button type="button" :class="[ITEM, active && 'bg-surface-hover']" data-testid="action-move" @click="transferMode = 'move'">
+                <ArrowRightCircleIcon class="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />{{ t('artifact.action.moveTo') }}
+              </button>
+            </MenuItem>
             <MenuItem v-if="ctx.caps.value.admin" v-slot="{ active }">
               <button type="button" :class="[ITEM, active && 'bg-surface-hover']" data-testid="action-quarantine" @click="toggleQuarantine">
                 <component :is="quarantined ? ArrowUturnLeftIcon : LockClosedIcon" class="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
@@ -55,6 +65,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </PopupTransition>
       </Teleport>
     </Menu>
+
+    <ArtifactTransferDialog
+      :open="transferMode !== null"
+      :mode="transferMode ?? 'copy'"
+      :repo="ctx.repoName.value"
+      :format="ctx.format.value"
+      :is-admin="session.isAdmin"
+      :label="`${pkgName} ${entry.version}`"
+      :items="transferItems"
+      @close="transferMode = null"
+      @done="transferDone"
+    />
 
     <ConfirmDialog
       :open="confirmOpen"
@@ -73,10 +95,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
-import { ArrowDownTrayIcon, ArrowUturnLeftIcon, EllipsisHorizontalIcon, LinkIcon, LockClosedIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { ArrowDownTrayIcon, ArrowRightCircleIcon, ArrowUturnLeftIcon, DocumentDuplicateIcon, EllipsisHorizontalIcon, LinkIcon, LockClosedIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import AppButton from '../AppButton.vue'
 import PopupTransition from '../ui/PopupTransition.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
+import ArtifactTransferDialog from './ArtifactTransferDialog.vue'
+import type { CopyItem, TransferOperation } from '../../api/transfer'
+import { useSessionStore } from '../../stores/session'
 import { setVersionQuarantine } from '../../api/artifact'
 import { deletePackage, downloadPackage } from '../../api/repositories'
 import { useArtifactContext } from '../../composables/useArtifact'
@@ -173,6 +198,32 @@ async function applyQuarantine(flag: boolean, undo: boolean, target?: { repo: st
 
 function toggleQuarantine(): void {
   void applyQuarantine(!quarantined.value, false)
+}
+
+// Copy and move work on hosted repositories; a docker image is named by its manifest digest and tag.
+const session = useSessionStore()
+const transferMode = ref<TransferOperation | null>(null)
+const transferable = computed(() => {
+  if (ctx.repository.value?.repo_type !== 'hosted') return false
+  return ctx.format.value !== 'docker' || !!ctx.detail.value?.sha256
+})
+const transferItems = computed<CopyItem[]>(() => {
+  const version = entry.value?.version ?? ''
+  if (ctx.format.value === 'docker') return [{ sha256: ctx.detail.value?.sha256 ?? '', path: version }]
+  return [{ package: pkgName.value, version }]
+})
+
+function transferDone(target: string): void {
+  const move = transferMode.value === 'move'
+  transferMode.value = null
+  const vars = { name: `${pkgName.value} ${entry.value?.version ?? ''}`, repo: target }
+  toasts.push({
+    level: 'success',
+    title: tp(move ? 'artifact.transfer.moved' : 'artifact.transfer.copied', vars),
+    action: { label: tp('artifact.transfer.open', { repo: target }), run: () => void router.push(`/repos/${encodeURIComponent(target)}`) },
+    timeoutMs: 8000,
+  })
+  if (move) void ctx.reload()
 }
 
 const confirmOpen = ref(false)

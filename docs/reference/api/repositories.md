@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Repositories API
 
-76 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+78 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -521,6 +521,35 @@ Replace the comps (package groups) XML of a hosted RPM repository. The body is t
 | `405` | Proxy and group repositories are read-only | `application/json`: [Error](schemas.md#error) |
 | `413` | Body too large | `application/json`: [Error](schemas.md#error) |
 
+### `POST /api/v1/repositories/{name}/copy`
+
+Copy artifacts to another repository
+
+Copies the items from the source repository ({name}) into a hosted repository of the same format, in one transaction. The bytes are never touched: the copies reference the same stored blobs. The artifacts' properties are copied, scan results are not: the target's own scan on upload and policies run for the copies. The copies are dated now. Content that is already in the target is reported as `existing`; different content at the same coordinates answers 409 unless an administrator sends `force`. Authorization: `read` on the source at each artifact's path and `write` on the target.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | Source repository |
+
+**Request body** (required)
+
+`application/json`: [CopyRequest](schemas.md#copyrequest)
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The report per item (also for a dry run, which wrote nothing) | `application/json`: [CopyResult](schemas.md#copyresult) |
+| `400` | Invalid body, unknown or non-hosted repository type, or the formats differ | `application/json`: [Error](schemas.md#error) |
+| `401` | Authentication required | `application/json`: [Error](schemas.md#error) |
+| `403` | Not allowed to read the source artifact, write the target or delete the source artifact, `force` without admin, quarantined source, or a blocking license policy of the target | `application/json`: [Error](schemas.md#error) |
+| `404` | Source or target repository not found (or not visible), or no such artifact in the source | `application/json`: [Error](schemas.md#error) |
+| `409` | The target holds different content at the same coordinates (`artifact_conflict`, `immutable_release`), the source artifact is held by a sealed bundle (`held_by_bundle`) or protected by immutable releases | `application/json`: [Error](schemas.md#error) |
+| `422` | The target has a blocking license policy and the license cannot be read from the package file | `application/json`: [Error](schemas.md#error) |
+| `507` | The target's storage quota would be exceeded | `application/json`: [Error](schemas.md#error) |
+
 ### `POST /api/v1/repositories/{name}/debs`
 
 Upload a DEB package
@@ -848,6 +877,35 @@ Fields of the `200` response (`application/json`):
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `members` | array of [RepositoryMember](schemas.md#repositorymember) | no | - |
+
+### `POST /api/v1/repositories/{name}/move`
+
+Move artifacts to another repository
+
+Copies the items from the source repository ({name}) into a hosted repository of the same format, in one transaction, and moves the source files to the source repository's trash (restorable, retention applies). The bytes are never touched: the copies reference the same stored blobs. The artifacts' properties are copied, scan results are not: the target's own scan on upload and policies run for the copies. The copies are dated now. Content that is already in the target is reported as `existing`; different content at the same coordinates answers 409 unless an administrator sends `force`. Authorization: `read` on the source at each artifact's path and `write` on the target, plus `delete` on the source at each artifact's path. A source artifact held by a sealed release bundle, or a release in a repository with `immutable_releases`, answers 409 and nothing is moved.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | Source repository |
+
+**Request body** (required)
+
+`application/json`: [CopyRequest](schemas.md#copyrequest)
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The report per item (also for a dry run, which wrote nothing) | `application/json`: [CopyResult](schemas.md#copyresult) |
+| `400` | Invalid body, unknown or non-hosted repository type, or the formats differ | `application/json`: [Error](schemas.md#error) |
+| `401` | Authentication required | `application/json`: [Error](schemas.md#error) |
+| `403` | Not allowed to read the source artifact, write the target or delete the source artifact, `force` without admin, quarantined source, or a blocking license policy of the target | `application/json`: [Error](schemas.md#error) |
+| `404` | Source or target repository not found (or not visible), or no such artifact in the source | `application/json`: [Error](schemas.md#error) |
+| `409` | The target holds different content at the same coordinates (`artifact_conflict`, `immutable_release`), the source artifact is held by a sealed bundle (`held_by_bundle`) or protected by immutable releases | `application/json`: [Error](schemas.md#error) |
+| `422` | The target has a blocking license policy and the license cannot be read from the package file | `application/json`: [Error](schemas.md#error) |
+| `507` | The target's storage quota would be exceeded | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/nix-key`
 

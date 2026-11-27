@@ -180,16 +180,42 @@ func auditPromotion(r *http.Request, bundleID, repoID, details string) {
 // writePromoteError maps a promotion failure to its HTTP answer. The database
 // is unchanged whenever it fires: the promotion is one transaction.
 func (h *BundlesHandler) writePromoteError(w http.ResponseWriter, bundle *models.ReleaseBundle, err error) {
+	which := promoteItemLabelOf(err)
+
+	switch {
+	case writePromoteFailure(w, err, which, "the target repository changed concurrently; retry the promotion"):
+	case errors.Is(err, promote.ErrItemNotFound):
+		writeError(w, http.StatusConflict, "artifact_missing", "a bundle item no longer exists in its source repository"+which)
+	case errors.Is(err, promote.ErrBundleState), errors.Is(err, promote.ErrStageChanged):
+		writeError(w, http.StatusConflict, "conflict", "bundle was changed by a concurrent request; reload it and retry")
+	case errors.Is(err, promote.ErrEmpty):
+		writeError(w, http.StatusConflict, "conflict", "bundle has no items")
+	case errors.Is(err, promote.ErrFormatMismatch), errors.Is(err, promote.ErrNotHosted),
+		errors.Is(err, promote.ErrSameRepository), errors.Is(err, promote.ErrUnsupportedFormat):
+		writeError(w, http.StatusBadRequest, "validation_failed", promoteInvalidMessage(err)+which)
+	default:
+		h.log.Errorw("promote bundle failed", "bundle", bundle.Name, "version", bundle.Version, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "promotion failed")
+	}
+}
+
+// promoteItemLabelOf is the label of the item a failure belongs to, or "".
+func promoteItemLabelOf(err error) string {
+	if item, ok := errors.AsType[*promote.ItemError](err); ok {
+		return promoteItemLabel(item)
+	}
+
+	return ""
+}
+
+// writePromoteFailure answers the failures a bundle promotion and a copy or move
+// share, and reports whether err was one of them. retry is the 409 message of a
+// unique violation (a concurrent write to the target).
+func writePromoteFailure(w http.ResponseWriter, err error, which, retry string) bool {
 	var (
-		item     *promote.ItemError
 		conflict *promote.ConflictError
 		blocked  *promote.LicenseBlockedError
 	)
-
-	which := ""
-	if errors.As(err, &item) {
-		which = promoteItemLabel(item)
-	}
 
 	switch {
 	case errors.As(err, &conflict):
@@ -209,12 +235,6 @@ func (h *BundlesHandler) writePromoteError(w http.ResponseWriter, bundle *models
 	case errors.Is(err, promote.ErrLicenseUnreadable):
 		writeError(w, http.StatusUnprocessableEntity, licensepolicy.CodeMetadataUnreadable,
 			"the target repository has a blocking license policy and the license of an item cannot be read from its package file"+which)
-	case errors.Is(err, promote.ErrItemNotFound):
-		writeError(w, http.StatusConflict, "artifact_missing", "a bundle item no longer exists in its source repository"+which)
-	case errors.Is(err, promote.ErrBundleState), errors.Is(err, promote.ErrStageChanged):
-		writeError(w, http.StatusConflict, "conflict", "bundle was changed by a concurrent request; reload it and retry")
-	case errors.Is(err, promote.ErrEmpty):
-		writeError(w, http.StatusConflict, "conflict", "bundle has no items")
 	case errors.Is(err, promote.ErrDockerNotIndexed), errors.Is(err, promote.ErrDockerTagChanged):
 		writeError(
 			w,
@@ -222,18 +242,20 @@ func (h *BundlesHandler) writePromoteError(w http.ResponseWriter, bundle *models
 			"conflict",
 			"a docker image is not ready to be promoted (its references are not indexed yet, or a tag changed concurrently); retry later"+which,
 		)
-	case errors.Is(err, promote.ErrFormatMismatch), errors.Is(err, promote.ErrNotHosted),
-		errors.Is(err, promote.ErrSameRepository), errors.Is(err, promote.ErrUnsupportedFormat):
-		writeError(w, http.StatusBadRequest, "validation_failed", promoteInvalidMessage(err)+which)
 	case database.IsUniqueViolation(err):
-		writeError(w, http.StatusConflict, "artifact_conflict", "the target repository changed concurrently; retry the promotion")
+		writeError(w, http.StatusConflict, "artifact_conflict", retry)
 	default:
-		h.log.Errorw("promote bundle failed", "bundle", bundle.Name, "version", bundle.Version, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "promotion failed")
+		return false
 	}
+
+	return true
 }
 
 func promoteItemLabel(item *promote.ItemError) string {
+	if item.Package != "" {
+		return " (item " + item.Package + " " + item.Version + ")"
+	}
+
 	label := " (item sha256 " + item.SHA256
 	if item.Path != "" {
 		label += ", path " + strconv.Quote(item.Path)

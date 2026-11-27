@@ -46,6 +46,7 @@ type BundlesStore interface {
 	DeletePromotionPipeline(ctx context.Context, id string) error
 	DeleteReleaseBundle(ctx context.Context, id string) error
 	GetBundleItem(ctx context.Context, bundleID string, sha256 string) (*models.ReleaseBundleItem, error)
+	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
 	GetPromotionPipelineByID(ctx context.Context, id string) (*models.PromotionPipeline, error)
 	GetPromotionPipelineByName(ctx context.Context, name string) (*models.PromotionPipeline, error)
 	GetReleaseBundle(ctx context.Context, name string, version string) (*models.ReleaseBundle, error)

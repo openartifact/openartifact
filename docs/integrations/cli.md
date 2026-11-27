@@ -201,6 +201,10 @@ oa trash purge --repo my-repo --all --yes      # empty that repository's trash (
 - `purge --repo NAME --all` purges every trashed item of the repository (`DELETE /api/v1/repositories/{name}/trash`) and needs the repository `manage` permission instead of admin; `--all` requires `--repo`, and it asks for the same confirmation (`--yes` skips it). The server purges at most 1000 items per request; the CLI repeats until none remain and prints the totals.
 - `oa repo create|update --trash-retention-days N` sets the per-repository retention (`0` deletes immediately, `default` on `update` goes back to the server-wide setting); `--immutable-releases[=false]` blocks deleting or overwriting released versions. See [immutable releases](../operations/trash.md#immutable-releases).
 
+### Copy and move
+
+`oa cp <source> <target> <package>@<version>` copies a package version into another hosted repository of the same format and `oa mv` moves it (the source files go to the source's trash). Both take `--dry-run`, `--force` (administrators) and, instead of a version, `--sha256` with an optional `--path`. See [Copy and move](../repositories/copy-and-move.md).
+
 ### Transfers
 
 Uploads and downloads stream through the CLI without buffering whole files.

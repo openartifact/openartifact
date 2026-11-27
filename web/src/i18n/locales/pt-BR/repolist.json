@@ -107,6 +107,7 @@
   "activity.action.artifact.downloaded": "Baixado",
   "activity.action.artifact.deleted": "Movido para a lixeira",
   "activity.action.artifact.moved": "Movido",
+  "activity.action.artifact.copied": "Copiado",
   "activity.action.artifact.promoted": "Promovido",
   "activity.action.artifact.quarantined": "Colocado em quarentena",
   "activity.action.artifact.released": "Liberado da quarentena",

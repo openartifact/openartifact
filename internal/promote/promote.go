@@ -86,6 +86,10 @@ type Request struct {
 	// several artifacts that share the content, only that one is copied;
 	// otherwise every artifact with the content is.
 	Path string
+	// Package and Version, when Package is set, select every live file of that
+	// package version instead of the content SHA256 (copy and move of a version).
+	// Not supported for docker, which is selected by manifest digest.
+	Package, Version string
 	// Force replaces content the destination holds at the same coordinates
 	// instead of failing with a ConflictError (an admin's `?force=true`): the
 	// replaced rows are moved to the destination's trash, see displace.
@@ -155,7 +159,23 @@ type Result struct {
 	QuarantineKeys []string
 	// Regen lists the metadata refreshes the destination needs.
 	Regen []Regen
+	// SourceFiles are the ids of the live source package files the item matched
+	// (copied or already present in the destination): what a move takes out of
+	// the source. Docker leaves it empty.
+	SourceFiles []string
+	// SourceManifests are the ids of the live source docker manifests the item
+	// matched; moving them to the trash takes their tags along.
+	SourceManifests []string
+	// Copies pairs the source rows a copy created in the destination with their
+	// new rows: package files, and docker tags (the rows artifact properties hang on).
+	Copies []RowCopy
+	// SourceRegen lists the metadata refreshes the source needs once the item
+	// has been moved out of it.
+	SourceRegen []Regen
 }
+
+// RowCopy is a source row and the destination row created from it.
+type RowCopy struct{ Src, Dst string }
 
 // ConflictError reports different content at the coordinates being promoted.
 type ConflictError struct {
@@ -203,14 +223,19 @@ func (e *LicenseBlockedError) Error() string {
 	return "promote: a license policy of the target repository blocks " + strings.Join(e.Licenses, ", ")
 }
 
-// ItemError attaches the bundle item a failure belongs to.
+// ItemError attaches the item a failure belongs to: a bundle item (SHA256 and
+// Path) or a copied package version (Package and Version).
 type ItemError struct {
-	SHA256 string
-	Path   string
-	Err    error
+	SHA256, Path     string
+	Package, Version string
+	Err              error
 }
 
 func (e *ItemError) Error() string {
+	if e.Package != "" {
+		return fmt.Sprintf("item %s %s: %v", e.Package, e.Version, e.Err)
+	}
+
 	return fmt.Sprintf("bundle item %s (%s): %v", e.SHA256, e.Path, e.Err)
 }
 

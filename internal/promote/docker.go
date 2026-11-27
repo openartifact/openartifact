@@ -252,6 +252,7 @@ func (r *dockerRun) addKeys(keys ...string) {
 // before any data is copied), then the manifest with its blobs and children.
 func (r *dockerRun) promoteRoot(ctx context.Context, root dockerManifest) error {
 	r.addKeys(root.quarantineKeys(r.req.Src.Name, true)...)
+	r.res.SourceManifests = append(r.res.SourceManifests, root.id)
 
 	tagged, err := r.copyTags(ctx, root)
 	if err != nil {
@@ -347,6 +348,8 @@ func (r *dockerRun) insertTag(ctx context.Context, name string, t dockerTag) (bo
 
 	switch {
 	case err == nil:
+		r.res.Copies = append(r.res.Copies, RowCopy{Src: t.ID, Dst: id})
+
 		return true, nil
 	case errors.Is(err, sql.ErrNoRows):
 		return false, nil

@@ -115,6 +115,7 @@
   "activity.action.artifact.downloaded": "Pobrano",
   "activity.action.artifact.deleted": "Przeniesiono do kosza",
   "activity.action.artifact.moved": "Przeniesiono",
+  "activity.action.artifact.copied": "Skopiowano",
   "activity.action.artifact.promoted": "Wypromowano do innego",
   "activity.action.artifact.quarantined": "Objęto kwarantanną",
   "activity.action.artifact.released": "Zwolniono z kwarantanny",

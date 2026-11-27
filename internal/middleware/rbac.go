@@ -106,6 +106,11 @@ type routeScope struct {
 	// each repository (read on the sources, write on the target) and the
 	// bundle's owner.
 	bundles bool
+	// transfer marks POST /api/v1/repositories/{source}/copy and .../move. The
+	// target repository and the artifacts live in the body, so RBAC only requires
+	// a real principal; the handler checks `read` on the source at each artifact's
+	// path, `write` on the target and, for a move, `delete` on the source.
+	transfer bool
 }
 
 // RBACMiddlewareStore is the part of the database RBACMiddleware needs.
@@ -189,7 +194,7 @@ func RBACMiddleware(cfg RBACConfig, db RBACMiddlewareStore, evaluator *auth.Eval
 
 			// A project token's service account is a repository credential
 			// only: it gets no /api/v1 list endpoint, not even a filtered one.
-			if (((scope.anyAuthenticated || scope.bundles) && principal.ServiceProjectID == "") || isDockerRootless(r)) &&
+			if (((scope.anyAuthenticated || scope.bundles || scope.transfer) && principal.ServiceProjectID == "") || isDockerRootless(r)) &&
 				!principal.IsAnonymous {
 				next.ServeHTTP(w, r)
 				return
@@ -909,6 +914,8 @@ func classifyAPIRoute(method, escapedPath string) routeScope {
 		}
 	case isCIRoute(method, segs):
 		return classifyCIRoute(method, segs)
+	case isRepoTransferRoute(method, segs):
+		return routeScope{action: "manage", transfer: true}
 	case isRepoTrashEmptyRoute(method, segs):
 		// Emptying a repository's trash destroys data for good: repo `manage`,
 		// or the repository's project maintainers and owners.
@@ -1198,6 +1205,13 @@ func isBundleRoute(method string, segs []string) bool {
 	}
 
 	return false
+}
+
+// isRepoTransferRoute reports whether segs (of an /api/v1/ path) is POST
+// repositories/{name}/copy or POST repositories/{name}/move.
+func isRepoTransferRoute(method string, segs []string) bool {
+	return method == http.MethodPost && len(segs) == 3 && segs[0] == "repositories" && isPlainName(segs[1]) &&
+		(segs[2] == "copy" || segs[2] == "move")
 }
 
 // isRepoTrashEmptyRoute reports whether segs is DELETE repositories/{name}/trash

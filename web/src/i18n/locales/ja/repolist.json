@@ -103,6 +103,7 @@
   "activity.action.artifact.downloaded": "ダウンロード",
   "activity.action.artifact.deleted": "ゴミ箱へ移動",
   "activity.action.artifact.moved": "移動",
+  "activity.action.artifact.copied": "コピー",
   "activity.action.artifact.promoted": "プロモート",
   "activity.action.artifact.quarantined": "隔離",
   "activity.action.artifact.released": "隔離から解除",
