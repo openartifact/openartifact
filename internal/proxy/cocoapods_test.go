@@ -510,16 +510,21 @@ func cocoapodsServedShard(t *testing.T, f *fixture, name string) []string {
 		t.Fatalf("shard = %d %s", w.Code, w.Body.String())
 	}
 
-	pods, err := pkgcocoapods.ParseShard(w.Body.Bytes())
-	if err != nil {
+	if err := pkgcocoapods.VerifyShard(w.Body.Bytes()); err != nil {
 		t.Fatalf("served shard: %v\n%s", err, w.Body.String())
 	}
 
 	var out []string
 
-	for _, p := range pods {
-		for _, v := range p.Versions {
-			out = append(out, p.Name+"/"+v)
+	// A verified shard is one "Name/Version/Version/..." line per pod.
+	for line := range strings.Lines(w.Body.String()) {
+		name, versions, ok := strings.Cut(strings.TrimRight(line, "\r\n"), "/")
+		if !ok {
+			continue
+		}
+
+		for v := range strings.SplitSeq(versions, "/") {
+			out = append(out, name+"/"+v)
 		}
 	}
 

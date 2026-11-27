@@ -169,27 +169,6 @@ func VerifyShard(body []byte) error {
 	return lines(body, func([]byte, [][]byte) bool { return true })
 }
 
-// ParseShard reads a shard into its lines.
-func ParseShard(body []byte) ([]PodVersions, error) {
-	var out []PodVersions
-
-	err := lines(body, func(name []byte, versions [][]byte) bool {
-		pv := PodVersions{Name: string(name), Versions: make([]string, len(versions))}
-		for i, v := range versions {
-			pv.Versions[i] = string(v)
-		}
-
-		out = append(out, pv)
-
-		return true
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return out, nil
-}
-
 // VersionsOf is the versions the shard lists for the pod name; false when it
 // lists none.
 func VersionsOf(body []byte, name string) ([]string, bool, error) {

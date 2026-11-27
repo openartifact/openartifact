@@ -32,6 +32,7 @@ path = [
   "internal/csaf/testdata/vex.json",
   "internal/vexsync/testdata/vendor-vex.json",
   "pkg/lockfile/testdata/**",
+  "pkg/swift/testdata/swiftpm-archive-source.zip",
   "VERSION",
   ".github/dup-baseline.json",
   "web/.jscpd.json",

@@ -20,7 +20,7 @@ Start here:
 Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO` with the repository name (`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$`).
 
 - Every repository is served under `/repos/REPO/...`.
-- Git LFS, CRAN, Ivy, Maven, pub, raw, sbt and Swift are served under a format prefix: `/repos/cran/REPO`, `/repos/gitlfs/REPO`, `/repos/ivy/REPO`, `/repos/maven/REPO`, `/repos/pub/REPO`, `/repos/raw/REPO`, `/repos/sbt/REPO`, `/repos/swift/REPO`. Repositories named like these prefixes are not reachable by the generic URL.
+- CRAN, Eclipse p2, Git LFS, Ivy, Maven, Pub, raw, sbt and Swift are served under a format prefix: `/repos/cran/REPO`, `/repos/gitlfs/REPO`, `/repos/ivy/REPO`, `/repos/maven/REPO`, `/repos/p2/REPO`, `/repos/pub/REPO`, `/repos/raw/REPO`, `/repos/sbt/REPO`, `/repos/swift/REPO`. Repositories named like these prefixes are not reachable by the generic URL.
 - Docker / OCI is the exception: the registry API is at `HOST/v2/`, and the first path segment after `/v2/` is the repository name ([details](docker.md)).
 - `BASE_URL` (`baseUrl`) is optional for package clients. Set it when the server sits behind a proxy that does not forward the original host.
   - Helm, PyPI and Terraform metadata use relative references and need no host.
@@ -94,7 +94,7 @@ Debian and RPM have no upload route under `/repos/REPO/`. Upload them through th
 
 ## Proxy and group repositories
 
-Every format in the matrix can be a proxy repository and every format but CocoaPods a group; Hugging Face exists only as proxy and group, CocoaPods only as proxy. Proxy and group repositories are read-only: writes answer `405`. Each format page has a Proxy and a Group section with the format-specific behaviour.
+Every format in the matrix but Git LFS can be a proxy repository, and every format but CocoaPods, Eclipse p2 and Git LFS a group; Hugging Face exists only as proxy and group, CocoaPods and Eclipse p2 only as proxy, Git LFS only as hosted. Proxy and group repositories are read-only: writes answer `405`. Each format page has a Proxy and a Group section with the format-specific behaviour.
 
 ## Authentication
 

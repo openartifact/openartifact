@@ -218,11 +218,6 @@ func ParseFile(file, ext string) (string, string, bool) {
 	return pkg, version, true
 }
 
-// FileName is "<package>_<version><ext>".
-func FileName(pkg, version, ext string) string {
-	return pkg + "_" + version + ext
-}
-
 // MaxNameLen bounds a package name.
 const MaxNameLen = 128
 

@@ -197,7 +197,7 @@ describe('color-contrast after switching theme in the user menu', () => {
 })
 
 /**
- * Format badges (WCAG 1.4.11 non-text contrast): every one of the 22 formats on the login page is
+ * Format badges (WCAG 1.4.11 non-text contrast): every format on the login page is
  * painted with its icon, holds 3:1 between the icon's computed colour and the badge's own
  * background in both themes, has its name as text (colour is never the only carrier, 1.4.1), and
  * every icon has the same box and sits on the label's vertical centre.

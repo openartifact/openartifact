@@ -22,7 +22,7 @@ Before 0.15 a format cost:
 
 The cure has two halves, delivered together:
 
-1. **Generic package tables** (`packages`, `package_versions`, `package_files`, `package_tags`) hold the data of every format but docker. Everything that spans formats reads them once instead of unioning the tables of 22 formats.
+1. **Generic package tables** (`packages`, `package_versions`, `package_files`, `package_tags`) hold the data of every format but docker. Everything that spans formats reads them once instead of unioning one set of tables per format.
 2. **A format plugin** (`internal/format/plugin`) is the single registration a format makes: hosted routes, analysis hooks (dependencies, license, PURL, manifest), client setup, proxy and group hooks, lifecycle hooks and the storage descriptor. Every method of the interface is required, so a forgotten capability is a compile error. The exhaustiveness tests that only existed to find forgotten switch arms are deleted.
 
 ## Scope
