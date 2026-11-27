@@ -53,6 +53,10 @@ func CargoBlobPath(rel string) bool {
 	return strings.HasPrefix(rel, "api/v1/crates/") && path.Base(rel) == "download"
 }
 
+// CocoaPodsBlobPath accepts the source archives (dl/...) only; the shards, the
+// version file and the podspecs are generated or small and streamed.
+func CocoaPodsBlobPath(rel string) bool { return strings.HasPrefix(rel, "dl/") }
+
 // ComposerBlobPath accepts dists only; packages.json and the p2 documents are
 // generated.
 func ComposerBlobPath(rel string) bool { return strings.HasPrefix(rel, "dists/") }

@@ -626,6 +626,22 @@ func HuggingFaceBuilder(c target) []Snippet {
 	}}
 }
 
+// CocoaPodsBuilder configures CocoaPods against the repository root, which is a
+// CDN spec repository. The format is proxy-only, so the read-only snippet
+// carries no publish hint. CocoaPods sends credentials from ~/.netrc (matched on
+// the host name without the port), both for the CDN and for the archives.
+func CocoaPodsBuilder(c target) []Snippet {
+	return []Snippet{{
+		Client: "CocoaPods",
+		Configure: fmt.Sprintf(
+			"# Podfile\nsource '%[1]s'\n\n# or register it once for every project\npod repo add-cdn openartifact %[1]s"+
+				"\n\n# private repository: ~/.netrc (chmod 600)\nmachine %[2]s login oa password <TOKEN>"+
+				"\n\n# install\npod install",
+			c.base, c.name,
+		),
+	}}
+}
+
 // AnsibleBuilder configures ansible-galaxy against the Galaxy v3 API rooted at
 // the repository's /api/ path. Galaxy sends the API token as `Token <token>`.
 // Proxy and group repositories are read-only, so they carry no publish hint.

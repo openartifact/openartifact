@@ -83,14 +83,16 @@ func TestRegistryShape(t *testing.T) {
 func TestPolicy(t *testing.T) {
 	t.Parallel()
 
-	all := "ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform"
+	// cocoapods is proxy-only: its shards cannot be merged by a group.
+	groups := "ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform"
+	all := "ansible, apk, cargo, cocoapods, composer, conan, conda, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform"
 
 	if got := repotype.ProxyFormats(); got != all {
 		t.Errorf("ProxyFormats() = %q, want %q", got, all)
 	}
 
-	if got := repotype.GroupFormats(); got != all {
-		t.Errorf("GroupFormats() = %q, want %q", got, all)
+	if got := repotype.GroupFormats(); got != groups {
+		t.Errorf("GroupFormats() = %q, want %q", got, groups)
 	}
 
 	if got, want := repotype.FederationFormats(), "cargo, docker, go, helm, maven, npm, nuget, pypi, raw"; got != want {
@@ -111,6 +113,7 @@ func TestPolicy(t *testing.T) {
 		"ansible":     "https://galaxy.ansible.com",
 		"composer":    "https://repo.packagist.org",
 		"huggingface": "https://huggingface.co",
+		"cocoapods":   "https://cdn.cocoapods.org",
 	}
 
 	for _, name := range repotype.Names() {

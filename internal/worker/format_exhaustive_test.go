@@ -43,7 +43,7 @@ func TestGroupMetadataCoversEveryFormat(t *testing.T) {
 
 	generated := []string{"apk", "deb", "pacman", "rpm"}
 	others := []string{
-		"ansible", "cargo", "composer", "conan", "conda", "docker", "go", "helm", "huggingface", "ivy", "maven", "nix", "npm",
+		"ansible", "cargo", "cocoapods", "composer", "conan", "conda", "docker", "go", "helm", "huggingface", "ivy", "maven", "nix", "npm",
 		"nuget", "pypi", "raw", "rubygems", "sbt", "terraform",
 	}
 

@@ -96,6 +96,14 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
       },
     ],
   },
+  cocoapods: {
+    hosted: [
+      {
+        client: 'CocoaPods',
+        configure: '# Podfile\nsource \'{{base}}\'\n\n# or register it once for every project\npod repo add-cdn openartifact {{base}}\n\n# private repository: ~/.netrc (chmod 600)\nmachine {{hostname}} login oa password <TOKEN>\n\n# install\npod install',
+      },
+    ],
+  },
   composer: {
     hosted: [
       {

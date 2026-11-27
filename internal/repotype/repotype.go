@@ -210,6 +210,10 @@ var specs = [...]Spec{
 		Versioning: VersionSemver, PURLType: "cargo", OSVEcosystem: "crates.io", GrypeScan: true,
 	},
 	{
+		Name: "cocoapods", Proxy: true, NoHosted: true, DefaultUpstream: "https://cdn.cocoapods.org",
+		Versioning: VersionGem, PURLType: "cocoapods",
+	},
+	{
 		Name: "composer", Mount: MountGuarded,
 		Proxy: true, Group: true, DefaultUpstream: "https://repo.packagist.org",
 		Versioning: VersionSemver, PURLType: "composer", OSVEcosystem: "Packagist", GrypeScan: true,

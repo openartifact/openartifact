@@ -147,7 +147,7 @@ describe('pullCommand (property)', () => {
   })
 
   it('splits into exactly the intended words however hostile the names are', () => {
-    const shellFormats = ALL_FORMATS.filter((f) => f !== 'ivy' && f !== 'sbt' && f !== 'terraform')
+    const shellFormats = ALL_FORMATS.filter((f) => f !== 'cocoapods' && f !== 'ivy' && f !== 'sbt' && f !== 'terraform')
     fc.assert(fc.property(fc.constantFrom(...shellFormats), origin, hostileWord, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
       fc.pre(repo !== '.' && repo !== '..')
       fc.pre(format !== 'raw' || pkg.split('/').every((s) => s !== '.' && s !== '..'))
@@ -159,7 +159,7 @@ describe('pullCommand (property)', () => {
     fc.assert(fc.property(fc.constantFrom(...ALL_FORMATS.filter((f) => f !== 'apk' && f !== 'composer' && f !== 'conan' && f !== 'deb' && f !== 'docker' && f !== 'pacman' && f !== 'rpm' && f !== 'terraform')), origin, repoName, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
       const base = repoBaseUrl(format, o.url, repo)
       const cmd = pullCommand(format, o.url, repo, pkg, version)
-      const words = format === 'sbt' || format === 'ivy' ? [cmd] : shellWords(cmd)
+      const words = format === 'sbt' || format === 'ivy' || format === 'cocoapods' ? [cmd] : shellWords(cmd)
       const withOrigin = words.filter((w) => w.includes(o.url))
       expect(withOrigin.length).toBeGreaterThan(0)
       for (const w of withOrigin) expect(w).toContain(base)

@@ -6,7 +6,7 @@
 // Add or change a format in the Go registry, then run `make generate`.
 
 /** Every package format id, in alphabetical (picker) order. */
-export const FORMAT_IDS = ['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'] as const
+export const FORMAT_IDS = ['ansible', 'apk', 'cargo', 'cocoapods', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'] as const
 
 export type FormatId = (typeof FORMAT_IDS)[number]
 
@@ -14,7 +14,7 @@ export type FormatId = (typeof FORMAT_IDS)[number]
 export const HOSTED_FORMATS: readonly FormatId[] = ['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
 
 /** Formats that can be created as proxy repositories. */
-export const PROXY_FORMATS: readonly FormatId[] = ['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
+export const PROXY_FORMATS: readonly FormatId[] = ['ansible', 'apk', 'cargo', 'cocoapods', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
 
 /** Formats that can be created as group repositories. */
 export const GROUP_FORMATS: readonly FormatId[] = ['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'huggingface', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
@@ -35,6 +35,7 @@ export const VULN_ECOSYSTEMS: readonly FormatId[] = ['cargo', 'composer', 'deb',
 export const DEFAULT_UPSTREAMS: Readonly<Partial<Record<FormatId, string>>> = {
   ansible: 'https://galaxy.ansible.com',
   cargo: 'https://index.crates.io',
+  cocoapods: 'https://cdn.cocoapods.org',
   composer: 'https://repo.packagist.org',
   conan: 'https://center2.conan.io',
   docker: 'https://registry-1.docker.io',

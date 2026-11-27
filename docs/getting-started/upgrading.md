@@ -131,10 +131,11 @@ Newest first. Each version starts with **What you must do**; the text below it l
 
 **What you must do**
 
-- Nothing is required. Migration `030` adds the index `idx_ai_results_tags_lower` with `CREATE INDEX CONCURRENTLY`, so it does not block writes.
+- Nothing is required. Migration `030` adds the index `idx_ai_results_tags_lower` with `CREATE INDEX CONCURRENTLY`, so it does not block writes. Migration `033` adds the `cocoapods` format to the allowed repository formats; it applies on start.
 
 **Changes.**
 
+- **CocoaPods proxy repositories.** The new `cocoapods` format mirrors a CocoaPods CDN (`https://cdn.cocoapods.org` by default) for `pod install`, `pod search` and `pod spec cat`, caches podspecs and source archives, verifies them against their published checksums, and applies curation rules by pod name and version. It is proxy only: there are no hosted or group repositories of this format. See [CocoaPods](../formats/cocoapods.md).
 - **AI analysis results in the web UI.** Administrators see the latest analysis of a version on the **Security** tab of the artifact page whatever its outcome (a clean or failed run showed nothing before) and can re-run it there; a repository gets an **AI analysis** tab listing its analyses by status. See [AI analysis](../integrations/ai-analysis.md).
 - **Search by AI tag.** `GET /api/v1/search?q=TERM` and the web UI search also return the artifacts whose AI analysis has a tag equal to the term, case-insensitively, within the repositories you can read. See [Search by tag](../integrations/ai-analysis.md#search-by-tag).
 - **`oa check` reads `go.sum`.** Every module version it lists is checked against a Go repository, also the ones it lists only as `/go.mod` (the go command fetches that file through the proxy too). `--fetch` requests the `.info` of each version, as a build does, and the version list of each module, so a release the module does not have is `not_found` instead of `unknown`. `go.sum` records neither requirers (no REQUIRED BY column, `"dependency_graph": false`) nor test-only modules (`--no-dev` is refused).

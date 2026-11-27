@@ -14,6 +14,7 @@ func init() { //nolint:gochecknoinits // test-only format registry, see above
 		"ansible":     AnsibleHooks,
 		"apk":         APKHooks,
 		"cargo":       CargoHooks,
+		"cocoapods":   CocoaPodsHooks,
 		"composer":    ComposerHooks,
 		"conan":       ConanHooks,
 		"conda":       CondaHooks,

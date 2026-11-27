@@ -101,6 +101,11 @@ function huggingfaceRepoArgs(pkg: string): { id: string; type: string } {
   return { id: pkg, type: 'model' }
 }
 
+/** A Ruby single-quoted string literal (the Podfile is Ruby). */
+function rubyQuote(token: string): string {
+  return `'${token.replace(/[\\']/g, '\\$&')}'`
+}
+
 /** Install/pull command for a package version, built from the real server origin. */
 export function pullCommand(
   format: string,
@@ -119,6 +124,9 @@ export function pullCommand(
       return `apk add ${q(`${pkg}=${version}`)}`
     case 'cargo':
       return `cargo install ${q(pkg)} --version ${q(version)} --index ${q(`sparse+${base}/index/`)}`
+    case 'cocoapods':
+      // A Podfile fragment: CocoaPods has no command that adds a pod.
+      return `source ${rubyQuote(base)}\npod ${rubyQuote(pkg)}, ${rubyQuote(version)}`
     case 'composer':
       return `composer require ${q(`${pkg}:${version}`)}`
     case 'conan':

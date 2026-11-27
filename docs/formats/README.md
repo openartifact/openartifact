@@ -29,13 +29,14 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 
 ## Format matrix
 
-`Format id` is the `format` value you use when creating a repository. Every format can be a proxy or a group repository, and every format but Hugging Face a hosted one (see [hosted, proxy, group](../repositories/hosted-proxy-group.md)). The Upload column shows how you publish to a hosted repository.
+`Format id` is the `format` value you use when creating a repository. Every format can be a proxy repository, every format but CocoaPods a group, and every format but Hugging Face and CocoaPods a hosted one (see [hosted, proxy, group](../repositories/hosted-proxy-group.md)). The Upload column shows how you publish to a hosted repository.
 
 | Format | Format id | Client URL | Types | Upload | Page |
 |---|---|---|---|---|---|
 | Ansible collections | `ansible` | `HOST/repos/REPO/api/` (Galaxy API v3) | hosted, proxy, group | `ansible-galaxy collection publish` (`POST /api/v3/artifacts/collections/`, multipart) | [ansible](ansible.md) |
 | Alpine (apk) | `apk` | `HOST/repos/REPO/<branch>/<repo>` (`<arch>/APKINDEX.tar.gz`) | hosted, proxy, group | `PUT <branch>/<repo>/<arch>/<name>-<version>.apk` or `POST /api/v1/repositories/REPO/apks` (multipart) | [apk](apk.md) |
 | Cargo | `cargo` | `sparse+HOST/repos/REPO/index/` | hosted, proxy, group | `cargo publish` (`PUT /api/v1/crates/new`) | [cargo](cargo.md) |
+| CocoaPods | `cocoapods` | `source 'HOST/repos/REPO'` in the Podfile, or `pod repo add-cdn NAME HOST/repos/REPO` | proxy | none (download only) | [cocoapods](cocoapods.md) |
 | Composer (PHP) | `composer` | `HOST/repos/REPO` (`packages.json`, Composer repository v2) | hosted, proxy, group | `PUT /packages/upload/VENDOR/NAME/VERSION` (zip) | [composer](composer.md) |
 | Conan (1.x and 2) | `conan` | `HOST/repos/REPO/` (`v2/conans/...`, `v1/conans/...`) | hosted, proxy, group | `conan upload` | [conan](conan.md) |
 | Conda | `conda` | `HOST/repos/REPO/<platform>/repodata.json` | hosted, proxy, group | `POST /<platform>` with `X-Filename` | [conda](conda.md) |
@@ -86,7 +87,7 @@ Debian and RPM have no upload route under `/repos/REPO/`. Upload them through th
 
 ## Proxy and group repositories
 
-Every format in the matrix can be a proxy or a group repository; Hugging Face exists only as those two. Proxy and group repositories are read-only: writes answer `405`. Each format page has a Proxy and a Group section with the format-specific behaviour.
+Every format in the matrix can be a proxy repository and every format but CocoaPods a group; Hugging Face exists only as proxy and group, CocoaPods only as proxy. Proxy and group repositories are read-only: writes answer `405`. Each format page has a Proxy and a Group section with the format-specific behaviour.
 
 ## Authentication
 

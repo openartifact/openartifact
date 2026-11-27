@@ -54,8 +54,8 @@ func newProxyGroupDB() *proxyGroupMockDB {
 	return db
 }
 
-// Every real format supports proxy and group repositories, so the guard is
-// exercised with a name no handler serves.
+// Every real format supports proxy repositories and every one but cocoapods
+// group repositories, so the guard is exercised with a name no handler serves.
 func TestUnsupportedRepoTypeMessage(t *testing.T) {
 	for _, repoType := range []string{"proxy", "group"} {
 		if msg := unsupportedRepoTypeMessage(repoType, "bogus"); !strings.Contains(msg, "not supported for format") {
@@ -65,6 +65,15 @@ func TestUnsupportedRepoTypeMessage(t *testing.T) {
 		for _, format := range repotype.Names() {
 			if repoType == "group" && format == "pacman" {
 				continue // pacman groups arrive in a later change
+			}
+
+			if repoType == "group" && format == "cocoapods" {
+				msg := unsupportedRepoTypeMessage(repoType, format)
+				if !strings.Contains(msg, `group repositories are not supported for format "cocoapods"`) {
+					t.Errorf("group of cocoapods: message %q", msg)
+				}
+
+				continue
 			}
 
 			if msg := unsupportedRepoTypeMessage(repoType, format); msg != "" {
