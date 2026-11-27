@@ -434,6 +434,7 @@ oa repo update <name> [flags]
 
 | Flag | Value | Description |
 |---|---|---|
+| `--deploy-target` | `string` | Group repositories: the hosted member that publishes sent to the group are served by (--deploy-target= clears it) |
 | `--description` | `string` | Description |
 | `--honour-quay-expiry` | none | Hosted docker repositories: delete images once their quay.expires-after time has passed (--honour-quay-expiry=false to stop) |
 | `--immutable-releases` | none | Block deleting or overwriting released versions (--immutable-releases=false to allow) |

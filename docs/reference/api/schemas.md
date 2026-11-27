@@ -1843,6 +1843,7 @@ Counts only; no finding ids, titles or other details.
 | `cache_ttl_seconds` | integer | no | Cache TTL in seconds |
 | `created_at` | string (date-time) | no | Creation timestamp |
 | `curation_mode` | string | no | Proxy repositories only. How the repository's curation rules apply: off ignores them (default), denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches. Rules are managed under /api/v1/repositories/{name}/curation-rules. One of: `off`, `denylist`, `allowlist`. |
+| `deploy_target` | string | no | Group repositories only: the hosted member a publish sent to the group is served by (name of one of its members; same format). Absent when the group has none, and writes through the group are then refused with 405. Authorization is the target's: the caller needs write on the target. |
 | `description` | string | no | Repository description |
 | `federated` | boolean | no | True when federation is enabled: the repository keeps a change log that peer instances pull to stay in sync. Hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw only. Peers and tokens are managed under /api/v1/repositories/{name}/federation. |
 | `format` | string | yes | Package format. One of: `ansible`, `apk`, `cargo`, `composer`, `conan`, `conda`, `deb`, `docker`, `go`, `helm`, `huggingface`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `pacman`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. |
