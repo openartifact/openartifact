@@ -427,7 +427,7 @@ export type Repository = {
     /**
      * Package format
      */
-    format: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
+    format: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'p2' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
     /**
      * Repository description
      */
@@ -4479,7 +4479,7 @@ export type GetApiV1RepositoriesData = {
         /**
          * Filter by package format
          */
-        format?: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
+        format?: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'p2' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
         /**
          * Page number (default: 1)
          */
@@ -4553,11 +4553,11 @@ export type PostApiV1RepositoriesData = {
          * Repository name (1-100 letters, digits, hyphen or underscore; starts with a letter or digit)
          */
         name: string;
-        format: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
+        format: 'ansible' | 'apk' | 'cargo' | 'composer' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'huggingface' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'p2' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
         description?: string;
         public?: boolean;
         /**
-         * hosted (default), proxy or group. Every format can be a proxy or a group repository; huggingface only exists as proxy or group (a hosted huggingface repository is rejected with 400). apk, deb, rpm and pacman groups serve generated Release/Packages, repodata, APKINDEX or database files merged across their members. Docker proxies and groups are served under /v2/ only. Proxy and group repositories are read-only.
+         * hosted (default), proxy or group. Every format can be a proxy or a group repository; huggingface only exists as proxy or group (a hosted huggingface repository is rejected with 400); p2 only exists as proxy (a hosted or group p2 repository is rejected with 400). apk, deb, rpm and pacman groups serve generated Release/Packages, repodata, APKINDEX or database files merged across their members. Docker proxies and groups are served under /v2/ only. Proxy and group repositories are read-only.
          */
         repo_type?: 'hosted' | 'proxy' | 'group';
         /**

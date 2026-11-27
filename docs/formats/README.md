@@ -29,7 +29,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 
 ## Format matrix
 
-`Format id` is the `format` value you use when creating a repository. Every format can be a proxy or a group repository, and every format but Hugging Face a hosted one (see [hosted, proxy, group](../repositories/hosted-proxy-group.md)). The Upload column shows how you publish to a hosted repository.
+`Format id` is the `format` value you use when creating a repository. Every format can be a proxy, every format but Eclipse p2 a group repository, and every format but Hugging Face and Eclipse p2 a hosted one (see [hosted, proxy, group](../repositories/hosted-proxy-group.md)). The Upload column shows how you publish to a hosted repository.
 
 | Format | Format id | Client URL | Types | Upload | Page |
 |---|---|---|---|---|---|
@@ -49,6 +49,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | Nix | `nix` | `HOST/repos/REPO` (`/nix-cache-info`, `/<hash>.narinfo`, `/nar/`) | hosted, proxy, group | `nix copy --to 'HOST/repos/REPO' /nix/store/...` (netrc token) | [nix](nix.md) |
 | npm | `npm` | `HOST/repos/REPO/` | hosted, proxy, group | `npm publish` (`PUT /<pkg>`) | [npm](npm.md) |
 | NuGet | `nuget` | `HOST/repos/REPO/v3/index.json` | hosted, proxy, group | `dotnet nuget push` (`PUT /v3/package`) | [nuget](nuget.md) |
+| Eclipse p2 | `p2` | `HOST/repos/p2/REPO/` (update site: `p2.index`, `content.jar`, `artifacts.jar`) | proxy | none (download only) | [p2](p2.md) |
 | Arch Linux (pacman) | `pacman` | `HOST/repos/REPO/os/<arch>` (`<name>.db`, packages) | hosted, proxy, group | `PUT /os/<arch>/<pkg>.pkg.tar.zst` (+ `.sig`) | [pacman](pacman.md) |
 | PyPI | `pypi` | `HOST/repos/REPO/simple/` | hosted, proxy, group | `twine upload` to `HOST/repos/REPO/legacy/` | [pypi](pypi.md) |
 | Raw | `raw` | `HOST/repos/raw/REPO/<path>` | hosted, proxy, group | `PUT <path>` (`curl -T`) | [raw](raw.md) |

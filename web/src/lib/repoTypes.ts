@@ -31,6 +31,7 @@ export function upstreamUrlRequired(format: FormatId): boolean {
 // placeholder of the required upstream URL field.
 const EXAMPLE_UPSTREAMS: Readonly<Partial<Record<FormatId, string>>> = {
   apk: 'https://dl-cdn.alpinelinux.org/alpine',
+  p2: 'https://download.eclipse.org/releases/2024-12',
   sbt: 'https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases',
   conda: 'https://conda.anaconda.org/conda-forge',
 }

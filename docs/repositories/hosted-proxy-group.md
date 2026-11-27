@@ -26,7 +26,7 @@ Proxy and group repositories use the same client URLs as hosted ones.
 
 ## Type and format support
 
-Every format can be a proxy or a group, and every format except huggingface can be hosted (a hosted huggingface repository is refused with `400 validation_failed`). Proxy and group repositories are read-only: uploads and deletes answer `405`.
+Every format can be a proxy, every format except p2 can be a group, and every format except huggingface and p2 can be hosted (a hosted huggingface repository, and a hosted or group p2 repository, are refused with `400 validation_failed`). Proxy and group repositories are read-only: uploads and deletes answer `405`.
 
 A proxy needs an `upstream_url`. These formats have a default, so you may leave it out:
 
@@ -125,7 +125,7 @@ A proxy repository mirrors an upstream registry. A file is fetched on the first 
 - Paths with empty segments, `.`, `..`, backslashes, control characters or a trailing `/` answer `404`.
 - Requests to the upstream ask for `Accept-Encoding: identity`, so bytes are mirrored unchanged.
 
-Format-specific proxy behaviour is on the format pages: [Ansible](../formats/ansible.md#proxy), [apk](../formats/apk.md#proxy), [Cargo](../formats/cargo.md#proxy), [Composer](../formats/composer.md#proxy), [Conan](../formats/conan.md#proxy), [Conda](../formats/conda.md#proxy), [Debian](../formats/debian.md#proxy), [Docker](../formats/docker.md#proxy), [Go](../formats/go.md#proxy), [Helm](../formats/helm.md#proxy), [Hugging Face](../formats/huggingface.md#caching-and-revision-pinning), [Ivy and sbt](../formats/ivy-sbt.md#proxy), [Maven](../formats/maven.md#proxy), [Nix](../formats/nix.md#proxy), [npm](../formats/npm.md#proxy), [NuGet](../formats/nuget.md#proxy), [pacman](../formats/pacman.md#proxy), [PyPI](../formats/pypi.md#proxy), [raw](../formats/raw.md#proxy), [RPM](../formats/rpm.md#proxy), [RubyGems](../formats/rubygems.md#proxy) and [Terraform](../formats/terraform.md#proxy-repositories).
+Format-specific proxy behaviour is on the format pages: [Ansible](../formats/ansible.md#proxy), [apk](../formats/apk.md#proxy), [Cargo](../formats/cargo.md#proxy), [Composer](../formats/composer.md#proxy), [Conan](../formats/conan.md#proxy), [Conda](../formats/conda.md#proxy), [Debian](../formats/debian.md#proxy), [Docker](../formats/docker.md#proxy), [Go](../formats/go.md#proxy), [Helm](../formats/helm.md#proxy), [Hugging Face](../formats/huggingface.md#caching-and-revision-pinning), [Ivy and sbt](../formats/ivy-sbt.md#proxy), [Maven](../formats/maven.md#proxy), [Nix](../formats/nix.md#proxy), [npm](../formats/npm.md#proxy), [NuGet](../formats/nuget.md#proxy), [Eclipse p2](../formats/p2.md#what-the-proxy-rewrites), [pacman](../formats/pacman.md#proxy), [PyPI](../formats/pypi.md#proxy), [raw](../formats/raw.md#proxy), [RPM](../formats/rpm.md#proxy), [RubyGems](../formats/rubygems.md#proxy) and [Terraform](../formats/terraform.md#proxy-repositories).
 
 ### Editing proxy settings in the web UI
 

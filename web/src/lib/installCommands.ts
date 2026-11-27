@@ -4,7 +4,7 @@
 
 // Builds the native client URL / install command for a package. Repository
 // routes mirror cmd/server/main.go: most formats live under /repos/{repo};
-// ivy, maven, raw and sbt use an isolated /repos/{format}/{repo} prefix, and
+// ivy, maven, p2, raw and sbt use an isolated /repos/{format}/{repo} prefix, and
 // docker serves the registry API at the host root (/v2/). The repository base
 // URL and the per-client configure/publish snippets are templates generated
 // from internal/clientsetup (clientsetup.generated.ts); this file only
@@ -152,6 +152,8 @@ export function pullCommand(
       return `npm install ${q(`${pkg}@${version}`)} ${q(`--registry=${base}/`)}`
     case 'nuget':
       return `dotnet add package ${q(pkg)} --version ${q(version)} --source ${q(`${base}/v3/index.json`)}`
+    case 'p2':
+      return `eclipse -nosplash -application org.eclipse.equinox.p2.director -repository ${q(`${base}/`)} -installIU ${q(`${pkg}/${version}`)}`
     case 'pacman':
       // A proxy mirrors the whole Arch mirror: the package is named without a repository qualifier.
       return repoType === 'proxy' ? `sudo pacman -Sy ${q(pkg)}` : `sudo pacman -Sy ${q(`${repo}/${pkg}`)}`

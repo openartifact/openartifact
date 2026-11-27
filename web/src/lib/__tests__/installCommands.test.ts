@@ -385,6 +385,26 @@ describe('huggingface', () => {
   })
 })
 
+describe('p2', () => {
+  const origin = 'https://oa.example'
+
+  it('serves the update site below /repos/p2 and installs through the director', () => {
+    expect(repoBaseUrl('p2', origin, 'eclipse')).toBe('https://oa.example/repos/p2/eclipse')
+    expect(pullCommand('p2', origin, 'eclipse', 'org.eclipse.core.runtime', '3.31.0.v20240101')).toBe(
+      'eclipse -nosplash -application org.eclipse.equinox.p2.director -repository https://oa.example/repos/p2/eclipse/ -installIU org.eclipse.core.runtime/3.31.0.v20240101',
+    )
+  })
+
+  it('gives a Tycho and an Eclipse snippet, with the update site URL ending in a slash and no publish step', () => {
+    const setup = clientSetup('p2', origin, 'eclipse', 'proxy')
+    expect(setup.map((s) => s.client)).toEqual(['Tycho (Maven)', 'Eclipse IDE / p2 director'])
+    expect(setup[0]!.configure).toContain('<layout>p2</layout>\n    <url>https://oa.example/repos/p2/eclipse/</url>')
+    expect(setup[0]!.configure).toContain('<id>eclipse</id>\n      <username><USERNAME></username>')
+    expect(setup[1]!.configure).toContain('https://oa.example/repos/p2/eclipse/')
+    expect(setup.every((s) => s.publish === undefined)).toBe(true)
+  })
+})
+
 describe('clientSetup under a path prefix', () => {
   const origin = 'https://registry.example:8443/artifacts'
 

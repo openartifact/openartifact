@@ -29,6 +29,7 @@ export const BASE_TEMPLATES: Readonly<Record<string, string>> = {
   docker: '{{origin}}',
   ivy: '{{origin}}/repos/ivy/{{esc}}',
   maven: '{{origin}}/repos/maven/{{esc}}',
+  p2: '{{origin}}/repos/p2/{{esc}}',
   raw: '{{origin}}/repos/raw/{{esc}}',
   sbt: '{{origin}}/repos/sbt/{{esc}}',
 }
@@ -255,6 +256,18 @@ export const CLIENT_SETUP: Readonly<Record<string, ClientSetupVariants>> = {
         client: 'dotnet',
         configure: 'dotnet nuget add source {{base}}/v3/index.json --name {{repo}} --username <USERNAME> --password <TOKEN> --store-password-in-clear-text',
         publish: 'dotnet nuget push my-package.1.0.0.nupkg --source {{repo}} --api-key <TOKEN>',
+      },
+    ],
+  },
+  p2: {
+    hosted: [
+      {
+        client: 'Tycho (Maven)',
+        configure: '<!-- pom.xml -->\n<repositories>\n  <repository>\n    <id>{{repo}}</id>\n    <layout>p2</layout>\n    <url>{{base}}/</url>\n  </repository>\n</repositories>\n\n<!-- ~/.m2/settings.xml -->\n<settings>\n  <servers>\n    <server>\n      <id>{{repo}}</id>\n      <username><USERNAME></username>\n      <password><TOKEN></password>\n    </server>\n  </servers>\n</settings>',
+      },
+      {
+        client: 'Eclipse IDE / p2 director',
+        configure: '# Help > Install New Software > Add... > Location\n{{base}}/\n\n# command line\neclipse -nosplash -application org.eclipse.equinox.p2.director \\\n  -repository {{base}}/ -installIU org.example.feature.feature.group',
       },
     ],
   },
