@@ -44,6 +44,10 @@ func AnsibleBlobPath(rel string) bool {
 	return strings.HasPrefix(rel, "api/v3/artifacts/collections/")
 }
 
+// PubBlobPath accepts the package archives; the package and version documents
+// are streamed.
+func PubBlobPath(rel string) bool { return strings.HasPrefix(rel, "api/archives/") }
+
 // HuggingFaceBlobPath accepts the cached files of the Hugging Face Hub proxy
 // (keys under f/); repository info, listings and file metadata are streamed.
 func HuggingFaceBlobPath(rel string) bool { return strings.HasPrefix(rel, "f/") }

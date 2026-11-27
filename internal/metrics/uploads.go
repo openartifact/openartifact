@@ -37,6 +37,7 @@ const (
 	FormatAnsible   = "ansible"
 	FormatTerraform = "terraform"
 	FormatGitLFS    = "gitlfs"
+	FormatPub       = "pub"
 )
 
 // Upload result label values of openartifact_uploads_total.

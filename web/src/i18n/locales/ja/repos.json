@@ -220,6 +220,7 @@
   "trash.purgesInDays": "{n} 日後に完全削除",
   "trash.kind.repository": "リポジトリ",
   "trash.kind.ansible": "Ansible コレクション",
+  "trash.kind.pub": "Pub パッケージ",
   "trash.kind.apk_package": "Alpine パッケージ",
   "trash.kind.cargo_crate": "Cargo クレート",
   "trash.kind.composer": "Composer パッケージ",

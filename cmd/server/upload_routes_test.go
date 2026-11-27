@@ -72,6 +72,12 @@ var documentedUploads = map[string]documentedUpload{ //nolint:gochecknoglobals /
 		"nix copy --to 'HOST/repos/REPO' /nix/store/...",
 		"nix copy --to 'https://HOST/repos/REPO'",
 	},
+	"pub": {
+		http.MethodPost,
+		"/repos/pub/{name}/api/packages/versions/newUpload",
+		"dart pub publish",
+		"dart pub publish --server https://HOST/repos/pub/REPO",
+	},
 	"ansible": {
 		http.MethodPost,
 		"/repos/{name}/api/v3/artifacts/collections/",

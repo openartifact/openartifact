@@ -47,6 +47,8 @@ import (
 //	                                              are files, version details are metadata)
 //	ansible api/v3/collections/<ns>/<name>/      (the collection document; version lists,
 //	                                              version documents and downloads)
+//	pub     api/packages/<name>                  (the package document; version
+//	                                              documents and archives)
 //	composer p2/<name>.json, p2/<name>~dev.json  (either document; versions are merged
 //	                                              in serveComposer, dists are files)
 //	docker  <image>/tags/list                    (manifests, blobs and tags)

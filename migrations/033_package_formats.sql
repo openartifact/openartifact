@@ -6,10 +6,11 @@
 -- validated in 033_package_formats_validate.no_tx.sql):
 --   gitlfs: Git LFS hosted repositories
 --   p2: Eclipse p2 proxy repositories (update sites)
+--   pub: Dart and Flutter Pub hosted, proxy and group repositories
 -- They live in the generic package tables; no table is added.
 SET LOCAL lock_timeout = '10s';
 
 ALTER TABLE public.repositories DROP CONSTRAINT chk_repo_format;
-ALTER TABLE public.repositories ADD CONSTRAINT chk_repo_format CHECK (format IN ('rpm', 'deb', 'maven', 'npm', 'docker', 'helm', 'pypi', 'nuget', 'go', 'cargo', 'composer', 'rubygems', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman', 'nix', 'ansible', 'huggingface', 'gitlfs', 'p2')) NOT VALID;
+ALTER TABLE public.repositories ADD CONSTRAINT chk_repo_format CHECK (format IN ('rpm', 'deb', 'maven', 'npm', 'docker', 'helm', 'pypi', 'nuget', 'go', 'cargo', 'composer', 'rubygems', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman', 'nix', 'ansible', 'huggingface', 'gitlfs', 'p2', 'pub')) NOT VALID;
 
-COMMENT ON COLUMN public.repositories.format IS 'Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, composer, rubygems, raw, conda, conan, ivy, sbt, terraform, apk, pacman, nix, ansible, huggingface, gitlfs, p2. Constrained by chk_repo_format.';
+COMMENT ON COLUMN public.repositories.format IS 'Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, composer, rubygems, raw, conda, conan, ivy, sbt, terraform, apk, pacman, nix, ansible, huggingface, gitlfs, p2, pub. Constrained by chk_repo_format.';

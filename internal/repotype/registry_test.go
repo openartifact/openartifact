@@ -83,7 +83,7 @@ func TestRegistryShape(t *testing.T) {
 func TestPolicy(t *testing.T) {
 	t.Parallel()
 
-	all := "ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform"
+	all := "ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, huggingface, ivy, maven, nix, npm, nuget, pacman, pub, pypi, raw, rpm, rubygems, sbt, terraform"
 
 	// p2 is proxy only: an update site is merged by a composite repository, not a group.
 	if got, want := repotype.ProxyFormats(), strings.Replace(all, "nuget, pacman", "nuget, p2, pacman", 1); got != want {
@@ -112,6 +112,7 @@ func TestPolicy(t *testing.T) {
 		"ansible":     "https://galaxy.ansible.com",
 		"composer":    "https://repo.packagist.org",
 		"huggingface": "https://huggingface.co",
+		"pub":         "https://pub.dev",
 	}
 
 	for _, name := range repotype.Names() {

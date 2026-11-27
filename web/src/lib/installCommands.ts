@@ -161,6 +161,8 @@ export function pullCommand(
     case 'pacman':
       // A proxy mirrors the whole Arch mirror: the package is named without a repository qualifier.
       return repoType === 'proxy' ? `sudo pacman -Sy ${q(pkg)}` : `sudo pacman -Sy ${q(`${repo}/${pkg}`)}`
+    case 'pub':
+      return `dart pub add ${q(`${pkg}:${version}`)} --hosted-url ${q(base)}`
     case 'pypi':
       return `pip install ${q(`${pkg}==${version}`)} --index-url ${q(`${base}/simple/`)}`
     case 'raw':

@@ -29,6 +29,7 @@ func init() { //nolint:gochecknoinits // test-only format registry, see above
 		"nuget":       NuGetHooks,
 		"p2":          P2Hooks,
 		"pacman":      PacmanHooks,
+		"pub":         PubHooks,
 		"pypi":        PyPIHooks,
 		"raw":         RawHooks,
 		"rpm":         RPMHooks,

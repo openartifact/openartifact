@@ -22,7 +22,8 @@ func TestMain(m *testing.M) {
 		"conan": ConanBuilder, "apk": APKBuilder, "terraform": TerraformBuilder,
 		"ansible": AnsibleBuilder, "sbt": SBTBuilder, "ivy": IvyBuilder, "huggingface": HuggingFaceBuilder,
 		"gitlfs": GitLFSBuilder,
-		"p2": P2Builder,
+		"p2":     P2Builder,
+		"pub":    PubBuilder,
 	} {
 		Register(format, b)
 	}

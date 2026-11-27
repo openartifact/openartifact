@@ -232,6 +232,7 @@
   "trash.purgesInDays": "Trwałe usunięcie za {n} dni",
   "trash.kind.repository": "Repozytorium",
   "trash.kind.ansible": "Kolekcja Ansible",
+  "trash.kind.pub": "Pakiet Pub",
   "trash.kind.apk_package": "Pakiet Alpine",
   "trash.kind.cargo_crate": "Crate Cargo",
   "trash.kind.composer": "Pakiet Composer",

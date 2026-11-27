@@ -40,6 +40,7 @@ A proxy needs an `upstream_url`. These formats have a default, so you may leave 
 | go | `https://proxy.golang.org` |
 | huggingface | `https://huggingface.co` |
 | nix | `https://cache.nixos.org` |
+| pub | `https://pub.dev` |
 | nuget | `https://api.nuget.org/v3/index.json` |
 | pacman | `https://geo.mirror.pkgbuild.com` |
 | pypi | `https://pypi.org/simple` |
@@ -125,7 +126,7 @@ A proxy repository mirrors an upstream registry. A file is fetched on the first 
 - Paths with empty segments, `.`, `..`, backslashes, control characters or a trailing `/` answer `404`.
 - Requests to the upstream ask for `Accept-Encoding: identity`, so bytes are mirrored unchanged.
 
-Format-specific proxy behaviour is on the format pages: [Ansible](../formats/ansible.md#proxy), [apk](../formats/apk.md#proxy), [Cargo](../formats/cargo.md#proxy), [Composer](../formats/composer.md#proxy), [Conan](../formats/conan.md#proxy), [Conda](../formats/conda.md#proxy), [Debian](../formats/debian.md#proxy), [Docker](../formats/docker.md#proxy), [Go](../formats/go.md#proxy), [Helm](../formats/helm.md#proxy), [Hugging Face](../formats/huggingface.md#caching-and-revision-pinning), [Ivy and sbt](../formats/ivy-sbt.md#proxy), [Maven](../formats/maven.md#proxy), [Nix](../formats/nix.md#proxy), [npm](../formats/npm.md#proxy), [NuGet](../formats/nuget.md#proxy), [Eclipse p2](../formats/p2.md#what-the-proxy-rewrites), [pacman](../formats/pacman.md#proxy), [PyPI](../formats/pypi.md#proxy), [raw](../formats/raw.md#proxy), [RPM](../formats/rpm.md#proxy), [RubyGems](../formats/rubygems.md#proxy) and [Terraform](../formats/terraform.md#proxy-repositories).
+Format-specific proxy behaviour is on the format pages: [Ansible](../formats/ansible.md#proxy), [apk](../formats/apk.md#proxy), [Cargo](../formats/cargo.md#proxy), [Composer](../formats/composer.md#proxy), [Conan](../formats/conan.md#proxy), [Conda](../formats/conda.md#proxy), [Debian](../formats/debian.md#proxy), [Docker](../formats/docker.md#proxy), [Go](../formats/go.md#proxy), [Helm](../formats/helm.md#proxy), [Hugging Face](../formats/huggingface.md#caching-and-revision-pinning), [Ivy and sbt](../formats/ivy-sbt.md#proxy), [Maven](../formats/maven.md#proxy), [Nix](../formats/nix.md#proxy), [npm](../formats/npm.md#proxy), [NuGet](../formats/nuget.md#proxy), [Eclipse p2](../formats/p2.md#what-the-proxy-rewrites), [pacman](../formats/pacman.md#proxy), [Pub](../formats/pub.md#proxy), [PyPI](../formats/pypi.md#proxy), [raw](../formats/raw.md#proxy), [RPM](../formats/rpm.md#proxy), [RubyGems](../formats/rubygems.md#proxy) and [Terraform](../formats/terraform.md#proxy-repositories).
 
 ### Editing proxy settings in the web UI
 
@@ -188,7 +189,7 @@ The proxy cache worker runs every 5 minutes and deletes entries expired by more 
 
 A version whose publish time the upstream does not state is not hidden. Files already in the cache stay served. A version becomes visible by itself once it is old enough (rendered documents are revalidated at most every few minutes). Groups containing the proxy inherit the filter.
 
-The gate applies to the formats whose upstream metadata dates each version: npm, pypi, composer, helm, nuget, rubygems, go, cargo, conda, ansible, huggingface (by commit date; a branch or tag moves to the newest old-enough commit, see [Hugging Face](../formats/huggingface.md#minimum-age-and-curation)). A conda proxy rebuilds `repodata.json` and `.zst` when the gate is on (`.bz2` answers `404`). Other proxy formats (for example deb, rpm, apk, pacman, maven, docker, nix, terraform, raw) ignore the setting because their upstream metadata dates no version.
+The gate applies to the formats whose upstream metadata dates each version: npm, pypi, composer, helm, nuget, rubygems, go, cargo, conda, ansible, pub, huggingface (by commit date; a branch or tag moves to the newest old-enough commit, see [Hugging Face](../formats/huggingface.md#minimum-age-and-curation)). A conda proxy rebuilds `repodata.json` and `.zst` when the gate is on (`.bz2` answers `404`). Other proxy formats (for example deb, rpm, apk, pacman, maven, docker, nix, terraform, raw) ignore the setting because their upstream metadata dates no version.
 
 ### Package curation
 
@@ -243,7 +244,7 @@ Coverage differs by format:
 
 | Formats | Metadata | Download |
 |---|---|---|
-| npm, pypi, composer, helm, nuget, rubygems, go, cargo, conda, ansible | Blocked versions are left out of what the proxy renders | `403`, also for cached files |
+| npm, pypi, composer, helm, nuget, rubygems, go, cargo, conda, ansible, pub | Blocked versions are left out of what the proxy renders | `403`, also for cached files |
 | maven, ivy, sbt, deb, rpm, apk, pacman, conan | Served as the upstream has them: a client may still list a blocked package | `403`, also for cached files |
 | docker | Tag lists pass through | Manifests: `403 DENIED`; blobs addressed by digest are not gated |
 | huggingface | A blocked revision answers `403` | `403` |

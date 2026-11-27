@@ -19,7 +19,7 @@ A background worker checks every minute which enabled policies are due (their cr
 
 ### Supported formats
 
-Policies run on **every hosted format**: ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform. Proxy and group repositories are never touched (a proxy cache has its own expiry). Creating or updating a policy for a format outside this set answers `400 UNSUPPORTED_FORMAT`. What a "version" is, and what a run does besides deleting rows, depends on the format:
+Policies run on **every hosted format**: ansible, apk, cargo, composer, conan, conda, deb, docker, go, helm, ivy, maven, nix, npm, nuget, pacman, pub, pypi, raw, rpm, rubygems, sbt and terraform. Proxy and group repositories are never touched (a proxy cache has its own expiry). Creating or updating a policy for a format outside this set answers `400 UNSUPPORTED_FORMAT`. What a "version" is, and what a run does besides deleting rows, depends on the format:
 
 | Format | What is ranked and removed | After a run |
 |---|---|---|
@@ -27,7 +27,7 @@ Policies run on **every hosted format**: ansible, apk, cargo, composer, conan, c
 | cargo | Versions per crate. Cleanup **deletes** a version (to hide a version without deleting it, [yank](../formats/cargo.md) it instead). | The sparse index is computed live. |
 | conan | Recipe versions (`version@user/channel`) per package; all revisions of a version count together. | Computed live. |
 | conda | Builds per package and platform (`version-build_string`); the `.tar.bz2` and `.conda` files of one build count together. | `repodata.json` is computed live. |
-| ansible, composer, deb, go, helm, nix, nuget, pacman, pypi, rpm | Versions per package (see below). | deb, rpm and pacman indexes are regenerated. |
+| ansible, composer, deb, go, helm, nix, nuget, pacman, pub, pypi, rpm | Versions per package (see below). | deb, rpm and pacman indexes are regenerated. |
 | docker | **Tags** per image, aged by their last update (re-tagging counts as activity). Cosign signature, attestation and SBOM tags (`sha256-<hex>.sig`, `.att`, `.sbom`, `.src`) are never ranked or matched; they go with their image, see [signatures and cleanup policies](../formats/docker.md#signatures-attestations-and-cleanup-policies). | When tags were removed permanently, [registry garbage collection](#docker-registry-garbage-collection) reclaims the manifests and layers they left unreferenced (subject to its grace period). Tags moved to the trash keep their manifests until the purge. |
 | ivy, sbt | Revisions per `organisation:module` (sbt: per group, artifact and Scala version). | Indexes are computed live. |
 | maven | Releases are ranked per `groupId:artifactId`; the timestamped builds of each `-SNAPSHOT` version are ranked against each other. The **newest build of a snapshot is always kept**, so `-SNAPSHOT` keeps resolving. All files of a version (jar, pom, checksums, classifiers) count as one version. | `maven-metadata.xml` of the artifact (and of its snapshot versions) is regenerated. |
@@ -148,7 +148,7 @@ Quotas are enforced on the upload paths of every **hosted** format. The unit is 
 | Format | Counted as |
 |---|---|
 | Alpine (apk) | one artifact per `.apk` file, with its file size. |
-| Ansible, Cargo, Composer, Conda, deb, Helm, Ivy, Maven, Nix, npm, NuGet, pacman, PyPI, raw, rpm, RubyGems, sbt | one artifact per file/version row, with its file size. Replacing a Conan file, a Maven snapshot or a raw file releases the previous content. |
+| Ansible, Cargo, Composer, Conda, deb, Helm, Ivy, Maven, Nix, npm, NuGet, pacman, Pub, PyPI, raw, rpm, RubyGems, sbt | one artifact per file/version row, with its file size. Replacing a Conan file, a Maven snapshot or a raw file releases the previous content. |
 | Conan | one artifact per stored file (recipe files and package files each count). |
 | Docker | the bytes of every blob (layer or config) the repository holds, **without** an artifact slot, plus one artifact with the manifest's size per manifest. An image with many layers is therefore one artifact, and a layer shared by several images of the repository, or pushed or mounted again into it, counts once. A blob mounted from another repository counts in the destination repository. Tags are free. |
 | Go | one artifact per module version, with the size of its zip plus its `go.mod`. |

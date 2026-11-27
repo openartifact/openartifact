@@ -108,6 +108,27 @@ describe('pullCommand quoting', () => {
   })
 })
 
+describe('pub', () => {
+  const origin = 'https://oa.example:8443'
+
+  it('adds the package from the repository', () => {
+    expect(pullCommand('pub', origin, 'r1', 'http_parser', '4.0.2')).toBe(
+      'dart pub add http_parser:4.0.2 --hosted-url https://oa.example:8443/repos/pub/r1',
+    )
+  })
+
+  it('stores the token for the repository and publishes to it; proxies and groups only read', () => {
+    const [setup] = clientSetup('pub', origin, 'r1')
+    expect(setup!.configure).toContain('dart pub token add https://oa.example:8443/repos/pub/r1')
+    expect(setup!.configure).toContain('PUB_HOSTED_URL=https://oa.example:8443/repos/pub/r1')
+    expect(setup!.publish).toBe('dart pub publish --server https://oa.example:8443/repos/pub/r1')
+
+    for (const type of ['proxy', 'group']) {
+      expect(clientSetup('pub', origin, 'r1', type)[0]!.publish).toBeUndefined()
+    }
+  })
+})
+
 describe('pacman', () => {
   const origin = 'https://oa.example:8443'
 

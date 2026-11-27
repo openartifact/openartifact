@@ -25,7 +25,7 @@ func TestWithDistroCoversEveryFormat(t *testing.T) {
 		[]string{"deb", "rpm"},
 		[]string{
 			"ansible", "apk", "cargo", "composer", "conan", "conda", "docker", "gitlfs", "go", "helm", "huggingface", "ivy", "maven",
-			"nix", "npm", "nuget", "p2", "pacman", "pypi", "raw", "rubygems", "sbt", "terraform",
+			"nix", "npm", "nuget", "p2", "pacman", "pub", "pypi", "raw", "rubygems", "sbt", "terraform",
 		},
 	)
 
@@ -63,7 +63,7 @@ func TestDownloadFilenameCoversEveryFormat(t *testing.T) {
 		[]string{"conan", "docker"},
 		[]string{
 			"ansible", "apk", "cargo", "composer", "conda", "deb", "gitlfs", "go", "helm", "huggingface", "ivy", "maven", "nix", "npm",
-			"nuget", "p2", "pacman", "pypi", "raw", "rpm", "rubygems", "sbt", "terraform",
+			"nuget", "p2", "pacman", "pub", "pypi", "raw", "rpm", "rubygems", "sbt", "terraform",
 		},
 	)
 

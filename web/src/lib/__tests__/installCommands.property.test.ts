@@ -54,7 +54,7 @@ const origin = fc
 const repoName = fc.stringMatching(/^[a-zA-Z0-9_-]{1,40}$/)
 const imagePath = fc.array(fc.stringMatching(/^[a-z0-9][a-z0-9._-]{0,15}$/), { minLength: 1, maxLength: 4 }).map((s) => s.join('/'))
 
-const ISOLATED = ['gitlfs', 'ivy', 'maven', 'p2', 'raw', 'sbt']
+const ISOLATED = ['gitlfs', 'ivy', 'maven', 'p2', 'pub', 'raw', 'sbt']
 const encode = encodeURIComponent
 const encodePath = (p: string) => p.split('/').map(encode).join('/')
 
@@ -84,6 +84,7 @@ function expectedArgv(format: string, o: { url: string; host: string }, repo: st
     case 'nuget': return ['dotnet', 'add', 'package', pkg, '--version', version, '--source', `${base}/v3/index.json`]
     case 'p2': return ['eclipse', '-nosplash', '-application', 'org.eclipse.equinox.p2.director', '-repository', `${base}/`, '-installIU', `${pkg}/${version}`]
     case 'pacman': return ['sudo', 'pacman', '-Sy', `${repo}/${pkg}`]
+    case 'pub': return ['dart', 'pub', 'add', `${pkg}:${version}`, '--hosted-url', base]
     case 'pypi': return ['pip', 'install', `${pkg}==${version}`, '--index-url', `${base}/simple/`]
     case 'raw': return ['curl', '-fO', `${base}/${encodePath(pkg)}`]
     case 'rpm': return ['dnf', 'install', `${pkg}-${version}`]

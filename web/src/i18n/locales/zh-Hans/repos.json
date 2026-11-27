@@ -220,6 +220,7 @@
   "trash.purgesInDays": "{n} 天后清除",
   "trash.kind.repository": "仓库",
   "trash.kind.ansible": "Ansible 集合",
+  "trash.kind.pub": "Pub 包",
   "trash.kind.apk_package": "Alpine 包",
   "trash.kind.cargo_crate": "Cargo crate",
   "trash.kind.composer": "Composer 软件包",

@@ -224,6 +224,7 @@
   "trash.purgesInDays": "Endgültige Löschung in {n} Tagen",
   "trash.kind.repository": "Repository",
   "trash.kind.ansible": "Ansible-Collection",
+  "trash.kind.pub": "Pub-Paket",
   "trash.kind.apk_package": "Alpine-Paket",
   "trash.kind.cargo_crate": "Cargo-Crate",
   "trash.kind.composer": "Composer-Paket",

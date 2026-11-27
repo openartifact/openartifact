@@ -224,6 +224,7 @@
   "trash.purgesInDays": "Remoção definitiva em {n} dias",
   "trash.kind.repository": "Repositório",
   "trash.kind.ansible": "Coleção do Ansible",
+  "trash.kind.pub": "Pacote Pub",
   "trash.kind.apk_package": "Pacote Alpine",
   "trash.kind.cargo_crate": "Crate Cargo",
   "trash.kind.composer": "Pacote do Composer",
