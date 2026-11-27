@@ -34,6 +34,7 @@ import (
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	formatrubygems "github.com/openartifact/openartifact/internal/format/rubygems"
 	formatsbt "github.com/openartifact/openartifact/internal/format/sbt"
+	formatswift "github.com/openartifact/openartifact/internal/format/swift"
 	formatterraform "github.com/openartifact/openartifact/internal/format/terraform"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -78,6 +79,7 @@ func serverRoutes(t *testing.T) chi.Router {
 	r.Route("/repos/raw/{name}", func(r chi.Router) { formatraw.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
 	r.Route("/repos/maven/{name}", func(r chi.Router) { formatmaven.NewHTTPHandler(nil, nil, nil).RegisterRepoRoutes(r) })
 	r.Route("/repos/sbt/{name}", func(r chi.Router) { formatsbt.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
+	r.Route("/repos/swift/{name}", func(r chi.Router) { formatswift.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
 	r.Route("/repos/ivy/{name}", func(r chi.Router) { formativy.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r) })
 	formatdocker.NewHTTPHandler(nil, nil, nil).RegisterRoutes(r)
 
@@ -154,7 +156,7 @@ func TestEveryFormatHasUploadLabel(t *testing.T) {
 		"ivy": metrics.FormatIvy, "maven": metrics.FormatMaven, "nix": metrics.FormatNix,
 		"npm": metrics.FormatNPM, "nuget": metrics.FormatNuGet, "pacman": metrics.FormatPacman,
 		"pypi": metrics.FormatPyPI, "raw": metrics.FormatRaw, "rpm": metrics.FormatRPM,
-		"rubygems": metrics.FormatRubyGems, "sbt": metrics.FormatSBT, "terraform": metrics.FormatTerraform,
+		"rubygems": metrics.FormatRubyGems, "sbt": metrics.FormatSBT, "swift": metrics.FormatSwift, "terraform": metrics.FormatTerraform,
 	}
 
 	entries, err := os.ReadDir("../format")
@@ -234,7 +236,7 @@ func TestUploadRoutesCounted(t *testing.T) {
 		for _, f := range []string{
 			metrics.FormatCargo, metrics.FormatRubyGems, metrics.FormatHelm, metrics.FormatPyPI,
 			metrics.FormatNuGet, metrics.FormatConda, metrics.FormatConan, metrics.FormatRaw,
-			metrics.FormatIvy, metrics.FormatSBT, metrics.FormatTerraform,
+			metrics.FormatIvy, metrics.FormatSBT, metrics.FormatSwift, metrics.FormatTerraform,
 		} {
 			if got := testutil.ToFloat64(reg.UploadsTotal.WithLabelValues(f, result)); got < 1 {
 				t.Errorf("status %d: format %s counted %v times, want >= 1", status, f, got)

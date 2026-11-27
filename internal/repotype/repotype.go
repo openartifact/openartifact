@@ -298,6 +298,10 @@ var specs = [...]Spec{
 		Proxy: true, Group: true, Mount: MountIsolated, Versioning: VersionMaven, PURLType: "maven",
 	},
 	{
+		Name: "swift", Mount: MountIsolated, Uploads: swiftUploads,
+		Proxy: true, Group: true, Versioning: VersionSemver, PURLType: "swift", OSVEcosystem: "SwiftURL",
+	},
+	{
 		Name: "terraform", NoCuration: true, Uploads: terraformUploads,
 		Proxy: true, Group: true, DefaultUpstream: "https://registry.terraform.io",
 		Signing: SigningGPG, Versioning: VersionSemver,

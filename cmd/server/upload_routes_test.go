@@ -39,8 +39,14 @@ type documentedUpload struct {
 // every format to the route table. Changing a route, or the documentation of
 // one, fails a test here until both agree.
 var documentedUploads = map[string]documentedUpload{ //nolint:gochecknoglobals // read-only test table
-	"maven":  {http.MethodPut, "/repos/maven/{name}/*", "mvn deploy", "PUT /repos/maven/REPO/<group/path>/<artifactId>/<version>/<file>"},
-	"sbt":    {http.MethodPut, "/repos/sbt/{name}/*", "sbt publish", "HOST/repos/sbt/REPO"},
+	"maven": {http.MethodPut, "/repos/maven/{name}/*", "mvn deploy", "PUT /repos/maven/REPO/<group/path>/<artifactId>/<version>/<file>"},
+	"sbt":   {http.MethodPut, "/repos/sbt/{name}/*", "sbt publish", "HOST/repos/sbt/REPO"},
+	"swift": {
+		http.MethodPut,
+		"/repos/swift/{name}/{scope}/{pkg}/{version}",
+		"swift package-registry publish",
+		"PUT /repos/swift/REPO/<scope>/<name>/<version>",
+	},
 	"ivy":    {http.MethodPut, "/repos/ivy/{name}/*", "ivy:publish", "HOST/repos/ivy/REPO"},
 	"raw":    {http.MethodPut, "/repos/raw/{name}/*", "PUT <path>", "-T file.bin HOST/repos/raw/REPO/path/to/file.bin"},
 	"npm":    {http.MethodPut, "/repos/{name}/*", "PUT /<pkg>", "PUT /repos/REPO/<package>"},

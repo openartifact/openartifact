@@ -40,6 +40,7 @@ const (
 	TrashKindDockerTag         TrashKind = "docker_tag"
 	TrashKindRPM               TrashKind = "rpm_package"
 	TrashKindDeb               TrashKind = "deb_package"
+	TrashKindSwift             TrashKind = "swift_release"
 )
 
 // TrashItem is one entry of the trash listing: a soft-deleted repository or

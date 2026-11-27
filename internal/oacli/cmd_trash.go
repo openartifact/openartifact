@@ -98,7 +98,7 @@ func trashKinds() []string {
 		"repository", "maven_artifact", "ivy_artifact", "sbt_artifact", "npm_version", "pypi_package", "nuget_package",
 		"go_module", "cargo_crate", "composer", "rubygems_gem", "conda_package", "pacman", "ansible", "conan_package",
 		"terraform_module", "terraform_provider", "nix_path", "apk_package", "helm_chart", "raw_artifact",
-		"docker_manifest", "docker_tag", "rpm_package", "deb_package",
+		"docker_manifest", "docker_tag", "rpm_package", "deb_package", "swift_release",
 	}
 }
 

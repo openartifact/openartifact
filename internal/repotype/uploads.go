@@ -115,6 +115,11 @@ var (
 	sbtUploads = []UploadRoute{
 		counted("/repos/sbt/{name}/*", http.MethodPut),
 	}
+	swiftUploads = []UploadRoute{
+		counted("/repos/swift/{name}/{scope}/{pkg}/{version}", http.MethodPut),
+		// swift package-registry login: a credential check, nothing is stored.
+		notUpload("/repos/swift/{name}/login"),
+	}
 	terraformUploads = []UploadRoute{
 		counted("/repos/{name}/_api/modules/{mod}/{system}/{version}", http.MethodPut),
 		counted("/repos/{name}/_api/providers/{type}/{version}/{os}/{arch}", http.MethodPut),

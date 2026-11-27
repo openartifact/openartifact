@@ -849,6 +849,10 @@ func classifyRoute(r *http.Request) routeScope {
 		action = "delete"
 	}
 
+	if isSwiftLogin(r.Method, r.URL.Path, artifactPath) {
+		action = "read"
+	}
+
 	return routeScope{action: action, repoName: repoName, artifactPath: artifactPath}
 }
 
@@ -861,6 +865,14 @@ func isConanV1Delete(method, artifactPath string) bool {
 	}
 
 	return strings.HasSuffix(artifactPath, "/packages/delete") || strings.HasSuffix(artifactPath, "/remove_files")
+}
+
+// isSwiftLogin reports whether the request is "swift package-registry login":
+// a POST to /repos/swift/{name}/login that only checks the credential, so it
+// needs "read" like the downloads the credential is for, not the "write" every
+// POST maps to.
+func isSwiftLogin(method, urlPath, artifactPath string) bool {
+	return method == http.MethodPost && artifactPath == "login" && strings.HasPrefix(urlPath, "/repos/swift/")
 }
 
 // repoDataSegments are the sub-resources of /api/v1/repositories/{name}/ that
