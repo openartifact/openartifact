@@ -105,6 +105,7 @@ func newRecord(e entry) otellog.Record {
 	add("package", e.Package)
 	add("version", e.Version)
 	add("subject", e.Subject)
+	add("via_group", e.ViaGroup)
 
 	str("client.address", deref(e.IPAddress))
 	str("http.request.method", e.Method)

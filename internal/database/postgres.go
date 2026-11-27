@@ -207,7 +207,8 @@ const repoColumns = `id, name, format, description, COALESCE(public, false), COA
 	''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(max_stale_seconds, 604800),
 	min_age_hours, curation_mode, COALESCE(blocked, false), project_id, presign_downloads, trash_retention_days,
 	immutable_releases, merge_proxy_versions, sign_packages, honour_quay_expiry, federated, deleted_at, COALESCE(deleted_by, ''),
-	created_at, updated_at`
+	created_at, updated_at, deploy_target_id,
+	COALESCE((SELECT t.name FROM repositories t WHERE t.id = repositories.deploy_target_id AND t.deleted_at IS NULL), '')`
 
 func repoScanDest(r *models.Repository) []any {
 	return []any{
@@ -239,6 +240,8 @@ func repoScanDest(r *models.Repository) []any {
 		&r.DeletedBy,
 		&r.CreatedAt,
 		&r.UpdatedAt,
+		&r.DeployTargetID,
+		&r.DeployTarget,
 	}
 }
 

@@ -8,13 +8,18 @@
 // with validation_failed.
 
 import { ALL_FORMATS, type FormatId } from './formats'
-import { DEFAULT_UPSTREAMS, FEDERATION_FORMATS, GROUP_FORMATS, HOSTED_FORMATS, PROXY_FORMATS } from './formats.generated'
+import { DEFAULT_UPSTREAMS, FEDERATION_FORMATS, GROUP_DEPLOY_FORMATS, GROUP_FORMATS, HOSTED_FORMATS, PROXY_FORMATS } from './formats.generated'
 
 export type RepoType = 'hosted' | 'proxy' | 'group'
 
 /** True when the format has a federation codec (regardless of repository type). */
 export function isFederationFormat(format: string | null | undefined): boolean {
   return format != null && (FEDERATION_FORMATS as readonly string[]).includes(format)
+}
+
+/** True when groups of this format can publish through a hosted member (the deploy target). */
+export function groupDeployAvailable(format: string | null | undefined): boolean {
+  return format != null && (GROUP_DEPLOY_FORMATS as readonly string[]).includes(format)
 }
 
 /** True when a repository of this type and format can be federated: hosted and a capable format. */

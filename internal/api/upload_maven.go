@@ -27,6 +27,7 @@ import (
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/metrics"
+	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/repotype"
@@ -134,8 +135,14 @@ func (h *MavenUploadHandler) resolveRepoID(ctx context.Context, name string) (st
 
 //nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
 func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
+	repoName := urlparams.Vars(r)["name"]
+
+	// A publish to a group with a deploy target is authorized against the
+	// target (middleware.WithGroupDeploy) and stored in it. This route is
+	// registered beside the dispatcher, so it resolves the target itself.
+	if target := middleware.GroupDeployFromContext(r.Context(), repoName); target != "" {
+		repoName = target
+	}
 
 	uploadResult := "success"
 

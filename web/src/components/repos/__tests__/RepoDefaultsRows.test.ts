@@ -16,6 +16,7 @@ interface Opts {
   isAdmin?: boolean
   policy?: RepoPolicy | null
   candidates?: string[]
+  hosted?: string[]
   form?: Partial<RepoForm>
 }
 
@@ -38,6 +39,7 @@ async function mountRows(opts: Opts = {}): Promise<{ wrapper: VueWrapper; form: 
         isAdmin: opts.isAdmin ?? false,
         policy: opts.policy ?? null,
         candidates: opts.candidates ?? [],
+        hosted: opts.hosted ?? [],
       }),
   })
   const wrapper = mount(Host, { global: { plugins: [pinia] } })
@@ -189,6 +191,25 @@ describe('RepoDefaultsRows: policies and summaries', () => {
     expect(summary(wrapper, 'members')).toContain('2')
     const none = await mountRows({ form: { type: 'group' } })
     expect(summary(none.wrapper, 'members')).not.toContain('0')
+  })
+
+  it('offers the hosted members as deploy target, for formats that support it, and drops a target that leaves', async () => {
+    const { wrapper, form } = await mountRows({
+      form: { type: 'group', format: 'npm', members: ['local', 'mirror'] },
+      candidates: ['local', 'mirror'],
+      hosted: ['local'],
+    })
+    const select = wrapper.find('#rl-deploy-target')
+    expect(select.findAll('option').map((o) => o.attributes('value'))).toEqual(['', 'local'])
+
+    await select.setValue('local')
+    expect(form.value.deployTarget).toBe('local')
+    form.value.members = ['mirror']
+    await flushPromises()
+    expect(form.value.deployTarget).toBe('')
+
+    const deb = await mountRows({ form: { type: 'group', format: 'deb', members: ['x'] }, candidates: ['x'], hosted: ['x'] })
+    expect(deb.wrapper.find('#rl-deploy-target').exists()).toBe(false)
   })
 
   it('lets only admins pick the project on edit, everyone on create', async () => {

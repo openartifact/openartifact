@@ -141,6 +141,7 @@ metadata:
   name: all-npm
 spec:
   cleanup_policies: []
+  deploy_target: ""
   description: ""
   format: npm
   immutable_releases: false

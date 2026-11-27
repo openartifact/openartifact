@@ -169,9 +169,9 @@ func (p *RepositoryStore) createRepository(ctx context.Context, repo *models.Rep
 		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username,
 			upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, min_age_hours, curation_mode,
 			blocked, project_id, presign_downloads, trash_retention_days, immutable_releases, merge_proxy_versions, sign_packages,
-			honour_quay_expiry) VALUES
+			honour_quay_expiry, deploy_target_id) VALUES
 			(gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14, $15,
-			$16, $17, $18, $19, $20, $21) RETURNING id, created_at, updated_at`,
+			$16, $17, $18, $19, $20, $21, $22) RETURNING id, created_at, updated_at`,
 		repo.Name,
 		repo.Format,
 		repo.Description,
@@ -193,6 +193,7 @@ func (p *RepositoryStore) createRepository(ctx context.Context, repo *models.Rep
 		repo.MergeProxyVersions,
 		repo.SignPackages,
 		repo.HonourQuayExpiry,
+		repo.DeployTargetID,
 	).Scan(&repo.ID, &repo.CreatedAt, &repo.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to create repository: %w", err)
@@ -219,6 +220,11 @@ type RepositorySettingsChange struct {
 	// MoveToProjectID, when set, moves the repository (and its usage) to that
 	// project in the same transaction.
 	MoveToProjectID string
+	// SetDeployTarget writes DeployTargetID (nil clears it) as the group's
+	// deploy target; false leaves the column as it is. The caller has checked
+	// that it is a hosted member of the group after ReplaceMembers.
+	SetDeployTarget bool
+	DeployTargetID  *string
 }
 
 // UpdateRepositorySettings writes the settings of repo, optionally moves it to
@@ -246,6 +252,17 @@ func (p *RepositoryStore) UpdateRepositorySettings(ctx context.Context, repo *mo
 
 	if err := updateRepositoryRow(ctx, tx, repo, false); err != nil {
 		return err
+	}
+
+	if change.SetDeployTarget {
+		if _, err := tx.ExecContext(
+			ctx,
+			`UPDATE repositories SET deploy_target_id = $2 WHERE id = $1`,
+			repo.ID,
+			change.DeployTargetID,
+		); err != nil {
+			return fmt.Errorf("failed to set deploy target: %w", err)
+		}
 	}
 
 	if change.ReplaceMembers {
@@ -282,7 +299,19 @@ func replaceGroupMembersTx(ctx context.Context, tx *sql.Tx, groupRepoID string, 
 		return fmt.Errorf("failed to renumber kept group members: %w", err)
 	}
 
-	return insertGroupMembers(ctx, tx, groupRepoID, memberIDs)
+	if err := insertGroupMembers(ctx, tx, groupRepoID, memberIDs); err != nil {
+		return err
+	}
+
+	// The deploy target is a member: a member that left the group is no longer one.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE repositories g SET deploy_target_id = NULL WHERE g.id = $1 AND g.deploy_target_id IS NOT NULL
+		   AND NOT EXISTS (SELECT 1 FROM repository_group_members m WHERE m.group_repo_id = g.id AND m.member_repo_id = g.deploy_target_id)`,
+		groupRepoID); err != nil {
+		return fmt.Errorf("failed to unset deploy target: %w", err)
+	}
+
+	return nil
 }
 
 func insertGroupMembers(ctx context.Context, tx *sql.Tx, groupRepoID string, memberIDs []string) error {

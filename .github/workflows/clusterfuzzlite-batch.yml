@@ -31,12 +31,20 @@ jobs:
   batch:
     name: batch fuzzing
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # The run is sized to end inside this ("Fuzz budget" below), not left to be
+    # cancelled by it: the build takes 15 to 55 minutes and the run about 80.
+    # Keep JOB_TIMEOUT_MINUTES in the first step equal to it.
+    timeout-minutes: 180
     permissions:
       contents: read
       actions: read # find the previous crash artifacts
       security-events: write # upload SARIF to code scanning
     steps:
+      - name: Start the clock
+        env:
+          JOB_TIMEOUT_MINUTES: 180
+        run: echo "JOB_DEADLINE=$(($(date +%s) + JOB_TIMEOUT_MINUTES * 60))" >> "$GITHUB_ENV"
+
       # ClusterFuzzLite only logs a failed upload and carries on, so a token
       # GitHub rejects would cost the whole run before anyone notices.
       - name: Check the storage token
@@ -62,12 +70,63 @@ jobs:
           sanitizer: address
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # ClusterFuzzLite clones the storage repository once per target and gives
+      # up after five tries within 31 s: GitHub answered every one of them with
+      # HTTP 403 at the start of the run of 2026-11-20 (#514), which failed the
+      # job after 35 minutes of building. The token was checked 35 minutes
+      # earlier and works an hour later, so wait the error out here.
+      - name: Wait for the storage repository
+        env:
+          FUZZ_STORAGE_TOKEN: ${{ secrets.FUZZ_STORAGE_TOKEN }}
+          GIT_TERMINAL_PROMPT: 0
+        run: |
+          url="https://x-access-token:${FUZZ_STORAGE_TOKEN}@github.com/openartifact/openartifact-fuzz-storage.git"
+          for try in $(seq 1 20); do
+            heads="$(git ls-remote --heads "$url" main gh-pages 2>&1)" && [ "$(wc -l <<< "$heads")" -eq 2 ] && exit 0
+            echo "storage repository not readable (try $try of 20): $heads"
+            sleep 30
+          done
+          echo "::error::the storage repository stayed unreadable for 10 minutes (HTTP 403 is a GitHub rate limit or outage, see docs/development/fuzzing.md)"
+          exit 1
+
+      # ClusterFuzzLite splits fuzz-seconds among the targets (a floor of
+      # fuzz-seconds / targets each) and does not count what a target costs
+      # besides fuzzing: libFuzzer start and stop, the corpus download and its
+      # upload (measured 6.6 s on average, 33 s at most). 204 targets with 3600 s
+      # ran 80 minutes, and the 120-minute timeout cancelled every run whose build
+      # took more than 38 minutes (11 of the 16 nights up to 2026-11-27, #514),
+      # losing the crashes a cancelled run has not uploaded yet. So give the
+      # targets the time that is left: at most 3600 s, less when the build was
+      # slow, and fail at once when there is no use in starting.
+      - name: Fuzz budget
+        id: budget
+        env:
+          RESERVE: 900 # s kept for the SARIF upload, the crash artifacts and runner noise
+          OVERHEAD: 10 # s per target on top of the fuzzing
+          MIN_PER_TARGET: 5 # s: less finds nothing, and 0 would mean "no limit" to libFuzzer
+          MAX_SECONDS: 3600
+        run: |
+          targets=$(find "$GITHUB_WORKSPACE/build-out" -maxdepth 1 -type f -executable ! -name '*.*' | wc -l)
+          [ "$targets" -gt 0 ] || { echo "::error::the build left no fuzz target in build-out"; exit 1; }
+          left=$((JOB_DEADLINE - $(date +%s) - RESERVE))
+          per_target=$((left / targets - OVERHEAD))
+          echo "$targets fuzz targets, $((left / 60)) minutes left for them: $per_target s each"
+          if [ "$per_target" -lt "$MIN_PER_TARGET" ]; then
+            echo "::error::$((left / 60)) minutes left for $targets targets is under $MIN_PER_TARGET s each: the build took too long (see the Build fuzzers step)"
+            exit 1
+          fi
+          seconds=$((per_target * targets))
+          [ "$seconds" -le "$MAX_SECONDS" ] || seconds=$MAX_SECONDS
+          echo "budget $seconds s"
+          echo "seconds=$seconds" >> "$GITHUB_OUTPUT"
+
       - name: Run fuzzers
         uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
         with:
           language: go
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          fuzz-seconds: 3600
+          # Split among the targets, never more than an hour in all.
+          fuzz-seconds: ${{ steps.budget.outputs.seconds }}
           mode: batch
           sanitizer: address
           output-sarif: true
@@ -208,6 +267,7 @@ jobs:
     permissions:
       contents: read
       actions: read # read the failed log
+      checks: read # a job's annotations tell a timeout from a cancel
       issues: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

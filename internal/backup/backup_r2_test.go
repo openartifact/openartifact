@@ -64,6 +64,16 @@ func (d *fakeDB) AddGroupMember(_ context.Context, groupID, memberID string, pri
 	return nil
 }
 
+func (d *fakeDB) SetGroupDeployTarget(_ context.Context, groupID, memberID string) error {
+	for _, r := range d.repos {
+		if r.ID == groupID {
+			r.DeployTargetID = &memberID
+		}
+	}
+
+	return nil
+}
+
 // recordingRegen records the metadata refreshes a restore asks for.
 type recordingRegen struct {
 	mu    sync.Mutex
@@ -189,6 +199,8 @@ func TestBackupRestore_GroupMembersRoundTrip(t *testing.T) {
 		}
 	}
 
+	g.DeployTargetID = &a.ID
+
 	_ = src.AddGroupMember(ctx, g.ID, b.ID, 0)
 	_ = src.AddGroupMember(ctx, g.ID, a.ID, 1)
 
@@ -199,6 +211,10 @@ func TestBackupRestore_GroupMembersRoundTrip(t *testing.T) {
 
 	if len(got) != 2 || got[0].MemberRepoID != repoByName(t, dst, "b").ID || got[1].MemberRepoID != repoByName(t, dst, "a").ID {
 		t.Fatalf("restored members = %+v, want [b a] under the new ids", got)
+	}
+
+	if target := repoByName(t, dst, "grp").DeployTargetID; target == nil || *target != repoByName(t, dst, "a").ID {
+		t.Fatalf("restored deploy target = %v, want a under its new id", target)
 	}
 }
 

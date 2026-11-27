@@ -43,6 +43,7 @@ type repoOpsDB struct {
 	deleted  []string
 	order    []string // call order of the metadata read and the delete
 	updated  *models.Repository
+	change   database.RepositorySettingsChange
 	updMem   []string
 }
 
@@ -118,6 +119,7 @@ func (d *repoOpsDB) UpdateRepositorySettings(_ context.Context, repo *models.Rep
 
 	cp := *repo
 	d.updated = &cp
+	d.change = change
 
 	if change.ReplaceMembers {
 		d.updMem = slices.Clone(change.MemberIDs)

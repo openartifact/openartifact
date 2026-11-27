@@ -119,8 +119,14 @@ func fuzzCheckIndex(t *testing.T, idx packageIndex) {
 		t.Fatalf("extra %q is not valid UTF-8, jsonb refuses it", idx.Extra)
 	}
 
+	// Numbers stay exact literals, as in jsonb: float64 would call 117255555555555e5555 an overflow.
+	// The numbers jsonb refuses are covered by TestPackageIndexJSONBNumbers.
 	var decoded any
-	if err := json.Unmarshal(idx.Extra, &decoded); err != nil || !fuzzDBText(decoded) {
+
+	dec := json.NewDecoder(bytes.NewReader(idx.Extra))
+	dec.UseNumber()
+
+	if err := dec.Decode(&decoded); err != nil || !fuzzDBText(decoded) {
 		t.Fatalf("extra %q holds text jsonb refuses (%v)", idx.Extra, err)
 	}
 

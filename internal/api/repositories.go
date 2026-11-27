@@ -561,6 +561,96 @@ func (h *RepositoriesHandler) resolveGroupMembers(
 }
 
 // encryptUpstreamPassword encrypts a proxy upstream password for storage.
+// resolveDeployTarget validates the deploy target of a group of groupFormat
+// whose final members are memberIDs and returns its repository id: the target
+// must be a hosted member of the group (so of its format), and the format must
+// publish through a group.
+func (h *RepositoriesHandler) resolveDeployTarget(
+	ctx context.Context,
+	groupFormat, targetName string,
+	memberIDs []string,
+) (string, int, string, string) {
+	if !repotype.GroupDeploySupported(groupFormat) {
+		return "", http.StatusBadRequest, "validation_failed",
+			"deploy_target is not supported for " + groupFormat + " groups; it is for: " + repotype.GroupDeployFormats()
+	}
+
+	target, err := h.db.GetRepositoryByName(ctx, targetName)
+	if err != nil {
+		h.log.Errorw("deploy target lookup failed", "name", targetName, "error", err)
+		return "", http.StatusInternalServerError, "internal_error", "database error"
+	}
+
+	if target == nil || !slices.Contains(memberIDs, target.ID) {
+		return "", http.StatusBadRequest, "validation_failed", "deploy_target must be a member of the group: " + targetName
+	}
+
+	if target.RepoType != repotype.Hosted {
+		return "", http.StatusBadRequest, "validation_failed", "deploy_target must be a hosted member; " + targetName + " is a " + target.RepoType
+	}
+
+	return target.ID, 0, "", ""
+}
+
+// applyDeployTarget sets the deploy target of repo, a group about to be
+// updated, from the request (nil leaves it) and the member list the update
+// writes. A target that the new member list drops is cleared, as the database
+// does in the same transaction.
+func (h *RepositoriesHandler) applyDeployTarget(
+	ctx context.Context,
+	repo *models.Repository,
+	requested *string,
+	change *database.RepositorySettingsChange,
+) (int, string, string) {
+	if repo.RepoType != repotype.Group {
+		if requested != nil && *requested != "" {
+			return http.StatusBadRequest, "validation_failed", "deploy_target is only valid for group repositories"
+		}
+
+		return 0, "", ""
+	}
+
+	if requested == nil && change.ReplaceMembers && repo.DeployTargetID != nil && !slices.Contains(change.MemberIDs, *repo.DeployTargetID) {
+		repo.DeployTargetID, repo.DeployTarget = nil, ""
+	}
+
+	if requested == nil {
+		return 0, "", ""
+	}
+
+	change.SetDeployTarget = true
+
+	if *requested == "" {
+		repo.DeployTargetID, repo.DeployTarget = nil, ""
+		return 0, "", ""
+	}
+
+	memberIDs := change.MemberIDs
+
+	if !change.ReplaceMembers {
+		members, err := h.db.ListGroupMembers(ctx, repo.ID)
+		if err != nil {
+			h.log.Errorw("update repository: list members for deploy target", "error", err)
+			return http.StatusInternalServerError, "internal_error", "database error"
+		}
+
+		memberIDs = make([]string, len(members))
+		for i, m := range members {
+			memberIDs[i] = m.MemberRepoID
+		}
+	}
+
+	targetID, status, code, msg := h.resolveDeployTarget(ctx, repo.Format, *requested, memberIDs)
+	if status != 0 {
+		return status, code, msg
+	}
+
+	change.DeployTargetID = &targetID
+	repo.DeployTargetID, repo.DeployTarget = &targetID, *requested
+
+	return 0, "", ""
+}
+
 func encryptUpstreamPassword(plain string) (string, error) {
 	if err := crypto.CheckPlaintext(plain); err != nil {
 		return "", validationError("upstream_password must be the plaintext password")
@@ -611,6 +701,9 @@ type createRepositoryBody struct {
 	MinAgeHours             *int     `json:"min_age_hours"`
 	CurationMode            *string  `json:"curation_mode"`
 	MemberRepos             []string `json:"member_repos"`
+	// DeployTarget (groups only) names the hosted member a write sent to the
+	// group is served by; it must be one of MemberRepos.
+	DeployTarget string `json:"deploy_target"`
 	// PresignDownloads overrides storage.presignDownloads (null/absent inherits).
 	PresignDownloads *bool `json:"presign_downloads"`
 	// Project is the owning project's name; empty means the built-in system
@@ -866,8 +959,21 @@ func (h *RepositoriesHandler) createRepository(
 		}
 
 		memberIDs = ids
+
+		if body.DeployTarget != "" {
+			targetID, status, code, msg := h.resolveDeployTarget(r.Context(), body.Format, body.DeployTarget, memberIDs)
+			if status != 0 {
+				writeError(w, status, code, msg)
+				return
+			}
+
+			repo.DeployTargetID, repo.DeployTarget = &targetID, body.DeployTarget
+		}
 	case len(body.MemberRepos) > 0:
 		writeError(w, http.StatusBadRequest, "validation_failed", "member_repos is only valid for group repositories")
+		return
+	case body.DeployTarget != "":
+		writeError(w, http.StatusBadRequest, "validation_failed", "deploy_target is only valid for group repositories")
 		return
 	}
 
@@ -955,6 +1061,9 @@ type updateRepositoryBody struct {
 	CurationMode            *string   `json:"curation_mode"`
 	Blocked                 *bool     `json:"blocked"`
 	MemberRepos             *[]string `json:"member_repos"`
+	// DeployTarget (groups only): absent leaves the deploy target unchanged,
+	// "" clears it, a name sets it (a hosted member of the group).
+	DeployTarget *string `json:"deploy_target"`
 	// PresignDownloads is tri-state: absent leaves the override unchanged,
 	// null clears it (inherit storage.presignDownloads), true/false set it.
 	PresignDownloads json.RawMessage `json:"presign_downloads"`
@@ -992,6 +1101,7 @@ func (b *updateRepositoryBody) changedFields() []string {
 		{"max stale", b.MaxStaleSeconds != nil},
 		{"minimum age", b.MinAgeHours != nil},
 		{"group members", b.MemberRepos != nil},
+		{"deploy target", b.DeployTarget != nil},
 		{"presigned downloads", b.PresignDownloads != nil},
 		{"trash retention", b.TrashRetentionDays.Set},
 		{"immutable releases", b.ImmutableReleases != nil},
@@ -1265,6 +1375,11 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		}
 
 		change.ReplaceMembers, change.MemberIDs = true, ids
+	}
+
+	if status, code, msg := h.applyDeployTarget(ctx, repo, body.DeployTarget, &change); status != 0 {
+		writeError(w, status, code, msg)
+		return
 	}
 
 	err = h.db.UpdateRepositorySettings(ctx, repo, change)
@@ -1878,6 +1993,7 @@ func RepositoryToResponse(r *models.Repository) responses.RepositoryResponse {
 		SignPackages:       r.SignPackages,
 		HonourQuayExpiry:   r.HonourQuayExpiry,
 		Federated:          r.Federated,
+		DeployTarget:       r.DeployTarget,
 	}
 
 	if r.RepoType == repotype.Proxy {

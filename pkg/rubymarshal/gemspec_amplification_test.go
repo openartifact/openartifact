@@ -80,7 +80,7 @@ func TestDecodeSpecificationRejectsLinkAmplification(t *testing.T) {
 
 	cases := map[string][]byte{
 		"too many clauses in one requirement": linkedGemspec(t, 0, 1000),
-		"many deps sharing one requirement":   linkedGemspec(t, maxSpecDependencies-1, maxSpecClauses-1),
+		"many deps sharing one requirement":   linkedGemspec(t, maxSpecDependencies-1, MaxRequirementClauses-1),
 		"too many dependencies":               linkedGemspec(t, maxSpecDependencies+1, 0),
 		"authors linking one large string": func() []byte {
 			spec, err := EncodeSpecification(Specification{Name: "x", Version: "1", Authors: []string{big, big}})

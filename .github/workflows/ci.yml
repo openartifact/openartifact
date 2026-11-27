@@ -77,6 +77,9 @@ jobs:
       - name: fuzz target selection (PR fuzzing picks and caps targets)
         run: .clusterfuzzlite/select-targets_test.sh
 
+      - name: nightly fuzz tracking issue (failures, timeouts, cancels)
+        run: scripts/fuzz-issue_test.sh
+
       # -coverpkg=./... attributes coverage to every package, not just the one a
       # test lives in; the coverage job merges this with the integration profile.
       - name: go test (race, unit packages)

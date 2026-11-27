@@ -11,7 +11,7 @@ import { SYSTEM_PROJECT_NAME } from '../api/projects'
 import type { FormatId } from './formats'
 import { toBytes, splitBytes, formatBytes, type SizeUnit } from './quota'
 import { parseRetentionInput } from './trash'
-import { federationAvailable, type RepoType } from './repoTypes'
+import { federationAvailable, groupDeployAvailable, type RepoType } from './repoTypes'
 import { t, tp, tpn } from '../i18n'
 
 export interface RepoForm {
@@ -28,6 +28,8 @@ export interface RepoForm {
   upstreamPassword: string
   /** Ordered member repository names (group). */
   members: string[]
+  /** Hosted member a publish through the group is served by (group); '' is none. */
+  deployTarget: string
   /** Trash retention in days as typed; '' is the server default. */
   retentionDays: string
   /** Storage quota as typed (create only); '' is unlimited. */
@@ -53,6 +55,7 @@ export function emptyRepoForm(overrides: Partial<RepoForm> = {}): RepoForm {
     upstreamUsername: '',
     upstreamPassword: '',
     members: [],
+    deployTarget: '',
     retentionDays: '',
     quotaValue: '',
     quotaUnit: 'GB',
@@ -76,6 +79,7 @@ export function repoFormFrom(r: Repository): RepoForm {
     isPublic: r.public ?? false,
     project: r.project && r.project !== SYSTEM_PROJECT_NAME ? r.project : '',
     members: [...(r.member_repos ?? [])],
+    deployTarget: r.deploy_target ?? '',
     retentionDays: r.trash_retention_days == null ? '' : String(r.trash_retention_days),
     immutableReleases: r.immutable_releases ?? false,
     signPackages: r.sign_packages ?? false,
@@ -147,6 +151,7 @@ export function buildCreateBody(form: RepoForm, ctx: { isAdmin: boolean }): Crea
         }
       : {}),
     ...(form.type === 'group' ? { member_repos: form.members } : {}),
+    ...(form.type === 'group' && groupDeployAvailable(form.format) && form.deployTarget !== '' ? { deploy_target: form.deployTarget } : {}),
   }
 }
 
@@ -164,6 +169,8 @@ export function buildUpdateBody(form: RepoForm, repo: Repository, ctx: { isAdmin
     ...(type === 'hosted' && repo.format === 'rpm' ? { sign_packages: form.signPackages } : {}),
     ...(type === 'hosted' && repo.format === 'docker' ? { honour_quay_expiry: form.honourQuayExpiry } : {}),
     ...(type === 'group' && ctx.isAdmin ? { merge_proxy_versions: form.mergeProxyVersions } : {}),
+    // '' clears the target.
+    ...(type === 'group' && groupDeployAvailable(repo.format) ? { deploy_target: form.deployTarget } : {}),
     ...(ctx.isAdmin && form.project !== (repo.project === SYSTEM_PROJECT_NAME ? '' : (repo.project ?? ''))
       ? { project: form.project || SYSTEM_PROJECT_NAME }
       : {}),

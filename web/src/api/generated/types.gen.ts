@@ -524,6 +524,10 @@ export type Repository = {
      */
     merge_proxy_versions?: boolean;
     /**
+     * Group repositories only: the hosted member a publish sent to the group is served by (name of one of its members; same format). Absent when the group has none, and writes through the group are then refused with 405. Authorization is the target's: the caller needs write on the target.
+     */
+    deploy_target?: string;
+    /**
      * Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed.
      */
     sign_packages?: boolean;
@@ -4605,6 +4609,10 @@ export type PostApiV1RepositoriesData = {
          * Group repositories only, administrators only (403 otherwise). Default false: hosted members win a package name and proxy versions of the same name are hidden. true merges proxy versions into the group.
          */
         merge_proxy_versions?: boolean;
+        /**
+         * Group repositories only (400 otherwise). Name of a hosted member listed in member_repos that serves the writes (PUT/POST that publish) sent to the group, as if they had been sent to it. Supported formats: ansible, cargo, composer, conan, conda, go, helm, ivy, maven, nix, npm, nuget, pypi, raw, rubygems, sbt, terraform (400 otherwise). Authorization is the target's: the caller needs write on the target, a permission on the group neither grants nor is needed. Deletes through a group stay 405.
+         */
+        deploy_target?: string;
         /**
          * Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed.
          */
@@ -11582,6 +11590,10 @@ export type PostApiV1ProjectsByProjectRepositoriesData = {
          */
         merge_proxy_versions?: boolean;
         /**
+         * Group repositories only: the hosted member a publish sent to the group is served by (name of one of its members; same format). Absent when the group has none, and writes through the group are then refused with 405. Authorization is the target's: the caller needs write on the target.
+         */
+        deploy_target?: string;
+        /**
          * Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed.
          */
         sign_packages?: boolean;
@@ -12805,6 +12817,10 @@ export type PatchApiV1RepositoryByNameData = {
          * Group repositories only, administrators only (403 otherwise). Absent leaves it unchanged.
          */
         merge_proxy_versions?: boolean;
+        /**
+         * Group repositories only (400 otherwise). Absent leaves it unchanged; a name (a hosted member of the group after this update) sets it; an empty string clears it. A member that leaves the group stops being the target.
+         */
+        deploy_target?: string;
         /**
          * Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed.
          */

@@ -71,6 +71,10 @@ func TestRegistryShape(t *testing.T) {
 			t.Errorf("%s: generates group metadata but cannot be grouped", s.Name)
 		}
 
+		if s.GroupDeploy && (!s.Group || s.NoHosted || s.RestUploadEndpoint != "" || s.Mount == repotype.MountOCI) {
+			t.Errorf("%s: a deploy target needs a hosted, native-path upload under a group", s.Name)
+		}
+
 		if s.GrypeScan && s.PURLType == "" {
 			t.Errorf("%s: grype scans by Package URL, which needs a PURL type", s.Name)
 		}
@@ -96,6 +100,11 @@ func TestPolicy(t *testing.T) {
 
 	if got := repotype.GroupFormats(); got != groups {
 		t.Errorf("GroupFormats() = %q, want %q", got, groups)
+	}
+
+	deploy := "ansible, cargo, composer, conan, conda, go, helm, ivy, maven, nix, npm, nuget, pypi, raw, rubygems, sbt, terraform"
+	if got := repotype.GroupDeployFormats(); got != deploy {
+		t.Errorf("GroupDeployFormats() = %q, want %q", got, deploy)
 	}
 
 	if got, want := repotype.FederationFormats(), "cargo, docker, go, helm, maven, npm, nuget, pypi, raw"; got != want {

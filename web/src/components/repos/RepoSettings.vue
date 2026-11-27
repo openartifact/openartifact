@@ -15,7 +15,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <FormField :label="t('repos.settings.description')" id="rl-description">
         <textarea id="rl-description" v-model="form.description" rows="2" :class="INPUT_CLASS" />
       </FormField>
-      <RepoDefaultsRows v-model="form" mode="edit" :is-admin="session.isAdmin" :policy="null" :candidates="candidates" />
+      <RepoDefaultsRows v-model="form" mode="edit" :is-admin="session.isAdmin" :policy="null" :candidates="candidates" :hosted="hostedNames" />
       <p v-if="saveError" role="alert" class="text-sm text-danger">{{ saveError }}</p>
       <div class="flex justify-end">
         <AppButton type="submit" :disabled="!dirty || !valid" :loading="saving">{{ saving ? t('common.saving') : t('common.save') }}</AppButton>
@@ -132,6 +132,10 @@ const candidates = computed(() =>
   others.value.filter((r) => r.format === props.repo.format && r.repo_type !== 'group' && r.name !== props.repo.name).map((r) => r.name),
 )
 
+const hostedNames = computed(() =>
+  others.value.filter((r) => r.format === props.repo.format && r.repo_type === 'hosted' && r.name !== props.repo.name).map((r) => r.name),
+)
+
 const usage = ref<RepositoryUsage | null>(null)
 const usageFailed = ref(false)
 const quotaOpen = ref(false)
@@ -162,12 +166,12 @@ async function save(): Promise<void> {
   saving.value = true
   saveError.value = ''
   try {
-    let updated = await updateRepository(props.repo.name, buildUpdateBody(form.value, props.repo, { isAdmin: session.isAdmin }))
+    // The members go first: the deploy target sent with the settings must be one of them.
     const before = props.repo.member_repos ?? []
-    if (props.repo.repo_type === 'group' && form.value.members.join('\n') !== before.join('\n')) {
-      await updateRepoMembers(props.repo.name, form.value.members)
-      updated = { ...updated, member_repos: [...form.value.members] }
-    }
+    const membersChanged = props.repo.repo_type === 'group' && form.value.members.join('\n') !== before.join('\n')
+    if (membersChanged) await updateRepoMembers(props.repo.name, form.value.members)
+    let updated = await updateRepository(props.repo.name, buildUpdateBody(form.value, props.repo, { isAdmin: session.isAdmin }))
+    if (membersChanged) updated = { ...updated, member_repos: [...form.value.members] }
     toasts.success(t('rl.settings.saved'))
     emit('saved', updated)
   } catch (err) {

@@ -151,6 +151,12 @@ type Spec struct {
 	// group worker generates from their members (apk, deb, pacman, rpm) rather
 	// than resolving requests member by member.
 	GeneratedGroupMetadata bool
+	// GroupDeploy marks a format whose groups may name a hosted member as their
+	// deploy target (repositories.deploy_target_id): a publish is one or more
+	// independent requests under the repository path (PUT or POST), so a group
+	// can serve it as its target. Docker (a push is a session), the REST-upload
+	// formats (apk, deb, pacman, rpm) and proxy-only formats are not.
+	GroupDeploy bool
 	// DefaultUpstream is the upstream a proxy repository uses when none is
 	// given, "" for formats without a well-known public upstream.
 	DefaultUpstream string
@@ -197,7 +203,7 @@ type Spec struct {
 //nolint:gochecknoglobals // immutable registry
 var specs = [...]Spec{
 	{
-		Name: "ansible", Uploads: ansibleUploads,
+		Name: "ansible", GroupDeploy: true, Uploads: ansibleUploads,
 		Proxy: true, Group: true, DefaultUpstream: "https://galaxy.ansible.com", Versioning: VersionSemver,
 	},
 	{
@@ -205,7 +211,7 @@ var specs = [...]Spec{
 		Proxy: true, Group: true, GeneratedGroupMetadata: true, Signing: SigningRSA, PURLType: "apk",
 	},
 	{
-		Name: "cargo", Uploads: cargoUploads,
+		Name: "cargo", GroupDeploy: true, Uploads: cargoUploads,
 		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://index.crates.io",
 		Versioning: VersionSemver, PURLType: "cargo", OSVEcosystem: "crates.io", GrypeScan: true,
 	},
@@ -214,16 +220,16 @@ var specs = [...]Spec{
 		Versioning: VersionGem, PURLType: "cocoapods",
 	},
 	{
-		Name: "composer", Mount: MountGuarded,
+		Name: "composer", GroupDeploy: true, Mount: MountGuarded,
 		Proxy: true, Group: true, DefaultUpstream: "https://repo.packagist.org",
 		Versioning: VersionSemver, PURLType: "composer", OSVEcosystem: "Packagist", GrypeScan: true,
 	},
 	{
-		Name: "conan", Uploads: conanUploads,
+		Name: "conan", GroupDeploy: true, Uploads: conanUploads,
 		Proxy: true, Group: true, DefaultUpstream: "https://center2.conan.io", PURLType: "conan",
 	},
 	{
-		Name: "conda", Uploads: condaUploads,
+		Name: "conda", GroupDeploy: true, Uploads: condaUploads,
 		Proxy: true, Group: true, PURLType: "conda",
 	},
 	{
@@ -245,12 +251,12 @@ var specs = [...]Spec{
 		Name: "gitlfs", Mount: MountIsolated, Uploads: gitlfsUploads,
 	},
 	{
-		Name: "go", Uploads: goUploads,
+		Name: "go", GroupDeploy: true, Uploads: goUploads,
 		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://proxy.golang.org",
 		Versioning: VersionSemver, PURLType: "golang", OSVEcosystem: "Go", GrypeScan: true,
 	},
 	{
-		Name: "helm", Uploads: helmUploads,
+		Name: "helm", GroupDeploy: true, Uploads: helmUploads,
 		Proxy: true, Group: true, Federation: true,
 		Versioning: VersionSemver, PURLType: "helm", OSVEcosystem: "Helm",
 	},
@@ -259,25 +265,25 @@ var specs = [...]Spec{
 		PURLType: "huggingface",
 	},
 	{
-		Name: "ivy", Uploads: ivyUploads,
+		Name: "ivy", GroupDeploy: true, Uploads: ivyUploads,
 		Proxy: true, Group: true, Mount: MountIsolated, Versioning: VersionMaven, PURLType: "maven",
 	},
 	{
-		Name: "maven", Uploads: mavenUploads,
+		Name: "maven", GroupDeploy: true, Uploads: mavenUploads,
 		Proxy: true, Group: true, Federation: true, Mount: MountIsolated,
 		Versioning: VersionMaven, PURLType: "maven", OSVEcosystem: "Maven", GrypeScan: true,
 	},
 	{
-		Name: "nix", NoCuration: true, Mount: MountGuarded, Signing: SigningEd25519,
+		Name: "nix", GroupDeploy: true, NoCuration: true, Mount: MountGuarded, Signing: SigningEd25519,
 		Proxy: true, Group: true, DefaultUpstream: "https://cache.nixos.org",
 	},
 	{
-		Name: "npm", Uploads: npmUploads,
+		Name: "npm", GroupDeploy: true, Uploads: npmUploads,
 		Proxy: true, Group: true, Federation: true,
 		Versioning: VersionSemver, PURLType: "npm", OSVEcosystem: "npm", GrypeScan: true,
 	},
 	{
-		Name: "nuget", Uploads: nugetUploads,
+		Name: "nuget", GroupDeploy: true, Uploads: nugetUploads,
 		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://api.nuget.org/v3/index.json",
 		Versioning: VersionSemver, PURLType: "nuget", OSVEcosystem: "NuGet", GrypeScan: true,
 	},
@@ -295,12 +301,12 @@ var specs = [...]Spec{
 		Versioning: VersionSemver, PURLType: "pub", OSVEcosystem: "Pub", GrypeScan: true,
 	},
 	{
-		Name: "pypi", Uploads: pypiUploads,
+		Name: "pypi", GroupDeploy: true, Uploads: pypiUploads,
 		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://pypi.org/simple",
 		Versioning: VersionPEP440, PURLType: "pypi", OSVEcosystem: "PyPI", GrypeScan: true,
 	},
 	{
-		Name: "raw", Uploads: rawUploads,
+		Name: "raw", GroupDeploy: true, Uploads: rawUploads,
 		Proxy: true, Group: true, Federation: true, Mount: MountIsolated,
 	},
 	{
@@ -309,12 +315,12 @@ var specs = [...]Spec{
 		PURLType: "rpm", OSVEcosystem: "Red Hat", GrypeScan: true, DistroScoped: true,
 	},
 	{
-		Name: "rubygems", Uploads: rubygemsUploads,
+		Name: "rubygems", GroupDeploy: true, Uploads: rubygemsUploads,
 		Proxy: true, Group: true, DefaultUpstream: "https://rubygems.org",
 		Versioning: VersionGem, PURLType: "gem", OSVEcosystem: "RubyGems", GrypeScan: true,
 	},
 	{
-		Name: "sbt", Uploads: sbtUploads,
+		Name: "sbt", GroupDeploy: true, Uploads: sbtUploads,
 		Proxy: true, Group: true, Mount: MountIsolated, Versioning: VersionMaven, PURLType: "maven",
 	},
 	{
@@ -322,7 +328,7 @@ var specs = [...]Spec{
 		Proxy: true, Group: true, Versioning: VersionSemver, PURLType: "swift", OSVEcosystem: "SwiftURL",
 	},
 	{
-		Name: "terraform", NoCuration: true, Uploads: terraformUploads,
+		Name: "terraform", GroupDeploy: true, NoCuration: true, Uploads: terraformUploads,
 		Proxy: true, Group: true, DefaultUpstream: "https://registry.terraform.io",
 		Signing: SigningGPG, Versioning: VersionSemver,
 	},
@@ -409,6 +415,14 @@ func GroupSupported(format string) bool {
 	s, _ := Lookup(format)
 
 	return s.Group
+}
+
+// GroupDeploySupported reports whether a group of format may name a hosted
+// member as its deploy target (Spec.GroupDeploy).
+func GroupDeploySupported(format string) bool {
+	s, _ := Lookup(format)
+
+	return s.GroupDeploy
 }
 
 // GeneratedGroupMetadata reports whether the groups of format serve metadata
@@ -513,6 +527,9 @@ func ProxyFormats() string { return list(func(s Spec) bool { return s.Proxy }) }
 
 // GroupFormats lists the group-capable formats for error messages.
 func GroupFormats() string { return list(func(s Spec) bool { return s.Group }) }
+
+// GroupDeployFormats lists the formats whose groups can have a deploy target for error messages.
+func GroupDeployFormats() string { return list(func(s Spec) bool { return s.GroupDeploy }) }
 
 // FederationFormats lists the federation-capable formats for error messages.
 func FederationFormats() string { return list(func(s Spec) bool { return s.Federation }) }

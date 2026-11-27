@@ -1233,7 +1233,8 @@ type Repository struct {
 	MinAgeHours  int32  `db:"min_age_hours" json:"min_age_hours"`
 	CurationMode string `db:"curation_mode" json:"curation_mode"`
 	// Hosted docker repositories only: delete manifests once their quay.expires-after deadline (docker_manifests.expires_at) has passed.
-	HonourQuayExpiry bool `db:"honour_quay_expiry" json:"honour_quay_expiry"`
+	HonourQuayExpiry bool    `db:"honour_quay_expiry" json:"honour_quay_expiry"`
+	DeployTargetID   *string `db:"deploy_target_id" json:"deploy_target_id"`
 }
 
 type RepositoryAttestationAttach struct {

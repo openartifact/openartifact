@@ -114,6 +114,7 @@ jobs:
     permissions:
       contents: read
       actions: read # read the failed log
+      checks: read # a job's annotations tell a timeout from a cancel
       issues: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

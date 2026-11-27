@@ -314,14 +314,14 @@ describe('RepoSettings: group payload', () => {
     expect('upstream_url' in writes(calls)[0].body!).toBe(false)
   })
 
-  it('saves reordered/added members through the members endpoint after the settings, and reports them', async () => {
+  it('saves reordered/added members through the members endpoint before the settings, and reports them', async () => {
     const calls = serve(candidates())
     const w = await mountSettings(group())
     await w.findAll('[data-testid="members-available"] button')[0].trigger('click')
     await w.findAll('[data-testid="members-selected"] li')[1].findAll('button')[0].trigger('click')
     await save(w)
-    expect(writes(calls).map((c) => `${c.method} ${c.path}`)).toEqual(['PATCH /api/v1/repository/all', 'PUT /api/v1/repositories/all/members'])
-    expect(writes(calls)[1].body).toEqual({ member_repos: ['b', 'a', 'c'] })
+    expect(writes(calls).map((c) => `${c.method} ${c.path}`)).toEqual(['PUT /api/v1/repositories/all/members', 'PATCH /api/v1/repository/all'])
+    expect(writes(calls)[0].body).toEqual({ member_repos: ['b', 'a', 'c'] })
     expect((w.emitted('saved')![0][0] as Repository).member_repos).toEqual(['b', 'a', 'c'])
   })
 
@@ -330,7 +330,25 @@ describe('RepoSettings: group payload', () => {
     const w = await mountSettings(group())
     for (let i = 0; i < 2; i++) await w.find('[data-testid="members-selected"] li').findAll('button')[2].trigger('click')
     await save(w)
-    expect(writes(calls)[1].body).toEqual({ member_repos: [] })
+    expect(writes(calls)[0].body).toEqual({ member_repos: [] })
+  })
+
+  it('picks the deploy target among the hosted members, and clears it when its member leaves', async () => {
+    const calls = serve(candidates())
+    const w = await mountSettings(group())
+    const select = w.find('#rl-deploy-target')
+    expect(select.findAll('option').map((o) => o.text())).toEqual([expect.stringContaining('read-only'), 'a', 'b'])
+    await select.setValue('a')
+    await save(w)
+    expect(writes(calls)[0].body).toMatchObject({ deploy_target: 'a' })
+
+    await w.findAll('[data-testid="members-selected"] li')[0].findAll('button')[2].trigger('click')
+    expect((w.find('#rl-deploy-target').element as HTMLSelectElement).value).toBe('')
+  })
+
+  it('has no deploy target for a format that cannot publish through a group', async () => {
+    const w = await mountSettings(group({ format: 'deb' }))
+    expect(w.find('#rl-deploy-target').exists()).toBe(false)
   })
 
   it('reports a failed member update and does not announce a save', async () => {
@@ -338,7 +356,7 @@ describe('RepoSettings: group payload', () => {
     const w = await mountSettings(group())
     await w.findAll('[data-testid="members-available"] button')[0].trigger('click')
     await save(w)
-    expect(writes(calls)).toHaveLength(2)
+    expect(writes(calls)).toHaveLength(1)
     expect(w.find('[role="alert"]').text()).toBe('member c is a group')
     expect(w.emitted('saved')).toBeUndefined()
   })

@@ -119,6 +119,22 @@ func (p *RepoGroupStore) AddGroupMember(ctx context.Context, groupRepoID, member
 	return nil
 }
 
+// SetGroupDeployTarget makes memberRepoID, which must be a member of the group, its deploy target (the
+// restore of a backup; the API goes through UpdateRepositorySettings). It is a no-op for a non-member.
+func (p *RepoGroupStore) SetGroupDeployTarget(ctx context.Context, groupRepoID, memberRepoID string) error {
+	defer p.authCache.invalidate()
+
+	_, err := p.db.ExecContext(ctx,
+		`UPDATE repositories g SET deploy_target_id = $2 WHERE g.id = $1
+		   AND EXISTS (SELECT 1 FROM repository_group_members m WHERE m.group_repo_id = g.id AND m.member_repo_id = $2)`,
+		groupRepoID, memberRepoID)
+	if err != nil {
+		return fmt.Errorf("failed to set group deploy target: %w", err)
+	}
+
+	return nil
+}
+
 func (p *RepoGroupStore) ListGroupMembers(ctx context.Context, groupRepoID string) ([]*models.RepositoryGroupMember, error) {
 	rows, err := p.q.ListGroupMembers(ctx, groupRepoID)
 	if err != nil {
@@ -177,8 +193,12 @@ func (p *RepoGroupStore) ListGroupsOfMember(ctx context.Context, memberRepoID st
 }
 
 // ReplaceGroupMembers atomically replaces the member list of a group
-// repository. An empty memberIDs slice clears the group.
+// repository. An empty memberIDs slice clears the group. A deploy target that is no longer a
+// member is unset.
 func (p *RepoGroupStore) ReplaceGroupMembers(ctx context.Context, groupRepoID string, memberIDs []string) error {
+	// A member that leaves unsets the group's deploy target, which cached repository lookups carry.
+	defer p.authCache.invalidate()
+
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)

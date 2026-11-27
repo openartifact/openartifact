@@ -89,6 +89,7 @@ Create a new repository (admin only)
 | `blocked` | boolean | no | - |
 | `cache_ttl_seconds` | integer | no | - |
 | `curation_mode` | string | no | Proxy repositories only (400 for other types). off ignores the curation rules (default), denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches. One of: `off`, `denylist`, `allowlist`. |
+| `deploy_target` | string | no | Group repositories only (400 otherwise). Name of a hosted member listed in member_repos that serves the writes (PUT/POST that publish) sent to the group, as if they had been sent to it. Supported formats: ansible, cargo, composer, conan, conda, go, helm, ivy, maven, nix, npm, nuget, pypi, raw, rubygems, sbt, terraform (400 otherwise). Authorization is the target's: the caller needs write on the target, a permission on the group neither grants nor is needed. Deletes through a group stay 405. |
 | `description` | string | no | - |
 | `federated` | boolean | no | Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true). |
 | `format` | string | yes | One of: `ansible`, `apk`, `cargo`, `cocoapods`, `composer`, `conan`, `conda`, `cran`, `deb`, `docker`, `gitlfs`, `go`, `helm`, `huggingface`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `p2`, `pacman`, `pub`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `swift`, `terraform`. |
@@ -2008,6 +2009,7 @@ Update repository configuration. Requires global admin, or the maintainer or own
 | `blocked` | boolean | no | - |
 | `cache_ttl_seconds` | integer | no | - |
 | `curation_mode` | string | no | Proxy repositories only (400 for other types). off ignores the curation rules, denylist hides the versions a block rule matches, allowlist serves only the versions an allow rule matches. A change is audited as repository.updated. One of: `off`, `denylist`, `allowlist`. |
+| `deploy_target` | string | no | Group repositories only (400 otherwise). Absent leaves it unchanged; a name (a hosted member of the group after this update) sets it; an empty string clears it. A member that leaves the group stops being the target. |
 | `description` | string | no | - |
 | `honour_quay_expiry` | boolean | no | Hosted docker repositories only (400 validation_failed otherwise when true, and when combined with immutable_releases=true). When true, a manifest carrying the quay.expires-after annotation (or image config label) is deleted with its tags and dependents once that time has passed. |
 | `immutable_releases` | boolean | no | When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true. |

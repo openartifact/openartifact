@@ -52,6 +52,45 @@ func ReadRouters(hosted map[string]Hosted) map[string]http.Handler {
 	return routers
 }
 
+// WriteRouters returns an in-memory router per group-deployable format
+// (repotype.Spec.GroupDeploy): the read routes plus what the live mount adds
+// for writes (the WriteRouted routes and the format's own claim on the shared
+// PUT route), so a group can serve a publish as its deploy target. The routes
+// are those of the live mount, only without the other formats' claims.
+func WriteRouters(hosted map[string]Hosted) map[string]http.Handler {
+	routers := make(map[string]http.Handler)
+
+	for name, h := range hosted {
+		if !repotype.GroupDeploySupported(name) {
+			continue
+		}
+
+		r := chi.NewRouter()
+		h.RegisterRepoRoutes(r)
+
+		if w, ok := h.(WriteRouted); ok {
+			w.RegisterWriteRoutes(r)
+		}
+
+		if p, ok := h.(PutRouted); ok {
+			c := p.PutClaim()
+
+			r.Put("/*", func(w http.ResponseWriter, req *http.Request) {
+				if c.Claims != nil && !c.Claims(chi.URLParam(req, "*")) {
+					http.NotFound(w, req)
+					return
+				}
+
+				c.Serve(w, req)
+			})
+		}
+
+		routers[name] = r
+	}
+
+	return routers
+}
+
 // SetPublisher gives every hosted handler the publisher it announces uploads
 // and deletions through.
 func SetPublisher(hosted map[string]Hosted, p webhook.Publisher) {

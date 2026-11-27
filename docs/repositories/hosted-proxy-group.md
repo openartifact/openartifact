@@ -26,7 +26,7 @@ Proxy and group repositories use the same client URLs as hosted ones.
 
 ## Type and format support
 
-Every format except gitlfs can be a proxy, every format except cocoapods, gitlfs and p2 can be a group, and every format except cocoapods, huggingface and p2 can be hosted (a hosted cocoapods, huggingface or p2 repository, a group cocoapods or p2 repository and a proxy or group gitlfs repository are refused with `400 validation_failed`). Proxy and group repositories are read-only: uploads and deletes answer `405`.
+Every format except gitlfs can be a proxy, every format except cocoapods, gitlfs and p2 can be a group, and every format except cocoapods, huggingface and p2 can be hosted (a hosted cocoapods, huggingface or p2 repository, a group cocoapods or p2 repository and a proxy or group gitlfs repository are refused with `400 validation_failed`). Proxy repositories are read-only: uploads and deletes answer `405`. So are groups, unless a [deploy target](#publishing-through-a-group-deploy-target) is set: then a publish sent to the group is stored in that hosted member (deletes still answer `405`).
 
 A proxy needs an `upstream_url`. These formats have a default, so you may leave it out:
 
@@ -94,6 +94,7 @@ curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
 | `min_age_hours` | proxy | Default `0` (off), max 87600 (10 y). See [Minimum age](#minimum-age). |
 | `curation_mode` | proxy | `off` (default), `denylist` or `allowlist`; the [curation rules](#package-curation) take effect only in the last two. Any other value: `400`. |
 | `member_repos` | group | Member repository names in priority order, at most 200. |
+| `deploy_target` | group | Name of a hosted member (so of the group's format, and one of `member_repos`) that serves the publishes sent to the group. Absent or `""`: none, and the group is read-only. On update, `""` clears it and absent leaves it. `400 validation_failed` for a proxy, a non-member, a group, a non-supporting format or a non-group repository. See [Publishing through a group](#publishing-through-a-group-deploy-target). |
 | `trash_retention_days` | all | Days deleted items stay in the [trash](../operations/trash.md). Integer `>= 0`, or `null`/omitted for the server default (`OPENARTIFACT_TRASH_RETENTION`, 7); `0` deletes permanently and immediately. Negative is `400`. |
 | `immutable_releases` | all | Default `false`. When `true`, deleting or overwriting a released version is `409` unless an admin passes `?force=true` ([per format](../operations/trash.md#immutable-releases)). |
 | `merge_proxy_versions` | group | Default `false`: for a package name held by a readable hosted member, the group hides what proxy members offer under that name (hosted members win, see [hosted wins](#hosted-members-win-a-package-name)). `true` merges proxy versions with the hosted ones. Global admins only: a delegated project maintainer sending it gets `403`. Ignored/refused on other repository types. |
@@ -450,6 +451,26 @@ Each format page says what "package name" means for it. Formats whose group answ
 ### Group URLs
 
 A group uses the same client URL as a hosted repository of its format. Replace the repository name with the group name; see the [format matrix](../formats/README.md#format-matrix).
+
+### Publishing through a group (deploy target)
+
+<a id="publishing-through-a-group-deploy-target"></a>
+
+A group can name one of its hosted members as its `deploy_target`. Clients then publish to the group's URL, the same one they install from, and the upload is stored in that member. Without a target a group is read-only: writes answer `405`, as before.
+
+```bash
+curl -X PATCH HOST/api/v1/repository/maven-all -H "Authorization: Bearer <TOKEN>" \
+  -H 'Content-Type: application/json' -d '{"deploy_target":"releases"}'
+# oa repo update maven-all --deploy-target releases     (--deploy-target= clears it)
+```
+
+- **Formats.** ansible, cargo, composer, conan, conda, go, helm, ivy, maven, nix, npm, nuget, pypi, raw, rubygems, sbt and terraform. Docker/OCI, deb, rpm, apk and pacman groups, presigned uploads and writes to proxies are not covered: they answer `405` as before. Setting a target on a group of another format is `400 validation_failed`.
+- **Authorization is the target's.** A write through the group is allowed exactly when the caller may `write` the target at that path, evaluated like a direct upload (permission targets, project roles of the target's project). A permission on the group neither grants nor is needed. A caller without write on the target gets `403`.
+- **The target does the work.** Quota, curation and license policies, scanning, immutable releases, federation, webhooks and metadata regeneration are the target's, because the target's own handler serves the request. The answer is the one the target's handler gives, so it names the target. The `artifact.uploaded` webhook names the target, and its audit entry is recorded against the target with `via_group` set to the group's name.
+- **Reads.** The group serves the new version like any member's content, through its usual merge and metadata regeneration.
+- **Deletes stay refused.** `DELETE`, `npm unpublish` and Cargo `yank`/Conan removals through a group answer `405`; delete in the target.
+- **Changes.** Removing the target from the group's members, deleting it, or moving it to the trash leaves the group without a target. A new target is chosen by setting `deploy_target` again. [Rebuild from storage](../operations/rebuild-from-storage.md) does not restore it; backups do.
+- **Web UI.** The group's create and settings forms have a *Publish through the group to* select that lists its hosted members.
 
 ### Alpine (apk) groups
 

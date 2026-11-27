@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -244,6 +245,10 @@ func TestBuildDetailsJSONKeys(t *testing.T) {
 		if got[k] != v {
 			t.Errorf("details[%q] = %q, want %q", k, got[k], v)
 		}
+	}
+
+	if out := buildDetailsJSON(AuditEvent{Details: "m", ViaGroup: "all"}); !strings.Contains(out, `"via_group":"all"`) {
+		t.Errorf("via_group missing: %s", out)
 	}
 
 	if out := buildDetailsJSON(AuditEvent{Details: "only"}); out != `{"message":"only"}` {

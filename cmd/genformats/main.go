@@ -107,7 +107,7 @@ func render() []byte {
 
 `)
 
-	var hosted, proxy, group, federation, gpg, isolated, osv []string
+	var hosted, proxy, group, deploy, federation, gpg, isolated, osv []string
 
 	upstreams := map[string]string{}
 
@@ -118,7 +118,7 @@ func render() []byte {
 			on   bool
 			list *[]string
 		}{
-			{!s.NoHosted, &hosted}, {s.Proxy, &proxy}, {s.Group, &group}, {s.Federation, &federation},
+			{!s.NoHosted, &hosted}, {s.Proxy, &proxy}, {s.Group, &group}, {s.GroupDeploy, &deploy}, {s.Federation, &federation},
 			{s.Signing == repotype.SigningGPG, &gpg}, {s.Mount == repotype.MountIsolated, &isolated}, {s.OSVEcosystem != "", &osv},
 		} {
 			if sel.on {
@@ -142,6 +142,7 @@ func render() []byte {
 		{"HOSTED_FORMATS", "Formats that can be created as hosted repositories (the rest are proxy and group only).", hosted},
 		{"PROXY_FORMATS", "Formats that can be created as proxy repositories.", proxy},
 		{"GROUP_FORMATS", "Formats that can be created as group repositories.", group},
+		{"GROUP_DEPLOY_FORMATS", "Formats whose groups can publish through a hosted member (the deploy target).", deploy},
 		{"FEDERATION_FORMATS", "Formats whose hosted repositories can be federated.", federation},
 		{"GPG_SIGNED_FORMATS", "Formats whose hosted repositories can be assigned a GPG signing key.", gpg},
 		{"ISOLATED_FORMATS", "Formats served under /repos/<format>/{repo} instead of /repos/{repo}.", isolated},
