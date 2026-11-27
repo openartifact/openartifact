@@ -171,7 +171,7 @@ func repoShow(client *Client, name, outFmt string) {
 
 	for _, k := range []string{
 		"name", "format", "repo_type", "description", "public", "upstream_url", "trash_retention_days",
-		"immutable_releases", "merge_proxy_versions", "sign_packages", "honour_quay_expiry", "created_at", "updated_at",
+		"immutable_releases", "merge_proxy_versions", "deploy_target", "sign_packages", "honour_quay_expiry", "created_at", "updated_at",
 	} {
 		if v, ok := result[k]; ok {
 			_, _ = fmt.Fprintf(w, "%s\t%s\n", k, cell(v))
@@ -209,6 +209,11 @@ func repoUpdateCmd(a *app) *cobra.Command {
 		false,
 		"Group repositories, administrators only: merge proxy members' versions of names a hosted member holds "+
 			"(--merge-proxy-versions=false restores hosted-wins)",
+	)
+	deployTarget := fl.String(
+		"deploy-target",
+		"",
+		"Group repositories: the hosted member that publishes sent to the group are served by (--deploy-target= clears it)",
 	)
 	signPkgs := fl.Bool(
 		"sign-packages",
@@ -253,6 +258,10 @@ func repoUpdateCmd(a *app) *cobra.Command {
 			body["merge_proxy_versions"] = *mergeProxy
 		}
 
+		if set("deploy-target") {
+			body["deploy_target"] = *deployTarget
+		}
+
 		if set("sign-packages") {
 			body["sign_packages"] = *signPkgs
 		}
@@ -264,7 +273,8 @@ func repoUpdateCmd(a *app) *cobra.Command {
 		if len(body) == 0 {
 			dief(
 				"nothing to update: pass --description, --public[=false], --trash-retention-days, " +
-					"--immutable-releases[=false], --sign-packages[=false], --honour-quay-expiry[=false] or --merge-proxy-versions[=false]",
+					"--immutable-releases[=false], --sign-packages[=false], --honour-quay-expiry[=false], --deploy-target " +
+					"or --merge-proxy-versions[=false]",
 			)
 		}
 

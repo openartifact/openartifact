@@ -71,6 +71,7 @@ func auditUpload(ctx context.Context, repoID string, payload map[string]any) {
 		Package:      name,
 		Version:      version,
 		Subject:      subject,
+		ViaGroup:     viaGroup(ctx),
 	}
 
 	if p := PrincipalFromContext(ctx); p != nil && !p.IsAnonymous {

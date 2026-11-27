@@ -411,6 +411,18 @@ func TestContractRepo(t *testing.T) {
 			calls:   []call{{method: "PATCH", pattern: "/api/v1/repository/{name}", body: m{"merge_proxy_versions": true}}},
 		},
 		{
+			name:    "update deploy target",
+			args:    []string{"repo", "update", "g", "--deploy-target", "hosted-a"},
+			replies: map[string]reply{"PATCH /api/v1/repository/{name}": ok(one)},
+			calls:   []call{{method: "PATCH", pattern: "/api/v1/repository/{name}", body: m{"deploy_target": "hosted-a"}}},
+		},
+		{
+			name:    "update clears the deploy target",
+			args:    []string{"repo", "update", "g", "--deploy-target="},
+			replies: map[string]reply{"PATCH /api/v1/repository/{name}": ok(one)},
+			calls:   []call{{method: "PATCH", pattern: "/api/v1/repository/{name}", body: m{"deploy_target": ""}}},
+		},
+		{
 			name:    "update retention back to default sends null",
 			args:    []string{"repo", "update", "r", "--trash-retention-days", "default"},
 			replies: map[string]reply{"PATCH /api/v1/repository/{name}": ok(one)},

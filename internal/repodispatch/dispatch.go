@@ -62,6 +62,10 @@ type Dispatcher struct {
 	// the repository-relative path as the trailing wildcard. Groups use it to
 	// read their hosted members.
 	hosted map[string]http.Handler
+	// deploy serves a publish to a hosted repository like hosted, with the
+	// write routes the live mount registers (repotype.Spec.GroupDeploy
+	// formats only): groups serve their deploy target's writes through it.
+	deploy map[string]http.Handler
 }
 
 // New creates a Dispatcher.
@@ -82,6 +86,15 @@ func New(log *logger.Logger, db DispatcherStore, proxySvc *proxy.Service, authz 
 func (d *Dispatcher) WithBaseURL(baseURL string) *Dispatcher {
 	d.proxy.SetBaseURL(baseURL)
 	d.group.SetBaseURL(baseURL)
+
+	return d
+}
+
+// WithDeployRouters enables the deploy target of groups: writes sent to a group
+// that names one are served by the hosted member through the routers, one per
+// format that supports it.
+func (d *Dispatcher) WithDeployRouters(routers map[string]http.Handler) *Dispatcher {
+	d.deploy = routers
 
 	return d
 }
@@ -185,6 +198,11 @@ func (d *Dispatcher) Middleware(next http.Handler) http.Handler {
 				return
 			}
 
+			if target := d.deployTarget(r, repo); target != nil {
+				d.serveDeploy(w, r, repo, target, strings.TrimPrefix(tail, "/"))
+				return
+			}
+
 			d.group.Serve(w, r, repo, tail, group.Backend{
 				Authorize:   d.authorize,
 				ServeMember: d.serveMember,
@@ -193,6 +211,54 @@ func (d *Dispatcher) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		}
 	})
+}
+
+// deployTarget returns the hosted member a write sent to the group grp is
+// served by, nil when the request is not one (the group then answers it: 405
+// for a write). It is the repository RBAC authorized the write against: a
+// request that did not pass through RBAC has no deploy target, so a write can
+// never reach a repository nobody authorized it for.
+func (d *Dispatcher) deployTarget(r *http.Request, grp *models.Repository) *models.Repository {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead || grp.Blocked {
+		return nil
+	}
+
+	name := middleware.GroupDeployFromContext(r.Context(), grp.Name)
+	if name == "" || d.deploy[grp.Format] == nil {
+		return nil
+	}
+
+	target, err := d.db.GetRepositoryByName(r.Context(), name)
+	if err != nil {
+		d.log.Errorw("deploy target lookup failed", "group", grp.Name, "target", name, "error", err)
+		return nil
+	}
+
+	if target == nil || target.RepoType != repotype.Hosted || target.Format != grp.Format {
+		return nil
+	}
+
+	return target
+}
+
+// serveDeploy serves a write sent to grp as if it had been sent to target:
+// the hosted router is driven with the target as the {name} repository, so
+// the quota, curation, scan, immutability, federation, webhook and audit rules
+// are the target's and the answer names the target. The route the write took
+// is added to the request's route pattern, so the upload is counted under its
+// format like a direct one.
+func (d *Dispatcher) serveDeploy(w http.ResponseWriter, r *http.Request, grp, target *models.Repository, relPath string) {
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("name", target.Name)
+	rctx.RoutePath = "/" + relPath
+
+	d.deploy[target.Format].ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx)))
+
+	if outer := chi.RouteContext(r.Context()); outer != nil {
+		outer.RoutePatterns = append(outer.RoutePatterns, rctx.RoutePatterns...)
+	}
+
+	d.log.Debugw("write served by the deploy target", "group", grp.Name, "target", target.Name, "method", r.Method)
 }
 
 // wrongUploadHint answers a POST or PUT to /repos/{name}/upload of a hosted

@@ -58,6 +58,10 @@ type AuditEvent struct {
 	Package string
 	Version string
 	Subject string
+	// ViaGroup names the group repository a write came through when it was
+	// served by the group's deploy target (the event's repository); stored in
+	// details_json as "via_group".
+	ViaGroup string
 	// Outcome is OutcomeSuccess or OutcomeFailure. Log fills an empty one:
 	// failure for a Status of 400 and above, success otherwise (an explicit
 	// action records something that happened).
@@ -203,7 +207,7 @@ func buildDetailsJSON(event AuditEvent) string {
 
 	for k, v := range map[string]string{
 		"message": event.Details, "actor": event.Actor,
-		"package": event.Package, "version": event.Version, "subject": event.Subject,
+		"package": event.Package, "version": event.Version, "subject": event.Subject, "via_group": event.ViaGroup,
 		"outcome": event.Outcome, "username": event.Username, "token_id": event.TokenID, "request_id": event.RequestID,
 	} {
 		if v != "" {
